@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/course.dart';
@@ -12,11 +14,20 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late ScheduleService _schedule;
   List<Course> _todayCourses = [];
   List<Period> _periods = defaultPeriods.toList();
   bool _initialized = false;
+
+  // Refresh every minute to update course now/past state and day changes
+  Timer? _refreshTimer;
+  int _lastWeekday = DateTime.now().weekday;
+
+  // Staggered entrance animation for course items
+  AnimationController? _staggerController;
+  List<Animation<double>> _itemSlides = [];
+  List<Animation<double>> _itemFades = [];
 
   @override
   void didChangeDependencies() {
@@ -26,41 +37,95 @@ class _HomePageState extends State<HomePage> {
       _schedule = ServiceProvider.of(context).scheduleService;
       _schedule.addListener(_rebuild);
       _doRebuild();
+      _refreshTimer = Timer.periodic(
+        const Duration(minutes: 1),
+        (_) => _onTimerTick(),
+      );
     }
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _schedule.removeListener(_rebuild);
+    _staggerController?.dispose();
     super.dispose();
   }
 
   void _rebuild() {
     if (!mounted) return;
-    // Defer setState to avoid calling it during build phase
-    // (ScheduleService may notify during another widget's didChangeDependencies)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _doRebuild();
     });
   }
 
+  void _onTimerTick() {
+    if (!mounted) return;
+    final now = DateTime.now().weekday;
+    if (now != _lastWeekday) {
+      // Day changed — rebuild course list for the new day
+      _lastWeekday = now;
+      _doRebuild();
+    } else {
+      // Same day — just repaint to update now/past state
+      setState(() {});
+    }
+  }
+
   void _doRebuild() {
-    setState(() {
-      final table = _schedule.courseTable;
-      if (table != null) {
-        if (table.periods.isNotEmpty) {
-          _periods = table.periods.map((p) => p.toPeriod()).toList();
-        }
-        final week = _schedule.currentWeek();
-        final today = DateTime.now().weekday; // 1=Mon, 7=Sun
-        final all = eamsToDisplayCourses(table.courses, week);
-        _todayCourses = all.where((c) => c.dayOfWeek == today).toList()
-          ..sort((a, b) => a.startPeriod.compareTo(b.startPeriod));
-      } else {
-        _todayCourses = [];
+    final table = _schedule.courseTable;
+    List<Course> newCourses;
+    if (table != null) {
+      if (table.periods.isNotEmpty) {
+        _periods = table.periods.map((p) => p.toPeriod()).toList();
       }
+      final week = _schedule.currentWeek();
+      final today = DateTime.now().weekday;
+      final all = eamsToDisplayCourses(table.courses, week);
+      newCourses = all.where((c) => c.dayOfWeek == today).toList()
+        ..sort((a, b) => a.startPeriod.compareTo(b.startPeriod));
+    } else {
+      newCourses = [];
+    }
+
+    final previousCount = _todayCourses.length;
+    setState(() {
+      _todayCourses = newCourses;
     });
+
+    // Run stagger animation when courses appear for the first time
+    if (previousCount == 0 && newCourses.isNotEmpty) {
+      _runStaggerAnimation(newCourses.length);
+    }
+  }
+
+  void _runStaggerAnimation(int count) {
+    _staggerController?.dispose();
+    _staggerController = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 300 + count * 60),
+    );
+
+    _itemSlides = [];
+    _itemFades = [];
+    for (int i = 0; i < count; i++) {
+      final start = (i * 0.12).clamp(0.0, 0.6);
+      final end = (start + 0.5).clamp(start + 0.1, 1.0);
+      final interval = Interval(start, end, curve: Curves.easeOutCubic);
+      _itemSlides.add(
+        Tween<double>(begin: 24.0, end: 0.0).animate(
+          CurvedAnimation(parent: _staggerController!, curve: interval),
+        ),
+      );
+      _itemFades.add(
+        Tween<double>(begin: 0.0, end: 1.0).animate(
+          CurvedAnimation(parent: _staggerController!, curve: interval),
+        ),
+      );
+    }
+
+    _staggerController!.forward();
   }
 
   String _timeForCourse(Course course) {
@@ -162,29 +227,94 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildTodayClasses(ThemeData theme, bool isLoggedIn) {
-    if (!isLoggedIn || _todayCourses.isEmpty) {
-      return Card.outlined(
-        child: ListTile(
-          leading: Icon(
-            Icons.calendar_today,
-            color: theme.colorScheme.primary,
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 400),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: SizeTransition(
+            sizeFactor: animation,
+            axisAlignment: -1.0,
+            child: child,
           ),
-          title: const Text('Upcoming classes'),
-          subtitle: Text(
-            !isLoggedIn ? '登录以查看今日课程' : '今天没有课程',
-          ),
-          trailing: const Icon(Icons.chevron_right),
+        );
+      },
+      child: !isLoggedIn
+          ? _buildEmptyState(
+              key: const ValueKey('not-logged-in'),
+              theme: theme,
+              icon: Icons.login_rounded,
+              title: '登录以查看今日课程',
+              subtitle: '连接你的教务系统账号',
+            )
+          : _todayCourses.isEmpty
+          ? _buildEmptyState(
+              key: const ValueKey('no-courses'),
+              theme: theme,
+              icon: Icons.wb_sunny_outlined,
+              title: '今天没有课程',
+              subtitle: '享受你的自由时间吧',
+            )
+          : _buildCourseList(theme),
+    );
+  }
+
+  Widget _buildEmptyState({
+    required Key key,
+    required ThemeData theme,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Card.outlined(
+      key: key,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+        child: Column(
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                size: 32,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(title, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
-      );
-    }
+      ),
+    );
+  }
+
+  Widget _buildCourseList(ThemeData theme) {
+    final hasStagger =
+        _staggerController != null &&
+        _itemSlides.length == _todayCourses.length;
 
     return Card.outlined(
+      key: const ValueKey('courses'),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(
               children: [
                 Icon(
@@ -193,10 +323,7 @@ class _HomePageState extends State<HomePage> {
                   color: theme.colorScheme.primary,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  '今日课程',
-                  style: theme.textTheme.titleSmall,
-                ),
+                Text('今日课程', style: theme.textTheme.titleSmall),
                 const Spacer(),
                 Text(
                   '${_todayCourses.length}节课',
@@ -209,8 +336,21 @@ class _HomePageState extends State<HomePage> {
           ),
           const Divider(height: 1),
           for (int i = 0; i < _todayCourses.length; i++) ...[
-            _buildCourseItem(theme, _todayCourses[i]),
-            if (i < _todayCourses.length - 1) const Divider(height: 1, indent: 56),
+            if (hasStagger)
+              AnimatedBuilder(
+                animation: _staggerController!,
+                builder: (context, child) {
+                  return Transform.translate(
+                    offset: Offset(0, _itemSlides[i].value),
+                    child: Opacity(opacity: _itemFades[i].value, child: child),
+                  );
+                },
+                child: _buildCourseItem(theme, _todayCourses[i]),
+              )
+            else
+              _buildCourseItem(theme, _todayCourses[i]),
+            if (i < _todayCourses.length - 1)
+              const Divider(height: 1, indent: 56),
           ],
         ],
       ),
@@ -223,15 +363,19 @@ class _HomePageState extends State<HomePage> {
     final containerColor = course.color.containerColor(theme.colorScheme);
     final onContainerColor = course.color.onContainerColor(theme.colorScheme);
 
-    return Opacity(
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
       opacity: isPast ? 0.5 : 1.0,
       child: ListTile(
-        leading: Container(
+        leading: AnimatedContainer(
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOutCubic,
           width: 40,
           height: 40,
           decoration: BoxDecoration(
             color: containerColor,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(isNow ? 12 : 8),
           ),
           alignment: Alignment.center,
           child: Text(
@@ -247,9 +391,7 @@ class _HomePageState extends State<HomePage> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: isNow
-              ? theme.textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                )
+              ? theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)
               : null,
         ),
         subtitle: Text(

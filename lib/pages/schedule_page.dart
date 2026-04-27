@@ -50,8 +50,7 @@ class _SchedulePageState extends State<SchedulePage> {
     _rebuildCourses();
   }
 
-  Future<void> _loadData() async {
-    await _schedule.loadCachedData();
+  void _loadData() {
     _rebuildCourses();
   }
 

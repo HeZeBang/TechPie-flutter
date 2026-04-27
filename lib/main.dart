@@ -28,7 +28,10 @@ void main() async {
 
   await authService.initialize();
 
-  // Fetch schedule data once on startup if logged in
+  // Load cached schedule data so widgets (e.g. home page) render immediately
+  await scheduleService.loadCachedData();
+
+  // Fetch fresh schedule data in the background if logged in
   if (authService.isLoggedIn) {
     scheduleService.fetchAll(); // fire-and-forget, UI uses cache first
   }
