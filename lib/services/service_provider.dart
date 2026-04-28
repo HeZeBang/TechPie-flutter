@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'assignment_service.dart';
 import 'auth_service.dart';
 import 'debug_logger.dart';
 import 'schedule_service.dart';
@@ -12,6 +13,7 @@ class ServiceProvider extends InheritedWidget {
   final StorageService storageService;
   final ThemeService themeService;
   final ScheduleService scheduleService;
+  final AssignmentService assignmentService;
 
   const ServiceProvider({
     super.key,
@@ -20,6 +22,7 @@ class ServiceProvider extends InheritedWidget {
     required this.storageService,
     required this.themeService,
     required this.scheduleService,
+    required this.assignmentService,
     required super.child,
   });
 
@@ -35,5 +38,6 @@ class ServiceProvider extends InheritedWidget {
       debugLogger != oldWidget.debugLogger ||
       storageService != oldWidget.storageService ||
       themeService != oldWidget.themeService ||
-      scheduleService != oldWidget.scheduleService;
+      scheduleService != oldWidget.scheduleService ||
+      assignmentService != oldWidget.assignmentService;
 }
