@@ -105,6 +105,7 @@ class EamsCourse {
           .split(',')
           .map((s) => int.tryParse(s.trim()))
           .whereType<int>()
+          .where((p) => p > 0)
           .toList();
       times[day] = periods;
     }
