@@ -27,18 +27,21 @@ final class NativeGlassTabBarFactory: NSObject, FlutterPlatformViewFactory {
   }
 }
 
-private final class NativeTabBarHostView: UIView {
+private final class NativeGlassTabBarRootView: UIView {
   let tabBar = UITabBar()
-  var onValidLayout: ((_ width: CGFloat, _ height: CGFloat) -> Void)?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
 
     backgroundColor = .clear
+    isOpaque = false
     clipsToBounds = false
 
     tabBar.frame = bounds
     tabBar.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    tabBar.backgroundColor = .clear
+    tabBar.clipsToBounds = false
+
     addSubview(tabBar)
   }
 
@@ -46,41 +49,16 @@ private final class NativeTabBarHostView: UIView {
     fatalError("init(coder:) has not been implemented")
   }
 
-  override func didMoveToWindow() {
-    super.didMoveToWindow()
-
-    setNeedsLayout()
-    layoutIfNeeded()
-    emitValidLayoutIfReady()
-  }
-
   override func layoutSubviews() {
     super.layoutSubviews()
-
     tabBar.frame = bounds
-    emitValidLayoutIfReady()
-  }
-
-  private func emitValidLayoutIfReady() {
-    guard window != nil else {
-      return
-    }
-
-    guard bounds.width > 40, bounds.height > 20 else {
-      return
-    }
-
-    onValidLayout?(bounds.width, bounds.height)
   }
 }
 
 final class NativeGlassTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
   static let viewType = "techpie/native_glass_tab_bar"
 
-  private let tabBarIconPointSize: CGFloat = 20
-  private let explicitItemSpacing: CGFloat = 1
-
-  private let rootView: NativeTabBarHostView
+  private let rootView: NativeGlassTabBarRootView
   private let channel: FlutterMethodChannel
 
   private var tabBar: UITabBar {
@@ -90,38 +68,13 @@ final class NativeGlassTabBarPlatformView: NSObject, FlutterPlatformView, UITabB
   private var items: [NativeGlassTabBarItem] = []
   private var selectedIndex = 0
 
-  private var didInstallItems = false
-  private var isInstallingItems = false
-  private var lastInstalledSize: CGSize = .zero
-  private var lastItemSignature = ""
-
-  private var normalTitleAttributes: [NSAttributedString.Key: Any] {
-    [
-      .foregroundColor: NativeGlassColors.normalItem,
-      .font: UIFont.systemFont(ofSize: 10.5, weight: .medium)
-    ]
-  }
-
-  private var selectedTitleAttributes: [NSAttributedString.Key: Any] {
-    [
-      .foregroundColor: NativeGlassColors.selectedBlue,
-      .font: UIFont.systemFont(ofSize: 10.5, weight: .semibold)
-    ]
-  }
-
-  private var itemSignature: String {
-    items
-      .map { "\($0.label)|\($0.sfSymbol)|\($0.selectedSfSymbol)" }
-      .joined(separator: ";")
-  }
-
   init(
     frame: CGRect,
     viewId: Int64,
     arguments args: Any?,
     messenger: FlutterBinaryMessenger
   ) {
-    rootView = NativeTabBarHostView(frame: frame)
+    rootView = NativeGlassTabBarRootView(frame: frame)
     channel = FlutterMethodChannel(
       name: "\(Self.viewType)/\(viewId)",
       binaryMessenger: messenger
@@ -130,15 +83,16 @@ final class NativeGlassTabBarPlatformView: NSObject, FlutterPlatformView, UITabB
     super.init()
 
     parseArguments(args)
-    configureTabBarShell()
-
-    rootView.onValidLayout = { [weak self] width, height in
-      self?.installItemsIfNeeded(width: width, height: height)
-    }
+    configureTabBar()
+    applyItems()
 
     channel.setMethodCallHandler { [weak self] call, result in
       self?.handle(call: call, result: result)
     }
+  }
+
+  deinit {
+    channel.setMethodCallHandler(nil)
   }
 
   func view() -> UIView {
@@ -182,170 +136,52 @@ final class NativeGlassTabBarPlatformView: NSObject, FlutterPlatformView, UITabB
     selectedIndex = clampedIndex(selectedIndex)
   }
 
-  private func configureTabBarShell() {
+  private func configureTabBar() {
     tabBar.delegate = self
-    tabBar.isTranslucent = true
-    tabBar.backgroundColor = .clear
-    tabBar.clipsToBounds = false
-
-    tabBar.itemPositioning = .centered
-    tabBar.itemSpacing = explicitItemSpacing
-  }
-
-  private func configureTabBarAppearance(availableWidth width: CGFloat) {
-    let appearance = UITabBarAppearance()
-
-    appearance.configureWithTransparentBackground()
-    appearance.backgroundColor = NativeGlassColors.barBackground
-    appearance.backgroundEffect = UIBlurEffect(style: .systemChromeMaterial)
-    appearance.shadowColor = .clear
-    appearance.shadowImage = nil
-    appearance.backgroundImage = nil
-
-    configureItemAppearance(appearance.stackedLayoutAppearance)
-    configureItemAppearance(appearance.inlineLayoutAppearance)
-    configureItemAppearance(appearance.compactInlineLayoutAppearance)
-
-    let count = max(items.count, 1)
-    let totalSpacing = explicitItemSpacing * CGFloat(max(count - 1, 0))
-    let itemWidth = floor((width - totalSpacing) / CGFloat(count))
-
-    appearance.stackedItemPositioning = .centered
-    appearance.stackedItemWidth = max(44, itemWidth)
-    appearance.stackedItemSpacing = explicitItemSpacing
-
-    tabBar.standardAppearance = appearance
-
-    if #available(iOS 15.0, *) {
-      tabBar.scrollEdgeAppearance = appearance
-    }
-
-    tabBar.itemPositioning = .centered
-    tabBar.itemWidth = max(44, itemWidth)
-    tabBar.itemSpacing = explicitItemSpacing
+    
+    tabBar.itemPositioning = .fill
 
     tabBar.tintColor = NativeGlassColors.selectedBlue
     tabBar.unselectedItemTintColor = NativeGlassColors.normalItem
+
+    tabBar.backgroundColor = .clear
+    tabBar.clipsToBounds = false
   }
 
-  private func configureItemAppearance(_ itemAppearance: UITabBarItemAppearance) {
-    itemAppearance.normal.iconColor = NativeGlassColors.normalItem
-    itemAppearance.normal.titleTextAttributes = normalTitleAttributes
-
-    itemAppearance.selected.iconColor = NativeGlassColors.selectedBlue
-    itemAppearance.selected.titleTextAttributes = selectedTitleAttributes
-
-    itemAppearance.focused.iconColor = NativeGlassColors.selectedBlue
-    itemAppearance.focused.titleTextAttributes = selectedTitleAttributes
-
-    itemAppearance.disabled.iconColor = NativeGlassColors.normalItem.withAlphaComponent(0.28)
-    itemAppearance.disabled.titleTextAttributes = [
-      .foregroundColor: NativeGlassColors.normalItem.withAlphaComponent(0.28),
-      .font: UIFont.systemFont(ofSize: 10.5, weight: .medium)
-    ]
-  }
-
-  private func installItemsIfNeeded(width: CGFloat, height: CGFloat) {
-    guard !isInstallingItems else {
-      return
-    }
-
-    guard width > 40, height > 20 else {
-      return
-    }
-
-    let size = CGSize(width: width, height: height)
-    let sizeChanged =
-      abs(size.width - lastInstalledSize.width) > 0.5 ||
-      abs(size.height - lastInstalledSize.height) > 0.5
-    let signatureChanged = itemSignature != lastItemSignature
-
-    guard !didInstallItems || sizeChanged || signatureChanged else {
-      return
-    }
-
-    isInstallingItems = true
-    defer {
-      isInstallingItems = false
-    }
-
-    didInstallItems = true
-    lastInstalledSize = size
-    lastItemSignature = itemSignature
-
-    tabBar.frame = CGRect(x: 0, y: 0, width: width, height: height)
-
-    configureTabBarAppearance(availableWidth: width)
-
-    tabBar.setItems(makeTabItems(), animated: false)
-    applySelectedItem()
-    refreshTabBarColors()
-
-    tabBar.setNeedsLayout()
-    tabBar.layoutIfNeeded()
-  }
-
-  private func makeTabItems() -> [UITabBarItem] {
-    items.enumerated().map { index, item in
-      let image = configuredSymbolImage(named: item.sfSymbol, weight: .medium)
-      let selectedImage = configuredSymbolImage(
-        named: item.selectedSfSymbol,
-        weight: .semibold
-      )
-
+  private func applyItems() {
+    let tabItems = items.enumerated().map { index, item in
       let tabItem = UITabBarItem(
         title: item.label,
-        image: image,
-        selectedImage: selectedImage
+        image: symbolImage(named: item.sfSymbol),
+        selectedImage: symbolImage(named: item.selectedSfSymbol)
       )
 
       tabItem.tag = index
-      tabItem.setTitleTextAttributes(normalTitleAttributes, for: .normal)
-      tabItem.setTitleTextAttributes(selectedTitleAttributes, for: .selected)
-
       return tabItem
     }
+
+    tabBar.setItems(tabItems, animated: false)
+    applySelectedItem()
   }
 
   private func updateSelection(to index: Int) {
     selectedIndex = clampedIndex(index)
     applySelectedItem()
-    refreshTabBarColors()
   }
 
   private func applySelectedItem() {
-    guard let tabItems = tabBar.items, tabItems.indices.contains(selectedIndex) else {
+    guard
+      let tabItems = tabBar.items,
+      tabItems.indices.contains(selectedIndex)
+    else {
       return
     }
 
     tabBar.selectedItem = tabItems[selectedIndex]
   }
 
-  private func refreshTabBarColors() {
-    tabBar.tintColor = NativeGlassColors.selectedBlue
-    tabBar.unselectedItemTintColor = NativeGlassColors.normalItem
-
-    if let tabItems = tabBar.items {
-      for item in tabItems {
-        item.setTitleTextAttributes(normalTitleAttributes, for: .normal)
-        item.setTitleTextAttributes(selectedTitleAttributes, for: .selected)
-      }
-    }
-
-    tabBar.setNeedsLayout()
-  }
-
-  private func configuredSymbolImage(
-    named systemName: String,
-    weight: UIImage.SymbolWeight
-  ) -> UIImage? {
-    let configuration = UIImage.SymbolConfiguration(
-      pointSize: tabBarIconPointSize,
-      weight: weight,
-      scale: .medium
-    )
-
-    return UIImage(systemName: systemName, withConfiguration: configuration)?
+  private func symbolImage(named systemName: String) -> UIImage? {
+    UIImage(systemName: systemName)?
       .withRenderingMode(.alwaysTemplate)
   }
 
@@ -385,7 +221,6 @@ final class NativeGlassTabBarPlatformView: NSObject, FlutterPlatformView, UITabB
   func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
     let index = item.tag
     selectedIndex = clampedIndex(index)
-    refreshTabBarColors()
     channel.invokeMethod("onSelect", arguments: ["index": selectedIndex])
   }
 }
