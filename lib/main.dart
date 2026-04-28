@@ -13,6 +13,7 @@ import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
 import 'services/storage_service.dart';
 import 'services/theme_service.dart';
+import 'widgets/native_glass_floating_button.dart';
 import 'widgets/native_glass_tab_bar.dart';
 
 void main() async {
@@ -97,6 +98,8 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
+  static const int _assignmentsIndex = 2;
+
   int _selectedIndex = 0;
 
   static const List<NativeGlassTabBarItem> _navigationItems = [
@@ -153,6 +156,14 @@ class _AppShellState extends State<AppShell> {
         },
         child: _pages[_selectedIndex],
       ),
+      floatingActionButton: _selectedIndex == _assignmentsIndex
+          ? NativeGlassFloatingButton(
+              onPressed: () {},
+              icon: Icons.add,
+              sfSymbol: 'plus',
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: NativeGlassTabBar(
         selectedIndex: _selectedIndex,
         items: _navigationItems,

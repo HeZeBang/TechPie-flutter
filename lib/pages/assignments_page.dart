@@ -8,13 +8,7 @@ class AssignmentsPage extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Assignments'),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {},
-        child: const Icon(Icons.add),
-      ),
+      appBar: AppBar(title: const Text('Assignments')),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -25,10 +19,7 @@ class AssignmentsPage extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 16),
-            Text(
-              'No assignments yet',
-              style: theme.textTheme.titleMedium,
-            ),
+            Text('No assignments yet', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(
               'Tap + to add your first assignment.',
