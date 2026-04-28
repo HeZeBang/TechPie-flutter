@@ -48,3 +48,6 @@ app.*.map.json
 .idea/
 .vscode/
 .claude/
+
+# Environment files
+.envrc
