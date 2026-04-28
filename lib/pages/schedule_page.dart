@@ -643,6 +643,7 @@ class _TimetableGrid extends StatelessWidget {
     final theme = Theme.of(context);
 
     return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 120),
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,

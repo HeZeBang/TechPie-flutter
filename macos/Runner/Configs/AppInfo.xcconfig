@@ -8,7 +8,7 @@
 PRODUCT_NAME = techpie
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.techpie
+PRODUCT_BUNDLE_IDENTIFIER = club.geekpie.techpie.henryli
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.

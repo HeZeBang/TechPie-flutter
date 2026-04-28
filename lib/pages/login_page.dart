@@ -68,7 +68,10 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       await ServiceProvider.of(context).authService.smsLogin(phone, code);
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ServiceProvider.of(context).scheduleService.fetchAll();
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -85,7 +88,10 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       await ServiceProvider.of(context).authService.egateLogin(username, password);
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ServiceProvider.of(context).scheduleService.fetchAll();
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

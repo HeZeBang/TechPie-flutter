@@ -46,6 +46,7 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListenableBuilder(
         listenable: Listenable.merge([auth, logger, themeService]),
         builder: (context, _) => ListView(
+          padding: const EdgeInsets.only(bottom: 120),
           children: [
             // Account section
             _sectionHeader(theme, 'Account'),
