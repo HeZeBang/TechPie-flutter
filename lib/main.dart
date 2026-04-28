@@ -24,8 +24,11 @@ void main() async {
   final httpClient = LoggingHttpClient(debugLogger);
   final authService = AuthService(storageService, httpClient);
   final themeService = ThemeService(storageService);
-  final scheduleService =
-      ScheduleService(storageService, httpClient, authService);
+  final scheduleService = ScheduleService(
+    storageService,
+    httpClient,
+    authService,
+  );
 
   await authService.initialize();
 
@@ -37,13 +40,15 @@ void main() async {
     scheduleService.fetchAll(); // fire-and-forget, UI uses cache first
   }
 
-  runApp(TechPieApp(
-    authService: authService,
-    debugLogger: debugLogger,
-    storageService: storageService,
-    themeService: themeService,
-    scheduleService: scheduleService,
-  ));
+  runApp(
+    TechPieApp(
+      authService: authService,
+      debugLogger: debugLogger,
+      storageService: storageService,
+      themeService: themeService,
+      scheduleService: scheduleService,
+    ),
+  );
 }
 
 class TechPieApp extends StatelessWidget {
@@ -135,13 +140,14 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: true,
       body: PageTransitionSwitcher(
         duration: const Duration(milliseconds: 300),
         transitionBuilder: (child, animation, secondaryAnimation) {
           return FadeThroughTransition(
             animation: animation,
             secondaryAnimation: secondaryAnimation,
-            fillColor: Theme.of(context).colorScheme.surface,
+            fillColor: Colors.transparent,
             child: child,
           );
         },
@@ -151,6 +157,8 @@ class _AppShellState extends State<AppShell> {
         selectedIndex: _selectedIndex,
         items: _navigationItems,
         onSelected: (index) {
+          if (index == _selectedIndex) return;
+
           setState(() {
             _selectedIndex = index;
           });

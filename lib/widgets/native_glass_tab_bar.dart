@@ -40,17 +40,25 @@ class _NativeGlassTabBarState extends State<NativeGlassTabBar> {
   bool get _usesNativeBar =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
+  int get _safeSelectedIndex {
+    if (widget.items.isEmpty) return 0;
+    return widget.selectedIndex.clamp(0, widget.items.length - 1);
+  }
+
   @override
   void didUpdateWidget(covariant NativeGlassTabBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_usesNativeBar && oldWidget.selectedIndex != widget.selectedIndex) {
-      _sendSelectionUpdate(widget.selectedIndex);
-    }
+
+    if (!_usesNativeBar) return;
+    if (oldWidget.selectedIndex == widget.selectedIndex) return;
+
+    _sendSelectionUpdate(_safeSelectedIndex);
   }
 
   @override
   void dispose() {
     _channel?.setMethodCallHandler(null);
+    _channel = null;
     super.dispose();
   }
 
@@ -58,7 +66,7 @@ class _NativeGlassTabBarState extends State<NativeGlassTabBar> {
   Widget build(BuildContext context) {
     if (!_usesNativeBar) {
       return NavigationBar(
-        selectedIndex: widget.selectedIndex,
+        selectedIndex: _safeSelectedIndex,
         onDestinationSelected: widget.onSelected,
         destinations: [
           for (final item in widget.items)
@@ -71,27 +79,25 @@ class _NativeGlassTabBarState extends State<NativeGlassTabBar> {
       );
     }
 
-    final creationParams = <String, dynamic>{
-      'selectedIndex': widget.selectedIndex,
-      'items': [
-        for (final item in widget.items)
-          <String, dynamic>{
-            'label': item.label,
-            'sfSymbol': item.sfSymbol,
-            'selectedSfSymbol': item.selectedSfSymbol,
-          },
-      ],
-    };
-
     return SafeArea(
       top: false,
-      minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      minimum: const EdgeInsets.fromLTRB(0, 0, 0, 0),
       child: SizedBox(
-        height: 72,
+        height: 78,
         child: UiKitView(
           viewType: _viewType,
           layoutDirection: Directionality.of(context),
-          creationParams: creationParams,
+          creationParams: <String, Object?>{
+            'selectedIndex': _safeSelectedIndex,
+            'items': [
+              for (final item in widget.items)
+                <String, Object?>{
+                  'label': item.label,
+                  'sfSymbol': item.sfSymbol,
+                  'selectedSfSymbol': item.selectedSfSymbol,
+                },
+            ],
+          },
           creationParamsCodec: const StandardMessageCodec(),
           onPlatformViewCreated: _onPlatformViewCreated,
         ),
@@ -99,37 +105,36 @@ class _NativeGlassTabBarState extends State<NativeGlassTabBar> {
     );
   }
 
-  Future<void> _onPlatformViewCreated(int viewId) async {
+  void _onPlatformViewCreated(int viewId) {
     final channel = MethodChannel('$_channelPrefix/$viewId');
     _channel = channel;
+
     channel.setMethodCallHandler((call) async {
-      switch (call.method) {
-        case 'onSelect':
-          final arguments = call.arguments;
-          final index = arguments is Map ? arguments['index'] : null;
-          if (index is int) {
-            widget.onSelected(index);
-          }
-          return null;
-        default:
-          return null;
+      if (call.method != 'onSelect') return null;
+
+      final arguments = call.arguments;
+      final index = arguments is Map ? arguments['index'] : null;
+
+      if (index is int && index >= 0 && index < widget.items.length) {
+        widget.onSelected(index);
       }
+
+      return null;
     });
-    await _sendSelectionUpdate(widget.selectedIndex);
   }
 
   Future<void> _sendSelectionUpdate(int index) async {
     final channel = _channel;
     if (channel == null) return;
+
     try {
-      await channel.invokeMethod<void>(
-        'updateSelectedIndex',
-        <String, dynamic>{'index': index},
-      );
+      await channel.invokeMethod<void>('updateSelectedIndex', <String, Object?>{
+        'index': index,
+      });
     } on PlatformException {
-      // Ignore transient channel errors during view teardown.
+      // Platform view may be tearing down.
     } on MissingPluginException {
-      // Ignore calls issued before the platform view finishes wiring itself up.
+      // Platform view may not be wired yet.
     }
   }
 }
