@@ -14,7 +14,12 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "TechPieNativeGlassTabBar")
+    guard let registrar = engineBridge.pluginRegistry.registrar(
+      forPlugin: "TechPieNativeGlassTabBar"
+    ) else {
+      assertionFailure("Failed to create registrar for TechPieNativeGlassTabBar")
+      return
+    }
     let factory = NativeGlassTabBarFactory(messenger: registrar.messenger())
     registrar.register(factory, withId: nativeGlassTabBarViewType)
   }
