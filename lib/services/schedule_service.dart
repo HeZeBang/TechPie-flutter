@@ -37,7 +37,7 @@ class ScheduleService extends ChangeNotifier {
     if (_termBegin == null) return 1;
     final diff = DateTime.now().difference(_termBegin!).inDays;
     if (diff < 0) return 1;
-    return ((diff ~/ 7) + 1).clamp(1, 25);
+    return ((diff ~/ 7) + 1).clamp(1, 25).toInt();
   }
 
   Map<String, String> _jsonHeaders() => {
