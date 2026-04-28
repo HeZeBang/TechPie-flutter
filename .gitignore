@@ -51,3 +51,5 @@ app.*.map.json
 
 # Environment files
 .envrc
+# Local Xcode overrides
+macos/Runner/Configs/Local.xcconfig

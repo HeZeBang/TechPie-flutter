@@ -526,7 +526,7 @@ class _DayHeader extends StatelessWidget {
     final theme = Theme.of(context);
 
     return SizedBox(
-      height: 56,
+      height: 68,
       child: Row(
         children: [
           SizedBox(
@@ -536,7 +536,7 @@ class _DayHeader extends StatelessWidget {
                 duration: const Duration(milliseconds: 250),
                 child: Text(
                   '${weekStart.month}\n月',
-                  key: ValueKey<int>(weekStart.month),
+                  key: ValueKey<String>('${weekStart.year}-${weekStart.month}'),
                   textAlign: TextAlign.center,
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -597,7 +597,7 @@ class _DayHeaderCell extends StatelessWidget {
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 250),
           child: Container(
-            key: ValueKey<int>(date.day),
+            key: ValueKey<String>('${date.year}-${date.month}-${date.day}'),
             width: 28,
             height: 28,
             decoration: isToday
@@ -643,6 +643,7 @@ class _TimetableGrid extends StatelessWidget {
     final theme = Theme.of(context);
 
     return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 120),
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
