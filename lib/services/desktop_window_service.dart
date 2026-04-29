@@ -32,11 +32,14 @@ class DesktopWindowService with WindowListener {
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
 
+    final isMacOS = defaultTargetPlatform == TargetPlatform.macOS;
+
     final windowOptions = WindowOptions(
       size: _initialSize,
       center: true,
       title: 'TechPie',
-      titleBarStyle: TitleBarStyle.hidden,
+      titleBarStyle:
+          isMacOS ? TitleBarStyle.hidden : TitleBarStyle.normal,
     );
 
     await windowManager.waitUntilReadyToShow(windowOptions, () async {
