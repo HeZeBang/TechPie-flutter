@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'storage_service.dart';
 
 enum AppThemeMode {
-  system('System default', Icons.brightness_auto_outlined),
+  system('System', Icons.brightness_auto_outlined),
   light('Light', Icons.light_mode_outlined),
   dark('Dark', Icons.dark_mode_outlined),
   amoled('Dark AMOLED', Icons.brightness_2_outlined);

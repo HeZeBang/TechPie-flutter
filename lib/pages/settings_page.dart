@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/service_provider.dart';
 import '../services/theme_service.dart';
 import '../widgets/desktop_popup.dart';
+import '../widgets/ios_liquid/ios_glass_select.dart';
+import '../widgets/ios_liquid/ios_glass_switch.dart';
 import 'debug_log_page.dart';
 import 'login_page.dart';
 
@@ -41,6 +44,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final logger = sp.debugLogger;
     final storage = sp.storageService;
     final themeService = sp.themeService;
+    final usesIosLiquidGlass =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -89,14 +94,37 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // Appearance section
             _sectionHeader(theme, 'Appearance'),
-            Builder(
-              builder: (tileContext) => ListTile(
+            if (usesIosLiquidGlass)
+              ListTile(
                 leading: Icon(themeService.mode.icon),
                 title: const Text('Theme'),
                 subtitle: Text(themeService.mode.label),
-                onTap: () => _showThemePicker(tileContext, themeService),
+                trailing: IosGlassSelect(
+                  value: themeService.mode.name,
+                  placeholder: 'Choose theme',
+                  width: 156,
+                  options: [
+                    for (final mode in AppThemeMode.values)
+                      IosGlassSelectOption(value: mode.name, label: mode.label),
+                  ],
+                  onChanged: (value) {
+                    final mode = AppThemeMode.values.firstWhere(
+                      (item) => item.name == value,
+                      orElse: () => AppThemeMode.system,
+                    );
+                    themeService.setMode(mode);
+                  },
+                ),
+              )
+            else
+              Builder(
+                builder: (tileContext) => ListTile(
+                  leading: Icon(themeService.mode.icon),
+                  title: const Text('Theme'),
+                  subtitle: Text(themeService.mode.label),
+                  onTap: () => _showThemePicker(tileContext, themeService),
+                ),
               ),
-            ),
             const Divider(),
 
             // General section
@@ -121,20 +149,22 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // Developer section
             _sectionHeader(theme, 'Developer'),
-            SwitchListTile(
+            _AdaptiveSwitchTile(
+              usesIosLiquidGlass: usesIosLiquidGlass,
               secondary: const Icon(Icons.bug_report_outlined),
-              title: const Text('Debug mode'),
-              subtitle: const Text('Log all API requests'),
+              title: 'Debug mode',
+              subtitle: 'Log all API requests',
               value: logger.enabled,
               onChanged: (value) {
                 logger.enabled = value;
                 storage.setDebugMode(value);
               },
             ),
-            SwitchListTile(
+            _AdaptiveSwitchTile(
+              usesIosLiquidGlass: usesIosLiquidGlass,
               secondary: const Icon(Icons.dns_outlined),
-              title: const Text('Use localhost'),
-              subtitle: const Text('Connect to local development server'),
+              title: 'Use localhost',
+              subtitle: 'Connect to local development server',
               value: storage.useLocalhost,
               onChanged: (value) {
                 storage.setUseLocalhost(value);
@@ -255,6 +285,45 @@ class _SettingsPageState extends State<SettingsPage> {
           color: theme.colorScheme.primary,
         ),
       ),
+    );
+  }
+}
+
+class _AdaptiveSwitchTile extends StatelessWidget {
+  const _AdaptiveSwitchTile({
+    required this.usesIosLiquidGlass,
+    required this.secondary,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final bool usesIosLiquidGlass;
+  final Widget secondary;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!usesIosLiquidGlass) {
+      return SwitchListTile(
+        secondary: secondary,
+        title: Text(title),
+        subtitle: Text(subtitle),
+        value: value,
+        onChanged: onChanged,
+      );
+    }
+
+    return ListTile(
+      leading: secondary,
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: IosGlassSwitch(value: value, onChanged: onChanged),
+      onTap: () => onChanged(!value),
     );
   }
 }
