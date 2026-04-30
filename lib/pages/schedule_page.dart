@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/course.dart';
@@ -7,6 +8,8 @@ import '../services/service_provider.dart';
 import '../widgets/course_detail_panel.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/desktop_select_popover.dart';
+import '../widgets/ios_liquid/ios_glass_button_group.dart';
+import '../widgets/ios_liquid/ios_glass_dropdown_menu.dart';
 
 class SchedulePage extends StatefulWidget {
   const SchedulePage({super.key});
@@ -319,6 +322,8 @@ class _SchedulePageState extends State<SchedulePage> {
     final auth = ServiceProvider.of(context).authService;
     final actualCurrentWeek = _schedule.currentWeek().clamp(1, 25).toInt();
     final isViewingCurrentWeek = _currentWeek == actualCurrentWeek;
+    final usesIosLiquidGlass =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
     return Scaffold(
       appBar: AppBar(
@@ -331,6 +336,13 @@ class _SchedulePageState extends State<SchedulePage> {
                 currentWeek: _currentWeek,
                 semesterLabel: _semesterLabel,
                 slideDirection: _slideDirection,
+                onWeekChanged: _setWeek,
+              )
+            else if (usesIosLiquidGlass)
+              _IosWeekTitleMenu(
+                currentWeek: _currentWeek,
+                actualCurrentWeek: actualCurrentWeek,
+                semesterLabel: _semesterLabel,
                 onWeekChanged: _setWeek,
               )
             else
@@ -356,22 +368,87 @@ class _SchedulePageState extends State<SchedulePage> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left),
-            tooltip: 'Previous week',
-            onPressed: _previousWeek,
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            tooltip: 'Next week',
-            onPressed: _nextWeek,
-          ),
-          if (isDesktopLayout(context))
+          if (usesIosLiquidGlass)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: Center(
+                child: IosGlassButtonGroup(
+                  width: 88,
+                  buttons: const [
+                    IosGlassButtonGroupButton(
+                      id: 'previous',
+                      icon: Icons.chevron_left,
+                      sfSymbol: 'chevron.left',
+                      tooltip: 'Previous week',
+                    ),
+                    IosGlassButtonGroupButton(
+                      id: 'next',
+                      icon: Icons.chevron_right,
+                      sfSymbol: 'chevron.right',
+                      tooltip: 'Next week',
+                    ),
+                  ],
+                  onPressed: (id) {
+                    if (id == 'previous') {
+                      _previousWeek();
+                    } else if (id == 'next') {
+                      _nextWeek();
+                    }
+                  },
+                ),
+              ),
+            )
+          else ...[
+            IconButton(
+              icon: const Icon(Icons.chevron_left),
+              tooltip: 'Previous week',
+              onPressed: _previousWeek,
+            ),
+            IconButton(
+              icon: const Icon(Icons.chevron_right),
+              tooltip: 'Next week',
+              onPressed: _nextWeek,
+            ),
+          ],
+          if (isDesktopLayout(context) && !usesIosLiquidGlass)
             IconButton(
               key: _viewSettingsAnchorKey,
               icon: const Icon(Icons.more_vert),
               tooltip: '视图设置',
               onPressed: _showViewSettingsMenu,
+            )
+          else if (usesIosLiquidGlass)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: Center(
+                child: IosGlassDropdownMenu(
+                  icon: Icons.more_vert,
+                  sfSymbol: 'ellipsis',
+                  tooltip: '视图设置',
+                  items: [
+                    const IosGlassDropdownMenuItem(
+                      value: 'semester',
+                      label: '切换学期',
+                    ),
+                    IosGlassDropdownMenuItem(
+                      value: 'saturday',
+                      label: '显示周六',
+                      checked: _showSaturday,
+                    ),
+                    IosGlassDropdownMenuItem(
+                      value: 'sunday',
+                      label: '显示周日',
+                      checked: _showSunday,
+                    ),
+                    IosGlassDropdownMenuItem(
+                      value: 'ghost',
+                      label: '显示非本周课程',
+                      checked: _showGhostCourses,
+                    ),
+                  ],
+                  onSelected: _onMenuSelected,
+                ),
+              ),
             )
           else
             PopupMenuButton<String>(
@@ -693,6 +770,69 @@ class _DesktopWeekTitleMenu extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _IosWeekTitleMenu extends StatelessWidget {
+  final int currentWeek;
+  final int actualCurrentWeek;
+  final String semesterLabel;
+  final ValueChanged<int> onWeekChanged;
+
+  const _IosWeekTitleMenu({
+    required this.currentWeek,
+    required this.actualCurrentWeek,
+    required this.semesterLabel,
+    required this.onWeekChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IosGlassDropdownMenu(
+            key: ValueKey<int>(currentWeek),
+            icon: Icons.expand_more_rounded,
+            sfSymbol: 'none',
+            label: '第 $currentWeek 周',
+            width: 96,
+            height: 36,
+            items: [
+              for (int week = 1; week <= 25; week++)
+                IosGlassDropdownMenuItem(
+                  value: '$week',
+                  label: week == actualCurrentWeek
+                      ? '第 $week 周 · 本周'
+                      : '第 $week 周',
+                  checked: week == currentWeek,
+                ),
+            ],
+            onSelected: (value) {
+              final week = int.tryParse(value);
+              if (week != null) {
+                onWeekChanged(week);
+              }
+            },
+          ),
+          if (semesterLabel.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              semesterLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

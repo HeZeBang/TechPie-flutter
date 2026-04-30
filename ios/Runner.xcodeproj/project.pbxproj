@@ -14,6 +14,10 @@
 		5A0010032F1A000100000001 /* NativeGlassRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010022F1A000100000001 /* NativeGlassRegistry.swift */; };
 		5A0010052F1A000100000001 /* NativeGlassTabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010042F1A000100000001 /* NativeGlassTabBarView.swift */; };
 		5A0010072F1A000100000001 /* NativeGlassFloatingButtonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010062F1A000100000001 /* NativeGlassFloatingButtonView.swift */; };
+		5A00100A2F1A000100000001 /* NativeGlassButtonGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010092F1A000100000001 /* NativeGlassButtonGroup.swift */; };
+		5A00100C2F1A000100000001 /* NativeGlassDropdownMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00100B2F1A000100000001 /* NativeGlassDropdownMenu.swift */; };
+		5A00100E2F1A000100000001 /* NativeGlassSelect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00100D2F1A000100000001 /* NativeGlassSelect.swift */; };
+		5A0010102F1A000100000001 /* NativeGlassSwitch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A00100F2F1A000100000001 /* NativeGlassSwitch.swift */; };
 		6BFBE954DB868241E9E9810B /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 052EF181B45C1F8AB028A91F /* Pods_Runner.framework */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
@@ -58,6 +62,10 @@
 		5A0010022F1A000100000001 /* NativeGlassRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassRegistry.swift; sourceTree = "<group>"; };
 		5A0010042F1A000100000001 /* NativeGlassTabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassTabBarView.swift; sourceTree = "<group>"; };
 		5A0010062F1A000100000001 /* NativeGlassFloatingButtonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassFloatingButtonView.swift; sourceTree = "<group>"; };
+		5A0010092F1A000100000001 /* NativeGlassButtonGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassButtonGroup.swift; sourceTree = "<group>"; };
+		5A00100B2F1A000100000001 /* NativeGlassDropdownMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassDropdownMenu.swift; sourceTree = "<group>"; };
+		5A00100D2F1A000100000001 /* NativeGlassSelect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassSelect.swift; sourceTree = "<group>"; };
+		5A00100F2F1A000100000001 /* NativeGlassSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassSwitch.swift; sourceTree = "<group>"; };
 		6B0AD00AB3D979A68E9ABE84 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -133,6 +141,10 @@
 				5A0010022F1A000100000001 /* NativeGlassRegistry.swift */,
 				5A0010042F1A000100000001 /* NativeGlassTabBarView.swift */,
 				5A0010062F1A000100000001 /* NativeGlassFloatingButtonView.swift */,
+				5A0010092F1A000100000001 /* NativeGlassButtonGroup.swift */,
+				5A00100B2F1A000100000001 /* NativeGlassDropdownMenu.swift */,
+				5A00100D2F1A000100000001 /* NativeGlassSelect.swift */,
+				5A00100F2F1A000100000001 /* NativeGlassSwitch.swift */,
 				5A0010002F1A000100000001 /* NativeGlassColors.swift */,
 			);
 			path = NativeGlass;
@@ -399,6 +411,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5A0010102F1A000100000001 /* NativeGlassSwitch.swift in Sources */,
+				5A00100E2F1A000100000001 /* NativeGlassSelect.swift in Sources */,
+				5A00100C2F1A000100000001 /* NativeGlassDropdownMenu.swift in Sources */,
+				5A00100A2F1A000100000001 /* NativeGlassButtonGroup.swift in Sources */,
 				5A0010072F1A000100000001 /* NativeGlassFloatingButtonView.swift in Sources */,
 				5A0010052F1A000100000001 /* NativeGlassTabBarView.swift in Sources */,
 				5A0010032F1A000100000001 /* NativeGlassRegistry.swift in Sources */,

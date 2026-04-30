@@ -44,4 +44,28 @@ enum NativeGlassColors {
         : UIColor.black.withAlphaComponent(0.82)
     }
   }
+
+  static var controlBorder: UIColor {
+    UIColor { trait in
+      trait.userInterfaceStyle == .dark
+        ? UIColor.white.withAlphaComponent(0.12)
+        : UIColor.black.withAlphaComponent(0.08)
+    }
+  }
+
+  static var controlSeparator: UIColor {
+    UIColor { trait in
+      trait.userInterfaceStyle == .dark
+        ? UIColor.white.withAlphaComponent(0.14)
+        : UIColor.black.withAlphaComponent(0.10)
+    }
+  }
+
+  static var destructiveRed: UIColor {
+    UIColor { trait in
+      trait.userInterfaceStyle == .dark
+        ? UIColor.systemRed.withAlphaComponent(0.92)
+        : UIColor.systemRed
+    }
+  }
 }

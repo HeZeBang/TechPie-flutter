@@ -13,5 +13,21 @@ enum NativeGlassRegistry {
       NativeGlassFloatingButtonFactory(messenger: messenger),
       withId: NativeGlassFloatingButtonPlatformView.viewType
     )
+    registrar.register(
+      NativeGlassButtonGroupFactory(messenger: messenger),
+      withId: NativeGlassButtonGroupPlatformView.viewType
+    )
+    registrar.register(
+      NativeGlassDropdownMenuFactory(messenger: messenger),
+      withId: NativeGlassDropdownMenuPlatformView.viewType
+    )
+    registrar.register(
+      NativeGlassSelectFactory(messenger: messenger),
+      withId: NativeGlassSelectPlatformView.viewType
+    )
+    registrar.register(
+      NativeGlassSwitchFactory(messenger: messenger),
+      withId: NativeGlassSwitchPlatformView.viewType
+    )
   }
 }
