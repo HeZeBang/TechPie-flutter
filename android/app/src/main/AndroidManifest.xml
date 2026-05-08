@@ -34,6 +34,16 @@
             android:value="2" />
 
         <receiver
+            android:name=".widget.SystemEventReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".widget.TodayScheduleWidgetReceiver"
             android:exported="true"
             android:label="@string/widget_today_schedule_label">
