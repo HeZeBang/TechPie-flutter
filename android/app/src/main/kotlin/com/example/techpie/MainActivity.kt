@@ -1,9 +1,7 @@
 package com.example.techpie
 
-import androidx.lifecycle.lifecycleScope
 import com.example.techpie.widget.SystemEventReceiver
 import io.flutter.embedding.android.FlutterActivity
-import kotlinx.coroutines.launch
 
 class MainActivity : FlutterActivity() {
     /**
@@ -13,8 +11,6 @@ class MainActivity : FlutterActivity() {
      */
     override fun onStop() {
         super.onStop()
-        lifecycleScope.launch {
-            SystemEventReceiver.refreshAll(applicationContext)
-        }
+        SystemEventReceiver.refreshAll(applicationContext)
     }
 }
