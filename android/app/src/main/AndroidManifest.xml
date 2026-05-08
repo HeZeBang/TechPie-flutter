@@ -32,6 +32,30 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <receiver
+            android:name=".widget.TodayScheduleWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_today_schedule_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/today_schedule_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.TodayAndAssignmentsWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_today_assignments_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/today_assignments_widget_info" />
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

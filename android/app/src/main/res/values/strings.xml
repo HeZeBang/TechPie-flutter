@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TechPie</string>
+    <string name="widget_today_schedule_label">今日课程</string>
+    <string name="widget_today_schedule_description">显示今日课程表,被动读取应用缓存</string>
+    <string name="widget_today_assignments_label">课程 + 作业</string>
+    <string name="widget_today_assignments_description">左侧今日课程,右侧未完成作业</string>
+</resources>
