@@ -47,7 +47,7 @@ final featureEntries = <Feature>[
     mode: FeatureMode.webviewWithCookie,
     url: 'https://egate.shanghaitech.edu.cn/xsfw/sys/xsqjapp/*default/index.do',
     mobileUrl:
-        'https://ids.shanghaitech.edu.cn/authserver/login?service=https://egate.shanghaitech.edu.cn/xsfw/sys/ydxsqjxs/index.html#/',
+        'https://ids.shanghaitech.edu.cn/authserver/login?service=https://egate.shanghaitech.edu.cn/xsfw/sys/ydxsqjxs/index.html',
     cookieType: CookieType.ids,
     icon: Icon(Icons.door_front_door),
   ),

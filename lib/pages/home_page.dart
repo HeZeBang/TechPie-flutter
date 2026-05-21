@@ -408,7 +408,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           WebViewCookie(
             name: 'CASTGC',
             value: session.tgc,
-            domain: 'ids.shanghaitech.edu.cn',
+            domain: '.shanghaitech.edu.cn',
             path: '/',
           ),
         ];
