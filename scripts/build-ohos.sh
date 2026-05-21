@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-FLUTTER_OHOS_SDK="${FLUTTER_OHOS_SDK:-/home/zambar/dev/flutter_flutter}"
+FLUTTER_OHOS_SDK="${FLUTTER_OHOS_SDK:-$HOME/dev/flutter_flutter}"
 FLUTTER_BIN="$FLUTTER_OHOS_SDK/bin/flutter"
 
 if [[ ! -x "$FLUTTER_BIN" ]]; then
@@ -32,11 +32,11 @@ fi
 TARGET="${1:-hap}"
 shift || true
 case "$TARGET" in
-  hap|app|har|hsp) ;;
-  *)
-    echo "error: unknown OHOS target '$TARGET' (expected hap|app|har|hsp)" >&2
-    exit 1
-    ;;
+hap | app | har | hsp) ;;
+*)
+  echo "error: unknown OHOS target '$TARGET' (expected hap|app|har|hsp)" >&2
+  exit 1
+  ;;
 esac
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

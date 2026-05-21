@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-FLUTTER_UPSTREAM_SDK="${FLUTTER_UPSTREAM_SDK:-/home/zambar/dev/flutter}"
+FLUTTER_UPSTREAM_SDK="${FLUTTER_UPSTREAM_SDK:-$HOME/dev/flutter}"
 FLUTTER_BIN="$FLUTTER_UPSTREAM_SDK/bin/flutter"
 
 if [[ ! -x "$FLUTTER_BIN" ]]; then
