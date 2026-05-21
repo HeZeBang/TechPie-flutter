@@ -17,6 +17,7 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/app_card.dart';
+import '../widgets/desktop_popup.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 import '../utils/platform.dart';
 import 'generic_webview_page.dart';
@@ -374,12 +375,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final auth = ServiceProvider.of(context).authService;
         final cookies = _buildWebViewCookies(auth, feature.cookieType);
         if (feature.url != null) {
+          final useMobileService =
+              feature.mobileUrl != null && !isDesktopLayout(context);
+          // TODO: how to decide MediaQuery.of(context).orientation?
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => GenericWebViewPage(
-                  title: feature.description,
-                  url: feature.url!,
-                  cookies: cookies),
+                title: feature.description,
+                url: feature.url!,
+                mobileUrl: feature.mobileUrl,
+                initialUseMobileService: useMobileService,
+                cookies: cookies,
+              ),
             ),
           );
         }
