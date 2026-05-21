@@ -10,6 +10,7 @@ import '../models/course.dart';
 import '../models/course_table.dart';
 import '../models/feature.dart';
 import '../services/assignment_service.dart';
+import '../services/auth_service.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
 import '../widgets/adaptive_alert_dialog.dart';
@@ -370,28 +371,42 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         feature.nativeEntry?.call(context);
         break;
       case FeatureMode.webviewWithCookie:
-        final cookies = <WebViewCookie>[];
-        switch (feature.cookieType) {
-          case CookieType.ecourse:
-            break;
-          case CookieType.egate:
-            break;
-          case CookieType.eams:
-            break;
-          case null:
-            break;
-        }
+        final auth = ServiceProvider.of(context).authService;
+        final cookies = _buildWebViewCookies(auth, feature.cookieType);
         if (feature.url != null) {
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => GenericWebViewPage(
-                title: feature.description,
-                url: feature.url!,
-                cookies: cookies),
+                  title: feature.description,
+                  url: feature.url!,
+                  cookies: cookies),
             ),
           );
         }
         break;
+    }
+  }
+
+  List<WebViewCookie> _buildWebViewCookies(
+    AuthService auth,
+    CookieType? cookieType,
+  ) {
+    switch (cookieType) {
+      case CookieType.ids:
+        final session = auth.session;
+        if (session == null || session.tgc.isEmpty) {
+          return const <WebViewCookie>[];
+        }
+        return [
+          WebViewCookie(
+            name: 'CASTGC',
+            value: session.tgc,
+            domain: 'ids.shanghaitech.edu.cn',
+            path: '/',
+          ),
+        ];
+      case null:
+        return const <WebViewCookie>[];
     }
   }
 
