@@ -93,11 +93,15 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
     // 2. 获取当前页面真实的 document.cookie
     String documentCookies = '';
     try {
-      final jsResult = await controller.runJavaScriptReturningResult('document.cookie');
+      final jsResult =
+          await controller.runJavaScriptReturningResult('document.cookie');
       documentCookies = jsResult.toString();
       // webview_flutter 可能会给返回的字符串加引号，去掉首尾引号
-      if (documentCookies.startsWith('"') && documentCookies.endsWith('"') && documentCookies.length >= 2) {
-        documentCookies = documentCookies.substring(1, documentCookies.length - 1);
+      if (documentCookies.startsWith('"') &&
+          documentCookies.endsWith('"') &&
+          documentCookies.length >= 2) {
+        documentCookies =
+            documentCookies.substring(1, documentCookies.length - 1);
       }
       if (documentCookies.isEmpty) {
         documentCookies = '无 (注: HttpOnly 无法通过 JS 获取)';
