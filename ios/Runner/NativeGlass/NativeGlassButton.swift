@@ -105,15 +105,21 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
   private func applyButtonAppearance() {
     let image = symbolImage()
 
+#if compiler(>=6.2)
     if #available(iOS 26.0, *) {
       applyLiquidGlassAppearance(image: image)
-    } else if #available(iOS 15.0, *) {
+      return
+    }
+#endif
+
+    if #available(iOS 15.0, *) {
       applyModernFallbackAppearance(image: image)
     } else {
       applyLegacyFallbackAppearance(image: image)
     }
   }
 
+#if compiler(>=6.2)
   @available(iOS 26.0, *)
   private func applyLiquidGlassAppearance(image: UIImage?) {
     var configuration = UIButton.Configuration.prominentGlass()
@@ -121,6 +127,7 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
 
     button.configuration = configuration
   }
+#endif
 
   @available(iOS 15.0, *)
   private func applyModernFallbackAppearance(image: UIImage?) {

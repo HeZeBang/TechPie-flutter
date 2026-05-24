@@ -114,10 +114,12 @@ final class NativeGlassConfirmationButtonPlatformView: NSObject, FlutterPlatform
   }
 
   private func applyButtonAppearance() {
+#if compiler(>=6.2)
     if #available(iOS 26.0, *) {
       applyLiquidGlassAppearance()
       return
     }
+#endif
 
     let image = symbolImage(named: sfSymbol)
 
@@ -139,6 +141,7 @@ final class NativeGlassConfirmationButtonPlatformView: NSObject, FlutterPlatform
     }
   }
 
+#if compiler(>=6.2)
   @available(iOS 26.0, *)
   private func applyLiquidGlassAppearance() {
     let image = symbolImage(named: sfSymbol)
@@ -155,6 +158,7 @@ final class NativeGlassConfirmationButtonPlatformView: NSObject, FlutterPlatform
 
     button.configuration = configuration
   }
+#endif
 
   private func symbolImage(named systemName: String) -> UIImage? {
     return UIImage(systemName: systemName)?
@@ -184,12 +188,17 @@ final class NativeGlassConfirmationButtonPlatformView: NSObject, FlutterPlatform
     actionSheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 
     if let popover = actionSheet.popoverPresentationController {
+#if compiler(>=6.2)
       if #available(iOS 26.0, *) {
         popover.sourceItem = button
       } else {
         popover.sourceView = rootView
         popover.sourceRect = rootView.bounds
       }
+#else
+      popover.sourceView = rootView
+      popover.sourceRect = rootView.bounds
+#endif
     }
 
     controller.present(actionSheet, animated: true)

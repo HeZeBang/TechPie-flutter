@@ -123,6 +123,7 @@ final class NativeGlassDropdownMenuPlatformView: NSObject, FlutterPlatformView {
   private func applyButtonAppearance() {
     let image = symbolImage(named: sfSymbol)
 
+#if compiler(>=6.2)
     if #available(iOS 26.0, *) {
       var configuration = UIButton.Configuration.glass()
       configuration.image = image
@@ -130,6 +131,7 @@ final class NativeGlassDropdownMenuPlatformView: NSObject, FlutterPlatformView {
       button.configuration = configuration
       return
     }
+#endif
 
     if #available(iOS 15.0, *) {
       var configuration = UIButton.Configuration.plain()

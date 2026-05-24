@@ -113,10 +113,12 @@ final class NativeNavigationBarPlatformView: NSObject, FlutterPlatformView {
 
     navigationItem.title = configuration.title
     navigationItem.largeTitleDisplayMode = configuration.largeTitleMode ? .always : .never
+#if compiler(>=6.2)
     if #available(iOS 26.0, *) {
       navigationItem.subtitle = configuration.largeTitleMode ? nil : configuration.subtitle
       navigationItem.largeSubtitle = configuration.largeTitleMode ? configuration.subtitle : nil
     }
+#endif
 
     if #available(iOS 16.0, *) {
       let leadingItems = configuration.leadingItems.map(makeBarButtonItem)
@@ -220,9 +222,11 @@ final class NativeNavigationBarPlatformView: NSObject, FlutterPlatformView {
       if #available(iOS 16.0, *) {
         barButtonItem.isHidden = item.hidden
       }
+#if compiler(>=6.2)
       if #available(iOS 26.0, *) {
         barButtonItem.identifier = item.id
       }
+#endif
       return barButtonItem
     }
 
