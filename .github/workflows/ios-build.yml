@@ -60,6 +60,9 @@ jobs:
       - name: Show Flutter environment
         run: flutter --version
 
+      - name: Precache iOS Flutter artifacts
+        run: flutter precache --ios
+
       - name: Get Flutter packages
         run: flutter pub get
 
