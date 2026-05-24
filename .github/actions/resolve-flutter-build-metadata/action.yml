@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+name: Resolve Flutter build metadata
+description: Resolve build name, build number, release tag metadata, and artifact naming.
+
+inputs:
+  platform:
+    description: Platform name used for platform-specific release tags.
+    required: true
+  source-ref:
+    description: Optional branch, tag, or commit SHA selected from workflow_dispatch.
+    required: false
+    default: ''
+  upload-artifacts:
+    description: Whether manual workflow_dispatch runs should upload artifacts.
+    required: false
+    default: 'false'
+
+outputs:
+  build_name:
+    description: Flutter build name.
+    value: ${{ steps.metadata.outputs.build_name }}
+  build_number:
+    description: Flutter build number.
+    value: ${{ steps.metadata.outputs.build_number }}
+  artifact_ref_name:
+    description: Sanitized ref name for artifact names.
+    value: ${{ steps.metadata.outputs.artifact_ref_name }}
+  is_tag_build:
+    description: Whether the current build resolved to a release tag.
+    value: ${{ steps.metadata.outputs.is_tag_build }}
+  upload_artifact:
+    description: Whether artifacts should be uploaded.
+    value: ${{ steps.metadata.outputs.upload_artifact }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve metadata
+      id: metadata
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+        SOURCE_REF_INPUT: ${{ inputs.source-ref }}
+        MANUAL_UPLOAD_ARTIFACTS: ${{ inputs.upload-artifacts }}
+      run: |
+        set -euo pipefail
+
+        is_tag_build=false
+        tag_name=""
+
+        if [[ "${GITHUB_REF_TYPE}" == "tag" && -z "${SOURCE_REF_INPUT}" ]]; then
+          is_tag_build=true
+          tag_name="${GITHUB_REF_NAME}"
+        elif [[ -n "${SOURCE_REF_INPUT}" ]]; then
+          candidate="${SOURCE_REF_INPUT#refs/tags/}"
+          if git show-ref --verify --quiet "refs/tags/${candidate}"; then
+            is_tag_build=true
+            tag_name="${candidate}"
+          fi
+        fi
+
+        if [[ "${is_tag_build}" == "true" ]]; then
+          if [[ "${tag_name}" =~ ^${PLATFORM}-v([0-9]+)\.([0-9]+)\.([0-9]+)(\+([0-9]+))?$ ]]; then
+            build_name="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+            build_number="${BASH_REMATCH[5]:-${GITHUB_RUN_NUMBER}}"
+          elif [[ "${tag_name}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(\+([0-9]+))?$ ]]; then
+            build_name="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+            build_number="${BASH_REMATCH[5]:-${GITHUB_RUN_NUMBER}}"
+          else
+            echo "::error::Invalid ${PLATFORM} release tag '${tag_name}'. Expected vX.Y.Z, vX.Y.Z+B, ${PLATFORM}-vX.Y.Z, or ${PLATFORM}-vX.Y.Z+B."
+            exit 1
+          fi
+
+          tag_commit="$(git rev-list -n 1 "${tag_name}")"
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' || true
+          git fetch --no-tags origin '+refs/heads/master:refs/remotes/origin/master' || true
+
+          reachable=false
+          for branch in origin/main origin/master; do
+            if git show-ref --verify --quiet "refs/remotes/${branch}" &&
+               git merge-base --is-ancestor "${tag_commit}" "${branch}"; then
+              reachable=true
+              break
+            fi
+          done
+
+          if [[ "${reachable}" != "true" ]]; then
+            echo "::error::Release tag must point to a commit reachable from main or master."
+            exit 1
+          fi
+
+          ref_name="${tag_name}"
+        else
+          pubspec_version="$(awk '/^version:/ { print $2; exit }' pubspec.yaml)"
+          build_name="${pubspec_version%%+*}"
+          if [[ -z "${build_name}" || "${build_name}" == "${pubspec_version}" ]]; then
+            build_number="${GITHUB_RUN_NUMBER}"
+          else
+            build_number="${pubspec_version##*+}"
+          fi
+
+          if [[ -z "${build_name}" ]]; then
+            build_name="0.0.0"
+          fi
+          if [[ -z "${build_number}" || ! "${build_number}" =~ ^[0-9]+$ ]]; then
+            build_number="${GITHUB_RUN_NUMBER}"
+          fi
+
+          if [[ -n "${SOURCE_REF_INPUT}" ]]; then
+            ref_name="${SOURCE_REF_INPUT#refs/heads/}"
+            ref_name="${ref_name#refs/tags/}"
+          else
+            ref_name="${GITHUB_REF_NAME}"
+          fi
+        fi
+
+        artifact_ref_name="$(printf '%s' "${ref_name}" | sed 's#[^A-Za-z0-9_.+-]#-#g')"
+
+        upload_artifact=false
+        if [[ "${is_tag_build}" == "true" ]]; then
+          upload_artifact=true
+        elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${MANUAL_UPLOAD_ARTIFACTS}" == "true" ]]; then
+          upload_artifact=true
+        fi
+
+        echo "build_name=${build_name}" >> "${GITHUB_OUTPUT}"
+        echo "build_number=${build_number}" >> "${GITHUB_OUTPUT}"
+        echo "artifact_ref_name=${artifact_ref_name}" >> "${GITHUB_OUTPUT}"
+        echo "is_tag_build=${is_tag_build}" >> "${GITHUB_OUTPUT}"
+        echo "upload_artifact=${upload_artifact}" >> "${GITHUB_OUTPUT}"
+
+        {
+          echo "## Build metadata"
+          echo
+          echo "- Platform: ${PLATFORM}"
+          echo "- Build name: ${build_name}"
+          echo "- Build number: ${build_number}"
+          echo "- Upload artifacts: ${upload_artifact}"
+        } >> "${GITHUB_STEP_SUMMARY}"

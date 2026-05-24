@@ -1,0 +1,109 @@
+name: iOS Build
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - 'dev/**'
+  push:
+    branches:
+      - main
+      - master
+      - 'dev/**'
+    tags:
+      - 'v*'
+      - 'ios-v*'
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'Optional branch, tag, or commit SHA to build.'
+        required: false
+        type: string
+      upload_artifacts:
+        description: 'Upload artifacts for this manual run.'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build-${{ github.event.inputs.source_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build unsigned iOS app
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.source_ref || github.ref }}
+
+      - name: Install Flutter stable
+        uses: ./.github/actions/setup-flutter
+
+      - name: Resolve build metadata
+        id: metadata
+        uses: ./.github/actions/resolve-flutter-build-metadata
+        with:
+          platform: ios
+          source-ref: ${{ github.event.inputs.source_ref || '' }}
+          upload-artifacts: ${{ github.event.inputs.upload_artifacts || 'false' }}
+
+      - name: Show Flutter environment
+        run: flutter --version
+
+      - name: Get Flutter packages
+        run: flutter pub get
+
+      - name: Install iOS pods
+        run: |
+          set -euo pipefail
+          cd ios
+          pod install
+
+      - name: Build unsigned iOS app
+        run: |
+          set -euo pipefail
+          flutter build ios --release --no-codesign \
+            --build-name "${{ steps.metadata.outputs.build_name }}" \
+            --build-number "${{ steps.metadata.outputs.build_number }}"
+
+      - name: Write unsigned iOS artifact notice
+        if: steps.metadata.outputs.upload_artifact == 'true'
+        run: |
+          set -euo pipefail
+          cat > build/ios/UNSIGNED_ARTIFACT_README.md <<'NOTICE'
+          # Unsigned iOS build artifact
+
+          This artifact is unsigned. It cannot be uploaded directly to TestFlight and may not install directly on a device. It is only for verifying that the source code builds in a macOS/Xcode environment.
+          NOTICE
+
+      - name: Package unsigned IPA
+        if: steps.metadata.outputs.upload_artifact == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf build/ios/ipa
+          mkdir -p build/ios/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/Runner.app
+          cd build/ios/ipa
+          ditto -c -k --sequesterRsrc --keepParent Payload TechPie-unsigned.ipa
+
+      - name: Upload unsigned iOS artifact
+        if: steps.metadata.outputs.upload_artifact == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: techpie-ios-unsigned-${{ steps.metadata.outputs.artifact_ref_name }}
+          if-no-files-found: error
+          path: |
+            build/ios/UNSIGNED_ARTIFACT_README.md
+            build/ios/ipa/TechPie-unsigned.ipa
+            build/ios/iphoneos/Runner.app
+            build/ios/archive/

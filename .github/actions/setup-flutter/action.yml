@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+name: Setup Flutter
+description: Install a Flutter SDK from Git and add it to PATH.
+
+inputs:
+  flutter-repository:
+    description: Flutter SDK Git repository.
+    required: false
+    default: https://github.com/flutter/flutter.git
+  flutter-ref:
+    description: Flutter SDK branch, tag, or ref.
+    required: false
+    default: stable
+
+runs:
+  using: composite
+  steps:
+    - name: Install Flutter
+      shell: bash
+      run: |
+        set -euo pipefail
+        git clone --depth 1 --branch "${{ inputs.flutter-ref }}" "${{ inputs.flutter-repository }}" "${RUNNER_TEMP}/flutter"
+        echo "${RUNNER_TEMP}/flutter/bin" >> "${GITHUB_PATH}"
