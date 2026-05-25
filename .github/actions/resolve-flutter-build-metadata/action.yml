@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-action.json
-name: Resolve Flutter build metadata
-description: Resolve build name, build number, release tag metadata, and artifact naming.
+name: Resolve Flutter package metadata
+description: Resolve Flutter build-name/build-number values, release tag metadata, and artifact naming.
 
 inputs:
   platform:
@@ -17,10 +17,10 @@ inputs:
 
 outputs:
   build_name:
-    description: Flutter build name.
+    description: Flutter build-name value.
     value: ${{ steps.metadata.outputs.build_name }}
   build_number:
-    description: Flutter build number.
+    description: Flutter build-number value.
     value: ${{ steps.metadata.outputs.build_number }}
   artifact_ref_name:
     description: Sanitized ref name for artifact names.
@@ -130,7 +130,7 @@ runs:
         echo "upload_artifact=${upload_artifact}" >> "${GITHUB_OUTPUT}"
 
         {
-          echo "## Build metadata"
+          echo "## Package metadata"
           echo
           echo "- Platform: ${PLATFORM}"
           echo "- Build name: ${build_name}"

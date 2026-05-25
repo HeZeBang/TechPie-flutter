@@ -1,4 +1,4 @@
-name: iOS Build
+name: iOS Unsigned CD
 
 on:
   pull_request:
@@ -11,17 +11,18 @@ on:
       - main
       - master
       - 'dev/**'
+      - 'cd/**'
     tags:
       - 'v*'
       - 'ios-v*'
   workflow_dispatch:
     inputs:
       source_ref:
-        description: 'Optional branch, tag, or commit SHA to build.'
+        description: 'Optional branch, tag, or commit SHA to package.'
         required: false
         type: string
       upload_artifacts:
-        description: 'Upload artifacts for this manual run.'
+        description: 'Upload unsigned IPA artifacts for this manual run.'
         required: true
         type: boolean
         default: true
@@ -30,14 +31,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-build-${{ github.event.inputs.source_ref || github.ref }}
+  group: ios-unsigned-cd-${{ github.event.inputs.source_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build unsigned iOS app
+  package:
+    name: Build checks and unsigned IPA package
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 70
 
     steps:
       - name: Checkout source
@@ -49,13 +50,20 @@ jobs:
       - name: Install Flutter stable
         uses: ./.github/actions/setup-flutter
 
-      - name: Resolve build metadata
+      - name: Resolve package metadata
         id: metadata
         uses: ./.github/actions/resolve-flutter-build-metadata
         with:
           platform: ios
           source-ref: ${{ github.event.inputs.source_ref || '' }}
           upload-artifacts: ${{ github.event.inputs.upload_artifacts || 'false' }}
+
+      - name: Show Xcode environment
+        run: |
+          set -euo pipefail
+          xcode-select -p
+          xcodebuild -version
+          swift --version
 
       - name: Show Flutter environment
         run: flutter --version
@@ -65,6 +73,18 @@ jobs:
 
       - name: Get Flutter packages
         run: flutter pub get
+
+      - name: Run static analysis
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: |
+          set -euo pipefail
+          if [[ -d test ]]; then
+            flutter test
+          else
+            echo "No test/ directory found; skipping flutter test."
+          fi
 
       - name: Install iOS pods
         run: |
@@ -78,19 +98,20 @@ jobs:
           flutter build ios --release --no-codesign \
             --build-name "${{ steps.metadata.outputs.build_name }}" \
             --build-number "${{ steps.metadata.outputs.build_number }}"
+          test -d build/ios/iphoneos/Runner.app
 
-      - name: Write unsigned iOS artifact notice
-        if: steps.metadata.outputs.upload_artifact == 'true'
+      - name: Write unsigned artifact notice
+        if: steps.metadata.outputs.upload_artifact == 'true' || github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           cat > build/ios/UNSIGNED_ARTIFACT_README.md <<'NOTICE'
-          # Unsigned iOS build artifact
+          # Unsigned iOS artifact
 
-          This artifact is unsigned. It cannot be uploaded directly to TestFlight and may not install directly on a device. It is only for verifying that the source code builds in a macOS/Xcode environment.
+          This artifact is unsigned. It cannot be uploaded directly to TestFlight and may not install directly on a device. It is only for verifying that the source code can produce an unsigned iOS package in a macOS/Xcode environment.
           NOTICE
 
       - name: Package unsigned IPA
-        if: steps.metadata.outputs.upload_artifact == 'true'
+        if: steps.metadata.outputs.upload_artifact == 'true' || github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           rm -rf build/ios/ipa
@@ -98,15 +119,16 @@ jobs:
           cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/Runner.app
           cd build/ios/ipa
           ditto -c -k --sequesterRsrc --keepParent Payload TechPie-unsigned.ipa
+          test -f TechPie-unsigned.ipa
 
-      - name: Upload unsigned iOS artifact
-        if: steps.metadata.outputs.upload_artifact == 'true'
+      - name: Upload unsigned IPA artifact
+        if: steps.metadata.outputs.upload_artifact == 'true' || github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: techpie-ios-unsigned-${{ steps.metadata.outputs.artifact_ref_name }}
+          retention-days: 7
           if-no-files-found: error
           path: |
             build/ios/UNSIGNED_ARTIFACT_README.md
             build/ios/ipa/TechPie-unsigned.ipa
             build/ios/iphoneos/Runner.app
-            build/ios/archive/
