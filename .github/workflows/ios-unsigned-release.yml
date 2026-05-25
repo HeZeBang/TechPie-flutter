@@ -79,13 +79,18 @@ jobs:
             exit 1
           fi
 
-          /usr/libexec/PlistBuddy \
-            -c "Set :objects:97C147061CF9000F007C117D:buildSettings:PRODUCT_BUNDLE_IDENTIFIER ${IOS_BUNDLE_IDENTIFIER}" \
-            -c "Set :objects:97C147071CF9000F007C117D:buildSettings:PRODUCT_BUNDLE_IDENTIFIER ${IOS_BUNDLE_IDENTIFIER}" \
-            -c "Set :objects:249021D4217E4FDB00AE95B9:buildSettings:PRODUCT_BUNDLE_IDENTIFIER ${IOS_BUNDLE_IDENTIFIER}" \
-            ios/Runner.xcodeproj/project.pbxproj
+          if ! printf '%s\n' "${IOS_BUNDLE_IDENTIFIER}" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$'; then
+            echo "::error::IOS_BUNDLE_IDENTIFIER has an invalid bundle identifier format."
+            exit 1
+          fi
 
-          grep -q "PRODUCT_BUNDLE_IDENTIFIER = ${IOS_BUNDLE_IDENTIFIER};" ios/Runner.xcodeproj/project.pbxproj
+          perl -0pi -e 's/PRODUCT_BUNDLE_IDENTIFIER = com\.example\.techpie;/PRODUCT_BUNDLE_IDENTIFIER = $ENV{IOS_BUNDLE_IDENTIFIER};/g' ios/Runner.xcodeproj/project.pbxproj
+
+          matches=$(grep -c "PRODUCT_BUNDLE_IDENTIFIER = ${IOS_BUNDLE_IDENTIFIER};" ios/Runner.xcodeproj/project.pbxproj)
+          if [ "${matches}" -ne 3 ]; then
+            echo "::error::Expected to update 3 Runner bundle identifier settings, updated ${matches}."
+            exit 1
+          fi
 
       - name: Build unsigned iOS app
         run: |
