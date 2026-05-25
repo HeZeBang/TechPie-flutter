@@ -1,51 +1,28 @@
-name: iOS Unsigned CD
+name: iOS Unsigned Release
 
 on:
-  pull_request:
-    branches:
-      - main
-      - master
-      - 'dev/**'
   push:
-    branches:
-      - main
-      - master
-      - 'dev/**'
-      - 'cd/**'
     tags:
-      - 'v*'
       - 'ios-v*'
-  workflow_dispatch:
-    inputs:
-      source_ref:
-        description: 'Optional branch, tag, or commit SHA to package.'
-        required: false
-        type: string
-      upload_artifacts:
-        description: 'Upload unsigned IPA artifacts for this manual run.'
-        required: true
-        type: boolean
-        default: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: ios-unsigned-cd-${{ github.event.inputs.source_ref || github.ref }}
+  group: ios-unsigned-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   package:
-    name: Build checks and unsigned IPA package
+    name: Package unsigned iOS IPA
     runs-on: macos-latest
-    timeout-minutes: 70
+    timeout-minutes: 60
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.source_ref || github.ref }}
 
       - name: Install Flutter stable
         uses: ./.github/actions/setup-flutter
@@ -55,8 +32,7 @@ jobs:
         uses: ./.github/actions/resolve-flutter-build-metadata
         with:
           platform: ios
-          source-ref: ${{ github.event.inputs.source_ref || '' }}
-          upload-artifacts: ${{ github.event.inputs.upload_artifacts || 'false' }}
+          require-tag-build-number: 'true'
 
       - name: Show Xcode environment
         run: |
@@ -72,19 +48,20 @@ jobs:
         run: flutter precache --ios
 
       - name: Get Flutter packages
-        run: flutter pub get
-
-      - name: Run static analysis
-        run: flutter analyze
-
-      - name: Run Flutter tests
         run: |
           set -euo pipefail
-          if [[ -d test ]]; then
-            flutter test
-          else
-            echo "No test/ directory found; skipping flutter test."
-          fi
+          for attempt in 1 2 3; do
+            if flutter pub get; then
+              exit 0
+            fi
+
+            echo "flutter pub get failed on attempt ${attempt}; retrying after cleaning temporary pub cache files."
+            rm -rf "${HOME}/.pub-cache/_temp"
+            sleep $((attempt * 10))
+          done
+
+          echo "::error::flutter pub get failed after 3 attempts."
+          exit 1
 
       - name: Install iOS pods
         run: |
@@ -101,7 +78,6 @@ jobs:
           test -d build/ios/iphoneos/Runner.app
 
       - name: Write unsigned artifact notice
-        if: steps.metadata.outputs.upload_artifact == 'true' || github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           cat > build/ios/UNSIGNED_ARTIFACT_README.md <<'NOTICE'
@@ -111,7 +87,6 @@ jobs:
           NOTICE
 
       - name: Package unsigned IPA
-        if: steps.metadata.outputs.upload_artifact == 'true' || github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           rm -rf build/ios/ipa
@@ -122,13 +97,11 @@ jobs:
           test -f TechPie-unsigned.ipa
 
       - name: Upload unsigned IPA artifact
-        if: steps.metadata.outputs.upload_artifact == 'true' || github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: techpie-ios-unsigned-${{ steps.metadata.outputs.artifact_ref_name }}
-          retention-days: 7
+          retention-days: 30
           if-no-files-found: error
           path: |
             build/ios/UNSIGNED_ARTIFACT_README.md
             build/ios/ipa/TechPie-unsigned.ipa
-            build/ios/iphoneos/Runner.app
