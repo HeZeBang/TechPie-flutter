@@ -1,0 +1,102 @@
+name: Dispatch iOS Release
+
+on:
+  push:
+    tags:
+      - "ios-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="$GITHUB_REF_NAME"
+          if [[ ! "$TAG_NAME" =~ ^ios-v([0-9]+)\.([0-9]+)\.([0-9]+)\+([0-9]+)$ ]]; then
+            echo "Invalid iOS release tag: $TAG_NAME"
+            echo "Expected format: ios-vX.Y.Z+B"
+            exit 1
+          fi
+
+          BUILD_NAME="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+          BUILD_NUMBER="${BASH_REMATCH[4]}"
+          TAG_SHA="$(git rev-list -n 1 "$TAG_NAME")"
+
+          git fetch --no-tags origin main:refs/remotes/origin/main || true
+          git fetch --no-tags origin master:refs/remotes/origin/master || true
+
+          reachable=false
+          for branch in origin/main origin/master; do
+            if git rev-parse --verify --quiet "$branch" >/dev/null; then
+              if git merge-base --is-ancestor "$TAG_SHA" "$branch"; then
+                reachable=true
+                break
+              fi
+            fi
+          done
+
+          if [[ "$reachable" != "true" ]]; then
+            echo "Release tag must point to a commit reachable from main or master."
+            exit 1
+          fi
+
+          {
+            echo "BUILD_NAME=$BUILD_NAME"
+            echo "BUILD_NUMBER=$BUILD_NUMBER"
+            echo "TAG_SHA=$TAG_SHA"
+          } >> "$GITHUB_ENV"
+
+      - name: Create GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: CNDY1390
+          repositories: TechPie-release
+          permission-actions: write
+
+      - name: Dispatch private signed release workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          payload="$(
+            jq -n \
+              --arg ref "main" \
+              --arg tag "$GITHUB_REF_NAME" \
+              '{
+                ref: $ref,
+                inputs: {
+                  tag: $tag,
+                  upload_to_testflight: "true"
+                }
+              }'
+          )"
+
+          curl --fail-with-body \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/CNDY1390/TechPie-release/actions/workflows/ios-signed-release.yml/dispatches \
+            -d "$payload"
