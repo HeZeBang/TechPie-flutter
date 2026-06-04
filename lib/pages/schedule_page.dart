@@ -396,6 +396,15 @@ class _SchedulePageState extends State<SchedulePage> {
       final subscribeUrl = data?['subscribeUrl'] as String?;
       if (!mounted) return;
       if (subscribeUrl?.isNotEmpty == true) {
+        if (isIos() && await _openIosCalendarSubscription(subscribeUrl!)) {
+          if (!mounted) return;
+          showAdaptiveFeedback(
+            context: context,
+            message: '已打开系统日历订阅',
+            style: AdaptiveFeedbackStyle.success,
+          );
+          return;
+        }
         await _copyCalendarSubscriptionUrl(subscribeUrl!);
         return;
       }
@@ -418,6 +427,21 @@ class _SchedulePageState extends State<SchedulePage> {
           _subscribingCalendar = false;
         });
       }
+    }
+  }
+
+  Future<bool> _openIosCalendarSubscription(String subscribeUrl) async {
+    final uri = Uri.tryParse(subscribeUrl);
+    if (uri == null) return false;
+
+    final calendarUri = uri.scheme == 'https' || uri.scheme == 'http'
+        ? uri.replace(scheme: 'webcal')
+        : uri;
+
+    try {
+      return launchUrl(calendarUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      return false;
     }
   }
 
