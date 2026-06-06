@@ -360,19 +360,48 @@ class _SchedulePageState extends State<SchedulePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('创建日历订阅'),
-          content: const Text('如果你之前已经订阅过该学期，之前的订阅链接将会失效。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('继续'),
-            ),
-          ],
+        var credentialStorageAgreed = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('创建日历订阅'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('如果你之前已经订阅过该学期，之前的订阅链接将会失效。'),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    value: credentialStorageAgreed,
+                    onChanged: (value) {
+                      setDialogState(() {
+                        credentialStorageAgreed = value ?? false;
+                      });
+                    },
+                    title: Text(
+                      '您理解并同意：订阅日历时，您的登录凭据将会被加密存储到服务器内，并用于课表订阅服务',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: credentialStorageAgreed
+                      ? () => Navigator.of(dialogContext).pop(true)
+                      : null,
+                  child: const Text('确定'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
