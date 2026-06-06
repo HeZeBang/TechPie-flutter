@@ -201,6 +201,20 @@ class SemesterInfo {
     return null;
   }
 
+  SemesterTerm? findSemesterTerm(String semesterId) {
+    for (final yearEntry in semesters.entries) {
+      for (final semEntry in yearEntry.value.entries) {
+        if (semEntry.value != semesterId) continue;
+
+        final year = yearEntry.key.split('-').first;
+        final semester = _semesterNumberForTermName(semEntry.key);
+        if (semester == null) return null;
+        return SemesterTerm(year: year, semester: semester);
+      }
+    }
+    return null;
+  }
+
   List<MapEntry<String, String>> get allSemesters {
     final result = <MapEntry<String, String>>[];
     for (final yearEntry in semesters.entries) {
@@ -212,6 +226,45 @@ class SemesterInfo {
     }
     return result;
   }
+
+  static String? _semesterNumberForTermName(String termName) {
+    final normalized = termName.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+
+    if (normalized == '1' ||
+        normalized.contains('春') ||
+        normalized.contains('下') ||
+        normalized.contains('第二') ||
+        normalized.contains('spring')) {
+      return '1';
+    }
+
+    if (normalized == '2' ||
+        normalized.contains('秋') ||
+        normalized.contains('上') ||
+        normalized.contains('第一') ||
+        normalized.contains('fall') ||
+        normalized.contains('autumn')) {
+      return '2';
+    }
+
+    if (normalized == '3' ||
+        normalized.contains('夏') ||
+        normalized.contains('暑') ||
+        normalized.contains('第三') ||
+        normalized.contains('summer')) {
+      return '3';
+    }
+
+    return null;
+  }
+}
+
+class SemesterTerm {
+  final String year;
+  final String semester;
+
+  const SemesterTerm({required this.year, required this.semester});
 }
 
 /// Convert EamsCourse list to display Course list, grouping consecutive periods.

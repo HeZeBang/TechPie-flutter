@@ -36,7 +36,9 @@ class ScheduleService extends ChangeNotifier {
     if (_termBegin == null) return 1;
     final diff = DateTime.now().difference(_termBegin!).inDays;
     if (diff < 0) return 1;
-    return ((diff ~/ 7) + 1).clamp(1, 25).toInt();
+    final week = (diff ~/ 7) + 1;
+    if (week > 25) return 1;
+    return week;
   }
 
   Map<String, String> _jsonHeaders() => {
@@ -132,26 +134,11 @@ class ScheduleService extends ChangeNotifier {
   }
 
   Future<void> _fetchTermBeginForSemester(String semesterId) async {
-    // Try to find the year and semester number from semesterInfo
     if (_semesterInfo == null) return;
 
-    String? year;
-    String? semNum;
-    for (final yearEntry in _semesterInfo!.semesters.entries) {
-      for (final semEntry in yearEntry.value.entries) {
-        if (semEntry.value == semesterId) {
-          // yearEntry.key is like "2024-2025"
-          year = yearEntry.key.split('-').first;
-          // Map label to number
-          semNum = semEntry.key.contains('春') ? '1' : '2';
-          break;
-        }
-      }
-      if (year != null) break;
-    }
-
-    if (year == null || semNum == null) return;
-    await fetchTermBegin(year, semNum, semesterId);
+    final term = _semesterInfo!.findSemesterTerm(semesterId);
+    if (term == null) return;
+    await fetchTermBegin(term.year, term.semester, semesterId);
   }
 
   Future<void> fetchTermBegin(
