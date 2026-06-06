@@ -362,7 +362,7 @@ class _SchedulePageState extends State<SchedulePage> {
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('创建日历订阅'),
-          content: const Text('如果你之前已经创建过日历订阅，旧的订阅链接将会失效。'),
+          content: const Text('如果你之前已经订阅过该学期，之前的订阅链接将会失效。'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -389,8 +389,14 @@ class _SchedulePageState extends State<SchedulePage> {
     });
 
     try {
+      final semesterId = _schedule.selectedSemesterId;
+      if (semesterId == null || semesterId.isEmpty) {
+        throw Exception('Missing semesterId');
+      }
       final auth = ServiceProvider.of(context).authService;
-      final result = await auth.createCalendarSubscription();
+      final result = await auth.createCalendarSubscription(
+        semesterId: semesterId,
+      );
 
       final data = result['data'] as Map<String, dynamic>?;
       final subscribeUrl = data?['subscribeUrl'] as String?;

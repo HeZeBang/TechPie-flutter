@@ -82,10 +82,15 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> createCalendarSubscription() async {
+  Future<Map<String, dynamic>> createCalendarSubscription({
+    required String semesterId,
+  }) async {
     final session = _session;
     if (session == null) {
       throw Exception('Not logged in');
+    }
+    if (semesterId.isEmpty) {
+      throw Exception('Missing semesterId');
     }
 
     Future<http.Response> postCreate() {
@@ -97,6 +102,7 @@ class AuthService extends ChangeNotifier {
           'studentId': currentSession.studentId.isNotEmpty
               ? currentSession.studentId
               : currentSession.userId,
+          'semesterId': semesterId,
           'tgc': currentSession.tgc,
           'sessionToken': currentSession.sessionToken,
           'tenantId': currentSession.tenantId,
