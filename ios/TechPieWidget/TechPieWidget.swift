@@ -1,56 +1,143 @@
-//
-//  TechPieWidget.swift
-//  TechPieWidget
-//
-//  Created by Henry Li on 2026/6/11.
-//
-
 import WidgetKit
 import SwiftUI
 
-struct Provider: AppIntentTimelineProvider {
+struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(date: Date(), configuration: ConfigurationAppIntent())
+        SimpleEntry(date: Date(), courses: [], assignments: [])
     }
 
-    func snapshot(for configuration: ConfigurationAppIntent, in context: Context) async -> SimpleEntry {
-        SimpleEntry(date: Date(), configuration: configuration)
-    }
-    
-    func timeline(for configuration: ConfigurationAppIntent, in context: Context) async -> Timeline<SimpleEntry> {
-        var entries: [SimpleEntry] = []
-
-        // Generate a timeline consisting of five entries an hour apart, starting from the current date.
-        let currentDate = Date()
-        for hourOffset in 0 ..< 5 {
-            let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate)!
-            let entry = SimpleEntry(date: entryDate, configuration: configuration)
-            entries.append(entry)
-        }
-
-        return Timeline(entries: entries, policy: .atEnd)
+    func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> ()) {
+        let entry = SimpleEntry(date: Date(),
+                                courses: WidgetDataManager.shared.courses,
+                                assignments: WidgetDataManager.shared.assignments)
+        completion(entry)
     }
 
-//    func relevances() async -> WidgetRelevances<ConfigurationAppIntent> {
-//        // Generate a list containing the contexts this widget is relevant in.
-//    }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleEntry>) -> ()) {
+        let entry = SimpleEntry(date: Date(),
+                                courses: WidgetDataManager.shared.courses,
+                                assignments: WidgetDataManager.shared.assignments)
+        
+        // Update widget occasionally or when told by Flutter
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date())!
+        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        completion(timeline)
+    }
 }
 
 struct SimpleEntry: TimelineEntry {
     let date: Date
-    let configuration: ConfigurationAppIntent
+    let courses: [Course]
+    let assignments: [Assignment]
 }
 
 struct TechPieWidgetEntryView : View {
     var entry: Provider.Entry
+    @Environment(\.widgetFamily) var family
 
     var body: some View {
-        VStack {
-            Text("Time:")
-            Text(entry.date, style: .time)
-
-            Text("Favorite Emoji:")
-            Text(entry.configuration.favoriteEmoji)
+        ZStack {
+            VStack(alignment: .leading, spacing: 10) {
+                if family == .systemSmall {
+                    smallView
+                } else {
+                    mediumView
+                }
+            }
+            .padding()
+        }
+    }
+    
+    var smallView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "book.fill")
+                    .foregroundColor(.blue)
+                Text("Next Class")
+                    .font(.headline)
+            }
+            
+            if let firstClass = entry.courses.first {
+                Text(firstClass.name)
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .lineLimit(2)
+                Text("\(firstClass.startTime) - \(firstClass.endTime)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(firstClass.location)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("No more classes today! 🎉")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    var mediumView: some View {
+        HStack(alignment: .top, spacing: 16) {
+            // Left Side: Schedule
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "calendar")
+                        .foregroundColor(.blue)
+                    Text("Today's Classes")
+                        .font(.headline)
+                }
+                
+                if entry.courses.isEmpty {
+                    Text("Free day! 🎉")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(entry.courses.prefix(2)) { course in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(course.name)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                            Text("\(course.startTime) | \(course.location)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            
+            Divider()
+            
+            // Right Side: Assignments
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "doc.text.fill")
+                        .foregroundColor(.orange)
+                    Text("Pending Work")
+                        .font(.headline)
+                }
+                
+                if entry.assignments.isEmpty {
+                    Text("All caught up! ✅")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(entry.assignments.prefix(2)) { assignment in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(assignment.title)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+                            Text(assignment.course)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -59,30 +146,70 @@ struct TechPieWidget: Widget {
     let kind: String = "TechPieWidget"
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: kind, intent: ConfigurationAppIntent.self, provider: Provider()) { entry in
-            TechPieWidgetEntryView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+        StaticConfiguration(kind: kind, provider: Provider()) { entry in
+            if #available(iOS 17.0, *) {
+                TechPieWidgetEntryView(entry: entry)
+                    .containerBackground(Color(UIColor.systemBackground), for: .widget)
+            } else {
+                TechPieWidgetEntryView(entry: entry)
+                    .background(Color(UIColor.systemBackground))
+            }
+        }
+        .configurationDisplayName("TechPie Tracker")
+        .description("Track your daily schedule and pending assignments.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+// MARK: - Data Models
+
+struct Course: Codable, Identifiable {
+    var id: String { name + startTime }
+    let name: String
+    let location: String
+    let startTime: String
+    let endTime: String
+}
+
+struct Assignment: Codable, Identifiable {
+    var id: String { title + course }
+    let title: String
+    let course: String
+    let due: String
+}
+
+class WidgetDataManager {
+    static let shared = WidgetDataManager()
+    // IMPORTANT: Match this with your App Group ID configured in Xcode
+    let appGroupID = "group.com.example.techpie"
+    
+    var courses: [Course] {
+        guard let defaults = UserDefaults(suiteName: appGroupID),
+              let dataString = defaults.string(forKey: "schedule_data"),
+              let data = dataString.data(using: .utf8) else {
+            return []
+        }
+        
+        do {
+            return try JSONDecoder().decode([Course].self, from: data)
+        } catch {
+            print("Error decoding courses: \(error)")
+            return []
         }
     }
-}
-
-extension ConfigurationAppIntent {
-    fileprivate static var smiley: ConfigurationAppIntent {
-        let intent = ConfigurationAppIntent()
-        intent.favoriteEmoji = "😀"
-        return intent
-    }
     
-    fileprivate static var starEyes: ConfigurationAppIntent {
-        let intent = ConfigurationAppIntent()
-        intent.favoriteEmoji = "🤩"
-        return intent
+    var assignments: [Assignment] {
+        guard let defaults = UserDefaults(suiteName: appGroupID),
+              let dataString = defaults.string(forKey: "assignment_data"),
+              let data = dataString.data(using: .utf8) else {
+            return []
+        }
+        
+        do {
+            return try JSONDecoder().decode([Assignment].self, from: data)
+        } catch {
+            print("Error decoding assignments: \(error)")
+            return []
+        }
     }
-}
-
-#Preview(as: .systemSmall) {
-    TechPieWidget()
-} timeline: {
-    SimpleEntry(date: .now, configuration: .smiley)
-    SimpleEntry(date: .now, configuration: .starEyes)
 }

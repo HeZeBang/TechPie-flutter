@@ -12,7 +12,5 @@ import SwiftUI
 struct TechPieWidgetBundle: WidgetBundle {
     var body: some Widget {
         TechPieWidget()
-        TechPieWidgetControl()
-        TechPieWidgetLiveActivity()
     }
 }

@@ -8,6 +8,7 @@ import 'api_base_url.dart';
 import 'auth_service.dart';
 import 'http_client.dart';
 import 'storage_service.dart';
+import 'widget_sync_service.dart';
 
 class ScheduleService extends ChangeNotifier {
   final StorageService _storage;
@@ -62,6 +63,7 @@ class ScheduleService extends ChangeNotifier {
       _courseTable = _storage.loadCourseTable(_selectedSemesterId!);
     }
     _termBegin = _storage.loadTermBegin(_selectedSemesterId ?? '');
+    _syncWidget();
     notifyListeners();
   }
 
@@ -128,6 +130,7 @@ class ScheduleService extends ChangeNotifier {
       data['data'] as Map<String, dynamic>,
     );
     await _storage.saveCourseTable(semesterId, _courseTable!);
+    _syncWidget();
     notifyListeners();
   }
 
@@ -240,4 +243,13 @@ class ScheduleService extends ChangeNotifier {
 
     return resp;
   }
+
+  void _syncWidget() {
+    if (_courseTable != null) {
+      try {
+        WidgetSyncService.syncSchedule(_courseTable!, currentWeek());
+      } catch (_) {}
+    }
+  }
 }
+

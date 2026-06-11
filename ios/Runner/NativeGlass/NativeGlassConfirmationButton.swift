@@ -143,10 +143,17 @@ final class NativeGlassConfirmationButtonPlatformView: NSObject, FlutterPlatform
   private func applyLiquidGlassAppearance() {
     let image = symbolImage(named: sfSymbol)
 
+#if compiler(>=7.0)
     var configuration: UIButton.Configuration =
       label == nil || label?.isEmpty == true
       ? .clearGlass()
       : .glass()
+#else
+    var configuration: UIButton.Configuration =
+      label == nil || label?.isEmpty == true
+      ? .plain()
+      : .filled()
+#endif
     configuration.image = image
     configuration.title = label
     if destructive {
