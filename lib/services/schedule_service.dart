@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -247,7 +248,7 @@ class ScheduleService extends ChangeNotifier {
   void _syncWidget() {
     if (_courseTable != null) {
       try {
-        WidgetSyncService.syncSchedule(_courseTable!, currentWeek());
+        unawaited(WidgetSyncService.syncSchedule(_courseTable!, currentWeek()));
       } catch (_) {}
     }
   }

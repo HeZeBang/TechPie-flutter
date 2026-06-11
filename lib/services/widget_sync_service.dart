@@ -1,9 +1,11 @@
 import 'dart:convert';
+
 import 'package:home_widget/home_widget.dart';
-import '../models/course_table.dart';
-import '../models/course.dart';
+
 import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
+import '../models/course.dart';
+import '../models/course_table.dart';
 
 class WidgetSyncService {
   static const String _groupId = 'group.com.example.techpie'; 
