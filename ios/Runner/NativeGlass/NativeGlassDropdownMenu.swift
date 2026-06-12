@@ -124,11 +124,7 @@ final class NativeGlassDropdownMenuPlatformView: NSObject, FlutterPlatformView {
     let image = symbolImage(named: sfSymbol)
 
     if #available(iOS 26.0, *) {
-#if compiler(>=7.0)
       var configuration = UIButton.Configuration.glass()
-#else
-      var configuration = UIButton.Configuration.filled()
-#endif
       configuration.image = image
       configuration.title = label
       button.configuration = configuration

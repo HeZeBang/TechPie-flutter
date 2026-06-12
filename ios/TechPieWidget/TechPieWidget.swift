@@ -19,7 +19,7 @@ struct Provider: TimelineProvider {
                                 assignments: WidgetDataManager.shared.assignments)
         
         // Update widget occasionally or when told by Flutter
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date())!
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date().addingTimeInterval(30 * 60)
         let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
         completion(timeline)
     }

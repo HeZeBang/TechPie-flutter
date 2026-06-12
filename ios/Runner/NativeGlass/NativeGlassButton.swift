@@ -116,17 +116,10 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
 
   @available(iOS 26.0, *)
   private func applyLiquidGlassAppearance(image: UIImage?) {
-#if compiler(>=7.0)
     var configuration = UIButton.Configuration.prominentGlass()
     configuration.image = image
 
     button.configuration = configuration
-#else
-    var configuration = UIButton.Configuration.filled()
-    configuration.image = image
-
-    button.configuration = configuration
-#endif
   }
 
   @available(iOS 15.0, *)
