@@ -1,4 +1,3 @@
-
 <div align="center">
 <a href="https://techpie.geekpie.club">
 <img src="./assets/logo/Logo-1.png" alt="TechPie logo" style="border-radius:50%"/>
@@ -78,12 +77,12 @@ export HOS_SDK_HOME="$HOME/dev/command-line-tools/sdk"
 - macOS
 - Xcode
 - CocoaPods
-- iOS Deployment Target 13.0
+- iOS Deployment Target 14.0
 
 ### HarmonyOS
 
 - Flutter (OHOS patch) 3.27.5-ohos-1.0.5
-- [Huawei Command Tools  6.1.1 Beta1](https://developer.huawei.com/consumer/cn/download/command-line-tools-for-hmos)
+- [Huawei Command Tools 6.1.1 Beta1](https://developer.huawei.com/consumer/cn/download/command-line-tools-for-hmos)
 
 ## License
 
