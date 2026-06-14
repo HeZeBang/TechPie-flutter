@@ -92,6 +92,7 @@ class AssignmentService extends ChangeNotifier {
     _error = null;
     await _storage.clearCachedAssignments();
     notifyListeners();
+    _syncWidget();
   }
 
   /// Hydrate from local cache so the UI doesn't flash empty on app start
@@ -101,6 +102,7 @@ class AssignmentService extends ChangeNotifier {
     final raw = _storage.loadCachedAssignments();
     if (raw.isEmpty) {
       notifyListeners();
+      _syncWidget();
       return;
     }
     _assignments = raw.map((e) => Assignment.fromJson(e)).toList()
@@ -575,7 +577,7 @@ class AssignmentService extends ChangeNotifier {
   }
 
   void _syncWidget() {
-    unawaited(WidgetSyncService.syncAssignments(_assignments, _overrides).catchError((_) {}));
+    unawaited(WidgetSyncService.syncAssignments(_assignments, _overrides)
+        .catchError((_) {}));
   }
 }
-
