@@ -247,8 +247,10 @@ class ScheduleService extends ChangeNotifier {
 
   void _syncWidget() {
     if (_courseTable != null) {
-      unawaited(WidgetSyncService.syncSchedule(_courseTable!, currentWeek())
-          .catchError((_) {}));
+      unawaited(
+        WidgetSyncService.syncSchedule(_courseTable!, currentWeek())
+            .catchError((_) {}),
+      );
     }
   }
 }

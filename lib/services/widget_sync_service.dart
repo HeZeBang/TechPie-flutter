@@ -35,14 +35,16 @@ class WidgetSyncService {
 
       final coursesJson = todayCourses.map((c) {
         final startTime = periods
-            .firstWhere((p) => p.number == c.startPeriod,
-                orElse: () =>
-                    const Period(number: 0, startTime: '', endTime: ''))
+            .firstWhere(
+              (p) => p.number == c.startPeriod,
+              orElse: () => const Period(number: 0, startTime: '', endTime: ''),
+            )
             .startTime;
         final endTime = periods
-            .firstWhere((p) => p.number == c.endPeriod,
-                orElse: () =>
-                    const Period(number: 0, startTime: '', endTime: ''))
+            .firstWhere(
+              (p) => p.number == c.endPeriod,
+              orElse: () => const Period(number: 0, startTime: '', endTime: ''),
+            )
             .endTime;
         return {
           'name': c.name,
@@ -55,14 +57,18 @@ class WidgetSyncService {
       await HomeWidget.setAppGroupId(_groupId);
       await HomeWidget.saveWidgetData('schedule_data', jsonEncode(coursesJson));
       await HomeWidget.updateWidget(
-          name: 'TechPieWidget', iOSName: 'TechPieWidget');
+        name: 'TechPieWidget',
+        iOSName: 'TechPieWidget',
+      );
     } catch (e) {
       // Swallow platform-channel errors to avoid unhandled async exceptions
     }
   }
 
   static Future<void> syncAssignments(
-      List<Assignment> assignments, AssignmentOverrides overrides) async {
+    List<Assignment> assignments,
+    AssignmentOverrides overrides,
+  ) async {
     if (kIsWeb || (!Platform.isIOS && !Platform.isAndroid)) return;
 
     try {
@@ -87,9 +93,13 @@ class WidgetSyncService {
 
       await HomeWidget.setAppGroupId(_groupId);
       await HomeWidget.saveWidgetData(
-          'assignment_data', jsonEncode(assignmentsJson));
+        'assignment_data',
+        jsonEncode(assignmentsJson),
+      );
       await HomeWidget.updateWidget(
-          name: 'TechPieWidget', iOSName: 'TechPieWidget');
+        name: 'TechPieWidget',
+        iOSName: 'TechPieWidget',
+      );
     } catch (e) {
       // Swallow platform-channel errors to avoid unhandled async exceptions
     }
