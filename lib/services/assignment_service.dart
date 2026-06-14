@@ -577,7 +577,9 @@ class AssignmentService extends ChangeNotifier {
   }
 
   void _syncWidget() {
-    unawaited(WidgetSyncService.syncAssignments(_assignments, _overrides)
-        .catchError((_) {}));
+    unawaited(
+      WidgetSyncService.syncAssignments(_assignments, _overrides)
+          .catchError((_) {}),
+    );
   }
 }
