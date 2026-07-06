@@ -37,8 +37,17 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
   bool _autoRenew = false;
   String? _inlineError;
 
+  // eGate SMS state
+  int _egateLoginMethod = 0; // 0 = password, 1 = SMS
+  final _egatePhoneCtrl = TextEditingController();
+  final _egateCodeCtrl = TextEditingController();
+  bool _sendingSms = false;
+  int _smsCooldown = 0;
+  Timer? _smsCooldownTimer;
+
   bool get _isHydro => widget.platform == ThirdPartyPlatform.hydro;
   bool get _isGradescope => widget.platform == ThirdPartyPlatform.gradescope;
+  bool get _isEgate => widget.platform == ThirdPartyPlatform.egate;
 
   Future<void> _dismissKeyboard() async {
     FocusManager.instance.primaryFocus?.unfocus();
@@ -53,6 +62,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     _passwordCtrl.dispose();
     _hydroOriginCtrl.dispose();
     _hydroDomainsCtrl.dispose();
+    _egatePhoneCtrl.dispose();
+    _egateCodeCtrl.dispose();
+    _smsCooldownTimer?.cancel();
     super.dispose();
   }
 
@@ -90,6 +102,43 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     setState(() => _autoRenew = ok == true);
   }
 
+  // -- eGate SMS methods --
+
+  Future<void> _sendEgateSms() async {
+    final phone = _egatePhoneCtrl.text.trim();
+    if (phone.isEmpty) return;
+
+    setState(() => _sendingSms = true);
+    try {
+      await ServiceProvider.of(context)
+          .thirdPartyAuthService
+          .sendEgateSmsCode(phone);
+      if (mounted) {
+        setState(() => _inlineError = null);
+        _smsCooldown = 60;
+        _smsCooldownTimer?.cancel();
+        _smsCooldownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+          if (!mounted) {
+            t.cancel();
+            return;
+          }
+          if (_smsCooldown <= 1) {
+            t.cancel();
+            setState(() => _smsCooldown = 0);
+          } else {
+            setState(() => _smsCooldown--);
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _inlineError = '发送失败：$e');
+      }
+    } finally {
+      if (mounted) setState(() => _sendingSms = false);
+    }
+  }
+
   Future<void> _submit() async {
     if (!_validateForSubmit()) return;
     await _dismissKeyboard();
@@ -109,14 +158,22 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     }
 
     try {
-      await tpAuth.bind(
-        platform: widget.platform,
-        account: _accountCtrl.text.trim(),
-        password: _passwordCtrl.text,
-        hydroOrigin: _isHydro ? _hydroOriginCtrl.text.trim() : null,
-        hydroDomains: domains,
-        autoRenew: _autoRenew,
-      );
+      if (_isEgate && _egateLoginMethod == 1) {
+        // SMS mode
+        await tpAuth.bindEgateSms(
+          phone: _egatePhoneCtrl.text.trim(),
+          code: _egateCodeCtrl.text.trim(),
+        );
+      } else {
+        await tpAuth.bind(
+          platform: widget.platform,
+          account: _accountCtrl.text.trim(),
+          password: _passwordCtrl.text,
+          hydroOrigin: _isHydro ? _hydroOriginCtrl.text.trim() : null,
+          hydroDomains: domains,
+          autoRenew: _autoRenew,
+        );
+      }
       if (!mounted) return;
       setState(() => _inlineError = null);
       await _dismissKeyboard();
@@ -157,6 +214,18 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
   }
 
   bool _validateForSubmit() {
+    if (_isEgate && _egateLoginMethod == 1) {
+      // SMS mode validation
+      String? message;
+      if (_egatePhoneCtrl.text.trim().isEmpty) {
+        message = '请填写手机号码';
+      } else if (_egateCodeCtrl.text.trim().isEmpty) {
+        message = '请填写验证码';
+      }
+      setState(() => _inlineError = message);
+      return message == null;
+    }
+
     if (!isIos()) {
       return _formKey.currentState?.validate() ?? true;
     }
@@ -207,7 +276,101 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
               _InlineBindFeedback(message: _inlineError!),
               const SizedBox(height: 12),
             ],
-            TextFormField(
+            if (_isEgate) ...[
+              // eGate: tabbed password / SMS interface
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('密码登录')),
+                  ButtonSegment(value: 1, label: Text('短信登录')),
+                ],
+                selected: {_egateLoginMethod},
+                onSelectionChanged: (v) =>
+                    setState(() => _egateLoginMethod = v.first),
+              ),
+              const SizedBox(height: 16),
+              if (_egateLoginMethod == 0) ...[
+                TextFormField(
+                  controller: _accountCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '学号',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '必填' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _passwordCtrl,
+                  obscureText: _obscure,
+                  decoration: InputDecoration(
+                    labelText: '密码',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscure
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                      onPressed: () =>
+                          setState(() => _obscure = !_obscure),
+                    ),
+                  ),
+                  validator: (v) => (v == null || v.isEmpty) ? '必填' : null,
+                ),
+              ] else ...[
+                TextFormField(
+                  controller: _egatePhoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: '手机号码',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '必填' : null,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _egateCodeCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '验证码',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? '必填' : null,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton.tonal(
+                      onPressed:
+                          (_smsCooldown > 0 || _sendingSms)
+                              ? null
+                              : () => unawaited(_sendEgateSms()),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(100, 56),
+                      ),
+                      child: _sendingSms
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              _smsCooldown > 0
+                                  ? '${_smsCooldown}s'
+                                  : '发送验证码',
+                            ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 8),
+            ] else ...[
+              TextFormField(
               controller: _accountCtrl,
               autofillHints: const [AutofillHints.username],
               keyboardType: _isGradescope
@@ -267,6 +430,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
               ),
             ],
             const SizedBox(height: 8),
+            ],
             if (isIos())
               MergeSemantics(
                 child: ListTile(

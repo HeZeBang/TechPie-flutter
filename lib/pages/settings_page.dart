@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:techpie/services/auth_service.dart';
 
+import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
 import '../services/theme_service.dart';
+import '../services/third_party_auth_service.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/blurred_app_bar.dart';
@@ -96,15 +98,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 subtitle: Text(
                   [
-                    auth.session!.schoolName,
-                    if (auth.session!.phoneNumber.isNotEmpty)
-                      auth.session!.phoneNumber,
-                    auth.session!.studentId.isNotEmpty
-                        ? auth.session!.studentId
-                        : '未知学号',
-                  ].join(' | '),
+                    'GeekPie Uni-Auth',
+                    if (auth.session!.userId.isNotEmpty) auth.session!.userId,
+                  ].join(' · '),
                 ),
               ),
+              _EgateBindingTile(tpAuth: tpAuth),
               ListTile(
                 leading: const Icon(Icons.account_tree_outlined),
                 title: const Text('Linked accounts'),
@@ -130,7 +129,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ListTile(
                 leading: const Icon(Icons.login),
                 title: const Text('Login'),
-                subtitle: const Text('Sign in to your campus account'),
+                subtitle: const Text('通过 GeekPie Uni-Auth 登录'),
                 onTap: () => unawaited(presentLoginPage(context)),
               ),
             const Divider(),
@@ -528,6 +527,45 @@ class _AdaptiveSwitchTile extends StatelessWidget {
       subtitle: Text(subtitle),
       trailing: IosGlassSwitch(value: value, onChanged: onChanged),
       onTap: () => onChanged(!value),
+    );
+  }
+}
+
+class _EgateBindingTile extends StatelessWidget {
+  final ThirdPartyAuthService tpAuth;
+
+  const _EgateBindingTile({required this.tpAuth});
+
+  @override
+  Widget build(BuildContext context) {
+    final egate = tpAuth.account(ThirdPartyPlatform.egate);
+    final bound = egate != null;
+    final theme = Theme.of(context);
+
+    return ListTile(
+      leading: Icon(
+        bound ? Icons.vpn_key : Icons.vpn_key_outlined,
+        color: bound ? theme.colorScheme.primary : null,
+      ),
+      title: const Text('eGate / IDS'),
+      subtitle: Text(
+        bound
+            ? '已绑定 · ${egate.name ?? egate.sid ?? egate.account}'
+            : '未绑定 · 需要绑定以启用课表和考试功能',
+      ),
+      trailing: bound
+          ? Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 20)
+          : const Icon(Icons.chevron_right),
+      onTap: bound
+          ? null
+          : () => unawaited(
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ThirdPartyAccountsPage(),
+                  ),
+                ),
+              ),
     );
   }
 }

@@ -179,7 +179,7 @@ class AssignmentService extends ChangeNotifier {
 
     final futures = <Future<void>>[];
 
-    if (_auth.isLoggedIn) {
+    if (_auth.hasEgateBinding) {
       futures.add(
         _fetchBlackboard().then((items) {
           if (items != null) successfulResults['blackboard'] = items;
@@ -207,6 +207,9 @@ class AssignmentService extends ChangeNotifier {
               if (items != null) successfulResults[acc.platform.id] = items;
             }),
           );
+          break;
+        case ThirdPartyPlatform.egate:
+          // eGate provides CpDaily session, not deadline data — skip.
           break;
       }
     }
@@ -253,11 +256,11 @@ class AssignmentService extends ChangeNotifier {
     final successfulResults = <String, List<Assignment>>{};
     Future<void>? future;
 
-    if (platformId == 'blackboard' && _auth.isLoggedIn) {
+    if (platformId == 'blackboard' && _auth.hasEgateBinding) {
       future = _fetchBlackboard().then((items) {
         if (items != null) successfulResults['blackboard'] = items;
       });
-    } else if (platformId == 'exam' && _auth.isLoggedIn) {
+    } else if (platformId == 'exam' && _auth.hasEgateBinding) {
       future = _fetchExamTable().then((items) {
         if (items != null) successfulResults['exam'] = items;
       });
@@ -301,26 +304,27 @@ class AssignmentService extends ChangeNotifier {
   // -- Per-platform fetchers --
 
   Future<List<Assignment>?> _fetchBlackboard() async {
-    final session = _auth.session;
-    if (session == null || session.tgc.isEmpty) return null;
+    final egate = _tpAuth.account(ThirdPartyPlatform.egate);
+    if (egate == null) return null;
+    final tgc = (egate.raw['tgc'] as String?) ?? '';
+    if (tgc.isEmpty) return null;
 
-    Future<http.Response> doFetch() => _http.post(
+    Future<http.Response> doFetch(String token) => _http.post(
           Uri.parse('$_baseUrl/deadlines/blackboard'),
           headers: _jsonHeaders(),
-          body: jsonEncode({'token': session.tgc}),
+          body: jsonEncode({'token': token}),
           tag: 'deadlines:blackboard',
         );
 
     try {
-      var resp = await doFetch();
+      var resp = await doFetch(tgc);
       if (resp.statusCode == 401) {
-        if (await _auth.tryRenewSession()) {
-          resp = await _http.post(
-            Uri.parse('$_baseUrl/deadlines/blackboard'),
-            headers: _jsonHeaders(),
-            body: jsonEncode({'token': _auth.session!.tgc}),
-            tag: 'deadlines:blackboard:retry',
-          );
+        final renewedRaw =
+            await _auth.tryRenewCpDailySession(Map.from(egate.raw));
+        if (renewedRaw != null) {
+          await _tpAuth.updateRaw(ThirdPartyPlatform.egate, renewedRaw);
+          final newTgc = (renewedRaw['tgc'] as String?) ?? tgc;
+          resp = await doFetch(newTgc);
         }
       }
       return _parseDeadlinesResponse(resp, 'blackboard');
@@ -331,15 +335,15 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<List<Assignment>?> _fetchExamTable() async {
-    final session = _auth.session;
     final semesterId = _selectedSemesterId();
-    if (session == null || semesterId == null || semesterId.isEmpty) {
+    final egate = _tpAuth.account(ThirdPartyPlatform.egate);
+    if (egate == null || semesterId == null || semesterId.isEmpty) {
       return null;
     }
 
     Map<String, dynamic> buildBody() => {
           'semester_id': semesterId,
-          'cookies': _eamsCookies(),
+          'cookies': _eamsCookies(egate),
         };
 
     try {
@@ -350,7 +354,10 @@ class AssignmentService extends ChangeNotifier {
         tag: 'schedule:exam_table',
       );
       if (resp.statusCode == 401) {
-        if (await _auth.tryRenewSession()) {
+        final renewedRaw =
+            await _auth.tryRenewCpDailySession(Map.from(egate.raw));
+        if (renewedRaw != null) {
+          await _tpAuth.updateRaw(ThirdPartyPlatform.egate, renewedRaw);
           resp = await _http.post(
             Uri.parse('$_baseUrl/schedule/exam_table'),
             headers: _jsonHeaders(),
@@ -559,10 +566,10 @@ class AssignmentService extends ChangeNotifier {
       _storage.selectedSemester ??
       _schedule.semesterInfo?.defaultSemester;
 
-  String _eamsCookies() {
-    final session = _auth.session!;
-    final baseCookies = session.cookies;
-    final tgc = session.tgc;
+  String _eamsCookies(ThirdPartyAccount egate) {
+    final raw = egate.raw;
+    final baseCookies = (raw['cookies'] as String?) ?? '';
+    final tgc = (raw['tgc'] as String?) ?? '';
     return tgc.isNotEmpty
         ? (baseCookies.isNotEmpty ? '$baseCookies; CASTGC=$tgc' : 'CASTGC=$tgc')
         : baseCookies;

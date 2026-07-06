@@ -9,6 +9,7 @@ import '../models/assignment.dart';
 import '../models/course.dart';
 import '../models/course_table.dart';
 import '../models/feature.dart';
+import '../models/third_party_account.dart';
 import '../services/assignment_service.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
@@ -393,27 +394,34 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final cookies = <WebViewCookie>[];
     if (cookieType == null) return cookies;
 
-    final session = ServiceProvider.of(context).authService.session;
-    if (session == null) return cookies;
+    final sp = ServiceProvider.of(context);
+    // Read cookies from eGate binding's raw data (post-migration) or legacy session
+    String rawCookies = '';
+    final egate = sp.thirdPartyAuthService.account(ThirdPartyPlatform.egate);
+    if (egate != null) {
+      rawCookies = (egate.raw['cookies'] as String?) ?? '';
+    } else {
+      final session = sp.authService.session;
+      if (session != null) rawCookies = session.cookies;
+    }
+    if (rawCookies.isEmpty) return cookies;
 
     final domain = 'ids.shanghaitech.edu.cn';
 
-    if (session.cookies.isNotEmpty) {
-      for (final part in session.cookies.split(';')) {
-        final idx = part.indexOf('=');
-        if (idx > 0) {
-          final key = part.substring(0, idx).trim();
-          final value = part.substring(idx + 1).trim();
-          if (key.isNotEmpty && value.isNotEmpty) {
-            cookies.add(
-              WebViewCookie(
-                name: key,
-                value: value,
-                domain: domain,
-                path: '/',
-              ),
-            );
-          }
+    for (final part in rawCookies.split(';')) {
+      final idx = part.indexOf('=');
+      if (idx > 0) {
+        final key = part.substring(0, idx).trim();
+        final value = part.substring(idx + 1).trim();
+        if (key.isNotEmpty && value.isNotEmpty) {
+          cookies.add(
+            WebViewCookie(
+              name: key,
+              value: value,
+              domain: domain,
+              path: '/',
+            ),
+          );
         }
       }
     }

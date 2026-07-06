@@ -9,6 +9,8 @@ class UserSession {
   final String cookies;
   final String studentId;
   final DateTime createdAt;
+  final String? geekpieToken;
+  final String? geekpieExpiresAt;
 
   UserSession({
     required this.sessionToken,
@@ -21,6 +23,8 @@ class UserSession {
     this.cookies = '',
     required this.studentId,
     required this.createdAt,
+    this.geekpieToken,
+    this.geekpieExpiresAt,
   });
 
   Map<String, dynamic> toJson() => {
@@ -34,6 +38,8 @@ class UserSession {
         'cookies': cookies,
         'studentId': studentId,
         'createdAt': createdAt.toIso8601String(),
+        if (geekpieToken != null) 'geekpieToken': geekpieToken,
+        if (geekpieExpiresAt != null) 'geekpieExpiresAt': geekpieExpiresAt,
       };
 
   factory UserSession.fromJson(Map<String, dynamic> json) => UserSession(
@@ -49,6 +55,8 @@ class UserSession {
             json['studentId'] as String? ?? json['openId'] as String? ?? '',
         createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
             DateTime.now(),
+        geekpieToken: json['geekpieToken'] as String?,
+        geekpieExpiresAt: json['geekpieExpiresAt'] as String?,
       );
 
   UserSession copyWith({
@@ -62,6 +70,8 @@ class UserSession {
     String? cookies,
     String? studentId,
     DateTime? createdAt,
+    String? geekpieToken,
+    String? geekpieExpiresAt,
   }) =>
       UserSession(
         sessionToken: sessionToken ?? this.sessionToken,
@@ -74,5 +84,7 @@ class UserSession {
         cookies: cookies ?? this.cookies,
         createdAt: createdAt ?? this.createdAt,
         studentId: studentId ?? this.studentId,
+        geekpieToken: geekpieToken ?? this.geekpieToken,
+        geekpieExpiresAt: geekpieExpiresAt ?? this.geekpieExpiresAt,
       );
 }

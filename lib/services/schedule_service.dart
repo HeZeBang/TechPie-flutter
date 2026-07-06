@@ -4,15 +4,18 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/course_table.dart';
+import '../models/third_party_account.dart';
 import 'api_base_url.dart';
 import 'auth_service.dart';
 import 'http_client.dart';
 import 'storage_service.dart';
+import 'third_party_auth_service.dart';
 
 class ScheduleService extends ChangeNotifier {
   final StorageService _storage;
   final LoggingHttpClient _http;
   final AuthService _auth;
+  final ThirdPartyAuthService _tpAuth;
 
   SemesterInfo? _semesterInfo;
   CourseTable? _courseTable;
@@ -30,7 +33,7 @@ class ScheduleService extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
 
-  ScheduleService(this._storage, this._http, this._auth);
+  ScheduleService(this._storage, this._http, this._auth, this._tpAuth);
 
   int currentWeek() {
     if (_termBegin == null) return 1;
@@ -44,15 +47,34 @@ class ScheduleService extends ChangeNotifier {
       };
 
   Map<String, dynamic> _authBody() {
-    final session = _auth.session!;
-    // Ensure CASTGC (tgc) is included in the cookies sent to EAMS
-    final baseCookies = session.cookies;
-    final tgc = session.tgc;
+    final egate = _tpAuth.account(ThirdPartyPlatform.egate);
+    if (egate == null) {
+      // Fallback: legacy session (pre-migration)
+      final session = _auth.session;
+      if (session == null) return {};
+      final baseCookies = session.cookies;
+      final tgc = session.tgc;
+      final cookies = tgc.isNotEmpty
+          ? (baseCookies.isNotEmpty
+              ? '$baseCookies; CASTGC=$tgc'
+              : 'CASTGC=$tgc')
+          : baseCookies;
+      return {'studentId': session.studentId, 'cookies': cookies};
+    }
+    // Read CpDaily session from eGate binding's raw data
+    final raw = egate.raw;
+    final baseCookies = (raw['cookies'] as String?) ?? '';
+    final tgc = (raw['tgc'] as String?) ?? '';
     final cookies = tgc.isNotEmpty
-        ? (baseCookies.isNotEmpty ? '$baseCookies; CASTGC=$tgc' : 'CASTGC=$tgc')
+        ? (baseCookies.isNotEmpty
+            ? '$baseCookies; CASTGC=$tgc'
+            : 'CASTGC=$tgc')
         : baseCookies;
-    return {'studentId': session.studentId, 'cookies': cookies};
+    return {'studentId': egate.sid ?? '', 'cookies': cookies};
   }
+
+  bool get _hasEgateBinding =>
+      _tpAuth.account(ThirdPartyPlatform.egate) != null;
 
   Future<void> loadCachedData() async {
     _semesterInfo = _storage.loadSemesters();
@@ -66,7 +88,7 @@ class ScheduleService extends ChangeNotifier {
   }
 
   Future<void> fetchAll() async {
-    if (!_auth.isLoggedIn) return;
+    if (!_hasEgateBinding) return;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -189,7 +211,7 @@ class ScheduleService extends ChangeNotifier {
     _termBegin = _storage.loadTermBegin(semesterId);
     notifyListeners();
 
-    if (!_auth.isLoggedIn) return;
+    if (!_hasEgateBinding) return;
 
     _loading = true;
     _error = null;
@@ -221,16 +243,22 @@ class ScheduleService extends ChangeNotifier {
     );
 
     if (resp.statusCode == 401) {
-      final renewed = await _auth.tryRenewSession();
-      if (renewed) {
-        // Rebuild body with refreshed session
-        final newBody = {...body, ..._authBody()};
-        resp = await _http.post(
-          Uri.parse(url),
-          headers: _jsonHeaders(),
-          body: jsonEncode(newBody),
-          tag: '$tag-retry',
-        );
+      // Try renewing via eGate binding's CpDaily session
+      final egate = _tpAuth.account(ThirdPartyPlatform.egate);
+      if (egate != null) {
+        final renewedRaw =
+            await _auth.tryRenewCpDailySession(Map.from(egate.raw));
+        if (renewedRaw != null) {
+          // Persist refreshed CpDaily data back into the binding
+          await _tpAuth.updateRaw(ThirdPartyPlatform.egate, renewedRaw);
+          final newBody = {...body, ..._authBody()};
+          resp = await _http.post(
+            Uri.parse(url),
+            headers: _jsonHeaders(),
+            body: jsonEncode(newBody),
+            tag: '$tag-retry',
+          );
+        }
       }
     }
 

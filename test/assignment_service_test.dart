@@ -48,6 +48,24 @@ void main() {
         createdAt: DateTime.utc(2026),
       ),
     );
+    // New architecture: blackboard/exam fetches are gated on an eGate binding,
+    // not on the primary UserSession. Bind one with the same tgc the test expects.
+    await storage.saveThirdPartyAccount(
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.egate,
+        account: 'student',
+        sid: 'student',
+        token: 'session',
+        raw: const {
+          'tgc': 'tgc',
+          'cookies': '',
+          'sessionToken': 'session',
+          'userId': 'user',
+          'tenantId': 'tenant',
+        },
+        boundAt: DateTime.utc(2026),
+      ),
+    );
     await storage.saveThirdPartyAccount(
       ThirdPartyAccount(
         platform: ThirdPartyPlatform.gradescope,
@@ -83,7 +101,10 @@ void main() {
     });
     final auth = AuthService(storage, httpClient);
     final tpAuth = ThirdPartyAuthService(storage, httpClient);
-    final schedule = ScheduleService(storage, httpClient, auth);
+    auth.setEgateBindingChecker(
+      () => tpAuth.account(ThirdPartyPlatform.egate) != null,
+    );
+    final schedule = ScheduleService(storage, httpClient, auth, tpAuth);
     await auth.loadSession();
     await tpAuth.initialize();
 
@@ -127,6 +148,23 @@ void main() {
         cookies: 'SESSION=abc',
         studentId: 'student',
         createdAt: DateTime.utc(2026),
+      ),
+    );
+    // New architecture: exam fetch reads cookies from the eGate binding, not UserSession.
+    await storage.saveThirdPartyAccount(
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.egate,
+        account: 'student',
+        sid: 'student',
+        token: 'session',
+        raw: const {
+          'tgc': 'tgc',
+          'cookies': 'SESSION=abc',
+          'sessionToken': 'session',
+          'userId': 'user',
+          'tenantId': 'tenant',
+        },
+        boundAt: DateTime.utc(2026),
       ),
     );
 
@@ -173,8 +211,13 @@ void main() {
     });
     final auth = AuthService(storage, httpClient);
     final tpAuth = ThirdPartyAuthService(storage, httpClient);
-    final schedule = ScheduleService(storage, httpClient, auth);
+    // Wire eGate binding checker (mirrors main.dart boot sequence).
+    auth.setEgateBindingChecker(
+      () => tpAuth.account(ThirdPartyPlatform.egate) != null,
+    );
+    final schedule = ScheduleService(storage, httpClient, auth, tpAuth);
     await auth.loadSession();
+    await tpAuth.initialize();
     await schedule.loadCachedData();
 
     final service =

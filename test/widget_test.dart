@@ -12,6 +12,7 @@ import 'package:techpie/services/schedule_service.dart';
 import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
+import 'package:techpie/services/uni_auth_service.dart';
 
 void main() {
   testWidgets('App shell renders with desktop sidebar', (
@@ -29,11 +30,12 @@ void main() {
     final http = LoggingHttpClient(logger);
     final auth = AuthService(storage, http);
     final theme = ThemeService(storage);
-    final schedule = ScheduleService(storage, http, auth);
     final tpAuth = ThirdPartyAuthService(storage, http);
+    final schedule = ScheduleService(storage, http, auth, tpAuth);
     final assignments =
         AssignmentService(storage, http, auth, tpAuth, schedule);
     final oaGym = OaGymService(auth, storage);
+    final uniAuth = UniAuthService();
 
     await tester.pumpWidget(
       TechPieApp(
@@ -45,6 +47,7 @@ void main() {
         assignmentService: assignments,
         thirdPartyAuthService: tpAuth,
         oaGymService: oaGym,
+        uniAuthService: uniAuth,
       ),
     );
 
@@ -67,11 +70,12 @@ void main() {
     final logger = DebugLogger();
     final http = LoggingHttpClient(logger);
     final auth = AuthService(storage, http);
-    final schedule = ScheduleService(storage, http, auth);
     final tpAuth = ThirdPartyAuthService(storage, http);
+    final schedule = ScheduleService(storage, http, auth, tpAuth);
     final assignments =
         AssignmentService(storage, http, auth, tpAuth, schedule);
     final oaGym = OaGymService(auth, storage);
+    final uniAuth = UniAuthService();
 
     await tester.pumpWidget(
       TechPieApp(
@@ -83,6 +87,7 @@ void main() {
         assignmentService: assignments,
         thirdPartyAuthService: tpAuth,
         oaGymService: oaGym,
+        uniAuthService: uniAuth,
       ),
     );
 

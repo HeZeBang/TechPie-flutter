@@ -16,6 +16,7 @@ import 'services/service_provider.dart';
 import 'services/storage_service.dart';
 import 'services/theme_service.dart';
 import 'services/third_party_auth_service.dart';
+import 'services/uni_auth_service.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
 
@@ -49,14 +50,15 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final httpClient = LoggingHttpClient(debugLogger);
   final authService = AuthService(storageService, httpClient);
   final themeService = ThemeService(storageService);
+  final thirdPartyAuthService = ThirdPartyAuthService(
+    storageService,
+    httpClient,
+  );
   final scheduleService = ScheduleService(
     storageService,
     httpClient,
     authService,
-  );
-  final thirdPartyAuthService = ThirdPartyAuthService(
-    storageService,
-    httpClient,
+    thirdPartyAuthService,
   );
   final oaGymService = OaGymService(authService, storageService);
   final assignmentService = AssignmentService(
@@ -66,9 +68,16 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService,
     scheduleService,
   );
+  final uniAuthService = UniAuthService();
+
+  // Wire eGate binding checker into AuthService (avoids circular construction).
+  authService.setEgateBindingChecker(
+    () => thirdPartyAuthService.account(ThirdPartyPlatform.egate) != null,
+  );
 
   authService.onLogout = () async {
-    await thirdPartyAuthService.clearAll();
+    // Third-party bindings persist across logouts — they will be used by the
+    // future sync system. Only clear ephemeral state.
     await assignmentService.clearCache();
     await assignmentService.clearAllOverrides();
     oaGymService.clearSession();
@@ -91,6 +100,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       assignmentService: assignmentService,
       thirdPartyAuthService: thirdPartyAuthService,
       oaGymService: oaGymService,
+      uniAuthService: uniAuthService,
     ),
   );
 
@@ -123,7 +133,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       );
     }
 
-    if (authService.isLoggedIn) {
+    if (thirdPartyAuthService.account(ThirdPartyPlatform.egate) != null) {
       await scheduleService.fetchAll();
     }
     if (authService.isLoggedIn ||
@@ -171,6 +181,7 @@ class TechPieApp extends StatefulWidget {
   final AssignmentService assignmentService;
   final ThirdPartyAuthService thirdPartyAuthService;
   final OaGymService oaGymService;
+  final UniAuthService uniAuthService;
 
   const TechPieApp({
     super.key,
@@ -182,6 +193,7 @@ class TechPieApp extends StatefulWidget {
     required this.assignmentService,
     required this.thirdPartyAuthService,
     required this.oaGymService,
+    required this.uniAuthService,
   });
 
   @override
@@ -213,6 +225,7 @@ class _TechPieAppState extends State<TechPieApp> {
         assignmentService: widget.assignmentService,
         thirdPartyAuthService: widget.thirdPartyAuthService,
         oaGymService: widget.oaGymService,
+        uniAuthService: widget.uniAuthService,
         child: MaterialApp(
           scaffoldMessengerKey: rootMessengerKey,
           title: 'TechPie',

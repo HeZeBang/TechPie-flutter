@@ -17,11 +17,16 @@ class AuthService extends ChangeNotifier {
   // Context returned by send-sms, needed for mobile/login
   Map<String, dynamic>? _smsContext;
 
+  // Injected post-construction to check third-party bindings.
+  // avoids circular construction with ThirdPartyAuthService.
+  bool Function()? _hasEgateBinding;
+
   String get _baseUrl => apiBaseUrl(_storage);
 
   UserSession? get session => _session;
   bool get isLoggedIn => _session != null;
   bool get loading => _loading;
+  bool get hasEgateBinding => _hasEgateBinding?.call() ?? false;
 
   // Optional callback fired after primary-account logout so dependent
   // services (e.g. third-party bindings) can clear themselves. Injected
@@ -29,6 +34,11 @@ class AuthService extends ChangeNotifier {
   Future<void> Function()? onLogout;
 
   AuthService(this._storage, this._http);
+
+  /// Inject the eGate binding checker (called post-construction from main.dart).
+  void setEgateBindingChecker(bool Function() checker) {
+    _hasEgateBinding = checker;
+  }
 
   // -- Initialization & token renewal --
 
@@ -78,6 +88,44 @@ class AuthService extends ChangeNotifier {
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Renew CpDaily session using raw data from a third-party binding (e.g.
+  /// eGate). Returns the refreshed raw map on success, or null on failure.
+  /// Does NOT mutate [_session] — the caller is responsible for persisting
+  /// the updated raw data back into the ThirdPartyAccount.
+  Future<Map<String, dynamic>?> tryRenewCpDailySession(
+    Map<String, dynamic> raw,
+  ) async {
+    try {
+      final resp = await _http.post(
+        Uri.parse('$_baseUrl/auth/renew'),
+        headers: _jsonHeaders(),
+        body: jsonEncode({
+          'sessionToken': raw['sessionToken'] ?? '',
+          'tgc': raw['tgc'] ?? '',
+          'userId': raw['userId'] ?? '',
+          'tenantId': raw['tenantId'] ?? '',
+        }),
+        tag: 'cpDailyRenew',
+      );
+
+      if (resp.statusCode != 200) return null;
+
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (data['success'] != true) return null;
+
+      return {
+        ...raw,
+        'sessionToken': data['sessionToken'] as String? ?? raw['sessionToken'],
+        'tgc': data['tgc'] as String? ?? raw['tgc'],
+        'userId': data['userId'] as String? ?? raw['userId'],
+        'tenantId': data['tenantId'] as String? ?? raw['tenantId'],
+        'cookies': data['cookies'] as String? ?? raw['cookies'],
+      };
+    } catch (_) {
+      return null;
     }
   }
 
@@ -183,6 +231,48 @@ class AuthService extends ChangeNotifier {
         cookies: data['cookies'] as String? ?? '',
         createdAt: DateTime.now(),
         studentId: loginResult['openId'] as String? ?? '',
+      );
+
+      await _storage.saveSession(_session!);
+      notifyListeners();
+      return _session!;
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  // -- GeekPie Uni-Auth Login --
+
+  Future<UserSession> geekpieLogin(String geekpieToken) async {
+    _loading = true;
+    notifyListeners();
+    try {
+      final resp = await _http.post(
+        Uri.parse('$_baseUrl/auth/geekpie'),
+        headers: _jsonHeaders(),
+        body: jsonEncode({'token': geekpieToken}),
+        tag: 'geekpieLogin',
+      );
+
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (data['success'] != true) {
+        throw Exception(data['error'] as String? ?? 'Login failed');
+      }
+
+      _session = UserSession(
+        sessionToken: '',
+        tgc: '',
+        userId: data['userId'] as String? ?? '',
+        userName: data['userName'] as String? ?? '',
+        schoolName: '上海科技大学',
+        tenantId: '',
+        phoneNumber: '',
+        cookies: '',
+        studentId: '',
+        createdAt: DateTime.now(),
+        geekpieToken: geekpieToken,
+        geekpieExpiresAt: data['expiresAt'] as String?,
       );
 
       await _storage.saveSession(_session!);

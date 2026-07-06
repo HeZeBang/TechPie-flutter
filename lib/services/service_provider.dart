@@ -8,6 +8,7 @@ import 'schedule_service.dart';
 import 'storage_service.dart';
 import 'theme_service.dart';
 import 'third_party_auth_service.dart';
+import 'uni_auth_service.dart';
 
 class ServiceProvider extends InheritedWidget {
   final AuthService authService;
@@ -18,6 +19,7 @@ class ServiceProvider extends InheritedWidget {
   final AssignmentService assignmentService;
   final ThirdPartyAuthService thirdPartyAuthService;
   final OaGymService oaGymService;
+  final UniAuthService uniAuthService;
 
   const ServiceProvider({
     super.key,
@@ -29,6 +31,7 @@ class ServiceProvider extends InheritedWidget {
     required this.assignmentService,
     required this.thirdPartyAuthService,
     required this.oaGymService,
+    required this.uniAuthService,
     required super.child,
   });
 
@@ -48,5 +51,6 @@ class ServiceProvider extends InheritedWidget {
       scheduleService != oldWidget.scheduleService ||
       assignmentService != oldWidget.assignmentService ||
       thirdPartyAuthService != oldWidget.thirdPartyAuthService ||
-      oaGymService != oldWidget.oaGymService;
+      oaGymService != oldWidget.oaGymService ||
+      uniAuthService != oldWidget.uniAuthService;
 }
