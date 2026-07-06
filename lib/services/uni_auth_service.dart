@@ -49,7 +49,8 @@ class UniAuthService extends ChangeNotifier {
     notifyListeners();
     try {
       final casdoor = _getCasdoor();
-      final code = await casdoor.showFullscreen(context);
+      final callbackUrl = await casdoor.showFullscreen(context);
+      final code = _extractCode(callbackUrl);
       if (code.isEmpty) {
         throw Exception('Login cancelled or failed');
       }
@@ -80,7 +81,8 @@ class UniAuthService extends ChangeNotifier {
     notifyListeners();
     try {
       final casdoor = _getCasdoor();
-      final code = await casdoor.show();
+      final callbackUrl = await casdoor.show();
+      final code = _extractCode(callbackUrl);
       if (code.isEmpty) {
         throw Exception('Login cancelled or failed');
       }
@@ -101,6 +103,16 @@ class UniAuthService extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  /// Pull the `code` query parameter out of the callback URL the SDK returns.
+  /// casdoor.showFullscreen / casdoor.show yield the full redirect URL
+  /// (e.g. `techpie://auth-callback?code=xxx&state=yyy`), not just the code.
+  String _extractCode(String callbackUrl) {
+    if (callbackUrl.isEmpty) return '';
+    final uri = Uri.tryParse(callbackUrl);
+    if (uri == null) return '';
+    return uri.queryParameters['code'] ?? '';
   }
 
   /// Refresh an existing JWT token.
