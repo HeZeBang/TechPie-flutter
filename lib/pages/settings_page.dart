@@ -108,7 +108,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 leading: const Icon(Icons.account_tree_outlined),
                 title: const Text('Linked accounts'),
                 subtitle: Text(
-                  '${tpAuth.boundPlatforms.length} bound · Gradescope / Hydro / Blackboard',
+                  '${tpAuth.boundPlatforms.length} bound · Gradescope / Hydro / eGate',
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(

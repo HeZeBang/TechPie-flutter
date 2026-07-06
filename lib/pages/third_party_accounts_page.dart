@@ -5,12 +5,12 @@ import 'package:intl/intl.dart';
 
 import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
+import '../services/third_party_auth_service.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_glass_confirmation_button.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import 'login_page.dart';
 import 'third_party_bind_page.dart';
 
 class ThirdPartyAccountsPage extends StatelessWidget {
@@ -55,8 +55,9 @@ class ThirdPartyAccountsPage extends StatelessWidget {
           return ListView(
             padding: EdgeInsets.only(top: topInset, bottom: 120),
             children: [
-              // Blackboard read-only entry
-              _BlackboardTile(),
+              // Blackboard rides on the eGate binding (CASTGC cookie), not on
+              // the primary GeekPie SSO account.
+              _BlackboardTile(tpAuth: tpAuth),
               const Divider(),
 
               for (final platform in ThirdPartyPlatform.values) ...[
@@ -87,25 +88,42 @@ class ThirdPartyAccountsPage extends StatelessWidget {
 }
 
 class _BlackboardTile extends StatelessWidget {
+  final ThirdPartyAuthService tpAuth;
+
+  const _BlackboardTile({required this.tpAuth});
+
   @override
   Widget build(BuildContext context) {
-    final auth = ServiceProvider.of(context).authService;
     final theme = Theme.of(context);
-    final loggedIn = auth.isLoggedIn;
+    final egate = tpAuth.account(ThirdPartyPlatform.egate);
+    final bound = egate != null;
+    final subtitleId = egate?.sid?.isNotEmpty == true
+        ? egate!.sid
+        : (egate?.account.isNotEmpty == true ? egate!.account : '');
 
     return ListTile(
       leading: const Icon(Icons.school_outlined),
       title: const Text('Blackboard'),
       subtitle: Text(
-        loggedIn
-            ? '通过主账号自动启用 (CASTGC) · ${auth.session!.studentId.isNotEmpty ? auth.session!.studentId : auth.session!.userId}'
-            : '登录主账号后自动启用',
+        bound
+            ? '通过 eGate 自动启用 (CASTGC)${subtitleId != null && subtitleId.isNotEmpty ? ' · $subtitleId' : ''}'
+            : '绑定 eGate 后自动启用',
         style: theme.textTheme.bodySmall,
       ),
-      trailing: loggedIn
+      trailing: bound
           ? Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 20)
           : const Icon(Icons.chevron_right),
-      onTap: loggedIn ? null : () => unawaited(presentLoginPage(context)),
+      onTap: bound
+          ? null
+          : () => unawaited(
+              Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      const ThirdPartyBindPage(platform: ThirdPartyPlatform.egate),
+                ),
+              ),
+            ),
     );
   }
 }
