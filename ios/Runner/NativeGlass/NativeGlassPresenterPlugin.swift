@@ -1,22 +1,48 @@
 import Flutter
+import QuartzCore
 import SwiftUI
 import UIKit
 
-final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin {
+final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecognizerDelegate {
   private static let channelName = "techpie/native_glass_presenter"
+  private static let pageTransitionChannelName = "techpie/native_page_transition"
   private let channel: FlutterMethodChannel
+  private let pageTransitionChannel: FlutterMethodChannel
+  private var pageTransitionSource: UIImageView?
+  private weak var pageTransitionRootView: UIView?
+  private weak var pageTransitionWindow: UIWindow?
+  private var pageTransitionDirection = "push"
+  private var pageTransitionAnimating = false
+  private var pageBackSnapshots: [UIImage] = []
+  private weak var interactivePopGestureWindow: UIWindow?
+  private var interactivePopGesture: UIPanGestureRecognizer?
+  private var interactivePopSource: UIImageView?
+  private var interactivePopDestination: UIImageView?
+  private var interactivePopFrame = CGRect.zero
+  private var interactivePopProgress: CGFloat = 0
 
   static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
       name: channelName,
       binaryMessenger: registrar.messenger()
     )
-    let instance = NativeGlassPresenterPlugin(channel: channel)
+    let pageTransitionChannel = FlutterMethodChannel(
+      name: pageTransitionChannelName,
+      binaryMessenger: registrar.messenger()
+    )
+    let instance = NativeGlassPresenterPlugin(
+      channel: channel,
+      pageTransitionChannel: pageTransitionChannel
+    )
     registrar.addMethodCallDelegate(instance, channel: channel)
   }
 
-  init(channel: FlutterMethodChannel) {
+  init(
+    channel: FlutterMethodChannel,
+    pageTransitionChannel: FlutterMethodChannel
+  ) {
     self.channel = channel
+    self.pageTransitionChannel = pageTransitionChannel
     super.init()
   }
 
@@ -38,9 +64,316 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin {
     case "presentLoginSheet":
       let arguments = call.arguments as? [String: Any] ?? [:]
       presentLoginSheet(arguments: arguments, result: result)
+    case "beginPageTransition":
+      let arguments = call.arguments as? [String: Any] ?? [:]
+      beginPageTransition(arguments: arguments, result: result)
+    case "finishPageTransition":
+      finishPageTransition(result: result)
+    case "cancelPageTransition":
+      cancelPageTransition()
+      result(nil)
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  private func beginPageTransition(
+    arguments: [String: Any],
+    result: FlutterResult
+  ) {
+    guard !pageTransitionAnimating, interactivePopSource == nil else {
+      result(
+        FlutterError(
+          code: "transition_in_progress",
+          message: "A page transition is already in progress.",
+          details: nil
+        )
+      )
+      return
+    }
+
+    cancelPageTransition()
+
+    guard
+      let window = keyWindow(),
+      let rootView = window.rootViewController?.view,
+      let direction = arguments["direction"] as? String,
+      let source = makePageSnapshot(of: rootView)
+    else {
+      result(
+        FlutterError(
+          code: "no_root_view",
+          message: "Unable to find the root view for the page transition.",
+          details: nil
+        )
+      )
+      return
+    }
+
+    source.frame = rootView.convert(rootView.bounds, to: window)
+    source.clipsToBounds = true
+    source.isUserInteractionEnabled = true
+    window.addSubview(source)
+
+    pageTransitionSource = source
+    pageTransitionRootView = rootView
+    pageTransitionWindow = window
+    pageTransitionDirection = direction
+    result(nil)
+  }
+
+  private func finishPageTransition(result: FlutterResult) {
+    guard
+      let source = pageTransitionSource,
+      let rootView = pageTransitionRootView,
+      let window = pageTransitionWindow,
+      let destination = makePageSnapshot(of: rootView)
+    else {
+      cancelPageTransition()
+      result(nil)
+      return
+    }
+
+    let frame = rootView.convert(rootView.bounds, to: window)
+    let width = frame.width
+    let isPop = pageTransitionDirection == "pop"
+
+    destination.frame = frame
+    destination.clipsToBounds = true
+    destination.isUserInteractionEnabled = true
+
+    if isPop {
+      destination.frame.origin.x = frame.minX - width / 3
+      source.layer.shadowColor = UIColor.black.cgColor
+      source.layer.shadowOpacity = 0.2
+      source.layer.shadowRadius = 12
+      source.layer.shadowOffset = CGSize(width: -4, height: 0)
+      window.insertSubview(destination, belowSubview: source)
+    } else {
+      destination.frame.origin.x = frame.maxX
+      destination.layer.shadowColor = UIColor.black.cgColor
+      destination.layer.shadowOpacity = 0.2
+      destination.layer.shadowRadius = 12
+      destination.layer.shadowOffset = CGSize(width: -4, height: 0)
+      window.insertSubview(destination, aboveSubview: source)
+    }
+
+    if isPop {
+      if !pageBackSnapshots.isEmpty {
+        pageBackSnapshots.removeLast()
+      }
+    } else if let sourceImage = source.image {
+      pageBackSnapshots.append(sourceImage)
+      installInteractivePopGesture(in: window)
+    }
+
+    pageTransitionSource = nil
+    pageTransitionRootView = nil
+    pageTransitionWindow = nil
+    pageTransitionAnimating = true
+
+    UIView.animate(
+      withDuration: 0.3,
+      delay: 0,
+      options: [.curveEaseInOut, .beginFromCurrentState]
+    ) {
+      source.frame.origin.x = isPop ? frame.maxX : frame.minX - width / 3
+      destination.frame = frame
+    } completion: { [weak self] _ in
+      source.removeFromSuperview()
+      destination.removeFromSuperview()
+      self?.pageTransitionAnimating = false
+    }
+
+    result(nil)
+  }
+
+  private func cancelPageTransition() {
+    pageTransitionSource?.removeFromSuperview()
+    pageTransitionSource = nil
+    pageTransitionRootView = nil
+    pageTransitionWindow = nil
+  }
+
+  private func makePageSnapshot(of view: UIView) -> UIImageView? {
+    guard !view.bounds.isEmpty else { return nil }
+
+    let format = UIGraphicsImageRendererFormat.preferred()
+    format.opaque = false
+    let renderer = UIGraphicsImageRenderer(bounds: view.bounds, format: format)
+    let image = renderer.image { context in
+      if !view.drawHierarchy(in: view.bounds, afterScreenUpdates: true) {
+        view.layer.render(in: context.cgContext)
+      }
+    }
+
+    let imageView = UIImageView(image: image)
+    imageView.contentMode = .scaleToFill
+    return imageView
+  }
+
+  private func installInteractivePopGesture(in window: UIWindow) {
+    if interactivePopGestureWindow === window, interactivePopGesture != nil {
+      return
+    }
+
+    if let gesture = interactivePopGesture {
+      interactivePopGestureWindow?.removeGestureRecognizer(gesture)
+    }
+
+    let gesture = UIPanGestureRecognizer(
+      target: self,
+      action: #selector(handleInteractivePopGesture(_:))
+    )
+    gesture.delegate = self
+    gesture.cancelsTouchesInView = true
+    window.addGestureRecognizer(gesture)
+    interactivePopGesture = gesture
+    interactivePopGestureWindow = window
+  }
+
+  @objc private func handleInteractivePopGesture(
+    _ gesture: UIPanGestureRecognizer
+  ) {
+    switch gesture.state {
+    case .began:
+      beginInteractivePop(gesture)
+    case .changed:
+      guard interactivePopSource != nil else { return }
+      let width = max(interactivePopFrame.width, 1)
+      let progress = min(max(gesture.translation(in: gesture.view).x / width, 0), 1)
+      updateInteractivePop(progress: progress)
+    case .ended:
+      guard interactivePopSource != nil else { return }
+      let velocity = gesture.velocity(in: gesture.view).x
+      settleInteractivePop(completes: interactivePopProgress > 0.5 || velocity > 700)
+    case .cancelled, .failed:
+      guard interactivePopSource != nil else { return }
+      settleInteractivePop(completes: false)
+    default:
+      break
+    }
+  }
+
+  func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    guard
+      let gesture = gestureRecognizer as? UIPanGestureRecognizer,
+      gesture === interactivePopGesture,
+      let view = gesture.view,
+      !pageTransitionAnimating,
+      pageTransitionSource == nil,
+      interactivePopSource == nil,
+      !pageBackSnapshots.isEmpty
+    else { return false }
+
+    let startX = gesture.location(in: view).x - gesture.translation(in: view).x
+    let velocity = gesture.velocity(in: view)
+    return startX <= 24 && velocity.x > 0 && abs(velocity.x) > abs(velocity.y)
+  }
+
+  private func beginInteractivePop(_ gesture: UIPanGestureRecognizer) {
+    guard
+      !pageTransitionAnimating,
+      pageTransitionSource == nil,
+      interactivePopSource == nil,
+      let previousImage = pageBackSnapshots.last,
+      let window = gesture.view as? UIWindow ?? keyWindow(),
+      let rootView = window.rootViewController?.view,
+      let source = makePageSnapshot(of: rootView)
+    else {
+      gesture.isEnabled = false
+      gesture.isEnabled = true
+      return
+    }
+
+    let frame = rootView.convert(rootView.bounds, to: window)
+    let destination = UIImageView(image: previousImage)
+    destination.contentMode = .scaleToFill
+    destination.clipsToBounds = true
+    destination.isUserInteractionEnabled = true
+    source.clipsToBounds = true
+    source.isUserInteractionEnabled = true
+
+    destination.frame = frame
+    source.frame = frame
+    source.layer.shadowColor = UIColor.black.cgColor
+    source.layer.shadowOpacity = 0.2
+    source.layer.shadowRadius = 12
+    source.layer.shadowOffset = CGSize(width: -4, height: 0)
+
+    window.addSubview(destination)
+    window.addSubview(source)
+
+    interactivePopSource = source
+    interactivePopDestination = destination
+    interactivePopFrame = frame
+    updateInteractivePop(progress: 0)
+  }
+
+  private func updateInteractivePop(progress: CGFloat) {
+    guard
+      let source = interactivePopSource,
+      let destination = interactivePopDestination
+    else { return }
+
+    let normalizedProgress = min(max(progress, 0), 1)
+    let width = interactivePopFrame.width
+    source.frame.origin.x = interactivePopFrame.minX + width * normalizedProgress
+    destination.frame.origin.x = interactivePopFrame.minX - width / 3
+      + width / 3 * normalizedProgress
+    interactivePopProgress = normalizedProgress
+  }
+
+  private func settleInteractivePop(completes: Bool) {
+    pageTransitionAnimating = true
+    let remainingProgress = completes
+      ? 1 - interactivePopProgress
+      : interactivePopProgress
+    let duration = max(0.12, 0.28 * Double(remainingProgress))
+
+    UIView.animate(
+      withDuration: duration,
+      delay: 0,
+      options: [.curveEaseOut, .beginFromCurrentState]
+    ) { [weak self] in
+      self?.updateInteractivePop(progress: completes ? 1 : 0)
+    } completion: { [weak self] _ in
+      guard let self else { return }
+      if completes {
+        self.requestFlutterInteractivePop()
+      } else {
+        self.cleanupInteractivePop()
+      }
+    }
+  }
+
+  private func requestFlutterInteractivePop() {
+    pageTransitionChannel.invokeMethod(
+      "interactivePop",
+      arguments: nil
+    ) { [weak self] response in
+      guard let self else { return }
+      let didPop = (response as? NSNumber)?.boolValue ?? false
+
+      if didPop {
+        if !self.pageBackSnapshots.isEmpty {
+          self.pageBackSnapshots.removeLast()
+        }
+        self.cleanupInteractivePop()
+      } else {
+        self.settleInteractivePop(completes: false)
+      }
+    }
+  }
+
+  private func cleanupInteractivePop() {
+    interactivePopSource?.removeFromSuperview()
+    interactivePopDestination?.removeFromSuperview()
+    interactivePopSource = nil
+    interactivePopDestination = nil
+    interactivePopFrame = .zero
+    interactivePopProgress = 0
+    pageTransitionAnimating = false
   }
 
   private func showAlert(arguments: [String: Any], result: @escaping FlutterResult) {
@@ -161,22 +494,21 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin {
   }
 
   private func topViewController() -> UIViewController? {
-    let scenes = UIApplication.shared.connectedScenes
-      .compactMap { $0 as? UIWindowScene }
-      .filter { $0.activationState == .foregroundActive }
-
-    let keyWindow =
-      scenes
-      .flatMap(\.windows)
-      .first(where: \.isKeyWindow)
-
-    var topController = keyWindow?.rootViewController
+    var topController = keyWindow()?.rootViewController
 
     while let presented = topController?.presentedViewController {
       topController = presented
     }
 
     return topController
+  }
+
+  private func keyWindow() -> UIWindow? {
+    UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .filter { $0.activationState == .foregroundActive }
+      .flatMap(\.windows)
+      .first(where: \.isKeyWindow)
   }
 }
 

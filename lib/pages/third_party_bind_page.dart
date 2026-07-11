@@ -14,6 +14,7 @@ import '../widgets/ios_liquid/ios_glass_switch.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 import '../widgets/ios_liquid/ios_native_text_field_group.dart';
 import '../widgets/ios_liquid/ios_native_text_view.dart';
+import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 
 class ThirdPartyBindPage extends StatefulWidget {
   final ThirdPartyPlatform platform;
@@ -97,7 +98,6 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     setState(() => _busy = true);
 
     final tpAuth = ServiceProvider.of(context).thirdPartyAuthService;
-    final navigator = Navigator.of(context);
 
     List<String>? domains;
     if (_isHydro) {
@@ -128,7 +128,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
           style: AdaptiveFeedbackStyle.success,
         );
       }
-      navigator.pop();
+      await maybePopPlatformViewPage<void>(context);
     } on ThirdPartyBindException catch (e) {
       if (!mounted) return;
       if (isIos()) {
@@ -331,7 +331,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
         ],
         onItemPressed: (id) {
           if (id == 'back') {
-            unawaited(Navigator.maybePop(context));
+            unawaited(maybePopPlatformViewPage<void>(context));
           }
         },
       ),
