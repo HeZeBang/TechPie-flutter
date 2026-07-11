@@ -173,7 +173,7 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
     pageTransitionAnimating = true
 
     UIView.animate(
-      withDuration: 0.3,
+      withDuration: 0.12,
       delay: 0,
       options: [.curveEaseInOut, .beginFromCurrentState]
     ) {
