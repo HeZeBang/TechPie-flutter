@@ -36,6 +36,7 @@ class _SchedulePageState extends State<SchedulePage> {
   int _currentWeek = 1;
   bool _initialized = false;
   bool _exportingCalendar = false;
+  bool _subscribingCalendar = false;
 
   // Settings
   bool _showSaturday = true;
@@ -350,6 +351,197 @@ class _SchedulePageState extends State<SchedulePage> {
     unawaited(_exportCalendar());
   }
 
+  void _startSubscribeCalendar() {
+    if (_subscribingCalendar) return;
+    unawaited(_confirmAndSubscribeCalendar());
+  }
+
+  Future<void> _confirmAndSubscribeCalendar() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        var credentialStorageAgreed = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('创建日历订阅'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('如果你之前已经订阅过该学期，之前的订阅链接将会失效。'),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    value: credentialStorageAgreed,
+                    onChanged: (value) {
+                      setDialogState(() {
+                        credentialStorageAgreed = value ?? false;
+                      });
+                    },
+                    title: Text(
+                      '您理解并同意：订阅日历时，您的登录凭据将会被加密存储到服务器内，并用于课表订阅服务',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: credentialStorageAgreed
+                      ? () => Navigator.of(dialogContext).pop(true)
+                      : null,
+                  child: const Text('确定'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+    await _subscribeCalendar();
+  }
+
+  Future<void> _subscribeCalendar() async {
+    if (_subscribingCalendar) return;
+
+    setState(() {
+      _subscribingCalendar = true;
+    });
+
+    try {
+      final semesterId = _schedule.selectedSemesterId;
+      if (semesterId == null || semesterId.isEmpty) {
+        throw Exception('Missing semesterId');
+      }
+      final auth = ServiceProvider.of(context).authService;
+      final result = await auth.createCalendarSubscription(
+        semesterId: semesterId,
+      );
+
+      final data = result['data'] as Map<String, dynamic>?;
+      final subscribeUrl = data?['subscribeUrl'] as String?;
+      if (!mounted) return;
+      if (subscribeUrl?.isNotEmpty == true) {
+        if (isIos() && await _openIosCalendarSubscription(subscribeUrl!)) {
+          if (!mounted) return;
+          showAdaptiveFeedback(
+            context: context,
+            message: '已打开系统日历订阅',
+            style: AdaptiveFeedbackStyle.success,
+          );
+          return;
+        }
+        await _copyCalendarSubscriptionUrl(subscribeUrl!);
+        return;
+      }
+
+      showAdaptiveFeedback(
+        context: context,
+        message: '日历订阅已创建',
+        style: AdaptiveFeedbackStyle.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '创建日历订阅失败',
+        style: AdaptiveFeedbackStyle.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _subscribingCalendar = false;
+        });
+      }
+    }
+  }
+
+  Future<bool> _openIosCalendarSubscription(String subscribeUrl) async {
+    final uri = Uri.tryParse(subscribeUrl);
+    if (uri == null) return false;
+
+    final calendarUri = uri.scheme == 'https' || uri.scheme == 'http'
+        ? uri.replace(scheme: 'webcal')
+        : uri;
+
+    try {
+      return launchUrl(calendarUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _copyCalendarSubscriptionUrl(String subscribeUrl) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: subscribeUrl));
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '日历订阅链接已复制到剪贴板',
+        style: AdaptiveFeedbackStyle.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '无法自动复制，请手动复制订阅链接',
+        style: AdaptiveFeedbackStyle.info,
+      );
+      await _showManualCalendarSubscriptionCopy(subscribeUrl);
+    }
+  }
+
+  Future<void> _showManualCalendarSubscriptionCopy(String subscribeUrl) async {
+    final controller = TextEditingController(text: subscribeUrl);
+    final focusNode = FocusNode();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('手动复制订阅链接'),
+            content: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              readOnly: true,
+              autofocus: false,
+              showCursor: false,
+              keyboardType: TextInputType.none,
+              enableInteractiveSelection: true,
+              maxLines: 3,
+              minLines: 1,
+              decoration: const InputDecoration(
+                labelText: '订阅链接',
+                border: OutlineInputBorder(),
+              ),
+              onTap: () {
+                unawaited(_dismissKeyboard());
+              },
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('完成'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      focusNode.dispose();
+      controller.dispose();
+    }
+  }
+
   Future<SavedIcsFile> _saveCalendarFile(
     IcsSaveLocation location, {
     required String calendarName,
@@ -601,6 +793,13 @@ class _SchedulePageState extends State<SchedulePage> {
                               ? 'arrow.triangle.2.circlepath'
                               : 'square.and.arrow.up',
                         ),
+                        IosNativeNavigationBarMenuItem(
+                          value: 'subscribeCalendar',
+                          title: _subscribingCalendar ? '正在创建订阅…' : '订阅日历',
+                          sfSymbol: _subscribingCalendar
+                              ? 'arrow.triangle.2.circlepath'
+                              : 'calendar.badge.plus',
+                        ),
                       ],
                     ),
                   ],
@@ -665,17 +864,6 @@ class _SchedulePageState extends State<SchedulePage> {
                   tooltip: 'Next week',
                   onPressed: _nextWeek,
                 ),
-                IconButton(
-                  tooltip: _exportingCalendar ? '正在导出课表' : '导出课表',
-                  onPressed: _exportingCalendar ? null : _startExportCalendar,
-                  icon: _exportingCalendar
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.ios_share_rounded),
-                ),
                 if (isDesktopLayout(context))
                   IconButton(
                     key: _viewSettingsAnchorKey,
@@ -707,6 +895,19 @@ class _SchedulePageState extends State<SchedulePage> {
                         value: 'ghost',
                         checked: _showGhostCourses,
                         child: const Text('显示非本周课程'),
+                      ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'exportCalendar',
+                        enabled: !_exportingCalendar,
+                        child: Text(_exportingCalendar ? '正在导出…' : '导出课表'),
+                      ),
+                      PopupMenuItem(
+                        value: 'subscribeCalendar',
+                        enabled: !_subscribingCalendar,
+                        child: Text(
+                          _subscribingCalendar ? '正在创建订阅…' : '订阅日历',
+                        ),
                       ),
                     ],
                   ),
@@ -884,6 +1085,8 @@ class _SchedulePageState extends State<SchedulePage> {
         });
       case 'exportCalendar':
         _startExportCalendar();
+      case 'subscribeCalendar':
+        _startSubscribeCalendar();
     }
   }
 
@@ -967,6 +1170,22 @@ class _SchedulePageState extends State<SchedulePage> {
                         : () {
                             close();
                             _startExportCalendar();
+                          },
+                  ),
+                  DesktopMenuRow(
+                    leading: _subscribingCalendar
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.calendar_month_outlined, size: 20),
+                    title: Text('订阅日历', style: theme.textTheme.bodyMedium),
+                    onTap: _subscribingCalendar
+                        ? null
+                        : () {
+                            close();
+                            _startSubscribeCalendar();
                           },
                   ),
                 ],

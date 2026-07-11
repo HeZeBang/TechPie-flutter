@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import '../models/user_session.dart';
 import 'api_base_url.dart';
@@ -79,6 +80,53 @@ class AuthService extends ChangeNotifier {
     } catch (_) {
       return false;
     }
+  }
+
+  Future<Map<String, dynamic>> createCalendarSubscription({
+    required String semesterId,
+  }) async {
+    final session = _session;
+    if (session == null) {
+      throw Exception('Not logged in');
+    }
+    if (semesterId.isEmpty) {
+      throw Exception('Missing semesterId');
+    }
+
+    Future<http.Response> postCreate() {
+      final currentSession = _session!;
+      return _http.post(
+        Uri.parse('$_baseUrl/calendar/create'),
+        headers: _jsonHeaders(),
+        body: jsonEncode({
+          'studentId': currentSession.studentId.isNotEmpty
+              ? currentSession.studentId
+              : currentSession.userId,
+          'semesterId': semesterId,
+          'tgc': currentSession.tgc,
+          'sessionToken': currentSession.sessionToken,
+          'tenantId': currentSession.tenantId,
+          'userId': currentSession.userId,
+          'cookies': currentSession.cookies,
+        }),
+        tag: 'createCalendarSubscription',
+      );
+    }
+
+    var resp = await postCreate();
+    if (resp.statusCode == 401 && await tryRenewSession()) {
+      resp = await postCreate();
+    }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (resp.statusCode != 200 || data['success'] != true) {
+      throw Exception(
+        data['error'] as String? ??
+            'Request failed with status ${resp.statusCode}',
+      );
+    }
+
+    return data;
   }
 
   // -- SMS Login Flow --
