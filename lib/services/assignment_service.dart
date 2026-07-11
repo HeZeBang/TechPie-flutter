@@ -14,6 +14,7 @@ import 'http_client.dart';
 import 'schedule_service.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
+import 'widget_sync_service.dart';
 
 class AssignmentService extends ChangeNotifier {
   final StorageService _storage;
@@ -91,6 +92,7 @@ class AssignmentService extends ChangeNotifier {
     _error = null;
     await _storage.clearCachedAssignments();
     notifyListeners();
+    _syncWidget();
   }
 
   /// Hydrate from local cache so the UI doesn't flash empty on app start
@@ -100,17 +102,21 @@ class AssignmentService extends ChangeNotifier {
     final raw = _storage.loadCachedAssignments();
     if (raw.isEmpty) {
       notifyListeners();
+      _syncWidget();
       return;
     }
     _assignments = raw.map((e) => Assignment.fromJson(e)).toList()
       ..sort((a, b) => a.due.compareTo(b.due));
+    _syncWidget();
     notifyListeners();
   }
 
   // -- Override mutators --
 
-  Future<void> _persistOverrides() =>
-      _storage.saveAssignmentOverrides(_overrides);
+  Future<void> _persistOverrides() async {
+    await _storage.saveAssignmentOverrides(_overrides);
+    _syncWidget();
+  }
 
   Future<void> setCompleted(Assignment a, bool completed) async {
     _overrides.completed[AssignmentOverrides.keyFor(a)] = completed;
@@ -221,6 +227,7 @@ class AssignmentService extends ChangeNotifier {
       await _storage.saveCachedAssignments(
         merged.map((a) => a.toJson()).toList(),
       );
+      _syncWidget();
     } catch (e) {
       _error = '同步失败，请检查网络或稍后重试';
     } finally {
@@ -289,6 +296,7 @@ class AssignmentService extends ChangeNotifier {
         await _storage.saveCachedAssignments(
           merged.map((a) => a.toJson()).toList(),
         );
+        _syncWidget();
       } catch (e) {
         _error = e.toString();
       }
@@ -566,5 +574,12 @@ class AssignmentService extends ChangeNotifier {
     return tgc.isNotEmpty
         ? (baseCookies.isNotEmpty ? '$baseCookies; CASTGC=$tgc' : 'CASTGC=$tgc')
         : baseCookies;
+  }
+
+  void _syncWidget() {
+    unawaited(
+      WidgetSyncService.syncAssignments(_assignments, _overrides)
+          .catchError((_) {}),
+    );
   }
 }
