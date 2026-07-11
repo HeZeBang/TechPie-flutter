@@ -10,6 +10,7 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_glass_confirmation_button.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 import 'login_page.dart';
 import 'third_party_bind_page.dart';
 
@@ -44,7 +45,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
               ],
               onItemPressed: (id) {
                 if (id == 'back') {
-                  unawaited(Navigator.maybePop(context));
+                  unawaited(maybePopPlatformViewPage<void>(context));
                 }
               },
             )
@@ -133,11 +134,9 @@ class _ThirdPartyTile extends StatelessWidget {
         subtitle: const Text('未绑定'),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => unawaited(
-          Navigator.push(
+          pushPlatformViewPage<void>(
             context,
-            MaterialPageRoute<void>(
-              builder: (_) => ThirdPartyBindPage(platform: platform),
-            ),
+            builder: (_) => ThirdPartyBindPage(platform: platform),
           ),
         ),
       );
