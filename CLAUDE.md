@@ -47,12 +47,21 @@ flutter test test/assignment_service_test.dart   # single test
 All services are created in `main.dart`, wired together manually (no DI framework), and provided to the widget tree via a single `ServiceProvider` (InheritedWidget). Access with `ServiceProvider.of(context)`.
 
 Key services:
-- **AuthService** — eGate + SMS login flows, session renewal, logout cascade
-- **ScheduleService** — semester list, course table, term-begin date; auto-retries with token renewal on 401
-- **AssignmentService** — aggregates deadlines from Blackboard (via eGate session), Gradescope, and Hydro (third-party tokens); merges per-platform results so a single platform failure doesn't wipe others
-- **ThirdPartyAuthService** — bind/unbind/auto-renew for Gradescope and Hydro accounts
+- **AuthService** — primary account ONLY: GeekPie Uni-Auth (Casdoor) SSO login via `UniAuthService`, SSO token refresh, logout cascade. Owns the SSO identity session (`UserSession` with `geekpieToken`/`geekpieRefreshToken`). It deliberately knows nothing about CASTGC/CpDaily — `UserSession` has no `tgc`/`cookies`/`sessionToken`/`tenantId` fields.
+- **UniAuthService** — Casdoor OAuth: `login()`/`loginSdkOnly()` exchange an authorization code for an `SsoTokens` bundle (access + refresh + expiry); `refresh()` rotates them.
+- **ScheduleService** — semester list, course table, term-begin date; CpDaily cookies from the eGate binding (`ThirdPartyAuthService.egateCookies()`); auto-retries with `renewEgateBinding()` on 401
+- **AssignmentService** — aggregates deadlines from Blackboard + exam table (both via the eGate binding's CpDaily session), Gradescope, and Hydro (third-party tokens); merges per-platform results so a single platform failure doesn't wipe others
+- **ThirdPartyAuthService** — bind/unbind/auto-renew for Gradescope, Hydro, **and eGate**. The eGate binding (`ThirdPartyPlatform.egate`) is the SINGLE source of CASTGC / CpDaily session in the app: `hasEgateBinding`, `egateBinding`, `egateCookies()` (always appends `CASTGC=<tgc>`), `egateStudentId`, `renewEgateBinding()` (renews via `/api/auth/renew` and persists back). Every campus-system feature (schedule, blackboard, exam, oa-gym, ecourse/student-leave webviews) reads its CpDaily session through these accessors, never from `AuthService.session`.
 - **StorageService** — wraps `FlutterSecureStorage` (credentials) + `SharedPreferences` (caches, settings). **Important:** imports `flutter_secure_storage_ohos` (a hard fork), NOT the upstream `flutter_secure_storage` facade
 - **ThemeService** — Material dynamic color, theme mode persistence
+
+### Auth model boundary (important)
+
+There are two distinct account tiers — do not cross them:
+- **Primary account** = GeekPie SSO (Casdoor). Determines `auth.isLoggedIn` and user identity (userName). Produces NO CASTGC.
+- **eGate binding** = a third-party account that holds the campus CpDaily session (CASTGC). Required by every campus-system feature. A user can be SSO-logged-in but have no eGate binding — such a user is "logged in" but cannot use schedule/blackboard/exam/gym/webview features until they bind eGate.
+
+CASTGC must never be read off `AuthService.session`. Always go through `ThirdPartyAuthService.egateCookies()` / `egateStudentId` / `renewEgateBinding()`.
 
 ### Boot sequence (`main.dart`)
 
@@ -70,7 +79,7 @@ iOS Liquid Glass (iOS 26+) vs legacy iOS chrome is detected at boot via a Method
 
 ### Features / WebView (`lib/models/feature.dart`)
 
-Campus web services (ecourse, student leave, etc.) are opened in an in-app WebView with injected CASTGC cookies from the eGate session. The `Feature` model declares `FeatureMode.native` vs `FeatureMode.webviewWithCookie`.
+Campus web services (ecourse, student leave, etc.) are opened in an in-app WebView with injected CASTGC cookies sourced from the eGate binding (`ThirdPartyAuthService.egateCookies()`). The `Feature` model declares `FeatureMode.native` vs `FeatureMode.webviewWithCookie`.
 
 ## OHOS-Specific Gotchas
 

@@ -28,14 +28,14 @@ void main() {
     final storage = StorageService(prefs);
     final logger = DebugLogger();
     final http = LoggingHttpClient(logger);
-    final auth = AuthService(storage, http);
+    final uniAuth = UniAuthService();
+    final auth = AuthService(storage, http, uniAuth);
     final theme = ThemeService(storage);
     final tpAuth = ThirdPartyAuthService(storage, http);
     final schedule = ScheduleService(storage, http, auth, tpAuth);
     final assignments =
         AssignmentService(storage, http, auth, tpAuth, schedule);
-    final oaGym = OaGymService(auth, storage);
-    final uniAuth = UniAuthService();
+    final oaGym = OaGymService(auth, storage, tpAuth);
 
     await tester.pumpWidget(
       TechPieApp(
@@ -69,13 +69,13 @@ void main() {
     final storage = StorageService(prefs);
     final logger = DebugLogger();
     final http = LoggingHttpClient(logger);
-    final auth = AuthService(storage, http);
+    final uniAuth = UniAuthService();
+    final auth = AuthService(storage, http, uniAuth);
     final tpAuth = ThirdPartyAuthService(storage, http);
     final schedule = ScheduleService(storage, http, auth, tpAuth);
     final assignments =
         AssignmentService(storage, http, auth, tpAuth, schedule);
-    final oaGym = OaGymService(auth, storage);
-    final uniAuth = UniAuthService();
+    final oaGym = OaGymService(auth, storage, tpAuth);
 
     await tester.pumpWidget(
       TechPieApp(

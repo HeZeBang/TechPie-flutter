@@ -34,6 +34,84 @@ class ThirdPartyAuthService extends ChangeNotifier {
   Iterable<ThirdPartyAccount> get accounts => _accounts.values;
   ThirdPartyAccount? account(ThirdPartyPlatform p) => _accounts[p];
 
+  // -- eGate binding (single source of CASTGC / CpDaily session) --
+  //
+  // The eGate binding is the ONLY place CASTGC lives in the new architecture.
+  // The primary GeekPie SSO session has no tgc/cookies; every campus-system
+  // feature (schedule, blackboard, exam, oa-gym, webview features) must read
+  // its CpDaily session through these accessors instead of touching
+  // `AuthService.session` fields directly.
+
+  /// True when an eGate / IDS binding exists. This is the gate every
+  /// CASTGC-dependent feature must check before doing work.
+  bool get hasEgateBinding => _accounts[ThirdPartyPlatform.egate] != null;
+
+  /// The bound eGate account, or null.
+  ThirdPartyAccount? get egateBinding => _accounts[ThirdPartyPlatform.egate];
+
+  /// Cookie string for campus-system requests, always ending with
+  /// `CASTGC=<tgc>` when a tgc is present (the form CpDaily/EAMS expects).
+  /// Returns '' when there is no binding or no tgc — callers should treat
+  /// that as "session unavailable".
+  String egateCookies() {
+    final acc = _accounts[ThirdPartyPlatform.egate];
+    if (acc == null) return '';
+    final raw = acc.raw;
+    final baseCookies = (raw['cookies'] as String?) ?? '';
+    final tgc = (raw['tgc'] as String?) ?? '';
+    return tgc.isEmpty
+        ? baseCookies
+        : (baseCookies.isNotEmpty
+            ? '$baseCookies; CASTGC=$tgc'
+            : 'CASTGC=$tgc');
+  }
+
+  /// Student id surfaced by the eGate binding, or '' if unbound.
+  String get egateStudentId =>
+      _accounts[ThirdPartyPlatform.egate]?.sid ?? '';
+
+  /// Best-effort renewal of the eGate binding's CpDaily session via
+  /// `/api/auth/renew`. On success the refreshed raw data is persisted back
+  /// into the binding and listeners are notified. Returns true on success.
+  Future<bool> renewEgateBinding() async {
+    final acc = _accounts[ThirdPartyPlatform.egate];
+    if (acc == null) return false;
+    try {
+      final resp = await _http.post(
+        Uri.parse('$_baseUrl/auth/renew'),
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: jsonEncode({
+          'sessionToken': acc.raw['sessionToken'] ?? '',
+          'tgc': acc.raw['tgc'] ?? '',
+          'userId': acc.raw['userId'] ?? '',
+          'tenantId': acc.raw['tenantId'] ?? '',
+        }),
+        tag: 'egateCpDailyRenew',
+      );
+
+      if (resp.statusCode != 200) return false;
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      if (data['success'] != true) return false;
+
+      await updateRaw(
+        ThirdPartyPlatform.egate,
+        {
+          ...acc.raw,
+          'sessionToken':
+              data['sessionToken'] as String? ?? acc.raw['sessionToken'] ?? '',
+          'tgc': data['tgc'] as String? ?? acc.raw['tgc'] ?? '',
+          'userId': data['userId'] as String? ?? acc.raw['userId'] ?? '',
+          'tenantId':
+              data['tenantId'] as String? ?? acc.raw['tenantId'] ?? '',
+          'cookies': data['cookies'] as String? ?? acc.raw['cookies'] ?? '',
+        },
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> initialize() async {
     final loaded = await _storage.loadAllThirdPartyAccounts();
     _accounts

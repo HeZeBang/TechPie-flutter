@@ -15,6 +15,27 @@ const String _uniAuthRedirectUri = 'techpie://auth-callback';
 const String _uniAuthCallbackScheme = 'techpie';
 
 // ---------------------------------------------------------------------------
+// SSO token bundle
+// ---------------------------------------------------------------------------
+
+/// Result of exchanging an OAuth `code` with Casdoor: the access token used to
+/// authenticate against the TechPie backend (`/auth/geekpie`) plus the refresh
+/// token + expiry needed to renew it later without re-prompting the user.
+class SsoTokens {
+  final String accessToken;
+  final String? refreshToken;
+  final String? expiresAt;
+
+  const SsoTokens({
+    required this.accessToken,
+    this.refreshToken,
+    this.expiresAt,
+  });
+
+  bool get isEmpty => accessToken.isEmpty;
+}
+
+// ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
 
@@ -43,8 +64,9 @@ class UniAuthService extends ChangeNotifier {
   }
 
   /// Open the GeekPie Uni-Auth login page in an in-app WebView.
-  /// Requires a BuildContext for the full-screen presentation.
-  Future<String> login(BuildContext context) async {
+  /// Requires a BuildContext for the full-screen presentation. Returns the
+  /// full token bundle (access + refresh + expiry).
+  Future<SsoTokens> login(BuildContext context) async {
     _loading = true;
     notifyListeners();
     try {
@@ -54,20 +76,7 @@ class UniAuthService extends ChangeNotifier {
       if (code.isEmpty) {
         throw Exception('Login cancelled or failed');
       }
-
-      // Exchange authorization code for JWT token.
-      final resp = await casdoor.requestOauthAccessToken(code);
-      if (resp.statusCode != 200) {
-        throw Exception('Token exchange failed (${resp.statusCode})');
-      }
-
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final accessToken = data['access_token'] as String?;
-      if (accessToken == null || accessToken.isEmpty) {
-        throw Exception(data['error_description'] ?? 'Token exchange failed');
-      }
-
-      return accessToken;
+      return _exchangeCode(casdoor, code);
     } finally {
       _loading = false;
       notifyListeners();
@@ -76,7 +85,7 @@ class UniAuthService extends ChangeNotifier {
 
   /// Open the GeekPie Uni-Auth login using a system browser (no BuildContext).
   /// Used by the native iOS liquid glass login sheet.
-  Future<String> loginSdkOnly() async {
+  Future<SsoTokens> loginSdkOnly() async {
     _loading = true;
     notifyListeners();
     try {
@@ -86,23 +95,31 @@ class UniAuthService extends ChangeNotifier {
       if (code.isEmpty) {
         throw Exception('Login cancelled or failed');
       }
-
-      final resp = await casdoor.requestOauthAccessToken(code);
-      if (resp.statusCode != 200) {
-        throw Exception('Token exchange failed (${resp.statusCode})');
-      }
-
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final accessToken = data['access_token'] as String?;
-      if (accessToken == null || accessToken.isEmpty) {
-        throw Exception(data['error_description'] ?? 'Token exchange failed');
-      }
-
-      return accessToken;
+      return _exchangeCode(casdoor, code);
     } finally {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  /// Exchange an authorization code for the SSO token bundle.
+  Future<SsoTokens> _exchangeCode(Casdoor casdoor, String code) async {
+    final resp = await casdoor.requestOauthAccessToken(code);
+    if (resp.statusCode != 200) {
+      throw Exception('Token exchange failed (${resp.statusCode})');
+    }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    final accessToken = data['access_token'] as String?;
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception(data['error_description'] ?? 'Token exchange failed');
+    }
+
+    return SsoTokens(
+      accessToken: accessToken,
+      refreshToken: data['refresh_token'] as String?,
+      expiresAt: data['expires_at'] as String?,
+    );
   }
 
   /// Pull the `code` query parameter out of the callback URL the SDK returns.
@@ -115,10 +132,12 @@ class UniAuthService extends ChangeNotifier {
     return uri.queryParameters['code'] ?? '';
   }
 
-  /// Refresh an existing JWT token.
-  Future<String> refreshToken(String refreshTokenValue) async {
+  /// Refresh an existing access token using [refreshToken]. Returns the new
+  /// token bundle (the refresh token may be rotated by Casdoor). Throws on
+  /// failure so the caller can fall back to prompting for re-login.
+  Future<SsoTokens> refresh(String refreshToken) async {
     final casdoor = _getCasdoor();
-    final resp = await casdoor.refreshToken(refreshTokenValue, null);
+    final resp = await casdoor.refreshToken(refreshToken, null);
     if (resp.statusCode != 200) {
       throw Exception('Token refresh failed (${resp.statusCode})');
     }
@@ -129,6 +148,12 @@ class UniAuthService extends ChangeNotifier {
       throw Exception(data['error_description'] ?? 'Token refresh failed');
     }
 
-    return accessToken;
+    return SsoTokens(
+      accessToken: accessToken,
+      // Casdoor may rotate the refresh token; keep the new one if present,
+      // otherwise reuse the one we just redeemed.
+      refreshToken: (data['refresh_token'] as String?) ?? refreshToken,
+      expiresAt: data['expires_at'] as String?,
+    );
   }
 }

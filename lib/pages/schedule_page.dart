@@ -541,7 +541,9 @@ class _SchedulePageState extends State<SchedulePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final today = DateTime.now();
-    final auth = ServiceProvider.of(context).authService;
+    final sp = ServiceProvider.of(context);
+    final auth = sp.authService;
+    final tpAuth = sp.thirdPartyAuthService;
     final actualCurrentWeek = _schedule.currentWeek().clamp(1, 25).toInt();
     final isViewingCurrentWeek = _currentWeek == actualCurrentWeek;
     final useIosChrome = isIos();
@@ -718,7 +720,7 @@ class _SchedulePageState extends State<SchedulePage> {
               ? 0
               : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top,
         ),
-        child: !auth.isLoggedIn
+        child: !auth.isLoggedIn || !tpAuth.hasEgateBinding
             ? Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -730,7 +732,7 @@ class _SchedulePageState extends State<SchedulePage> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      '登录以查看课表',
+                      auth.isLoggedIn ? '绑定 eGate 以查看课表' : '登录以查看课表',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),

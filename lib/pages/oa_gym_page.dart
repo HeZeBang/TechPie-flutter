@@ -9,6 +9,7 @@ import '../widgets/adaptive_feedback.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 import 'login_page.dart';
+import 'third_party_accounts_page.dart';
 
 class OaGymPage extends StatefulWidget {
   const OaGymPage({super.key});
@@ -34,14 +35,32 @@ class _OaGymPageState extends State<OaGymPage>
   }
 
   Future<void> _handleLogin() async {
+    final sp = ServiceProvider.of(context);
+    final alreadyLoggedIn = sp.authService.isLoggedIn;
     await presentLoginPage(context);
     if (!mounted) return;
+    // Already logged into the primary SSO account but missing the eGate
+    // binding — route the user to the third-party accounts page instead of
+    // re-showing the login sheet.
+    if (alreadyLoggedIn && sp.authService.isLoggedIn) {
+      unawaited(_openThirdPartyAccounts());
+    }
     setState(() {});
+  }
+
+  Future<void> _openThirdPartyAccounts() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const ThirdPartyAccountsPage(),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final auth = ServiceProvider.of(context).authService;
+    final sp = ServiceProvider.of(context);
+    final auth = sp.authService;
+    final tpAuth = sp.thirdPartyAuthService;
     final useIosChrome = isIos();
     final useLegacyIosChrome = usesLegacyIosChrome();
     final topInset = useIosChrome || useLegacyIosChrome
@@ -71,9 +90,10 @@ class _OaGymPageState extends State<OaGymPage>
             )
           : const BlurredAppBar(title: Text('场馆预约')),
       body: ListenableBuilder(
-        listenable: auth,
+        listenable: Listenable.merge([auth, tpAuth]),
         builder: (context, _) {
-          return auth.isLoggedIn
+          final ready = auth.isLoggedIn && tpAuth.hasEgateBinding;
+          return ready
               ? Column(
                   children: [
                     SizedBox(height: topInset),
@@ -122,19 +142,25 @@ class _OaGymPageState extends State<OaGymPage>
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              '需要先登录 TechPie',
+                              auth.isLoggedIn
+                                  ? '需要绑定 eGate 账号'
+                                  : '需要先登录 TechPie',
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              '场馆预约会复用你的主账号 CASTGC 登录态，不需要单独保存 OA 密码。',
+                              auth.isLoggedIn
+                                  ? '场馆预约复用 eGate 绑定的校园网登录态，请在「第三方账号」中绑定 eGate 后再使用。'
+                                  : '场馆预约复用 eGate 绑定的校园网登录态，不需要单独保存 OA 密码。',
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                             const SizedBox(height: 16),
                             FilledButton.icon(
                               onPressed: _handleLogin,
                               icon: const Icon(Icons.login),
-                              label: const Text('去登录'),
+                              label: Text(
+                                auth.isLoggedIn ? '去绑定 eGate' : '去登录',
+                              ),
                             ),
                           ],
                         ),
@@ -945,10 +971,12 @@ class _ProfileTabState extends State<_ProfileTab> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = ServiceProvider.of(context).authService;
-    final studentId = auth.session?.studentId.isNotEmpty == true
-        ? auth.session!.studentId
-        : auth.session?.userId ?? '';
+    final sp = ServiceProvider.of(context);
+    final auth = sp.authService;
+    final tpAuth = sp.thirdPartyAuthService;
+    final studentId = tpAuth.egateStudentId.isNotEmpty
+        ? tpAuth.egateStudentId
+        : (auth.session?.userId ?? '');
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
@@ -979,7 +1007,11 @@ class _ProfileTabState extends State<_ProfileTab> {
                             : 'TechPie 用户',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      Text(studentId),
+                      Text(
+                        tpAuth.egateStudentId.isNotEmpty
+                            ? tpAuth.egateStudentId
+                            : (auth.session?.userId ?? ''),
+                      ),
                     ],
                   ),
                 ),

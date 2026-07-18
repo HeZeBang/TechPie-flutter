@@ -14,6 +14,7 @@ import 'package:techpie/services/http_client.dart';
 import 'package:techpie/services/schedule_service.dart';
 import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
+import 'package:techpie/services/uni_auth_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -35,21 +36,17 @@ void main() {
       due: DateTime.utc(2026, 1, 20),
     );
     await storage.saveCachedAssignments([oldBlackboard, oldGradescope]);
+    // Primary account is the SSO identity session — no CASTGC on it.
     await storage.saveSession(
       UserSession(
-        sessionToken: 'session',
-        tgc: 'tgc',
         userId: 'user',
         userName: 'User',
         schoolName: 'School',
-        tenantId: 'tenant',
-        phoneNumber: '',
-        studentId: 'student',
         createdAt: DateTime.utc(2026),
       ),
     );
-    // New architecture: blackboard/exam fetches are gated on an eGate binding,
-    // not on the primary UserSession. Bind one with the same tgc the test expects.
+    // Blackboard/exam fetches are gated on the eGate binding, not on the
+    // primary UserSession. Bind one with the tgc the test expects.
     await storage.saveThirdPartyAccount(
       ThirdPartyAccount(
         platform: ThirdPartyPlatform.egate,
@@ -99,11 +96,8 @@ void main() {
       }
       return http.Response('not found', 404);
     });
-    final auth = AuthService(storage, httpClient);
+    final auth = AuthService(storage, httpClient, UniAuthService());
     final tpAuth = ThirdPartyAuthService(storage, httpClient);
-    auth.setEgateBindingChecker(
-      () => tpAuth.account(ThirdPartyPlatform.egate) != null,
-    );
     final schedule = ScheduleService(storage, httpClient, auth, tpAuth);
     await auth.loadSession();
     await tpAuth.initialize();
@@ -138,19 +132,13 @@ void main() {
     await storage.setSelectedSemester('263');
     await storage.saveSession(
       UserSession(
-        sessionToken: 'session',
-        tgc: 'tgc',
         userId: 'user',
         userName: 'User',
         schoolName: 'School',
-        tenantId: 'tenant',
-        phoneNumber: '',
-        cookies: 'SESSION=abc',
-        studentId: 'student',
         createdAt: DateTime.utc(2026),
       ),
     );
-    // New architecture: exam fetch reads cookies from the eGate binding, not UserSession.
+    // Exam fetch reads cookies from the eGate binding, not UserSession.
     await storage.saveThirdPartyAccount(
       ThirdPartyAccount(
         platform: ThirdPartyPlatform.egate,
@@ -209,12 +197,8 @@ void main() {
       }
       return http.Response('not found', 404);
     });
-    final auth = AuthService(storage, httpClient);
+    final auth = AuthService(storage, httpClient, UniAuthService());
     final tpAuth = ThirdPartyAuthService(storage, httpClient);
-    // Wire eGate binding checker (mirrors main.dart boot sequence).
-    auth.setEgateBindingChecker(
-      () => tpAuth.account(ThirdPartyPlatform.egate) != null,
-    );
     final schedule = ScheduleService(storage, httpClient, auth, tpAuth);
     await auth.loadSession();
     await tpAuth.initialize();

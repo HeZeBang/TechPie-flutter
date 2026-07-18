@@ -48,7 +48,8 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final storageService = StorageService(prefs);
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
   final httpClient = LoggingHttpClient(debugLogger);
-  final authService = AuthService(storageService, httpClient);
+  final uniAuthService = UniAuthService();
+  final authService = AuthService(storageService, httpClient, uniAuthService);
   final themeService = ThemeService(storageService);
   final thirdPartyAuthService = ThirdPartyAuthService(
     storageService,
@@ -60,19 +61,17 @@ Future<void> _realMain(SharedPreferences prefs) async {
     authService,
     thirdPartyAuthService,
   );
-  final oaGymService = OaGymService(authService, storageService);
+  final oaGymService = OaGymService(
+    authService,
+    storageService,
+    thirdPartyAuthService,
+  );
   final assignmentService = AssignmentService(
     storageService,
     httpClient,
     authService,
     thirdPartyAuthService,
     scheduleService,
-  );
-  final uniAuthService = UniAuthService();
-
-  // Wire eGate binding checker into AuthService (avoids circular construction).
-  authService.setEgateBindingChecker(
-    () => thirdPartyAuthService.account(ThirdPartyPlatform.egate) != null,
   );
 
   authService.onLogout = () async {
@@ -104,11 +103,15 @@ Future<void> _realMain(SharedPreferences prefs) async {
     ),
   );
 
-  // -- Background: renew tokens first (main session + third-party in
+  // -- Background: renew tokens first (main SSO session + third-party in
   // parallel — they touch independent state), then fan out fetches that
   // depend on those tokens. The whole block is unawaited so the splash
   // never blocks. --
   unawaited(() async {
+    // Primary SSO renewal uses Casdoor's refresh-token grant. With no
+    // refresh token (legacy session) this is a no-op and returns false —
+    // that is NOT a "login expired" condition, only an actual renewal
+    // failure is.
     final renewMain = authService.isLoggedIn
         ? authService.tryRenewSession()
         : Future.value(true);
@@ -118,7 +121,11 @@ Future<void> _realMain(SharedPreferences prefs) async {
     final mainOk = results[0] as bool;
     final failedTp = results[1] as List<ThirdPartyPlatform>;
 
-    if (!mainOk && !isIos()) {
+    // Only surface a renewal failure when we actually had a refresh token
+    // to try (a no-op returning false is not an expiry).
+    if (!mainOk &&
+        authService.session?.geekpieRefreshToken != null &&
+        !isIos()) {
       showAdaptiveFeedback(
         message: '登录已过期，请重新登录',
         style: AdaptiveFeedbackStyle.error,
@@ -133,7 +140,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       );
     }
 
-    if (thirdPartyAuthService.account(ThirdPartyPlatform.egate) != null) {
+    if (thirdPartyAuthService.hasEgateBinding) {
       await scheduleService.fetchAll();
     }
     if (authService.isLoggedIn ||

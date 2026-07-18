@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 
 import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
-import '../services/third_party_auth_service.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/blurred_app_bar.dart';
@@ -55,11 +54,6 @@ class ThirdPartyAccountsPage extends StatelessWidget {
           return ListView(
             padding: EdgeInsets.only(top: topInset, bottom: 120),
             children: [
-              // Blackboard rides on the eGate binding (CASTGC cookie), not on
-              // the primary GeekPie SSO account.
-              _BlackboardTile(tpAuth: tpAuth),
-              const Divider(),
-
               for (final platform in ThirdPartyPlatform.values) ...[
                 _ThirdPartyTile(
                   platform: platform,
@@ -83,47 +77,6 @@ class ThirdPartyAccountsPage extends StatelessWidget {
           );
         },
       ),
-    );
-  }
-}
-
-class _BlackboardTile extends StatelessWidget {
-  final ThirdPartyAuthService tpAuth;
-
-  const _BlackboardTile({required this.tpAuth});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final egate = tpAuth.account(ThirdPartyPlatform.egate);
-    final bound = egate != null;
-    final subtitleId = egate?.sid?.isNotEmpty == true
-        ? egate!.sid
-        : (egate?.account.isNotEmpty == true ? egate!.account : '');
-
-    return ListTile(
-      leading: const Icon(Icons.school_outlined),
-      title: const Text('Blackboard'),
-      subtitle: Text(
-        bound
-            ? '通过 eGate 自动启用 (CASTGC)${subtitleId != null && subtitleId.isNotEmpty ? ' · $subtitleId' : ''}'
-            : '绑定 eGate 后自动启用',
-        style: theme.textTheme.bodySmall,
-      ),
-      trailing: bound
-          ? Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 20)
-          : const Icon(Icons.chevron_right),
-      onTap: bound
-          ? null
-          : () => unawaited(
-              Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) =>
-                      const ThirdPartyBindPage(platform: ThirdPartyPlatform.egate),
-                ),
-              ),
-            ),
     );
   }
 }

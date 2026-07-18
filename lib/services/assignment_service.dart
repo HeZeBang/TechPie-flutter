@@ -179,7 +179,7 @@ class AssignmentService extends ChangeNotifier {
 
     final futures = <Future<void>>[];
 
-    if (_auth.hasEgateBinding) {
+    if (_tpAuth.hasEgateBinding) {
       futures.add(
         _fetchBlackboard().then((items) {
           if (items != null) successfulResults['blackboard'] = items;
@@ -256,11 +256,11 @@ class AssignmentService extends ChangeNotifier {
     final successfulResults = <String, List<Assignment>>{};
     Future<void>? future;
 
-    if (platformId == 'blackboard' && _auth.hasEgateBinding) {
+    if (platformId == 'blackboard' && _tpAuth.hasEgateBinding) {
       future = _fetchBlackboard().then((items) {
         if (items != null) successfulResults['blackboard'] = items;
       });
-    } else if (platformId == 'exam' && _auth.hasEgateBinding) {
+    } else if (platformId == 'exam' && _tpAuth.hasEgateBinding) {
       future = _fetchExamTable().then((items) {
         if (items != null) successfulResults['exam'] = items;
       });
@@ -304,7 +304,7 @@ class AssignmentService extends ChangeNotifier {
   // -- Per-platform fetchers --
 
   Future<List<Assignment>?> _fetchBlackboard() async {
-    final egate = _tpAuth.account(ThirdPartyPlatform.egate);
+    final egate = _tpAuth.egateBinding;
     if (egate == null) return null;
     final tgc = (egate.raw['tgc'] as String?) ?? '';
     if (tgc.isEmpty) return null;
@@ -318,14 +318,10 @@ class AssignmentService extends ChangeNotifier {
 
     try {
       var resp = await doFetch(tgc);
-      if (resp.statusCode == 401) {
-        final renewedRaw =
-            await _auth.tryRenewCpDailySession(Map.from(egate.raw));
-        if (renewedRaw != null) {
-          await _tpAuth.updateRaw(ThirdPartyPlatform.egate, renewedRaw);
-          final newTgc = (renewedRaw['tgc'] as String?) ?? tgc;
-          resp = await doFetch(newTgc);
-        }
+      if (resp.statusCode == 401 && await _tpAuth.renewEgateBinding()) {
+        final newTgc =
+            (_tpAuth.egateBinding?.raw['tgc'] as String?) ?? tgc;
+        resp = await doFetch(newTgc);
       }
       return _parseDeadlinesResponse(resp, 'blackboard');
     } catch (e) {
@@ -336,14 +332,15 @@ class AssignmentService extends ChangeNotifier {
 
   Future<List<Assignment>?> _fetchExamTable() async {
     final semesterId = _selectedSemesterId();
-    final egate = _tpAuth.account(ThirdPartyPlatform.egate);
-    if (egate == null || semesterId == null || semesterId.isEmpty) {
+    if (!_tpAuth.hasEgateBinding ||
+        semesterId == null ||
+        semesterId.isEmpty) {
       return null;
     }
 
     Map<String, dynamic> buildBody() => {
           'semester_id': semesterId,
-          'cookies': _eamsCookies(egate),
+          'cookies': _tpAuth.egateCookies(),
         };
 
     try {
@@ -353,18 +350,13 @@ class AssignmentService extends ChangeNotifier {
         body: jsonEncode(buildBody()),
         tag: 'schedule:exam_table',
       );
-      if (resp.statusCode == 401) {
-        final renewedRaw =
-            await _auth.tryRenewCpDailySession(Map.from(egate.raw));
-        if (renewedRaw != null) {
-          await _tpAuth.updateRaw(ThirdPartyPlatform.egate, renewedRaw);
-          resp = await _http.post(
-            Uri.parse('$_baseUrl/schedule/exam_table'),
-            headers: _jsonHeaders(),
-            body: jsonEncode(buildBody()),
-            tag: 'schedule:exam_table:retry',
-          );
-        }
+      if (resp.statusCode == 401 && await _tpAuth.renewEgateBinding()) {
+        resp = await _http.post(
+          Uri.parse('$_baseUrl/schedule/exam_table'),
+          headers: _jsonHeaders(),
+          body: jsonEncode(buildBody()),
+          tag: 'schedule:exam_table:retry',
+        );
       }
       return _parseExamTableResponse(resp);
     } catch (e) {
@@ -565,13 +557,4 @@ class AssignmentService extends ChangeNotifier {
       _schedule.selectedSemesterId ??
       _storage.selectedSemester ??
       _schedule.semesterInfo?.defaultSemester;
-
-  String _eamsCookies(ThirdPartyAccount egate) {
-    final raw = egate.raw;
-    final baseCookies = (raw['cookies'] as String?) ?? '';
-    final tgc = (raw['tgc'] as String?) ?? '';
-    return tgc.isNotEmpty
-        ? (baseCookies.isNotEmpty ? '$baseCookies; CASTGC=$tgc' : 'CASTGC=$tgc')
-        : baseCookies;
-  }
 }

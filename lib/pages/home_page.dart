@@ -9,7 +9,6 @@ import '../models/assignment.dart';
 import '../models/course.dart';
 import '../models/course_table.dart';
 import '../models/feature.dart';
-import '../models/third_party_account.dart';
 import '../services/assignment_service.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
@@ -395,15 +394,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (cookieType == null) return cookies;
 
     final sp = ServiceProvider.of(context);
-    // Read cookies from eGate binding's raw data (post-migration) or legacy session
-    String rawCookies = '';
-    final egate = sp.thirdPartyAuthService.account(ThirdPartyPlatform.egate);
-    if (egate != null) {
-      rawCookies = (egate.raw['cookies'] as String?) ?? '';
-    } else {
-      final session = sp.authService.session;
-      if (session != null) rawCookies = session.cookies;
-    }
+    // ecourse and student-leave both authenticate against the eGate/IDS
+    // SSO, so they share the eGate binding's CpDaily cookies (which always
+    // include CASTGC via [ThirdPartyAuthService.egateCookies]). Without an
+    // eGate binding there is nothing to inject and the webview opens
+    // unauthenticated — the UI should steer the user to bind eGate first.
+    final String rawCookies = sp.thirdPartyAuthService.egateCookies();
     if (rawCookies.isEmpty) return cookies;
 
     final domain = 'ids.shanghaitech.edu.cn';

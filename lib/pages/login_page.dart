@@ -79,8 +79,8 @@ Future<void> _presentNativeLoginSheet({
       case 'nativeLoginSheet.geekpieLogin':
         return runAction(() async {
           // The SDK manages its own WebView — no BuildContext needed.
-          final jwt = await uniAuthService.loginSdkOnly();
-          await authService.geekpieLogin(jwt);
+          final tokens = await uniAuthService.loginSdkOnly();
+          await authService.geekpieLogin(tokens);
           unawaited(scheduleService.fetchAll());
         });
       default:
@@ -116,8 +116,8 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       final sp = ServiceProvider.of(context);
-      final jwt = await sp.uniAuthService.login(context);
-      await sp.authService.geekpieLogin(jwt);
+      final tokens = await sp.uniAuthService.login(context);
+      await sp.authService.geekpieLogin(tokens);
       if (mounted) {
         unawaited(sp.scheduleService.fetchAll());
         Navigator.pop(context);

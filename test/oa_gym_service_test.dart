@@ -6,16 +6,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/oa_gym.dart';
+import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/debug_logger.dart';
 import 'package:techpie/services/http_client.dart';
 import 'package:techpie/services/oa_gym_service.dart';
 import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/services/third_party_auth_service.dart';
+import 'package:techpie/services/uni_auth_service.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
   test('queries availability through TechPie backend with CASTGC payload',
       () async {
     final fixture = await _serviceFixture();
@@ -29,7 +30,7 @@ void main() {
       final body = jsonDecode(await request.finalize().bytesToString())
           as Map<String, dynamic>;
       expect(body['auth']['tgc'], 'tgc-value');
-      expect(body['auth']['cookies'], 'happyVoyage=happy');
+      expect(body['auth']['cookies'], 'happyVoyage=happy; CASTGC=tgc-value');
       expect(body['sports'], ['badminton']);
       expect(body['date'], '2026-05-23');
       expect(body['startSlot'], 8);
@@ -48,7 +49,13 @@ void main() {
       });
     });
 
-    final service = OaGymService(fixture.auth, fixture.storage, client: client);
+    final service =
+        OaGymService(
+      fixture.auth,
+      fixture.storage,
+      fixture.tpAuth,
+      client: client,
+    );
     final result = await service.checkAvailability(
       sports: {OaSport.badminton},
       date: '2026-05-23',
@@ -62,7 +69,7 @@ void main() {
   });
 
   test('loads metadata and searches courts through TechPie backend', () async {
-    final fixture = await _serviceFixture(cookies: '');
+    final fixture = await _serviceFixture();
     final paths = <String>[];
     final client = _FakeClient((request) async {
       paths.add(request.url.path);
@@ -120,7 +127,13 @@ void main() {
       });
     });
 
-    final service = OaGymService(fixture.auth, fixture.storage, client: client);
+    final service =
+        OaGymService(
+      fixture.auth,
+      fixture.storage,
+      fixture.tpAuth,
+      client: client,
+    );
     final result = await service.searchCourts(
       startDate: '2026-05-23',
       endDate: '2026-05-23',
@@ -154,7 +167,13 @@ void main() {
       });
     });
 
-    final service = OaGymService(fixture.auth, fixture.storage, client: client);
+    final service =
+        OaGymService(
+      fixture.auth,
+      fixture.storage,
+      fixture.tpAuth,
+      client: client,
+    );
     final result = await service.bookCourt(
       sport: OaSport.badminton,
       date: '2026-05-23',
@@ -166,30 +185,79 @@ void main() {
     expect(result.success, isTrue);
     expect(result.message, contains('预约成功'));
   });
+
+  test('throws when eGate binding is absent', () async {
+    final fixture = await _serviceFixture(bindEgate: false);
+    final client = _FakeClient(
+      (request) async => _jsonResponse({
+        'success': true,
+        'data': const <String, dynamic>{},
+      }),
+    );
+    final service = OaGymService(
+      fixture.auth,
+      fixture.storage,
+      fixture.tpAuth,
+      client: client,
+    );
+
+    expect(
+      () => service.checkAvailability(
+        sports: {OaSport.badminton},
+        date: '2026-05-23',
+        startSlot: 8,
+        endSlot: 8,
+      ),
+      throwsA(isA<OaGymException>()),
+    );
+  });
 }
 
-Future<_Fixture> _serviceFixture({String cookies = 'happyVoyage=happy'}) async {
+Future<_Fixture> _serviceFixture({
+  bool bindEgate = true,
+}) async {
   SharedPreferences.setMockInitialValues({});
   FlutterSecureStorage.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
   final storage = StorageService(prefs);
+  // Primary account is the GeekPie SSO identity session — it carries no
+  // CASTGC / CpDaily session at all.
   await storage.saveSession(
     UserSession(
-      sessionToken: 'session',
-      tgc: 'tgc-value',
       userId: 'user',
       userName: 'User',
       schoolName: 'School',
-      tenantId: 'tenant',
       phoneNumber: '13800000000',
-      cookies: cookies,
-      studentId: '20240001',
+      studentId: '',
       createdAt: DateTime.utc(2026),
     ),
   );
-  final auth = AuthService(storage, LoggingHttpClient(DebugLogger()));
+  if (bindEgate) {
+    await storage.saveThirdPartyAccount(
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.egate,
+        account: '20240001',
+        sid: '20240001',
+        token: 'session',
+        raw: const {
+          'tgc': 'tgc-value',
+          'cookies': 'happyVoyage=happy',
+          'sessionToken': 'session',
+          'userId': 'user',
+          'tenantId': 'tenant',
+        },
+        boundAt: DateTime.utc(2026),
+      ),
+    );
+  }
+  final logger = DebugLogger();
+  final httpClient = LoggingHttpClient(logger);
+  final uniAuth = UniAuthService();
+  final auth = AuthService(storage, httpClient, uniAuth);
+  final tpAuth = ThirdPartyAuthService(storage, httpClient);
   await auth.loadSession();
-  return _Fixture(storage, auth);
+  await tpAuth.initialize();
+  return _Fixture(storage, auth, tpAuth);
 }
 
 http.Response _jsonResponse(Map<String, dynamic> body) => http.Response(
@@ -201,8 +269,9 @@ http.Response _jsonResponse(Map<String, dynamic> body) => http.Response(
 class _Fixture {
   final StorageService storage;
   final AuthService auth;
+  final ThirdPartyAuthService tpAuth;
 
-  const _Fixture(this.storage, this.auth);
+  const _Fixture(this.storage, this.auth, this.tpAuth);
 }
 
 class _FakeClient extends http.BaseClient {
