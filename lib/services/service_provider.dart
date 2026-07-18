@@ -6,6 +6,7 @@ import 'debug_logger.dart';
 import 'oa_gym_service.dart';
 import 'schedule_service.dart';
 import 'storage_service.dart';
+import 'sync_service.dart';
 import 'theme_service.dart';
 import 'third_party_auth_service.dart';
 import 'uni_auth_service.dart';
@@ -20,6 +21,7 @@ class ServiceProvider extends InheritedWidget {
   final ThirdPartyAuthService thirdPartyAuthService;
   final OaGymService oaGymService;
   final UniAuthService uniAuthService;
+  final SyncService syncService;
 
   const ServiceProvider({
     super.key,
@@ -32,6 +34,7 @@ class ServiceProvider extends InheritedWidget {
     required this.thirdPartyAuthService,
     required this.oaGymService,
     required this.uniAuthService,
+    required this.syncService,
     required super.child,
   });
 
@@ -52,5 +55,6 @@ class ServiceProvider extends InheritedWidget {
       assignmentService != oldWidget.assignmentService ||
       thirdPartyAuthService != oldWidget.thirdPartyAuthService ||
       oaGymService != oldWidget.oaGymService ||
-      uniAuthService != oldWidget.uniAuthService;
+      uniAuthService != oldWidget.uniAuthService ||
+      syncService != oldWidget.syncService;
 }

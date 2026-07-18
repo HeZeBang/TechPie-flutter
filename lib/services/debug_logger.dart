@@ -78,6 +78,11 @@ class DebugLogger extends ChangeNotifier {
     'castgc',
     'cookies',
     'cookie',
+    // Cloud-sync: the derived master key and the encrypted blob both must
+    // never appear in logs (the blob is ciphertext, but leaking it still
+    // gives an attacker an offline target; the key is the crown jewel).
+    'techpie_sync',
+    'sync_master_key',
   };
 
   // Best-effort redaction: parse as JSON and walk the tree replacing

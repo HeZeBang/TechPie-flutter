@@ -6,6 +6,7 @@ import 'package:techpie/services/auth_service.dart';
 
 import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
+import '../services/sync_service.dart';
 import '../services/theme_service.dart';
 import '../services/third_party_auth_service.dart';
 import '../utils/platform.dart';
@@ -17,6 +18,7 @@ import '../widgets/ios_liquid/ios_glass_switch.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 import 'debug_log_page.dart';
 import 'login_page.dart';
+import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -116,6 +118,20 @@ class _SettingsPageState extends State<SettingsPage> {
                     context,
                     MaterialPageRoute<void>(
                       builder: (_) => const ThirdPartyAccountsPage(),
+                    ),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.cloud_sync_outlined),
+                title: const Text('Cloud sync'),
+                subtitle: Text(_cloudSyncSubtitle(sp.syncService)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => unawaited(
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SyncSettingsPage(),
                     ),
                   ),
                 ),
@@ -489,6 +505,18 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       ),
     );
+  }
+
+  String _cloudSyncSubtitle(SyncService sync) {
+    if (!sync.enabled) return '未开启';
+    final at = sync.lastSyncAt;
+    if (at == null) return '已开启 · 尚未同步';
+    return '已开启 · 上次同步 ${_shortTime(at)}';
+  }
+
+  String _shortTime(DateTime t) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
   }
 }
 

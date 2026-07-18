@@ -14,6 +14,7 @@ import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
 import 'services/storage_service.dart';
+import 'services/sync_service.dart';
 import 'services/theme_service.dart';
 import 'services/third_party_auth_service.dart';
 import 'services/uni_auth_service.dart';
@@ -73,19 +74,39 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService,
     scheduleService,
   );
+  final syncService = SyncService(authService, thirdPartyAuthService, storageService);
 
   authService.onLogout = () async {
     // Third-party bindings persist across logouts — they will be used by the
-    // future sync system. Only clear ephemeral state.
+    // sync system. Only clear ephemeral state.
     await assignmentService.clearCache();
     await assignmentService.clearAllOverrides();
     oaGymService.clearSession();
+  };
+
+  // Cloud-sync push hook: after any binding mutation, best-effort push the new
+  // state (throttled). Wired via post-construction setter to avoid a circular
+  // dependency between ThirdPartyAuthService and SyncService.
+  thirdPartyAuthService.onBindingsChanged = () {
+    return syncService.pushIfDue();
+  };
+
+  // Cloud-sync pull hook: after a fresh SSO login, pull cloud bindings onto
+  // this device (or surface the master-password restore prompt).
+  authService.onLogin = () async {
+    if (!syncService.enabled) return;
+    try {
+      await syncService.pull();
+    } on NeedMasterPassword {
+      // Settings UI surfaces the restore banner.
+    } catch (_) {}
   };
 
   // -- Boot critical path: local I/O only --
   // Hydrate everything from caches so the first frame paints with data.
   await authService.loadSession();
   await thirdPartyAuthService.initialize();
+  await syncService.loadCachedKey();
   assignmentService.loadCached();
   await scheduleService.loadCachedData();
 
@@ -100,6 +121,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       thirdPartyAuthService: thirdPartyAuthService,
       oaGymService: oaGymService,
       uniAuthService: uniAuthService,
+      syncService: syncService,
     ),
   );
 
@@ -147,6 +169,21 @@ Future<void> _realMain(SharedPreferences prefs) async {
         thirdPartyAuthService.boundPlatforms.isNotEmpty) {
       unawaited(assignmentService.fetchAssignments());
     }
+
+    // Cloud-sync pull: if sync is enabled and this device has a cached master
+    // key, silently pull the latest cloud bindings before any feature fetch
+    // fires. If the device is enabled but has no key (new device with a cloud
+    // backup), set the needsRestore flag so the UI can prompt for the master
+    // password. All best-effort — sync failures never block boot.
+    if (syncService.enabled && authService.isLoggedIn) {
+      try {
+        await syncService.pull();
+      } on NeedMasterPassword {
+        // Surface via the settings/banner UI; not a toast.
+      } catch (_) {
+        // Network/Casdoor hiccup — next manual sync retries.
+      }
+    }
   }());
   // Allow auto-refetch on subsequent auth / binding changes
   // (login, bind, unbind, logout).
@@ -189,6 +226,7 @@ class TechPieApp extends StatefulWidget {
   final ThirdPartyAuthService thirdPartyAuthService;
   final OaGymService oaGymService;
   final UniAuthService uniAuthService;
+  final SyncService syncService;
 
   const TechPieApp({
     super.key,
@@ -201,6 +239,7 @@ class TechPieApp extends StatefulWidget {
     required this.thirdPartyAuthService,
     required this.oaGymService,
     required this.uniAuthService,
+    required this.syncService,
   });
 
   @override
@@ -233,6 +272,7 @@ class _TechPieAppState extends State<TechPieApp> {
         thirdPartyAuthService: widget.thirdPartyAuthService,
         oaGymService: widget.oaGymService,
         uniAuthService: widget.uniAuthService,
+        syncService: widget.syncService,
         child: MaterialApp(
           scaffoldMessengerKey: rootMessengerKey,
           title: 'TechPie',

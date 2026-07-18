@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -33,6 +34,20 @@ class ThirdPartyAuthService extends ChangeNotifier {
   List<ThirdPartyPlatform> get boundPlatforms => _accounts.keys.toList();
   Iterable<ThirdPartyAccount> get accounts => _accounts.values;
   ThirdPartyAccount? account(ThirdPartyPlatform p) => _accounts[p];
+
+  /// Post-construction hook fired after any binding mutation (bind / unbind /
+  /// raw update / replaceAll). Wired by main.dart to [SyncService.pushIfDue]
+  /// so the cloud backup stays current. Null until wired; safe to call.
+  Future<void> Function()? onBindingsChanged;
+
+  void _notifyChanged() {
+    notifyListeners();
+    final hook = onBindingsChanged;
+    if (hook != null) {
+      // Fire-and-forget; the hook is throttled and swallows its own errors.
+      unawaited(hook());
+    }
+  }
 
   // -- eGate binding (single source of CASTGC / CpDaily session) --
   //
@@ -118,6 +133,9 @@ class ThirdPartyAuthService extends ChangeNotifier {
       ..clear()
       ..addEntries(loaded.map((a) => MapEntry(a.platform, a)));
     _initialized = true;
+    // Boot hydration is not a user-driven mutation — notify listeners but do
+    // NOT trigger a cloud push (the hook is not wired yet at this point, and
+    // a pull may follow that should take precedence).
     notifyListeners();
   }
 
@@ -191,14 +209,31 @@ class ThirdPartyAuthService extends ChangeNotifier {
 
     await _storage.saveThirdPartyAccount(acc);
     _accounts[platform] = acc;
-    notifyListeners();
+    _notifyChanged();
     return acc;
   }
 
   Future<void> unbind(ThirdPartyPlatform platform) async {
     _accounts.remove(platform);
     await _storage.clearThirdPartyAccount(platform);
-    notifyListeners();
+    _notifyChanged();
+  }
+
+  /// Replace the entire in-memory + persisted binding set in one shot. Used by
+  /// [SyncService.pull] to restore a cloud-fetched snapshot: clears every
+  /// existing platform binding, writes each entry in [next] to secure storage,
+  /// and rebuilds the in-memory map. Fires a single notification.
+  Future<void> replaceAll(List<ThirdPartyAccount> next) async {
+    for (final p in ThirdPartyPlatform.values) {
+      await _storage.clearThirdPartyAccount(p);
+    }
+    _accounts
+      ..clear()
+      ..addEntries(next.map((a) => MapEntry(a.platform, a)));
+    for (final a in next) {
+      await _storage.saveThirdPartyAccount(a);
+    }
+    _notifyChanged();
   }
 
   /// Update the raw data of a bound account (e.g. after CpDaily session renewal).
@@ -225,7 +260,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     );
     await _storage.saveThirdPartyAccount(updated);
     _accounts[platform] = updated;
-    notifyListeners();
+    _notifyChanged();
   }
 
   // -- eGate SMS binding flow --
@@ -317,7 +352,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     await _storage.saveThirdPartyAccount(acc);
     _accounts[ThirdPartyPlatform.egate] = acc;
     _egateSmsContext = null;
-    notifyListeners();
+    _notifyChanged();
     return acc;
   }
 
@@ -362,6 +397,6 @@ class ThirdPartyAuthService extends ChangeNotifier {
   Future<void> clearAll() async {
     _accounts.clear();
     await _storage.clearAllThirdPartyAccounts();
-    notifyListeners();
+    _notifyChanged();
   }
 }

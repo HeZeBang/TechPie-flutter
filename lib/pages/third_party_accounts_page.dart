@@ -66,8 +66,8 @@ class ThirdPartyAccountsPage extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  '绑定信息加密存储于设备本地 Keychain / EncryptedSharedPreferences,'
-                  '不会上传到服务器。',
+                  '绑定信息加密存储于设备本地 Keychain / EncryptedSharedPreferences。'
+                  '开启云同步后，将以端到端加密形式额外备份至 Casdoor(仅你能用主密码解密)。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

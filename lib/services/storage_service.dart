@@ -23,6 +23,9 @@ class StorageService {
   static const _themeModeKey = 'theme_mode';
   static const _colorSchemeKey = 'color_scheme';
   static const _useLocalhostKey = 'use_localhost';
+  static const _syncEnabledKey = 'sync_enabled';
+  static const _syncLastAtKey = 'sync_last_at';
+  static const _syncMasterKeyKey = 'sync_master_key'; // secure storage
 
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
@@ -112,6 +115,21 @@ class StorageService {
   bool get useLocalhost => _prefs.getBool(_useLocalhostKey) ?? false;
   Future<void> setUseLocalhost(bool value) =>
       _prefs.setBool(_useLocalhostKey, value);
+
+  // Cloud-sync settings. The master-password-derived key is the one sensitive
+  // piece — it lives in secure storage, never in SharedPreferences.
+  bool get syncEnabled => _prefs.getBool(_syncEnabledKey) ?? false;
+  Future<void> setSyncEnabled(bool value) =>
+      _prefs.setBool(_syncEnabledKey, value);
+
+  String? get syncLastAt => _prefs.getString(_syncLastAtKey);
+  Future<void> setSyncLastAt(String iso) =>
+      _prefs.setString(_syncLastAtKey, iso);
+
+  Future<String?> loadSyncMasterKey() => _secure.read(key: _syncMasterKeyKey);
+  Future<void> saveSyncMasterKey(String serialized) =>
+      _secure.write(key: _syncMasterKeyKey, value: serialized);
+  Future<void> clearSyncMasterKey() => _secure.delete(key: _syncMasterKeyKey);
 
   // Schedule cache
   static const _semestersKey = 'schedule_semesters';

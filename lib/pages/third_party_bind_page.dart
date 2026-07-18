@@ -83,8 +83,8 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
       title: '开启自动更新 Token',
       message: '打开后，APP 将于本地加密存储你的账号和密码信息,'
           '用于在过期前 48 小时内自动触发 Token 更新。\n\n'
-          '凭据仅存放在本设备的 Keychain / EncryptedSharedPreferences 中，'
-          '不会上传到服务器。',
+          '凭据存放在本设备的 Keychain / EncryptedSharedPreferences 中。'
+          '若开启云同步，密码也会被端到端加密后备份至 Casdoor(仅你能用主密码解密)。',
       actions: const [
         AdaptiveAlertAction<bool>(label: '取消', value: false),
         AdaptiveAlertAction<bool>(
@@ -467,7 +467,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
             const SizedBox(height: 12),
             Text(
               '凭据将通过 HTTPS 发送到 techpie 后端,后端代为登录上游平台并返回 token。'
-              'token 与原始 payload 仅在本设备加密保存。',
+              'token 与原始 payload 在本设备加密保存;开启云同步后会以端到端加密形式备份至 Casdoor。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

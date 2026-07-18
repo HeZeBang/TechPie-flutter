@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -32,6 +33,11 @@ class AuthService extends ChangeNotifier {
   // services (e.g. third-party bindings) can clear themselves. Injected
   // post-construction from main.dart to avoid circular construction.
   Future<void> Function()? onLogout;
+
+  /// Fired after a successful SSO login (post-save). SyncService uses it to
+  /// pull cloud bindings onto a freshly-logged-in device. Injected from
+  /// main.dart to avoid a circular construction dependency.
+  Future<void> Function()? onLogin;
 
   AuthService(this._storage, this._http, this._uniAuth);
 
@@ -104,6 +110,11 @@ class AuthService extends ChangeNotifier {
 
       await _storage.saveSession(_session!);
       notifyListeners();
+      final hook = onLogin;
+      if (hook != null) {
+        // Fire-and-forget: a sync pull failure must not break login UX.
+        unawaited(hook());
+      }
       return _session!;
     } finally {
       _loading = false;
