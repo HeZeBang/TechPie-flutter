@@ -740,62 +740,35 @@ class _SchedulePageState extends State<SchedulePage> {
                   ],
                 ),
               )
-            : _schedule.loading && _courses.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : _schedule.error != null && _courses.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                              size: 48,
-                              color: theme.colorScheme.error,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              '加载失败',
-                              style: theme.textTheme.bodyLarge?.copyWith(
-                                color: theme.colorScheme.error,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            FilledButton.tonal(
-                              onPressed: _refresh,
-                              child: const Text('重试'),
-                            ),
-                          ],
-                        ),
+            : RefreshIndicator(
+                onRefresh: _refresh,
+                child: useIosChrome
+                    ? PageView.builder(
+                        controller: _weekPageController,
+                        itemCount: 25,
+                        onPageChanged: (index) {
+                          _setCurrentWeek(index + 1);
+                        },
+                        itemBuilder: (context, index) {
+                          final week = index + 1;
+                          return _buildScheduleWeek(
+                            context,
+                            theme,
+                            today,
+                            week,
+                            _coursesForWeek(week),
+                          );
+                        },
                       )
-                    : RefreshIndicator(
-                        onRefresh: _refresh,
-                        child: useIosChrome
-                            ? PageView.builder(
-                                controller: _weekPageController,
-                                itemCount: 25,
-                                onPageChanged: (index) {
-                                  _setCurrentWeek(index + 1);
-                                },
-                                itemBuilder: (context, index) {
-                                  final week = index + 1;
-                                  return _buildScheduleWeek(
-                                    context,
-                                    theme,
-                                    today,
-                                    week,
-                                    _coursesForWeek(week),
-                                  );
-                                },
-                              )
-                            : _buildScheduleWeek(
-                                context,
-                                theme,
-                                today,
-                                _currentWeek,
-                                _courses,
-                                animated: true,
-                              ),
+                    : _buildScheduleWeek(
+                        context,
+                        theme,
+                        today,
+                        _currentWeek,
+                        _courses,
+                        animated: true,
                       ),
+              ),
       ),
     );
   }

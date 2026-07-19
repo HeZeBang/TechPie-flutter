@@ -307,16 +307,6 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   ) {
     final banner = _PlatformErrorsBanner(service: service);
 
-    if (service.loading && allVisible.isEmpty) {
-      return Column(
-        children: [
-          SizedBox(height: topInset),
-          banner,
-          const Expanded(child: Center(child: CircularProgressIndicator())),
-        ],
-      );
-    }
-
     if (allVisible.isEmpty) {
       return Column(
         children: [
