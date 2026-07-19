@@ -16,6 +16,7 @@ import '../widgets/desktop_popup.dart';
 import '../widgets/ios_liquid/ios_glass_select.dart';
 import '../widgets/ios_liquid/ios_glass_switch.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 import 'debug_log_page.dart';
 import 'login_page.dart';
 import 'sync_settings_page.dart';
@@ -114,11 +115,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  Navigator.push(
+                  pushPlatformViewPage<void>(
                     context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const ThirdPartyAccountsPage(),
-                    ),
+                    builder: (_) => const ThirdPartyAccountsPage(),
                   ),
                 ),
               ),

@@ -53,6 +53,8 @@ app.*.map.json
 .envrc
 # Local Xcode overrides
 macos/Runner/Configs/Local.xcconfig
+macos/buildServer.json
+macos/.bundle
 
 # OHOS signing artifacts
 ohos/signature/*.p12

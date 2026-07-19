@@ -10,6 +10,8 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_glass_confirmation_button.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import 'login_page.dart';
 import 'third_party_bind_page.dart';
 
 class ThirdPartyAccountsPage extends StatelessWidget {
@@ -43,7 +45,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
               ],
               onItemPressed: (id) {
                 if (id == 'back') {
-                  unawaited(Navigator.maybePop(context));
+                  unawaited(maybePopPlatformViewPage<void>(context));
                 }
               },
             )
@@ -54,6 +56,10 @@ class ThirdPartyAccountsPage extends StatelessWidget {
           return ListView(
             padding: EdgeInsets.only(top: topInset, bottom: 120),
             children: [
+              // Blackboard read-only entry
+              _BlackboardTile(),
+              const Divider(),
+
               for (final platform in ThirdPartyPlatform.values) ...[
                 _ThirdPartyTile(
                   platform: platform,
@@ -66,8 +72,8 @@ class ThirdPartyAccountsPage extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  '绑定信息加密存储于设备本地 Keychain / EncryptedSharedPreferences。'
-                  '开启云同步后，将以端到端加密形式额外备份至 Casdoor(仅你能用主密码解密)。',
+                  '绑定信息加密存储于设备本地 Keychain / EncryptedSharedPreferences,'
+                  '不会上传到服务器。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -77,6 +83,30 @@ class ThirdPartyAccountsPage extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class _BlackboardTile extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final auth = ServiceProvider.of(context).authService;
+    final theme = Theme.of(context);
+    final loggedIn = auth.isLoggedIn;
+
+    return ListTile(
+      leading: const Icon(Icons.school_outlined),
+      title: const Text('Blackboard'),
+      subtitle: Text(
+        loggedIn
+            ? '通过主账号自动启用 (CASTGC) · ${auth.session!.studentId.isNotEmpty ? auth.session!.studentId : auth.session!.userId}'
+            : '登录主账号后自动启用',
+        style: theme.textTheme.bodySmall,
+      ),
+      trailing: loggedIn
+          ? Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 20)
+          : const Icon(Icons.chevron_right),
+      onTap: loggedIn ? null : () => unawaited(presentLoginPage(context)),
     );
   }
 }
@@ -105,11 +135,9 @@ class _ThirdPartyTile extends StatelessWidget {
         subtitle: const Text('未绑定'),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => unawaited(
-          Navigator.push(
+          pushPlatformViewPage<void>(
             context,
-            MaterialPageRoute<void>(
-              builder: (_) => ThirdPartyBindPage(platform: platform),
-            ),
+            builder: (_) => ThirdPartyBindPage(platform: platform),
           ),
         ),
       );
