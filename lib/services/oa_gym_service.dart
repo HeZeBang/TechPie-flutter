@@ -56,10 +56,15 @@ class OaGymService extends ChangeNotifier {
 
   OaBookingProfile bookingProfile() {
     final saved = _storage.loadOaBookingProfile();
-    final session = _auth.session;
+    // Fall back to the eGate binding's real name (not the primary SSO
+    // account, whose userName is a Casdoor UUID). Phone is not available
+    // from eGate, so the user must still fill it in manually.
+    final egateName = _tpAuth.egateBinding?.name;
     return saved.copyWith(
-      name: saved.name.isNotEmpty ? saved.name : session?.userName,
-      phone: saved.phone.isNotEmpty ? saved.phone : session?.phoneNumber,
+      name: saved.name.isNotEmpty
+          ? saved.name
+          : (egateName?.isNotEmpty == true ? egateName! : ''),
+      phone: saved.phone.isNotEmpty ? saved.phone : '',
     );
   }
 
@@ -121,11 +126,11 @@ class OaGymService extends ChangeNotifier {
     final auth = _requireAuth();
     final profile = bookingProfile();
     final studentId = _tpAuth.egateStudentId;
-    final userName = profile.name.isNotEmpty
-        ? profile.name
-        : (auth.session?.userName ?? '');
-    final phone =
-        profile.phone.isNotEmpty ? profile.phone : (auth.session?.phoneNumber ?? '');
+    final userName =
+        profile.name.isNotEmpty ? profile.name : (auth.session?.userName ?? '');
+    final phone = profile.phone.isNotEmpty
+        ? profile.phone
+        : (auth.session?.phoneNumber ?? '');
     if (userName.isEmpty || phone.isEmpty) {
       throw OaGymException('请先在「个人信息」里补全姓名和手机号');
     }
@@ -288,7 +293,9 @@ class OaGymService extends ChangeNotifier {
         response = await _client
             .post(
               Uri.parse('$_baseUrl/$path'),
-              headers: const {'Content-Type': 'application/json; charset=UTF-8'},
+              headers: const {
+                'Content-Type': 'application/json; charset=UTF-8',
+              },
               body: jsonEncode(body..['auth'] = _authPayload()),
             )
             .timeout(const Duration(seconds: 30));

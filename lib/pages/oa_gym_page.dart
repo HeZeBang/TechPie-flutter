@@ -972,11 +972,17 @@ class _ProfileTabState extends State<_ProfileTab> {
   @override
   Widget build(BuildContext context) {
     final sp = ServiceProvider.of(context);
-    final auth = sp.authService;
     final tpAuth = sp.thirdPartyAuthService;
-    final studentId = tpAuth.egateStudentId.isNotEmpty
-        ? tpAuth.egateStudentId
-        : (auth.session?.userId ?? '');
+    final egate = tpAuth.egateBinding;
+
+    // Identity card prefers eGate binding (real name + student id) over the
+    // primary SSO account, whose userName/userId are Casdoor UUIDs with no
+    // meaning in the OA booking context.
+    final displayName = egate?.name?.isNotEmpty == true
+        ? egate!.name!
+        : (egate?.account.isNotEmpty == true ? egate!.account : 'TechPie 用户');
+    final studentId = egate?.sid ?? '';
+    final avatarText = displayName.characters.firstOrNull ?? 'U';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
@@ -986,32 +992,17 @@ class _ProfileTabState extends State<_ProfileTab> {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                CircleAvatar(
-                  child: Text(
-                    (auth.session?.userName.isNotEmpty == true
-                                ? auth.session!.userName
-                                : studentId)
-                            .characters
-                            .firstOrNull ??
-                        'U',
-                  ),
-                ),
+                CircleAvatar(child: Text(avatarText)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        auth.session?.userName.isNotEmpty == true
-                            ? auth.session!.userName
-                            : 'TechPie 用户',
+                        displayName,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      Text(
-                        tpAuth.egateStudentId.isNotEmpty
-                            ? tpAuth.egateStudentId
-                            : (auth.session?.userId ?? ''),
-                      ),
+                      if (studentId.isNotEmpty) Text(studentId),
                     ],
                   ),
                 ),
