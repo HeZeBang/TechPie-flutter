@@ -1,7 +1,10 @@
 import 'dart:convert';
 
 import 'package:casdoor_flutter_sdk/casdoor_flutter_sdk.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+
+import '../pages/ohos_casdoor_auth_page.dart';
 
 // ---------------------------------------------------------------------------
 // GeekPie Uni-Auth configuration (powered by Casdoor)
@@ -67,11 +70,17 @@ class UniAuthService extends ChangeNotifier {
   /// Requires a BuildContext for the full-screen presentation. Returns the
   /// full token bundle (access + refresh + expiry).
   Future<SsoTokens> login(BuildContext context) async {
+    final navigator = Navigator.of(context);
     _loading = true;
     notifyListeners();
     try {
       final casdoor = _getCasdoor();
-      final callbackUrl = await casdoor.showFullscreen(context);
+      final String callbackUrl;
+      if (defaultTargetPlatform == TargetPlatform.ohos) {
+        callbackUrl = await _showOhosLogin(navigator, casdoor);
+      } else {
+        callbackUrl = await casdoor.showFullscreen(context);
+      }
       final code = _extractCode(callbackUrl);
       if (code.isEmpty) {
         throw Exception('Login cancelled or failed');
@@ -100,6 +109,21 @@ class UniAuthService extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  Future<String> _showOhosLogin(NavigatorState navigator, Casdoor casdoor) async {
+    final callbackUrl = await navigator.push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => OhosCasdoorAuthPage(
+          authorizeUrl: casdoor.getSigninUrl().toString(),
+          callbackScheme: _uniAuthCallbackScheme,
+        ),
+      ),
+    );
+    if (callbackUrl == null || callbackUrl.isEmpty) {
+      throw CasdoorAuthCancelledException();
+    }
+    return callbackUrl;
   }
 
   /// Exchange an authorization code for the SSO token bundle.
