@@ -84,6 +84,20 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     _exitSelection();
   }
 
+  Future<void> _refresh(AssignmentService service) async {
+    await service.fetchAssignments();
+    if (!mounted) return;
+    final hasError = service.error != null;
+    showAdaptiveFeedback(
+      context: context,
+      message: hasError ? '刷新失败' : '已刷新',
+      style: hasError
+          ? AdaptiveFeedbackStyle.error
+          : AdaptiveFeedbackStyle.success,
+      duration: const Duration(seconds: 2),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final assignmentService = ServiceProvider.of(context).assignmentService;
@@ -307,16 +321,6 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   ) {
     final banner = _PlatformErrorsBanner(service: service);
 
-    if (service.loading && allVisible.isEmpty) {
-      return Column(
-        children: [
-          SizedBox(height: topInset),
-          banner,
-          const Expanded(child: Center(child: CircularProgressIndicator())),
-        ],
-      );
-    }
-
     if (allVisible.isEmpty) {
       return Column(
         children: [
@@ -324,9 +328,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
           banner,
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () async {
-                await service.fetchAssignments();
-              },
+              onRefresh: () async => _refresh(service),
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 children: [
@@ -395,9 +397,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     final itemLabel = _filteredItemLabel;
 
     return RefreshIndicator(
-      onRefresh: () async {
-        await service.fetchAssignments();
-      },
+      onRefresh: () async => _refresh(service),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
         children: [

@@ -41,7 +41,8 @@
   - [ ] Android (Including other customized OS)
     - [ ] Soooo many...
 - API
-  - [x] eGate login / keep alive
+  - [x] GeekPie SSO (Casdoor) login + token refresh
+  - [x] eGate binding / CpDaily keep-alive (via /api/auth/renew)
   - [ ] Schedule
   - [ ] Homework / Resources
     - [ ] GradeScope

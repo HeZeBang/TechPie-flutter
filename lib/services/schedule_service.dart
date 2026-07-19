@@ -8,11 +8,12 @@ import 'api_base_url.dart';
 import 'auth_service.dart';
 import 'http_client.dart';
 import 'storage_service.dart';
+import 'third_party_auth_service.dart';
 
 class ScheduleService extends ChangeNotifier {
   final StorageService _storage;
   final LoggingHttpClient _http;
-  final AuthService _auth;
+  final ThirdPartyAuthService _tpAuth;
 
   SemesterInfo? _semesterInfo;
   CourseTable? _courseTable;
@@ -30,7 +31,7 @@ class ScheduleService extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
 
-  ScheduleService(this._storage, this._http, this._auth);
+  ScheduleService(this._storage, this._http, AuthService _, this._tpAuth);
 
   int currentWeek() {
     if (_termBegin == null) return 1;
@@ -44,15 +45,14 @@ class ScheduleService extends ChangeNotifier {
       };
 
   Map<String, dynamic> _authBody() {
-    final session = _auth.session!;
-    // Ensure CASTGC (tgc) is included in the cookies sent to EAMS
-    final baseCookies = session.cookies;
-    final tgc = session.tgc;
-    final cookies = tgc.isNotEmpty
-        ? (baseCookies.isNotEmpty ? '$baseCookies; CASTGC=$tgc' : 'CASTGC=$tgc')
-        : baseCookies;
-    return {'studentId': session.studentId, 'cookies': cookies};
+    final cookies = _tpAuth.egateCookies();
+    return {
+      'studentId': _tpAuth.egateStudentId,
+      'cookies': cookies,
+    };
   }
+
+  bool get _hasEgateBinding => _tpAuth.hasEgateBinding;
 
   Future<void> loadCachedData() async {
     _semesterInfo = _storage.loadSemesters();
@@ -66,7 +66,7 @@ class ScheduleService extends ChangeNotifier {
   }
 
   Future<void> fetchAll() async {
-    if (!_auth.isLoggedIn) return;
+    if (!_hasEgateBinding) return;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -189,7 +189,7 @@ class ScheduleService extends ChangeNotifier {
     _termBegin = _storage.loadTermBegin(semesterId);
     notifyListeners();
 
-    if (!_auth.isLoggedIn) return;
+    if (!_hasEgateBinding) return;
 
     _loading = true;
     _error = null;
@@ -221,9 +221,8 @@ class ScheduleService extends ChangeNotifier {
     );
 
     if (resp.statusCode == 401) {
-      final renewed = await _auth.tryRenewSession();
-      if (renewed) {
-        // Rebuild body with refreshed session
+      // CpDaily session expired — renew the eGate binding once and retry.
+      if (await _tpAuth.renewEgateBinding()) {
         final newBody = {...body, ..._authBody()};
         resp = await _http.post(
           Uri.parse(url),

@@ -1,11 +1,13 @@
 enum ThirdPartyPlatform {
   gradescope,
-  hydro;
+  hydro,
+  egate;
 
   String get id => name;
   String get label => switch (this) {
         ThirdPartyPlatform.gradescope => 'Gradescope',
         ThirdPartyPlatform.hydro => 'Hydro',
+        ThirdPartyPlatform.egate => 'eGate / IDS',
       };
 
   static ThirdPartyPlatform? fromId(String id) {

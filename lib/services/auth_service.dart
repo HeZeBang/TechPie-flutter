@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -6,16 +7,21 @@ import '../models/user_session.dart';
 import 'api_base_url.dart';
 import 'http_client.dart';
 import 'storage_service.dart';
+import 'uni_auth_service.dart';
 
+/// AuthService owns ONLY the primary account: the GeekPie Uni-Auth (Casdoor)
+/// SSO identity session. It knows nothing about CASTGC, CpDaily, or any
+/// campus-system credential — those live in [ThirdPartyAuthService] (the eGate
+/// binding) and are the single source of truth for every CASTGC-dependent
+/// feature. Keeping that boundary means an SSO-only user is correctly "logged
+/// in" without implying they can reach eGate-gated services.
 class AuthService extends ChangeNotifier {
   final StorageService _storage;
   final LoggingHttpClient _http;
+  final UniAuthService _uniAuth;
 
   UserSession? _session;
   bool _loading = false;
-
-  // Context returned by send-sms, needed for mobile/login
-  Map<String, dynamic>? _smsContext;
 
   String get _baseUrl => apiBaseUrl(_storage);
 
@@ -28,7 +34,12 @@ class AuthService extends ChangeNotifier {
   // post-construction from main.dart to avoid circular construction.
   Future<void> Function()? onLogout;
 
-  AuthService(this._storage, this._http);
+  /// Fired after a successful SSO login (post-save). SyncService uses it to
+  /// pull cloud bindings onto a freshly-logged-in device. Injected from
+  /// main.dart to avoid a circular construction dependency.
+  Future<void> Function()? onLogin;
+
+  AuthService(this._storage, this._http, this._uniAuth);
 
   // -- Initialization & token renewal --
 
@@ -44,34 +55,22 @@ class AuthService extends ChangeNotifier {
   /// use [tryRenewSession] explicitly if you need it.
   Future<void> initialize() => loadSession();
 
+  /// Renew the SSO access token via Casdoor's refresh-token grant. On
+  /// success the rotated tokens are persisted into the session. Returns
+  /// false (no throw) when there is no session, no refresh token, or the
+  /// refresh fails — the caller decides whether to prompt for re-login.
   Future<bool> tryRenewSession() async {
-    if (_session == null) return false;
+    final session = _session;
+    if (session == null) return false;
+    final refreshToken = session.geekpieRefreshToken;
+    if (refreshToken == null || refreshToken.isEmpty) return false;
+
     try {
-      final resp = await _http.post(
-        Uri.parse('$_baseUrl/auth/renew'),
-        headers: _jsonHeaders(),
-        body: jsonEncode({
-          'sessionToken': _session!.sessionToken,
-          'tgc': _session!.tgc,
-          'userId': _session!.userId,
-          'tenantId': _session!.tenantId,
-        }),
-        tag: 'tokenRenew',
-      );
-
-      if (resp.statusCode != 200) return false;
-
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      if (data['success'] != true) return false;
-
-      _session = _session!.copyWith(
-        sessionToken: data['sessionToken'] as String? ?? _session!.sessionToken,
-        tgc: data['tgc'] as String? ?? _session!.tgc,
-        userId: data['userId'] as String? ?? _session!.userId,
-        userName: data['name'] as String? ?? _session!.userName,
-        tenantId: data['tenantId'] as String? ?? _session!.tenantId,
-        cookies: data['cookies'] as String? ?? _session!.cookies,
-        studentId: data['openId'] as String? ?? _session!.studentId,
+      final tokens = await _uniAuth.refresh(refreshToken);
+      _session = session.copyWith(
+        geekpieToken: tokens.accessToken,
+        geekpieExpiresAt: tokens.expiresAt ?? session.geekpieExpiresAt,
+        geekpieRefreshToken: tokens.refreshToken ?? refreshToken,
       );
       await _storage.saveSession(_session!);
       notifyListeners();
@@ -81,42 +80,17 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  // -- SMS Login Flow --
+  // -- GeekPie Uni-Auth Login --
 
-  Future<void> sendSmsCode(String phone) async {
-    final resp = await _http.post(
-      Uri.parse('$_baseUrl/auth/mobile/send-sms'),
-      headers: _jsonHeaders(),
-      body: jsonEncode({'phone': phone}),
-      tag: 'sendSms',
-    );
-
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (data['success'] != true) {
-      throw Exception(data['error'] as String? ?? 'Failed to send SMS');
-    }
-
-    // Store context for the login step
-    _smsContext = data['context'] as Map<String, dynamic>?;
-  }
-
-  Future<UserSession> smsLogin(String phone, String code) async {
-    if (_smsContext == null) {
-      throw Exception('Send SMS code first');
-    }
-
+  Future<UserSession> geekpieLogin(SsoTokens tokens) async {
     _loading = true;
     notifyListeners();
     try {
       final resp = await _http.post(
-        Uri.parse('$_baseUrl/auth/mobile/login'),
+        Uri.parse('$_baseUrl/auth/geekpie'),
         headers: _jsonHeaders(),
-        body: jsonEncode({
-          'phone': phone,
-          'code': code,
-          'context': _smsContext,
-        }),
-        tag: 'smsLogin',
+        body: jsonEncode({'token': tokens.accessToken}),
+        tag: 'geekpieLogin',
       );
 
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -124,69 +98,23 @@ class AuthService extends ChangeNotifier {
         throw Exception(data['error'] as String? ?? 'Login failed');
       }
 
-      final loginResult =
-          data['loginResult'] as Map<String, dynamic>? ?? const {};
-
       _session = UserSession(
-        sessionToken: data['sessionToken'] as String? ?? '',
-        tgc: data['tgc'] as String? ?? '',
         userId: data['userId'] as String? ?? '',
-        userName: loginResult['name'] as String? ?? '',
+        userName: data['userName'] as String? ?? '',
         schoolName: '上海科技大学',
-        tenantId: data['tenantId'] as String? ?? '',
-        phoneNumber: phone,
-        cookies: data['cookies'] as String? ?? '',
-        studentId: loginResult['openId'] as String? ?? '',
         createdAt: DateTime.now(),
+        geekpieToken: tokens.accessToken,
+        geekpieExpiresAt: tokens.expiresAt,
+        geekpieRefreshToken: tokens.refreshToken,
       );
 
-      _smsContext = null;
       await _storage.saveSession(_session!);
-      await _storage.setCachedPhone(phone);
       notifyListeners();
-      return _session!;
-    } finally {
-      _loading = false;
-      notifyListeners();
-    }
-  }
-
-  // -- eGate Login Flow --
-
-  Future<UserSession> egateLogin(String username, String password) async {
-    _loading = true;
-    notifyListeners();
-    try {
-      final resp = await _http.post(
-        Uri.parse('$_baseUrl/auth/egate'),
-        headers: _jsonHeaders(),
-        body: jsonEncode({'username': username, 'password': password}),
-        tag: 'egateLogin',
-      );
-
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      if (data['success'] != true) {
-        throw Exception(data['error'] as String? ?? 'Login failed');
+      final hook = onLogin;
+      if (hook != null) {
+        // Fire-and-forget: a sync pull failure must not break login UX.
+        unawaited(hook());
       }
-
-      final loginResult =
-          data['loginResult'] as Map<String, dynamic>? ?? const {};
-
-      _session = UserSession(
-        sessionToken: data['sessionToken'] as String? ?? '',
-        tgc: data['tgc'] as String? ?? '',
-        userId: data['userId'] as String? ?? username,
-        userName: loginResult['name'] as String? ?? '',
-        schoolName: '上海科技大学',
-        tenantId: data['tenantId'] as String? ?? '',
-        phoneNumber: '',
-        cookies: data['cookies'] as String? ?? '',
-        createdAt: DateTime.now(),
-        studentId: loginResult['openId'] as String? ?? '',
-      );
-
-      await _storage.saveSession(_session!);
-      notifyListeners();
       return _session!;
     } finally {
       _loading = false;

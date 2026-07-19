@@ -10,8 +10,10 @@ import 'package:techpie/services/http_client.dart';
 import 'package:techpie/services/oa_gym_service.dart';
 import 'package:techpie/services/schedule_service.dart';
 import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/services/sync_service.dart';
 import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
+import 'package:techpie/services/uni_auth_service.dart';
 
 void main() {
   testWidgets('App shell renders with desktop sidebar', (
@@ -27,13 +29,15 @@ void main() {
     final storage = StorageService(prefs);
     final logger = DebugLogger();
     final http = LoggingHttpClient(logger);
-    final auth = AuthService(storage, http);
+    final uniAuth = UniAuthService();
+    final auth = AuthService(storage, http, uniAuth);
     final theme = ThemeService(storage);
-    final schedule = ScheduleService(storage, http, auth);
     final tpAuth = ThirdPartyAuthService(storage, http);
+    final schedule = ScheduleService(storage, http, auth, tpAuth);
     final assignments =
         AssignmentService(storage, http, auth, tpAuth, schedule);
-    final oaGym = OaGymService(auth, storage);
+    final oaGym = OaGymService(auth, storage, tpAuth);
+    final sync = SyncService(auth, tpAuth, storage);
 
     await tester.pumpWidget(
       TechPieApp(
@@ -45,6 +49,8 @@ void main() {
         assignmentService: assignments,
         thirdPartyAuthService: tpAuth,
         oaGymService: oaGym,
+        uniAuthService: uniAuth,
+        syncService: sync,
       ),
     );
 
@@ -56,22 +62,23 @@ void main() {
   });
 
   testWidgets('Navigation switches pages', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
     final logger = DebugLogger();
     final http = LoggingHttpClient(logger);
-    final auth = AuthService(storage, http);
-    final schedule = ScheduleService(storage, http, auth);
+    final uniAuth = UniAuthService();
+    final auth = AuthService(storage, http, uniAuth);
     final tpAuth = ThirdPartyAuthService(storage, http);
+    final schedule = ScheduleService(storage, http, auth, tpAuth);
     final assignments =
         AssignmentService(storage, http, auth, tpAuth, schedule);
-    final oaGym = OaGymService(auth, storage);
+    final oaGym = OaGymService(auth, storage, tpAuth);
+    final sync = SyncService(auth, tpAuth, storage);
 
     await tester.pumpWidget(
       TechPieApp(
@@ -83,9 +90,15 @@ void main() {
         assignmentService: assignments,
         thirdPartyAuthService: tpAuth,
         oaGymService: oaGym,
+        uniAuthService: uniAuth,
+        syncService: sync,
       ),
     );
 
+    final navigationBar = tester.widget<NavigationBar>(
+      find.byType(NavigationBar),
+    );
+    expect(navigationBar.overlayColor?.resolve(<WidgetState>{}), Colors.transparent);
     // Starts on Home
     expect(find.text('Welcome to TechPie'), findsOneWidget);
 
@@ -93,6 +106,7 @@ void main() {
     await tester.tap(find.text('Schedule'));
     await tester.pumpAndSettle();
     // Not logged in, so shows login prompt
+    expect(find.byIcon(Icons.calendar_month), findsOneWidget);
     expect(find.text('登录以查看课表'), findsOneWidget);
 
     // Tap Deadlines

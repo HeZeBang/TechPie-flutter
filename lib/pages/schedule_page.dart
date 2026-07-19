@@ -78,9 +78,18 @@ class _SchedulePageState extends State<SchedulePage> {
 
   Future<void> _refresh() async {
     final auth = ServiceProvider.of(context).authService;
-    if (auth.isLoggedIn) {
-      await _schedule.fetchAll();
-    }
+    if (!auth.isLoggedIn) return;
+    await _schedule.fetchAll();
+    if (!mounted) return;
+    final hasError = _schedule.error != null;
+    showAdaptiveFeedback(
+      context: context,
+      message: hasError ? '刷新失败' : '已刷新',
+      style: hasError
+          ? AdaptiveFeedbackStyle.error
+          : AdaptiveFeedbackStyle.success,
+      duration: const Duration(seconds: 2),
+    );
   }
 
   Future<void> _dismissKeyboard() async {
@@ -541,7 +550,9 @@ class _SchedulePageState extends State<SchedulePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final today = DateTime.now();
-    final auth = ServiceProvider.of(context).authService;
+    final sp = ServiceProvider.of(context);
+    final auth = sp.authService;
+    final tpAuth = sp.thirdPartyAuthService;
     final actualCurrentWeek = _schedule.currentWeek().clamp(1, 25).toInt();
     final isViewingCurrentWeek = _currentWeek == actualCurrentWeek;
     final useIosChrome = isIos();
@@ -718,7 +729,7 @@ class _SchedulePageState extends State<SchedulePage> {
               ? 0
               : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top,
         ),
-        child: !auth.isLoggedIn
+        child: !auth.isLoggedIn || !tpAuth.hasEgateBinding
             ? Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -730,7 +741,7 @@ class _SchedulePageState extends State<SchedulePage> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      '登录以查看课表',
+                      auth.isLoggedIn ? '绑定 eGate 以查看课表' : '登录以查看课表',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -738,62 +749,35 @@ class _SchedulePageState extends State<SchedulePage> {
                   ],
                 ),
               )
-            : _schedule.loading && _courses.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : _schedule.error != null && _courses.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                              size: 48,
-                              color: theme.colorScheme.error,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              '加载失败',
-                              style: theme.textTheme.bodyLarge?.copyWith(
-                                color: theme.colorScheme.error,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            FilledButton.tonal(
-                              onPressed: _refresh,
-                              child: const Text('重试'),
-                            ),
-                          ],
-                        ),
+            : RefreshIndicator(
+                onRefresh: _refresh,
+                child: useIosChrome
+                    ? PageView.builder(
+                        controller: _weekPageController,
+                        itemCount: 25,
+                        onPageChanged: (index) {
+                          _setCurrentWeek(index + 1);
+                        },
+                        itemBuilder: (context, index) {
+                          final week = index + 1;
+                          return _buildScheduleWeek(
+                            context,
+                            theme,
+                            today,
+                            week,
+                            _coursesForWeek(week),
+                          );
+                        },
                       )
-                    : RefreshIndicator(
-                        onRefresh: _refresh,
-                        child: useIosChrome
-                            ? PageView.builder(
-                                controller: _weekPageController,
-                                itemCount: 25,
-                                onPageChanged: (index) {
-                                  _setCurrentWeek(index + 1);
-                                },
-                                itemBuilder: (context, index) {
-                                  final week = index + 1;
-                                  return _buildScheduleWeek(
-                                    context,
-                                    theme,
-                                    today,
-                                    week,
-                                    _coursesForWeek(week),
-                                  );
-                                },
-                              )
-                            : _buildScheduleWeek(
-                                context,
-                                theme,
-                                today,
-                                _currentWeek,
-                                _courses,
-                                animated: true,
-                              ),
+                    : _buildScheduleWeek(
+                        context,
+                        theme,
+                        today,
+                        _currentWeek,
+                        _courses,
+                        animated: true,
                       ),
+              ),
       ),
     );
   }

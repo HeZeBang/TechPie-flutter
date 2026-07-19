@@ -75,3 +75,6 @@ ohos/build-profile.json5
 /android/build.gradle
 /android/settings.gradle
 /android/app/build.gradle
+
+# Cache
+.cache

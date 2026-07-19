@@ -393,27 +393,31 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final cookies = <WebViewCookie>[];
     if (cookieType == null) return cookies;
 
-    final session = ServiceProvider.of(context).authService.session;
-    if (session == null) return cookies;
+    final sp = ServiceProvider.of(context);
+    // ecourse and student-leave both authenticate against the eGate/IDS
+    // SSO, so they share the eGate binding's CpDaily cookies (which always
+    // include CASTGC via [ThirdPartyAuthService.egateCookies]). Without an
+    // eGate binding there is nothing to inject and the webview opens
+    // unauthenticated — the UI should steer the user to bind eGate first.
+    final String rawCookies = sp.thirdPartyAuthService.egateCookies();
+    if (rawCookies.isEmpty) return cookies;
 
     final domain = 'ids.shanghaitech.edu.cn';
 
-    if (session.cookies.isNotEmpty) {
-      for (final part in session.cookies.split(';')) {
-        final idx = part.indexOf('=');
-        if (idx > 0) {
-          final key = part.substring(0, idx).trim();
-          final value = part.substring(idx + 1).trim();
-          if (key.isNotEmpty && value.isNotEmpty) {
-            cookies.add(
-              WebViewCookie(
-                name: key,
-                value: value,
-                domain: domain,
-                path: '/',
-              ),
-            );
-          }
+    for (final part in rawCookies.split(';')) {
+      final idx = part.indexOf('=');
+      if (idx > 0) {
+        final key = part.substring(0, idx).trim();
+        final value = part.substring(idx + 1).trim();
+        if (key.isNotEmpty && value.isNotEmpty) {
+          cookies.add(
+            WebViewCookie(
+              name: key,
+              value: value,
+              domain: domain,
+              path: '/',
+            ),
+          );
         }
       }
     }

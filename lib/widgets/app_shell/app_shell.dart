@@ -20,6 +20,7 @@ class _AppShellState extends State<AppShell> {
   static const int _assignmentsIndex = 2;
 
   int _selectedIndex = 0;
+  int _previousSelectedIndex = 0;
   bool _sidebarCollapsed = false;
   static const List<AppDestination> _destinations = [
     AppDestination(
@@ -58,6 +59,7 @@ class _AppShellState extends State<AppShell> {
 
   void _onDestinationSelected(int index) {
     if (index == _selectedIndex) return;
+    _previousSelectedIndex = _selectedIndex;
     setState(() => _selectedIndex = index);
   }
 
@@ -68,11 +70,41 @@ class _AppShellState extends State<AppShell> {
   Widget _buildPageView() {
     return PageTransitionSwitcher(
       duration: const Duration(milliseconds: 300),
+      layoutBuilder: (entries) => Stack(
+        fit: StackFit.expand,
+        children: entries,
+      ),
       transitionBuilder: (child, animation, secondaryAnimation) {
-        return FadeThroughTransition(
-          animation: animation,
-          secondaryAnimation: secondaryAnimation,
-          fillColor: Colors.transparent,
+        // Pure horizontal slide — no fade, no scale, no color fill.
+        // Controllers always run forward: the new entry's primary (0→1)
+        // drives its incoming slide; the old entry's secondary (0→1)
+        // drives its outgoing slide. Direction is encoded only in the
+        // tween sign, so backward navigation mirrors forward correctly
+        // and the easing curve stays consistent in both directions.
+        final direction = _selectedIndex >= _previousSelectedIndex ? 1.0 : -1.0;
+        final incoming = Tween<Offset>(
+          begin: Offset(direction, 0),
+          end: Offset.zero,
+        );
+        final outgoing = Tween<Offset>(
+          begin: Offset.zero,
+          end: Offset(-direction, 0),
+        );
+        return AnimatedBuilder(
+          animation: Listenable.merge([animation, secondaryAnimation]),
+          builder: (context, built) {
+            final incomingOffset = incoming.transform(
+              Curves.easeInOutCubicEmphasized.transform(animation.value),
+            );
+            final outgoingOffset = outgoing.transform(
+              Curves.easeInOutCubicEmphasized
+                  .transform(secondaryAnimation.value),
+            );
+            return FractionalTranslation(
+              translation: incomingOffset + outgoingOffset,
+              child: built,
+            );
+          },
           child: child,
         );
       },

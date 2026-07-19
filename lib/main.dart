@@ -14,8 +14,10 @@ import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
 import 'services/storage_service.dart';
+import 'services/sync_service.dart';
 import 'services/theme_service.dart';
 import 'services/third_party_auth_service.dart';
+import 'services/uni_auth_service.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
 
@@ -47,18 +49,24 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final storageService = StorageService(prefs);
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
   final httpClient = LoggingHttpClient(debugLogger);
-  final authService = AuthService(storageService, httpClient);
+  final uniAuthService = UniAuthService();
+  final authService = AuthService(storageService, httpClient, uniAuthService);
   final themeService = ThemeService(storageService);
-  final scheduleService = ScheduleService(
-    storageService,
-    httpClient,
-    authService,
-  );
   final thirdPartyAuthService = ThirdPartyAuthService(
     storageService,
     httpClient,
   );
-  final oaGymService = OaGymService(authService, storageService);
+  final scheduleService = ScheduleService(
+    storageService,
+    httpClient,
+    authService,
+    thirdPartyAuthService,
+  );
+  final oaGymService = OaGymService(
+    authService,
+    storageService,
+    thirdPartyAuthService,
+  );
   final assignmentService = AssignmentService(
     storageService,
     httpClient,
@@ -66,18 +74,39 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService,
     scheduleService,
   );
+  final syncService = SyncService(authService, thirdPartyAuthService, storageService);
 
   authService.onLogout = () async {
-    await thirdPartyAuthService.clearAll();
+    // Third-party bindings persist across logouts — they will be used by the
+    // sync system. Only clear ephemeral state.
     await assignmentService.clearCache();
     await assignmentService.clearAllOverrides();
     oaGymService.clearSession();
+  };
+
+  // Cloud-sync push hook: after any binding mutation, best-effort push the new
+  // state (throttled). Wired via post-construction setter to avoid a circular
+  // dependency between ThirdPartyAuthService and SyncService.
+  thirdPartyAuthService.onBindingsChanged = () {
+    return syncService.pushIfDue();
+  };
+
+  // Cloud-sync pull hook: after a fresh SSO login, pull cloud bindings onto
+  // this device (or surface the master-password restore prompt).
+  authService.onLogin = () async {
+    if (!syncService.enabled) return;
+    try {
+      await syncService.pull();
+    } on NeedMasterPassword {
+      // Settings UI surfaces the restore banner.
+    } catch (_) {}
   };
 
   // -- Boot critical path: local I/O only --
   // Hydrate everything from caches so the first frame paints with data.
   await authService.loadSession();
   await thirdPartyAuthService.initialize();
+  await syncService.loadCachedKey();
   assignmentService.loadCached();
   await scheduleService.loadCachedData();
 
@@ -91,14 +120,20 @@ Future<void> _realMain(SharedPreferences prefs) async {
       assignmentService: assignmentService,
       thirdPartyAuthService: thirdPartyAuthService,
       oaGymService: oaGymService,
+      uniAuthService: uniAuthService,
+      syncService: syncService,
     ),
   );
 
-  // -- Background: renew tokens first (main session + third-party in
+  // -- Background: renew tokens first (main SSO session + third-party in
   // parallel — they touch independent state), then fan out fetches that
   // depend on those tokens. The whole block is unawaited so the splash
   // never blocks. --
   unawaited(() async {
+    // Primary SSO renewal uses Casdoor's refresh-token grant. With no
+    // refresh token (legacy session) this is a no-op and returns false —
+    // that is NOT a "login expired" condition, only an actual renewal
+    // failure is.
     final renewMain = authService.isLoggedIn
         ? authService.tryRenewSession()
         : Future.value(true);
@@ -108,7 +143,11 @@ Future<void> _realMain(SharedPreferences prefs) async {
     final mainOk = results[0] as bool;
     final failedTp = results[1] as List<ThirdPartyPlatform>;
 
-    if (!mainOk && !isIos()) {
+    // Only surface a renewal failure when we actually had a refresh token
+    // to try (a no-op returning false is not an expiry).
+    if (!mainOk &&
+        authService.session?.geekpieRefreshToken != null &&
+        !isIos()) {
       showAdaptiveFeedback(
         message: '登录已过期，请重新登录',
         style: AdaptiveFeedbackStyle.error,
@@ -123,12 +162,27 @@ Future<void> _realMain(SharedPreferences prefs) async {
       );
     }
 
-    if (authService.isLoggedIn) {
+    if (thirdPartyAuthService.hasEgateBinding) {
       await scheduleService.fetchAll();
     }
     if (authService.isLoggedIn ||
         thirdPartyAuthService.boundPlatforms.isNotEmpty) {
       unawaited(assignmentService.fetchAssignments());
+    }
+
+    // Cloud-sync pull: if sync is enabled and this device has a cached master
+    // key, silently pull the latest cloud bindings before any feature fetch
+    // fires. If the device is enabled but has no key (new device with a cloud
+    // backup), set the needsRestore flag so the UI can prompt for the master
+    // password. All best-effort — sync failures never block boot.
+    if (syncService.enabled && authService.isLoggedIn) {
+      try {
+        await syncService.pull();
+      } on NeedMasterPassword {
+        // Surface via the settings/banner UI; not a toast.
+      } catch (_) {
+        // Network/Casdoor hiccup — next manual sync retries.
+      }
     }
   }());
   // Allow auto-refetch on subsequent auth / binding changes
@@ -171,6 +225,8 @@ class TechPieApp extends StatefulWidget {
   final AssignmentService assignmentService;
   final ThirdPartyAuthService thirdPartyAuthService;
   final OaGymService oaGymService;
+  final UniAuthService uniAuthService;
+  final SyncService syncService;
 
   const TechPieApp({
     super.key,
@@ -182,6 +238,8 @@ class TechPieApp extends StatefulWidget {
     required this.assignmentService,
     required this.thirdPartyAuthService,
     required this.oaGymService,
+    required this.uniAuthService,
+    required this.syncService,
   });
 
   @override
@@ -213,6 +271,8 @@ class _TechPieAppState extends State<TechPieApp> {
         assignmentService: widget.assignmentService,
         thirdPartyAuthService: widget.thirdPartyAuthService,
         oaGymService: widget.oaGymService,
+        uniAuthService: widget.uniAuthService,
+        syncService: widget.syncService,
         child: MaterialApp(
           scaffoldMessengerKey: rootMessengerKey,
           title: 'TechPie',

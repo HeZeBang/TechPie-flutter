@@ -52,15 +52,52 @@ class MobileShell extends StatelessWidget {
           : NavigationBar(
               selectedIndex: selectedIndex,
               onDestinationSelected: onDestinationSelected,
+              // The selection indicator is the persistent selected state.
+              // Suppress transient state layers so they do not overlap it.
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
               destinations: [
-                for (final destination in destinations)
+                for (var index = 0; index < destinations.length; index++)
                   NavigationDestination(
-                    icon: Icon(destination.icon),
-                    selectedIcon: Icon(destination.selectedIcon),
-                    label: destination.label,
+                    icon: _NavigationDestinationIcon(
+                      icon: destinations[index].icon,
+                      selectedIcon: destinations[index].selectedIcon,
+                      selected: index == selectedIndex,
+                    ),
+                    label: destinations[index].label,
                   ),
               ],
             ),
+    );
+  }
+}
+
+class _NavigationDestinationIcon extends StatelessWidget {
+  const _NavigationDestinationIcon({
+    required this.icon,
+    required this.selectedIcon,
+    required this.selected,
+  });
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final displayedIcon = selected ? selectedIcon : icon;
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.88, end: 1).animate(animation),
+          child: child,
+        ),
+      ),
+      child: Icon(displayedIcon, key: ValueKey(displayedIcon)),
     );
   }
 }
