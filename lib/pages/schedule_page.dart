@@ -78,9 +78,18 @@ class _SchedulePageState extends State<SchedulePage> {
 
   Future<void> _refresh() async {
     final auth = ServiceProvider.of(context).authService;
-    if (auth.isLoggedIn) {
-      await _schedule.fetchAll();
-    }
+    if (!auth.isLoggedIn) return;
+    await _schedule.fetchAll();
+    if (!mounted) return;
+    final hasError = _schedule.error != null;
+    showAdaptiveFeedback(
+      context: context,
+      message: hasError ? '刷新失败' : '已刷新',
+      style: hasError
+          ? AdaptiveFeedbackStyle.error
+          : AdaptiveFeedbackStyle.success,
+      duration: const Duration(seconds: 2),
+    );
   }
 
   Future<void> _dismissKeyboard() async {
