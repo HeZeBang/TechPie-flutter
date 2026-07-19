@@ -62,11 +62,10 @@ void main() {
   });
 
   testWidgets('Navigation switches pages', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
@@ -96,6 +95,10 @@ void main() {
       ),
     );
 
+    final navigationBar = tester.widget<NavigationBar>(
+      find.byType(NavigationBar),
+    );
+    expect(navigationBar.overlayColor?.resolve(<WidgetState>{}), Colors.transparent);
     // Starts on Home
     expect(find.text('Welcome to TechPie'), findsOneWidget);
 
@@ -103,6 +106,7 @@ void main() {
     await tester.tap(find.text('Schedule'));
     await tester.pumpAndSettle();
     // Not logged in, so shows login prompt
+    expect(find.byIcon(Icons.calendar_month), findsOneWidget);
     expect(find.text('登录以查看课表'), findsOneWidget);
 
     // Tap Deadlines
