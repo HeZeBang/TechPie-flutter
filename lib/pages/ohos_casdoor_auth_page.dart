@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-/// OAuth WebView for OHOS, where Casdoor's SDK has no platform implementation.
+/// OAuth WebView for OHOS, where the Casdoor SDK has no platform
+/// implementation. Uses webview_flutter (OHOS fork) for the in-app
+/// webview.
 class OhosCasdoorAuthPage extends StatefulWidget {
   const OhosCasdoorAuthPage({
     super.key,
