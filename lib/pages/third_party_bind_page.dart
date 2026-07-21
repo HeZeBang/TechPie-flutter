@@ -12,6 +12,7 @@ import '../widgets/adaptive_feedback.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_glass_switch.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios_liquid/ios_native_segmented_control.dart';
 import '../widgets/ios_liquid/ios_native_text_field_group.dart';
 import '../widgets/ios_liquid/ios_native_text_view.dart';
 import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
@@ -307,12 +308,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscure
-                            ? Icons.visibility_off
-                            : Icons.visibility,
+                        _obscure ? Icons.visibility_off : Icons.visibility,
                       ),
-                      onPressed: () =>
-                          setState(() => _obscure = !_obscure),
+                      onPressed: () => setState(() => _obscure = !_obscure),
                     ),
                   ),
                   validator: (v) => (v == null || v.isEmpty) ? '必填' : null,
@@ -345,10 +343,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                     ),
                     const SizedBox(width: 12),
                     FilledButton.tonal(
-                      onPressed:
-                          (_smsCooldown > 0 || _sendingSms)
-                              ? null
-                              : () => unawaited(_sendEgateSms()),
+                      onPressed: (_smsCooldown > 0 || _sendingSms)
+                          ? null
+                          : () => unawaited(_sendEgateSms()),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size(100, 56),
                       ),
@@ -356,13 +353,10 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                           ? const SizedBox(
                               height: 20,
                               width: 20,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : Text(
-                              _smsCooldown > 0
-                                  ? '${_smsCooldown}s'
-                                  : '发送验证码',
+                              _smsCooldown > 0 ? '${_smsCooldown}s' : '发送验证码',
                             ),
                     ),
                   ],
@@ -371,65 +365,66 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
               const SizedBox(height: 8),
             ] else ...[
               TextFormField(
-              controller: _accountCtrl,
-              autofillHints: const [AutofillHints.username],
-              keyboardType: _isGradescope
-                  ? TextInputType.emailAddress
-                  : TextInputType.text,
-              decoration: InputDecoration(
-                labelText: _isGradescope ? '邮箱' : '用户名',
-                border: const OutlineInputBorder(),
-              ),
-              validator: (v) => (v == null || v.trim().isEmpty) ? '必填' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _passwordCtrl,
-              autofillHints: const [AutofillHints.password],
-              obscureText: _obscure,
-              decoration: InputDecoration(
-                labelText: '密码',
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscure ? Icons.visibility_off : Icons.visibility,
-                  ),
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                ),
-              ),
-              validator: (v) => (v == null || v.isEmpty) ? '必填' : null,
-            ),
-            if (_isHydro) ...[
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _hydroOriginCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Hydro 站点 origin',
-                  helperText: '默认 https://acm.shanghaitech.edu.cn',
-                  border: OutlineInputBorder(),
+                controller: _accountCtrl,
+                autofillHints: const [AutofillHints.username],
+                keyboardType: _isGradescope
+                    ? TextInputType.emailAddress
+                    : TextInputType.text,
+                decoration: InputDecoration(
+                  labelText: _isGradescope ? '邮箱' : '用户名',
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (v) => (v == null || v.trim().isEmpty) ? '必填' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _hydroDomainsCtrl,
-                minLines: 2,
-                maxLines: 6,
-                decoration: const InputDecoration(
-                  labelText: '课程 domain (每行一个,或用逗号分隔)',
-                  helperText: '例: SI100B_2025_Autumn',
-                  border: OutlineInputBorder(),
-                  alignLabelWithHint: true,
+                controller: _passwordCtrl,
+                autofillHints: const [AutofillHints.password],
+                obscureText: _obscure,
+                decoration: InputDecoration(
+                  labelText: '密码',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscure ? Icons.visibility_off : Icons.visibility,
+                    ),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
                 ),
-                validator: (v) {
-                  final list = (v ?? '')
-                      .split(RegExp(r'[\s,]+'))
-                      .where((e) => e.trim().isNotEmpty);
-                  return list.isEmpty ? '至少填一个 domain' : null;
-                },
+                validator: (v) => (v == null || v.isEmpty) ? '必填' : null,
               ),
-            ],
-            const SizedBox(height: 8),
+              if (_isHydro) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _hydroOriginCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Hydro 站点 origin',
+                    helperText: '默认 https://acm.shanghaitech.edu.cn',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? '必填' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _hydroDomainsCtrl,
+                  minLines: 2,
+                  maxLines: 6,
+                  decoration: const InputDecoration(
+                    labelText: '课程 domain (每行一个,或用逗号分隔)',
+                    helperText: '例: SI100B_2025_Autumn',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                  validator: (v) {
+                    final list = (v ?? '')
+                        .split(RegExp(r'[\s,]+'))
+                        .where((e) => e.trim().isNotEmpty);
+                    return list.isEmpty ? '至少填一个 domain' : null;
+                  },
+                ),
+              ],
+              const SizedBox(height: 8),
             ],
             if (isIos())
               MergeSemantics(
@@ -509,28 +504,106 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
               _InlineBindFeedback(message: _inlineError!),
               const SizedBox(height: 16),
             ],
-            IosNativeTextFieldGroup(
-              items: [
-                IosNativeTextFieldGroupItem(
-                  placeholder: _isGradescope ? '邮箱' : '用户名',
-                  controller: _accountCtrl,
-                  keyboardType: _isGradescope
-                      ? TextInputType.emailAddress
-                      : TextInputType.text,
-                  textInputAction: TextInputAction.next,
+            if (_isEgate) ...[
+              IosNativeSegmentedControl(
+                value: _egateLoginMethod,
+                segments: const ['密码登录', '短信登录'],
+                onChanged: (value) {
+                  setState(() {
+                    _egateLoginMethod = value;
+                    _inlineError = null;
+                  });
+                },
+              ),
+              const SizedBox(height: 18),
+              if (_egateLoginMethod == 0)
+                IosNativeTextFieldGroup(
+                  items: [
+                    IosNativeTextFieldGroupItem(
+                      placeholder: '学号',
+                      controller: _accountCtrl,
+                      textInputAction: TextInputAction.next,
+                    ),
+                    IosNativeTextFieldGroupItem(
+                      placeholder: '密码',
+                      controller: _passwordCtrl,
+                      obscureText: _obscure,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => unawaited(_submit()),
+                    ),
+                  ],
+                )
+              else ...[
+                IosNativeTextFieldGroup(
+                  items: [
+                    IosNativeTextFieldGroupItem(
+                      placeholder: '手机号码',
+                      controller: _egatePhoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.next,
+                    ),
+                  ],
                 ),
-                IosNativeTextFieldGroupItem(
-                  placeholder: '密码',
-                  controller: _passwordCtrl,
-                  obscureText: _obscure,
-                  textInputAction:
-                      _isHydro ? TextInputAction.next : TextInputAction.done,
-                  onSubmitted: (_) {
-                    if (!_isHydro) unawaited(_submit());
-                  },
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: IosNativeTextFieldGroup(
+                        items: [
+                          IosNativeTextFieldGroupItem(
+                            placeholder: '验证码',
+                            controller: _egateCodeCtrl,
+                            keyboardType: TextInputType.number,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => unawaited(_submit()),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.tonal(
+                      onPressed: (_smsCooldown > 0 || _sendingSms)
+                          ? null
+                          : () => unawaited(_sendEgateSms()),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(100, 56),
+                      ),
+                      child: _sendingSms
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              _smsCooldown > 0 ? '${_smsCooldown}s' : '发送验证码',
+                            ),
+                    ),
+                  ],
                 ),
               ],
-            ),
+            ] else
+              IosNativeTextFieldGroup(
+                items: [
+                  IosNativeTextFieldGroupItem(
+                    placeholder: _isGradescope ? '邮箱' : '用户名',
+                    controller: _accountCtrl,
+                    keyboardType: _isGradescope
+                        ? TextInputType.emailAddress
+                        : TextInputType.text,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  IosNativeTextFieldGroupItem(
+                    placeholder: '密码',
+                    controller: _passwordCtrl,
+                    obscureText: _obscure,
+                    textInputAction:
+                        _isHydro ? TextInputAction.next : TextInputAction.done,
+                    onSubmitted: (_) {
+                      if (!_isHydro) unawaited(_submit());
+                    },
+                  ),
+                ],
+              ),
             if (_isHydro) ...[
               const SizedBox(height: 16),
               IosNativeTextFieldGroup(
@@ -566,22 +639,24 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                 ),
               ),
             ],
-            const SizedBox(height: 16),
-            MergeSemantics(
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('自动更新 Token'),
-                subtitle: Text(
-                  '过期前 48 小时内自动重登,免去手动重绑',
-                  style: TextStyle(color: secondaryLabel),
+            if (!_isEgate || _egateLoginMethod == 0) ...[
+              const SizedBox(height: 16),
+              MergeSemantics(
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('自动更新 Token'),
+                  subtitle: Text(
+                    '过期前 48 小时内自动重登,免去手动重绑',
+                    style: TextStyle(color: secondaryLabel),
+                  ),
+                  trailing: IosGlassSwitch(
+                    value: _autoRenew,
+                    onChanged: (value) => unawaited(_onAutoRenewChanged(value)),
+                  ),
+                  onTap: () => unawaited(_onAutoRenewChanged(!_autoRenew)),
                 ),
-                trailing: IosGlassSwitch(
-                  value: _autoRenew,
-                  onChanged: (value) => unawaited(_onAutoRenewChanged(value)),
-                ),
-                onTap: () => unawaited(_onAutoRenewChanged(!_autoRenew)),
               ),
-            ),
+            ],
             const SizedBox(height: 18),
             FilledButton(
               onPressed: _busy ? null : () => unawaited(_submit()),
