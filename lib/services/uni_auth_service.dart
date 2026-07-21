@@ -4,6 +4,7 @@ import 'package:casdoor_flutter_sdk/casdoor_flutter_sdk.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../pages/macos_casdoor_auth_page.dart';
 import '../pages/ohos_casdoor_auth_page.dart';
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,8 @@ class UniAuthService extends ChangeNotifier {
       final String callbackUrl;
       if (defaultTargetPlatform.name == 'ohos') {
         callbackUrl = await _showOhosLogin(navigator, casdoor);
+      } else if (defaultTargetPlatform == TargetPlatform.macOS) {
+        callbackUrl = await _showMacosLogin(navigator, casdoor);
       } else {
         callbackUrl = await casdoor.showFullscreen(context);
       }
@@ -118,6 +121,24 @@ class UniAuthService extends ChangeNotifier {
     final callbackUrl = await navigator.push<String>(
       MaterialPageRoute<String>(
         builder: (_) => OhosCasdoorAuthPage(
+          authorizeUrl: casdoor.getSigninUrl().toString(),
+          callbackScheme: _uniAuthCallbackScheme,
+        ),
+      ),
+    );
+    if (callbackUrl == null || callbackUrl.isEmpty) {
+      throw CasdoorAuthCancelledException();
+    }
+    return callbackUrl;
+  }
+
+  Future<String> _showMacosLogin(
+    NavigatorState navigator,
+    Casdoor casdoor,
+  ) async {
+    final callbackUrl = await navigator.push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => MacosCasdoorAuthPage(
           authorizeUrl: casdoor.getSigninUrl().toString(),
           callbackScheme: _uniAuthCallbackScheme,
         ),
