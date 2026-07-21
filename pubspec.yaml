@@ -95,7 +95,7 @@ dependency_overrides:
   # native setCookie via webkit_cookie_manager_add_cookie.
   desktop_webview_window:
     git:
-      url: git@github.com:HeZeBang/desktop_webview_window_fork.git
+      url: https://github.com/HeZeBang/desktop_webview_window_fork.git
       ref: master
 
 dev_dependencies:
