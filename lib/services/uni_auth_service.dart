@@ -76,7 +76,7 @@ class UniAuthService extends ChangeNotifier {
     try {
       final casdoor = _getCasdoor();
       final String callbackUrl;
-      if (defaultTargetPlatform == TargetPlatform.ohos) {
+      if (defaultTargetPlatform.name == 'ohos') {
         callbackUrl = await _showOhosLogin(navigator, casdoor);
       } else {
         callbackUrl = await casdoor.showFullscreen(context);
@@ -111,7 +111,10 @@ class UniAuthService extends ChangeNotifier {
     }
   }
 
-  Future<String> _showOhosLogin(NavigatorState navigator, Casdoor casdoor) async {
+  Future<String> _showOhosLogin(
+    NavigatorState navigator,
+    Casdoor casdoor,
+  ) async {
     final callbackUrl = await navigator.push<String>(
       MaterialPageRoute<String>(
         builder: (_) => OhosCasdoorAuthPage(
