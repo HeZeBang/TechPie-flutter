@@ -55,11 +55,6 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
         title: widget.title,
         windowWidth: 900,
         windowHeight: 700,
-        // TechPie doesn't use the title bar (Flutter view) that
-        // desktop_webview_window creates for navigation buttons —
-        // the webview has its own. Set height to 0 so the WebKit
-        // view fills the full window without a black bar.
-        titleBarHeight: 0,
       ),
     );
 
