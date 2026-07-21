@@ -59,13 +59,17 @@ dependencies:
       ref: br_webview_flutter-v4.13.0_ohos
 
 dependency_overrides:
-  # OpenHarmony-SIG forks add OHOS platform implementations for plugins
-  # whose upstream pub.dev releases don't ship them. Without these, the
-  # MethodChannel calls on OHOS throw MissingPluginException at boot.
+  # Linux: use forked desktop_webview_window (WebKitGTK) for webview
+  # popup, avoiding WPE WebKit EGL issues on Wayland. The fork adds
+  # native setCookie via webkit_cookie_manager_add_cookie.
   desktop_webview_window:
     git:
       url: https://github.com/HeZeBang/desktop_webview_window_fork.git
       ref: master
+
+  # OpenHarmony-SIG forks add OHOS platform implementations for plugins
+  # whose upstream pub.dev releases don't ship them. Without these, the
+  # MethodChannel calls on OHOS throw MissingPluginException at boot.
   package_info_plus:
     git:
       url: https://gitee.com/openharmony-sig/flutter_plus_plugins.git
@@ -95,9 +99,6 @@ dependency_overrides:
   #   git:
   #     url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
   #     path: flutter_secure_storage_ohos
-  # Linux: use forked desktop_webview_window (WebKitGTK) for webview
-  # popup, avoiding WPE WebKit EGL issues on Wayland. The fork adds
-  # native setCookie via webkit_cookie_manager_add_cookie.
 
 dev_dependencies:
   # The "flutter_lints" package below contains a set of recommended lints to
