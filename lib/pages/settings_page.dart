@@ -586,11 +586,9 @@ class _EgateBindingTile extends StatelessWidget {
       onTap: bound
           ? null
           : () => unawaited(
-                Navigator.push(
+                pushPlatformViewPage<void>(
                   context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => const ThirdPartyAccountsPage(),
-                  ),
+                  builder: (_) => const ThirdPartyAccountsPage(),
                 ),
               ),
     );
