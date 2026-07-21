@@ -29,7 +29,6 @@ void main(List<String> args) async {
 
   WidgetsFlutterBinding.ensureInitialized();
   await initializePlatformCapabilities();
-
   // OHOS white-screen probe disabled to speed up startup. Re-enable by
   // restoring the runApp(_BootProbe...) calls and wrapping init in try/catch.
   // runApp(const _BootProbe(message: '启动中…'));
@@ -220,7 +219,6 @@ Future<void> _realMain(SharedPreferences prefs) async {
 //     );
 //   }
 // }
-
 class TechPieApp extends StatefulWidget {
   final AuthService authService;
   final DebugLogger debugLogger;
