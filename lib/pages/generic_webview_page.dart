@@ -11,9 +11,10 @@ import 'package:webview_flutter/webview_flutter.dart'
 
 /// A page that hosts a webview.
 ///
-/// On Linux it opens a separate popup window via [WebviewWindow]
-/// (WebKitGTK, which renders correctly on Wayland). On all other platforms
-/// it uses [WebViewWidget] (webview_flutter) for an in-app webview.
+/// On Linux and Windows it opens a separate popup window via
+/// [WebviewWindow] (WebKitGTK on Linux, WebView2 on Windows). On all
+/// other platforms it uses [WebViewWidget] (webview_flutter) for an
+/// in-app webview.
 class GenericWebViewPage extends StatefulWidget {
   const GenericWebViewPage({
     super.key,
@@ -36,17 +37,17 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
   @override
   void initState() {
     super.initState();
-    if (Platform.isLinux) {
-      unawaited(_openLinux());
+    if (Platform.isLinux || Platform.isWindows) {
+      unawaited(_openDesktop());
     } else {
       _controller = WebViewController();
       unawaited(_initController());
     }
   }
 
-  // -- Linux path (desktop_webview_window popup) --
+  // -- Desktop path (desktop_webview_window popup) --
 
-  Future<void> _openLinux() async {
+  Future<void> _openDesktop() async {
     final cookies = widget.cookies ?? const <WebViewCookie>[];
 
     final webview = await WebviewWindow.create(
@@ -72,7 +73,7 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  // -- Non-Linux path (webview_flutter in-app widget) --
+  // -- Mobile / webview_flutter in-app widget --
 
   Future<void> _initController() async {
     await _controller.setJavaScriptMode(JavaScriptMode.unrestricted);
@@ -81,17 +82,19 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
         onNavigationRequest: (request) => NavigationDecision.navigate,
       ),
     );
+
     final cookieManager = WebViewCookieManager();
     await cookieManager.clearCookies();
     for (final c in widget.cookies ?? const <WebViewCookie>[]) {
       await cookieManager.setCookie(c);
     }
+
     await _controller.loadRequest(Uri.parse(widget.url));
   }
 
   @override
   Widget build(BuildContext context) {
-    if (Platform.isLinux) {
+    if (Platform.isLinux || Platform.isWindows) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.title), centerTitle: true),
         body: const Center(child: CircularProgressIndicator()),
