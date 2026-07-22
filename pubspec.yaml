@@ -56,6 +56,17 @@ dependencies:
       url: https://gitcode.com/openharmony-tpc/flutter_packages.git
       path: packages/webview_flutter/webview_flutter
       ref: br_webview_flutter-v4.13.0_ohos
+  # flutter_ai element showcase (ported from ../flutter_ai demo). All three
+  # packages are pure Dart/Flutter (no platform channels) so they run on every
+  # techpie target incl. OHOS with no extra override. `highlight` is used by the
+  # demo's code_highlighter.dart and is also pure Dart.
+  flutter_ai_core:
+    path: ../flutter_ai/packages/flutter_ai_core
+  flutter_ai_client:
+    path: ../flutter_ai/packages/flutter_ai_client
+  flutter_ai_elements:
+    path: ../flutter_ai/packages/flutter_ai_elements
+  highlight: ^0.7.0
 
 dependency_overrides:
   # OpenHarmony-SIG forks add OHOS platform implementations for plugins
@@ -78,6 +89,13 @@ dependency_overrides:
       url: https://gitcode.com/openharmony-tpc/flutter_packages.git
       path: packages/webview_flutter/webview_flutter_platform_interface
       ref: br_webview_flutter-v4.13.0_ohos
+  # The flutter_ai packages declare transitive deps on flutter_ai_core/client
+  # as hosted (pub.dev) ranges, but we consume them from a local path checkout.
+  # Force every transitive reference to the local path so version solving agrees.
+  flutter_ai_core:
+    path: ../flutter_ai/packages/flutter_ai_core
+  flutter_ai_client:
+    path: ../flutter_ai/packages/flutter_ai_client
   # flutter_secure_storage:
   #   git:
   #     url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
