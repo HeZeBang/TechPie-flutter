@@ -170,6 +170,7 @@ class AssignmentService extends ChangeNotifier {
       };
 
   Future<void> fetchAssignments() async {
+    if (_loading) return; // 避免启动时 listener 链触发的并发重复调用
     _loading = true;
     _error = null;
     _platformErrors.clear();
