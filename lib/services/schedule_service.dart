@@ -66,6 +66,7 @@ class ScheduleService extends ChangeNotifier {
   }
 
   Future<void> fetchAll() async {
+    if (_loading) return; // 避免启动时并发重复调用
     if (!_hasEgateBinding) return;
     _loading = true;
     _error = null;
