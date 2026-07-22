@@ -171,7 +171,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     }
     if (authService.isLoggedIn ||
         thirdPartyAuthService.boundPlatforms.isNotEmpty) {
-      unawaited(assignmentService.fetchAssignments());
+      await assignmentService.fetchAssignments();
     }
 
     // Cloud-sync pull: if sync is enabled and this device has a cached master
@@ -188,10 +188,11 @@ Future<void> _realMain(SharedPreferences prefs) async {
         // Network/Casdoor hiccup — next manual sync retries.
       }
     }
+
+    // All initial fetches done — now allow listener-triggered auto-refetch
+    // so subsequent auth/binding changes don't double-fire.
+    assignmentService.enableAutoRefetch();
   }());
-  // Allow auto-refetch on subsequent auth / binding changes
-  // (login, bind, unbind, logout).
-  assignmentService.enableAutoRefetch();
 }
 
 // Disabled along with the boot probe above. Restore if the white-screen
