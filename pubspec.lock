@@ -114,12 +114,13 @@ packages:
     source: hosted
     version: "1.0.8"
   desktop_webview_window:
-    dependency: transitive
+    dependency: "direct main"
     description:
-      name: desktop_webview_window
-      sha256: "57cf20d81689d5cbb1adfd0017e96b669398a669d927906073b0e42fc64111c0"
-      url: "https://pub.flutter-io.cn"
-    source: hosted
+      path: "."
+      ref: master
+      resolved-ref: "7657bf9f66f4955fdb9a41338ad21b21c2b9e87b"
+      url: "https://github.com/HeZeBang/desktop_webview_window_fork.git"
+    source: git
     version: "0.2.3"
   dynamic_color:
     dependency: "direct main"
@@ -267,7 +268,7 @@ packages:
     description:
       path: flutter_secure_storage_ohos
       ref: "br_v9.2.2_ohos"
-      resolved-ref: "13fde43f67fd2ee8fc6d0a7bdc3a506947523309"
+      resolved-ref: cc6c28d6ea1d46ee83cc97d1328707946a1a2d38
       url: "https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git"
     source: git
     version: "1.0.0"
@@ -305,14 +306,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  fullscreen_window:
-    dependency: transitive
-    description:
-      name: fullscreen_window
-      sha256: "262a19366157542c3e1fa07232ee7e8a5c82e5223d912b04a2771c47aa6a048d"
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "1.2.1"
   http:
     dependency: "direct main"
     description:
@@ -806,14 +799,6 @@ packages:
       url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
     source: git
     version: "3.22.0"
-  webview_win_floating:
-    dependency: "direct main"
-    description:
-      name: webview_win_floating
-      sha256: "40b4f6c66554d3eb9c486952b5c072e2478f9471f64e6d63e92ddc4e527b7aa8"
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "3.0.3"
   win32:
     dependency: transitive
     description:

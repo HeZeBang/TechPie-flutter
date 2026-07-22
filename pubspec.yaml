@@ -2,7 +2,7 @@ name: techpie
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 0.1.0
 
 environment:
-  sdk: '>=3.6.2 <4.0.0'
+  sdk: ">=3.6.2 <4.0.0"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -34,6 +34,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cryptography: ^2.9.0
   cupertino_icons: ^1.0.8
+  desktop_webview_window: any
   dynamic_color: ">=1.7.0 <1.8.0"
   flutter:
     sdk: flutter
@@ -56,9 +57,16 @@ dependencies:
       url: https://gitcode.com/openharmony-tpc/flutter_packages.git
       path: packages/webview_flutter/webview_flutter
       ref: br_webview_flutter-v4.13.0_ohos
-  webview_win_floating: ^3.0.3
 
 dependency_overrides:
+  # Linux: use forked desktop_webview_window (WebKitGTK) for webview
+  # popup, avoiding WPE WebKit EGL issues on Wayland. The fork adds
+  # native setCookie via webkit_cookie_manager_add_cookie.
+  desktop_webview_window:
+    git:
+      url: https://github.com/HeZeBang/desktop_webview_window_fork.git
+      ref: master
+
   # OpenHarmony-SIG forks add OHOS platform implementations for plugins
   # whose upstream pub.dev releases don't ship them. Without these, the
   # MethodChannel calls on OHOS throw MissingPluginException at boot.
@@ -130,7 +138,6 @@ flutter_launcher_icons:
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

@@ -1,5 +1,6 @@
 import 'dart:async';
-
+import 'package:desktop_webview_window/desktop_webview_window.dart'
+    show runWebViewTitleBarWidget;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,11 +21,14 @@ import 'services/third_party_auth_service.dart';
 import 'services/uni_auth_service.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
+void main(List<String> args) async {
+  // If this Flutter engine is a desktop_webview_window title bar (secondary
+  // engine inside the webview popup), render the navigation controls and
+  // return early — do not start the full TechPie app.
+  if (runWebViewTitleBarWidget(args)) return;
 
-void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializePlatformCapabilities();
-
   // OHOS white-screen probe disabled to speed up startup. Re-enable by
   // restoring the runApp(_BootProbe...) calls and wrapping init in try/catch.
   // runApp(const _BootProbe(message: '启动中…'));
@@ -215,7 +219,6 @@ Future<void> _realMain(SharedPreferences prefs) async {
 //     );
 //   }
 // }
-
 class TechPieApp extends StatefulWidget {
   final AuthService authService;
   final DebugLogger debugLogger;
