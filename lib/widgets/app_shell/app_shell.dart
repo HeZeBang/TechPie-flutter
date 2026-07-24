@@ -5,6 +5,7 @@ import '../../pages/assignments_page.dart';
 import '../../pages/home_page.dart';
 import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
+import '../../utils/platform.dart';
 import 'app_destination.dart';
 import 'desktop/desktop_shell.dart';
 import 'mobile_shell.dart';
@@ -67,48 +68,13 @@ class _AppShellState extends State<AppShell> {
     setState(() => _sidebarCollapsed = !_sidebarCollapsed);
   }
 
-  Widget _buildPageView() {
-    return PageTransitionSwitcher(
-      duration: const Duration(milliseconds: 300),
-      layoutBuilder: (entries) => Stack(
-        fit: StackFit.expand,
-        children: entries,
-      ),
-      transitionBuilder: (child, animation, secondaryAnimation) {
-        // Pure horizontal slide — no fade, no scale, no color fill.
-        // Controllers always run forward: the new entry's primary (0→1)
-        // drives its incoming slide; the old entry's secondary (0→1)
-        // drives its outgoing slide. Direction is encoded only in the
-        // tween sign, so backward navigation mirrors forward correctly
-        // and the easing curve stays consistent in both directions.
-        final direction = _selectedIndex >= _previousSelectedIndex ? 1.0 : -1.0;
-        final incoming = Tween<Offset>(
-          begin: Offset(direction, 0),
-          end: Offset.zero,
-        );
-        final outgoing = Tween<Offset>(
-          begin: Offset.zero,
-          end: Offset(-direction, 0),
-        );
-        return AnimatedBuilder(
-          animation: Listenable.merge([animation, secondaryAnimation]),
-          builder: (context, built) {
-            final incomingOffset = incoming.transform(
-              Curves.easeInOutCubicEmphasized.transform(animation.value),
-            );
-            final outgoingOffset = outgoing.transform(
-              Curves.easeInOutCubicEmphasized
-                  .transform(secondaryAnimation.value),
-            );
-            return FractionalTranslation(
-              translation: incomingOffset + outgoingOffset,
-              child: built,
-            );
-          },
-          child: child,
-        );
-      },
-      child: _destinations[_selectedIndex].page,
+  Widget _buildPageView(BuildContext context) {
+    return AppDestinationSwitcher(
+      selectedIndex: _selectedIndex,
+      previousSelectedIndex: _previousSelectedIndex,
+      preserveVisitedPages: isIos(),
+      animationsEnabled: !MediaQuery.disableAnimationsOf(context),
+      pages: _destinations.map((destination) => destination.page).toList(),
     );
   }
 
@@ -125,7 +91,7 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final pageView = _buildPageView();
+    final pageView = _buildPageView(context);
 
     if (width >= 960) {
       return DesktopShell(
@@ -156,6 +122,110 @@ class _AppShellState extends State<AppShell> {
       assignmentsIndex: _assignmentsIndex,
       onDestinationSelected: _onDestinationSelected,
       child: pageView,
+    );
+  }
+}
+
+class AppDestinationSwitcher extends StatefulWidget {
+  const AppDestinationSwitcher({
+    super.key,
+    required this.pages,
+    required this.selectedIndex,
+    required this.previousSelectedIndex,
+    required this.preserveVisitedPages,
+    required this.animationsEnabled,
+  });
+
+  final List<Widget> pages;
+  final int selectedIndex;
+  final int previousSelectedIndex;
+  final bool preserveVisitedPages;
+  final bool animationsEnabled;
+
+  @override
+  State<AppDestinationSwitcher> createState() => _AppDestinationSwitcherState();
+}
+
+class _AppDestinationSwitcherState extends State<AppDestinationSwitcher> {
+  late final Set<int> _visitedIndexes = {widget.selectedIndex};
+
+  @override
+  void didUpdateWidget(covariant AppDestinationSwitcher oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _visitedIndexes.add(widget.selectedIndex);
+    _visitedIndexes.removeWhere((index) => index >= widget.pages.length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    assert(widget.pages.isNotEmpty);
+    assert(
+      widget.selectedIndex >= 0 && widget.selectedIndex < widget.pages.length,
+    );
+
+    if (widget.preserveVisitedPages) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          for (var index = 0; index < widget.pages.length; index++)
+            if (_visitedIndexes.contains(index))
+              Offstage(
+                offstage: index != widget.selectedIndex,
+                child: TickerMode(
+                  enabled: index == widget.selectedIndex,
+                  child: widget.pages[index],
+                ),
+              ),
+        ],
+      );
+    }
+
+    if (!widget.animationsEnabled) {
+      return widget.pages[widget.selectedIndex];
+    }
+
+    return PageTransitionSwitcher(
+      duration: const Duration(milliseconds: 300),
+      layoutBuilder: (entries) => Stack(
+        fit: StackFit.expand,
+        children: entries,
+      ),
+      transitionBuilder: (child, animation, secondaryAnimation) {
+        // Pure horizontal slide — no fade, no scale, no color fill.
+        // Controllers always run forward: the new entry's primary (0→1)
+        // drives its incoming slide; the old entry's secondary (0→1)
+        // drives its outgoing slide. Direction is encoded only in the
+        // tween sign, so backward navigation mirrors forward correctly
+        // and the easing curve stays consistent in both directions.
+        final direction =
+            widget.selectedIndex >= widget.previousSelectedIndex ? 1.0 : -1.0;
+        final incoming = Tween<Offset>(
+          begin: Offset(direction, 0),
+          end: Offset.zero,
+        );
+        final outgoing = Tween<Offset>(
+          begin: Offset.zero,
+          end: Offset(-direction, 0),
+        );
+        return AnimatedBuilder(
+          animation: Listenable.merge([animation, secondaryAnimation]),
+          builder: (context, built) {
+            final incomingOffset = incoming.transform(
+              Curves.easeInOutCubicEmphasized.transform(animation.value),
+            );
+            final outgoingOffset = outgoing.transform(
+              Curves.easeInOutCubicEmphasized
+                  .transform(secondaryAnimation.value),
+            );
+            return FractionalTranslation(
+              translation: incomingOffset + outgoingOffset,
+              child: built,
+            );
+          },
+          child: child,
+        );
+      },
+      child: widget.pages[widget.selectedIndex],
     );
   }
 }

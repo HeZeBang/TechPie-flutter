@@ -14,8 +14,52 @@ import 'package:techpie/services/sync_service.dart';
 import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
+import 'package:techpie/widgets/app_shell/app_shell.dart';
 
 void main() {
+  testWidgets('iOS-style destination switching lazily preserves visited pages',
+      (
+    WidgetTester tester,
+  ) async {
+    var selectedIndex = 0;
+    late StateSetter setHostState;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            setHostState = setState;
+            return AppDestinationSwitcher(
+              pages: const [
+                _StatefulDestination(label: 'First'),
+                _StatefulDestination(label: 'Second'),
+              ],
+              selectedIndex: selectedIndex,
+              previousSelectedIndex: 0,
+              preserveVisitedPages: true,
+              animationsEnabled: true,
+            );
+          },
+        ),
+      ),
+    );
+
+    expect(find.text('First: 0'), findsOneWidget);
+    expect(find.text('Second: 0'), findsNothing);
+    await tester.tap(find.text('First: 0'));
+    await tester.pump();
+
+    setHostState(() => selectedIndex = 1);
+    await tester.pump();
+    expect(find.text('First: 1'), findsNothing);
+    expect(find.text('Second: 0'), findsOneWidget);
+
+    setHostState(() => selectedIndex = 0);
+    await tester.pump();
+    expect(find.text('First: 1'), findsOneWidget);
+    expect(find.text('Second: 0'), findsNothing);
+  });
+
   testWidgets('App shell renders with desktop sidebar', (
     WidgetTester tester,
   ) async {
@@ -98,7 +142,10 @@ void main() {
     final navigationBar = tester.widget<NavigationBar>(
       find.byType(NavigationBar),
     );
-    expect(navigationBar.overlayColor?.resolve(<WidgetState>{}), Colors.transparent);
+    expect(
+      navigationBar.overlayColor?.resolve(<WidgetState>{}),
+      Colors.transparent,
+    );
     // Starts on Home
     expect(find.text('Welcome to TechPie'), findsOneWidget);
 
@@ -119,4 +166,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Appearance'), findsOneWidget);
   });
+}
+
+class _StatefulDestination extends StatefulWidget {
+  const _StatefulDestination({required this.label});
+
+  final String label;
+
+  @override
+  State<_StatefulDestination> createState() => _StatefulDestinationState();
+}
+
+class _StatefulDestinationState extends State<_StatefulDestination> {
+  var _count = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: () => setState(() => _count++),
+      child: Text('${widget.label}: $_count'),
+    );
+  }
 }
