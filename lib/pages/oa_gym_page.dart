@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/oa_gym.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
@@ -221,7 +222,7 @@ class _BookingTabState extends State<_BookingTab> {
     final maxDate = now.hour >= 12
         ? DateTime(now.year, now.month, now.day + 2)
         : DateTime(now.year, now.month, now.day + 1);
-    final picked = await showDatePicker(
+    final picked = await showAdaptiveDatePicker(
       context: context,
       initialDate: _date,
       firstDate: DateTime(now.year, now.month, now.day),
@@ -601,7 +602,7 @@ class _SearchTabState extends State<_SearchTab> {
   }
 
   Future<void> _pickStartDate() async {
-    final picked = await showDatePicker(
+    final picked = await showAdaptiveDatePicker(
       context: context,
       initialDate: _startDate,
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
@@ -611,7 +612,7 @@ class _SearchTabState extends State<_SearchTab> {
   }
 
   Future<void> _pickEndDate() async {
-    final picked = await showDatePicker(
+    final picked = await showAdaptiveDatePicker(
       context: context,
       initialDate: _endDate,
       firstDate: _startDate,
