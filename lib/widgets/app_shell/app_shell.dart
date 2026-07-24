@@ -19,8 +19,6 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  static const int _assignmentsIndex = 2;
-
   int _selectedIndex = 0;
   int _previousSelectedIndex = 0;
   bool _sidebarCollapsed = false;
@@ -120,7 +118,6 @@ class _AppShellState extends State<AppShell> {
     return MobileShell(
       destinations: _destinations,
       selectedIndex: _selectedIndex,
-      assignmentsIndex: _assignmentsIndex,
       onDestinationSelected: _onDestinationSelected,
       child: pageView,
     );

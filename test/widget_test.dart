@@ -160,6 +160,7 @@ void main() {
     await tester.tap(find.text('Deadlines'));
     await tester.pumpAndSettle();
     expect(find.text('No upcoming deadlines'), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNothing);
 
     // Tap Settings
     await tester.tap(find.text('Settings'));

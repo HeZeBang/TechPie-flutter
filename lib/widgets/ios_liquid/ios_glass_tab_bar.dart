@@ -61,7 +61,8 @@ class _IosGlassTabBarState extends State<IosGlassTabBar> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
-    final tabBarHeight = 52.0 + bottomInset;
+    const standardTabBarHeight = 49.0;
+    final tabBarHeight = standardTabBarHeight + bottomInset;
 
     return LayoutBuilder(
       builder: (context, constraints) {
