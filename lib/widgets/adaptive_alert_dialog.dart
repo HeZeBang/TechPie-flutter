@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -88,7 +89,7 @@ Future<T?> _showNativeIosAlert<T>({
   } on PlatformException {
     if (!fallbackContext.mounted) return null;
 
-    return _showFlutterAlertDialog<T>(
+    return _showCupertinoAlertDialog<T>(
       context: fallbackContext,
       title: title,
       message: message,
@@ -97,13 +98,37 @@ Future<T?> _showNativeIosAlert<T>({
   } on MissingPluginException {
     if (!fallbackContext.mounted) return null;
 
-    return _showFlutterAlertDialog<T>(
+    return _showCupertinoAlertDialog<T>(
       context: fallbackContext,
       title: title,
       message: message,
       actions: actions,
     );
   }
+}
+
+Future<T?> _showCupertinoAlertDialog<T>({
+  required BuildContext context,
+  required String title,
+  required String message,
+  required List<AdaptiveAlertAction<T>> actions,
+}) {
+  return showCupertinoDialog<T>(
+    context: context,
+    builder: (dialogContext) => CupertinoAlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        for (final action in actions)
+          CupertinoDialogAction(
+            isDefaultAction: action.isDefault,
+            isDestructiveAction: action.isDestructive,
+            onPressed: () => Navigator.pop(dialogContext, action.value),
+            child: Text(action.label),
+          ),
+      ],
+    ),
+  );
 }
 
 Future<T?> _showFlutterAlertDialog<T>({
