@@ -9,10 +9,6 @@ typedef DesktopPopoverBuilder = Widget Function(
   VoidCallback close,
 );
 
-bool isDesktopLayout(BuildContext context) {
-  return MediaQuery.sizeOf(context).width >= 600;
-}
-
 void showDesktopPopover({
   required BuildContext anchorContext,
   required DesktopPopoverBuilder builder,

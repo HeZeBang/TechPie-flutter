@@ -5,6 +5,7 @@ import '../../pages/assignments_page.dart';
 import '../../pages/home_page.dart';
 import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
+import '../../utils/adaptive_layout.dart';
 import '../../utils/platform.dart';
 import 'app_destination.dart';
 import 'desktop/desktop_shell.dart';
@@ -90,10 +91,10 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
+    final windowSizeClass = appWindowSizeClassOf(context);
     final pageView = _buildPageView(context);
 
-    if (width >= 960) {
+    if (windowSizeClass == AppWindowSizeClass.expanded) {
       return DesktopShell(
         destinations: _destinations,
         selectedIndex: _selectedIndex,
@@ -104,7 +105,7 @@ class _AppShellState extends State<AppShell> {
       );
     }
 
-    if (width >= 600) {
+    if (windowSizeClass == AppWindowSizeClass.medium) {
       return DesktopShell(
         destinations: _destinations,
         selectedIndex: _selectedIndex,

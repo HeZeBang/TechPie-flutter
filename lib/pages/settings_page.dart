@@ -9,6 +9,7 @@ import '../services/service_provider.dart';
 import '../services/sync_service.dart';
 import '../services/theme_service.dart';
 import '../services/third_party_auth_service.dart';
+import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/blurred_app_bar.dart';
@@ -50,7 +51,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (isDesktopLayout(context)) {
+    if (usesSidebarLayout(context)) {
       return Navigator(
         onGenerateRoute: (settings) => MaterialPageRoute<void>(
           settings: settings,
@@ -305,7 +306,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showThemePicker(BuildContext context, ThemeService themeService) {
-    if (isDesktopLayout(context)) {
+    if (usesSidebarLayout(context)) {
       showDesktopPopover(
         anchorContext: context,
         width: 260,
@@ -404,7 +405,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showColorPicker(BuildContext context, ThemeService themeService) {
-    if (isDesktopLayout(context)) {
+    if (usesSidebarLayout(context)) {
       showDesktopPopover(
         anchorContext: context,
         width: 260,

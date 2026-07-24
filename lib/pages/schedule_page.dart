@@ -12,6 +12,7 @@ import '../services/ics/ics_export_service.dart';
 import '../services/ics/ics_file_saver.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
+import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/blurred_app_bar.dart';
@@ -241,7 +242,7 @@ class _SchedulePageState extends State<SchedulePage> {
 
   void _showWeekPicker() {
     // Desktop is handled directly by _DesktopWeekTitleMenu.
-    if (isDesktopLayout(context)) return;
+    if (usesSidebarLayout(context)) return;
 
     final computedWeek = _schedule.currentWeek().clamp(1, 25).toInt();
 
@@ -636,7 +637,7 @@ class _SchedulePageState extends State<SchedulePage> {
               title: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  if (isDesktopLayout(context))
+                  if (usesSidebarLayout(context))
                     _DesktopWeekTitleMenu(
                       currentWeek: _currentWeek,
                       semesterLabel: _semesterLabel,
@@ -654,7 +655,7 @@ class _SchedulePageState extends State<SchedulePage> {
                         trailingIcon: Icons.unfold_more,
                       ),
                     ),
-                  if (isDesktopLayout(context) && !isViewingCurrentWeek) ...[
+                  if (usesSidebarLayout(context) && !isViewingCurrentWeek) ...[
                     const SizedBox(width: 12),
                     TextButton.icon(
                       onPressed: _goToCurrentWeek,
@@ -687,7 +688,7 @@ class _SchedulePageState extends State<SchedulePage> {
                         )
                       : const Icon(Icons.ios_share_rounded),
                 ),
-                if (isDesktopLayout(context))
+                if (usesSidebarLayout(context))
                   IconButton(
                     key: _viewSettingsAnchorKey,
                     icon: const Icon(Icons.more_vert),
@@ -1497,7 +1498,7 @@ class _CourseBlock extends StatelessWidget {
   }
 
   void _showCourseDetail(BuildContext context) {
-    if (isDesktopLayout(context)) {
+    if (usesSidebarLayout(context)) {
       showDesktopPopover(
         anchorContext: context,
         width: 360,
