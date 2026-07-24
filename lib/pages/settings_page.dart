@@ -241,11 +241,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: const Text('View Logs'),
                 subtitle: Text('${logger.entries.length} entries'),
                 onTap: () => unawaited(
-                  Navigator.push(
+                  pushPlatformViewPage<void>(
                     context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const DebugLogPage(),
-                    ),
+                    builder: (_) => const DebugLogPage(),
                   ),
                 ),
               ),
