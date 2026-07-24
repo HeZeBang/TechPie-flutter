@@ -15,6 +15,8 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
+import '../widgets/ios_liquid/ios_glass_button.dart';
+import '../widgets/ios_liquid/ios_glass_confirmation_button.dart';
 import '../widgets/ios_liquid/ios_glass_select.dart';
 import '../widgets/ios_liquid/ios_glass_switch.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
@@ -138,12 +140,40 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text('Logout'),
-                onTap: () => unawaited(_confirmLogout(auth)),
-              ),
-            ] else
+              if (useIosChrome)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: IosGlassConfirmationButton(
+                    label: 'Logout',
+                    icon: Icons.logout,
+                    sfSymbol: 'rectangle.portrait.and.arrow.right',
+                    confirmTitle: '退出登录？',
+                    confirmLabel: '退出登录',
+                    destructive: true,
+                    width: double.infinity,
+                    height: 50,
+                    onConfirmed: () => unawaited(auth.logout()),
+                  ),
+                )
+              else
+                ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Logout'),
+                  onTap: () => unawaited(_confirmLogout(auth)),
+                ),
+            ] else if (useIosChrome)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: IosGlassButton(
+                  icon: Icons.login,
+                  sfSymbol: 'person.crop.circle.badge.plus',
+                  label: '通过 GeekPie Uni-Auth 登录',
+                  role: IosNativeButtonRole.prominent,
+                  accessibilityLabel: '登录 TechPie',
+                  onPressed: () => unawaited(presentLoginPage(context)),
+                ),
+              )
+            else
               ListTile(
                 leading: const Icon(Icons.login),
                 title: const Text('Login'),
