@@ -111,7 +111,6 @@ Future<void> _beginNativeTransition(String direction) async {
 
 Future<void> _finishNativeTransitionAfterFrame() async {
   await WidgetsBinding.instance.endOfFrame;
-  await Future<void>.delayed(const Duration(milliseconds: 32));
   try {
     await _presenterChannel.invokeMethod<void>('finishPageTransition');
   } on MissingPluginException {
@@ -146,7 +145,6 @@ void _installInteractivePopHandler() {
       final didPop = await entry.navigator.maybePop();
       if (didPop) {
         await WidgetsBinding.instance.endOfFrame;
-        await Future<void>.delayed(const Duration(milliseconds: 32));
       }
       return didPop;
     }

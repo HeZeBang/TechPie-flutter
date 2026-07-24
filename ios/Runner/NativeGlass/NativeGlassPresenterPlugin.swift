@@ -4,6 +4,14 @@ import SwiftUI
 import UIKit
 
 final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecognizerDelegate {
+  private enum PageTransitionMetrics {
+    static let duration: TimeInterval = 0.35
+    static let minimumSettleDuration: TimeInterval = 0.12
+    static let parallax: CGFloat = 0.30
+    static let shadowOpacity: Float = 0.16
+    static let shadowRadius: CGFloat = 10
+  }
+
   private static let channelName = "techpie/native_glass_presenter"
   private static let pageTransitionChannelName = "techpie/native_page_transition"
   private let channel: FlutterMethodChannel
@@ -137,24 +145,20 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
     let frame = rootView.convert(rootView.bounds, to: window)
     let width = frame.width
     let isPop = pageTransitionDirection == "pop"
+    let direction = horizontalDirection(in: rootView)
 
     destination.frame = frame
     destination.clipsToBounds = true
     destination.isUserInteractionEnabled = true
 
     if isPop {
-      destination.frame.origin.x = frame.minX - width / 3
-      source.layer.shadowColor = UIColor.black.cgColor
-      source.layer.shadowOpacity = 0.2
-      source.layer.shadowRadius = 12
-      source.layer.shadowOffset = CGSize(width: -4, height: 0)
+      destination.frame.origin.x = frame.minX
+        - width * PageTransitionMetrics.parallax * direction
+      applyNavigationShadow(to: source, direction: direction)
       window.insertSubview(destination, belowSubview: source)
     } else {
-      destination.frame.origin.x = frame.maxX
-      destination.layer.shadowColor = UIColor.black.cgColor
-      destination.layer.shadowOpacity = 0.2
-      destination.layer.shadowRadius = 12
-      destination.layer.shadowOffset = CGSize(width: -4, height: 0)
+      destination.frame.origin.x = frame.minX + width * direction
+      applyNavigationShadow(to: destination, direction: direction)
       window.insertSubview(destination, aboveSubview: source)
     }
 
@@ -172,18 +176,21 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
     pageTransitionWindow = nil
     pageTransitionAnimating = true
 
-    UIView.animate(
-      withDuration: 0.12,
-      delay: 0,
-      options: [.curveEaseInOut, .beginFromCurrentState]
+    let animator = UIViewPropertyAnimator(
+      duration: PageTransitionMetrics.duration,
+      curve: .easeInOut
     ) {
-      source.frame.origin.x = isPop ? frame.maxX : frame.minX - width / 3
+      source.frame.origin.x = isPop
+        ? frame.minX + width * direction
+        : frame.minX - width * PageTransitionMetrics.parallax * direction
       destination.frame = frame
-    } completion: { [weak self] _ in
+    }
+    animator.addCompletion { [weak self] _ in
       source.removeFromSuperview()
       destination.removeFromSuperview()
       self?.pageTransitionAnimating = false
     }
+    animator.startAnimation()
 
     result(nil)
   }
@@ -212,6 +219,17 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
     return imageView
   }
 
+  private func horizontalDirection(in view: UIView) -> CGFloat {
+    view.effectiveUserInterfaceLayoutDirection == .rightToLeft ? -1 : 1
+  }
+
+  private func applyNavigationShadow(to view: UIView, direction: CGFloat) {
+    view.layer.shadowColor = UIColor.black.cgColor
+    view.layer.shadowOpacity = PageTransitionMetrics.shadowOpacity
+    view.layer.shadowRadius = PageTransitionMetrics.shadowRadius
+    view.layer.shadowOffset = CGSize(width: -3 * direction, height: 0)
+  }
+
   private func installInteractivePopGesture(in window: UIWindow) {
     if interactivePopGestureWindow === window, interactivePopGesture != nil {
       return
@@ -221,10 +239,13 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
       interactivePopGestureWindow?.removeGestureRecognizer(gesture)
     }
 
-    let gesture = UIPanGestureRecognizer(
+    let gesture = UIScreenEdgePanGestureRecognizer(
       target: self,
       action: #selector(handleInteractivePopGesture(_:))
     )
+    gesture.edges = window.effectiveUserInterfaceLayoutDirection == .rightToLeft
+      ? .right
+      : .left
     gesture.delegate = self
     gesture.cancelsTouchesInView = true
     window.addGestureRecognizer(gesture)
@@ -241,11 +262,16 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
     case .changed:
       guard interactivePopSource != nil else { return }
       let width = max(interactivePopFrame.width, 1)
-      let progress = min(max(gesture.translation(in: gesture.view).x / width, 0), 1)
+      let direction = horizontalDirection(in: gesture.view!)
+      let progress = min(
+        max(gesture.translation(in: gesture.view).x * direction / width, 0),
+        1
+      )
       updateInteractivePop(progress: progress)
     case .ended:
       guard interactivePopSource != nil else { return }
-      let velocity = gesture.velocity(in: gesture.view).x
+      let direction = horizontalDirection(in: gesture.view!)
+      let velocity = gesture.velocity(in: gesture.view).x * direction
       settleInteractivePop(completes: interactivePopProgress > 0.5 || velocity > 700)
     case .cancelled, .failed:
       guard interactivePopSource != nil else { return }
@@ -259,16 +285,15 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
     guard
       let gesture = gestureRecognizer as? UIPanGestureRecognizer,
       gesture === interactivePopGesture,
-      let view = gesture.view,
       !pageTransitionAnimating,
       pageTransitionSource == nil,
       interactivePopSource == nil,
       !pageBackSnapshots.isEmpty
     else { return false }
 
-    let startX = gesture.location(in: view).x - gesture.translation(in: view).x
-    let velocity = gesture.velocity(in: view)
-    return startX <= 24 && velocity.x > 0 && abs(velocity.x) > abs(velocity.y)
+    let direction = horizontalDirection(in: gesture.view!)
+    let velocity = gesture.velocity(in: gesture.view)
+    return velocity.x * direction > 0 && abs(velocity.x) > abs(velocity.y)
   }
 
   private func beginInteractivePop(_ gesture: UIPanGestureRecognizer) {
@@ -287,6 +312,7 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
     }
 
     let frame = rootView.convert(rootView.bounds, to: window)
+    let direction = horizontalDirection(in: rootView)
     let destination = UIImageView(image: previousImage)
     destination.contentMode = .scaleToFill
     destination.clipsToBounds = true
@@ -296,10 +322,7 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
 
     destination.frame = frame
     source.frame = frame
-    source.layer.shadowColor = UIColor.black.cgColor
-    source.layer.shadowOpacity = 0.2
-    source.layer.shadowRadius = 12
-    source.layer.shadowOffset = CGSize(width: -4, height: 0)
+    applyNavigationShadow(to: source, direction: direction)
 
     window.addSubview(destination)
     window.addSubview(source)
@@ -318,9 +341,12 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
 
     let normalizedProgress = min(max(progress, 0), 1)
     let width = interactivePopFrame.width
-    source.frame.origin.x = interactivePopFrame.minX + width * normalizedProgress
-    destination.frame.origin.x = interactivePopFrame.minX - width / 3
-      + width / 3 * normalizedProgress
+    let direction = horizontalDirection(in: source)
+    source.frame.origin.x = interactivePopFrame.minX
+      + width * normalizedProgress * direction
+    destination.frame.origin.x = interactivePopFrame.minX
+      - width * PageTransitionMetrics.parallax * direction
+      + width * PageTransitionMetrics.parallax * normalizedProgress * direction
     interactivePopProgress = normalizedProgress
   }
 
@@ -329,7 +355,10 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
     let remainingProgress = completes
       ? 1 - interactivePopProgress
       : interactivePopProgress
-    let duration = max(0.12, 0.28 * Double(remainingProgress))
+    let duration = max(
+      PageTransitionMetrics.minimumSettleDuration,
+      PageTransitionMetrics.duration * Double(remainingProgress)
+    )
 
     UIView.animate(
       withDuration: duration,
