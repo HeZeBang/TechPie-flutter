@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../models/oa_gym.dart';
@@ -25,15 +26,23 @@ class OaGymPage extends StatefulWidget {
 class _OaGymPageState extends State<OaGymPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  int _selectedTab = 0;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (_selectedTab == _tabController.index || !mounted) return;
+    setState(() => _selectedTab = _tabController.index);
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -99,20 +108,37 @@ class _OaGymPageState extends State<OaGymPage>
                     SizedBox(height: topInset),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: Card.outlined(
-                        clipBehavior: Clip.antiAlias,
-                        child: TabBar(
-                          controller: _tabController,
-                          tabs: const [
-                            Tab(
-                              text: '预约',
-                              icon: Icon(Icons.event_available),
+                      child: isIos()
+                          ? CupertinoSlidingSegmentedControl<int>(
+                              groupValue: _selectedTab,
+                              children: const {
+                                0: Text('预约'),
+                                1: Text('查询'),
+                                2: Text('个人'),
+                              },
+                              onValueChanged: (value) {
+                                if (value != null) {
+                                  _tabController.animateTo(value);
+                                }
+                              },
+                            )
+                          : Card.outlined(
+                              clipBehavior: Clip.antiAlias,
+                              child: TabBar(
+                                controller: _tabController,
+                                tabs: const [
+                                  Tab(
+                                    text: '预约',
+                                    icon: Icon(Icons.event_available),
+                                  ),
+                                  Tab(text: '查询', icon: Icon(Icons.search)),
+                                  Tab(
+                                    text: '个人',
+                                    icon: Icon(Icons.person_outline),
+                                  ),
+                                ],
+                              ),
                             ),
-                            Tab(text: '查询', icon: Icon(Icons.search)),
-                            Tab(text: '个人', icon: Icon(Icons.person_outline)),
-                          ],
-                        ),
-                      ),
                     ),
                     Expanded(
                       child: TabBarView(
