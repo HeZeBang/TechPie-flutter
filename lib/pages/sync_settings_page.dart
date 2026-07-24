@@ -12,6 +12,7 @@ import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_glass_button.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 
 /// Cloud-sync settings: turn sync on/off, set / restore / change the master
 /// password, and trigger a manual pull. All cryptography + Casdoor I/O lives
@@ -41,7 +42,23 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     return Scaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
-          ? const IosNativeNavigationBar(title: 'Cloud sync')
+          ? IosNativeNavigationBar(
+              title: 'Cloud sync',
+              leadingItems: const [
+                IosNativeNavigationBarItem(
+                  id: 'back',
+                  title: 'Settings',
+                  sfSymbol: 'chevron.left',
+                  accessibilityLabel: '返回 Settings',
+                  placementGroup: 'leading-main',
+                ),
+              ],
+              onItemPressed: (id) {
+                if (id == 'back') {
+                  unawaited(maybePopPlatformViewPage<void>(context));
+                }
+              },
+            )
           : const BlurredAppBar(title: Text('Cloud sync')),
       body: ListenableBuilder(
         listenable: sync,

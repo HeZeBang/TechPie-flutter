@@ -479,9 +479,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
           if (Navigator.canPop(context))
             const IosNativeNavigationBarItem(
               id: 'back',
-              title: '返回',
+              title: 'Accounts',
               sfSymbol: 'chevron.left',
-              accessibilityLabel: '返回',
+              accessibilityLabel: '返回 Linked Accounts',
             ),
         ],
         onItemPressed: (id) {

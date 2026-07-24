@@ -39,9 +39,9 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                 if (Navigator.canPop(context))
                   const IosNativeNavigationBarItem(
                     id: 'back',
-                    title: '返回',
+                    title: 'Settings',
                     sfSymbol: 'chevron.left',
-                    accessibilityLabel: '返回',
+                    accessibilityLabel: '返回 Settings',
                   ),
               ],
               onItemPressed: (id) {
