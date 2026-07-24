@@ -185,32 +185,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   onTap: () => _showThemePicker(tileContext, themeService),
                 ),
               ),
-            if (useIosChrome)
-              ListTile(
-                leading: Icon(themeService.colorScheme.icon),
-                title: const Text('Color'),
-                subtitle: Text(_colorSubtitle(themeService)),
-                trailing: IosGlassSelect(
-                  value: themeService.colorScheme.name,
-                  placeholder: 'Choose color',
-                  width: 156,
-                  options: [
-                    for (final scheme in AppColorScheme.values)
-                      IosGlassSelectOption(
-                        value: scheme.name,
-                        label: scheme.label,
-                      ),
-                  ],
-                  onChanged: (value) {
-                    final scheme = AppColorScheme.values.firstWhere(
-                      (item) => item.name == value,
-                      orElse: () => AppColorScheme.system,
-                    );
-                    unawaited(themeService.setColorScheme(scheme));
-                  },
-                ),
-              )
-            else
+            if (themeService.supportsColorSchemeSelection)
               Builder(
                 builder: (tileContext) => ListTile(
                   leading: Icon(themeService.colorScheme.icon),
@@ -224,12 +199,6 @@ class _SettingsPageState extends State<SettingsPage> {
             // General section
             _sectionHeader(theme, 'General'),
             ListTile(
-              leading: const Icon(Icons.notifications_outlined),
-              title: const Text('Notifications'),
-              subtitle: const Text('Manage notification preferences'),
-              onTap: () {},
-            ),
-            ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('About'),
               subtitle: Text(
@@ -237,7 +206,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     ? 'Version Unknown'
                     : 'Version $_appVersion',
               ),
-              onTap: () {},
             ),
             const Divider(),
 
