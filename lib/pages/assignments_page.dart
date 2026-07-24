@@ -281,6 +281,67 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   ) {
     final allSelected =
         visible.isNotEmpty && _selected.length == visible.length;
+    if (isIos()) {
+      return IosNativeNavigationBar(
+        title: '已选择 ${_selected.length} 个',
+        selectionMode: true,
+        leadingItems: const [
+          IosNativeNavigationBarItem(
+            id: 'cancelSelection',
+            title: 'Cancel',
+            accessibilityLabel: '退出多选',
+            placementGroup: 'leading-main',
+          ),
+        ],
+        trailingItems: [
+          IosNativeNavigationBarItem(
+            id: 'toggleSelectAll',
+            title: allSelected ? 'Deselect All' : 'Select All',
+            enabled: visible.isNotEmpty,
+            accessibilityLabel: allSelected ? '全不选' : '全选',
+            placementGroup: 'selection-actions',
+          ),
+          IosNativeNavigationBarItem(
+            id: 'selectionMore',
+            sfSymbol: 'ellipsis.circle',
+            accessibilityLabel: '更多选择操作',
+            placementGroup: 'selection-actions',
+            menuItems: [
+              const IosNativeNavigationBarMenuItem(
+                value: 'invertSelection',
+                title: '反选',
+                sfSymbol: 'arrow.triangle.2.circlepath',
+              ),
+              IosNativeNavigationBarMenuItem(
+                value: 'resetSelected',
+                title: '重置状态',
+                sfSymbol: 'arrow.counterclockwise',
+                destructive: _selected.isNotEmpty,
+              ),
+            ],
+          ),
+        ],
+        onItemPressed: (id) {
+          switch (id) {
+            case 'cancelSelection':
+              _exitSelection();
+            case 'toggleSelectAll':
+              if (visible.isNotEmpty) _selectAll(visible);
+          }
+        },
+        onMenuSelected: (_, value) {
+          switch (value) {
+            case 'invertSelection':
+              _invertSelection(visible);
+            case 'resetSelected':
+              if (_selected.isNotEmpty) {
+                unawaited(_resetSelected(service));
+              }
+          }
+        },
+      );
+    }
+
     return BlurredAppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
