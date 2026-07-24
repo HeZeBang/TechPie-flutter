@@ -165,16 +165,34 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     String? subtitle,
     IosNativeButtonRole role = IosNativeButtonRole.standard,
   }) {
-    return IosGlassButton(
-      label: label,
-      subtitle: subtitle,
-      icon: icon,
-      sfSymbol: sfSymbol,
-      role: role,
-      height: subtitle == null ? 52 : 64,
-      loading: _busyAction == id,
-      onPressed: _busy ? null : onPressed,
-      accessibilityLabel: label,
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        IosGlassButton(
+          label: label,
+          icon: icon,
+          sfSymbol: sfSymbol,
+          role: role,
+          height: 44,
+          loading: _busyAction == id,
+          onPressed: _busy ? null : onPressed,
+          accessibilityLabel: label,
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
