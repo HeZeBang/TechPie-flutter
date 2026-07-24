@@ -145,7 +145,7 @@ class _SchedulePageState extends State<SchedulePage> {
           context,
           const Duration(milliseconds: 280),
         ),
-        curve: Curves.easeOutCubic,
+        curve: appAnimationCurve(Curves.easeOutCubic),
       ),
     );
   }

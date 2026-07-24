@@ -162,7 +162,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     for (int i = 0; i < count; i++) {
       final start = (i * 0.12).clamp(0.0, 0.6);
       final end = (start + 0.5).clamp(start + 0.1, 1.0);
-      final interval = Interval(start, end, curve: Curves.easeOutCubic);
+      final interval = Interval(
+        start,
+        end,
+        curve: appAnimationCurve(Curves.easeOutCubic),
+      );
       _itemSlides.add(
         Tween<double>(begin: 24.0, end: 0.0).animate(
           CurvedAnimation(parent: _staggerController!, curve: interval),
@@ -354,7 +358,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           context,
           const Duration(milliseconds: 350),
         ),
-        curve: Curves.easeOutCubic,
+        curve: appAnimationCurve(Curves.easeOutCubic),
         alignment: Alignment.topCenter,
         child: Column(
           key: ValueKey('apps-${features.length}-$rows'),
@@ -487,15 +491,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           context,
           const Duration(milliseconds: 350),
         ),
-        curve: Curves.easeOutCubic,
+        curve: appAnimationCurve(Curves.easeOutCubic),
         alignment: Alignment.topCenter,
         child: AnimatedSwitcher(
           duration: appAnimationDuration(
             context,
             const Duration(milliseconds: 300),
           ),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
+          switchInCurve: appAnimationCurve(Curves.easeOutCubic),
+          switchOutCurve: appAnimationCurve(
+            Curves.easeInCubic,
+            iosCurve: Curves.easeInOut,
+          ),
           transitionBuilder: (child, animation) {
             return FadeTransition(opacity: animation, child: child);
           },
@@ -585,15 +592,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           context,
           const Duration(milliseconds: 350),
         ),
-        curve: Curves.easeOutCubic,
+        curve: appAnimationCurve(Curves.easeOutCubic),
         alignment: Alignment.topCenter,
         child: AnimatedSwitcher(
           duration: appAnimationDuration(
             context,
             const Duration(milliseconds: 300),
           ),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
+          switchInCurve: appAnimationCurve(Curves.easeOutCubic),
+          switchOutCurve: appAnimationCurve(
+            Curves.easeInCubic,
+            iosCurve: Curves.easeInOut,
+          ),
           transitionBuilder: (child, animation) =>
               FadeTransition(opacity: animation, child: child),
           layoutBuilder: (currentChild, previousChildren) {
@@ -838,7 +848,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         context,
         const Duration(milliseconds: 300),
       ),
-      curve: Curves.easeOutCubic,
+      curve: appAnimationCurve(Curves.easeOutCubic),
       opacity: isPast ? 0.5 : 1.0,
       child: ListTile(
         title: AnimatedDefaultTextStyle(
@@ -846,7 +856,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             context,
             const Duration(milliseconds: 300),
           ),
-          curve: Curves.easeOutCubic,
+          curve: appAnimationCurve(Curves.easeOutCubic),
           style: titleStyle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -1037,8 +1047,11 @@ class _CourseBadge extends StatelessWidget {
         context,
         const Duration(milliseconds: 350),
       ),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
+      switchInCurve: appAnimationCurve(Curves.easeOutCubic),
+      switchOutCurve: appAnimationCurve(
+        Curves.easeInCubic,
+        iosCurve: Curves.easeInOut,
+      ),
       transitionBuilder: (child, animation) {
         return FadeTransition(
           opacity: animation,
