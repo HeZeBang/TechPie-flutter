@@ -427,15 +427,16 @@ class _BookingTabState extends State<_BookingTab> {
                 ),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton.icon(
+                  child: IosGlassButton(
                     onPressed: _checking ? null : _refreshAvailability,
-                    icon: _checking
-                        ? const SizedBox.square(
-                            dimension: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh),
-                    label: const Text('刷新可用场地'),
+                    icon: Icons.refresh,
+                    sfSymbol: 'arrow.clockwise',
+                    label: '刷新可用场地',
+                    role: IosNativeButtonRole.plain,
+                    loading: _checking,
+                    width: 180,
+                    height: 44,
+                    accessibilityLabel: '刷新可用场地',
                   ),
                 ),
               ],
@@ -483,15 +484,14 @@ class _BookingTabState extends State<_BookingTab> {
             ),
             const SizedBox(height: 12),
           ],
-        FilledButton.icon(
+        IosGlassButton(
           onPressed: _submitting || _selectedCount == 0 ? null : _submit,
-          icon: _submitting
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.send),
-          label: Text(_selectedCount == 0 ? '提交预约' : '提交预约 ($_selectedCount)'),
+          icon: Icons.send,
+          sfSymbol: 'paperplane.fill',
+          label: _selectedCount == 0 ? '提交预约' : '提交预约 ($_selectedCount)',
+          role: IosNativeButtonRole.prominent,
+          loading: _submitting,
+          accessibilityLabel: '提交场馆预约',
         ),
       ],
     );
@@ -822,15 +822,14 @@ class _SearchTabState extends State<_SearchTab> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                FilledButton.icon(
+                IosGlassButton(
                   onPressed: _loading ? null : _search,
-                  icon: _loading
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.search),
-                  label: Text(_loading ? '查询中...' : '查询预约记录'),
+                  icon: Icons.search,
+                  sfSymbol: 'magnifyingglass',
+                  label: _loading ? '查询中...' : '查询预约记录',
+                  role: IosNativeButtonRole.prominent,
+                  loading: _loading,
+                  accessibilityLabel: '查询预约记录',
                 ),
               ],
             ),
@@ -1076,10 +1075,13 @@ class _ProfileTabState extends State<_ProfileTab> {
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 16),
-                FilledButton.icon(
+                IosGlassButton(
                   onPressed: _save,
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('保存'),
+                  icon: Icons.save_outlined,
+                  sfSymbol: 'square.and.arrow.down',
+                  label: '保存',
+                  role: IosNativeButtonRole.prominent,
+                  accessibilityLabel: '保存预约信息',
                 ),
               ],
             ),
