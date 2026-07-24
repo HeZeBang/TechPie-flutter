@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/debug_logger.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_glass_confirmation_button.dart';
+import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 
 class DebugLogPage extends StatelessWidget {
   const DebugLogPage({super.key});
@@ -12,38 +15,41 @@ class DebugLogPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final logger = ServiceProvider.of(context).debugLogger;
+    final useIosChrome = isIos();
     final useLegacyIosChrome = usesLegacyIosChrome();
-    final topPad = useLegacyIosChrome
+    final topPad = useIosChrome || useLegacyIosChrome
         ? 0.0
         : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
 
     return Scaffold(
-      extendBodyBehindAppBar: !useLegacyIosChrome,
-      appBar: BlurredAppBar(
-        title: const Text('Debug Logs'),
-        actions: [
-          if (isIos())
-            Padding(
-              padding: const EdgeInsetsDirectional.only(end: 8),
-              child: Center(
-                child: IosGlassConfirmationButton(
-                  confirmTitle: '清空所有日志？',
-                  confirmLabel: '清空',
-                  icon: Icons.delete_outline,
+      extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
+      appBar: useIosChrome
+          ? IosNativeNavigationBar(
+              title: 'Debug Logs',
+              trailingItems: const [
+                IosNativeNavigationBarItem(
+                  id: 'clear',
                   sfSymbol: 'trash',
-                  destructive: true,
-                  onConfirmed: logger.clear,
+                  role: IosNativeNavigationBarItemRole.destructive,
+                  accessibilityLabel: 'Clear logs',
                 ),
-              ),
+              ],
+              onItemPressed: (id) {
+                if (id == 'clear') {
+                  unawaited(_confirmClearLogs(context, logger));
+                }
+              },
             )
-          else
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              onPressed: logger.clear,
-              tooltip: 'Clear logs',
+          : BlurredAppBar(
+              title: const Text('Debug Logs'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: logger.clear,
+                  tooltip: 'Clear logs',
+                ),
+              ],
             ),
-        ],
-      ),
       body: ListenableBuilder(
         listenable: logger,
         builder: (context, _) {
@@ -62,6 +68,26 @@ class DebugLogPage extends StatelessWidget {
         },
       ),
     );
+  }
+
+  Future<void> _confirmClearLogs(
+    BuildContext context,
+    DebugLogger logger,
+  ) async {
+    final confirmed = await showAdaptiveAlertDialog<bool>(
+      context: context,
+      title: '清空所有日志？',
+      message: '此操作无法撤销。',
+      actions: const [
+        AdaptiveAlertAction<bool>(label: '取消', value: false),
+        AdaptiveAlertAction<bool>(
+          label: '清空',
+          value: true,
+          isDestructive: true,
+        ),
+      ],
+    );
+    if (confirmed == true) logger.clear();
   }
 }
 
