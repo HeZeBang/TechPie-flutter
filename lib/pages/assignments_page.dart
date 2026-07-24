@@ -8,6 +8,7 @@ import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
 import '../services/assignment_service.dart';
 import '../services/service_provider.dart';
+import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
@@ -818,7 +819,7 @@ class _AssignmentCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       color: selected ? theme.colorScheme.secondaryContainer : null,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         side: selected
             ? BorderSide(color: theme.colorScheme.primary, width: 2)
             : BorderSide.none,
@@ -877,9 +878,16 @@ class _AssignmentCard extends StatelessWidget {
                   ],
                   const Spacer(),
                   AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 280),
-                    switchInCurve: Curves.easeInOutCubicEmphasized,
-                    switchOutCurve: Curves.easeInOutCubicEmphasized,
+                    duration: appAnimationDuration(
+                      context,
+                      const Duration(milliseconds: 280),
+                    ),
+                    switchInCurve: isIos()
+                        ? Curves.easeInOut
+                        : Curves.easeInOutCubicEmphasized,
+                    switchOutCurve: isIos()
+                        ? Curves.easeInOut
+                        : Curves.easeInOutCubicEmphasized,
                     transitionBuilder: (child, animation) => FadeTransition(
                       opacity: animation,
                       child: ScaleTransition(scale: animation, child: child),
@@ -935,9 +943,14 @@ class _AssignmentCard extends StatelessWidget {
                   ),
                   const Spacer(),
                   AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 320),
-                    switchInCurve: Curves.easeOutBack,
-                    switchOutCurve: Curves.easeInCubic,
+                    duration: appAnimationDuration(
+                      context,
+                      const Duration(milliseconds: 320),
+                    ),
+                    switchInCurve:
+                        isIos() ? Curves.easeOut : Curves.easeOutBack,
+                    switchOutCurve:
+                        isIos() ? Curves.easeIn : Curves.easeInCubic,
                     transitionBuilder: (child, animation) => FadeTransition(
                       opacity: animation,
                       child: ScaleTransition(scale: animation, child: child),
