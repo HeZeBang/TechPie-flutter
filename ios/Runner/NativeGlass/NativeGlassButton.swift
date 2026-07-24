@@ -40,6 +40,7 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
   private var role = "standard"
   private var isEnabled = true
   private var isLoading = false
+  private var showsIcon = true
   private var buttonAccessibilityLabel: String?
 
   init(
@@ -80,6 +81,7 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
     isEnabled = params["enabled"] as? Bool ?? true
     isLoading = params["loading"] as? Bool ?? false
     buttonAccessibilityLabel = params["accessibilityLabel"] as? String
+    showsIcon = (params["showsIcon"] as? Bool) ?? (label == nil)
   }
 
   private func buildViewHierarchy() {
@@ -105,7 +107,9 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
   }
 
   private func symbolImage() -> UIImage? {
-    return UIImage(systemName: sfSymbol)?
+    guard showsIcon else { return nil }
+    let configuration = UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+    return UIImage(systemName: sfSymbol, withConfiguration: configuration)?
       .withRenderingMode(.alwaysTemplate)
   }
 
@@ -171,8 +175,14 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
     configuration.subtitle = subtitle
     configuration.image = image
     configuration.imagePlacement = .leading
-    configuration.imagePadding = label == nil ? 0 : 8
+    configuration.imagePadding = label == nil ? 0 : 6
     configuration.showsActivityIndicator = isLoading
+    configuration.contentInsets = NSDirectionalEdgeInsets(
+      top: 9,
+      leading: label == nil ? 9 : 16,
+      bottom: 9,
+      trailing: label == nil ? 9 : 16
+    )
   }
 
   private func handle(call: FlutterMethodCall, result: FlutterResult) {
@@ -200,9 +210,6 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
 
   @objc
   private func handleTap() {
-    let feedback = UIImpactFeedbackGenerator(style: .light)
-    feedback.impactOccurred(intensity: 0.65)
-
     channel.invokeMethod("onTap", arguments: nil)
   }
 

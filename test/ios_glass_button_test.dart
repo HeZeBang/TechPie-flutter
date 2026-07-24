@@ -59,6 +59,7 @@ void main() {
       'enabled': false,
       'loading': true,
       'accessibilityLabel': 'Disable cloud sync',
+      'showsIcon': false,
     });
     debugDefaultTargetPlatformOverride = null;
   });

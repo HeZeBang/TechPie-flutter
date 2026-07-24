@@ -20,6 +20,7 @@ class IosGlassButton extends StatefulWidget {
     this.width,
     this.height,
     this.accessibilityLabel,
+    this.showIosIcon = false,
   });
 
   final VoidCallback? onPressed;
@@ -32,6 +33,7 @@ class IosGlassButton extends StatefulWidget {
   final double? width;
   final double? height;
   final String? accessibilityLabel;
+  final bool showIosIcon;
 
   @override
   State<IosGlassButton> createState() => _IosGlassButtonState();
@@ -62,8 +64,8 @@ class _IosGlassButtonState extends State<IosGlassButton> {
 
     final hasLabel = widget.label != null && widget.label!.isNotEmpty;
     return SizedBox(
-      width: widget.width ?? (hasLabel ? double.infinity : 64),
-      height: widget.height ?? (hasLabel ? 56 : 64),
+      width: widget.width ?? (hasLabel ? double.infinity : 44),
+      height: widget.height ?? 44,
       child: UiKitView(
         viewType: _viewType,
         layoutDirection: Directionality.of(context),
@@ -94,6 +96,8 @@ class _IosGlassButtonState extends State<IosGlassButton> {
         'enabled': widget.onPressed != null,
         'loading': widget.loading,
         'accessibilityLabel': widget.accessibilityLabel,
+        'showsIcon':
+            widget.label == null || widget.label!.isEmpty || widget.showIosIcon,
       };
 
   String _signature(IosGlassButton value) => jsonEncode(<String, Object?>{
@@ -104,6 +108,8 @@ class _IosGlassButtonState extends State<IosGlassButton> {
         'enabled': value.onPressed != null,
         'loading': value.loading,
         'accessibilityLabel': value.accessibilityLabel,
+        'showsIcon':
+            value.label == null || value.label!.isEmpty || value.showIosIcon,
       });
 
   Widget _buildMaterialButton(BuildContext context) {
