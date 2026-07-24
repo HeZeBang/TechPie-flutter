@@ -1,8 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import '../../utils/platform.dart';
 
 class IosGlassSwitch extends StatefulWidget {
   const IosGlassSwitch({
@@ -23,8 +24,7 @@ class IosGlassSwitch extends StatefulWidget {
 class _IosGlassSwitchState extends State<IosGlassSwitch> {
   MethodChannel? _channel;
 
-  bool get _usesNative =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+  bool get _usesNative => isIos();
 
   @override
   void didUpdateWidget(covariant IosGlassSwitch oldWidget) {
@@ -57,7 +57,7 @@ class _IosGlassSwitchState extends State<IosGlassSwitch> {
 
     return SizedBox(
       width: 52,
-      height: 32,
+      height: iosMinimumInteractiveDimension,
       child: UiKitView(
         viewType: _viewType,
         layoutDirection: Directionality.of(context),

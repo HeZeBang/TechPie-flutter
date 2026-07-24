@@ -27,8 +27,8 @@ class IosGlassDropdownMenu extends StatefulWidget {
     required this.onSelected,
     this.label,
     this.tooltip,
-    this.width = 40,
-    this.height = 40,
+    this.width = iosMinimumInteractiveDimension,
+    this.height = iosMinimumInteractiveDimension,
   });
 
   final IconData icon;
@@ -63,10 +63,16 @@ class _IosGlassDropdownMenuState extends State<IosGlassDropdownMenu> {
     }
 
     final signature = widget.items.map(_itemSignature).join(';');
+    final effectiveWidth = widget.width < iosMinimumInteractiveDimension
+        ? iosMinimumInteractiveDimension
+        : widget.width;
+    final effectiveHeight = widget.height < iosMinimumInteractiveDimension
+        ? iosMinimumInteractiveDimension
+        : widget.height;
 
     return SizedBox(
-      width: widget.width,
-      height: widget.height,
+      width: effectiveWidth,
+      height: effectiveHeight,
       child: UiKitView(
         key: ValueKey(
           'ios-glass-dropdown-$signature-${widget.sfSymbol}-${widget.label ?? ''}',

@@ -13,7 +13,7 @@ class IosGlassConfirmationButton extends StatefulWidget {
     this.sfSymbol = 'link.badge.minus',
     this.destructive = false,
     this.width,
-    this.height = 36,
+    this.height = iosMinimumInteractiveDimension,
   });
 
   final String? label;
@@ -62,12 +62,20 @@ class _IosGlassConfirmationButtonState
       );
     }
 
-    final width = widget.width ??
-        ((widget.label == null || widget.label!.isEmpty) ? 36.0 : 92.0);
+    final requestedWidth = widget.width ??
+        ((widget.label == null || widget.label!.isEmpty)
+            ? iosMinimumInteractiveDimension
+            : 92.0);
+    final width = requestedWidth < iosMinimumInteractiveDimension
+        ? iosMinimumInteractiveDimension
+        : requestedWidth;
+    final height = widget.height < iosMinimumInteractiveDimension
+        ? iosMinimumInteractiveDimension
+        : widget.height;
 
     return SizedBox(
       width: width,
-      height: widget.height,
+      height: height,
       child: UiKitView(
         key: ValueKey<String>(
           'ios-glass-confirm-${widget.label ?? ''}-'

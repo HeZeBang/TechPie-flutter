@@ -18,7 +18,7 @@ class IosGlassSelect extends StatefulWidget {
     this.placeholder = 'Select',
     this.sfSymbol = 'chevron.up.chevron.down',
     this.width = 150,
-    this.height = 36,
+    this.height = iosMinimumInteractiveDimension,
   });
 
   final List<IosGlassSelectOption> options;
@@ -54,10 +54,16 @@ class _IosGlassSelectState extends State<IosGlassSelect> {
     final signature = widget.options
         .map((option) => '${option.value}|${option.label}')
         .join(';');
+    final effectiveWidth = widget.width < iosMinimumInteractiveDimension
+        ? iosMinimumInteractiveDimension
+        : widget.width;
+    final effectiveHeight = widget.height < iosMinimumInteractiveDimension
+        ? iosMinimumInteractiveDimension
+        : widget.height;
 
     return SizedBox(
-      width: widget.width,
-      height: widget.height,
+      width: effectiveWidth,
+      height: effectiveHeight,
       child: UiKitView(
         key: ValueKey(
           'ios-glass-select-$signature-${widget.value ?? ''}-${widget.placeholder}',

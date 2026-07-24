@@ -61,7 +61,7 @@ class _IosNativeSegmentedControlState extends State<IosNativeSegmentedControl> {
     }
 
     return SizedBox(
-      height: 34,
+      height: iosMinimumInteractiveDimension,
       child: UiKitView(
         viewType: _viewType,
         layoutDirection: Directionality.of(context),

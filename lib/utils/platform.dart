@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 
 const MethodChannel _platformChannel = MethodChannel('techpie/platform');
 
+const double iosMinimumInteractiveDimension = 44;
+
 bool _supportsIosLiquidGlass = false;
 
 /// Load native platform capabilities that are needed before the first frame.
