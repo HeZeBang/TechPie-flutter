@@ -128,11 +128,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 subtitle: Text(_cloudSyncSubtitle(sp.syncService)),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  Navigator.push(
+                  pushPlatformViewPage<void>(
                     context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SyncSettingsPage(),
-                    ),
+                    builder: (_) => const SyncSettingsPage(),
                   ),
                 ),
               ),

@@ -38,9 +38,12 @@ Future<T?> pushPlatformViewPage<T>(
     );
   }
 
-  await _beginNativeTransition('push');
+  final animationsEnabled = !MediaQuery.disableAnimationsOf(context);
+  if (animationsEnabled) {
+    await _beginNativeTransition('push');
+  }
   if (!navigator.mounted) {
-    await _cancelNativeTransition();
+    if (animationsEnabled) await _cancelNativeTransition();
     return null;
   }
 
@@ -56,7 +59,9 @@ Future<T?> pushPlatformViewPage<T>(
 
   try {
     final result = navigator.push<T>(route);
-    unawaited(_finishNativeTransitionAfterFrame());
+    if (animationsEnabled) {
+      unawaited(_finishNativeTransitionAfterFrame());
+    }
     return await result;
   } finally {
     _interactivePopEntries.remove(entry);
@@ -71,7 +76,8 @@ Future<bool> maybePopPlatformViewPage<T>(
   final navigator = Navigator.of(context);
   if (!navigator.canPop()) return false;
 
-  if (isIos()) {
+  final animationsEnabled = isIos() && !MediaQuery.disableAnimationsOf(context);
+  if (animationsEnabled) {
     await _beginNativeTransition('pop');
     if (!navigator.mounted) {
       await _cancelNativeTransition();
@@ -80,7 +86,7 @@ Future<bool> maybePopPlatformViewPage<T>(
   }
 
   final didPop = await navigator.maybePop<T>(result);
-  if (isIos()) {
+  if (animationsEnabled) {
     if (didPop) {
       await _finishNativeTransitionAfterFrame();
     } else {

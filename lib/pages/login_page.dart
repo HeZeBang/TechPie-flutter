@@ -10,6 +10,7 @@ import '../services/uni_auth_service.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -52,8 +53,9 @@ Future<void> presentLoginPage(BuildContext context) async {
   }
 
   if (context.mounted) {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LoginPage()),
+    await pushPlatformViewPage<void>(
+      context,
+      builder: (_) => const LoginPage(),
     );
   }
 }

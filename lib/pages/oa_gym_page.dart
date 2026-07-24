@@ -8,6 +8,7 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 import 'login_page.dart';
 import 'third_party_accounts_page.dart';
 
@@ -49,10 +50,9 @@ class _OaGymPageState extends State<OaGymPage>
   }
 
   Future<void> _openThirdPartyAccounts() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const ThirdPartyAccountsPage(),
-      ),
+    await pushPlatformViewPage<void>(
+      context,
+      builder: (_) => const ThirdPartyAccountsPage(),
     );
   }
 

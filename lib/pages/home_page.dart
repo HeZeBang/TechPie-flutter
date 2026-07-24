@@ -18,6 +18,7 @@ import '../widgets/adaptive_feedback.dart';
 import '../widgets/app_card.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 import 'generic_webview_page.dart';
 import 'login_page.dart';
 
@@ -374,13 +375,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final cookies = _buildCookiesForFeature(feature.cookieType);
         if (feature.url != null) {
           unawaited(
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => GenericWebViewPage(
-                  title: feature.description,
-                  url: feature.url!,
-                  cookies: cookies,
-                ),
+            pushPlatformViewPage<void>(
+              context,
+              builder: (_) => GenericWebViewPage(
+                title: feature.description,
+                url: feature.url!,
+                cookies: cookies,
               ),
             ),
           );
