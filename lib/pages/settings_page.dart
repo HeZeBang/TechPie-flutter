@@ -151,7 +151,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     confirmLabel: '退出登录',
                     destructive: true,
                     width: double.infinity,
-                    height: 50,
+                    height: 44,
                     onConfirmed: () => unawaited(auth.logout()),
                   ),
                 )

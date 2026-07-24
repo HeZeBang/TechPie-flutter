@@ -146,7 +146,7 @@ final class NativeGlassConfirmationButtonPlatformView: NSObject, FlutterPlatform
     var configuration: UIButton.Configuration =
       label == nil || label?.isEmpty == true
       ? .clearGlass()
-      : .glass()
+      : .plain()
     configuration.image = image
     configuration.title = label
     if destructive {
@@ -176,8 +176,6 @@ final class NativeGlassConfirmationButtonPlatformView: NSObject, FlutterPlatform
     let confirmStyle: UIAlertAction.Style = destructive ? .destructive : .default
     actionSheet.addAction(
       UIAlertAction(title: confirmLabel, style: confirmStyle) { [weak self] _ in
-        let feedback = UIImpactFeedbackGenerator(style: .light)
-        feedback.impactOccurred(intensity: 0.55)
         self?.channel.invokeMethod("onConfirmed", arguments: nil)
       }
     )
