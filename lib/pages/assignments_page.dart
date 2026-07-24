@@ -11,6 +11,7 @@ import '../services/service_provider.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
@@ -396,7 +397,12 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     return RefreshIndicator(
       onRefresh: () async => _refresh(service),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          AppShellMetrics.bottomContentPaddingOf(context),
+        ),
         children: [
           InkWell(
             onTap: () => setState(() => _pastCollapsed = !_pastCollapsed),

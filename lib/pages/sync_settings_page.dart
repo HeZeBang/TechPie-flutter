@@ -7,6 +7,7 @@ import '../services/sync_service.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 
@@ -42,7 +43,10 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         listenable: sync,
         builder: (context, _) {
           return ListView(
-            padding: EdgeInsets.only(top: topInset, bottom: 120),
+            padding: EdgeInsets.only(
+              top: topInset,
+              bottom: AppShellMetrics.bottomContentPaddingOf(context),
+            ),
             children: [
               _ExplanationCard(enabled: sync.enabled),
               const SizedBox(height: 8),
@@ -89,7 +93,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                 ),
               ],
               if (sync.needsRestore)
-                _RestoreBanner(onTap: _busy ? null : () => unawaited(_restore(sync))),
+                _RestoreBanner(
+                  onTap: _busy ? null : () => unawaited(_restore(sync)),
+                ),
             ],
           );
         },
@@ -232,7 +238,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     showAdaptiveFeedback(
       context: context,
       message: message,
-      style: isError ? AdaptiveFeedbackStyle.error : AdaptiveFeedbackStyle.success,
+      style:
+          isError ? AdaptiveFeedbackStyle.error : AdaptiveFeedbackStyle.success,
     );
   }
 
@@ -388,7 +395,8 @@ class _RestoreBanner extends StatelessWidget {
         subtitle: Text(
           '检测到其它设备设置了云同步，输入主密码即可恢复绑定',
           style: TextStyle(
-            color: theme.colorScheme.onSecondaryContainer.withValues(alpha: 0.8),
+            color:
+                theme.colorScheme.onSecondaryContainer.withValues(alpha: 0.8),
             fontSize: 12,
           ),
         ),

@@ -15,6 +15,7 @@ import '../services/service_provider.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/course_detail_panel.dart';
 import '../widgets/desktop_popup.dart';
@@ -1263,7 +1264,9 @@ class _TimetableGrid extends StatelessWidget {
     final theme = Theme.of(context);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 120),
+      padding: EdgeInsets.only(
+        bottom: AppShellMetrics.bottomContentPaddingOf(context),
+      ),
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,

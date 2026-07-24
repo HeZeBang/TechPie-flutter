@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../utils/platform.dart';
 import '../ios_liquid/ios_glass_tab_bar.dart';
 import 'app_destination.dart';
+import 'app_shell_metrics.dart';
 
 class MobileShell extends StatelessWidget {
   final List<AppDestination> destinations;
@@ -21,36 +22,41 @@ class MobileShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final usesIosChrome = isIos();
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    final bottomObstruction = (usesIosChrome ? 49.0 : 80.0) + bottomInset;
 
-    return Scaffold(
-      extendBody: true,
-      body: child,
-      bottomNavigationBar: usesIosChrome
-          ? IosGlassTabBar(
-              selectedIndex: selectedIndex,
-              items: destinations
-                  .map((item) => item.toIosGlassTabBarItem())
-                  .toList(),
-              onSelected: onDestinationSelected,
-            )
-          : NavigationBar(
-              selectedIndex: selectedIndex,
-              onDestinationSelected: onDestinationSelected,
-              // The selection indicator is the persistent selected state.
-              // Suppress transient state layers so they do not overlap it.
-              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-              destinations: [
-                for (var index = 0; index < destinations.length; index++)
-                  NavigationDestination(
-                    icon: _NavigationDestinationIcon(
-                      icon: destinations[index].icon,
-                      selectedIcon: destinations[index].selectedIcon,
-                      selected: index == selectedIndex,
+    return AppShellMetrics(
+      bottomObstruction: bottomObstruction,
+      child: Scaffold(
+        extendBody: true,
+        body: child,
+        bottomNavigationBar: usesIosChrome
+            ? IosGlassTabBar(
+                selectedIndex: selectedIndex,
+                items: destinations
+                    .map((item) => item.toIosGlassTabBarItem())
+                    .toList(),
+                onSelected: onDestinationSelected,
+              )
+            : NavigationBar(
+                selectedIndex: selectedIndex,
+                onDestinationSelected: onDestinationSelected,
+                // The selection indicator is the persistent selected state.
+                // Suppress transient state layers so they do not overlap it.
+                overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+                destinations: [
+                  for (var index = 0; index < destinations.length; index++)
+                    NavigationDestination(
+                      icon: _NavigationDestinationIcon(
+                        icon: destinations[index].icon,
+                        selectedIcon: destinations[index].selectedIcon,
+                        selected: index == selectedIndex,
+                      ),
+                      label: destinations[index].label,
                     ),
-                    label: destinations[index].label,
-                  ),
-              ],
-            ),
+                ],
+              ),
+      ),
     );
   }
 }

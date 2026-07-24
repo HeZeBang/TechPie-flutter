@@ -7,6 +7,7 @@ import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_glass_confirmation_button.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
@@ -54,7 +55,10 @@ class ThirdPartyAccountsPage extends StatelessWidget {
         listenable: Listenable.merge([tpAuth, auth]),
         builder: (context, _) {
           return ListView(
-            padding: EdgeInsets.only(top: topInset, bottom: 120),
+            padding: EdgeInsets.only(
+              top: topInset,
+              bottom: AppShellMetrics.bottomContentPaddingOf(context),
+            ),
             children: [
               // Blackboard read-only entry
               _BlackboardTile(),

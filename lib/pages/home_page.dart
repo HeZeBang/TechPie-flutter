@@ -16,6 +16,7 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
@@ -279,7 +280,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           16,
           topInset,
           16,
-          120,
+          AppShellMetrics.bottomContentPaddingOf(context),
         ),
         children: [
           Card.filled(

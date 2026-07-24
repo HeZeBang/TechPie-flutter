@@ -12,6 +12,7 @@ import '../services/third_party_auth_service.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/ios_liquid/ios_glass_select.dart';
@@ -88,7 +89,10 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListenableBuilder(
         listenable: Listenable.merge([auth, logger, themeService, tpAuth]),
         builder: (context, _) => ListView(
-          padding: EdgeInsets.only(top: topInset, bottom: 120),
+          padding: EdgeInsets.only(
+            top: topInset,
+            bottom: AppShellMetrics.bottomContentPaddingOf(context),
+          ),
           children: [
             // Account section
             _sectionHeader(theme, 'Account'),

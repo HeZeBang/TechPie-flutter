@@ -6,6 +6,7 @@ import '../models/oa_gym.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
@@ -127,7 +128,12 @@ class _OaGymPageState extends State<OaGymPage>
                   ],
                 )
               : ListView(
-                  padding: EdgeInsets.fromLTRB(16, topInset + 16, 16, 120),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    topInset + 16,
+                    16,
+                    AppShellMetrics.bottomContentPaddingOf(context),
+                  ),
                   children: [
                     Card.filled(
                       child: Padding(
@@ -346,7 +352,12 @@ class _BookingTabState extends State<_BookingTab> {
     };
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        AppShellMetrics.bottomContentPaddingOf(context),
+      ),
       children: [
         Card.outlined(
           child: Padding(
@@ -654,7 +665,12 @@ class _SearchTabState extends State<_SearchTab> {
     );
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        AppShellMetrics.bottomContentPaddingOf(context),
+      ),
       children: [
         Card.outlined(
           child: Padding(
@@ -985,7 +1001,12 @@ class _ProfileTabState extends State<_ProfileTab> {
     final avatarText = displayName.characters.firstOrNull ?? 'U';
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        AppShellMetrics.bottomContentPaddingOf(context),
+      ),
       children: [
         Card.filled(
           child: Padding(
