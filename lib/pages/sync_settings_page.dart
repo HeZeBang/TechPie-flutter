@@ -7,6 +7,7 @@ import '../services/sync_service.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
@@ -248,83 +249,15 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     required bool confirm,
     required String? warning,
   }) async {
-    final controller = TextEditingController();
-    final confirmController = TextEditingController();
-    return showDialog<String>(
+    return showAdaptiveTextInputDialog(
       context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            final obscure = true;
-            final canSubmit = controller.text.isNotEmpty &&
-                (!confirm || controller.text == confirmController.text);
-            return AlertDialog(
-              title: Text(title),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (warning != null) ...[
-                      Text(
-                        warning,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    TextField(
-                      controller: controller,
-                      obscureText: obscure,
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: '主密码',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    if (confirm) ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: confirmController,
-                        obscureText: obscure,
-                        decoration: const InputDecoration(
-                          labelText: '再次输入',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      if (confirmController.text.isNotEmpty &&
-                          controller.text != confirmController.text)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            '两次输入不一致',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: canSubmit
-                      ? () => Navigator.pop(context, controller.text)
-                      : null,
-                  child: const Text('确定'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      title: title,
+      message: warning,
+      fieldLabel: '主密码',
+      confirmationFieldLabel: confirm ? '再次输入' : null,
+      mismatchMessage: '两次输入不一致',
+      confirmLabel: '确定',
+      obscureText: true,
     );
   }
 }

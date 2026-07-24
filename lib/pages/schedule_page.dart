@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -15,6 +14,7 @@ import '../services/service_provider.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/course_detail_panel.dart';
@@ -31,7 +31,6 @@ class SchedulePage extends StatefulWidget {
 
 class _SchedulePageState extends State<SchedulePage> {
   final IcsExportService _icsExport = IcsExportService();
-  final TextEditingController _calendarNameController = TextEditingController();
   late ScheduleService _schedule;
   List<Course> _courses = [];
   List<Period> _periods = defaultPeriods.toList();
@@ -64,7 +63,6 @@ class _SchedulePageState extends State<SchedulePage> {
 
   @override
   void dispose() {
-    _calendarNameController.dispose();
     _weekPageController.dispose();
     _schedule.removeListener(_onScheduleChanged);
     super.dispose();
@@ -92,13 +90,6 @@ class _SchedulePageState extends State<SchedulePage> {
           : AdaptiveFeedbackStyle.success,
       duration: const Duration(seconds: 2),
     );
-  }
-
-  Future<void> _dismissKeyboard() async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    if (isIos()) {
-      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
-    }
   }
 
   void _rebuildCourses() {
@@ -503,48 +494,14 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<String?> _promptCalendarName({required String initialValue}) async {
-    _calendarNameController
-      ..text = initialValue
-      ..selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: initialValue.length,
-      );
-
-    return showDialog<String>(
+    return showAdaptiveTextInputDialog(
       context: context,
-      builder: (dialogContext) {
-        Future<void> closeDialog([String? value]) async {
-          await _dismissKeyboard();
-          if (!dialogContext.mounted) return;
-          Navigator.of(dialogContext).pop(value);
-        }
-
-        return AlertDialog(
-          title: const Text('请输入日历名称'),
-          content: TextField(
-            controller: _calendarNameController,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '日历名',
-              hintText: '例如：2025-2026 春季学期',
-            ),
-            textInputAction: TextInputAction.done,
-            onSubmitted: (value) {
-              closeDialog(value.trim());
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => closeDialog(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => closeDialog(_calendarNameController.text.trim()),
-              child: const Text('导入'),
-            ),
-          ],
-        );
-      },
+      title: '请输入日历名称',
+      fieldLabel: '日历名',
+      hintText: '例如：2025-2026 春季学期',
+      initialValue: initialValue,
+      confirmLabel: '导入',
+      trimResult: true,
     );
   }
 
