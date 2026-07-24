@@ -35,6 +35,12 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
   private let button = UIButton(type: .system)
 
   private var sfSymbol = "plus"
+  private var label: String?
+  private var subtitle: String?
+  private var role = "standard"
+  private var isEnabled = true
+  private var isLoading = false
+  private var buttonAccessibilityLabel: String?
 
   init(
     frame: CGRect,
@@ -64,15 +70,16 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
   }
 
   private func parseArguments(_ args: Any?) {
-    guard
-      let params = args as? [String: Any],
-      let rawSymbol = params["sfSymbol"] as? String,
-      !rawSymbol.isEmpty
-    else {
-      return
+    guard let params = args as? [String: Any] else { return }
+    if let rawSymbol = params["sfSymbol"] as? String, !rawSymbol.isEmpty {
+      sfSymbol = rawSymbol
     }
-
-    sfSymbol = rawSymbol
+    label = params["label"] as? String
+    subtitle = params["subtitle"] as? String
+    role = params["role"] as? String ?? "standard"
+    isEnabled = params["enabled"] as? Bool ?? true
+    isLoading = params["loading"] as? Bool ?? false
+    buttonAccessibilityLabel = params["accessibilityLabel"] as? String
   }
 
   private func buildViewHierarchy() {
@@ -112,47 +119,77 @@ final class NativeGlassButtonPlatformView: NSObject, FlutterPlatformView {
     } else {
       applyLegacyFallbackAppearance(image: image)
     }
+    button.isEnabled = isEnabled && !isLoading
+    button.accessibilityLabel = buttonAccessibilityLabel ?? label
   }
 
   @available(iOS 26.0, *)
   private func applyLiquidGlassAppearance(image: UIImage?) {
-    var configuration = UIButton.Configuration.prominentGlass()
-    configuration.image = image
-
+    var configuration: UIButton.Configuration
+    switch role {
+    case "prominent":
+      configuration = .prominentGlass()
+    case "plain":
+      configuration = .plain()
+    default:
+      configuration = .glass()
+    }
+    configure(&configuration, image: image)
+    if role == "destructive" {
+      configuration.baseForegroundColor = .systemRed
+    }
     button.configuration = configuration
   }
 
   @available(iOS 15.0, *)
   private func applyModernFallbackAppearance(image: UIImage?) {
-    var configuration = UIButton.Configuration.plain()
-    configuration.image = image
-
+    var configuration: UIButton.Configuration
+    switch role {
+    case "prominent":
+      configuration = .filled()
+    case "standard":
+      configuration = .tinted()
+    default:
+      configuration = .plain()
+    }
+    configure(&configuration, image: image)
+    if role == "destructive" {
+      configuration.baseForegroundColor = .systemRed
+    }
     button.configuration = configuration
   }
 
   private func applyLegacyFallbackAppearance(image: UIImage?) {
     button.setImage(image, for: .normal)
+    button.setTitle(label, for: .normal)
+    button.tintColor = role == "destructive" ? .systemRed : nil
+  }
+
+  @available(iOS 15.0, *)
+  private func configure(_ configuration: inout UIButton.Configuration, image: UIImage?) {
+    configuration.title = label
+    configuration.subtitle = subtitle
+    configuration.image = image
+    configuration.imagePlacement = .leading
+    configuration.imagePadding = label == nil ? 0 : 8
+    configuration.showsActivityIndicator = isLoading
   }
 
   private func handle(call: FlutterMethodCall, result: FlutterResult) {
     switch call.method {
-    case "updateSymbol":
-      guard
-        let arguments = call.arguments as? [String: Any],
-        let symbol = arguments["sfSymbol"] as? String,
-        !symbol.isEmpty
-      else {
+    case "updateConfiguration":
+      guard let arguments = call.arguments as? [String: Any] else {
         result(
           FlutterError(
             code: "bad_args",
-            message: "Expected an sfSymbol string.",
+            message: "Expected a button configuration dictionary.",
             details: nil
           )
         )
         return
       }
 
-      sfSymbol = symbol
+      parseArguments(arguments)
       applyButtonAppearance()
       result(nil)
 
