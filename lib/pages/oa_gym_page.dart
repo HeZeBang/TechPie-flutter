@@ -8,6 +8,7 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/ios_liquid/ios_glass_button.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 import 'login_page.dart';
@@ -36,17 +37,14 @@ class _OaGymPageState extends State<OaGymPage>
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+  Future<void> _handlePrerequisite() async {
     final sp = ServiceProvider.of(context);
-    final alreadyLoggedIn = sp.authService.isLoggedIn;
+    if (sp.authService.isLoggedIn) {
+      await _openThirdPartyAccounts();
+      return;
+    }
     await presentLoginPage(context);
     if (!mounted) return;
-    // Already logged into the primary SSO account but missing the eGate
-    // binding — route the user to the third-party accounts page instead of
-    // re-showing the login sheet.
-    if (alreadyLoggedIn && sp.authService.isLoggedIn) {
-      unawaited(_openThirdPartyAccounts());
-    }
     setState(() {});
   }
 
@@ -85,7 +83,7 @@ class _OaGymPageState extends State<OaGymPage>
               onItemPressed: (id) {
                 switch (id) {
                   case 'back':
-                    unawaited(Navigator.maybePop(context));
+                    unawaited(maybePopPlatformViewPage<void>(context));
                 }
               },
             )
@@ -161,12 +159,18 @@ class _OaGymPageState extends State<OaGymPage>
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                             const SizedBox(height: 16),
-                            FilledButton.icon(
-                              onPressed: _handleLogin,
-                              icon: const Icon(Icons.login),
-                              label: Text(
-                                auth.isLoggedIn ? '去绑定 eGate' : '去登录',
-                              ),
+                            IosGlassButton(
+                              onPressed: _handlePrerequisite,
+                              icon: auth.isLoggedIn
+                                  ? Icons.vpn_key_outlined
+                                  : Icons.login,
+                              sfSymbol: auth.isLoggedIn
+                                  ? 'key.horizontal'
+                                  : 'person.crop.circle.badge.plus',
+                              label: auth.isLoggedIn ? '去绑定 eGate' : '去登录',
+                              role: IosNativeButtonRole.prominent,
+                              accessibilityLabel:
+                                  auth.isLoggedIn ? '前往绑定 eGate' : '登录 TechPie',
                             ),
                           ],
                         ),
