@@ -8,8 +8,8 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin, UIGestureRecogn
     static let duration: TimeInterval = 0.35
     static let minimumSettleDuration: TimeInterval = 0.12
     static let parallax: CGFloat = 0.30
-    static let shadowOpacity: Float = 0.16
-    static let shadowRadius: CGFloat = 10
+    static let shadowOpacity: Float = 0.08
+    static let shadowRadius: CGFloat = 4
   }
 
   private static let channelName = "techpie/native_glass_presenter"
