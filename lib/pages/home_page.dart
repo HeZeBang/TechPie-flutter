@@ -18,6 +18,7 @@ import '../widgets/adaptive_feedback.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/ios_liquid/ios_glass_button.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 import 'generic_webview_page.dart';
@@ -435,6 +436,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         icon: Icons.login_rounded,
         title: '登录以查看今日课程',
         subtitle: '连接你的教务系统账号',
+        actionLabel: '登录',
+        actionSfSymbol: 'person.crop.circle.badge.checkmark',
         onTap: () async {
           await presentLoginPage(context);
           if (!mounted) return;
@@ -683,6 +686,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     required IconData icon,
     required String title,
     required String subtitle,
+    String? actionLabel,
+    String? actionSfSymbol,
     VoidCallback? onTap,
   }) {
     final inner = SizedBox(
@@ -713,18 +718,22 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            if (onTap != null && actionLabel != null) ...[
+              const SizedBox(height: 16),
+              IosGlassButton(
+                label: actionLabel,
+                icon: icon,
+                sfSymbol: actionSfSymbol ?? 'arrow.right',
+                role: IosNativeButtonRole.prominent,
+                width: 180,
+                onPressed: onTap,
+                accessibilityLabel: actionLabel,
+              ),
+            ],
           ],
         ),
       ),
     );
-
-    if (onTap != null) {
-      return InkWell(
-        key: key,
-        onTap: onTap,
-        child: inner,
-      );
-    }
 
     return Container(key: key, child: inner);
   }

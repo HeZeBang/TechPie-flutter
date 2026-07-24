@@ -20,7 +20,11 @@ import '../widgets/blurred_app_bar.dart';
 import '../widgets/course_detail_panel.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/desktop_select_popover.dart';
+import '../widgets/ios_liquid/ios_glass_button.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import 'login_page.dart';
+import 'third_party_accounts_page.dart';
 
 class SchedulePage extends StatefulWidget {
   const SchedulePage({super.key});
@@ -704,6 +708,32 @@ class _SchedulePageState extends State<SchedulePage> {
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
+                    ),
+                    const SizedBox(height: 20),
+                    IosGlassButton(
+                      label: auth.isLoggedIn ? '去绑定 eGate' : '登录',
+                      icon: auth.isLoggedIn
+                          ? Icons.account_tree_outlined
+                          : Icons.login,
+                      sfSymbol: auth.isLoggedIn
+                          ? 'person.crop.circle.badge.plus'
+                          : 'person.crop.circle.badge.checkmark',
+                      role: IosNativeButtonRole.prominent,
+                      width: 220,
+                      onPressed: () {
+                        if (auth.isLoggedIn) {
+                          unawaited(
+                            pushPlatformViewPage<void>(
+                              context,
+                              builder: (_) => const ThirdPartyAccountsPage(),
+                            ),
+                          );
+                        } else {
+                          unawaited(presentLoginPage(context));
+                        }
+                      },
+                      accessibilityLabel:
+                          auth.isLoggedIn ? '绑定 eGate 账号' : '登录 TechPie',
                     ),
                   ],
                 ),
