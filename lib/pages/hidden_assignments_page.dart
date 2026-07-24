@@ -7,8 +7,11 @@ import '../models/assignment_overrides.dart';
 import '../services/assignment_service.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_feedback.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/ios_liquid/ios_glass_button.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 
 class HiddenAssignmentsPage extends StatefulWidget {
   const HiddenAssignmentsPage({super.key});
@@ -125,7 +128,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                   onItemPressed: (id) {
                     switch (id) {
                       case 'back':
-                        unawaited(Navigator.maybePop(context));
+                        unawaited(maybePopPlatformViewPage<void>(context));
                       case 'toggleSelectAll':
                         if (hiddenKeys.isNotEmpty) {
                           _toggleSelectAll(hiddenKeys);
@@ -196,6 +199,17 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
     );
   }
 
+  Future<void> _restoreOne(String key) async {
+    final service = ServiceProvider.of(context).assignmentService;
+    await service.unhide(key);
+    if (!mounted) return;
+    showAdaptiveFeedback(
+      context: context,
+      message: '已恢复事项',
+      style: AdaptiveFeedbackStyle.success,
+    );
+  }
+
   Widget _buildList(
     BuildContext context,
     AssignmentService service,
@@ -245,6 +259,16 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                     _selected.add(key);
                   });
                 },
+          trailing: _selectionMode
+              ? null
+              : IosGlassButton(
+                  icon: Icons.restore,
+                  sfSymbol: 'arrow.uturn.backward',
+                  width: 44,
+                  height: 44,
+                  accessibilityLabel: '恢复 ${a?.title ?? key}',
+                  onPressed: () => unawaited(_restoreOne(key)),
+                ),
         );
       },
     );
