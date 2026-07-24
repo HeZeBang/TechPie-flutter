@@ -12,6 +12,7 @@ import '../services/ics/ics_file_saver.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
 import '../utils/adaptive_layout.dart';
+import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_text_input_dialog.dart';
@@ -140,7 +141,10 @@ class _SchedulePageState extends State<SchedulePage> {
     unawaited(
       _weekPageController.animateToPage(
         _currentWeek - 1,
-        duration: const Duration(milliseconds: 280),
+        duration: appAnimationDuration(
+          context,
+          const Duration(milliseconds: 280),
+        ),
         curve: Curves.easeOutCubic,
       ),
     );
@@ -821,7 +825,10 @@ class _SchedulePageState extends State<SchedulePage> {
         Expanded(
           child: animated
               ? AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
+                  duration: appAnimationDuration(
+                    context,
+                    const Duration(milliseconds: 300),
+                  ),
                   switchInCurve: Curves.easeOut,
                   switchOutCurve: Curves.easeIn,
                   child: content,
@@ -1081,7 +1088,10 @@ class _WeekTitleContent extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
+              duration: appAnimationDuration(
+                context,
+                const Duration(milliseconds: 200),
+              ),
               transitionBuilder: (child, animation) {
                 return FadeTransition(
                   opacity: animation,
@@ -1141,7 +1151,10 @@ class _DayHeader extends StatelessWidget {
             width: 48,
             child: Center(
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
+                duration: appAnimationDuration(
+                  context,
+                  const Duration(milliseconds: 250),
+                ),
                 child: Text(
                   '${weekStart.month}\n月',
                   key: ValueKey<String>('${weekStart.year}-${weekStart.month}'),
@@ -1203,7 +1216,10 @@ class _DayHeaderCell extends StatelessWidget {
         ),
         const SizedBox(height: 2),
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
+          duration: appAnimationDuration(
+            context,
+            const Duration(milliseconds: 250),
+          ),
           child: Container(
             key: ValueKey<String>('${date.year}-${date.month}-${date.day}'),
             width: 28,

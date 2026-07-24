@@ -12,6 +12,7 @@ import '../models/feature.dart';
 import '../services/assignment_service.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
+import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
@@ -37,6 +38,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   List<Course> _todayCourses = [];
   List<Period> _periods = defaultPeriods.toList();
   bool _initialized = false;
+  bool _animationsEnabled = true;
 
   // Refresh every minute to update course now/past state and day changes
   Timer? _refreshTimer;
@@ -57,6 +59,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final animationsEnabled = appAnimationsEnabled(context);
+    if (_animationsEnabled != animationsEnabled) {
+      _animationsEnabled = animationsEnabled;
+      if (!animationsEnabled) {
+        _staggerController?.dispose();
+        _staggerController = null;
+        _itemSlides = [];
+        _itemFades = [];
+      }
+    }
     if (!_initialized) {
       _initialized = true;
       _schedule = ServiceProvider.of(context).scheduleService;
@@ -134,6 +146,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   void _runStaggerAnimation(int count) {
     _staggerController?.dispose();
+    if (!_animationsEnabled) {
+      _staggerController = null;
+      _itemSlides = [];
+      _itemFades = [];
+      return;
+    }
     _staggerController = AnimationController(
       vsync: this,
       duration: Duration(milliseconds: 300 + count * 60),
@@ -332,7 +350,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return Card.outlined(
       clipBehavior: Clip.antiAlias,
       child: AnimatedSize(
-        duration: const Duration(milliseconds: 350),
+        duration: appAnimationDuration(
+          context,
+          const Duration(milliseconds: 350),
+        ),
         curve: Curves.easeOutCubic,
         alignment: Alignment.topCenter,
         child: Column(
@@ -462,11 +483,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return Card.outlined(
       clipBehavior: Clip.antiAlias,
       child: AnimatedSize(
-        duration: const Duration(milliseconds: 350),
+        duration: appAnimationDuration(
+          context,
+          const Duration(milliseconds: 350),
+        ),
         curve: Curves.easeOutCubic,
         alignment: Alignment.topCenter,
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
+          duration: appAnimationDuration(
+            context,
+            const Duration(milliseconds: 300),
+          ),
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInCubic,
           transitionBuilder: (child, animation) {
@@ -554,11 +581,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return Card.outlined(
       clipBehavior: Clip.antiAlias,
       child: AnimatedSize(
-        duration: const Duration(milliseconds: 350),
+        duration: appAnimationDuration(
+          context,
+          const Duration(milliseconds: 350),
+        ),
         curve: Curves.easeOutCubic,
         alignment: Alignment.topCenter,
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
+          duration: appAnimationDuration(
+            context,
+            const Duration(milliseconds: 300),
+          ),
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInCubic,
           transitionBuilder: (child, animation) =>
@@ -801,12 +834,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
 
     return AnimatedOpacity(
-      duration: const Duration(milliseconds: 300),
+      duration: appAnimationDuration(
+        context,
+        const Duration(milliseconds: 300),
+      ),
       curve: Curves.easeOutCubic,
       opacity: isPast ? 0.5 : 1.0,
       child: ListTile(
         title: AnimatedDefaultTextStyle(
-          duration: const Duration(milliseconds: 300),
+          duration: appAnimationDuration(
+            context,
+            const Duration(milliseconds: 300),
+          ),
           curve: Curves.easeOutCubic,
           style: titleStyle,
           maxLines: 1,
@@ -883,7 +922,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             }),
           ),
           AnimatedCrossFade(
-            duration: const Duration(milliseconds: 250),
+            duration: appAnimationDuration(
+              context,
+              const Duration(milliseconds: 250),
+            ),
             crossFadeState: _debugPanelExpanded
                 ? CrossFadeState.showSecond
                 : CrossFadeState.showFirst,
@@ -991,7 +1033,10 @@ class _CourseBadge extends StatelessWidget {
         status == _CourseStatus.soon || status == _CourseStatus.ongoing;
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 350),
+      duration: appAnimationDuration(
+        context,
+        const Duration(milliseconds: 350),
+      ),
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
       transitionBuilder: (child, animation) {
