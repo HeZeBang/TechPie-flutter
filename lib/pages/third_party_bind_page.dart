@@ -557,22 +557,18 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton.tonal(
+                    IosGlassButton(
+                      width: 120,
+                      height: 56,
                       onPressed: (_smsCooldown > 0 || _sendingSms)
                           ? null
                           : () => unawaited(_sendEgateSms()),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(100, 56),
-                      ),
-                      child: _sendingSms
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(
-                              _smsCooldown > 0 ? '${_smsCooldown}s' : '发送验证码',
-                            ),
+                      icon: Icons.sms_outlined,
+                      sfSymbol: 'message.badge',
+                      label: _smsCooldown > 0 ? '${_smsCooldown}s' : '发送验证码',
+                      loading: _sendingSms,
+                      accessibilityLabel:
+                          _smsCooldown > 0 ? '验证码倒计时 $_smsCooldown 秒' : '发送验证码',
                     ),
                   ],
                 ),
@@ -654,15 +650,14 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
               ),
             ],
             const SizedBox(height: 18),
-            FilledButton(
+            IosGlassButton(
               onPressed: _busy ? null : () => unawaited(_submit()),
-              child: _busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('绑定'),
+              icon: Icons.link,
+              sfSymbol: 'link',
+              label: '绑定',
+              role: IosNativeButtonRole.prominent,
+              loading: _busy,
+              accessibilityLabel: '绑定 ${widget.platform.label}',
             ),
             const SizedBox(height: 12),
             Text(
