@@ -39,17 +39,17 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
   bool _autoRenew = false;
   String? _inlineError;
 
-  // eGate SMS state
-  int _egateLoginMethod = 0; // 0 = password, 1 = SMS
-  final _egatePhoneCtrl = TextEditingController();
-  final _egateCodeCtrl = TextEditingController();
+  // cpdaily SMS state
+  int _cpdailyLoginMethod = 0; // 0 = password, 1 = SMS
+  final _cpdailyPhoneCtrl = TextEditingController();
+  final _cpdailyCodeCtrl = TextEditingController();
   bool _sendingSms = false;
   int _smsCooldown = 0;
   Timer? _smsCooldownTimer;
 
   bool get _isHydro => widget.platform == ThirdPartyPlatform.hydro;
   bool get _isGradescope => widget.platform == ThirdPartyPlatform.gradescope;
-  bool get _isEgate => widget.platform == ThirdPartyPlatform.egate;
+  bool get _isCpdaily => widget.platform == ThirdPartyPlatform.cpdaily;
 
   Future<void> _dismissKeyboard() async {
     FocusManager.instance.primaryFocus?.unfocus();
@@ -64,8 +64,8 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     _passwordCtrl.dispose();
     _hydroOriginCtrl.dispose();
     _hydroDomainsCtrl.dispose();
-    _egatePhoneCtrl.dispose();
-    _egateCodeCtrl.dispose();
+    _cpdailyPhoneCtrl.dispose();
+    _cpdailyCodeCtrl.dispose();
     _smsCooldownTimer?.cancel();
     super.dispose();
   }
@@ -104,17 +104,17 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     setState(() => _autoRenew = ok == true);
   }
 
-  // -- eGate SMS methods --
+  // -- cpdaily SMS methods --
 
-  Future<void> _sendEgateSms() async {
-    final phone = _egatePhoneCtrl.text.trim();
+  Future<void> _sendCpdailySms() async {
+    final phone = _cpdailyPhoneCtrl.text.trim();
     if (phone.isEmpty) return;
 
     setState(() => _sendingSms = true);
     try {
       await ServiceProvider.of(context)
           .thirdPartyAuthService
-          .sendEgateSmsCode(phone);
+          .sendCpdailySmsCode(phone);
       if (mounted) {
         setState(() => _inlineError = null);
         _smsCooldown = 60;
@@ -159,11 +159,11 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     }
 
     try {
-      if (_isEgate && _egateLoginMethod == 1) {
+      if (_isCpdaily && _cpdailyLoginMethod == 1) {
         // SMS mode
-        await tpAuth.bindEgateSms(
-          phone: _egatePhoneCtrl.text.trim(),
-          code: _egateCodeCtrl.text.trim(),
+        await tpAuth.bindCpdailySms(
+          phone: _cpdailyPhoneCtrl.text.trim(),
+          code: _cpdailyCodeCtrl.text.trim(),
         );
       } else {
         await tpAuth.bind(
@@ -215,12 +215,12 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
   }
 
   bool _validateForSubmit() {
-    if (_isEgate && _egateLoginMethod == 1) {
+    if (_isCpdaily && _cpdailyLoginMethod == 1) {
       // SMS mode validation
       String? message;
-      if (_egatePhoneCtrl.text.trim().isEmpty) {
+      if (_cpdailyPhoneCtrl.text.trim().isEmpty) {
         message = '请填写手机号码';
-      } else if (_egateCodeCtrl.text.trim().isEmpty) {
+      } else if (_cpdailyCodeCtrl.text.trim().isEmpty) {
         message = '请填写验证码';
       }
       setState(() => _inlineError = message);
@@ -277,19 +277,19 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
               _InlineBindFeedback(message: _inlineError!),
               const SizedBox(height: 12),
             ],
-            if (_isEgate) ...[
-              // eGate: tabbed password / SMS interface
+            if (_isCpdaily) ...[
+              // cpdaily: tabbed password / SMS interface
               SegmentedButton<int>(
                 segments: const [
                   ButtonSegment(value: 0, label: Text('密码登录')),
                   ButtonSegment(value: 1, label: Text('短信登录')),
                 ],
-                selected: {_egateLoginMethod},
+                selected: {_cpdailyLoginMethod},
                 onSelectionChanged: (v) =>
-                    setState(() => _egateLoginMethod = v.first),
+                    setState(() => _cpdailyLoginMethod = v.first),
               ),
               const SizedBox(height: 16),
-              if (_egateLoginMethod == 0) ...[
+              if (_cpdailyLoginMethod == 0) ...[
                 TextFormField(
                   controller: _accountCtrl,
                   decoration: const InputDecoration(
@@ -317,7 +317,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                 ),
               ] else ...[
                 TextFormField(
-                  controller: _egatePhoneCtrl,
+                  controller: _cpdailyPhoneCtrl,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(
                     labelText: '手机号码',
@@ -331,7 +331,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                   children: [
                     Expanded(
                       child: TextFormField(
-                        controller: _egateCodeCtrl,
+                        controller: _cpdailyCodeCtrl,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
                           labelText: '验证码',
@@ -345,7 +345,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                     FilledButton.tonal(
                       onPressed: (_smsCooldown > 0 || _sendingSms)
                           ? null
-                          : () => unawaited(_sendEgateSms()),
+                          : () => unawaited(_sendCpdailySms()),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size(100, 56),
                       ),
@@ -504,19 +504,19 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
               _InlineBindFeedback(message: _inlineError!),
               const SizedBox(height: 16),
             ],
-            if (_isEgate) ...[
+            if (_isCpdaily) ...[
               IosNativeSegmentedControl(
-                value: _egateLoginMethod,
+                value: _cpdailyLoginMethod,
                 segments: const ['密码登录', '短信登录'],
                 onChanged: (value) {
                   setState(() {
-                    _egateLoginMethod = value;
+                    _cpdailyLoginMethod = value;
                     _inlineError = null;
                   });
                 },
               ),
               const SizedBox(height: 18),
-              if (_egateLoginMethod == 0)
+              if (_cpdailyLoginMethod == 0)
                 IosNativeTextFieldGroup(
                   items: [
                     IosNativeTextFieldGroupItem(
@@ -538,7 +538,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                   items: [
                     IosNativeTextFieldGroupItem(
                       placeholder: '手机号码',
-                      controller: _egatePhoneCtrl,
+                      controller: _cpdailyPhoneCtrl,
                       keyboardType: TextInputType.phone,
                       textInputAction: TextInputAction.next,
                     ),
@@ -552,7 +552,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                         items: [
                           IosNativeTextFieldGroupItem(
                             placeholder: '验证码',
-                            controller: _egateCodeCtrl,
+                            controller: _cpdailyCodeCtrl,
                             keyboardType: TextInputType.number,
                             textInputAction: TextInputAction.done,
                             onSubmitted: (_) => unawaited(_submit()),
@@ -564,7 +564,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                     FilledButton.tonal(
                       onPressed: (_smsCooldown > 0 || _sendingSms)
                           ? null
-                          : () => unawaited(_sendEgateSms()),
+                          : () => unawaited(_sendCpdailySms()),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size(100, 56),
                       ),
@@ -639,7 +639,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                 ),
               ),
             ],
-            if (!_isEgate || _egateLoginMethod == 0) ...[
+            if (!_isCpdaily || _cpdailyLoginMethod == 0) ...[
               const SizedBox(height: 16),
               MergeSemantics(
                 child: ListTile(

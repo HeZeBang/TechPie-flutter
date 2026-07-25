@@ -729,7 +729,7 @@ class _SchedulePageState extends State<SchedulePage> {
               ? 0
               : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top,
         ),
-        child: !auth.isLoggedIn || !tpAuth.hasEgateBinding
+        child: !auth.isLoggedIn || !tpAuth.hasCpdailyBinding
             ? Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

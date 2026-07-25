@@ -58,14 +58,14 @@ class OaGymService extends ChangeNotifier {
 
   OaBookingProfile bookingProfile() {
     final saved = _storage.loadOaBookingProfile();
-    // Fall back to the eGate binding's real name (not the primary SSO
+    // Fall back to the cpdaily binding's real name (not the primary SSO
     // account, whose userName is a Casdoor UUID). Phone is not available
-    // from eGate, so the user must still fill it in manually.
-    final egateName = _tpAuth.egateBinding?.name;
+    // from cpdaily, so the user must still fill it in manually.
+    final cpdailyName = _tpAuth.cpdailyBinding?.name;
     return saved.copyWith(
       name: saved.name.isNotEmpty
           ? saved.name
-          : (egateName?.isNotEmpty == true ? egateName! : ''),
+          : (cpdailyName?.isNotEmpty == true ? cpdailyName! : ''),
       phone: saved.phone.isNotEmpty ? saved.phone : '',
     );
   }
@@ -126,7 +126,7 @@ class OaGymService extends ChangeNotifier {
   }) async {
     final auth = _requireAuth();
     final profile = bookingProfile();
-    final studentId = _tpAuth.egateStudentId;
+    final studentId = _tpAuth.cpdailyStudentId;
     final userName =
         profile.name.isNotEmpty ? profile.name : (auth.session?.userName ?? '');
     final phone = profile.phone.isNotEmpty
@@ -240,25 +240,25 @@ class OaGymService extends ChangeNotifier {
   }
 
   /// Guard for any gym call: requires a logged-in primary account AND a
-  /// bound eGate account (the source of the CpDaily/CASTGC session the OA
+  /// bound cpdaily account (the source of the CpDaily/CASTGC session the OA
   /// system authenticates against). Returns the AuthService so callers can
   /// also read identity fields (name/phone) from the primary session.
   AuthService _requireAuth() {
     if (!_auth.isLoggedIn) {
       throw OaGymException('请先登录 TechPie 主账号');
     }
-    if (!_tpAuth.hasEgateBinding) {
+    if (!_tpAuth.hasCpdailyBinding) {
       throw OaGymException('场馆预约需要绑定 eGate 账号，请在「第三方账号」中绑定');
     }
     return _auth;
   }
 
   /// CpDaily auth payload built from a [CookieProvider] snapshot plus the
-  /// egate node's raw session fields (tgc/sessionToken/userId/tenantId). The
+  /// cpdaily node's raw session fields (tgc/sessionToken/userId/tenantId). The
   /// cookie + epoch captured at request time drive the storm-safe renew-retry
   /// in [_postJson].
   Map<String, dynamic> _authPayload(CookieProvider cp) {
-    final raw = _tpAuth.egateNode.rawFields;
+    final raw = _tpAuth.cpdailyNode.rawFields;
     return {
       'tgc': (raw['tgc'] as String?) ?? '',
       'cookies': cp.cookies,
@@ -269,14 +269,14 @@ class OaGymService extends ChangeNotifier {
   }
 
   /// POST `$_baseUrl/[path]` with CpDaily auth + [extra] body fields. On 401
-  /// the egate node is renewed exactly once (single-flighted across all
+  /// the cpdaily node is renewed exactly once (single-flighted across all
   /// concurrent callers) and the request retried with the fresh cookie.
   Future<Map<String, dynamic>> _postJson(
     String path,
     Map<String, dynamic> extra,
   ) async {
     _requireAuth();
-    final node = _tpAuth.egateNode;
+    final node = _tpAuth.cpdailyNode;
     final response = await _tpAuth.sessionTree.withCookie<http.Response>(
       node,
       (cp) async {

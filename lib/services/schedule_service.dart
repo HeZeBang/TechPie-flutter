@@ -50,11 +50,12 @@ class ScheduleService extends ChangeNotifier {
   /// time. The epoch captured alongside is what makes the renew-retry
   /// storm-safe (see [_postWithRetry]).
   Map<String, dynamic> _authBody(CookieProvider cp) => {
-        'studentId': cp.studentId,
+        // eams downstream cookie; studentId comes from the cpdaily binding.
+        'studentId': _tpAuth.cpdailyNode.account?.sid ?? '',
         'cookies': cp.cookies,
       };
 
-  bool get _hasEgateBinding => _tpAuth.egateNode.isAvailable;
+  bool get _hasCpdailyBinding => _tpAuth.cpdailyNode.isAvailable;
 
   Future<void> loadCachedData() async {
     _semesterInfo = _storage.loadSemesters();
@@ -69,7 +70,7 @@ class ScheduleService extends ChangeNotifier {
 
   Future<void> fetchAll() async {
     if (_loading) return; // 避免启动时并发重复调用
-    if (!_hasEgateBinding) return;
+    if (!_hasCpdailyBinding) return;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -191,7 +192,7 @@ class ScheduleService extends ChangeNotifier {
     _termBegin = _storage.loadTermBegin(semesterId);
     notifyListeners();
 
-    if (!_hasEgateBinding) return;
+    if (!_hasCpdailyBinding) return;
 
     _loading = true;
     _error = null;
@@ -210,16 +211,18 @@ class ScheduleService extends ChangeNotifier {
     }
   }
 
-  /// POST [url] with CpDaily auth + [extra] body fields. On 401 the egate
+  /// POST [url] with CpDaily auth + [extra] body fields. On 401 the eams
   /// node is renewed exactly once (single-flighted across all concurrent
- /// callers) and the request retried with the fresh cookie. Throws on any
-  /// non-200 after the retry budget is exhausted.
+ /// callers) and the request retried with the fresh cookie. For a stale
+ /// parent tgc, [SessionTree.withCookie] falls back to renewing the
+ /// cpdaily parent then re-minting the eams cookie. Throws on any non-200
+ /// after the retry budget is exhausted.
   Future<http.Response> _postWithRetry(
     String url,
     Map<String, dynamic> extra,
     String tag,
   ) async {
-    final node = _tpAuth.egateNode;
+    final node = _tpAuth.eamsNode;
     final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
       node,
       (cp) async {
@@ -237,7 +240,7 @@ class ScheduleService extends ChangeNotifier {
       },
     );
     if (resp == null) {
-      throw Exception('eGate session unavailable');
+      throw Exception('cpdaily session unavailable');
     }
     if (resp.statusCode != 200) {
       throw Exception('Request failed with status ${resp.statusCode}');

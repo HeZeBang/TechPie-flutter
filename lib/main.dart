@@ -166,7 +166,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       );
     }
 
-    if (thirdPartyAuthService.hasEgateBinding) {
+    if (thirdPartyAuthService.hasCpdailyBinding) {
       await scheduleService.fetchAll();
     }
     if (authService.isLoggedIn ||

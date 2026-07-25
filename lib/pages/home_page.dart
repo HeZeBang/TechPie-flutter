@@ -395,11 +395,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     final sp = ServiceProvider.of(context);
     // ecourse / student-leave / eams webviews all authenticate against the
-    // IDS SSO, whose cookies are exposed by the IDS session node (a child of
-    // the CpDaily node — it falls back to the parent CpDaily CASTGC-bearing
-    // cookie set when no dedicated IDS cookie set has been minted). Read it
-    // through the unified [CookieProvider] view so the source is abstracted.
-    final cp = sp.thirdPartyAuthService.idsNode.cookieProvider;
+    // CpDaily session, whose cookies are exposed by the cpdaily session node
+    // (the CASTGC-bearing cookie set that webviews consume directly). Read
+    // it through the unified [CookieProvider] view so the source is abstracted.
+    final cp = sp.thirdPartyAuthService.cpdailyNode.cookieProvider;
     if (cp == null || cp.isEmpty) return cookies;
 
     final domain = cp.domain.isNotEmpty

@@ -181,7 +181,7 @@ class AssignmentService extends ChangeNotifier {
 
     final futures = <Future<void>>[];
 
-    if (_tpAuth.hasEgateBinding) {
+    if (_tpAuth.hasCpdailyBinding) {
       futures.add(
         _fetchBlackboard().then((items) {
           if (items != null) successfulResults['blackboard'] = items;
@@ -210,8 +210,8 @@ class AssignmentService extends ChangeNotifier {
             }),
           );
           break;
-        case ThirdPartyPlatform.egate:
-          // eGate provides CpDaily session, not deadline data — skip.
+        case ThirdPartyPlatform.cpdaily:
+          // cpdaily provides the CpDaily session, not deadline data — skip.
           break;
       }
     }
@@ -258,11 +258,11 @@ class AssignmentService extends ChangeNotifier {
     final successfulResults = <String, List<Assignment>>{};
     Future<void>? future;
 
-    if (platformId == 'blackboard' && _tpAuth.hasEgateBinding) {
+    if (platformId == 'blackboard' && _tpAuth.hasCpdailyBinding) {
       future = _fetchBlackboard().then((items) {
         if (items != null) successfulResults['blackboard'] = items;
       });
-    } else if (platformId == 'exam' && _tpAuth.hasEgateBinding) {
+    } else if (platformId == 'exam' && _tpAuth.hasCpdailyBinding) {
       future = _fetchExamTable().then((items) {
         if (items != null) successfulResults['exam'] = items;
       });
@@ -304,18 +304,21 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<List<Assignment>?> _fetchBlackboard() async {
-    final node = _tpAuth.egateNode;
-    if (!node.isAvailable) return null;
+    final node = _tpAuth.elearningNode;
+    // withCookie handles initial minting if the downstream cookie isn't set.
+    if (!_tpAuth.hasCpdailyBinding) return null;
 
     try {
       final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
         node,
         (cp) async {
-          final tgc = (node.rawFields['tgc'] as String?) ?? '';
+          // cp.cookies is the elearning cookie string minted from the
+          // cpdaily CASTGC. The backend uses it directly to query
+          // Blackboard (no SSO bounce needed).
           final r = await _http.post(
             Uri.parse('$_baseUrl/deadlines/blackboard'),
             headers: _jsonHeaders(),
-            body: jsonEncode({'token': tgc}),
+            body: jsonEncode({'token': cp.cookies}),
             tag: 'deadlines:blackboard',
           );
           return CookieAction(r, expired: r.statusCode == 401);
@@ -331,8 +334,8 @@ class AssignmentService extends ChangeNotifier {
 
   Future<List<Assignment>?> _fetchExamTable() async {
     final semesterId = _selectedSemesterId();
-    final node = _tpAuth.egateNode;
-    if (!node.isAvailable ||
+    final node = _tpAuth.eamsNode;
+    if (!_tpAuth.hasCpdailyBinding ||
         semesterId == null ||
         semesterId.isEmpty) {
       return null;
@@ -363,13 +366,23 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<List<Assignment>?> _fetchGradescope(ThirdPartyAccount acc) async {
+    final node = _tpAuth.gradescopeNode;
+    if (!node.isAvailable) return null;
     try {
-      final resp = await _http.post(
-        Uri.parse('$_baseUrl/deadlines/gradescope'),
-        headers: _jsonHeaders(),
-        body: jsonEncode({'token': acc.token}),
-        tag: 'deadlines:gradescope',
+      final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
+        node,
+        (cp) async {
+          // cp.cookies is the gradescope bearer token.
+          final r = await _http.post(
+            Uri.parse('$_baseUrl/deadlines/gradescope'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({'token': cp.cookies}),
+            tag: 'deadlines:gradescope',
+          );
+          return CookieAction(r, expired: r.statusCode == 401);
+        },
       );
+      if (resp == null) return null;
       if (resp.statusCode == 401) {
         await _tpAuth.unbind(ThirdPartyPlatform.gradescope);
         _platformErrors['gradescope'] = 'token 已失效,请重新绑定';
@@ -390,20 +403,31 @@ class AssignmentService extends ChangeNotifier {
       return null;
     }
 
+    final node = _tpAuth.hydroNode;
+    if (!node.isAvailable) return null;
+
     final all = <Assignment>[];
     var hadError = false;
     for (final domain in domains) {
       final url = '${origin.replaceAll(RegExp(r'/+$'), '')}/d/$domain';
       try {
-        final resp = await _http.post(
-          Uri.parse('$_baseUrl/deadlines/hydro'),
-          headers: _jsonHeaders(),
-          body: jsonEncode({
-            'token': acc.token,
-            'args': {'url': url},
-          }),
-          tag: 'deadlines:hydro:$domain',
+        final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
+          node,
+          (cp) async {
+            // cp.cookies is the hydro sid cookie.
+            final r = await _http.post(
+              Uri.parse('$_baseUrl/deadlines/hydro'),
+              headers: _jsonHeaders(),
+              body: jsonEncode({
+                'token': cp.cookies,
+                'args': {'url': url},
+              }),
+              tag: 'deadlines:hydro:$domain',
+            );
+            return CookieAction(r, expired: r.statusCode == 401);
+          },
         );
+        if (resp == null) return null;
         if (resp.statusCode == 401) {
           await _tpAuth.unbind(ThirdPartyPlatform.hydro);
           _platformErrors['hydro'] = 'token 已失效,请重新绑定';

@@ -49,7 +49,7 @@ void main() {
     // primary UserSession. Bind one with the tgc the test expects.
     await storage.saveThirdPartyAccount(
       ThirdPartyAccount(
-        platform: ThirdPartyPlatform.egate,
+        platform: ThirdPartyPlatform.cpdaily,
         account: 'student',
         sid: 'student',
         token: 'session',
@@ -73,6 +73,15 @@ void main() {
     );
 
     final httpClient = _AssignmentHttpClient((url, _) {
+      if (url.path.endsWith('/auth/third-party/elearning')) {
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'data': {'token': 'session_id=elearning-mock'},
+          }),
+          200,
+        );
+      }
       if (url.path.endsWith('/deadlines/blackboard')) {
         return http.Response(
           jsonEncode({
@@ -141,7 +150,7 @@ void main() {
     // Exam fetch reads cookies from the eGate binding, not UserSession.
     await storage.saveThirdPartyAccount(
       ThirdPartyAccount(
-        platform: ThirdPartyPlatform.egate,
+        platform: ThirdPartyPlatform.cpdaily,
         account: 'student',
         sid: 'student',
         token: 'session',
@@ -159,6 +168,24 @@ void main() {
     final seenBodies = <Map<String, dynamic>>[];
     final httpClient = _AssignmentHttpClient((url, body) {
       seenBodies.add(body);
+      if (url.path.endsWith('/auth/third-party/elearning')) {
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'data': {'token': 'session_id=elearning-mock'},
+          }),
+          200,
+        );
+      }
+      if (url.path.endsWith('/auth/third-party/eams')) {
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'data': {'token': 'JSESSIONID=eams-mock'},
+          }),
+          200,
+        );
+      }
       if (url.path.endsWith('/deadlines/blackboard')) {
         return http.Response(
           jsonEncode({'success': true, 'data': <Object?>[]}),
@@ -228,7 +255,7 @@ void main() {
       contains(
         predicate<Map<String, dynamic>>((body) {
           return body['semester_id'] == '263' &&
-              body['cookies'] == 'SESSION=abc; CASTGC=tgc';
+              body['cookies'] == 'JSESSIONID=eams-mock';
         }),
       ),
     );

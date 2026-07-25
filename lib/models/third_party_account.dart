@@ -1,22 +1,35 @@
 enum ThirdPartyPlatform {
   gradescope,
   hydro,
-  egate;
+  cpdaily;
 
+  /// Stable id used for storage keys and cloud-sync payloads. Note: the
+  /// backend bind route for cpdaily is still 'egate' (unrenamed); see
+  /// [apiPath].
   String get id => name;
   String get label => switch (this) {
         ThirdPartyPlatform.gradescope => 'Gradescope',
         ThirdPartyPlatform.hydro => 'Hydro',
-        ThirdPartyPlatform.egate => 'eGate / IDS',
+        ThirdPartyPlatform.cpdaily => 'CpDaily / IDS',
       };
 
+  /// Backend bind/renew route name. cpdaily maps to 'egate' (the backend
+  /// route was not renamed); all others map to their own [id].
+  String get apiPath => switch (this) {
+        ThirdPartyPlatform.cpdaily => 'egate',
+        _ => id,
+      };
+
+  /// Parse a platform id, accepting the legacy 'egate' alias for cpdaily.
   static ThirdPartyPlatform? fromId(String id) {
+    if (id == 'egate') return ThirdPartyPlatform.cpdaily;
     for (final p in ThirdPartyPlatform.values) {
       if (p.id == id) return p;
     }
     return null;
   }
 }
+
 
 class ThirdPartyAccount {
   final ThirdPartyPlatform platform;

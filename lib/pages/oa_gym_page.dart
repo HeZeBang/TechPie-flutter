@@ -92,7 +92,7 @@ class _OaGymPageState extends State<OaGymPage>
       body: ListenableBuilder(
         listenable: Listenable.merge([auth, tpAuth]),
         builder: (context, _) {
-          final ready = auth.isLoggedIn && tpAuth.hasEgateBinding;
+          final ready = auth.isLoggedIn && tpAuth.hasCpdailyBinding;
           return ready
               ? Column(
                   children: [
@@ -973,15 +973,15 @@ class _ProfileTabState extends State<_ProfileTab> {
   Widget build(BuildContext context) {
     final sp = ServiceProvider.of(context);
     final tpAuth = sp.thirdPartyAuthService;
-    final egate = tpAuth.egateBinding;
+    final cpdaily = tpAuth.cpdailyBinding;
 
-    // Identity card prefers eGate binding (real name + student id) over the
+    // Identity card prefers cpdaily binding (real name + student id) over the
     // primary SSO account, whose userName/userId are Casdoor UUIDs with no
     // meaning in the OA booking context.
-    final displayName = egate?.name?.isNotEmpty == true
-        ? egate!.name!
-        : (egate?.account.isNotEmpty == true ? egate!.account : 'TechPie 用户');
-    final studentId = egate?.sid ?? '';
+    final displayName = cpdaily?.name?.isNotEmpty == true
+        ? cpdaily!.name!
+        : (cpdaily?.account.isNotEmpty == true ? cpdaily!.account : 'TechPie 用户');
+    final studentId = cpdaily?.sid ?? '';
     final avatarText = displayName.characters.firstOrNull ?? 'U';
 
     return ListView(

@@ -76,7 +76,26 @@ class StorageService {
   Future<List<ThirdPartyAccount>> loadAllThirdPartyAccounts() async {
     final result = <ThirdPartyAccount>[];
     for (final p in ThirdPartyPlatform.values) {
-      final acc = await loadThirdPartyAccount(p);
+      var acc = await loadThirdPartyAccount(p);
+      // One-time migration: cpdaily was previously stored under the legacy
+      // 'egate' key (platform id before the rename). If the new key is empty
+      // but the legacy key has data, adopt it and delete the old key.
+      if (p == ThirdPartyPlatform.cpdaily && acc == null) {
+        const legacyKey = '${_thirdPartyKeyPrefix}egate';
+        final raw = await _secure.read(key: legacyKey);
+        if (raw != null) {
+          try {
+            acc = ThirdPartyAccount.fromJson(
+              jsonDecode(raw) as Map<String, dynamic>,
+            );
+            await _secure.write(key: _thirdPartyKey(p), value: raw);
+            await _secure.delete(key: legacyKey);
+          } catch (_) {
+            // Corrupt legacy entry — leave it; clearThirdPartyAccount can
+            // still remove it via the fromId alias path.
+          }
+        }
+      }
       if (acc != null) result.add(acc);
     }
     return result;

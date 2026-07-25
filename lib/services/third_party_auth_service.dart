@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../models/third_party_account.dart';
 import 'api_base_url.dart';
 import 'http_client.dart';
-import 'session/session_nodes.dart';
+import 'session/session_node.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
 
@@ -24,8 +24,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
 
   bool _initialized = false;
 
-  // SMS context for eGate binding flow (set by sendEgateSmsCode).
-  Map<String, dynamic>? _egateSmsContext;
+  // SMS context for cpdaily binding flow (set by sendCpdailySmsCode).
+  Map<String, dynamic>? _cpdailySmsContext;
 
   late final SessionTree _tree;
 
@@ -50,12 +50,21 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// [SessionTree.withCookie] for 401-renew-retry) go through here.
   SessionTree get sessionTree => _tree;
 
-  /// Convenience: the CpDaily (eGate) session node — parent of [idsNode].
-  CpdailySessionNode get egateNode => _tree.egate;
+  /// Convenience: the CpDaily session node — parent of [eamsNode] and
+  /// [elearningNode]. Source of CASTGC / CpDaily cookies.
+  SessionNode get cpdailyNode => _tree.cpdaily;
 
-  /// Convenience: the IDS session node — child of [egateNode], refreshed via
-  /// the CpDaily session.
-  IdsSessionNode get idsNode => _tree.ids;
+  /// Convenience: the EAMS downstream node (child of cpdaily).
+  SessionNode get eamsNode => _tree.eams;
+
+  /// Convenience: the eLearning downstream node (child of cpdaily).
+  SessionNode get elearningNode => _tree.elearning;
+
+  /// Convenience: the Gradescope top-level node.
+  SessionNode get gradescopeNode => _tree.gradescope;
+
+  /// Convenience: the Hydro top-level node.
+  SessionNode get hydroNode => _tree.hydro;
 
   List<ThirdPartyPlatform> get boundPlatforms =>
       _accountsSnapshot.map((a) => a.platform).toList();
@@ -63,13 +72,13 @@ class ThirdPartyAuthService extends ChangeNotifier {
   ThirdPartyAccount? account(ThirdPartyPlatform p) => _nodeAccount(p);
 
   List<ThirdPartyAccount> get _accountsSnapshot => [
-        _tree.egate.account,
+        _tree.cpdaily.account,
         _tree.gradescope.account,
         _tree.hydro.account,
       ].whereType<ThirdPartyAccount>().toList();
 
   ThirdPartyAccount? _nodeAccount(ThirdPartyPlatform p) => switch (p) {
-        ThirdPartyPlatform.egate => _tree.egate.account,
+        ThirdPartyPlatform.cpdaily => _tree.cpdaily.account,
         ThirdPartyPlatform.gradescope => _tree.gradescope.account,
         ThirdPartyPlatform.hydro => _tree.hydro.account,
       };
@@ -100,36 +109,36 @@ class ThirdPartyAuthService extends ChangeNotifier {
     // listener → _onTreeChanged).
   }
 
-  // -- eGate binding (single source of CASTGC / CpDaily session) --
+  // -- CpDaily binding (single source of CASTGC / CpDaily session) --
   //
-  // The eGate binding is the ONLY place CASTGC lives in the new architecture.
-  // The primary GeekPie SSO session has no tgc/cookies; every campus-system
-  // feature (schedule, blackboard, exam, oa-gym, webview features) must read
-  // its CpDaily session through these accessors instead of touching
-  // `AuthService.session` fields directly.
+  // The cpdaily binding is the ONLY place CASTGC lives in the new
+  // architecture. The primary GeekPie SSO session has no tgc/cookies; every
+  // campus-system feature (schedule, blackboard, exam, oa-gym, webview
+  // features) must read its CpDaily session through these accessors instead
+  // of touching `AuthService.session` fields directly.
 
-  /// True when an eGate / IDS binding exists. This is the gate every
+  /// True when a cpdaily binding exists. This is the gate every
   /// CASTGC-dependent feature must check before doing work.
-  bool get hasEgateBinding => _tree.egate.account != null;
+  bool get hasCpdailyBinding => _tree.cpdaily.account != null;
 
-  /// The bound eGate account, or null.
-  ThirdPartyAccount? get egateBinding => _tree.egate.account;
+  /// The bound cpdaily account, or null.
+  ThirdPartyAccount? get cpdailyBinding => _tree.cpdaily.account;
 
   /// Cookie string for campus-system requests, always ending with
   /// `CASTGC=<tgc>` when a tgc is present (the form CpDaily/EAMS expects).
   /// Returns '' when there is no binding or no tgc — callers should treat
   /// that as "session unavailable".
-  String egateCookies() => _tree.egate.cookieProvider?.cookies ?? '';
+  String cpdailyCookies() => _tree.cpdaily.cookieProvider?.cookies ?? '';
 
-  /// Student id surfaced by the eGate binding, or '' if unbound.
-  String get egateStudentId => _tree.egate.account?.sid ?? '';
+  /// Student id surfaced by the cpdaily binding, or '' if unbound.
+  String get cpdailyStudentId => _tree.cpdaily.account?.sid ?? '';
 
-  /// Best-effort renewal of the eGate binding's CpDaily session. Delegates to
-  /// [CpdailySessionNode.renew], which is single-flighted: concurrent callers
+  /// Best-effort renewal of the cpdaily binding's CpDaily session. Delegates
+  /// to [SessionNode.renew], which is single-flighted: concurrent callers
   /// (two services hitting 401 at once) share ONE `/auth/renew` POST. On
   /// success the refreshed raw is persisted and listeners notified via the
   /// tree → [Service._onTreeChanged] path. Returns true on success.
-  Future<bool> renewEgateBinding() => _tree.egate.renew();
+  Future<bool> renewCpdailyBinding() => _tree.cpdaily.renew();
 
   Future<void> initialize() async {
     final loaded = await _storage.loadAllThirdPartyAccounts();
@@ -161,8 +170,10 @@ class ThirdPartyAuthService extends ChangeNotifier {
       body['args'] = {'url': hydroOrigin};
     }
 
+    // cpdaily binds via the legacy 'egate' backend route; others use their id.
+    final route = platform.apiPath;
     final resp = await _http.post(
-      Uri.parse('$_baseUrl/auth/third-party/${platform.id}'),
+      Uri.parse('$_baseUrl/auth/third-party/$route'),
       headers: {'Content-Type': 'application/json; charset=UTF-8'},
       body: jsonEncode(body),
       tag: 'thirdPartyBind:${platform.id}',
@@ -220,6 +231,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     _tree.setAccount(platform, null);
     await _storage.clearThirdPartyAccount(platform);
   }
+
   /// Replace the entire in-memory + persisted binding set in one shot. Used by
   /// [SyncService.pull] to restore a cloud-fetched snapshot: clears every
   /// existing platform binding, writes each entry in [next] to secure storage,
@@ -267,51 +279,52 @@ class ThirdPartyAuthService extends ChangeNotifier {
     _tree.setAccount(platform, updated);
   }
 
-  // -- eGate SMS binding flow --
+  // -- CpDaily SMS binding flow --
 
-  /// Step 1: Send an SMS verification code for eGate binding.
+  /// Step 1: Send an SMS verification code for cpdaily binding.
   /// Reuses the existing /api/auth/mobile/send-sms endpoint.
-  Future<void> sendEgateSmsCode(String phone) async {
+  Future<void> sendCpdailySmsCode(String phone) async {
     final resp = await _http.post(
       Uri.parse('$_baseUrl/auth/mobile/send-sms'),
       headers: {'Content-Type': 'application/json; charset=UTF-8'},
       body: jsonEncode({'phone': phone}),
-      tag: 'egateSendSms',
+      tag: 'cpdailySendSms',
     );
 
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     if (data['success'] != true) {
       throw ThirdPartyBindException(
-        ThirdPartyPlatform.egate,
+        ThirdPartyPlatform.cpdaily,
         data['error'] as String? ?? 'Failed to send SMS',
       );
     }
 
-    _egateSmsContext = data['context'] as Map<String, dynamic>?;
+    _cpdailySmsContext = data['context'] as Map<String, dynamic>?;
   }
 
-  /// Step 2: Complete eGate binding via SMS verification code.
-  Future<ThirdPartyAccount> bindEgateSms({
+  /// Step 2: Complete cpdaily binding via SMS verification code.
+  Future<ThirdPartyAccount> bindCpdailySms({
     required String phone,
     required String code,
     bool autoRenew = false,
   }) async {
-    if (_egateSmsContext == null) {
+    if (_cpdailySmsContext == null) {
       throw ThirdPartyBindException(
-        ThirdPartyPlatform.egate,
+        ThirdPartyPlatform.cpdaily,
         'Send SMS code first',
       );
     }
 
+    // cpdaily binds via the legacy 'egate' backend route.
     final resp = await _http.post(
       Uri.parse('$_baseUrl/auth/third-party/egate'),
       headers: {'Content-Type': 'application/json; charset=UTF-8'},
       body: jsonEncode({
         'phone': phone,
         'code': code,
-        'context': _egateSmsContext,
+        'context': _cpdailySmsContext,
       }),
-      tag: 'egateBindSms',
+      tag: 'cpdailyBindSms',
     );
 
     Map<String, dynamic> data;
@@ -319,14 +332,14 @@ class ThirdPartyAuthService extends ChangeNotifier {
       data = jsonDecode(resp.body) as Map<String, dynamic>;
     } catch (_) {
       throw ThirdPartyBindException(
-        ThirdPartyPlatform.egate,
+        ThirdPartyPlatform.cpdaily,
         'Invalid response (status ${resp.statusCode})',
       );
     }
 
     if (data['success'] != true) {
       throw ThirdPartyBindException(
-        ThirdPartyPlatform.egate,
+        ThirdPartyPlatform.cpdaily,
         (data['error'] as String?) ?? 'login failed (${resp.statusCode})',
       );
     }
@@ -335,13 +348,13 @@ class ThirdPartyAuthService extends ChangeNotifier {
     final token = d['token'] as String?;
     if (token == null || token.isEmpty) {
       throw ThirdPartyBindException(
-        ThirdPartyPlatform.egate,
+        ThirdPartyPlatform.cpdaily,
         'response missing token',
       );
     }
 
     final acc = ThirdPartyAccount(
-      platform: ThirdPartyPlatform.egate,
+      platform: ThirdPartyPlatform.cpdaily,
       account: phone,
       sid: d['sid'] as String?,
       name: d['name'] as String?,
@@ -354,8 +367,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
     );
 
     await _storage.saveThirdPartyAccount(acc);
-    _tree.setAccount(ThirdPartyPlatform.egate, acc);
-    _egateSmsContext = null;
+    _tree.setAccount(ThirdPartyPlatform.cpdaily, acc);
+    _cpdailySmsContext = null;
     return acc;
   }
 
@@ -373,9 +386,9 @@ class ThirdPartyAuthService extends ChangeNotifier {
     final failed = <ThirdPartyPlatform>[];
     for (final acc in snapshot) {
       if (!acc.autoRenew) continue;
-      // eGate tokens are renewed via /api/auth/renew using stored tgc,
+      // cpdaily tokens are renewed via /api/auth/renew using stored tgc,
       // not via password re-authentication — skip here.
-      if (acc.platform == ThirdPartyPlatform.egate) continue;
+      if (acc.platform == ThirdPartyPlatform.cpdaily) continue;
       final pw = acc.password;
       if (pw == null || pw.isEmpty) continue;
       final at = acc.expireAt;

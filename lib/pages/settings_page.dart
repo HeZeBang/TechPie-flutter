@@ -106,7 +106,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ].join(' · '),
                 ),
               ),
-              _EgateBindingTile(tpAuth: tpAuth),
+              _CpdailyBindingTile(tpAuth: tpAuth),
               ListTile(
                 leading: const Icon(Icons.account_tree_outlined),
                 title: const Text('Linked accounts'),
@@ -558,15 +558,15 @@ class _AdaptiveSwitchTile extends StatelessWidget {
   }
 }
 
-class _EgateBindingTile extends StatelessWidget {
+class _CpdailyBindingTile extends StatelessWidget {
   final ThirdPartyAuthService tpAuth;
 
-  const _EgateBindingTile({required this.tpAuth});
+  const _CpdailyBindingTile({required this.tpAuth});
 
   @override
   Widget build(BuildContext context) {
-    final egate = tpAuth.account(ThirdPartyPlatform.egate);
-    final bound = egate != null;
+    final cpdaily = tpAuth.account(ThirdPartyPlatform.cpdaily);
+    final bound = cpdaily != null;
     final theme = Theme.of(context);
 
     return ListTile(
@@ -574,10 +574,10 @@ class _EgateBindingTile extends StatelessWidget {
         bound ? Icons.vpn_key : Icons.vpn_key_outlined,
         color: bound ? theme.colorScheme.primary : null,
       ),
-      title: const Text('eGate / IDS'),
+      title: const Text('CpDaily / IDS'),
       subtitle: Text(
         bound
-            ? '已绑定 · ${egate.name ?? egate.sid ?? egate.account}'
+            ? '已绑定 · ${cpdaily.name ?? cpdaily.sid ?? cpdaily.account}'
             : '未绑定 · 需要绑定以启用课表和考试功能',
       ),
       trailing: bound

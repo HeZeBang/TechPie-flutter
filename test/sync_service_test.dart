@@ -59,7 +59,7 @@ void main() {
     final fx = await _Fixture.withSession();
     await fx.tpAuth.replaceAll([
       ThirdPartyAccount(
-        platform: ThirdPartyPlatform.egate,
+        platform: ThirdPartyPlatform.cpdaily,
         account: '13800000000',
         sid: '20240001',
         token: 'tgc-secret',
@@ -73,7 +73,7 @@ void main() {
     final outcome = await fx2.sync.restoreWithMasterPassword('wrong');
     expect(outcome.ok, isFalse);
     expect(outcome.message, contains('不正确'));
-    expect(fx2.tpAuth.account(ThirdPartyPlatform.egate), isNull);
+    expect(fx2.tpAuth.account(ThirdPartyPlatform.cpdaily), isNull);
   });
 
   test('push writes current bindings; disable clears the cloud blob',
