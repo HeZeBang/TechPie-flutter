@@ -87,16 +87,18 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// Post-construction hook fired after any binding mutation (bind / unbind /
   /// raw update / replaceAll / node-initiated renew). Wired by main.dart to
   /// [SyncService.pushIfDue] so the cloud backup stays current. Null until
-  /// wired; safe to call.
-  Future<void> Function()? onBindingsChanged;
+  /// wired; safe to call. When [force] is true the caller (unbind/clearAll)
+  /// wants the push to bypass the throttle so a removal is immediately
+  /// reflected in the cloud blob.
+  Future<void> Function({bool force})? onBindingsChanged;
 
-  void _onTreeChanged() {
+  void _onTreeChanged({bool force = false}) {
     // A node changed (renew / setAccount) — re-notify our listeners and push
     // to cloud sync. This is the single funnel for all mutations now.
     notifyListeners();
     final hook = onBindingsChanged;
     if (hook != null) {
-      unawaited(hook());
+      unawaited(hook(force: force));
     }
   }
 
@@ -254,6 +256,11 @@ class ThirdPartyAuthService extends ChangeNotifier {
         await _storage.clearDerivedCookie(id);
       }
     }
+    // Force-push so the removal is immediately reflected in the cloud blob,
+    // bypassing the pushIfDue throttle. Without this, a throttled skip would
+    // leave the stale binding in the cloud and the next boot's pull would
+    // restore it.
+    _onTreeChanged(force: true);
   }
 
   /// Replace the entire in-memory + persisted binding set in one shot. Used by
@@ -445,6 +452,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     }
     await _storage.clearAllThirdPartyAccounts();
     await _storage.clearAllDerivedCookies();
+    _onTreeChanged(force: true);
   }
 
   @override

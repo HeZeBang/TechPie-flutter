@@ -91,8 +91,8 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // Cloud-sync push hook: after any binding mutation, best-effort push the new
   // state (throttled). Wired via post-construction setter to avoid a circular
   // dependency between ThirdPartyAuthService and SyncService.
-  thirdPartyAuthService.onBindingsChanged = () {
-    return syncService.pushIfDue();
+  thirdPartyAuthService.onBindingsChanged = ({force = false}) {
+    return force ? syncService.forcePush() : syncService.pushIfDue();
   };
 
   // Cloud-sync pull hook: after a fresh SSO login, pull cloud bindings onto

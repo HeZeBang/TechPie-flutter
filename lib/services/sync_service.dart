@@ -570,4 +570,19 @@ class SyncService extends ChangeNotifier {
       // Background sync failures are non-fatal; the next explicit action retries.
     }
   }
+
+  /// Force-push current bindings to the cloud, bypassing the throttle.
+  /// Used after unbind/clearAll so a binding removal is immediately
+  /// reflected in the cloud blob — without this, a throttled pushIfDue
+  /// skip would leave the stale binding in the cloud, and the next boot's
+  /// pull would restore it.
+  Future<void> forcePush() async {
+    if (!enabled || _cachedKey == null) return;
+    _lastPushAt = DateTime.now();
+    try {
+      await push();
+    } catch (_) {
+      // Non-fatal — next explicit sync retries.
+    }
+  }
 }
