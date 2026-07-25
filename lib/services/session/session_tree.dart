@@ -27,6 +27,7 @@ class SessionTree extends ChangeNotifier {
     required this.persist,
     required this.http,
     required this.baseUrl,
+    this.persistDerived,
   }) {
     cpdaily = SessionNode(
       id: 'cpdaily',
@@ -63,6 +64,7 @@ class SessionTree extends ChangeNotifier {
       parent: cpdaily,
       renewPath: '/auth/third-party/eams',
       renewMode: RenewMode.parentCookie,
+      persistDerived: persistDerived,
     );
     elearning = SessionNode(
       id: 'elearning',
@@ -72,6 +74,7 @@ class SessionTree extends ChangeNotifier {
       parent: cpdaily,
       renewPath: '/auth/third-party/elearning',
       renewMode: RenewMode.parentCookie,
+      persistDerived: persistDerived,
     );
     cpdaily.attachChild(eams);
     cpdaily.attachChild(elearning);
@@ -86,8 +89,8 @@ class SessionTree extends ChangeNotifier {
       n.addListener(notifyListeners);
     }
   }
-
   final PersistAccount persist;
+  final PersistDerivedCookie? persistDerived;
   final LoggingHttpClient http;
   final BaseUrlGetter baseUrl;
 
@@ -113,6 +116,18 @@ class SessionTree extends ChangeNotifier {
   /// this (they carry no account).
   void setAccount(ThirdPartyPlatform p, ThirdPartyAccount? acc) {
     nodeFor(p).setAccount(acc);
+  }
+
+  /// Hydrate a child node's derived cookie from persistent storage at boot.
+  /// Called by the facade after accounts are loaded so cold start can skip
+  /// the SSO bounce if a valid derived cookie is still on disk.
+  void setDerivedCookie(String nodeId, String? cookie) {
+    final node = switch (nodeId) {
+      'eams' => eams,
+      'elearning' => elearning,
+      _ => null,
+    };
+    node?.setDerivedCookie(cookie);
   }
 
   // -- The anti-storm 401-renew-retry helper (two-level) --

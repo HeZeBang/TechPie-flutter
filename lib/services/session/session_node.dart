@@ -16,6 +16,15 @@ import 'cookie_provider.dart';
 /// ephemeral).
 typedef PersistAccount = Future<void> Function(ThirdPartyAccount updated);
 
+/// Callback a non-top-level node installs to persist its derived downstream
+/// cookie into secure storage (so cold start can skip the SSO bounce) or
+/// clear it (when the parent renews and invalidates it). Receives the node
+/// id and the cookie string (null to clear).
+typedef PersistDerivedCookie = Future<void> Function(
+  String nodeId,
+  String? cookie,
+);
+
 /// Callback to read the current API base URL (depends on storage settings).
 typedef BaseUrlGetter = String Function();
 
@@ -70,6 +79,7 @@ class SessionNode extends ChangeNotifier {
     this.renewPath,
     this.renewMode,
     this.apiPath,
+    this.persistDerived,
   });
 
   /// Stable identifier (matches storage key / platform id, except cpdaily
@@ -91,8 +101,8 @@ class SessionNode extends ChangeNotifier {
   /// was not renamed); for gradescope/hydro it equals [id]. Null for
   /// non-top-level nodes.
   final String? apiPath;
-
   final PersistAccount persist;
+  final PersistDerivedCookie? persistDerived;
   final LoggingHttpClient http;
   final BaseUrlGetter baseUrl;
 
@@ -119,6 +129,15 @@ class SessionNode extends ChangeNotifier {
     if (parent != null) return; // non-top-level: no account
     _account = acc;
     notifyListeners();
+  }
+
+  /// Hydrate the derived cookie from persistent storage at boot. Only
+  /// meaningful for non-top-level nodes; calling on a top-level node is a
+  /// no-op. Does NOT notify — this is a boot-time hydration, not a state
+  /// change the UI needs to react to.
+  void setDerivedCookie(String? cookie) {
+    if (parent == null) return; // top-level: no derived cookie
+    _derivedCookie = (cookie != null && cookie.isNotEmpty) ? cookie : null;
   }
 
   void attachChild(SessionNode child) {
@@ -226,6 +245,12 @@ class SessionNode extends ChangeNotifier {
   void onParentRenewed() {
     if (parent != null) {
       _derivedCookie = null;
+      // Clear persisted cookie too — it was minted from the old parent tgc
+      // and is now invalid. The next withCookie call will re-mint.
+      final pd = persistDerived;
+      if (pd != null) {
+        unawaited(pd(id, null));
+      }
       notifyListeners();
     }
   }
@@ -379,6 +404,11 @@ class SessionNode extends ChangeNotifier {
       final cookie = d['token'] as String?;
       if (cookie == null || cookie.isEmpty) return false;
       _derivedCookie = cookie;
+      // Persist so cold start can skip the SSO bounce.
+      final pd = persistDerived;
+      if (pd != null) {
+        unawaited(pd(id, cookie));
+      }
       markRenewed();
       return true;
     } catch (_) {

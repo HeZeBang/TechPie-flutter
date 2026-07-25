@@ -34,6 +34,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
       persist: _persistAccount,
       http: _http,
       baseUrl: () => apiBaseUrl(_storage),
+      persistDerived: _persistDerivedCookie,
     );
     // Tree node notifications propagate to this service's listeners (UI,
     // AssignmentService auto-refetch, etc.) and the cloud-sync push hook.
@@ -109,6 +110,17 @@ class ThirdPartyAuthService extends ChangeNotifier {
     // listener → _onTreeChanged).
   }
 
+  /// Persist/clear a child node's derived cookie. Installed as the tree's
+  /// [PersistDerivedCookie] callback so eams/elearning cookie minting and
+  /// parent-renew cascades flow through storage.
+  Future<void> _persistDerivedCookie(String nodeId, String? cookie) async {
+    if (cookie == null) {
+      await _storage.clearDerivedCookie(nodeId);
+    } else {
+      await _storage.saveDerivedCookie(nodeId, cookie);
+    }
+  }
+
   // -- CpDaily binding (single source of CASTGC / CpDaily session) --
   //
   // The cpdaily binding is the ONLY place CASTGC lives in the new
@@ -138,8 +150,6 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// (two services hitting 401 at once) share ONE `/auth/renew` POST. On
   /// success the refreshed raw is persisted and listeners notified via the
   /// tree → [Service._onTreeChanged] path. Returns true on success.
-  Future<bool> renewCpdailyBinding() => _tree.cpdaily.renew();
-
   Future<void> initialize() async {
     final loaded = await _storage.loadAllThirdPartyAccounts();
     // Seed each node with its persisted account. setAccount routes to the
@@ -147,6 +157,13 @@ class ThirdPartyAuthService extends ChangeNotifier {
     // yet, so no cloud push fires).
     for (final acc in loaded) {
       _tree.setAccount(acc.platform, acc);
+    }
+    // Hydrate child node derived cookies so cold start can skip the SSO
+    // bounce. These are best-effort — if stale, withCookie's 401 retry will
+    // re-mint transparently.
+    for (final id in const ['eams', 'elearning']) {
+      final cookie = await _storage.loadDerivedCookie(id);
+      _tree.setDerivedCookie(id, cookie);
     }
     _initialized = true;
     notifyListeners();
@@ -230,6 +247,13 @@ class ThirdPartyAuthService extends ChangeNotifier {
   Future<void> unbind(ThirdPartyPlatform platform) async {
     _tree.setAccount(platform, null);
     await _storage.clearThirdPartyAccount(platform);
+    // Unbinding cpdaily invalidates all downstream derived cookies.
+    if (platform == ThirdPartyPlatform.cpdaily) {
+      for (final id in const ['eams', 'elearning']) {
+        _tree.setDerivedCookie(id, null);
+        await _storage.clearDerivedCookie(id);
+      }
+    }
   }
 
   /// Replace the entire in-memory + persisted binding set in one shot. Used by
@@ -240,6 +264,11 @@ class ThirdPartyAuthService extends ChangeNotifier {
     // Clear storage for every platform first.
     for (final p in ThirdPartyPlatform.values) {
       await _storage.clearThirdPartyAccount(p);
+    }
+    // Downstream derived cookies are invalidated when bindings are replaced.
+    for (final id in const ['eams', 'elearning']) {
+      _tree.setDerivedCookie(id, null);
+      await _storage.clearDerivedCookie(id);
     }
     // Then seed each node + persist. setAccount notifies per-node; the tree
     // listener funnels into a single _onTreeChanged (throttled by SyncService).
@@ -415,6 +444,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
       _tree.setAccount(p, null);
     }
     await _storage.clearAllThirdPartyAccounts();
+    await _storage.clearAllDerivedCookies();
   }
 
   @override

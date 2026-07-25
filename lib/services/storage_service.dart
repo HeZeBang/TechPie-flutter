@@ -111,6 +111,31 @@ class StorageService {
     }
   }
 
+  // Derived downstream cookies
+  // CASTGC, persisted so cold start skips the SSO bounce. Keyed by node id.
+  static const _derivedCookieKeyPrefix = 'derived_cookie_';
+
+  Future<void> saveDerivedCookie(String nodeId, String cookie) async {
+    await _secure.write(
+      key: '$_derivedCookieKeyPrefix$nodeId',
+      value: cookie,
+    );
+  }
+
+  Future<String?> loadDerivedCookie(String nodeId) async {
+    return _secure.read(key: '$_derivedCookieKeyPrefix$nodeId');
+  }
+
+  Future<void> clearDerivedCookie(String nodeId) async {
+    await _secure.delete(key: '$_derivedCookieKeyPrefix$nodeId');
+  }
+
+  Future<void> clearAllDerivedCookies() async {
+    for (final id in const ['eams', 'elearning']) {
+      await _secure.delete(key: '$_derivedCookieKeyPrefix$id');
+    }
+  }
+
   // SharedPreferences for non-sensitive data
   bool get debugMode => _prefs.getBool(_debugModeKey) ?? false;
   Future<void> setDebugMode(bool value) => _prefs.setBool(_debugModeKey, value);
