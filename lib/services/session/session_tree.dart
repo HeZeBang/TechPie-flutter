@@ -76,9 +76,13 @@ class SessionTree extends ChangeNotifier {
     cpdaily.attachChild(eams);
     cpdaily.attachChild(elearning);
 
-    // Propagate child notifications up so listeners on the tree (facade →
-    // UI / sync) fire on any node change.
-    for (final n in [cpdaily, gradescope, hydro, eams, elearning]) {
+    // Only top-level node notifications propagate up to the tree (facade →
+    // UI / sync / auto-refetch). Child nodes (eams/elearning) mint cookies
+    // as a side-effect of withCookie — their notifyListeners would otherwise
+    // trigger _onDepsChanged → fetchAssignments → re-mint, a feedback loop.
+    // Child notifications still fire for direct listeners on the node itself
+    // (e.g. withCookie's epoch checks read node state directly, not via tree).
+    for (final n in [cpdaily, gradescope, hydro]) {
       n.addListener(notifyListeners);
     }
   }
@@ -195,8 +199,10 @@ class SessionTree extends ChangeNotifier {
 
   @override
   void dispose() {
-    for (final n in [cpdaily, gradescope, hydro, eams, elearning]) {
+    for (final n in [cpdaily, gradescope, hydro]) {
       n.removeListener(notifyListeners);
+    }
+    for (final n in [cpdaily, gradescope, hydro, eams, elearning]) {
       n.dispose();
     }
     super.dispose();
