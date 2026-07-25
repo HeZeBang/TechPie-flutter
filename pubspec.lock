@@ -138,6 +138,22 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.3.1"
+  fetch_api:
+    dependency: transitive
+    description:
+      name: fetch_api
+      sha256: "24cbd5616f3d4008c335c197bb90bfa0eb43b9e55c6de5c60d1f805092636034"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "2.3.1"
+  fetch_client:
+    dependency: transitive
+    description:
+      name: fetch_client
+      sha256: "2125ffb6325e0045cc3cbfca1a87e6defe9afa27d85dc14857c1cf3835a9a636"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.2.1"
   ffi:
     dependency: transitive
     description:
@@ -159,6 +175,36 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_ai_client:
+    dependency: transitive
+    description:
+      name: flutter_ai_client
+      sha256: e60a3a69c99070952ee203ed8aad709eeb704915cb6b79f94eeb5a4321556033
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "0.3.0"
+  flutter_ai_core:
+    dependency: transitive
+    description:
+      name: flutter_ai_core
+      sha256: b188f83a4bf78f59c1c830dab348cfcd9be40e40ef6401b3d2d21bee1c7c3d04
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "0.1.14"
+  flutter_ai_elements:
+    dependency: "direct main"
+    description:
+      path: "../flutter_ai/packages/flutter_ai_elements"
+      relative: true
+    source: path
+    version: "0.2.0"
+  flutter_ai_provider_anthropic:
+    dependency: "direct main"
+    description:
+      path: "../flutter_ai/packages/flutter_ai_provider_anthropic"
+      relative: true
+    source: path
+    version: "0.1.12"
   flutter_inappwebview:
     dependency: transitive
     description:
@@ -306,6 +352,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  highlight:
+    dependency: "direct main"
+    description:
+      name: highlight
+      sha256: "5353a83ffe3e3eca7df0abfb72dcf3fa66cc56b953728e7113ad4ad88497cf21"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "0.7.0"
   http:
     dependency: "direct main"
     description:

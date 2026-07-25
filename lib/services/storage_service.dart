@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/ai_chat.dart';
 import '../models/assignment_overrides.dart';
 import '../models/course_table.dart';
 import '../models/oa_gym.dart';
@@ -97,34 +98,27 @@ class StorageService {
   Future<void> setDebugMode(bool value) => _prefs.setBool(_debugModeKey, value);
 
   String get cachedSchoolName => _prefs.getString(_schoolNameKey) ?? '';
-  Future<void> setCachedSchoolName(String name) =>
-      _prefs.setString(_schoolNameKey, name);
+  Future<void> setCachedSchoolName(String name) => _prefs.setString(_schoolNameKey, name);
 
   String get cachedPhone => _prefs.getString(_phoneKey) ?? '';
-  Future<void> setCachedPhone(String phone) =>
-      _prefs.setString(_phoneKey, phone);
+  Future<void> setCachedPhone(String phone) => _prefs.setString(_phoneKey, phone);
 
   String get themeMode => _prefs.getString(_themeModeKey) ?? 'system';
-  Future<void> setThemeMode(String mode) =>
-      _prefs.setString(_themeModeKey, mode);
+  Future<void> setThemeMode(String mode) => _prefs.setString(_themeModeKey, mode);
 
   String get colorScheme => _prefs.getString(_colorSchemeKey) ?? 'system';
-  Future<void> setColorScheme(String scheme) =>
-      _prefs.setString(_colorSchemeKey, scheme);
+  Future<void> setColorScheme(String scheme) => _prefs.setString(_colorSchemeKey, scheme);
 
   bool get useLocalhost => _prefs.getBool(_useLocalhostKey) ?? false;
-  Future<void> setUseLocalhost(bool value) =>
-      _prefs.setBool(_useLocalhostKey, value);
+  Future<void> setUseLocalhost(bool value) => _prefs.setBool(_useLocalhostKey, value);
 
   // Cloud-sync settings. The master-password-derived key is the one sensitive
   // piece — it lives in secure storage, never in SharedPreferences.
   bool get syncEnabled => _prefs.getBool(_syncEnabledKey) ?? false;
-  Future<void> setSyncEnabled(bool value) =>
-      _prefs.setBool(_syncEnabledKey, value);
+  Future<void> setSyncEnabled(bool value) => _prefs.setBool(_syncEnabledKey, value);
 
   String? get syncLastAt => _prefs.getString(_syncLastAtKey);
-  Future<void> setSyncLastAt(String iso) =>
-      _prefs.setString(_syncLastAtKey, iso);
+  Future<void> setSyncLastAt(String iso) => _prefs.setString(_syncLastAtKey, iso);
 
   Future<String?> loadSyncMasterKey() => _secure.read(key: _syncMasterKeyKey);
   Future<void> saveSyncMasterKey(String serialized) =>
@@ -146,8 +140,8 @@ class StorageService {
     return SemesterInfo.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
-  Future<void> saveCourseTable(String semesterId, CourseTable table) => _prefs
-      .setString('$_courseTablePrefix$semesterId', jsonEncode(table.toJson()));
+  Future<void> saveCourseTable(String semesterId, CourseTable table) =>
+      _prefs.setString('$_courseTablePrefix$semesterId', jsonEncode(table.toJson()));
 
   CourseTable? loadCourseTable(String semesterId) {
     final raw = _prefs.getString('$_courseTablePrefix$semesterId');
@@ -165,8 +159,7 @@ class StorageService {
   }
 
   String? get selectedSemester => _prefs.getString(_selectedSemesterKey);
-  Future<void> setSelectedSemester(String id) =>
-      _prefs.setString(_selectedSemesterKey, id);
+  Future<void> setSelectedSemester(String id) => _prefs.setString(_selectedSemesterKey, id);
 
   // Assignments cache (non-sensitive — stored as JSON in SharedPreferences)
   static const _assignmentsKey = 'cached_assignments';
@@ -205,8 +198,7 @@ class StorageService {
     }
   }
 
-  Future<void> clearAssignmentOverrides() =>
-      _prefs.remove(_assignmentOverridesKey);
+  Future<void> clearAssignmentOverrides() => _prefs.remove(_assignmentOverridesKey);
 
   // OA gym booking profile. This is non-sensitive contact info used to submit
   // reservation forms and can be edited by the user.
@@ -228,4 +220,66 @@ class StorageService {
       return const OaBookingProfile(name: '', phone: '', email: '');
     }
   }
+
+  // ---- AI assistant ----
+  // The auth token is the one sensitive piece — it lives in secure storage.
+  // Everything else (config minus the token, conversation history) is plain
+  // cache in SharedPreferences.
+
+  static const _aiAuthTokenKey = 'ai_auth_token'; // secure storage
+  static const _aiConfigKey = 'ai_config'; // prefs JSON (token excluded)
+  static const _aiConversationsKey = 'ai_conversations'; // prefs JSON list
+
+  Future<void> saveAiAuthToken(String token) => _secure.write(key: _aiAuthTokenKey, value: token);
+
+  Future<String> loadAiAuthToken() async => await _secure.read(key: _aiAuthTokenKey) ?? '';
+
+  Future<void> clearAiAuthToken() => _secure.delete(key: _aiAuthTokenKey);
+
+  /// Persist config with the token stripped out — the token has its own secure
+  /// slot. We keep the two concerns separate so a prefs export never leaks the
+  /// secret.
+  Future<void> saveAiConfig(AiConfig config) => _prefs.setString(
+        _aiConfigKey,
+        jsonEncode(config.copyWith(authToken: '').toJson()),
+      );
+
+  /// Load config and re-attach the auth token from secure storage. Callers
+  /// should `await` this so the token is present.
+  Future<AiConfig> loadAiConfig() async {
+    final token = await loadAiAuthToken();
+    final raw = _prefs.getString(_aiConfigKey);
+    if (raw == null) {
+      return AiConfig.defaults().copyWith(authToken: token);
+    }
+    try {
+      return AiConfig.fromJson(
+        jsonDecode(raw) as Map<String, dynamic>,
+      ).copyWith(authToken: token);
+    } catch (_) {
+      return AiConfig.defaults().copyWith(authToken: token);
+    }
+  }
+
+  Future<void> saveAiConversations(List<AiThread> conversations) => _prefs.setString(
+        _aiConversationsKey,
+        jsonEncode(
+          conversations.map((c) => c.toJson()).toList(),
+        ),
+      );
+
+  List<AiThread> loadAiConversations() {
+    final raw = _prefs.getString(_aiConversationsKey);
+    if (raw == null) return const [];
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .map((e) => AiThread.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> clearAiConversations() => _prefs.remove(_aiConversationsKey);
 }

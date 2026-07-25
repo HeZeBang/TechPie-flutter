@@ -1,0 +1,315 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_ai_elements/flutter_ai_elements.dart';
+
+import '../models/ai_chat.dart';
+import '../services/ai_service.dart';
+import '../services/service_provider.dart';
+import '../utils/platform.dart';
+import '../widgets/ai/ai_text_renderer.dart';
+import '../widgets/blurred_app_bar.dart';
+import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import 'ai_config_page.dart';
+import 'ai_gallery_page.dart';
+import 'ai_history_page.dart';
+
+/// The AI Assistant chat page — entered from the Home "应用" card.
+///
+/// Layout mirrors other TechPie feature pages: a platform-adaptive app bar
+/// (Liquid Glass on iOS 26+, blurred bar elsewhere) over a body composed of
+/// the flutter_ai library's chat widgets — [AiChat] for the transcript,
+/// [AiPromptInput] for the composer, [AiErrorBanner] for failures. Only the
+/// top bar, the not-configured banner, and the empty state are TechPie's own;
+/// the conversation UI itself is the library's so that markdown, code blocks,
+/// and future workflow/cite parts render through the library's part pipeline.
+class AiAssistantPage extends StatefulWidget {
+  const AiAssistantPage({super.key, this.seedPrompt});
+
+  /// Optional prompt pre-filled from the gallery. Written into the composer's
+  /// text controller on first build.
+  final String? seedPrompt;
+
+  @override
+  State<AiAssistantPage> createState() => _AiAssistantPageState();
+}
+
+class _AiAssistantPageState extends State<AiAssistantPage> {
+  /// Owns the composer's text so the gallery can pre-fill it. Passed to
+  /// AiPromptInput.textController.
+  final TextEditingController _textController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.seedPrompt != null && widget.seedPrompt!.isNotEmpty) {
+      _textController.text = widget.seedPrompt!;
+    }
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openGallery() async {
+    final AiPromptTemplate? picked = await Navigator.of(context).push<
+      AiPromptTemplate
+    >(
+      MaterialPageRoute<AiPromptTemplate>(
+        builder: (_) => const AiGalleryPage(),
+      ),
+    );
+    if (picked != null && mounted) {
+      _textController.text = picked.prompt;
+      _textController.selection = TextSelection.collapsed(
+        offset: picked.prompt.length,
+      );
+    }
+  }
+
+  Future<void> _openHistory(AiService aiService) async {
+    final String? selectedId = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => AiHistoryPage(aiService: aiService),
+      ),
+    );
+    if (selectedId != null && mounted) {
+      aiService.selectConversation(selectedId);
+    }
+  }
+
+  Future<void> _openConfig() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const AiConfigPage()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sp = ServiceProvider.of(context);
+    final aiService = sp.aiService;
+    final useIosChrome = isIos();
+    final useLegacyIosChrome = usesLegacyIosChrome();
+    final topInset =
+        useIosChrome || useLegacyIosChrome
+        ? 0.0
+        : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
+
+    return Scaffold(
+      extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
+      appBar: useIosChrome
+          ? IosNativeNavigationBar(
+              title: 'AI 助手',
+              leadingItems: const [
+                IosNativeNavigationBarItem(
+                  id: 'back',
+                  title: 'Home',
+                  sfSymbol: 'chevron.left',
+                  accessibilityLabel: '返回 Home',
+                  placementGroup: 'leading-main',
+                ),
+              ],
+              trailingItems: const [
+                IosNativeNavigationBarItem(
+                  id: 'gallery',
+                  title: 'Gallery',
+                  sfSymbol: 'square.grid.2x2',
+                  accessibilityLabel: '提示词画廊',
+                  placementGroup: 'trailing-main',
+                ),
+                IosNativeNavigationBarItem(
+                  id: 'history',
+                  sfSymbol: 'clock.arrow.circlepath',
+                  accessibilityLabel: '历史会话',
+                  placementGroup: 'trailing-main',
+                ),
+                IosNativeNavigationBarItem(
+                  id: 'config',
+                  sfSymbol: 'gearshape',
+                  accessibilityLabel: 'API 设置',
+                  placementGroup: 'trailing-main',
+                ),
+              ],
+              onItemPressed: (id) {
+                switch (id) {
+                  case 'back':
+                    unawaited(Navigator.maybePop(context));
+                  case 'gallery':
+                    unawaited(_openGallery());
+                  case 'history':
+                    unawaited(_openHistory(aiService));
+                  case 'config':
+                    unawaited(_openConfig());
+                }
+              },
+            )
+          : BlurredAppBar(
+              title: const Text('AI 助手'),
+              actions: [
+                IconButton(
+                  tooltip: '提示词画廊',
+                  icon: const Icon(Icons.auto_awesome_outlined),
+                  onPressed: _openGallery,
+                ),
+                IconButton(
+                  tooltip: '历史会话',
+                  icon: const Icon(Icons.history),
+                  onPressed: () => unawaited(_openHistory(aiService)),
+                ),
+                IconButton(
+                  tooltip: 'API 设置',
+                  icon: const Icon(Icons.settings_outlined),
+                  onPressed: _openConfig,
+                ),
+              ],
+            ),
+      body: ListenableBuilder(
+        listenable: aiService,
+        builder: (context, _) {
+          final notConfigured = !aiService.isConfigured;
+          final error = aiService.streamingError;
+
+          return Column(
+            children: [
+              SizedBox(height: topInset),
+              if (notConfigured) _configBanner(context, aiService),
+              Expanded(
+                child: AiChat(
+                  controller: aiService.controller,
+                  textRenderer: const StreamingMarkdownRenderer(),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  emptyState: _emptyState(context, notConfigured),
+                ),
+              ),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: AiErrorBanner(
+                    message: error,
+                    onRetry: aiService.isStreaming ? null : () => _retry(aiService),
+                    onDismiss: () => _dismissError(aiService),
+                  ),
+                ),
+              // The composer only appears once configured; before that the
+              // config banner + empty state guide the user to set a token.
+              if (!notConfigured)
+                AiPromptInput(
+                  controller: aiService.controller,
+                  hintText: '输入消息…',
+                  textController: _textController,
+                )
+              else
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: FilledButton.tonalIcon(
+                      onPressed: _openConfig,
+                      icon: const Icon(Icons.key),
+                      label: const Text('前往配置 API 令牌'),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _retry(AiService aiService) async {
+    // Re-send an empty turn to regenerate the last assistant reply.
+    await aiService.send('');
+  }
+
+  void _dismissError(AiService aiService) {
+    // Clearing the transcript's error requires a fresh controller state; the
+    // simplest portable way is to reload the current conversation, which
+    // resets status to idle and drops the error.
+    final conv = aiService.currentConversation;
+    if (conv != null) {
+      aiService.controller.stop();
+    }
+  }
+
+  Widget _configBanner(BuildContext context, AiService aiService) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.tertiaryContainer,
+      child: InkWell(
+        onTap: _openConfig,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              Icon(
+                Icons.key,
+                size: 18,
+                color: theme.colorScheme.onTertiaryContainer,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '尚未配置 API 令牌，点此填写以开始对话',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onTertiaryContainer,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onTertiaryContainer,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyState(BuildContext context, bool notConfigured) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.smart_toy_outlined,
+              size: 56,
+              color: colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              notConfigured ? '欢迎使用 AI 助手' : '开始一段新对话',
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              notConfigured
+                  ? '先配置 API 令牌，然后即可开始对话。也可以从画廊挑选一个提示词模板。'
+                  : '在下方输入你的问题，或从画廊挑一个提示词模板快速开始。',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.tonalIcon(
+              onPressed: _openGallery,
+              icon: const Icon(Icons.auto_awesome_outlined),
+              label: const Text('浏览提示词画廊'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

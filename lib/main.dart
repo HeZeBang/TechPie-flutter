@@ -1,12 +1,13 @@
 import 'dart:async';
-import 'package:desktop_webview_window/desktop_webview_window.dart'
-    show runWebViewTitleBarWidget;
+import 'package:desktop_webview_window/desktop_webview_window.dart' show runWebViewTitleBarWidget;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_ai_elements/flutter_ai_elements.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/utils/platform.dart';
 
 import 'models/third_party_account.dart';
+import 'services/ai_service.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
 import 'services/debug_logger.dart';
@@ -21,6 +22,7 @@ import 'services/third_party_auth_service.dart';
 import 'services/uni_auth_service.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
+
 void main(List<String> args) async {
   // If this Flutter engine is a desktop_webview_window title bar (secondary
   // engine inside the webview popup), render the navigation controls and
@@ -79,6 +81,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     scheduleService,
   );
   final syncService = SyncService(authService, thirdPartyAuthService, storageService);
+  final aiService = AiService(storageService);
 
   authService.onLogout = () async {
     // Third-party bindings persist across logouts — they will be used by the
@@ -113,6 +116,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   await syncService.loadCachedKey();
   assignmentService.loadCached();
   await scheduleService.loadCachedData();
+  await aiService.initialize();
 
   runApp(
     TechPieApp(
@@ -126,6 +130,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       oaGymService: oaGymService,
       uniAuthService: uniAuthService,
       syncService: syncService,
+      aiService: aiService,
     ),
   );
 
@@ -138,9 +143,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     // refresh token (legacy session) this is a no-op and returns false —
     // that is NOT a "login expired" condition, only an actual renewal
     // failure is.
-    final renewMain = authService.isLoggedIn
-        ? authService.tryRenewSession()
-        : Future.value(true);
+    final renewMain = authService.isLoggedIn ? authService.tryRenewSession() : Future.value(true);
     final renewThirdParty = thirdPartyAuthService.autoRenewIfNeeded();
 
     final results = await Future.wait([renewMain, renewThirdParty]);
@@ -149,9 +152,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
 
     // Only surface a renewal failure when we actually had a refresh token
     // to try (a no-op returning false is not an expiry).
-    if (!mainOk &&
-        authService.session?.geekpieRefreshToken != null &&
-        !isIos()) {
+    if (!mainOk && authService.session?.geekpieRefreshToken != null && !isIos()) {
       showAdaptiveFeedback(
         message: '登录已过期，请重新登录',
         style: AdaptiveFeedbackStyle.error,
@@ -169,8 +170,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     if (thirdPartyAuthService.hasEgateBinding) {
       await scheduleService.fetchAll();
     }
-    if (authService.isLoggedIn ||
-        thirdPartyAuthService.boundPlatforms.isNotEmpty) {
+    if (authService.isLoggedIn || thirdPartyAuthService.boundPlatforms.isNotEmpty) {
       await assignmentService.fetchAssignments();
     }
 
@@ -231,6 +231,7 @@ class TechPieApp extends StatefulWidget {
   final OaGymService oaGymService;
   final UniAuthService uniAuthService;
   final SyncService syncService;
+  final AiService aiService;
 
   const TechPieApp({
     super.key,
@@ -244,6 +245,7 @@ class TechPieApp extends StatefulWidget {
     required this.oaGymService,
     required this.uniAuthService,
     required this.syncService,
+    required this.aiService,
   });
 
   @override
@@ -277,15 +279,41 @@ class _TechPieAppState extends State<TechPieApp> {
         oaGymService: widget.oaGymService,
         uniAuthService: widget.uniAuthService,
         syncService: widget.syncService,
+        aiService: widget.aiService,
         child: MaterialApp(
           scaffoldMessengerKey: rootMessengerKey,
           title: 'TechPie',
-          theme: widget.themeService.lightTheme,
-          darkTheme: widget.themeService.darkTheme,
+          theme: _withAiExtension(widget.themeService.lightTheme),
+          darkTheme: _withAiExtension(widget.themeService.darkTheme),
           themeMode: widget.themeService.themeMode,
           home: const AppShell(),
         ),
       ),
     );
   }
+}
+
+/// Registers an [AiThemeExtension] on the TechPie theme so the flutter_ai
+/// widgets (AiResponse markdown, AiCodeBlock, etc.) pick up the active color
+/// scheme instead of their built-in defaults. Without this they fall back to
+/// `AiThemeExtension.fallback()`, whose dark code-block background clashes
+/// with TechPie's surfaces.
+ThemeData _withAiExtension(ThemeData base) {
+  final cs = base.colorScheme;
+  final isDark = base.brightness == Brightness.dark;
+  final ai = (isDark ? AiThemeExtension.dark() : AiThemeExtension.fallback())
+      .copyWith(
+        // Prose follows the surface text color; code block sits on a surface
+        // container tint with a contrasting foreground.
+        assistantTextColor: cs.onSurface,
+        userTextColor: cs.onSurface,
+        codeBackgroundColor:
+            isDark ? cs.surfaceContainerHighest : const Color(0xFF1E1E1E),
+        codeForegroundColor:
+            isDark ? cs.onSurface : const Color(0xFFE6E6E6),
+        linkColor: cs.primary,
+        accentColor: cs.primary,
+        onAccentColor: cs.onPrimary,
+      );
+  return base.copyWith(extensions: [...base.extensions.values, ai]);
 }

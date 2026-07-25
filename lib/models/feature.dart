@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../pages/ai_assistant_page.dart';
 import '../pages/oa_gym_page.dart';
 
 enum FeatureMode {
@@ -58,6 +59,15 @@ final featureEntries = <Feature>[
       MaterialPageRoute<void>(builder: (_) => const OaGymPage()),
     ),
     icon: const Icon(Icons.sports_tennis),
+  ),
+  Feature(
+    id: 'ai_assistant',
+    description: 'AI 助手',
+    mode: FeatureMode.native,
+    nativeEntry: (context) => Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const AiAssistantPage()),
+    ),
+    icon: const Icon(Icons.smart_toy_outlined),
   ),
 ];
 
