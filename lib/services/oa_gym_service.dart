@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import '../models/oa_gym.dart';
 import 'api_base_url.dart';
 import 'auth_service.dart';
+import 'session/cookie_provider.dart';
+import 'session/session_tree.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
 
@@ -90,7 +92,6 @@ class OaGymService extends ChangeNotifier {
       () => _postJson(
         'oa/gym/availability',
         {
-          'auth': _authPayload(),
           'sports': sports.map((sport) => sport.id).toList(),
           'date': date,
           'startSlot': startSlot,
@@ -142,7 +143,6 @@ class OaGymService extends ChangeNotifier {
       () => _postJson(
         'oa/gym/book',
         {
-          'auth': _authPayload(),
           'booking': {
             'sport': sport.id,
             'date': date,
@@ -178,7 +178,6 @@ class OaGymService extends ChangeNotifier {
       () => _postJson(
         'oa/gym/search',
         {
-          'auth': _authPayload(),
           'startDate': startDate,
           'endDate': endDate,
           'venueNames': venueNames.toList(),
@@ -206,7 +205,7 @@ class OaGymService extends ChangeNotifier {
 
   Future<void> _ensureMetadata() async {
     if (_metadataReady) return;
-    final data = await _postJson('oa/gym/metadata', {'auth': _authPayload()});
+    final data = await _postJson('oa/gym/metadata', const <String, dynamic>{});
     final payload = (data['data'] as Map?)?.cast<String, dynamic>() ?? data;
     _venues = _stringMap(payload['venues']);
     _allVenues = _stringMap(payload['allVenues']);
@@ -254,54 +253,52 @@ class OaGymService extends ChangeNotifier {
     return _auth;
   }
 
-  /// CpDaily auth payload built entirely from the eGate binding — the same
-  /// source Schedule/Assignment use. No CASTGC ever leaves the primary
-  /// SSO session (which has none).
-  Map<String, dynamic> _authPayload() {
-    _requireAuth();
-    final cookies = _tpAuth.egateCookies();
-    if (cookies.isEmpty) {
-      throw OaGymException('当前 eGate 登录态已失效，请重新绑定 eGate');
-    }
-    final egate = _tpAuth.egateBinding!;
-    final raw = egate.raw;
+  /// CpDaily auth payload built from a [CookieProvider] snapshot plus the
+  /// egate node's raw session fields (tgc/sessionToken/userId/tenantId). The
+  /// cookie + epoch captured at request time drive the storm-safe renew-retry
+  /// in [_postJson].
+  Map<String, dynamic> _authPayload(CookieProvider cp) {
+    final raw = _tpAuth.egateNode.rawFields;
     return {
       'tgc': (raw['tgc'] as String?) ?? '',
-      'cookies': cookies,
+      'cookies': cp.cookies,
       'sessionToken': (raw['sessionToken'] as String?) ?? '',
       'userId': (raw['userId'] as String?) ?? '',
       'tenantId': (raw['tenantId'] as String?) ?? '',
     };
   }
 
+  /// POST `$_baseUrl/[path]` with CpDaily auth + [extra] body fields. On 401
+  /// the egate node is renewed exactly once (single-flighted across all
+  /// concurrent callers) and the request retried with the fresh cookie.
   Future<Map<String, dynamic>> _postJson(
     String path,
-    Map<String, dynamic> body,
+    Map<String, dynamic> extra,
   ) async {
-    var response = await _client
-        .post(
-          Uri.parse('$_baseUrl/$path'),
-          headers: const {'Content-Type': 'application/json; charset=UTF-8'},
-          body: jsonEncode(body),
-        )
-        .timeout(const Duration(seconds: 30));
-
-    // 401 → CpDaily session expired: renew the eGate binding once, then retry.
-    if (response.statusCode == 401) {
-      _sessionReady = false;
-      if (await _tpAuth.renewEgateBinding()) {
-        response = await _client
+    _requireAuth();
+    final node = _tpAuth.egateNode;
+    final response = await _tpAuth.sessionTree.withCookie<http.Response>(
+      node,
+      (cp) async {
+        final body = {...extra, 'auth': _authPayload(cp)};
+        final r = await _client
             .post(
               Uri.parse('$_baseUrl/$path'),
               headers: const {
                 'Content-Type': 'application/json; charset=UTF-8',
               },
-              body: jsonEncode(body..['auth'] = _authPayload()),
+              body: jsonEncode(body),
             )
             .timeout(const Duration(seconds: 30));
-      }
+        return CookieAction(r, expired: r.statusCode == 401);
+      },
+    );
+    if (response == null) {
+      throw OaGymException('当前 eGate 登录态已失效，请重新绑定 eGate');
     }
-
+    if (response.statusCode == 401) {
+      _sessionReady = false;
+    }
     final decoded = response.body.isEmpty
         ? <String, dynamic>{}
         : (jsonDecode(response.body) as Map).cast<String, dynamic>();

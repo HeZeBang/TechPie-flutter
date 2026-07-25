@@ -12,6 +12,7 @@ import 'api_base_url.dart';
 import 'auth_service.dart';
 import 'http_client.dart';
 import 'schedule_service.dart';
+import 'session/session_tree.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
 
@@ -302,28 +303,25 @@ class AssignmentService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // -- Per-platform fetchers --
-
   Future<List<Assignment>?> _fetchBlackboard() async {
-    final egate = _tpAuth.egateBinding;
-    if (egate == null) return null;
-    final tgc = (egate.raw['tgc'] as String?) ?? '';
-    if (tgc.isEmpty) return null;
-
-    Future<http.Response> doFetch(String token) => _http.post(
-          Uri.parse('$_baseUrl/deadlines/blackboard'),
-          headers: _jsonHeaders(),
-          body: jsonEncode({'token': token}),
-          tag: 'deadlines:blackboard',
-        );
+    final node = _tpAuth.egateNode;
+    if (!node.isAvailable) return null;
 
     try {
-      var resp = await doFetch(tgc);
-      if (resp.statusCode == 401 && await _tpAuth.renewEgateBinding()) {
-        final newTgc =
-            (_tpAuth.egateBinding?.raw['tgc'] as String?) ?? tgc;
-        resp = await doFetch(newTgc);
-      }
+      final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
+        node,
+        (cp) async {
+          final tgc = (node.rawFields['tgc'] as String?) ?? '';
+          final r = await _http.post(
+            Uri.parse('$_baseUrl/deadlines/blackboard'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({'token': tgc}),
+            tag: 'deadlines:blackboard',
+          );
+          return CookieAction(r, expired: r.statusCode == 401);
+        },
+      );
+      if (resp == null) return null;
       return _parseDeadlinesResponse(resp, 'blackboard');
     } catch (e) {
       _platformErrors['blackboard'] = '同步失败，请检查网络或稍后重试';
@@ -333,32 +331,30 @@ class AssignmentService extends ChangeNotifier {
 
   Future<List<Assignment>?> _fetchExamTable() async {
     final semesterId = _selectedSemesterId();
-    if (!_tpAuth.hasEgateBinding ||
+    final node = _tpAuth.egateNode;
+    if (!node.isAvailable ||
         semesterId == null ||
         semesterId.isEmpty) {
       return null;
     }
 
-    Map<String, dynamic> buildBody() => {
-          'semester_id': semesterId,
-          'cookies': _tpAuth.egateCookies(),
-        };
-
     try {
-      var resp = await _http.post(
-        Uri.parse('$_baseUrl/schedule/exam_table'),
-        headers: _jsonHeaders(),
-        body: jsonEncode(buildBody()),
-        tag: 'schedule:exam_table',
+      final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
+        node,
+        (cp) async {
+          final r = await _http.post(
+            Uri.parse('$_baseUrl/schedule/exam_table'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({
+              'semester_id': semesterId,
+              'cookies': cp.cookies,
+            }),
+            tag: 'schedule:exam_table',
+          );
+          return CookieAction(r, expired: r.statusCode == 401);
+        },
       );
-      if (resp.statusCode == 401 && await _tpAuth.renewEgateBinding()) {
-        resp = await _http.post(
-          Uri.parse('$_baseUrl/schedule/exam_table'),
-          headers: _jsonHeaders(),
-          body: jsonEncode(buildBody()),
-          tag: 'schedule:exam_table:retry',
-        );
-      }
+      if (resp == null) return null;
       return _parseExamTableResponse(resp);
     } catch (e) {
       _platformErrors['exam'] = '同步失败，请检查网络或稍后重试';

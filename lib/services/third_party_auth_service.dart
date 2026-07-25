@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import '../models/third_party_account.dart';
 import 'api_base_url.dart';
 import 'http_client.dart';
+import 'session/session_nodes.dart';
+import 'session/session_tree.dart';
 import 'storage_service.dart';
 
 class ThirdPartyBindException implements Exception {
@@ -20,33 +22,82 @@ class ThirdPartyAuthService extends ChangeNotifier {
   final StorageService _storage;
   final LoggingHttpClient _http;
 
-  final Map<ThirdPartyPlatform, ThirdPartyAccount> _accounts = {};
   bool _initialized = false;
 
   // SMS context for eGate binding flow (set by sendEgateSmsCode).
   Map<String, dynamic>? _egateSmsContext;
 
-  ThirdPartyAuthService(this._storage, this._http);
+  late final SessionTree _tree;
+
+  ThirdPartyAuthService(this._storage, this._http) {
+    _tree = SessionTree(
+      persist: _persistAccount,
+      http: _http,
+      baseUrl: () => apiBaseUrl(_storage),
+    );
+    // Tree node notifications propagate to this service's listeners (UI,
+    // AssignmentService auto-refetch, etc.) and the cloud-sync push hook.
+    _tree.addListener(_onTreeChanged);
+  }
 
   String get _baseUrl => apiBaseUrl(_storage);
 
   bool get initialized => _initialized;
-  List<ThirdPartyPlatform> get boundPlatforms => _accounts.keys.toList();
-  Iterable<ThirdPartyAccount> get accounts => _accounts.values;
-  ThirdPartyAccount? account(ThirdPartyPlatform p) => _accounts[p];
+
+  // -- SessionTree access (new unified API) --
+
+  /// The unified session tree. Callers that want node-level control (e.g.
+  /// [SessionTree.withCookie] for 401-renew-retry) go through here.
+  SessionTree get sessionTree => _tree;
+
+  /// Convenience: the CpDaily (eGate) session node — parent of [idsNode].
+  CpdailySessionNode get egateNode => _tree.egate;
+
+  /// Convenience: the IDS session node — child of [egateNode], refreshed via
+  /// the CpDaily session.
+  IdsSessionNode get idsNode => _tree.ids;
+
+  List<ThirdPartyPlatform> get boundPlatforms =>
+      _accountsSnapshot.map((a) => a.platform).toList();
+  Iterable<ThirdPartyAccount> get accounts => _accountsSnapshot;
+  ThirdPartyAccount? account(ThirdPartyPlatform p) => _nodeAccount(p);
+
+  List<ThirdPartyAccount> get _accountsSnapshot => [
+        _tree.egate.account,
+        _tree.gradescope.account,
+        _tree.hydro.account,
+      ].whereType<ThirdPartyAccount>().toList();
+
+  ThirdPartyAccount? _nodeAccount(ThirdPartyPlatform p) => switch (p) {
+        ThirdPartyPlatform.egate => _tree.egate.account,
+        ThirdPartyPlatform.gradescope => _tree.gradescope.account,
+        ThirdPartyPlatform.hydro => _tree.hydro.account,
+      };
 
   /// Post-construction hook fired after any binding mutation (bind / unbind /
-  /// raw update / replaceAll). Wired by main.dart to [SyncService.pushIfDue]
-  /// so the cloud backup stays current. Null until wired; safe to call.
+  /// raw update / replaceAll / node-initiated renew). Wired by main.dart to
+  /// [SyncService.pushIfDue] so the cloud backup stays current. Null until
+  /// wired; safe to call.
   Future<void> Function()? onBindingsChanged;
 
-  void _notifyChanged() {
+  void _onTreeChanged() {
+    // A node changed (renew / setAccount) — re-notify our listeners and push
+    // to cloud sync. This is the single funnel for all mutations now.
     notifyListeners();
     final hook = onBindingsChanged;
     if (hook != null) {
-      // Fire-and-forget; the hook is throttled and swallows its own errors.
       unawaited(hook());
     }
+  }
+
+  /// Persist a (possibly refreshed) account into secure storage AND sync the
+  /// matching [SessionNode]'s in-memory state. Installed as the tree's
+  /// [PersistAccount] callback so node-initiated renews flow through here.
+  Future<void> _persistAccount(ThirdPartyAccount updated) async {
+    await _storage.saveThirdPartyAccount(updated);
+    // The node already updated its own _account before calling persist; we
+    // only need storage + notification here (notification fires via the tree
+    // listener → _onTreeChanged).
   }
 
   // -- eGate binding (single source of CASTGC / CpDaily session) --
@@ -59,83 +110,36 @@ class ThirdPartyAuthService extends ChangeNotifier {
 
   /// True when an eGate / IDS binding exists. This is the gate every
   /// CASTGC-dependent feature must check before doing work.
-  bool get hasEgateBinding => _accounts[ThirdPartyPlatform.egate] != null;
+  bool get hasEgateBinding => _tree.egate.account != null;
 
   /// The bound eGate account, or null.
-  ThirdPartyAccount? get egateBinding => _accounts[ThirdPartyPlatform.egate];
+  ThirdPartyAccount? get egateBinding => _tree.egate.account;
 
   /// Cookie string for campus-system requests, always ending with
   /// `CASTGC=<tgc>` when a tgc is present (the form CpDaily/EAMS expects).
   /// Returns '' when there is no binding or no tgc — callers should treat
   /// that as "session unavailable".
-  String egateCookies() {
-    final acc = _accounts[ThirdPartyPlatform.egate];
-    if (acc == null) return '';
-    final raw = acc.raw;
-    final baseCookies = (raw['cookies'] as String?) ?? '';
-    final tgc = (raw['tgc'] as String?) ?? '';
-    return tgc.isEmpty
-        ? baseCookies
-        : (baseCookies.isNotEmpty
-            ? '$baseCookies; CASTGC=$tgc'
-            : 'CASTGC=$tgc');
-  }
+  String egateCookies() => _tree.egate.cookieProvider?.cookies ?? '';
 
   /// Student id surfaced by the eGate binding, or '' if unbound.
-  String get egateStudentId =>
-      _accounts[ThirdPartyPlatform.egate]?.sid ?? '';
+  String get egateStudentId => _tree.egate.account?.sid ?? '';
 
-  /// Best-effort renewal of the eGate binding's CpDaily session via
-  /// `/api/auth/renew`. On success the refreshed raw data is persisted back
-  /// into the binding and listeners are notified. Returns true on success.
-  Future<bool> renewEgateBinding() async {
-    final acc = _accounts[ThirdPartyPlatform.egate];
-    if (acc == null) return false;
-    try {
-      final resp = await _http.post(
-        Uri.parse('$_baseUrl/auth/renew'),
-        headers: {'Content-Type': 'application/json; charset=UTF-8'},
-        body: jsonEncode({
-          'sessionToken': acc.raw['sessionToken'] ?? '',
-          'tgc': acc.raw['tgc'] ?? '',
-          'userId': acc.raw['userId'] ?? '',
-          'tenantId': acc.raw['tenantId'] ?? '',
-        }),
-        tag: 'egateCpDailyRenew',
-      );
-
-      if (resp.statusCode != 200) return false;
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      if (data['success'] != true) return false;
-
-      await updateRaw(
-        ThirdPartyPlatform.egate,
-        {
-          ...acc.raw,
-          'sessionToken':
-              data['sessionToken'] as String? ?? acc.raw['sessionToken'] ?? '',
-          'tgc': data['tgc'] as String? ?? acc.raw['tgc'] ?? '',
-          'userId': data['userId'] as String? ?? acc.raw['userId'] ?? '',
-          'tenantId':
-              data['tenantId'] as String? ?? acc.raw['tenantId'] ?? '',
-          'cookies': data['cookies'] as String? ?? acc.raw['cookies'] ?? '',
-        },
-      );
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
+  /// Best-effort renewal of the eGate binding's CpDaily session. Delegates to
+  /// [CpdailySessionNode.renew], which is single-flighted: concurrent callers
+  /// (two services hitting 401 at once) share ONE `/auth/renew` POST. On
+  /// success the refreshed raw is persisted and listeners notified via the
+  /// tree → [Service._onTreeChanged] path. Returns true on success.
+  Future<bool> renewEgateBinding() => _tree.egate.renew();
 
   Future<void> initialize() async {
     final loaded = await _storage.loadAllThirdPartyAccounts();
-    _accounts
-      ..clear()
-      ..addEntries(loaded.map((a) => MapEntry(a.platform, a)));
+    // Seed each node with its persisted account. setAccount routes to the
+    // matching node and notifies (boot hydration — the sync hook is not wired
+    // yet, so no cloud push fires).
+    for (final acc in loaded) {
+      _tree.setAccount(acc.platform, acc);
+    }
     _initialized = true;
-    // Boot hydration is not a user-driven mutation — notify listeners but do
-    // NOT trigger a cloud push (the hook is not wired yet at this point, and
-    // a pull may follow that should take precedence).
     notifyListeners();
   }
 
@@ -208,32 +212,33 @@ class ThirdPartyAuthService extends ChangeNotifier {
     );
 
     await _storage.saveThirdPartyAccount(acc);
-    _accounts[platform] = acc;
-    _notifyChanged();
+    _tree.setAccount(platform, acc);
     return acc;
   }
 
   Future<void> unbind(ThirdPartyPlatform platform) async {
-    _accounts.remove(platform);
+    _tree.setAccount(platform, null);
     await _storage.clearThirdPartyAccount(platform);
-    _notifyChanged();
   }
-
   /// Replace the entire in-memory + persisted binding set in one shot. Used by
   /// [SyncService.pull] to restore a cloud-fetched snapshot: clears every
   /// existing platform binding, writes each entry in [next] to secure storage,
   /// and rebuilds the in-memory map. Fires a single notification.
   Future<void> replaceAll(List<ThirdPartyAccount> next) async {
+    // Clear storage for every platform first.
     for (final p in ThirdPartyPlatform.values) {
       await _storage.clearThirdPartyAccount(p);
     }
-    _accounts
-      ..clear()
-      ..addEntries(next.map((a) => MapEntry(a.platform, a)));
-    for (final a in next) {
-      await _storage.saveThirdPartyAccount(a);
+    // Then seed each node + persist. setAccount notifies per-node; the tree
+    // listener funnels into a single _onTreeChanged (throttled by SyncService).
+    final byPlatform = {
+      for (final a in next) a.platform: a,
+    };
+    for (final p in ThirdPartyPlatform.values) {
+      _tree.setAccount(p, byPlatform[p]);
+      final a = byPlatform[p];
+      if (a != null) await _storage.saveThirdPartyAccount(a);
     }
-    _notifyChanged();
   }
 
   /// Update the raw data of a bound account (e.g. after CpDaily session renewal).
@@ -241,7 +246,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     ThirdPartyPlatform platform,
     Map<String, dynamic> newRaw,
   ) async {
-    final acc = _accounts[platform];
+    final acc = _nodeAccount(platform);
     if (acc == null) return;
     final updated = ThirdPartyAccount(
       platform: acc.platform,
@@ -259,8 +264,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
       password: acc.password,
     );
     await _storage.saveThirdPartyAccount(updated);
-    _accounts[platform] = updated;
-    _notifyChanged();
+    _tree.setAccount(platform, updated);
   }
 
   // -- eGate SMS binding flow --
@@ -350,9 +354,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
     );
 
     await _storage.saveThirdPartyAccount(acc);
-    _accounts[ThirdPartyPlatform.egate] = acc;
+    _tree.setAccount(ThirdPartyPlatform.egate, acc);
     _egateSmsContext = null;
-    _notifyChanged();
     return acc;
   }
 
@@ -366,7 +369,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     Duration window = const Duration(hours: 48),
   }) async {
     final cutoff = DateTime.now().add(window);
-    final snapshot = _accounts.values.toList();
+    final snapshot = _accountsSnapshot;
     final failed = <ThirdPartyPlatform>[];
     for (final acc in snapshot) {
       if (!acc.autoRenew) continue;
@@ -395,8 +398,16 @@ class ThirdPartyAuthService extends ChangeNotifier {
   }
 
   Future<void> clearAll() async {
-    _accounts.clear();
+    for (final p in ThirdPartyPlatform.values) {
+      _tree.setAccount(p, null);
+    }
     await _storage.clearAllThirdPartyAccounts();
-    _notifyChanged();
+  }
+
+  @override
+  void dispose() {
+    _tree.removeListener(_onTreeChanged);
+    _tree.dispose();
+    super.dispose();
   }
 }
