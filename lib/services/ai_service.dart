@@ -42,6 +42,12 @@ class AiService extends ChangeNotifier {
   /// isn't configured yet). Cleared when a real turn starts or config is saved.
   String? _userError;
 
+  /// Last-seen controller status / error, to detect transitions worth notifying
+  /// the UI about (streaming start/stop, error appear/clear) without firing on
+  /// every token.
+  ChatStatus? _lastStatus;
+  Object? _lastError;
+
   /// Debounced persistence timer.
   Timer? _persistTimer;
 
@@ -268,12 +274,27 @@ class AiService extends ChangeNotifier {
     if (_forwarding) return;
     _forwarding = true;
     try {
-      // Mirror the controller's live transcript back into our persisted thread
-      // so currentConversation reflects streamed tokens, then forward the notify.
+      // Mirror the controller's live transcript into the persisted thread so
+      // currentConversation reflects streamed tokens. Done silently — token
+      // arrivals must NOT call notifyListeners, or the page rebuilds every
+      // token and AiChat's scroll/anchor logic fights the rebuild (visible as
+      // flicker + no smooth auto-scroll). AiChat listens to the controller
+      // directly for live transcript updates.
       _syncCurrentFromController();
-      notifyListeners();
+      final status = _controller?.status;
+      final error = _controller?.error;
+      // Only surface a notification when something the UI actually cares about
+      // changes: streaming started/stopped, or an error appeared/cleared.
+      // Token-only changes (status stays streaming, same error) are silent.
+      final statusChanged = status != _lastStatus;
+      final errorChanged = error != _lastError;
+      _lastStatus = status;
+      _lastError = error;
+      if (statusChanged || errorChanged) {
+        notifyListeners();
+      }
       // Persist once the turn settles (status leaves streaming).
-      if (_controller?.status != ChatStatus.streaming) {
+      if (status != ChatStatus.streaming) {
         _schedulePersist();
       }
     } finally {

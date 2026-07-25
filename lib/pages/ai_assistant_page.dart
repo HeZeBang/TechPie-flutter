@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_ai_client/flutter_ai_client.dart';
 import 'package:flutter_ai_elements/flutter_ai_elements.dart';
 
 import '../models/ai_chat.dart';
@@ -165,46 +166,57 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                 ),
               ],
             ),
-      body: ListenableBuilder(
-        listenable: aiService,
-        builder: (context, _) {
-          final notConfigured = !aiService.isConfigured;
-          final error = aiService.streamingError;
-
-          return Column(
-            children: [
-              SizedBox(height: topInset),
-              if (notConfigured) _configBanner(context, aiService),
-              Expanded(
-                child: AiChat(
-                  controller: aiService.controller,
-                  textRenderer: const StreamingMarkdownRenderer(),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  emptyState: _emptyState(context, notConfigured),
-                ),
+      // The transcript (AiChat) and composer (AiPromptInput) bind the
+      // controller DIRECTLY and are NOT wrapped in a ListenableBuilder —
+      // matching the flutter_ai demo. Wrapping them in ListenableBuilder(aiService)
+      // rebuilds AiChat on every status change, which races AiChat's top-anchor
+      // scroll logic (its anchor RenderBox goes missing mid-rebuild → trailingSpace
+      // oscillates → the bottom padding flickers). Only the mutable banners listen
+      // to aiService; AiChat listens to the controller itself.
+      body: Column(
+        children: [
+          SizedBox(height: topInset),
+          ListenableBuilder(
+            listenable: aiService,
+            builder: (context, _) {
+              final notConfigured = !aiService.isConfigured;
+              if (!notConfigured) return const SizedBox.shrink();
+              return _configBanner(context, aiService);
+            },
+          ),
+          Expanded(
+            child: _AutoScrollChat(
+              controller: aiService.controller,
+              emptyState: Builder(
+                builder: (context) =>
+                    _emptyState(context, !aiService.isConfigured),
               ),
-              if (error != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: AiErrorBanner(
-                    message: error,
-                    onRetry: aiService.isStreaming ? null : () => _retry(aiService),
-                    onDismiss: () => _dismissError(aiService),
-                  ),
+            ),
+          ),
+          ListenableBuilder(
+            listenable: aiService,
+            builder: (context, _) {
+              final error = aiService.streamingError;
+              if (error == null) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: AiErrorBanner(
+                  message: error,
+                  onRetry:
+                      aiService.isStreaming ? null : () => _retry(aiService),
+                  onDismiss: () => _dismissError(aiService),
                 ),
-              // The composer only appears once configured; before that the
-              // config banner + empty state guide the user to set a token.
-              if (!notConfigured)
-                AiPromptInput(
-                  controller: aiService.controller,
-                  hintText: '输入消息…',
-                  textController: _textController,
-                )
-              else
-                SafeArea(
+              );
+            },
+          ),
+          // Composer appears only once configured; before that a button guides
+          // the user to set a token. This toggle is the only composer-level
+          // piece that needs aiService.
+          ListenableBuilder(
+            listenable: aiService,
+            builder: (context, _) {
+              if (!aiService.isConfigured) {
+                return SafeArea(
                   top: false,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -214,10 +226,16 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                       label: const Text('前往配置 API 令牌'),
                     ),
                   ),
-                ),
-            ],
-          );
-        },
+                );
+              }
+              return AiPromptInput(
+                controller: aiService.controller,
+                hintText: '输入消息…',
+                textController: _textController,
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -313,3 +331,204 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
     );
   }
 }
+
+/// A transcript bound to a [UseChatController] that scrolls to the bottom when a
+/// message is sent — WITHOUT the library [AiChat]'s ChatGPT-style top-anchor.
+///
+/// Why not just use `AiChat(autoScroll: false)`: AiChat's ScrollController is
+/// private, so we can't drive scroll-to-end from outside. This wrapper uses the
+/// presentational [AiConversationView] with our own ScrollController, so we
+/// control scrolling directly. Crucially it never sets `trailingSpace`, so
+/// there is no dynamic bottom-padding (the source of the earlier flicker).
+///
+/// Scroll behavior:
+/// - On a new message (count grows), animate to the bottom.
+/// - While streaming, keep pinned to the bottom ONLY if the user is already
+///   near the bottom — so scrolling up to read isn't yanked back down.
+class _AutoScrollChat extends StatefulWidget {
+  const _AutoScrollChat({required this.controller, this.emptyState});
+
+  final UseChatController controller;
+  final Widget? emptyState;
+
+  @override
+  State<_AutoScrollChat> createState() => _AutoScrollChatState();
+}
+
+class _AutoScrollChatState extends State<_AutoScrollChat> {
+  final ScrollController _scrollController = ScrollController();
+  int _lastCount = 0;
+  /// First message id of the currently-shown thread. When it changes, the user
+  /// switched conversations (the controller is a singleton that `load()`s a new
+  /// transcript) — we jump to the bottom of the new thread.
+  String? _firstMessageId;
+  bool _nearBottom = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastCount = widget.controller.messages.length;
+    _firstMessageId = widget.controller.messages.firstOrNull?.id;
+    widget.controller.addListener(_onChanged);
+    _scrollController.addListener(_onScroll);
+    // On first open (or when re-entering a conversation), jump to the latest
+    // message so the user lands at the bottom of the transcript.
+    _jumpToEnd();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AutoScrollChat oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onChanged);
+      widget.controller.addListener(_onChanged);
+      _lastCount = widget.controller.messages.length;
+      _firstMessageId = widget.controller.messages.firstOrNull?.id;
+      // Switched controllers — land at the bottom of the new thread.
+      _jumpToEnd();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onChanged);
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    final near = (pos.maxScrollExtent - pos.pixels) <= 80;
+    if (near != _nearBottom) {
+      setState(() => _nearBottom = near);
+    }
+  }
+
+  void _onChanged() {
+    final messages = widget.controller.messages;
+    final count = messages.length;
+    final firstId = messages.firstOrNull?.id;
+    // The controller is a singleton; a conversation switch swaps the transcript
+    // in place via load(). Detect it by the first message id changing.
+    final switched = firstId != _firstMessageId;
+    _firstMessageId = firstId;
+    final grew = count > _lastCount;
+    _lastCount = count;
+    if (!mounted) return;
+    if (switched) {
+      // New conversation — jump (no animation) to its latest message.
+      _jumpToEnd();
+      return;
+    }
+    // Scroll to end when a new message lands (user sent / assistant turn
+    // started), or while streaming if the user is still pinned near the bottom.
+    final streaming = widget.controller.status == ChatStatus.streaming;
+    if (grew || (streaming && _nearBottom)) {
+      _scrollToEnd();
+    }
+  }
+
+  /// Animated scroll to the bottom — used while streaming / on send.
+  void _scrollToEnd() {
+    if (!_scrollController.hasClients) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final pos = _scrollController.position;
+      unawaited(
+        _scrollController.animateTo(
+          pos.maxScrollExtent,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        ),
+      );
+    });
+  }
+
+  /// Instant jump to the bottom — used on init / conversation switch so the
+  /// user lands at the latest message without a scroll animation.
+  void _jumpToEnd() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        final messages = widget.controller.messages;
+        if (messages.isEmpty &&
+            !widget.controller.status.isBusy &&
+            widget.emptyState != null) {
+          return widget.emptyState!;
+        }
+        final view = AiConversationView(
+          messages: messages,
+          scrollController: _scrollController,
+          textRenderer: const StreamingMarkdownRenderer(),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          // Show the thinking loader while awaiting the first streamed token,
+          // matching AiChat's behavior.
+          showLoader: widget.controller.status == ChatStatus.submitted,
+          // trailingSpace stays 0 (default) — no bottom padding, no flicker.
+        );
+        // Floating "scroll to end" button, shown only when not already at the
+        // bottom (and there's content to scroll). Hidden once at the end.
+        final showJump = !_nearBottom && messages.isNotEmpty;
+        return Stack(
+          children: [
+            view,
+            if (showJump)
+              PositionedDirectional(
+                bottom: 12,
+                start: 0,
+                end: 0,
+                child: Center(child: _ScrollToEndButton(onTap: _scrollToEnd)),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A small circular "scroll to end" affordance. Styled to match the library's
+/// jump button (AiChat._JumpButton) so it feels native to the chat surface.
+class _ScrollToEndButton extends StatelessWidget {
+  const _ScrollToEndButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      button: true,
+      label: '滚动到最新',
+      child: Material(
+        color: theme.colorScheme.surfaceContainerHigh,
+        shape: const CircleBorder(),
+        elevation: 2,
+        shadowColor: Colors.black.withValues(alpha: 0.2),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(
+              Icons.arrow_downward_rounded,
+              size: 20,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
