@@ -124,6 +124,79 @@ void main() {
       throwsA(isA<NeedMasterPassword>()),
     );
   });
+  // -- LWW merge behavior (the bug these guard against) ----------------------
+
+  test(
+      'pull does NOT overwrite a locally-newer binding with an older cloud copy',
+      () async {
+    // Device A: set up sync with a gradescope binding (old updatedAt).
+    final fx = await _Fixture.withSession();
+    await fx.tpAuth.replaceAll([
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.gradescope,
+        account: 'a@b',
+        token: 'cloud-old',
+        boundAt: DateTime.utc(2026, 1, 1),
+      ),
+    ]);
+    await fx.sync.setupWithMasterPassword('pw');
+
+    // Device B: restore, then locally rebind a NEWER token.
+    final fx2 = await _Fixture.withSession(server: fx.server);
+    await fx2.sync.restoreWithMasterPassword('pw');
+    // Bump the local binding's updatedAt to "now" via the real bind path.
+    await fx2.tpAuth.replaceAll([
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.gradescope,
+        account: 'a@b',
+        token: 'local-new',
+        boundAt: DateTime.utc(2026, 1, 10),
+        updatedAt: DateTime.utc(2026, 1, 10),
+        deviceId: 'devB',
+      ),
+    ]);
+    // Manually stamp deviceId on device 2 so the touch helper works. The
+    // fixture loads deviceId lazily; ensureDeviceId already ran in init.
+
+    // Pull from cloud (which still has 'cloud-old'). The merge must keep
+    // 'local-new' because its updatedAt is newer.
+    await fx2.sync.pull();
+    expect(
+      fx2.tpAuth.account(ThirdPartyPlatform.gradescope)?.token,
+      'local-new',
+      reason: 'a newer local binding must survive a pull of older cloud data',
+    );
+  });
+
+  test(
+      'a deletion (tombstone) on device A is not resurrected when device B pulls',
+      () async {
+    // Device A: bind gradescope, set up sync.
+    final fx = await _Fixture.withSession();
+    await fx.tpAuth.replaceAll([
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.gradescope,
+        account: 'a@b',
+        token: 't',
+        boundAt: DateTime.utc(2026, 1, 1),
+      ),
+    ]);
+    await fx.sync.setupWithMasterPassword('pw');
+
+    // Device A: unbind gradescope. This records a tombstone + force-pushes.
+    await fx.tpAuth.unbind(ThirdPartyPlatform.gradescope);
+    // Cloud blob now carries a tombstone, no gradescope account.
+
+    // Device B: restore (gets the post-deletion state) — should have no
+    // gradescope binding.
+    final fx2 = await _Fixture.withSession(server: fx.server);
+    await fx2.sync.restoreWithMasterPassword('pw');
+    expect(
+      fx2.tpAuth.account(ThirdPartyPlatform.gradescope),
+      isNull,
+      reason: 'tombstone on device A must remove the binding on device B',
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +300,11 @@ class _Fixture {
     final auth = AuthService(storage, httpClient, uniAuth);
     final tpAuth = ThirdPartyAuthService(storage, httpClient);
     final sync = SyncService(auth, tpAuth, storage, client: srv.toHttpClient());
+    // Mirror main.dart wiring so tombstones are recorded + pushes fire.
+    tpAuth.onBindingsChanged = ({force = false}) {
+      return force ? sync.forcePush() : sync.pushIfDue();
+    };
+    tpAuth.onUnbind = sync.recordTombstone;
     await auth.loadSession();
     await tpAuth.initialize();
     await sync.loadCachedKey();

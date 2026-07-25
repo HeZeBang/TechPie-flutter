@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 // NOTE: import the OHOS package, not the upstream `flutter_secure_storage`.
 // Despite the name, `flutter_secure_storage_ohos` is a hard fork (declares
@@ -26,6 +27,8 @@ class StorageService {
   static const _syncEnabledKey = 'sync_enabled';
   static const _syncLastAtKey = 'sync_last_at';
   static const _syncMasterKeyKey = 'sync_master_key'; // secure storage
+  static const _deviceIdKey = 'device_id';
+
 
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
@@ -174,6 +177,22 @@ class StorageService {
   Future<void> saveSyncMasterKey(String serialized) =>
       _secure.write(key: _syncMasterKeyKey, value: serialized);
   Future<void> clearSyncMasterKey() => _secure.delete(key: _syncMasterKeyKey);
+
+  // Stable per-device identifier used as the cloud-sync LWW tie-breaker.
+  // Generated lazily on first access (16 random bytes → 32 hex chars) and
+  // persisted in SharedPreferences; never leaves the device except inside
+  // encrypted sync blobs.
+  Future<String> ensureDeviceId() async {
+    var id = _prefs.getString(_deviceIdKey);
+    if (id == null || id.isEmpty) {
+      final rnd = Random.secure();
+      id = List<int>.generate(16, (_) => rnd.nextInt(256))
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
+      await _prefs.setString(_deviceIdKey, id);
+    }
+    return id;
+  }
 
   // Schedule cache
   static const _semestersKey = 'schedule_semesters';

@@ -94,6 +94,9 @@ Future<void> _realMain(SharedPreferences prefs) async {
   thirdPartyAuthService.onBindingsChanged = ({force = false}) {
     return force ? syncService.forcePush() : syncService.pushIfDue();
   };
+  // Cloud-sync tombstone hook: record a deletion so the next LWW merge does
+  // not resurrect an older remote copy of the unbound platform.
+  thirdPartyAuthService.onUnbind = syncService.recordTombstone;
 
   // Cloud-sync pull hook: after a fresh SSO login, pull cloud bindings onto
   // this device (or surface the master-password restore prompt).

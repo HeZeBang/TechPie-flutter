@@ -23,11 +23,15 @@ class ThirdPartyAuthService extends ChangeNotifier {
   final LoggingHttpClient _http;
 
   bool _initialized = false;
-
+  bool _suppressSyncPush = false;
   // SMS context for cpdaily binding flow (set by sendCpdailySmsCode).
   Map<String, dynamic>? _cpdailySmsContext;
 
   late final SessionTree _tree;
+  // Stable per-device id, loaded in [initialize]. Stamped onto every locally
+  // mutated account so the cloud-sync LWW merge converges.
+  String _deviceId = '';
+
 
   ThirdPartyAuthService(this._storage, this._http) {
     _tree = SessionTree(
@@ -91,11 +95,20 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// wants the push to bypass the throttle so a removal is immediately
   /// reflected in the cloud blob.
   Future<void> Function({bool force})? onBindingsChanged;
+  /// Hook fired when a platform is deliberately unbound. Wired by
+  /// [SyncService] to record a tombstone so the deletion survives the next
+  /// LWW merge (instead of being resurrected by an older remote copy).
+  /// Null until wired; safe to call.
+  void Function(ThirdPartyPlatform platform)? onUnbind;
 
   void _onTreeChanged({bool force = false}) {
     // A node changed (renew / setAccount) — re-notify our listeners and push
     // to cloud sync. This is the single funnel for all mutations now.
     notifyListeners();
+    // Skip the cloud-push hook while [applySyncMerge] is replaying a merged
+    // snapshot — the sync path writes the merged envelope itself, so a
+    // throttled pushIfDue here would be redundant (and could race).
+    if (_suppressSyncPush) return;
     final hook = onBindingsChanged;
     if (hook != null) {
       unawaited(hook(force: force));
@@ -106,10 +119,13 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// matching [SessionNode]'s in-memory state. Installed as the tree's
   /// [PersistAccount] callback so node-initiated renews flow through here.
   Future<void> _persistAccount(ThirdPartyAccount updated) async {
-    await _storage.saveThirdPartyAccount(updated);
-    // The node already updated its own _account before calling persist; we
-    // only need storage + notification here (notification fires via the tree
-    // listener → _onTreeChanged).
+    // Stamp the renewed/refreshed account with this device's id + a fresh
+    // updatedAt so the cloud-sync LWW merge treats it as the newest version.
+    final touched = _touch(updated);
+    await _storage.saveThirdPartyAccount(touched);
+    // Re-sync the node's in-memory copy so UI + cookieProvider see the
+    // stamped version. setAccount notifies; _onTreeChanged funnels it.
+    _tree.setAccount(touched.platform, touched);
   }
 
   /// Persist/clear a child node's derived cookie. Installed as the tree's
@@ -121,6 +137,11 @@ class ThirdPartyAuthService extends ChangeNotifier {
     } else {
       await _storage.saveDerivedCookie(nodeId, cookie);
     }
+  }
+
+  /// Stamp [acc] with this device's id + current time, for LWW merge.
+  ThirdPartyAccount _touch(ThirdPartyAccount acc) {
+    return acc.copyWith(updatedAt: DateTime.now(), deviceId: _deviceId);
   }
 
   // -- CpDaily binding (single source of CASTGC / CpDaily session) --
@@ -153,6 +174,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// success the refreshed raw is persisted and listeners notified via the
   /// tree → [Service._onTreeChanged] path. Returns true on success.
   Future<void> initialize() async {
+    _deviceId = await _storage.ensureDeviceId();
     final loaded = await _storage.loadAllThirdPartyAccounts();
     // Seed each node with its persisted account. setAccount routes to the
     // matching node and notifies (boot hydration — the sync hook is not wired
@@ -241,9 +263,10 @@ class ThirdPartyAuthService extends ChangeNotifier {
       password: autoRenew ? password : null,
     );
 
-    await _storage.saveThirdPartyAccount(acc);
-    _tree.setAccount(platform, acc);
-    return acc;
+    final touched = _touch(acc);
+    await _storage.saveThirdPartyAccount(touched);
+    _tree.setAccount(platform, touched);
+    return touched;
   }
 
   Future<void> unbind(ThirdPartyPlatform platform) async {
@@ -256,6 +279,10 @@ class ThirdPartyAuthService extends ChangeNotifier {
         await _storage.clearDerivedCookie(id);
       }
     }
+    // Record a tombstone for the cloud-sync merge so this deletion is not
+    // resurrected by an older remote copy on the next pull.
+    final unbindHook = onUnbind;
+    if (unbindHook != null) unbindHook(platform);
     // Force-push so the removal is immediately reflected in the cloud blob,
     // bypassing the pushIfDue throttle. Without this, a throttled skip would
     // leave the stale binding in the cloud and the next boot's pull would
@@ -289,6 +316,59 @@ class ThirdPartyAuthService extends ChangeNotifier {
     }
   }
 
+  /// Apply a merged account set coming from the cloud-sync LWW merge. For
+  /// each platform: if a kept account is present, persist + set it; if the
+  /// platform is in [removed], clear it. Unlike [replaceAll], this does NOT
+  /// clear every platform first — it writes per-platform diffs and skips the
+  /// cloud-sync push hook (the sync path pushes the merged envelope itself),
+  /// avoiding a redundant throttled push right after an explicit one.
+  Future<void> applySyncMerge(
+    List<ThirdPartyAccount> kept,
+    Set<ThirdPartyPlatform> removed,
+  ) async {
+    _suppressSyncPush = true;
+    try {
+      final byPlatform = {
+        for (final a in kept) a.platform: a,
+      };
+      for (final p in ThirdPartyPlatform.values) {
+        final next = byPlatform[p];
+        final cur = _nodeAccount(p);
+        // Skip no-op writes: if the merged account equals the current one
+        // (same token, same updatedAt), don't touch storage or fire notifies.
+        if (next != null && cur != null && _accountEqual(cur, next)) continue;
+        if (next == null && cur == null) continue;
+        if (next != null) {
+          await _storage.saveThirdPartyAccount(next);
+          _tree.setAccount(p, next);
+        } else {
+          // Clearing cpdaily invalidates downstream derived cookies.
+          if (p == ThirdPartyPlatform.cpdaily && cur != null) {
+            for (final id in const ['eams', 'elearning']) {
+              _tree.setDerivedCookie(id, null);
+              await _storage.clearDerivedCookie(id);
+            }
+          }
+          _tree.setAccount(p, null);
+          await _storage.clearThirdPartyAccount(p);
+        }
+      }
+    } finally {
+      _suppressSyncPush = false;
+    }
+    // One notification for the whole merge.
+    notifyListeners();
+  }
+
+  /// Cheap structural equality used by [applySyncMerge] to skip no-op writes.
+  static bool _accountEqual(ThirdPartyAccount a, ThirdPartyAccount b) {
+    return a.token == b.token &&
+        a.account == b.account &&
+        a.expire == b.expire &&
+        a.updatedAt == b.updatedAt &&
+        a.deviceId == b.deviceId;
+  }
+
   /// Update the raw data of a bound account (e.g. after CpDaily session renewal).
   Future<void> updateRaw(
     ThirdPartyPlatform platform,
@@ -296,23 +376,9 @@ class ThirdPartyAuthService extends ChangeNotifier {
   ) async {
     final acc = _nodeAccount(platform);
     if (acc == null) return;
-    final updated = ThirdPartyAccount(
-      platform: acc.platform,
-      account: acc.account,
-      sid: acc.sid,
-      name: acc.name,
-      email: acc.email,
-      token: acc.token,
-      expire: acc.expire,
-      raw: newRaw,
-      hydroOrigin: acc.hydroOrigin,
-      hydroDomains: acc.hydroDomains,
-      boundAt: acc.boundAt,
-      autoRenew: acc.autoRenew,
-      password: acc.password,
-    );
-    await _storage.saveThirdPartyAccount(updated);
-    _tree.setAccount(platform, updated);
+    final touched = _touch(acc.copyWith(raw: newRaw));
+    await _storage.saveThirdPartyAccount(touched);
+    _tree.setAccount(platform, touched);
   }
 
   // -- CpDaily SMS binding flow --
@@ -402,10 +468,11 @@ class ThirdPartyAuthService extends ChangeNotifier {
       autoRenew: false, // SMS binding does not support auto-renew
     );
 
-    await _storage.saveThirdPartyAccount(acc);
-    _tree.setAccount(ThirdPartyPlatform.cpdaily, acc);
+    final touched = _touch(acc);
+    await _storage.saveThirdPartyAccount(touched);
+    _tree.setAccount(ThirdPartyPlatform.cpdaily, touched);
     _cpdailySmsContext = null;
-    return acc;
+    return touched;
   }
 
   /// Boot-time best-effort renewal: for each bound account whose token is
@@ -447,7 +514,11 @@ class ThirdPartyAuthService extends ChangeNotifier {
   }
 
   Future<void> clearAll() async {
+    final unbindHook = onUnbind;
     for (final p in ThirdPartyPlatform.values) {
+      if (_nodeAccount(p) != null) {
+        if (unbindHook != null) unbindHook(p);
+      }
       _tree.setAccount(p, null);
     }
     await _storage.clearAllThirdPartyAccounts();

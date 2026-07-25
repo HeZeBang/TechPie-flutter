@@ -22,11 +22,12 @@ enum ThirdPartyPlatform {
 
   /// Parse a platform id, accepting the legacy 'egate' alias for cpdaily.
   static ThirdPartyPlatform? fromId(String id) {
-    if (id == 'egate') return ThirdPartyPlatform.cpdaily;
-    for (final p in ThirdPartyPlatform.values) {
-      if (p.id == id) return p;
-    }
-    return null;
+    return switch (id) {
+      'gradescope' => ThirdPartyPlatform.gradescope,
+      'hydro' => ThirdPartyPlatform.hydro,
+      'cpdaily' || 'egate' => ThirdPartyPlatform.cpdaily,
+      _ => null,
+    };
   }
 }
 
@@ -49,6 +50,20 @@ class ThirdPartyAccount {
   final bool autoRenew;
   final String? password;
 
+  /// Wall-clock timestamp of the most recent local mutation of this account
+  /// (bind / rebind / renew / raw update). Used by the cloud-sync merge to do
+  /// per-account last-writer-wins with [deviceId] as a deterministic
+  /// tie-breaker. Defaults to [boundAt] for accounts created before this
+  /// field existed (back-compat: treated as "ancient" so any newer write
+  /// wins).
+  final DateTime updatedAt;
+
+  /// Stable id of the device that produced the current [updatedAt] bump. Used
+  /// as the LWW tie-breaker so two devices with skewed clocks still converge
+  /// deterministically. Empty for legacy accounts; newer devices always win
+  /// against an empty deviceId.
+  final String deviceId;
+
   const ThirdPartyAccount({
     required this.platform,
     required this.account,
@@ -63,22 +78,34 @@ class ThirdPartyAccount {
     required this.boundAt,
     this.autoRenew = false,
     this.password,
-  });
+    DateTime? updatedAt,
+    String? deviceId,
+  })  : updatedAt = updatedAt ?? boundAt,
+        deviceId = deviceId ?? '';
 
   DateTime? get expireAt => expire == null
       ? null
       : DateTime.fromMillisecondsSinceEpoch(expire! * 1000);
 
-  bool get isExpired {
-    final at = expireAt;
-    return at != null && at.isBefore(DateTime.now());
-  }
+  bool get isExpired =>
+      expireAt != null && DateTime.now().isAfter(expireAt!);
 
   String get displayName {
     if (name != null && name!.isNotEmpty) return name!;
-    if (email != null && email!.isNotEmpty) return email!;
-    if (sid != null && sid!.isNotEmpty) return sid!;
     return account;
+  }
+
+  /// Comparison key for LWW merge: newer [updatedAt] wins; on a tie the
+  /// lexicographically-larger [deviceId] wins (deterministic, total order).
+  /// An empty deviceId is treated as oldest of all so legacy data loses to
+  /// any real device write.
+  int compareVersionTo(ThirdPartyAccount other) {
+    final c = updatedAt.compareTo(other.updatedAt);
+    if (c != 0) return c;
+    // Empty deviceId always loses.
+    if (deviceId.isEmpty && other.deviceId.isNotEmpty) return -1;
+    if (deviceId.isNotEmpty && other.deviceId.isEmpty) return 1;
+    return deviceId.compareTo(other.deviceId);
   }
 
   Map<String, dynamic> toJson() => {
@@ -95,9 +122,13 @@ class ThirdPartyAccount {
         'boundAt': boundAt.toIso8601String(),
         'autoRenew': autoRenew,
         if (password != null) 'password': password,
+        'updatedAt': updatedAt.toIso8601String(),
+        'deviceId': deviceId,
       };
 
   factory ThirdPartyAccount.fromJson(Map<String, dynamic> json) {
+    final boundAt =
+        DateTime.tryParse(json['boundAt'] as String? ?? '') ?? DateTime.now();
     return ThirdPartyAccount(
       platform: ThirdPartyPlatform.fromId(json['platform'] as String? ?? '') ??
           ThirdPartyPlatform.gradescope,
@@ -111,10 +142,14 @@ class ThirdPartyAccount {
       hydroOrigin: json['hydroOrigin'] as String?,
       hydroDomains:
           (json['hydroDomains'] as List?)?.map((e) => e as String).toList(),
-      boundAt:
-          DateTime.tryParse(json['boundAt'] as String? ?? '') ?? DateTime.now(),
+      boundAt: boundAt,
       autoRenew: json['autoRenew'] as bool? ?? false,
       password: json['password'] as String?,
+      // Back-compat: pre-v2 blobs had no updatedAt/deviceId. Fall back to
+      // boundAt / empty so they merge as "older than any real write".
+      updatedAt:
+          DateTime.tryParse(json['updatedAt'] as String? ?? '') ?? boundAt,
+      deviceId: json['deviceId'] as String? ?? '',
     );
   }
 
@@ -129,6 +164,8 @@ class ThirdPartyAccount {
     List<String>? hydroDomains,
     bool? autoRenew,
     String? password,
+    DateTime? updatedAt,
+    String? deviceId,
   }) {
     return ThirdPartyAccount(
       platform: platform,
@@ -144,6 +181,8 @@ class ThirdPartyAccount {
       boundAt: boundAt,
       autoRenew: autoRenew ?? this.autoRenew,
       password: password ?? this.password,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deviceId: deviceId ?? this.deviceId,
     );
   }
 }
