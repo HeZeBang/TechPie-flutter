@@ -5,6 +5,7 @@ import '../../pages/assignments_page.dart';
 import '../../pages/home_page.dart';
 import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
+import '../../utils/motion.dart';
 import 'app_destination.dart';
 import 'desktop/desktop_shell.dart';
 import 'mobile_shell.dart';
@@ -67,9 +68,12 @@ class _AppShellState extends State<AppShell> {
     setState(() => _sidebarCollapsed = !_sidebarCollapsed);
   }
 
-  Widget _buildPageView() {
+  Widget _buildPageView({
+    Duration duration = const Duration(milliseconds: 300),
+    Curve curve = Curves.easeInOutCubicEmphasized,
+  }) {
     return PageTransitionSwitcher(
-      duration: const Duration(milliseconds: 300),
+      duration: duration,
       layoutBuilder: (entries) => Stack(
         fit: StackFit.expand,
         children: entries,
@@ -94,11 +98,10 @@ class _AppShellState extends State<AppShell> {
           animation: Listenable.merge([animation, secondaryAnimation]),
           builder: (context, built) {
             final incomingOffset = incoming.transform(
-              Curves.easeInOutCubicEmphasized.transform(animation.value),
+              curve.transform(animation.value),
             );
             final outgoingOffset = outgoing.transform(
-              Curves.easeInOutCubicEmphasized
-                  .transform(secondaryAnimation.value),
+              curve.transform(secondaryAnimation.value),
             );
             return FractionalTranslation(
               translation: incomingOffset + outgoingOffset,
@@ -125,9 +128,9 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final pageView = _buildPageView();
 
     if (width >= 960) {
+      final pageView = _buildPageView();
       return DesktopShell(
         destinations: _destinations,
         selectedIndex: _selectedIndex,
@@ -146,16 +149,22 @@ class _AppShellState extends State<AppShell> {
         showToggleButton: false,
         onDestinationSelected: _onDestinationSelected,
         onToggleSidebarCollapsed: () {},
-        child: _buildDesktopContentNavigator(pageView),
+        child: _buildDesktopContentNavigator(_buildPageView()),
       );
     }
 
+    // Mobile: page slide uses Telegram's main-tabs pager settle (320ms
+    // EASE_OUT_QUINT) — the same length as the tab selector pop, so the
+    // bottom bar and the page move on one shared timeline.
     return MobileShell(
       destinations: _destinations,
       selectedIndex: _selectedIndex,
       assignmentsIndex: _assignmentsIndex,
       onDestinationSelected: _onDestinationSelected,
-      child: pageView,
+      child: _buildPageView(
+        duration: TgMotion.tabsPageSwitch,
+        curve: TgMotion.easeOutQuint,
+      ),
     );
   }
 }
