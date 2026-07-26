@@ -34,11 +34,11 @@ enum RenewMode {
   /// sessionToken/tgc/userId/tenantId. Top-level only.
   cpdailySession,
 
-  /// Password re-authentication: POST /auth/third-party/<apiPath> with
+  /// Password re-authentication: POST /auth/third-party/`<apiPath>` with
   /// account/password. Top-level only (gradescope, hydro).
   password,
 
-  /// Downstream cookie minting: POST /auth/third-party/<id> with the parent
+  /// Downstream cookie minting: POST /auth/third-party/`<id>` with the parent
   /// node's tgc. Non-top-level only (eams, elearning).
   parentCookie,
 }

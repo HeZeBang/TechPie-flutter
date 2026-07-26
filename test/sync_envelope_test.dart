@@ -119,10 +119,10 @@ void main() {
     });
 
     test('remote account on a platform absent locally is adopted', () {
-      final local = SyncEnvelope(
+      final local = const SyncEnvelope(
         v: SyncSchema.current,
-        accounts: const [],
-        tombstones: const [],
+        accounts: [],
+        tombstones: [],
       );
       final remote = SyncEnvelope(
         v: SyncSchema.current,
