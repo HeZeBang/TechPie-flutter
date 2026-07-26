@@ -224,9 +224,14 @@ class SessionNode extends ChangeNotifier {
   /// this when reading cookies and pass it to [renewIfNeeded].
   int get epoch => _epoch;
 
-  /// Bump epoch, cascade to children (clear their derived cookies), and
-  /// notify. Called after persisting refreshed credentials (top-level) or
-  /// minting a downstream cookie (non-top-level).
+  /// Bump epoch and cascade to children (clear their derived cookies).
+  /// Does NOT call notifyListeners() on this node — the caller is
+  /// responsible for notifying: top-level nodes are notified by
+  /// [persist]→[setAccount] (which fires before this), and non-top-level
+  /// nodes call notifyListeners() explicitly after this. This avoids a
+  /// double-notify storm where both persist and markRenewed fire on the
+  /// same node, each cascading through SessionTree → ThirdPartyAuthService
+  /// → AssignmentService.fetchAssignments + SyncService.pushIfDue.
   @protected
   void markRenewed() {
     _epoch++;
@@ -234,7 +239,6 @@ class SessionNode extends ChangeNotifier {
     for (final child in _children) {
       child.onParentRenewed();
     }
-    notifyListeners();
   }
 
   /// Called by the parent's [markRenewed] when the parent's credentials
@@ -409,7 +413,10 @@ class SessionNode extends ChangeNotifier {
       if (pd != null) {
         unawaited(pd(id, cookie));
       }
+      // markRenewed cascades to children (none here) but does NOT notify
+      // this node — notify explicitly for the downstream cookie change.
       markRenewed();
+      notifyListeners();
       return true;
     } catch (_) {
       _lastRenewWasCredentialError = false;

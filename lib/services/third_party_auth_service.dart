@@ -102,13 +102,15 @@ class ThirdPartyAuthService extends ChangeNotifier {
   void Function(ThirdPartyPlatform platform)? onUnbind;
 
   void _onTreeChanged({bool force = false}) {
+    // While [applySyncMerge] is replaying a merged snapshot, suppress ALL
+    // downstream effects — the merge path notifies once at the end and
+    // writes the merged envelope itself. This avoids an N+1 notify storm
+    // (one per setAccount) that would each cascade into
+    // AssignmentService.fetchAssignments + SyncService.pushIfDue.
+    if (_suppressSyncPush) return;
     // A node changed (renew / setAccount) — re-notify our listeners and push
     // to cloud sync. This is the single funnel for all mutations now.
     notifyListeners();
-    // Skip the cloud-push hook while [applySyncMerge] is replaying a merged
-    // snapshot — the sync path writes the merged envelope itself, so a
-    // throttled pushIfDue here would be redundant (and could race).
-    if (_suppressSyncPush) return;
     final hook = onBindingsChanged;
     if (hook != null) {
       unawaited(hook(force: force));
