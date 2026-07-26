@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'ai_service.dart';
 import 'assignment_service.dart';
 import 'auth_service.dart';
 import 'debug_logger.dart';
@@ -22,6 +23,7 @@ class ServiceProvider extends InheritedWidget {
   final OaGymService oaGymService;
   final UniAuthService uniAuthService;
   final SyncService syncService;
+  final AiService aiService;
 
   const ServiceProvider({
     super.key,
@@ -35,12 +37,12 @@ class ServiceProvider extends InheritedWidget {
     required this.oaGymService,
     required this.uniAuthService,
     required this.syncService,
+    required this.aiService,
     required super.child,
   });
 
   static ServiceProvider of(BuildContext context) {
-    final result =
-        context.dependOnInheritedWidgetOfExactType<ServiceProvider>();
+    final result = context.dependOnInheritedWidgetOfExactType<ServiceProvider>();
     assert(result != null, 'No ServiceProvider found in context');
     return result!;
   }
@@ -56,5 +58,6 @@ class ServiceProvider extends InheritedWidget {
       thirdPartyAuthService != oldWidget.thirdPartyAuthService ||
       oaGymService != oldWidget.oaGymService ||
       uniAuthService != oldWidget.uniAuthService ||
-      syncService != oldWidget.syncService;
+      syncService != oldWidget.syncService ||
+      aiService != oldWidget.aiService;
 }
