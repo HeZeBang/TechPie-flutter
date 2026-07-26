@@ -24,6 +24,9 @@ class Feature {
   final Icon icon;
   final void Function(BuildContext context)? nativeEntry;
 
+  /// Only shown when the debug-mode setting is on.
+  final bool debugOnly;
+
   Feature({
     required this.id,
     required this.description,
@@ -32,6 +35,7 @@ class Feature {
     this.cookieType,
     required this.icon,
     this.nativeEntry,
+    this.debugOnly = false,
   });
 }
 
@@ -74,6 +78,7 @@ final featureEntries = <Feature>[
     id: 'ai_demo',
     description: 'AI 演示',
     mode: FeatureMode.native,
+    debugOnly: true,
     nativeEntry: (context) => Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const AiDemoPage()),
     ),
