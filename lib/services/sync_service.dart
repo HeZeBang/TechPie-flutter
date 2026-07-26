@@ -7,6 +7,7 @@ import '../models/third_party_account.dart';
 import 'auth_service.dart';
 import 'storage_service.dart';
 import 'sync_crypto.dart';
+import 'sync_envelope.dart';
 import 'third_party_auth_service.dart';
 
 /// Thrown by [SyncService.pull] when the cloud has a sync blob but this device
@@ -75,11 +76,17 @@ class SyncService extends ChangeNotifier {
   final ThirdPartyAuthService _tpAuth;
   final StorageService _storage;
   final http.Client _client;
-
   CachedSyncKey? _cachedKey;
   bool _needsRestore = false;
   DateTime? _lastSyncAt;
   String? _lastError;
+  // Stable per-device id, loaded once at boot and stamped onto every
+  // locally-touched account / tombstone so the LWW merge converges.
+  String _deviceId = '';
+  // In-memory tombstones for platforms unbound on THIS device since the last
+  // push. Cleared after a successful push. Survives across pulls so a remote
+  // account older than our deletion is not resurrected.
+  final List<SyncTombstone> _tombstones = [];
 
   SyncService(this._auth, this._tpAuth, this._storage, {http.Client? client})
       : _client = client ?? http.Client();
@@ -92,12 +99,14 @@ class SyncService extends ChangeNotifier {
   /// "立即备份/恢复" toasts). Null when the last call succeeded.
   String? get lastError => _lastError;
 
-  /// Load the cached derived key (if any) from secure storage. Call at boot.
+  /// Load the cached derived key (if any) from secure storage and the stable
+  /// device id from SharedPreferences. Call at boot.
   Future<void> loadCachedKey() async {
     final s = await _storage.loadSyncMasterKey();
     _cachedKey = await CachedSyncKey.fromStorageString(s);
     final iso = _storage.syncLastAt;
     _lastSyncAt = iso == null ? null : DateTime.tryParse(iso);
+    _deviceId = await _storage.ensureDeviceId();
     notifyListeners();
   }
 
@@ -369,29 +378,53 @@ class SyncService extends ChangeNotifier {
   /// Does not decrypt — just checks presence. Cheap probe for the UI.
   Future<bool> cloudHasBlob() async => (await _readBlob()) != null;
 
-  String _serializeAccounts() {
-    final list = _tpAuth.accounts.map((a) => a.toJson()).toList();
-    return jsonEncode(list);
+  /// Serialize the current local bindings + pending tombstones into the v2
+  /// envelope plaintext. Accounts are stamped with this device's id and a
+  /// fresh [updatedAt] only via [touchLocal]; already-stamped accounts pass
+  /// through unchanged.
+  String _serializeEnvelope() {
+    final env = SyncEnvelope.fromLocal(
+      accounts: _tpAuth.accounts,
+      tombstones: _tombstones,
+    );
+    return env.encode();
   }
 
-  List<ThirdPartyAccount> _parseAccounts(String json) {
-    final list = jsonDecode(json) as List<dynamic>;
-    return list
-        .map(
-          (e) =>
-              ThirdPartyAccount.fromJson((e as Map).cast<String, dynamic>()),
-        )
-        .toList();
+  /// Stamp [acc] with this device's id and the current wall clock, producing
+  /// a new [ThirdPartyAccount] that wins LWW against any older copy. Called
+  /// by [ThirdPartyAuthService] mutation paths via the public [touchLocal].
+  ThirdPartyAccount touchLocal(ThirdPartyAccount acc) {
+    return acc.copyWith(
+      updatedAt: DateTime.now(),
+      deviceId: _deviceId,
+    );
+  }
+
+  /// Record that [platform] was deliberately unbound on this device. The
+  /// tombstone is carried in the next push and participates in LWW merge so a
+  /// remote account older than this deletion is not resurrected on pull.
+  void recordTombstone(ThirdPartyPlatform platform) {
+    final now = DateTime.now();
+    // Replace any existing tombstone for the same platform (keep newest).
+    _tombstones.removeWhere((t) => t.platform == platform);
+    _tombstones.add(
+      SyncTombstone(
+        platform: platform,
+        deletedAt: now,
+        deviceId: _deviceId,
+      ),
+    );
   }
 
   /// Push current local bindings to the cloud (encrypted). Requires a cached
   /// key (i.e. the device has already been set up / restored). Returns a result
-  /// whose [msg] carries Casdoor's error text on failure.
+  /// whose [msg] carries Casdoor's error text on failure. On success pending
+  /// tombstones are cleared (they are now persisted in the cloud blob).
   Future<SyncCasdoorResult> push() async {
     if (!enabled || _cachedKey == null) {
       return const SyncCasdoorResult(false, msg: '云同步未开启或缺少主密码');
     }
-    final payload = _serializeAccounts();
+    final payload = _serializeEnvelope();
     // Reuse the cached salt so other devices' cached keys keep working.
     final salted = base64.encode(_cachedKey!.salt);
     final inner = await SyncCrypto.encrypt(payload, _cachedKey!.key);
@@ -399,6 +432,7 @@ class SyncService extends ChangeNotifier {
     final res = await _writeBlob(blob);
     _lastError = res.ok ? null : res.msg;
     if (res.ok) {
+      _tombstones.clear();
       _lastSyncAt = DateTime.now();
       await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());
       notifyListeners();
@@ -406,8 +440,12 @@ class SyncService extends ChangeNotifier {
     return res;
   }
 
-  /// Pull the cloud blob and restore bindings locally. Throws
-  /// [NeedMasterPassword] if no key is cached on this device.
+  /// Pull the cloud blob and merge it with the local state using per-platform
+  /// last-writer-wins (with [deviceId] tie-break and tombstones for
+  /// deletions). Unlike a blind overwrite, a local binding newer than the
+  /// cloud copy is preserved, and a cloud deletion (tombstone) newer than a
+  /// local binding removes it locally. Throws [NeedMasterPassword] if no key
+  /// is cached on this device.
   Future<void> pull() async {
     if (!enabled) return;
     final blob = await _readBlob();
@@ -429,12 +467,81 @@ class SyncService extends ChangeNotifier {
       notifyListeners();
       throw NeedMasterPassword();
     }
-    final accounts = _parseAccounts(plain);
-    await _tpAuth.replaceAll(accounts);
+    final remote = SyncEnvelope.decode(plain);
+    if (remote == null) return;
+    final local = SyncEnvelope.fromLocal(
+      accounts: _tpAuth.accounts,
+      tombstones: _tombstones,
+    );
+    final merged = local.mergeWith(remote);
+    // Apply the merged account set locally. applySyncMerge does NOT record
+    // tombstones (the merge already accounted for them); it just writes the
+    // winning account per platform and clears platforms whose tombstone won.
+    final removed = ThirdPartyPlatform.values
+        .where(
+          (p) => !merged.accounts.any((a) => a.platform == p),
+        )
+        .toSet();
+    await _tpAuth.applySyncMerge(merged.accounts, removed);
+    // Adopt the merged tombstone set so the next push propagates any remote
+    // tombstones this device didn't have. Local tombstones that won are
+    // already in [merged.tombstones]; ones that lost (an account won) are
+    // correctly absent.
+    _tombstones
+      ..clear()
+      ..addAll(merged.tombstones);
     _lastSyncAt = DateTime.now();
     await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());
     _needsRestore = false;
+    // If the merge produced a state that differs from the cloud (e.g. a local
+    // account won), push the merged envelope back so other devices converge.
+    if (!_envelopeEquals(local, merged)) {
+      await _writeMergedEnvelope(merged);
+    }
     notifyListeners();
+  }
+
+  /// Encrypt [env] and write it to the cloud, reusing the cached salt.
+  Future<SyncCasdoorResult> _writeMergedEnvelope(SyncEnvelope env) async {
+    final payload = env.encode();
+    final salted = base64.encode(_cachedKey!.salt);
+    final inner = await SyncCrypto.encrypt(payload, _cachedKey!.key);
+    final blob = '$salted.$inner';
+    final res = await _writeBlob(blob);
+    _lastError = res.ok ? null : res.msg;
+    if (res.ok) {
+      _lastSyncAt = DateTime.now();
+      await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());
+    }
+    return res;
+  }
+
+  /// Cheap structural equality between two envelopes — enough to decide
+  /// whether a pull changed anything worth pushing back. Compares the
+  /// encoded form; envelope encode is deterministic.
+  bool _envelopeEquals(SyncEnvelope a, SyncEnvelope b) {
+    if (a.accounts.length != b.accounts.length) return false;
+    if (a.tombstones.length != b.tombstones.length) return false;
+    // Account order is platform-stable within an envelope.
+    for (var i = 0; i < a.accounts.length; i++) {
+      final ax = a.accounts[i], bx = b.accounts[i];
+      if (ax.platform != bx.platform) return false;
+      if (ax.token != bx.token ||
+          ax.account != bx.account ||
+          ax.updatedAt != bx.updatedAt ||
+          ax.deviceId != bx.deviceId) {
+        return false;
+      }
+    }
+    for (var i = 0; i < a.tombstones.length; i++) {
+      final ta = a.tombstones[i], tb = b.tombstones[i];
+      if (ta.platform != tb.platform ||
+          ta.deletedAt != tb.deletedAt ||
+          ta.deviceId != tb.deviceId) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// First-time setup on a device that has no cloud blob yet: derive a key
@@ -450,7 +557,7 @@ class SyncService extends ChangeNotifier {
         message: '云端已存在备份，请改用「恢复」并输入主密码',
       );
     }
-    final payload = _serializeAccounts();
+    final payload = _serializeEnvelope();
     final blob = await SyncCrypto.encryptWithSalt(payload, password);
     final salt = SyncCrypto.extractSalt(blob)!;
     final key = await SyncCrypto.deriveKey(password, salt);
@@ -472,7 +579,10 @@ class SyncService extends ChangeNotifier {
   }
 
   /// Restore on a device that has a cloud blob but no cached key: verify
-  /// [password] decrypts the blob, cache the key, pull bindings.
+  /// [password] decrypts the blob, cache the key, then merge (same LWW as
+  /// [pull]) so a non-empty local state is not blindly overwritten. On a
+  /// truly fresh device the local side is empty and the merge result equals
+  /// the cloud snapshot.
   Future<SyncOutcome> restoreWithMasterPassword(String password) async {
     final blob = await _readBlob();
     if (blob == null) {
@@ -485,13 +595,30 @@ class SyncService extends ChangeNotifier {
     final salt = SyncCrypto.extractSalt(blob)!;
     final key = await SyncCrypto.deriveKey(password, salt);
     await _cacheKey(CachedSyncKey(salt, key));
-    final accounts = _parseAccounts(plain);
-    await _tpAuth.replaceAll(accounts);
+    final remote = SyncEnvelope.decode(plain);
+    if (remote == null) {
+      return const SyncOutcome(ok: false, message: '云端备份格式损坏');
+    }
+    final local = SyncEnvelope.fromLocal(
+      accounts: _tpAuth.accounts,
+      tombstones: _tombstones,
+    );
+    final merged = local.mergeWith(remote);
+    final removed = ThirdPartyPlatform.values
+        .where((p) => !merged.accounts.any((a) => a.platform == p))
+        .toSet();
+    await _tpAuth.applySyncMerge(merged.accounts, removed);
+    _tombstones
+      ..clear()
+      ..addAll(merged.tombstones);
     await _storage.setSyncEnabled(true);
     _lastSyncAt = DateTime.now();
     await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());
     _needsRestore = false;
     _lastError = null;
+    // Push the merged envelope back so the cloud reflects this device's
+    // local winners (and so other devices converge on the next pull).
+    await _writeMergedEnvelope(merged);
     notifyListeners();
     return const SyncOutcome(ok: true, message: '已从云端恢复绑定');
   }
@@ -539,6 +666,7 @@ class SyncService extends ChangeNotifier {
       return SyncOutcome(ok: false, message: res.describe('清除云端备份失败'));
     }
     await _clearCachedKey();
+    _tombstones.clear();
     await _storage.setSyncEnabled(false);
     await _storage.setSyncLastAt('');
     _lastSyncAt = null;
@@ -568,6 +696,21 @@ class SyncService extends ChangeNotifier {
       await push();
     } catch (_) {
       // Background sync failures are non-fatal; the next explicit action retries.
+    }
+  }
+
+  /// Force-push current bindings to the cloud, bypassing the throttle.
+  /// Used after unbind/clearAll so a binding removal is immediately
+  /// reflected in the cloud blob — without this, a throttled pushIfDue
+  /// skip would leave the stale binding in the cloud, and the next boot's
+  /// pull would restore it.
+  Future<void> forcePush() async {
+    if (!enabled || _cachedKey == null) return;
+    _lastPushAt = DateTime.now();
+    try {
+      await push();
+    } catch (_) {
+      // Non-fatal — next explicit sync retries.
     }
   }
 }

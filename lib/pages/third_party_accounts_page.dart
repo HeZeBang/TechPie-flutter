@@ -120,7 +120,7 @@ class _ThirdPartyTile extends StatelessWidget {
   IconData get _icon => switch (platform) {
         ThirdPartyPlatform.gradescope => Icons.grading_outlined,
         ThirdPartyPlatform.hydro => Icons.terminal_outlined,
-        ThirdPartyPlatform.egate => Icons.vpn_key_outlined,
+        ThirdPartyPlatform.cpdaily => Icons.vpn_key_outlined,
       };
 
   @override
