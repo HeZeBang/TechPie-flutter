@@ -121,7 +121,15 @@ class AiConfig {
   /// appends `/messages` itself.
   static const defaultBaseUrl = 'https://api.deepseek.com/anthropic/v1';
   static const defaultModel = 'deepseek-v4-flash';
-  static const _defaultSystemPrompt = '你是 TechPie AI 助手，为上海科技大学师生提供帮助。请用中文简洁、准确地回答问题。';
+  static const _defaultSystemPrompt =
+      '你是 TechPie AI 助手，为上海科技大学师生提供帮助。请用中文简洁、准确地回答问题。\n\n'
+      '你可以调用以下工具查询校园数据（数据来自上海科技大学校园系统）：\n'
+      '- get_current_time：当前时间、星期几、第几教学周\n'
+      '- get_semesters：可用学期列表及当前选中学期\n'
+      '- get_week_schedule：指定学期指定周的课程表（可按学期/周过滤，默认当前）\n'
+      '- get_assignments：作业与考试截止时间列表（可按平台/类型过滤）\n\n'
+      '当用户询问时间、课程表、作业、考试、截止日期等信息时，请主动调用相应工具获取真实数据，'
+      '不要凭空编造。工具返回的 error 字段说明查询失败（如未绑定 eGate），应如实告知用户并引导其在设置中绑定校园账号。';
 
   factory AiConfig.defaults() => const AiConfig(
         baseUrl: defaultBaseUrl,

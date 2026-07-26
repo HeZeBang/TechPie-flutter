@@ -4,9 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_ai_client/flutter_ai_client.dart';
 import 'package:flutter_ai_core/flutter_ai_core.dart';
 import 'package:flutter_ai_provider_anthropic/flutter_ai_provider_anthropic.dart';
+import 'package:flutter_ai_tools/flutter_ai_tools.dart';
 
 import '../models/ai_chat.dart';
+import 'ai_tools.dart';
+import 'assignment_service.dart';
+import 'schedule_service.dart';
 import 'storage_service.dart';
+import 'third_party_auth_service.dart';
 
 /// Central state for the AI Assistant feature.
 ///
@@ -24,6 +29,16 @@ import 'storage_service.dart';
 /// transcript back to [StorageService] when a turn settles.
 class AiService extends ChangeNotifier {
   final StorageService _storage;
+  final ScheduleService _schedule;
+  final AssignmentService _assignments;
+  final ThirdPartyAuthService _tpAuth;
+
+  /// The campus-service tools the model can call. Built once at construction.
+  late final ToolRegistry _tools = buildAiTools(
+    scheduleService: _schedule,
+    assignmentService: _assignments,
+    thirdPartyAuthService: _tpAuth,
+  );
 
   AiConfig _config = AiConfig.defaults();
   List<AiThread> _conversations = const [];
@@ -51,7 +66,12 @@ class AiService extends ChangeNotifier {
   /// Debounced persistence timer.
   Timer? _persistTimer;
 
-  AiService(this._storage);
+  AiService(
+    this._storage,
+    this._schedule,
+    this._assignments,
+    this._tpAuth,
+  );
 
   // ---- Accessors ----
 
@@ -255,9 +275,22 @@ class AiService extends ChangeNotifier {
       _controller = UseChatController(
         provider: _buildProvider(),
         options: _buildOptions(),
-        // The controller defaults to scheduleMicrotask for notification
-        // coalescing, so a fast token stream collapses into one notify per
-        // microtask — plenty smooth, and matches the flutter_ai demo.
+        // Campus-service tools (schedule / assignments / time). Providing
+        // onToolCalls turns the controller into an automatic agent loop:
+        // after a stream, pending ToolCallParts are executed, results are
+        // appended as an AiRole.tool message, and the model is re-prompted —
+        // repeating until no tool calls remain (bounded by maxSteps=8).
+        tools: _tools.definitions,
+        onToolCalls: (calls, signal) async {
+          // Run each call through the registry; it catches per-tool failures
+          // as isError results so one bad tool doesn't kill the batch.
+          final results = <ToolResultPart>[];
+          for (final call in calls) {
+            if (signal.isCancelled) break;
+            results.add(await _tools.run(call));
+          }
+          return results;
+        },
       );
       _controller!.addListener(_onControllerChanged);
     }

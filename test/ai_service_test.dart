@@ -4,7 +4,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:techpie/models/ai_chat.dart';
 import 'package:techpie/services/ai_service.dart';
+import 'package:techpie/services/assignment_service.dart';
+import 'package:techpie/services/auth_service.dart';
+import 'package:techpie/services/debug_logger.dart';
+import 'package:techpie/services/http_client.dart';
+import 'package:techpie/services/schedule_service.dart';
 import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/services/third_party_auth_service.dart';
+import 'package:techpie/services/uni_auth_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +39,15 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     storage = StorageService(prefs);
-    ai = AiService(storage);
+    final logger = DebugLogger();
+    final http = LoggingHttpClient(logger);
+    final uniAuth = UniAuthService();
+    final auth = AuthService(storage, http, uniAuth);
+    final tpAuth = ThirdPartyAuthService(storage, http);
+    final schedule = ScheduleService(storage, http, auth, tpAuth);
+    final assignments =
+        AssignmentService(storage, http, auth, tpAuth, schedule);
+    ai = AiService(storage, schedule, assignments, tpAuth);
     await ai.initialize();
   });
 

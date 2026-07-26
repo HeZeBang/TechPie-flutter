@@ -39,7 +39,7 @@ void main() {
         AssignmentService(storage, http, auth, tpAuth, schedule);
     final oaGym = OaGymService(auth, storage, tpAuth);
     final sync = SyncService(auth, tpAuth, storage);
-    final ai = AiService(storage);
+    final ai = AiService(storage, schedule, assignments, tpAuth);
 
     await tester.pumpWidget(
       TechPieApp(
@@ -82,7 +82,7 @@ void main() {
         AssignmentService(storage, http, auth, tpAuth, schedule);
     final oaGym = OaGymService(auth, storage, tpAuth);
     final sync = SyncService(auth, tpAuth, storage);
-    final ai = AiService(storage);
+    final ai = AiService(storage, schedule, assignments, tpAuth);
 
     await tester.pumpWidget(
       TechPieApp(

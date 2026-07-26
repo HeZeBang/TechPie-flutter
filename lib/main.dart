@@ -81,7 +81,12 @@ Future<void> _realMain(SharedPreferences prefs) async {
     scheduleService,
   );
   final syncService = SyncService(authService, thirdPartyAuthService, storageService);
-  final aiService = AiService(storageService);
+  final aiService = AiService(
+    storageService,
+    scheduleService,
+    assignmentService,
+    thirdPartyAuthService,
+  );
 
   authService.onLogout = () async {
     // Third-party bindings persist across logouts — they will be used by the

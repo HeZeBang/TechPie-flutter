@@ -8,6 +8,7 @@ import '../models/ai_chat.dart';
 import '../services/ai_service.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
+import '../widgets/ai/ai_code_highlighter.dart';
 import '../widgets/ai/ai_text_renderer.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
@@ -455,6 +456,71 @@ class _AutoScrollChatState extends State<_AutoScrollChat> {
     });
   }
 
+  /// Builds a message bubble, pairing tool calls with their results across the
+  /// whole transcript (the agent loop appends results as a separate
+  /// AiRole.tool message, so per-message pairing would miss them).
+  Widget _buildMessage(BuildContext context, AiMessage message) {
+    // Tool-result messages are folded into the assistant turn's tool cards.
+    if (message.role == AiRole.tool) return const SizedBox.shrink();
+    // User messages render with the default bubble.
+    if (message.role == AiRole.user) {
+      return AiMessageBubble(message: message);
+    }
+
+    // Assistant: gather tool results across the whole transcript so each
+    // ToolCallPart pairs with its result regardless of which message it's in.
+    final results = <String, ToolResultPart>{
+      for (final m in widget.controller.messages)
+        for (final p in m.parts)
+          if (p is ToolResultPart) p.toolCallId: p,
+    };
+    final toolCalls = message.parts.whereType<ToolCallPart>().toList();
+
+    final children = <Widget>[];
+    void add(Widget w) {
+      if (children.isNotEmpty) children.add(const SizedBox(height: 10));
+      children.add(w);
+    }
+
+    var toolsRendered = false;
+    for (final part in message.parts) {
+      switch (part) {
+        case TextPart(:final text):
+          if (text.isNotEmpty) {
+            add(AiResponse(text: text, codeHighlighter: techpieCodeHighlighter));
+          }
+        case ToolCallPart():
+          // Render all tool calls once (a group when parallel, else one card),
+          // each paired with its transcript-wide result.
+          if (!toolsRendered) {
+            toolsRendered = true;
+            add(
+              toolCalls.length > 1
+                  ? AiToolGroup(calls: toolCalls, results: results)
+                  : AiToolInvocation(
+                      call: part,
+                      result: results[part.toolCallId],
+                    ),
+            );
+          }
+        case ToolResultPart():
+          break; // rendered within its AiToolInvocation card
+        case ReasoningPart(:final text):
+          if (text.isNotEmpty) add(AiReasoning(text: text));
+        default:
+          break; // FilePart/SourcePart/DataPart not used by TechPie tools yet
+      }
+    }
+
+    if (children.isEmpty) return const SizedBox.shrink();
+    if (children.length == 1) return children.first;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -474,7 +540,11 @@ class _AutoScrollChatState extends State<_AutoScrollChat> {
           // Show the thinking loader while awaiting the first streamed token,
           // matching AiChat's behavior.
           showLoader: widget.controller.status == ChatStatus.submitted,
-          // trailingSpace stays 0 (default) — no bottom padding, no flicker.
+          // Custom builder pairs tool calls with their results across the whole
+          // transcript (the agent loop lands ToolResultParts in a separate
+          // AiRole.tool message; the default bubble only pairs within one
+          // message). Tool-result messages are collapsed into the call card.
+          messageBuilder: _buildMessage,
         );
         // Floating "scroll to end" button, shown only when not already at the
         // bottom (and there's content to scroll). Hidden once at the end.

@@ -43,6 +43,8 @@ dependencies:
     path: ../flutter_ai/packages/flutter_ai_elements
   flutter_ai_provider_anthropic:
     path: ../flutter_ai/packages/flutter_ai_provider_anthropic
+  flutter_ai_tools:
+    path: ../flutter_ai/packages/flutter_ai_tools
   # Syntax highlighting for AI code blocks (port of highlight.js, pure Dart).
   highlight: ^0.7.0
   flutter_secure_storage: ^9.2.4

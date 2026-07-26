@@ -205,6 +205,13 @@ packages:
       relative: true
     source: path
     version: "0.1.12"
+  flutter_ai_tools:
+    dependency: "direct main"
+    description:
+      path: "../flutter_ai/packages/flutter_ai_tools"
+      relative: true
+    source: path
+    version: "0.1.4"
   flutter_inappwebview:
     dependency: transitive
     description:
