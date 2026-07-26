@@ -61,29 +61,57 @@ class AssignmentService extends ChangeNotifier {
     // Refetch when bindings or auth change *after* initial app boot.
     // The initial fetch is kicked off explicitly from main.dart so we
     // don't double-fire during service initialization.
-    _tpAuth.addListener(_onDepsChanged);
-    _auth.addListener(_onDepsChanged);
-    _schedule.addListener(_onDepsChanged);
+    _tpAuth.addListener(_onBindingsOrAuthChanged);
+    _auth.addListener(_onBindingsOrAuthChanged);
+    _schedule.addListener(_onScheduleChanged);
   }
 
   bool _autoRefetchEnabled = false;
+  // Track the last semester we refetched for, so schedule notifies that
+  // don't change the semester (loading flips, course_table updates, errors)
+  // do NOT trigger a redundant assignment refetch.
+  String? _lastRefetchedSemesterId;
 
   /// Allow auto-refetch on auth/binding changes. Call after the first
   /// explicit fetch from app boot has been kicked off.
-  void enableAutoRefetch() => _autoRefetchEnabled = true;
+  void enableAutoRefetch() {
+    _autoRefetchEnabled = true;
+    // Seed so the first schedule notify (which doesn't change the semester)
+    // doesn't trigger a redundant refetch of the same semester.
+    _lastRefetchedSemesterId = _schedule.selectedSemesterId;
+  }
 
-  void _onDepsChanged() {
+  /// Auth or binding changed — always refetch (tokens, accounts differ).
+  void _onBindingsOrAuthChanged() {
     if (!_autoRefetchEnabled) return;
+    _lastRefetchedSemesterId = _schedule.selectedSemesterId;
+    unawaited(fetchAssignments());
+  }
+
+  /// Schedule changed — only refetch if the selected semester actually
+  /// changed, not on every loading/error/course_table flip. This prevents
+  /// a cascade of redundant blackboard+exam fetches during a semester switch.
+  /// Also defers the refetch while selectSemester is mid-fetch (its
+  /// course_table request primes the EAMS session; firing exam_table
+  /// concurrently would race on EAMS's stateful session and fail with
+  /// "Failed to extract numeric ids").
+  void _onScheduleChanged() {
+    if (!_autoRefetchEnabled) return;
+    if (_schedule.suppressAssignmentRefetch) return;
+    final currentSemester = _schedule.selectedSemesterId;
+    if (currentSemester == _lastRefetchedSemesterId) return;
+    _lastRefetchedSemesterId = currentSemester;
     unawaited(fetchAssignments());
   }
 
   @override
   void dispose() {
-    _tpAuth.removeListener(_onDepsChanged);
-    _auth.removeListener(_onDepsChanged);
-    _schedule.removeListener(_onDepsChanged);
+    _tpAuth.removeListener(_onBindingsOrAuthChanged);
+    _auth.removeListener(_onBindingsOrAuthChanged);
+    _schedule.removeListener(_onScheduleChanged);
     super.dispose();
   }
+
 
   /// Clear cached + in-memory deadlines (called on primary logout).
   Future<void> clearCache() async {

@@ -23,6 +23,11 @@ class ScheduleService extends ChangeNotifier {
   String? _selectedSemesterId;
   bool _loading = false;
   String? _error;
+  // While true, AssignmentService should NOT refetch on our notifies —
+  // selectSemester sets this during its own network fetch to avoid a
+  // concurrent exam_table + course_table race on EAMS's stateful session.
+  bool _suppressAssignmentRefetch = false;
+  bool get suppressAssignmentRefetch => _suppressAssignmentRefetch;
 
   String get _baseUrl => apiBaseUrl(_storage);
 
@@ -183,16 +188,28 @@ class ScheduleService extends ChangeNotifier {
   }
 
   Future<void> selectSemester(String semesterId) async {
+    // No-op if the semester is already selected.
+    if (_selectedSemesterId == semesterId) return;
     _selectedSemesterId = semesterId;
     await _storage.setSelectedSemester(semesterId);
-    notifyListeners();
 
-    // Load cached data for new semester first
+    // Load cached data for the new semester so the UI updates instantly.
     _courseTable = _storage.loadCourseTable(semesterId);
     _termBegin = _storage.loadTermBegin(semesterId);
+    // Notify the cached-swap UI update. AssignmentService._onScheduleChanged
+    // sees the semester changed and would fire fetchAssignments here — but
+    // that would race our own fetchCourseTable below (both hit
+    // courseTableForStd.action on the same EAMS session, and concurrent
+    // access to EAMS's stateful Spring/Struts session returns a partially
+    // initialized page → "Failed to extract numeric ids"). We suppress the
+    // assignment refetch during our own fetch and fire it once at the end.
+    _suppressAssignmentRefetch = true;
     notifyListeners();
 
-    if (!_hasCpdailyBinding) return;
+    if (!_hasCpdailyBinding) {
+      _suppressAssignmentRefetch = false;
+      return;
+    }
 
     _loading = true;
     _error = null;
@@ -207,6 +224,11 @@ class ScheduleService extends ChangeNotifier {
       _error = e.toString();
     } finally {
       _loading = false;
+      _suppressAssignmentRefetch = false;
+      // This final notify fires _onScheduleChanged again. Because
+      // _suppressAssignmentRefetch is now false, AssignmentService will
+      // refetch (the EAMS session is primed by our fetchCourseTable above,
+      // so exam_table succeeds on the first try).
       notifyListeners();
     }
   }
