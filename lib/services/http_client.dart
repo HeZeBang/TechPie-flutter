@@ -8,7 +8,8 @@ class LoggingHttpClient {
   final http.Client _inner;
   final DebugLogger _logger;
 
-  LoggingHttpClient(this._logger) : _inner = http.Client();
+  LoggingHttpClient(this._logger, {http.Client? inner})
+      : _inner = inner ?? http.Client();
 
   Future<http.Response> get(
     Uri url, {

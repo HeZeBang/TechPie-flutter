@@ -235,7 +235,7 @@ Future<_Fixture> _serviceFixture({
   if (bindEgate) {
     await storage.saveThirdPartyAccount(
       ThirdPartyAccount(
-        platform: ThirdPartyPlatform.egate,
+        platform: ThirdPartyPlatform.cpdaily,
         account: '20240001',
         sid: '20240001',
         token: 'session',
