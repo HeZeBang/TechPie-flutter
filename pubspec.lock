@@ -176,39 +176,37 @@ packages:
     source: sdk
     version: "0.0.0"
   flutter_ai_client:
-    dependency: transitive
+    dependency: "direct main"
     description:
-      name: flutter_ai_client
-      sha256: e60a3a69c99070952ee203ed8aad709eeb704915cb6b79f94eeb5a4321556033
-      url: "https://pub.flutter-io.cn"
-    source: hosted
+      path: "packages/flutter_ai/flutter_ai_client"
+      relative: true
+    source: path
     version: "0.3.0"
   flutter_ai_core:
-    dependency: transitive
+    dependency: "direct main"
     description:
-      name: flutter_ai_core
-      sha256: b188f83a4bf78f59c1c830dab348cfcd9be40e40ef6401b3d2d21bee1c7c3d04
-      url: "https://pub.flutter-io.cn"
-    source: hosted
+      path: "packages/flutter_ai/flutter_ai_core"
+      relative: true
+    source: path
     version: "0.1.14"
   flutter_ai_elements:
     dependency: "direct main"
     description:
-      path: "../flutter_ai/packages/flutter_ai_elements"
+      path: "packages/flutter_ai/flutter_ai_elements"
       relative: true
     source: path
     version: "0.2.0"
   flutter_ai_provider_anthropic:
     dependency: "direct main"
     description:
-      path: "../flutter_ai/packages/flutter_ai_provider_anthropic"
+      path: "packages/flutter_ai/flutter_ai_provider_anthropic"
       relative: true
     source: path
     version: "0.1.12"
   flutter_ai_tools:
     dependency: "direct main"
     description:
-      path: "../flutter_ai/packages/flutter_ai_tools"
+      path: "packages/flutter_ai/flutter_ai_tools"
       relative: true
     source: path
     version: "0.1.4"

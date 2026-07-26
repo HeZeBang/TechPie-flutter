@@ -1,0 +1,39 @@
+name: flutter_ai_client
+description: "Provider-agnostic chat controller for flutter_ai: wraps any LlmProvider with optimistic send, cancellation, regeneration, and frame-batched streaming."
+version: 0.3.0
+repository: https://github.com/ananmouaz/flutter_ai/tree/main/packages/flutter_ai_client
+issue_tracker: https://github.com/ananmouaz/flutter_ai/issues
+homepage: https://github.com/ananmouaz/flutter_ai
+
+topics:
+  - ai
+  - llm
+  - chat
+  - streaming
+  - flutter
+
+environment:
+  sdk: ^3.6.0
+  flutter: ">=3.27.0"
+
+# No platform channels — supported everywhere Flutter is.
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  web:
+  windows:
+
+# Part of the flutter_ai workspace.
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_ai_core: ^0.1.11
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  lints: ^5.0.0
