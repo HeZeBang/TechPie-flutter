@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ai_elements/flutter_ai_elements.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../widgets/adaptive_feedback.dart';
 import 'code_highlighter.dart';
 import 'demo_data.dart';
 import 'demo_provider.dart';
@@ -386,9 +387,10 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ];
 
-  void _snack(BuildContext context, String text) =>
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(text), duration: const Duration(seconds: 1)),
+  void _snack(BuildContext context, String text) => showAdaptiveFeedback(
+        context: context,
+        message: text,
+        duration: const Duration(seconds: 1),
       );
 
   Future<void> _editPrecedingUserMessage(
