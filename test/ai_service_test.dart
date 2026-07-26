@@ -1,4 +1,6 @@
 import 'package:flutter/services.dart';
+import 'package:flutter_ai_core/flutter_ai_core.dart'
+    show ToolCallPart, ToolCallState, ToolResultPart;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -93,6 +95,50 @@ void main() {
       final restored = AiThread.fromJson(raw);
       expect(restored.messages, hasLength(1));
       expect(restored.messages.first.text, 'real reply');
+    });
+
+    test('tool-result messages survive a persistence round-trip', () {
+      // Tool messages have no text part. The load filter must not drop them:
+      // losing a tool result leaves its tool_use unanswered, and providers
+      // reject the whole conversation on the next request.
+      final thread = AiThread(
+        id: 't3',
+        title: 'x',
+        updatedAt: DateTime.utc(2026, 7, 26),
+        messages: const [
+          AiMessage(id: 'u', role: AiRole.user, parts: [TextPart('几点了')]),
+          AiMessage(
+            id: 'a',
+            role: AiRole.assistant,
+            parts: [
+              ToolCallPart(
+                toolCallId: 'c1',
+                toolName: 'get_current_time',
+                state: ToolCallState.inputAvailable,
+              ),
+            ],
+            status: AiMessageStatus.complete,
+          ),
+          AiMessage(
+            id: 't',
+            role: AiRole.tool,
+            parts: [
+              ToolResultPart(
+                toolCallId: 'c1',
+                result: {'now': '2026-07-26T12:00:00'},
+              ),
+            ],
+            status: AiMessageStatus.complete,
+          ),
+        ],
+      );
+      final restored = AiThread.fromJson(thread.toJson());
+      expect(restored.messages, hasLength(3));
+      expect(restored.messages[2].role, AiRole.tool);
+      expect(
+        restored.messages[2].parts.single,
+        isA<ToolResultPart>(),
+      );
     });
   });
 

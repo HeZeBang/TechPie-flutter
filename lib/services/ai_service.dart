@@ -81,7 +81,10 @@ class AiService extends ChangeNotifier {
 
   bool get isStreaming {
     final c = _controller;
-    return c != null && c.status == ChatStatus.streaming;
+    // isBusy covers submitted/streaming/executingTools — the tool-execution
+    // phase must count as busy too, or the UI re-enables input mid agent-loop
+    // and a new send() lands on a transcript with unanswered tool calls.
+    return c != null && c.status.isBusy;
   }
 
   /// The error from the last failed turn, surfaced as a string for the UI
@@ -238,7 +241,7 @@ class AiService extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (c.status == ChatStatus.streaming) return;
+    if (c.status.isBusy) return;
     // Starting a real turn — clear any prior service-level error.
     if (_userError != null) {
       _userError = null;

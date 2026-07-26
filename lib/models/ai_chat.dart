@@ -61,7 +61,16 @@ class AiThread {
   factory AiThread.fromJson(Map<String, dynamic> json) {
     final rawMessages = (json['messages'] as List<dynamic>? ?? const [])
         .map((e) => AiMessage.fromJson((e as Map).cast<String, dynamic>()))
-        .where((m) => m.text.isNotEmpty || m.role == AiRole.system)
+        // Drop only messages with no content at all (e.g. an aborted
+        // streaming placeholder with a single empty text part). Filtering on
+        // `text` alone would drop AiRole.tool messages — tool results have no
+        // text part — leaving every historical tool_use unanswered, which
+        // providers reject on the next request.
+        .where(
+          (m) =>
+              m.role == AiRole.system ||
+              m.parts.any((p) => p is! TextPart || p.text.isNotEmpty),
+        )
         .toList();
     return AiThread(
       id: json['id'] as String,
