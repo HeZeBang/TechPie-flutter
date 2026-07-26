@@ -47,7 +47,7 @@ class DemoChatProvider implements LlmProvider {
   }
 
   Stream<AiStreamEvent> _textChunks(String id, String text,
-      {Duration? chunkDelay}) async* {
+      {Duration? chunkDelay,}) async* {
     final words = text.split(' ');
     final d = chunkDelay ?? const Duration(milliseconds: 40);
     for (var i = 0; i < words.length; i++) {
@@ -119,7 +119,7 @@ class DemoChatProvider implements LlmProvider {
           'count': 12,
           'topRate': 210,
         },
-        tag: 't2');
+        tag: 't2',);
     yield* _textChunks(
       id,
       '## Day 1\n'

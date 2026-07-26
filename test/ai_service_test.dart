@@ -60,7 +60,7 @@ void main() {
         title: 'hello',
         updatedAt: DateTime.utc(2026, 7, 26),
         messages: [
-          AiMessage(
+          const AiMessage(
             id: 'm1',
             role: AiRole.user,
             parts: [TextPart('hi there')],
@@ -86,10 +86,10 @@ void main() {
         'messages': [
           {'id': 'a', 'role': 'user', 'status': 'complete', 'parts': [
             {'type': 'text', 'text': ''},
-          ]},
+          ],},
           {'id': 'b', 'role': 'assistant', 'status': 'complete', 'parts': [
             {'type': 'text', 'text': 'real reply'},
-          ]},
+          ],},
         ],
       };
       final restored = AiThread.fromJson(raw);
@@ -159,17 +159,17 @@ void main() {
       expect(created.id, isNot(first));
     });
 
-    test('renameConversation updates title and is reflected in the list', () {
+    test('renameConversation updates title and is reflected in the list', () async {
       final id = ai.currentConversation!.id;
-      ai.renameConversation(id, '我的对话');
+      await ai.renameConversation(id, '我的对话');
       expect(ai.currentConversation!.title, '我的对话');
     });
 
-    test('deleteConversation on the current thread re-points to another', () {
+    test('deleteConversation on the current thread re-points to another', () async {
       final a = ai.newConversation();
       final b = ai.newConversation();
       expect(ai.currentConversation!.id, b.id);
-      ai.deleteConversation(b.id);
+      await ai.deleteConversation(b.id);
       expect(ai.conversations.any((c) => c.id == b.id), isFalse);
       expect(ai.currentConversation, isNotNull);
       expect(ai.currentConversation!.id, isNot(b.id));

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_ai_core/flutter_ai_core.dart';
 
 // Re-export the library's chat-domain types so the rest of TechPie keeps a
 // single import (`ai_chat.dart`) for everything AI — the parts-based
@@ -12,8 +13,6 @@ export 'package:flutter_ai_core/flutter_ai_core.dart'
         AiMessageStatus,
         AiPart,
         TextPart;
-
-import 'package:flutter_ai_core/flutter_ai_core.dart';
 
 /// A persisted conversation thread.
 ///

@@ -189,7 +189,7 @@ List<GalleryItem> galleryItems() => [
           initiallyExpanded: true,
           steps: [
             AiThoughtStep(
-                label: 'Search the web', detail: 'flutter stream tokens'),
+                label: 'Search the web', detail: 'flutter stream tokens',),
             AiThoughtStep(label: 'Read top results'),
             AiThoughtStep(label: 'Synthesize an answer', isActive: true),
           ],
@@ -287,7 +287,7 @@ List<GalleryItem> galleryItems() => [
           suggestions: const [
             'Summarize this',
             'Translate to French',
-            'Explain'
+            'Explain',
           ],
           onSelected: (_) {},
         ),

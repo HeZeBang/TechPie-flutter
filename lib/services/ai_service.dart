@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_ai_client/flutter_ai_client.dart';
-import 'package:flutter_ai_core/flutter_ai_core.dart';
 import 'package:flutter_ai_provider_anthropic/flutter_ai_provider_anthropic.dart';
 import 'package:flutter_ai_tools/flutter_ai_tools.dart';
 

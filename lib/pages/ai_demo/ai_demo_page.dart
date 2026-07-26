@@ -270,7 +270,7 @@ class _GalleryButton extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.grid_view_rounded,
-                  size: 14, color: theme.onAccentColor),
+                  size: 14, color: theme.onAccentColor,),
               const SizedBox(width: 6),
               Text(
                 'Every element',
@@ -462,9 +462,9 @@ class _ChatScreenState extends State<ChatScreen> {
         const SizedBox(width: 8),
         Text('flutter_ai',
             style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w600, color: subdued)),
+                fontSize: 13, fontWeight: FontWeight.w600, color: subdued,),),
       ],
-    ));
+    ),);
 
     for (final part in message.parts) {
       switch (part) {
@@ -479,7 +479,7 @@ class _ChatScreenState extends State<ChatScreen> {
               toolCalls.length > 1
                   ? AiToolGroup(calls: toolCalls, results: results)
                   : AiToolInvocation(
-                      call: part, result: results[part.toolCallId]),
+                      call: part, result: results[part.toolCallId],),
             );
           }
         case ToolResultPart():
@@ -489,8 +489,8 @@ class _ChatScreenState extends State<ChatScreen> {
             add(SizedBox(
               width: 260,
               child: AiImage(
-                  url: part.url, bytes: part.bytes, aspectRatio: 16 / 9),
-            ));
+                  url: part.url, bytes: part.bytes, aspectRatio: 16 / 9,),
+            ),);
           } else {
             add(AiAttachment(file: part));
           }
@@ -512,15 +512,15 @@ class _ChatScreenState extends State<ChatScreen> {
             toolRunner.resolveConfirmation(call.toolCallId, approved: true),
         onDeny: () =>
             toolRunner.resolveConfirmation(call.toolCallId, approved: false),
-      ));
+      ),);
     }
 
     if (sources.isNotEmpty) {
       add(AiSources(
         sources: sources,
         onTap: (source) => unawaited(
-            launchUrl(source.url, mode: LaunchMode.externalApplication)),
-      ));
+            launchUrl(source.url, mode: LaunchMode.externalApplication),),
+      ),);
     }
 
     if (message.status == AiMessageStatus.complete) {
@@ -545,7 +545,7 @@ class _ChatScreenState extends State<ChatScreen> {
               onNext: () => controller.selectBranch(controller.branchIndex + 1),
             ),
         ],
-      ));
+      ),);
     }
 
     return Padding(
@@ -591,7 +591,7 @@ class _ChatScreenState extends State<ChatScreen> {
       unawaited(
         controller.sendText('Summarize this article', attachments: const [
           FilePart(mediaType: 'application/pdf', name: 'article.pdf'),
-        ]),
+        ],),
       );
     } else {
       unawaited(controller.sendText(text));
@@ -640,10 +640,10 @@ class _EditMessageDialogState extends State<_EditMessageDialog> {
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
+            child: const Text('Cancel'),),
         FilledButton(
             onPressed: () => Navigator.pop(context, _field.text),
-            child: const Text('Save')),
+            child: const Text('Save'),),
       ],
     );
   }
@@ -680,7 +680,7 @@ class _BrandGlyph extends StatelessWidget {
         ],
       ),
       child: Icon(Icons.auto_awesome,
-          size: size * 0.5, color: theme.onAccentColor),
+          size: size * 0.5, color: theme.onAccentColor,),
     );
   }
 }
@@ -710,7 +710,7 @@ class GalleryScreen extends StatelessWidget {
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF9893A8),
-                    letterSpacing: 0.2)),
+                    letterSpacing: 0.2,),),
             const SizedBox(height: 10),
             item.child,
           ],

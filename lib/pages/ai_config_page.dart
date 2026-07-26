@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_ai_core/flutter_ai_core.dart';
 import 'package:flutter_ai_provider_anthropic/flutter_ai_provider_anthropic.dart';
 
 import '../models/ai_chat.dart';

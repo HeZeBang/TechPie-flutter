@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_ai_client/flutter_ai_client.dart';
 import 'package:flutter_ai_elements/flutter_ai_elements.dart';
 
 import '../models/ai_chat.dart';
@@ -203,8 +202,9 @@ class _AiAssistantPageState extends State<AiAssistantPage> {
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: AiErrorBanner(
                   message: error,
-                  onRetry:
-                      aiService.isStreaming ? null : () => _retry(aiService),
+                  onRetry: aiService.isStreaming
+                      ? null
+                      : () => unawaited(_retry(aiService)),
                   onDismiss: () => _dismissError(aiService),
                 ),
               );
