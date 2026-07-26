@@ -187,6 +187,86 @@ class ScheduleService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Live, non-mutating fetch of the semester list. Mirrors [fetchSemesters]
+  /// but returns the parsed [SemesterInfo] instead of writing it into
+  /// [_semesterInfo] and never notifies. Used by the AI tools so a query about
+  /// available terms doesn't touch the UI's selected-semester state.
+  Future<SemesterInfo> fetchSemestersLive() async {
+    final resp = await _postWithRetry(
+      '$_baseUrl/schedule/semesters',
+      const <String, dynamic>{},
+      'fetchSemestersLive',
+    );
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (data['success'] != true) {
+      throw Exception(data['error'] as String? ?? 'Failed to fetch semesters');
+    }
+    return SemesterInfo.fromJson(data['data'] as Map<String, dynamic>);
+  }
+
+  /// Live, non-mutating fetch of one semester's course table. Mirrors
+  /// [fetchCourseTable] but returns the parsed [CourseTable] instead of
+  /// writing it into [_courseTable] and never notifies. The AI tools use this
+  /// (via [courseTableFor]) to read an arbitrary semester (e.g. a
+  /// non-selected one) without polluting the UI's selected-semester view. The
+  /// table_id is best-effort: sent only when [_semesterInfo] is available.
+  Future<CourseTable> fetchCourseTableLive(String semesterId) async {
+    final tableId = _semesterInfo?.tableId;
+    final extra = <String, dynamic>{
+      'semester_id': semesterId,
+      if (tableId != null && tableId.isNotEmpty) 'table_id': tableId,
+    };
+    final resp = await _postWithRetry(
+      '$_baseUrl/schedule/course_table',
+      extra,
+      'fetchCourseTableLive',
+    );
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (data['success'] != true) {
+      throw Exception(
+        data['error'] as String? ?? 'Failed to fetch course table',
+      );
+    }
+    return CourseTable.fromApiResponse(data['data'] as Map<String, dynamic>);
+  }
+
+  /// Cache-first semester list for read-only consumers (AI tools): in-memory
+  /// [_semesterInfo] → storage → live fetch (written back to storage only,
+  /// never into [_semesterInfo], so UI state is untouched).
+  Future<SemesterInfo> semestersCachedOrLive({bool refresh = false}) async {
+    if (!refresh) {
+      final cached = _semesterInfo ?? _storage.loadSemesters();
+      if (cached != null) return cached;
+    }
+    final info = await fetchSemestersLive();
+    await _storage.saveSemesters(info);
+    return info;
+  }
+
+  /// Cache-first course table for an arbitrary semester. Storage is keyed per
+  /// semester, so a non-selected (e.g. past) semester hits its own cache
+  /// entry — the old AI-tool bug came from reading the in-memory
+  /// [_courseTable], which only ever holds the selected semester. On miss (or
+  /// [refresh]) fetches live and writes back to storage only, never into
+  /// [_courseTable], so querying another semester can't pollute the UI.
+  Future<CourseTable> courseTableFor(
+    String semesterId, {
+    bool refresh = false,
+  }) async {
+    if (!refresh) {
+      final cached = _storage.loadCourseTable(semesterId);
+      if (cached != null) return cached;
+    }
+    final table = await fetchCourseTableLive(semesterId);
+    await _storage.saveCourseTable(semesterId, table);
+    return table;
+  }
+
+  /// Cached term-begin date for [semesterId], if any (storage is per-semester
+  /// keyed). Used to derive a default week for non-selected semesters.
+  DateTime? termBeginFor(String semesterId) =>
+      _storage.loadTermBegin(semesterId);
+
   Future<void> selectSemester(String semesterId) async {
     // No-op if the semester is already selected.
     if (_selectedSemesterId == semesterId) return;

@@ -1,5 +1,6 @@
 import 'package:flutter_ai_tools/flutter_ai_tools.dart';
 
+import '../models/assignment.dart';
 import '../models/course_table.dart';
 import 'assignment_service.dart';
 import 'schedule_service.dart';
@@ -47,23 +48,31 @@ ToolRegistry buildAiTools({
           'List the student\'s available semesters (e.g. "2024-2025 春学期") '
           'with their IDs, and which semester is currently selected. Requires '
           'the eGate campus binding. Call when the user asks about available '
-          'terms or which semester is active.',
+          'terms or which semester is active. Served from the local cache; '
+          'pass refresh=true only if the user explicitly wants fresh data.',
       parametersSchema: const {
         'type': 'object',
-        'properties': {},
+        'properties': {
+          'refresh': {
+            'type': 'boolean',
+            'description':
+                'Force a live fetch, bypassing the local cache. Default false.',
+          },
+        },
       },
       execute: (args) async {
         if (!thirdPartyAuthService.hasCpdailyBinding) {
           return {'error': '未绑定校园账号（eGate），请在设置中绑定后再试。'};
         }
-        await scheduleService.loadCachedData();
-        var info = scheduleService.semesterInfo;
-        if (info == null || info.allSemesters.isEmpty) {
-          await scheduleService.fetchSemesters();
-          info = scheduleService.semesterInfo;
-        }
-        if (info == null) {
-          return {'error': scheduleService.error ?? '获取学期列表失败'};
+        // Cache-first: in-memory/storage semester list, live only on miss or
+        // explicit refresh. Never writes ScheduleService's in-memory state.
+        final SemesterInfo info;
+        try {
+          info = await scheduleService.semestersCachedOrLive(
+            refresh: args['refresh'] == true,
+          );
+        } catch (e) {
+          return {'error': '获取学期列表失败：$e'};
         }
         return {
           'currentSemesterId': scheduleService.selectedSemesterId,
@@ -87,7 +96,10 @@ ToolRegistry buildAiTools({
           'period range, time range, teachers, and active weeks. Requires the '
           'eGate campus binding. If semesterId or week are omitted, defaults to '
           'the current semester and current week. Call when the user asks about '
-          'their timetable / what classes they have.',
+          'their timetable / what classes they have. Served from the local '
+          'per-semester cache; pass refresh=true only if the user explicitly '
+          'wants fresh data. When querying a non-current semester, pass an '
+          'explicit week.',
       parametersSchema: const {
         'type': 'object',
         'properties': {
@@ -103,13 +115,17 @@ ToolRegistry buildAiTools({
             'minimum': 1,
             'maximum': 25,
           },
+          'refresh': {
+            'type': 'boolean',
+            'description':
+                'Force a live fetch, bypassing the local cache. Default false.',
+          },
         },
       },
       execute: (args) async {
         if (!thirdPartyAuthService.hasCpdailyBinding) {
           return {'error': '未绑定校园账号（eGate），请在设置中绑定后再试。'};
         }
-        await scheduleService.loadCachedData();
         final semesterId =
             (args['semesterId'] as String?)?.isNotEmpty == true
                 ? args['semesterId'] as String
@@ -117,18 +133,44 @@ ToolRegistry buildAiTools({
         if (semesterId == null) {
           return {'error': '无法确定当前学期，请先调用 get_semesters。'};
         }
-        // Fetch the course table for the requested semester if not cached.
-        if (scheduleService.courseTable == null) {
-          await scheduleService.fetchCourseTable(semesterId);
+        // Cache-first per-semester table: storage is keyed by semesterId, so
+        // a non-selected (e.g. past) semester hits its own cache entry — the
+        // old bug came from reading the in-memory table, which only holds the
+        // selected semester. On miss/refresh this fetches live and writes back
+        // to storage only, never ScheduleService's shared _courseTable, so
+        // querying a non-selected semester doesn't pollute the schedule UI.
+        final CourseTable table;
+        try {
+          table = await scheduleService.courseTableFor(
+            semesterId,
+            refresh: args['refresh'] == true,
+          );
+        } catch (e) {
+          return {'error': '获取课程表失败：$e'};
         }
-        final table = scheduleService.courseTable;
-        if (table == null) {
-          return {'error': scheduleService.error ?? '获取课程表失败'};
+        int week;
+        String? weekNote;
+        if (args['week'] is int) {
+          week = args['week'] as int;
+        } else if (semesterId == scheduleService.selectedSemesterId) {
+          week = scheduleService.currentWeek();
+        } else {
+          // Non-selected semester with no explicit week: currentWeek() is
+          // derived from the SELECTED semester's term begin, so it would be
+          // wrong here. Derive from this semester's cached term begin when
+          // today actually falls inside it; otherwise default to week 1.
+          final termBegin = scheduleService.termBeginFor(semesterId);
+          final diff =
+              termBegin == null
+                  ? -1
+                  : DateTime.now().difference(termBegin).inDays;
+          if (diff >= 0 && diff < 25 * 7) {
+            week = (diff ~/ 7) + 1;
+          } else {
+            week = 1;
+            weekNote = '未指定周数，已默认第 1 周；如需其他周请传 week 参数。';
+          }
         }
-        final week =
-            args['week'] is int
-                ? args['week'] as int
-                : scheduleService.currentWeek();
         final display = eamsToDisplayCourses(table.courses, week);
         // Period index → time range, from the table's period definitions.
         final periodTimes = <int, String>{};
@@ -163,6 +205,7 @@ ToolRegistry buildAiTools({
           'semesterId': semesterId,
           'semesterLabel': info?.findSemesterLabel(semesterId),
           'week': week,
+          if (weekNote != null) 'weekNote': weekNote,
           'days': days,
           if (days.isEmpty) 'note': '本周没有课程',
         };
@@ -176,10 +219,18 @@ ToolRegistry buildAiTools({
           'all platforms (Blackboard, exams, Gradescope, Hydro), sorted by due '
           'date. Each item has title, course, due date, platform, kind '
           '(作业/考试), and status. Optionally filter by platform or kind. Call '
-          'when the user asks about homework, deadlines, or exams.',
+          'when the user asks about homework, deadlines, or exams. Served from '
+          'the local cache (refreshed in the background at app start); pass '
+          'refresh=true only if the user explicitly wants fresh data.',
       parametersSchema: const {
         'type': 'object',
         'properties': {
+          'refresh': {
+            'type': 'boolean',
+            'description':
+                'Force a live fetch from all platforms, bypassing the local '
+                'cache. Default false.',
+          },
           'platform': {
             'type': 'string',
             'description':
@@ -195,11 +246,28 @@ ToolRegistry buildAiTools({
         },
       },
       execute: (args) async {
-        assignmentService.loadCached();
-        if (assignmentService.visibleAssignments.isEmpty) {
-          await assignmentService.fetchAssignments();
+        // Cache-first: the in-memory assignments are hydrated from storage at
+        // boot and refreshed by the background fan-out, so they're fresh
+        // within a session. Only go live when the cache is empty or the model
+        // explicitly asks for a refresh. fetchAssignmentsLive is non-mutating:
+        // it never writes AssignmentService's shared _assignments /
+        // _platformErrors or notifies, so a live query here doesn't disturb
+        // the assignments UI or trigger the schedule→assignment refetch chain.
+        List<Assignment> source;
+        Map<String, String> errors;
+        if (args['refresh'] != true &&
+            assignmentService.assignments.isNotEmpty) {
+          source = assignmentService.assignments;
+          errors = assignmentService.platformErrors;
+        } else {
+          final result = await assignmentService.fetchAssignmentsLive();
+          source = result.assignments;
+          errors = result.errors;
         }
-        var items = assignmentService.visibleAssignments;
+        // Honor locally-hidden items (matches the UI's visibleAssignments
+        // behavior) without mutating the overrides store.
+        var items =
+            source.where((a) => !assignmentService.isHidden(a)).toList();
         final platform = args['platform'] as String?;
         final kind = args['kind'] as String?;
         if (platform != null) {
@@ -208,7 +276,6 @@ ToolRegistry buildAiTools({
         if (kind != null) {
           items = items.where((a) => a.kind.id == kind).toList();
         }
-        final errors = assignmentService.platformErrors;
         return {
           'assignments': [
             for (final a in items)
@@ -224,7 +291,6 @@ ToolRegistry buildAiTools({
                 if (a.url != null) 'url': a.url,
               },
           ],
-          if (assignmentService.error != null) 'error': assignmentService.error,
           if (errors.isNotEmpty) 'platformErrors': errors,
         };
       },
