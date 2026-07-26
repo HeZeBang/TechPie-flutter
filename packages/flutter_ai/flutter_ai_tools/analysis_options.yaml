@@ -1,2 +1,0 @@
-# Inherits the workspace-wide strict configuration.
-include: ../../analysis_options.yaml

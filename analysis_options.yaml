@@ -4,9 +4,6 @@ analyzer:
   exclude:
     - build/**
     - .dart_tool/**
-    # Vendored upstream code (ananmouaz/flutter_ai + local fixes); keeps its
-    # own style, not held to techpie's lint set.
-    - packages/flutter_ai/**
   language:
     strict-casts: true
     strict-inference: true

@@ -1,3 +1,0 @@
-# Inherits the workspace-wide strict configuration. Package-specific overrides,
-# if ever needed, go below.
-include: ../../analysis_options.yaml

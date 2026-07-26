@@ -178,37 +178,47 @@ packages:
   flutter_ai_client:
     dependency: "direct main"
     description:
-      path: "packages/flutter_ai/flutter_ai_client"
-      relative: true
-    source: path
+      path: "packages/flutter_ai_client"
+      ref: "589a47d2262864dfd0ddbac27de0926748b26130"
+      resolved-ref: "589a47d2262864dfd0ddbac27de0926748b26130"
+      url: "https://github.com/HeZeBang/flutter_ai.git"
+    source: git
     version: "0.3.0"
   flutter_ai_core:
     dependency: "direct main"
     description:
-      path: "packages/flutter_ai/flutter_ai_core"
-      relative: true
-    source: path
+      path: "packages/flutter_ai_core"
+      ref: "589a47d2262864dfd0ddbac27de0926748b26130"
+      resolved-ref: "589a47d2262864dfd0ddbac27de0926748b26130"
+      url: "https://github.com/HeZeBang/flutter_ai.git"
+    source: git
     version: "0.1.14"
   flutter_ai_elements:
     dependency: "direct main"
     description:
-      path: "packages/flutter_ai/flutter_ai_elements"
-      relative: true
-    source: path
+      path: "packages/flutter_ai_elements"
+      ref: "589a47d2262864dfd0ddbac27de0926748b26130"
+      resolved-ref: "589a47d2262864dfd0ddbac27de0926748b26130"
+      url: "https://github.com/HeZeBang/flutter_ai.git"
+    source: git
     version: "0.2.0"
   flutter_ai_provider_anthropic:
     dependency: "direct main"
     description:
-      path: "packages/flutter_ai/flutter_ai_provider_anthropic"
-      relative: true
-    source: path
+      path: "packages/flutter_ai_provider_anthropic"
+      ref: "589a47d2262864dfd0ddbac27de0926748b26130"
+      resolved-ref: "589a47d2262864dfd0ddbac27de0926748b26130"
+      url: "https://github.com/HeZeBang/flutter_ai.git"
+    source: git
     version: "0.1.12"
   flutter_ai_tools:
     dependency: "direct main"
     description:
-      path: "packages/flutter_ai/flutter_ai_tools"
-      relative: true
-    source: path
+      path: "packages/flutter_ai_tools"
+      ref: "589a47d2262864dfd0ddbac27de0926748b26130"
+      resolved-ref: "589a47d2262864dfd0ddbac27de0926748b26130"
+      url: "https://github.com/HeZeBang/flutter_ai.git"
+    source: git
     version: "0.1.4"
   flutter_inappwebview:
     dependency: transitive
