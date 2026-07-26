@@ -291,6 +291,11 @@ class _TechPieAppState extends State<TechPieApp> {
         aiService: widget.aiService,
         child: MaterialApp(
           scaffoldMessengerKey: rootMessengerKey,
+          navigatorObservers: [FeedbackRouteObserver()],
+          builder: (context, child) => AdaptiveFeedbackHost(
+            key: adaptiveFeedbackHostKey,
+            child: child ?? const SizedBox.shrink(),
+          ),
           title: 'TechPie',
           theme: _withAiExtension(widget.themeService.lightTheme),
           darkTheme: _withAiExtension(widget.themeService.darkTheme),
