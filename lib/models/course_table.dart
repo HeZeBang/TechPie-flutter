@@ -194,24 +194,99 @@ class SemesterInfo {
     for (final yearEntry in semesters.entries) {
       for (final semEntry in yearEntry.value.entries) {
         if (semEntry.value == semesterId) {
-          return '${yearEntry.key} ${semEntry.key}学期';
+          return '${yearEntry.key} ${semesterTermDisplayName(semEntry.key)}学期';
         }
       }
     }
     return null;
   }
+}
 
-  List<MapEntry<String, String>> get allSemesters {
-    final result = <MapEntry<String, String>>[];
-    for (final yearEntry in semesters.entries) {
-      for (final semEntry in yearEntry.value.entries) {
-        result.add(
-          MapEntry(semEntry.value, '${yearEntry.key} ${semEntry.key}学期'),
-        );
-      }
-    }
-    return result;
+/// Canonical academic-year term names, in chronological order. Index+1 is
+/// also the term number the backend expects (秋=1, 春=2, 暑=3).
+const List<String> kSemesterTermNames = ['秋', '春', '暑'];
+
+/// The backend sometimes keys a year's terms by this display name directly
+/// (e.g. "秋"), sometimes by the term number as a string (e.g. "1"). Either
+/// way, resolve it to the Chinese term name for display.
+String semesterTermDisplayName(String rawTermKey) {
+  final asNumber = int.tryParse(rawTermKey);
+  if (asNumber != null &&
+      asNumber >= 1 &&
+      asNumber <= kSemesterTermNames.length) {
+    return kSemesterTermNames[asNumber - 1];
   }
+  for (final name in kSemesterTermNames) {
+    if (rawTermKey.contains(name)) return name;
+  }
+  return rawTermKey;
+}
+
+/// Chronological rank of a term key (0=秋, 1=春, 2=暑); unrecognized keys
+/// sort last.
+int semesterTermRank(String rawTermKey) {
+  final index = kSemesterTermNames.indexOf(semesterTermDisplayName(rawTermKey));
+  return index < 0 ? kSemesterTermNames.length : index;
+}
+
+/// Full school-calendar record for a specific queried year+semester, as
+/// returned by `/schedule/term_begin`. `date`/`weekOfTerm` are a snapshot of
+/// where "today" (server time, at fetch time) falls within the QUERIED term —
+/// they go stale as real time passes, so treat them as a hint, not live state
+/// (`ScheduleService` recomputes the live week/in-term status from
+/// [termBegin] + [allTeachWeeks] instead of trusting this snapshot).
+class TermCalendar {
+  final int code;
+  final String schoolYearTerm;
+  final DateTime termBegin;
+  final DateTime? snapshotDate;
+  final int? snapshotWeekOfTerm;
+  final int allTeachWeeks;
+  final int allTermWeeks;
+  final int amClasses;
+  final int pmClasses;
+  final int eveClasses;
+
+  const TermCalendar({
+    required this.code,
+    required this.schoolYearTerm,
+    required this.termBegin,
+    required this.snapshotDate,
+    required this.snapshotWeekOfTerm,
+    required this.allTeachWeeks,
+    required this.allTermWeeks,
+    required this.amClasses,
+    required this.pmClasses,
+    required this.eveClasses,
+  });
+
+  factory TermCalendar.fromJson(Map<String, dynamic> json) {
+    return TermCalendar(
+      code: json['code'] as int? ?? 200,
+      schoolYearTerm: json['schoolYearTerm'] as String? ?? '',
+      termBegin: DateTime.parse(json['termBegin'] as String),
+      snapshotDate: DateTime.tryParse(json['date'] as String? ?? ''),
+      snapshotWeekOfTerm: int.tryParse(json['weekOfTerm'] as String? ?? ''),
+      allTeachWeeks: json['allTeachWeeks'] as int? ?? 0,
+      allTermWeeks: json['allTermWeeks'] as int? ?? 0,
+      amClasses: json['amClasses'] as int? ?? 0,
+      pmClasses: json['pmClasses'] as int? ?? 0,
+      eveClasses: json['eveClasses'] as int? ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'schoolYearTerm': schoolYearTerm,
+        'termBegin': termBegin.toIso8601String(),
+        'date': snapshotDate?.toIso8601String(),
+        'weekOfTerm': snapshotWeekOfTerm?.toString(),
+        'allTeachWeeks': allTeachWeeks,
+        'allTermWeeks': allTermWeeks,
+        'amClasses': amClasses,
+        'pmClasses': pmClasses,
+        'eveClasses': eveClasses,
+      };
 }
 
 /// Convert EamsCourse list to display Course list, grouping consecutive periods.

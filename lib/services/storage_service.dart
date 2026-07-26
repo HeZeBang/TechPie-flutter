@@ -218,13 +218,17 @@ class StorageService {
     return CourseTable.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
-  Future<void> saveTermBegin(String key, DateTime date) =>
-      _prefs.setString('$_termBeginPrefix$key', date.toIso8601String());
+  Future<void> saveTermCalendar(String key, TermCalendar info) => _prefs
+      .setString('$_termBeginPrefix$key', jsonEncode(info.toJson()));
 
-  DateTime? loadTermBegin(String key) {
+  TermCalendar? loadTermCalendar(String key) {
     final raw = _prefs.getString('$_termBeginPrefix$key');
     if (raw == null) return null;
-    return DateTime.tryParse(raw);
+    try {
+      return TermCalendar.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
   }
 
   String? get selectedSemester => _prefs.getString(_selectedSemesterKey);
