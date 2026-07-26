@@ -19,7 +19,7 @@ class ScheduleService extends ChangeNotifier {
 
   SemesterInfo? _semesterInfo;
   CourseTable? _courseTable;
-  DateTime? _termBegin;
+  TermCalendar? _termCalendar;
   String? _selectedSemesterId;
   bool _loading = false;
   String? _error;
@@ -31,20 +31,45 @@ class ScheduleService extends ChangeNotifier {
 
   String get _baseUrl => apiBaseUrl(_storage);
 
+  // Fallback used before the school calendar has been fetched at least once.
+  static const _fallbackTotalWeeks = 25;
+
   SemesterInfo? get semesterInfo => _semesterInfo;
   CourseTable? get courseTable => _courseTable;
-  DateTime? get termBegin => _termBegin;
+  TermCalendar? get termCalendar => _termCalendar;
+  DateTime? get termBegin => _termCalendar?.termBegin;
   String? get selectedSemesterId => _selectedSemesterId;
   bool get loading => _loading;
   String? get error => _error;
 
+  /// Teaching weeks in the selected semester, i.e. the upper bound for week
+  /// navigation. Falls back to a generous default until the calendar loads.
+  int get totalWeeks =>
+      (_termCalendar?.allTeachWeeks ?? 0) > 0
+          ? _termCalendar!.allTeachWeeks
+          : _fallbackTotalWeeks;
+
   ScheduleService(this._storage, this._http, AuthService _, this._tpAuth);
 
   int currentWeek() {
-    if (_termBegin == null) return 1;
-    final diff = DateTime.now().difference(_termBegin!).inDays;
+    final begin = termBegin;
+    if (begin == null) return 1;
+    final diff = DateTime.now().difference(begin).inDays;
     if (diff < 0) return 1;
-    return ((diff ~/ 7) + 1).clamp(1, 25).toInt();
+    return ((diff ~/ 7) + 1).clamp(1, totalWeeks).toInt();
+  }
+
+  /// Whether "today" actually falls within the selected semester — false
+  /// before the calendar has loaded, before the term begins, or after its
+  /// last teaching week. Callers should hide "this week"/"today" indicators
+  /// when this is false, since there is no meaningful "current week".
+  bool get isTodayInTerm {
+    final begin = termBegin;
+    if (begin == null) return false;
+    final diff = DateTime.now().difference(begin).inDays;
+    if (diff < 0) return false;
+    final week = (diff ~/ 7) + 1;
+    return week <= totalWeeks;
   }
 
   Map<String, String> _jsonHeaders() => {
@@ -69,7 +94,7 @@ class ScheduleService extends ChangeNotifier {
     if (_selectedSemesterId != null) {
       _courseTable = _storage.loadCourseTable(_selectedSemesterId!);
     }
-    _termBegin = _storage.loadTermBegin(_selectedSemesterId ?? '');
+    _termCalendar = _storage.loadTermCalendar(_selectedSemesterId ?? '');
     notifyListeners();
   }
 
@@ -150,8 +175,12 @@ class ScheduleService extends ChangeNotifier {
         if (semEntry.value == semesterId) {
           // yearEntry.key is like "2024-2025"
           year = yearEntry.key.split('-').first;
-          // Map label to number
-          semNum = semEntry.key.contains('春') ? '1' : '2';
+          // rank 0/1/2 (秋/春/暑) -> the term number the backend expects (1/2/3);
+          // unrecognized term keys fall back to spring (2).
+          final rank = semesterTermRank(semEntry.key);
+          semNum = rank < kSemesterTermNames.length
+              ? (rank + 1).toString()
+              : '2';
           break;
         }
       }
@@ -179,11 +208,8 @@ class ScheduleService extends ChangeNotifier {
       throw Exception(data['error'] as String? ?? 'Failed to fetch term begin');
     }
 
-    final dateStr = data['data'] as String;
-    _termBegin = DateTime.tryParse(dateStr);
-    if (_termBegin != null) {
-      await _storage.saveTermBegin(cacheKey, _termBegin!);
-    }
+    _termCalendar = TermCalendar.fromJson(data['data'] as Map<String, dynamic>);
+    await _storage.saveTermCalendar(cacheKey, _termCalendar!);
     notifyListeners();
   }
 
@@ -195,7 +221,7 @@ class ScheduleService extends ChangeNotifier {
 
     // Load cached data for the new semester so the UI updates instantly.
     _courseTable = _storage.loadCourseTable(semesterId);
-    _termBegin = _storage.loadTermBegin(semesterId);
+    _termCalendar = _storage.loadTermCalendar(semesterId);
     // Notify the cached-swap UI update. AssignmentService._onScheduleChanged
     // sees the semester changed and would fire fetchAssignments here — but
     // that would race our own fetchCourseTable below (both hit

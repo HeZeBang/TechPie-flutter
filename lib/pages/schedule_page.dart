@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:reel_text/reel_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/course.dart';
@@ -102,7 +104,7 @@ class _SchedulePageState extends State<SchedulePage> {
   void _rebuildCourses() {
     if (!mounted) return;
     setState(() {
-      _currentWeek = _schedule.currentWeek().clamp(1, 25).toInt();
+      _currentWeek = _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
       final table = _schedule.courseTable;
       if (table != null) {
         if (table.periods.isNotEmpty) {
@@ -132,7 +134,8 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   void _goToCurrentWeek() {
-    final computedWeek = _schedule.currentWeek().clamp(1, 25).toInt();
+    final computedWeek =
+        _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
 
     _setWeek(computedWeek);
   }
@@ -152,7 +155,7 @@ class _SchedulePageState extends State<SchedulePage> {
   void _setCurrentWeek(int week) {
     final old = _currentWeek;
     setState(() {
-      _currentWeek = week.clamp(1, 25).toInt();
+      _currentWeek = week.clamp(1, _schedule.totalWeeks).toInt();
       _slideDirection = _currentWeek > old ? 1 : (_currentWeek < old ? -1 : 0);
       _filterCoursesForWeek();
     });
@@ -175,7 +178,7 @@ class _SchedulePageState extends State<SchedulePage> {
 
     return eamsToDisplayCourses(
       table.courses,
-      week.clamp(1, 25).toInt(),
+      week.clamp(1, _schedule.totalWeeks).toInt(),
       includeGhosts: _showGhostCourses,
     );
   }
@@ -184,7 +187,7 @@ class _SchedulePageState extends State<SchedulePage> {
     final termBegin = _schedule.termBegin;
     if (termBegin != null) {
       final weekStartDate = termBegin.add(
-        Duration(days: (week.clamp(1, 25).toInt() - 1) * 7),
+        Duration(days: (week.clamp(1, _schedule.totalWeeks).toInt() - 1) * 7),
       );
       return weekStartDate.subtract(Duration(days: weekStartDate.weekday - 1));
     }
@@ -194,45 +197,60 @@ class _SchedulePageState extends State<SchedulePage> {
 
   void _showSemesterPicker() {
     final info = _schedule.semesterInfo;
-    if (info == null) return;
-    final allSemesters = info.allSemesters;
-    if (allSemesters.isEmpty) return;
+    if (info == null || info.semesters.isEmpty) return;
+
+    var pendingSemesterId = _schedule.selectedSemesterId;
 
     unawaited(
       showModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
         builder: (context) {
-          return ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.only(bottom: 16),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-                child: Text(
-                  '选择学期',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              for (final entry in allSemesters)
-                ListTile(
-                  leading: Radio<String>(
-                    value: entry.key,
-                    groupValue: _schedule.selectedSemesterId,
-                    onChanged: (value) {
-                      Navigator.pop(context);
-                      if (value != null) {
-                        unawaited(_schedule.selectSemester(value));
-                      }
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('取消'),
+                        ),
+                        Expanded(
+                          child: Text(
+                            '选择学期',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            final value = pendingSemesterId;
+                            if (value != null) {
+                              unawaited(_schedule.selectSemester(value));
+                            }
+                          },
+                          child: const Text('确定'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _SemesterWheelPicker(
+                    info: info,
+                    initialSemesterId: _schedule.selectedSemesterId,
+                    onSelectionChanged: (semesterId) {
+                      pendingSemesterId = semesterId;
                     },
                   ),
-                  title: Text(entry.value),
-                  onTap: () {
-                    Navigator.pop(context);
-                    unawaited(_schedule.selectSemester(entry.key));
-                  },
-                ),
-            ],
+                ],
+              ),
+            ),
           );
         },
       ),
@@ -243,7 +261,9 @@ class _SchedulePageState extends State<SchedulePage> {
     // Desktop is handled directly by _DesktopWeekTitleMenu.
     if (isDesktopLayout(context)) return;
 
-    final computedWeek = _schedule.currentWeek().clamp(1, 25).toInt();
+    final computedWeek =
+        _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
+    final isInTerm = _schedule.isTodayInTerm;
 
     unawaited(
       showModalBottomSheet<void>(
@@ -254,7 +274,8 @@ class _SchedulePageState extends State<SchedulePage> {
 
           return StatefulBuilder(
             builder: (context, setModalState) {
-              final isViewingCurrentWeek = _currentWeek == computedWeek;
+              final isViewingCurrentWeek =
+                  isInTerm && _currentWeek == computedWeek;
 
               void selectWeek(int week) {
                 _setWeek(week);
@@ -296,11 +317,12 @@ class _SchedulePageState extends State<SchedulePage> {
                       Flexible(
                         child: ListView.builder(
                           shrinkWrap: true,
-                          itemCount: 25,
+                          itemCount: _schedule.totalWeeks,
                           itemBuilder: (context, index) {
                             final week = index + 1;
                             final selected = week == _currentWeek;
-                            final isActualCurrentWeek = week == computedWeek;
+                            final isActualCurrentWeek =
+                                isInTerm && week == computedWeek;
 
                             return ListTile(
                               selected: selected,
@@ -553,8 +575,10 @@ class _SchedulePageState extends State<SchedulePage> {
     final sp = ServiceProvider.of(context);
     final auth = sp.authService;
     final tpAuth = sp.thirdPartyAuthService;
-    final actualCurrentWeek = _schedule.currentWeek().clamp(1, 25).toInt();
-    final isViewingCurrentWeek = _currentWeek == actualCurrentWeek;
+    final isInTerm = _schedule.isTodayInTerm;
+    final actualCurrentWeek =
+        _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
+    final isViewingCurrentWeek = isInTerm && _currentWeek == actualCurrentWeek;
     final useIosChrome = isIos();
     final useLegacyIosChrome = usesLegacyIosChrome();
 
@@ -571,19 +595,10 @@ class _SchedulePageState extends State<SchedulePage> {
                   sfSymbol: 'ellipsis',
                   accessibilityLabel: '视图设置',
                   menuItems: [
-                    IosNativeNavigationBarMenuItem(
+                    const IosNativeNavigationBarMenuItem(
                       value: 'semester',
                       title: '切换学期',
-                      children: [
-                        for (final entry
-                            in _schedule.semesterInfo?.allSemesters ??
-                                const <MapEntry<String, String>>[])
-                          IosNativeNavigationBarMenuItem(
-                            value: 'semester:${entry.key}',
-                            title: entry.value,
-                            checked: _schedule.selectedSemesterId == entry.key,
-                          ),
-                      ],
+                      sfSymbol: 'calendar',
                     ),
                     IosNativeNavigationBarMenuItem(
                       value: 'saturday',
@@ -619,7 +634,7 @@ class _SchedulePageState extends State<SchedulePage> {
                 IosNativeNavigationBarItem(
                   id: 'currentWeek',
                   sfSymbol: 'calendar.badge.clock',
-                  hidden: isViewingCurrentWeek,
+                  hidden: !isInTerm || isViewingCurrentWeek,
                   accessibilityLabel: '回到本周',
                   placementGroup: 'week-actions',
                 ),
@@ -641,6 +656,7 @@ class _SchedulePageState extends State<SchedulePage> {
                       currentWeek: _currentWeek,
                       semesterLabel: _semesterLabel,
                       slideDirection: _slideDirection,
+                      totalWeeks: _schedule.totalWeeks,
                       onWeekChanged: _setWeek,
                     )
                   else
@@ -654,7 +670,9 @@ class _SchedulePageState extends State<SchedulePage> {
                         trailingIcon: Icons.unfold_more,
                       ),
                     ),
-                  if (isDesktopLayout(context) && !isViewingCurrentWeek) ...[
+                  if (isDesktopLayout(context) &&
+                      isInTerm &&
+                      !isViewingCurrentWeek) ...[
                     const SizedBox(width: 12),
                     TextButton.icon(
                       onPressed: _goToCurrentWeek,
@@ -754,7 +772,7 @@ class _SchedulePageState extends State<SchedulePage> {
                 child: useIosChrome
                     ? PageView.builder(
                         controller: _weekPageController,
-                        itemCount: 25,
+                        itemCount: _schedule.totalWeeks,
                         onPageChanged: (index) {
                           _setCurrentWeek(index + 1);
                         },
@@ -844,14 +862,6 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   void _onMenuSelected(String value) {
-    if (value.startsWith('semester:')) {
-      final semesterId = value.substring('semester:'.length);
-      if (semesterId.isNotEmpty) {
-        unawaited(_schedule.selectSemester(semesterId));
-      }
-      return;
-    }
-
     switch (value) {
       case 'currentWeek':
         _goToCurrentWeek();
@@ -869,6 +879,64 @@ class _SchedulePageState extends State<SchedulePage> {
       case 'exportCalendar':
         _startExportCalendar();
     }
+  }
+
+  void _showDesktopSemesterWheelPopover() {
+    final anchorContext = _viewSettingsAnchorKey.currentContext;
+    final info = _schedule.semesterInfo;
+    if (anchorContext == null || info == null || info.semesters.isEmpty) {
+      return;
+    }
+
+    var pendingSemesterId = _schedule.selectedSemesterId;
+
+    showDesktopPopover(
+      anchorContext: anchorContext,
+      width: 280,
+      placement: DesktopPopoverPlacement.belowEnd,
+      offset: const Offset(-12, 8),
+      builder: (context, close) {
+        final theme = Theme.of(context);
+        return DesktopPopoverSurface(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+                child: Text('选择学期', style: theme.textTheme.titleSmall),
+              ),
+              _SemesterWheelPicker(
+                info: info,
+                initialSemesterId: _schedule.selectedSemesterId,
+                onSelectionChanged: (semesterId) {
+                  pendingSemesterId = semesterId;
+                },
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: close,
+                    child: const Text('取消'),
+                  ),
+                  FilledButton(
+                    onPressed: () {
+                      close();
+                      final value = pendingSemesterId;
+                      if (value != null) {
+                        unawaited(_schedule.selectSemester(value));
+                      }
+                    },
+                    child: const Text('确定'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _showViewSettingsMenu() {
@@ -900,11 +968,11 @@ class _SchedulePageState extends State<SchedulePage> {
                   ),
                   const Divider(height: 1),
                   _DesktopSemesterSelectButton(
-                    semesters: _schedule.semesterInfo?.allSemesters ?? const [],
-                    selectedSemesterId: _schedule.selectedSemesterId,
-                    onChanged: (semesterId) {
+                    hasSemesters:
+                        _schedule.semesterInfo?.semesters.isNotEmpty ?? false,
+                    onTap: () {
                       close();
-                      unawaited(_schedule.selectSemester(semesterId));
+                      _showDesktopSemesterWheelPopover();
                     },
                   ),
                   const Divider(height: 1),
@@ -964,59 +1032,184 @@ class _SchedulePageState extends State<SchedulePage> {
 }
 
 class _DesktopSemesterSelectButton extends StatelessWidget {
-  final List<MapEntry<String, String>> semesters;
-  final String? selectedSemesterId;
-  final ValueChanged<String> onChanged;
+  final bool hasSemesters;
+  final VoidCallback onTap;
 
   const _DesktopSemesterSelectButton({
-    required this.semesters,
-    required this.selectedSemesterId,
-    required this.onChanged,
+    required this.hasSemesters,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final selectedId = selectedSemesterId;
-    final currentValue =
-        selectedId != null && semesters.any((entry) => entry.key == selectedId)
-            ? selectedId
-            : (semesters.isNotEmpty ? semesters.first.key : '');
+    return DesktopMenuRow(
+      leading: const Icon(Icons.swap_horiz, size: 20),
+      title: Text('切换学期', style: Theme.of(context).textTheme.bodyMedium),
+      onTap: hasSemesters ? onTap : null,
+    );
+  }
+}
 
-    if (semesters.isEmpty || currentValue.isEmpty) {
-      return DesktopMenuRow(
-        leading: const Icon(Icons.swap_horiz, size: 20),
-        title: Text('切换学期', style: Theme.of(context).textTheme.bodyMedium),
+/// Two synced scroll wheels (academic year, then term) for picking a semester.
+/// Reports the pending selection live via [onSelectionChanged]; the caller is
+/// responsible for confirming (or discarding) it.
+class _SemesterWheelPicker extends StatefulWidget {
+  final SemesterInfo info;
+  final String? initialSemesterId;
+  final ValueChanged<String> onSelectionChanged;
+
+  const _SemesterWheelPicker({
+    required this.info,
+    required this.initialSemesterId,
+    required this.onSelectionChanged,
+  });
+
+  @override
+  State<_SemesterWheelPicker> createState() => _SemesterWheelPickerState();
+}
+
+class _SemesterWheelPickerState extends State<_SemesterWheelPicker> {
+  late final List<String> _years;
+  late FixedExtentScrollController _yearController;
+  late FixedExtentScrollController _termController;
+  late List<MapEntry<String, String>> _termsForYear;
+  late int _yearIndex;
+  late int _termIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _years = widget.info.semesters.keys.toList()..sort();
+
+    var yearIndex = 0;
+    String? initialLabel;
+    final initialId = widget.initialSemesterId;
+    if (initialId != null) {
+      for (var i = 0; i < _years.length; i++) {
+        for (final entry in widget.info.semesters[_years[i]]!.entries) {
+          if (entry.value == initialId) {
+            yearIndex = i;
+            initialLabel = entry.key;
+          }
+        }
+      }
+    }
+
+    _yearIndex = yearIndex;
+    _termsForYear = _orderedTerms(_years[_yearIndex]);
+    final labelIndex = initialLabel == null
+        ? -1
+        : _termsForYear.indexWhere((entry) => entry.key == initialLabel);
+    _termIndex = labelIndex < 0 ? 0 : labelIndex;
+
+    _yearController = FixedExtentScrollController(initialItem: _yearIndex);
+    _termController = FixedExtentScrollController(initialItem: _termIndex);
+  }
+
+  @override
+  void dispose() {
+    _yearController.dispose();
+    _termController.dispose();
+    super.dispose();
+  }
+
+  List<MapEntry<String, String>> _orderedTerms(String year) {
+    final terms = widget.info.semesters[year] ?? const <String, String>{};
+    final entries = terms.entries.toList()
+      ..sort(
+        (a, b) =>
+            semesterTermRank(a.key).compareTo(semesterTermRank(b.key)),
+      );
+    return entries;
+  }
+
+  void _reportSelection() {
+    if (_termIndex >= _termsForYear.length) return;
+    widget.onSelectionChanged(_termsForYear[_termIndex].value);
+  }
+
+  void _onYearChanged(int index) {
+    final previousLabel = _termIndex < _termsForYear.length
+        ? _termsForYear[_termIndex].key
+        : null;
+
+    setState(() {
+      _yearIndex = index;
+      _termsForYear = _orderedTerms(_years[_yearIndex]);
+      final labelIndex = previousLabel == null
+          ? -1
+          : _termsForYear.indexWhere((entry) => entry.key == previousLabel);
+      _termIndex = labelIndex < 0
+          ? 0
+          : labelIndex.clamp(0, _termsForYear.length - 1);
+    });
+    _termController.jumpToItem(_termIndex);
+    _reportSelection();
+  }
+
+  void _onTermChanged(int index) {
+    setState(() => _termIndex = index);
+    _reportSelection();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    const itemExtent = 40.0;
+
+    Widget wheel({
+      required FixedExtentScrollController controller,
+      required int itemCount,
+      required String Function(int index) labelBuilder,
+      required ValueChanged<int> onChanged,
+    }) {
+      return CupertinoPicker(
+        scrollController: controller,
+        itemExtent: itemExtent,
+        onSelectedItemChanged: onChanged,
+        selectionOverlay: Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        children: [
+          for (var i = 0; i < itemCount; i++)
+            Center(
+              child: Text(
+                labelBuilder(i),
+                style: theme.textTheme.bodyLarge,
+              ),
+            ),
+        ],
       );
     }
 
-    return DesktopSelectPopover<String>(
-      items: semesters.map((entry) => entry.key).toList(growable: false),
-      value: currentValue,
-      onChanged: onChanged,
-      labelBuilder: (semesterId) {
-        return semesters.firstWhere((entry) => entry.key == semesterId).value;
-      },
-      leadingBuilder: (context, item, selected) {
-        return Icon(
-          selected
-              ? Icons.radio_button_checked_rounded
-              : Icons.radio_button_unchecked_rounded,
-          size: 22,
-          color: selected
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.onSurfaceVariant,
-        );
-      },
-      width: 280,
-      itemHeight: 56,
-      visibleItemCount: 5,
-      anchorBuilder: (context, isOpen, toggle) {
-        return DesktopMenuRow(
-          leading: const Icon(Icons.swap_horiz, size: 20),
-          title: Text('切换学期', style: Theme.of(context).textTheme.bodyMedium),
-          onTap: toggle,
-        );
-      },
+    return SizedBox(
+      height: 200,
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: wheel(
+              controller: _yearController,
+              itemCount: _years.length,
+              labelBuilder: (i) => _years[i],
+              onChanged: _onYearChanged,
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: wheel(
+              controller: _termController,
+              itemCount: _termsForYear.length,
+              labelBuilder: (i) =>
+                  '${semesterTermDisplayName(_termsForYear[i].key)}学期',
+              onChanged: _onTermChanged,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1025,21 +1218,21 @@ class _DesktopWeekTitleMenu extends StatelessWidget {
   final int currentWeek;
   final String semesterLabel;
   final int slideDirection;
+  final int totalWeeks;
   final ValueChanged<int> onWeekChanged;
 
   const _DesktopWeekTitleMenu({
     required this.currentWeek,
     required this.semesterLabel,
     required this.slideDirection,
+    required this.totalWeeks,
     required this.onWeekChanged,
   });
-
-  static final List<int> _weeks = List<int>.generate(25, (index) => index + 1);
 
   @override
   Widget build(BuildContext context) {
     return DesktopSelectPopover<int>(
-      items: _weeks,
+      items: List<int>.generate(totalWeeks, (index) => index + 1),
       value: currentWeek,
       onChanged: onWeekChanged,
       labelBuilder: (week) => '第 $week 周',
@@ -1091,24 +1284,13 @@ class _WeekTitleContent extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              transitionBuilder: (child, animation) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: Offset(0, slideDirection >= 0 ? 0.3 : -0.3),
-                      end: Offset.zero,
-                    ).animate(animation),
-                    child: child,
-                  ),
-                );
-              },
-              child: Text(
-                '第 $currentWeek 周',
-                key: ValueKey<int>(currentWeek),
-                style: theme.textTheme.titleMedium,
+            ReelText(
+              '第 $currentWeek 周',
+              style: theme.textTheme.titleMedium,
+              options: ReelTextOptions(
+                direction: slideDirection < 0
+                    ? ReelTextDirection.down
+                    : ReelTextDirection.up,
               ),
             ),
             if (semesterLabel.isNotEmpty)
