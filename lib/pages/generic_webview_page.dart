@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/material.dart';
 import 'package:desktop_webview_window/desktop_webview_window.dart'
     show WebviewWindow, CreateConfiguration;
+import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart'
     show WebViewController, JavaScriptMode, NavigationDelegate,
          NavigationDecision, WebViewWidget, WebViewCookie,

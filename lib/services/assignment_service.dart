@@ -12,6 +12,7 @@ import 'api_base_url.dart';
 import 'auth_service.dart';
 import 'http_client.dart';
 import 'schedule_service.dart';
+import 'session/session_tree.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
 
@@ -60,29 +61,57 @@ class AssignmentService extends ChangeNotifier {
     // Refetch when bindings or auth change *after* initial app boot.
     // The initial fetch is kicked off explicitly from main.dart so we
     // don't double-fire during service initialization.
-    _tpAuth.addListener(_onDepsChanged);
-    _auth.addListener(_onDepsChanged);
-    _schedule.addListener(_onDepsChanged);
+    _tpAuth.addListener(_onBindingsOrAuthChanged);
+    _auth.addListener(_onBindingsOrAuthChanged);
+    _schedule.addListener(_onScheduleChanged);
   }
 
   bool _autoRefetchEnabled = false;
+  // Track the last semester we refetched for, so schedule notifies that
+  // don't change the semester (loading flips, course_table updates, errors)
+  // do NOT trigger a redundant assignment refetch.
+  String? _lastRefetchedSemesterId;
 
   /// Allow auto-refetch on auth/binding changes. Call after the first
   /// explicit fetch from app boot has been kicked off.
-  void enableAutoRefetch() => _autoRefetchEnabled = true;
+  void enableAutoRefetch() {
+    _autoRefetchEnabled = true;
+    // Seed so the first schedule notify (which doesn't change the semester)
+    // doesn't trigger a redundant refetch of the same semester.
+    _lastRefetchedSemesterId = _schedule.selectedSemesterId;
+  }
 
-  void _onDepsChanged() {
+  /// Auth or binding changed — always refetch (tokens, accounts differ).
+  void _onBindingsOrAuthChanged() {
     if (!_autoRefetchEnabled) return;
+    _lastRefetchedSemesterId = _schedule.selectedSemesterId;
+    unawaited(fetchAssignments());
+  }
+
+  /// Schedule changed — only refetch if the selected semester actually
+  /// changed, not on every loading/error/course_table flip. This prevents
+  /// a cascade of redundant blackboard+exam fetches during a semester switch.
+  /// Also defers the refetch while selectSemester is mid-fetch (its
+  /// course_table request primes the EAMS session; firing exam_table
+  /// concurrently would race on EAMS's stateful session and fail with
+  /// "Failed to extract numeric ids").
+  void _onScheduleChanged() {
+    if (!_autoRefetchEnabled) return;
+    if (_schedule.suppressAssignmentRefetch) return;
+    final currentSemester = _schedule.selectedSemesterId;
+    if (currentSemester == _lastRefetchedSemesterId) return;
+    _lastRefetchedSemesterId = currentSemester;
     unawaited(fetchAssignments());
   }
 
   @override
   void dispose() {
-    _tpAuth.removeListener(_onDepsChanged);
-    _auth.removeListener(_onDepsChanged);
-    _schedule.removeListener(_onDepsChanged);
+    _tpAuth.removeListener(_onBindingsOrAuthChanged);
+    _auth.removeListener(_onBindingsOrAuthChanged);
+    _schedule.removeListener(_onScheduleChanged);
     super.dispose();
   }
+
 
   /// Clear cached + in-memory deadlines (called on primary logout).
   Future<void> clearCache() async {
@@ -180,7 +209,7 @@ class AssignmentService extends ChangeNotifier {
 
     final futures = <Future<void>>[];
 
-    if (_tpAuth.hasEgateBinding) {
+    if (_tpAuth.hasCpdailyBinding) {
       futures.add(
         _fetchBlackboard().then((items) {
           if (items != null) successfulResults['blackboard'] = items;
@@ -209,8 +238,8 @@ class AssignmentService extends ChangeNotifier {
             }),
           );
           break;
-        case ThirdPartyPlatform.egate:
-          // eGate provides CpDaily session, not deadline data — skip.
+        case ThirdPartyPlatform.cpdaily:
+          // cpdaily provides the CpDaily session, not deadline data — skip.
           break;
       }
     }
@@ -257,11 +286,11 @@ class AssignmentService extends ChangeNotifier {
     final successfulResults = <String, List<Assignment>>{};
     Future<void>? future;
 
-    if (platformId == 'blackboard' && _tpAuth.hasEgateBinding) {
+    if (platformId == 'blackboard' && _tpAuth.hasCpdailyBinding) {
       future = _fetchBlackboard().then((items) {
         if (items != null) successfulResults['blackboard'] = items;
       });
-    } else if (platformId == 'exam' && _tpAuth.hasEgateBinding) {
+    } else if (platformId == 'exam' && _tpAuth.hasCpdailyBinding) {
       future = _fetchExamTable().then((items) {
         if (items != null) successfulResults['exam'] = items;
       });
@@ -302,28 +331,28 @@ class AssignmentService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // -- Per-platform fetchers --
-
   Future<List<Assignment>?> _fetchBlackboard() async {
-    final egate = _tpAuth.egateBinding;
-    if (egate == null) return null;
-    final tgc = (egate.raw['tgc'] as String?) ?? '';
-    if (tgc.isEmpty) return null;
-
-    Future<http.Response> doFetch(String token) => _http.post(
-          Uri.parse('$_baseUrl/deadlines/blackboard'),
-          headers: _jsonHeaders(),
-          body: jsonEncode({'token': token}),
-          tag: 'deadlines:blackboard',
-        );
+    final node = _tpAuth.elearningNode;
+    // withCookie handles initial minting if the downstream cookie isn't set.
+    if (!_tpAuth.hasCpdailyBinding) return null;
 
     try {
-      var resp = await doFetch(tgc);
-      if (resp.statusCode == 401 && await _tpAuth.renewEgateBinding()) {
-        final newTgc =
-            (_tpAuth.egateBinding?.raw['tgc'] as String?) ?? tgc;
-        resp = await doFetch(newTgc);
-      }
+      final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
+        node,
+        (cp) async {
+          // cp.cookies is the elearning cookie string minted from the
+          // cpdaily CASTGC. The backend uses it directly to query
+          // Blackboard (no SSO bounce needed).
+          final r = await _http.post(
+            Uri.parse('$_baseUrl/deadlines/blackboard'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({'token': cp.cookies}),
+            tag: 'deadlines:blackboard',
+          );
+          return CookieAction(r, expired: r.statusCode == 401);
+        },
+      );
+      if (resp == null) return null;
       return _parseDeadlinesResponse(resp, 'blackboard');
     } catch (e) {
       _platformErrors['blackboard'] = '同步失败，请检查网络或稍后重试';
@@ -333,32 +362,30 @@ class AssignmentService extends ChangeNotifier {
 
   Future<List<Assignment>?> _fetchExamTable() async {
     final semesterId = _selectedSemesterId();
-    if (!_tpAuth.hasEgateBinding ||
+    final node = _tpAuth.eamsNode;
+    if (!_tpAuth.hasCpdailyBinding ||
         semesterId == null ||
         semesterId.isEmpty) {
       return null;
     }
 
-    Map<String, dynamic> buildBody() => {
-          'semester_id': semesterId,
-          'cookies': _tpAuth.egateCookies(),
-        };
-
     try {
-      var resp = await _http.post(
-        Uri.parse('$_baseUrl/schedule/exam_table'),
-        headers: _jsonHeaders(),
-        body: jsonEncode(buildBody()),
-        tag: 'schedule:exam_table',
+      final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
+        node,
+        (cp) async {
+          final r = await _http.post(
+            Uri.parse('$_baseUrl/schedule/exam_table'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({
+              'semester_id': semesterId,
+              'cookies': cp.cookies,
+            }),
+            tag: 'schedule:exam_table',
+          );
+          return CookieAction(r, expired: r.statusCode == 401);
+        },
       );
-      if (resp.statusCode == 401 && await _tpAuth.renewEgateBinding()) {
-        resp = await _http.post(
-          Uri.parse('$_baseUrl/schedule/exam_table'),
-          headers: _jsonHeaders(),
-          body: jsonEncode(buildBody()),
-          tag: 'schedule:exam_table:retry',
-        );
-      }
+      if (resp == null) return null;
       return _parseExamTableResponse(resp);
     } catch (e) {
       _platformErrors['exam'] = '同步失败，请检查网络或稍后重试';
@@ -367,13 +394,23 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<List<Assignment>?> _fetchGradescope(ThirdPartyAccount acc) async {
+    final node = _tpAuth.gradescopeNode;
+    if (!node.isAvailable) return null;
     try {
-      final resp = await _http.post(
-        Uri.parse('$_baseUrl/deadlines/gradescope'),
-        headers: _jsonHeaders(),
-        body: jsonEncode({'token': acc.token}),
-        tag: 'deadlines:gradescope',
+      final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
+        node,
+        (cp) async {
+          // cp.cookies is the gradescope bearer token.
+          final r = await _http.post(
+            Uri.parse('$_baseUrl/deadlines/gradescope'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({'token': cp.cookies}),
+            tag: 'deadlines:gradescope',
+          );
+          return CookieAction(r, expired: r.statusCode == 401);
+        },
       );
+      if (resp == null) return null;
       if (resp.statusCode == 401) {
         await _tpAuth.unbind(ThirdPartyPlatform.gradescope);
         _platformErrors['gradescope'] = 'token 已失效,请重新绑定';
@@ -394,20 +431,31 @@ class AssignmentService extends ChangeNotifier {
       return null;
     }
 
+    final node = _tpAuth.hydroNode;
+    if (!node.isAvailable) return null;
+
     final all = <Assignment>[];
     var hadError = false;
     for (final domain in domains) {
       final url = '${origin.replaceAll(RegExp(r'/+$'), '')}/d/$domain';
       try {
-        final resp = await _http.post(
-          Uri.parse('$_baseUrl/deadlines/hydro'),
-          headers: _jsonHeaders(),
-          body: jsonEncode({
-            'token': acc.token,
-            'args': {'url': url},
-          }),
-          tag: 'deadlines:hydro:$domain',
+        final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
+          node,
+          (cp) async {
+            // cp.cookies is the hydro sid cookie.
+            final r = await _http.post(
+              Uri.parse('$_baseUrl/deadlines/hydro'),
+              headers: _jsonHeaders(),
+              body: jsonEncode({
+                'token': cp.cookies,
+                'args': {'url': url},
+              }),
+              tag: 'deadlines:hydro:$domain',
+            );
+            return CookieAction(r, expired: r.statusCode == 401);
+          },
         );
+        if (resp == null) return null;
         if (resp.statusCode == 401) {
           await _tpAuth.unbind(ThirdPartyPlatform.hydro);
           _platformErrors['hydro'] = 'token 已失效,请重新绑定';

@@ -51,19 +51,24 @@ class DebugLogger extends ChangeNotifier {
     if (_entries.length >= _maxEntries) {
       _entries.removeAt(0);
     }
-    _entries.add(
-      LogEntry(
-        timestamp: DateTime.now(),
-        method: method,
-        url: url,
-        statusCode: statusCode,
-        requestBody: redactSensitive(requestBody),
-        responseBody: redactSensitive(responseBody),
-        error: error,
-        tag: tag,
-      ),
+    final entry = LogEntry(
+      timestamp: DateTime.now(),
+      method: method,
+      url: url,
+      statusCode: statusCode,
+      requestBody: redactSensitive(requestBody),
+      responseBody: redactSensitive(responseBody),
+      error: error,
+      tag: tag,
     );
+    _entries.add(entry);
     notifyListeners();
+    if (kDebugMode) {
+      debugPrint(
+        '[HTTP] ${entry.method} ${entry.url} '
+        '${entry.statusCode ?? '—'} ${entry.tag ?? ''}',
+      );
+    }
   }
 
   static const _sensitiveKeys = {

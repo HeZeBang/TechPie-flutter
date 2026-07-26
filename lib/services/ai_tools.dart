@@ -53,8 +53,8 @@ ToolRegistry buildAiTools({
         'properties': {},
       },
       execute: (args) async {
-        if (!thirdPartyAuthService.hasEgateBinding) {
-          return {'error': '未绑定 eGate 校园账号，请在设置中绑定后再试。'};
+        if (!thirdPartyAuthService.hasCpdailyBinding) {
+          return {'error': '未绑定校园账号（eGate），请在设置中绑定后再试。'};
         }
         await scheduleService.loadCachedData();
         var info = scheduleService.semesterInfo;
@@ -106,8 +106,8 @@ ToolRegistry buildAiTools({
         },
       },
       execute: (args) async {
-        if (!thirdPartyAuthService.hasEgateBinding) {
-          return {'error': '未绑定 eGate 校园账号，请在设置中绑定后再试。'};
+        if (!thirdPartyAuthService.hasCpdailyBinding) {
+          return {'error': '未绑定校园账号（eGate），请在设置中绑定后再试。'};
         }
         await scheduleService.loadCachedData();
         final semesterId =
