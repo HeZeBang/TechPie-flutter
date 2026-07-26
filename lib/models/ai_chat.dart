@@ -125,9 +125,8 @@ class AiConfig {
     this.maxTokens = 2048,
   });
 
-  /// Defaults taken from `tech-atlas/.env.local` (DeepSeek's Anthropic-compat
-  /// endpoint). The `/v1` segment is included because `AnthropicProvider`
-  /// appends `/messages` itself.
+  /// Default endpoint: DeepSeek's Anthropic-compatible API. The `/v1` segment
+  /// is included because `AnthropicProvider` appends `/messages` itself.
   static const defaultBaseUrl = 'https://api.deepseek.com/anthropic/v1';
   static const defaultModel = 'deepseek-v4-flash';
   static const _defaultSystemPrompt =

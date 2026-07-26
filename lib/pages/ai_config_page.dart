@@ -355,8 +355,7 @@ class _AiConfigPageState extends State<AiConfigPage> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              '默认值取自 tech-atlas/.env.local（DeepSeek 的 Anthropic 兼容端点）。'
-              '令牌仅保存在设备安全存储中。',
+              '支持任何 Anthropic 兼容端点。令牌仅保存在设备安全存储中。',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
