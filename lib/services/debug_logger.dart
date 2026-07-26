@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 
 class LogEntry {
@@ -56,8 +54,8 @@ class DebugLogger extends ChangeNotifier {
       method: method,
       url: url,
       statusCode: statusCode,
-      requestBody: redactSensitive(requestBody),
-      responseBody: redactSensitive(responseBody),
+      requestBody: requestBody,
+      responseBody: responseBody,
       error: error,
       tag: tag,
     );
@@ -69,57 +67,6 @@ class DebugLogger extends ChangeNotifier {
         '${entry.statusCode ?? '—'} ${entry.tag ?? ''}',
       );
     }
-  }
-
-  static const _sensitiveKeys = {
-    'password',
-    'token',
-    'tgc',
-    'sessionToken',
-    'api_token',
-    'sid',
-    'sid.sig',
-    'CASTGC',
-    'castgc',
-    'cookies',
-    'cookie',
-    // Cloud-sync: the derived master key and the encrypted blob both must
-    // never appear in logs (the blob is ciphertext, but leaking it still
-    // gives an attacker an offline target; the key is the crown jewel).
-    'techpie_sync',
-    'sync_master_key',
-  };
-
-  // Best-effort redaction: parse as JSON and walk the tree replacing
-  // sensitive values with "***". Falls back to regex on the raw string.
-  static String? redactSensitive(String? body) {
-    if (body == null || body.isEmpty) return body;
-    try {
-      final decoded = jsonDecode(body);
-      return jsonEncode(_redactNode(decoded));
-    } catch (_) {
-      var out = body;
-      for (final key in _sensitiveKeys) {
-        final pattern = RegExp(
-          '"${RegExp.escape(key)}"\\s*:\\s*"([^"\\\\]|\\\\.)*"',
-        );
-        out = out.replaceAll(pattern, '"$key":"***"');
-      }
-      return out;
-    }
-  }
-
-  static dynamic _redactNode(dynamic node) {
-    if (node is Map) {
-      return {
-        for (final entry in node.entries)
-          entry.key: _sensitiveKeys.contains(entry.key)
-              ? (entry.value == null ? null : '***')
-              : _redactNode(entry.value),
-      };
-    }
-    if (node is List) return node.map(_redactNode).toList();
-    return node;
   }
 
   void clear() {
