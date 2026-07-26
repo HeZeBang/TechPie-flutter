@@ -151,9 +151,13 @@ class AdaptiveFeedbackHostState extends State<AdaptiveFeedbackHost>
             child: ValueListenableBuilder<int>(
               valueListenable: _pageRouteDepth,
               builder: (context, depth, banner) {
-                final width = MediaQuery.sizeOf(context).width;
                 final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-                final navVisible = depth <= 1 && width < 600;
+                // MobileShell's bottom nav bar is always the shell now (the
+                // sidebar is temporarily disabled, see
+                // AppShell._desktopShellEnabled), so nav-bar clearance no
+                // longer depends on window width — only whether a full-screen
+                // page currently covers it (depth > 1).
+                final navVisible = depth <= 1;
                 final navClearance = isIos()
                     ? 52.0 + 12
                     : TgBottomNavBar.barHeight + 2 * TgBottomNavBar.margin;
