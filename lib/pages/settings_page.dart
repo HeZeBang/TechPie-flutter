@@ -4,11 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:techpie/services/auth_service.dart';
 
-import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
 import '../services/sync_service.dart';
 import '../services/theme_service.dart';
-import '../services/third_party_auth_service.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/blurred_app_bar.dart';
@@ -106,12 +104,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   ].join(' · '),
                 ),
               ),
-              _CpdailyBindingTile(tpAuth: tpAuth),
               ListTile(
                 leading: const Icon(Icons.account_tree_outlined),
                 title: const Text('Linked accounts'),
                 subtitle: Text(
-                  '${tpAuth.boundPlatforms.length} bound · Gradescope / Hydro / eGate',
+                  '${tpAuth.boundPlatforms.length} bound · CpDaily/IDS · Gradescope · Hydro',
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
@@ -558,39 +555,3 @@ class _AdaptiveSwitchTile extends StatelessWidget {
   }
 }
 
-class _CpdailyBindingTile extends StatelessWidget {
-  final ThirdPartyAuthService tpAuth;
-
-  const _CpdailyBindingTile({required this.tpAuth});
-
-  @override
-  Widget build(BuildContext context) {
-    final cpdaily = tpAuth.account(ThirdPartyPlatform.cpdaily);
-    final bound = cpdaily != null;
-    final theme = Theme.of(context);
-
-    return ListTile(
-      leading: Icon(
-        bound ? Icons.vpn_key : Icons.vpn_key_outlined,
-        color: bound ? theme.colorScheme.primary : null,
-      ),
-      title: const Text('CpDaily / IDS'),
-      subtitle: Text(
-        bound
-            ? '已绑定 · ${cpdaily.name ?? cpdaily.sid ?? cpdaily.account}'
-            : '未绑定 · 需要绑定以启用课表和考试功能',
-      ),
-      trailing: bound
-          ? Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 20)
-          : const Icon(Icons.chevron_right),
-      onTap: bound
-          ? null
-          : () => unawaited(
-                pushPlatformViewPage<void>(
-                  context,
-                  builder: (_) => const ThirdPartyAccountsPage(),
-                ),
-              ),
-    );
-  }
-}

@@ -28,6 +28,7 @@ class SessionTree extends ChangeNotifier {
     required this.http,
     required this.baseUrl,
     this.persistDerived,
+    this.recordRenewStatus,
   }) {
     cpdaily = SessionNode(
       id: 'cpdaily',
@@ -37,6 +38,7 @@ class SessionTree extends ChangeNotifier {
       renewPath: '/auth/renew',
       renewMode: RenewMode.cpdailySession,
       apiPath: 'egate',
+      recordRenewStatus: recordRenewStatus,
     );
     gradescope = SessionNode(
       id: 'gradescope',
@@ -46,6 +48,7 @@ class SessionTree extends ChangeNotifier {
       renewPath: '/auth/third-party/gradescope',
       renewMode: RenewMode.password,
       apiPath: 'gradescope',
+      recordRenewStatus: recordRenewStatus,
     );
     hydro = SessionNode(
       id: 'hydro',
@@ -55,6 +58,7 @@ class SessionTree extends ChangeNotifier {
       renewPath: '/auth/third-party/hydro',
       renewMode: RenewMode.password,
       apiPath: 'hydro',
+      recordRenewStatus: recordRenewStatus,
     );
     eams = SessionNode(
       id: 'eams',
@@ -65,6 +69,7 @@ class SessionTree extends ChangeNotifier {
       renewPath: '/auth/third-party/eams',
       renewMode: RenewMode.parentCookie,
       persistDerived: persistDerived,
+      recordRenewStatus: recordRenewStatus,
     );
     elearning = SessionNode(
       id: 'elearning',
@@ -75,6 +80,7 @@ class SessionTree extends ChangeNotifier {
       renewPath: '/auth/third-party/elearning',
       renewMode: RenewMode.parentCookie,
       persistDerived: persistDerived,
+      recordRenewStatus: recordRenewStatus,
     );
     cpdaily.attachChild(eams);
     cpdaily.attachChild(elearning);
@@ -91,6 +97,7 @@ class SessionTree extends ChangeNotifier {
   }
   final PersistAccount persist;
   final PersistDerivedCookie? persistDerived;
+  final PersistRenewStatus? recordRenewStatus;
   final LoggingHttpClient http;
   final BaseUrlGetter baseUrl;
 

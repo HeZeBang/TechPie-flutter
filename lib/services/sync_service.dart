@@ -95,6 +95,41 @@ class SyncService extends ChangeNotifier {
   bool get hasLocalKey => _cachedKey != null;
   bool get needsRestore => _needsRestore;
   DateTime? get lastSyncAt => _lastSyncAt;
+
+  /// The most recent local mutation across all bindings (bind/rebind/renew),
+  /// for comparison against [cloudLastModified] in the sync settings UI.
+  /// Null when there are no local bindings at all.
+  DateTime? get localLastModified {
+    final accounts = _tpAuth.accounts;
+    if (accounts.isEmpty) return null;
+    return accounts.map((a) => a.updatedAt).reduce(
+          (a, b) => a.isAfter(b) ? a : b,
+        );
+  }
+
+  /// Best-effort read of the cloud blob's most recent modification time,
+  /// without merging or writing anything back — just for the "local vs
+  /// cloud version" comparison in the sync settings UI. Returns null if
+  /// there's no cloud blob, or this device has no cached key to decrypt it
+  /// (surface as "cloud version unknown" rather than attempting a merge).
+  Future<DateTime?> cloudLastModified() async {
+    if (_cachedKey == null) return null;
+    final blob = await _readBlob();
+    if (blob == null) return null;
+    final dot = blob.indexOf('.');
+    if (dot <= 0) return null;
+    final inner = blob.substring(dot + 1);
+    final plain = await SyncCrypto.decrypt(inner, _cachedKey!.key);
+    if (plain == null) return null;
+    final remote = SyncEnvelope.decode(plain);
+    if (remote == null) return null;
+    final times = [
+      ...remote.accounts.map((a) => a.updatedAt),
+      ...remote.tombstones.map((t) => t.deletedAt),
+    ];
+    if (times.isEmpty) return null;
+    return times.reduce((a, b) => a.isAfter(b) ? a : b);
+  }
   /// Human-readable text from the most recent failed Casdoor call (for the
   /// "立即备份/恢复" toasts). Null when the last call succeeded.
   String? get lastError => _lastError;

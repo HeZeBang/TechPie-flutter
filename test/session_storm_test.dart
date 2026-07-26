@@ -48,7 +48,7 @@ void main() {
     final logger = DebugLogger();
     httpClient = LoggingHttpClient(logger, inner: client);
     tree = SessionTree(
-      persist: (_) async {},
+      persist: (_, {force = false}) async {},
       http: httpClient,
       baseUrl: () => 'https://backend.test',
     );

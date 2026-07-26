@@ -3,12 +3,23 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import 'api_base_url.dart';
 import 'http_client.dart';
 import 'session/session_node.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
+
+/// Every session-node id, top-level and derived, in a stable order. Used to
+/// bulk-load persisted renew status at boot.
+const List<String> _allSessionNodeIds = [
+  'cpdaily',
+  'gradescope',
+  'hydro',
+  'eams',
+  'elearning',
+];
 
 class ThirdPartyBindException implements Exception {
   final ThirdPartyPlatform platform;
@@ -24,6 +35,11 @@ class ThirdPartyAuthService extends ChangeNotifier {
 
   bool _initialized = false;
   bool _suppressSyncPush = false;
+  // Set by a renew-success call site (via _persistAccount/bind's `force`
+  // param) just before triggering _tree.setAccount, so the resulting
+  // _onTreeChanged() call knows to bypass the pushIfDue throttle. Consumed
+  // (reset to false) the moment _onTreeChanged reads it.
+  bool _pendingForcePush = false;
   // SMS context for cpdaily binding flow (set by sendCpdailySmsCode).
   Map<String, dynamic>? _cpdailySmsContext;
 
@@ -32,6 +48,11 @@ class ThirdPartyAuthService extends ChangeNotifier {
   // mutated account so the cloud-sync LWW merge converges.
   String _deviceId = '';
 
+  // Renew status per session-node id (cpdaily/gradescope/hydro/eams/
+  // elearning), for the linked-accounts status indicator. Loaded at boot,
+  // updated in-memory + persisted on every renew attempt. Local-only.
+  final Map<String, RenewStatus> _renewStatuses = {};
+  RenewStatus? renewStatus(String nodeId) => _renewStatuses[nodeId];
 
   ThirdPartyAuthService(this._storage, this._http) {
     _tree = SessionTree(
@@ -39,6 +60,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
       http: _http,
       baseUrl: () => apiBaseUrl(_storage),
       persistDerived: _persistDerivedCookie,
+      recordRenewStatus: _recordRenewStatus,
     );
     // Tree node notifications propagate to this service's listeners (UI,
     // AssignmentService auto-refetch, etc.) and the cloud-sync push hook.
@@ -108,26 +130,45 @@ class ThirdPartyAuthService extends ChangeNotifier {
     // (one per setAccount) that would each cascade into
     // AssignmentService.fetchAssignments + SyncService.pushIfDue.
     if (_suppressSyncPush) return;
+    // A renew-success call site (_persistAccount/bind) may have requested a
+    // forced push just before this notification fired.
+    final effectiveForce = force || _pendingForcePush;
+    _pendingForcePush = false;
     // A node changed (renew / setAccount) — re-notify our listeners and push
     // to cloud sync. This is the single funnel for all mutations now.
     notifyListeners();
     final hook = onBindingsChanged;
     if (hook != null) {
-      unawaited(hook(force: force));
+      unawaited(hook(force: effectiveForce));
     }
   }
 
   /// Persist a (possibly refreshed) account into secure storage AND sync the
   /// matching [SessionNode]'s in-memory state. Installed as the tree's
   /// [PersistAccount] callback so node-initiated renews flow through here.
-  Future<void> _persistAccount(ThirdPartyAccount updated) async {
+  /// [force] requests the cloud-sync push bypass its throttle — set by
+  /// [SessionNode]'s renew methods since a successful renew must not wait
+  /// for the next throttle window.
+  Future<void> _persistAccount(
+    ThirdPartyAccount updated, {
+    bool force = false,
+  }) async {
     // Stamp the renewed/refreshed account with this device's id + a fresh
     // updatedAt so the cloud-sync LWW merge treats it as the newest version.
     final touched = _touch(updated);
     await _storage.saveThirdPartyAccount(touched);
+    if (force) _pendingForcePush = true;
     // Re-sync the node's in-memory copy so UI + cookieProvider see the
     // stamped version. setAccount notifies; _onTreeChanged funnels it.
     _tree.setAccount(touched.platform, touched);
+  }
+
+  /// Persist a session node's renew outcome (in-memory + storage) for the
+  /// linked-accounts status indicator. Installed as the tree's
+  /// [PersistRenewStatus] callback.
+  Future<void> _recordRenewStatus(String nodeId, RenewStatus status) async {
+    _renewStatuses[nodeId] = status;
+    await _storage.saveRenewStatus(nodeId, status);
   }
 
   /// Persist/clear a child node's derived cookie. Installed as the tree's
@@ -191,9 +232,27 @@ class ThirdPartyAuthService extends ChangeNotifier {
       final cookie = await _storage.loadDerivedCookie(id);
       _tree.setDerivedCookie(id, cookie);
     }
+    // Hydrate the renew-status indicator cache (+ each node's in-memory
+    // copy) so the linked-accounts UI can render a status dot immediately.
+    for (final id in _allSessionNodeIds) {
+      final status = _storage.loadRenewStatus(id);
+      if (status != null) _renewStatuses[id] = status;
+      _sessionNode(id)?.seedRenewStatus(status);
+    }
     _initialized = true;
     notifyListeners();
   }
+
+  /// Look up a [SessionNode] by its stable string id (matches
+  /// [ThirdPartyPlatform.id] for top-level nodes, plus 'eams'/'elearning').
+  SessionNode? _sessionNode(String nodeId) => switch (nodeId) {
+        'cpdaily' => _tree.cpdaily,
+        'gradescope' => _tree.gradescope,
+        'hydro' => _tree.hydro,
+        'eams' => _tree.eams,
+        'elearning' => _tree.elearning,
+        _ => null,
+      };
 
   Future<ThirdPartyAccount> bind({
     required ThirdPartyPlatform platform,
@@ -202,6 +261,10 @@ class ThirdPartyAuthService extends ChangeNotifier {
     String? hydroOrigin,
     List<String>? hydroDomains,
     bool autoRenew = false,
+    // Requests the cloud-sync push bypass its throttle. Set by
+    // [autoRenewIfNeeded] since a successful background auto-renew must not
+    // wait for the next throttle window.
+    bool forceSyncPush = false,
   }) async {
     final body = <String, dynamic>{
       'account': account,
@@ -267,6 +330,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
 
     final touched = _touch(acc);
     await _storage.saveThirdPartyAccount(touched);
+    if (forceSyncPush) _pendingForcePush = true;
     _tree.setAccount(platform, touched);
     return touched;
   }
@@ -507,9 +571,18 @@ class ThirdPartyAuthService extends ChangeNotifier {
           hydroOrigin: acc.hydroOrigin,
           hydroDomains: acc.hydroDomains,
           autoRenew: true,
+          forceSyncPush: true,
         );
-      } catch (_) {
+        await _recordRenewStatus(
+          acc.platform.id,
+          RenewStatus(at: DateTime.now(), success: true),
+        );
+      } catch (e) {
         failed.add(acc.platform);
+        await _recordRenewStatus(
+          acc.platform.id,
+          RenewStatus(at: DateTime.now(), success: false, error: '$e'),
+        );
       }
     }
     return failed;

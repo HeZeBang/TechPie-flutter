@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/assignment_overrides.dart';
 import '../models/course_table.dart';
 import '../models/oa_gym.dart';
+import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import '../models/user_session.dart';
 
@@ -136,6 +137,26 @@ class StorageService {
   Future<void> clearAllDerivedCookies() async {
     for (final id in const ['eams', 'elearning']) {
       await _secure.delete(key: '$_derivedCookieKeyPrefix$id');
+    }
+  }
+
+  // Renew status (last attempt outcome per session-node id: cpdaily,
+  // gradescope, hydro, eams, elearning). Local-only UI signal, never synced.
+  static const _renewStatusKeyPrefix = 'renew_status_';
+
+  Future<void> saveRenewStatus(String nodeId, RenewStatus status) =>
+      _prefs.setString(
+        '$_renewStatusKeyPrefix$nodeId',
+        jsonEncode(status.toJson()),
+      );
+
+  RenewStatus? loadRenewStatus(String nodeId) {
+    final raw = _prefs.getString('$_renewStatusKeyPrefix$nodeId');
+    if (raw == null) return null;
+    try {
+      return RenewStatus.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
     }
   }
 

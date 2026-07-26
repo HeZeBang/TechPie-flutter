@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../../models/renew_status.dart';
 import '../../models/third_party_account.dart';
 import '../http_client.dart';
 import 'cookie_provider.dart';
@@ -13,8 +14,21 @@ import 'cookie_provider.dart';
 /// hook) in one place. Returns nothing; the node owns the in-memory account
 /// afterwards. Only meaningful for top-level nodes (renewMode cpdailySession
 /// or password); non-top-level nodes skip persist (derived cookies are
-/// ephemeral).
-typedef PersistAccount = Future<void> Function(ThirdPartyAccount updated);
+/// ephemeral). [force] requests the cloud-sync push bypass its throttle —
+/// set by renew() call sites since a successful renew must not wait for the
+/// next throttle window.
+typedef PersistAccount = Future<void> Function(
+  ThirdPartyAccount updated, {
+  bool force,
+});
+
+/// Callback the facade installs so every node (top-level or derived) can
+/// persist its latest renew outcome for the "linked accounts" status
+/// indicator. Local-only — never part of the cloud-sync envelope.
+typedef PersistRenewStatus = Future<void> Function(
+  String nodeId,
+  RenewStatus status,
+);
 
 /// Callback a non-top-level node installs to persist its derived downstream
 /// cookie into secure storage (so cold start can skip the SSO bounce) or
@@ -80,6 +94,7 @@ class SessionNode extends ChangeNotifier {
     this.renewMode,
     this.apiPath,
     this.persistDerived,
+    this.recordRenewStatus,
   });
 
   /// Stable identifier (matches storage key / platform id, except cpdaily
@@ -103,6 +118,7 @@ class SessionNode extends ChangeNotifier {
   final String? apiPath;
   final PersistAccount persist;
   final PersistDerivedCookie? persistDerived;
+  final PersistRenewStatus? recordRenewStatus;
   final LoggingHttpClient http;
   final BaseUrlGetter baseUrl;
 
@@ -220,6 +236,21 @@ class SessionNode extends ChangeNotifier {
   bool _lastRenewWasCredentialError = false;
   bool get lastRenewWasCredentialError => _lastRenewWasCredentialError;
 
+  /// Outcome of the most recent renew attempt (this session, or seeded from
+  /// persisted [RenewStatus] at boot). Null until a renew has ever completed.
+  DateTime? _lastRenewAt;
+  bool? _lastRenewSucceeded;
+  DateTime? get lastRenewAt => _lastRenewAt;
+  bool? get lastRenewSucceeded => _lastRenewSucceeded;
+
+  /// Seed the in-memory renew-status cache from a persisted [RenewStatus] at
+  /// boot, without notifying (this is hydration, not a state change the UI
+  /// needs to react to — mirrors [setDerivedCookie]).
+  void seedRenewStatus(RenewStatus? status) {
+    _lastRenewAt = status?.at;
+    _lastRenewSucceeded = status?.success;
+  }
+
   /// Current epoch. Bumped after every successful [renew]. Callers capture
   /// this when reading cookies and pass it to [renewIfNeeded].
   int get epoch => _epoch;
@@ -321,7 +352,9 @@ class SessionNode extends ChangeNotifier {
         password: acc.password,
       );
       _account = updated;
-      await persist(updated);
+      // force: true — a successful renew must push to the cloud immediately,
+      // not wait for the pushIfDue throttle window.
+      await persist(updated, force: true);
       markRenewed();
       return true;
     } catch (_) {
@@ -374,7 +407,9 @@ class SessionNode extends ChangeNotifier {
         password: pw,
       );
       _account = renewed;
-      await persist(renewed);
+      // force: true — a successful renew must push to the cloud immediately,
+      // not wait for the pushIfDue throttle window.
+      await persist(renewed, force: true);
       markRenewed();
       return true;
     } catch (_) {
@@ -426,11 +461,39 @@ class SessionNode extends ChangeNotifier {
 
   /// Refresh this node's credentials. Single-flighted: concurrent callers
   /// share one in-flight renew and observe the same result.
+  ///
+  /// _renewInFlight is only ever cleared via whenComplete on the OUTER
+  /// future returned here — never synchronously inside [_renewTracked] —
+  /// so a concurrent caller can never slip past the single-flight guard
+  /// mid-attempt.
   Future<bool> renew() {
     if (_renewInFlight != null) return _renewInFlight!;
-    final f = doRenew().whenComplete(() => _renewInFlight = null);
+    final f = _renewTracked().whenComplete(() => _renewInFlight = null);
     _renewInFlight = f;
     return f;
+  }
+
+  /// Wraps [doRenew] to record the outcome (for the linked-accounts status
+  /// indicator) regardless of [RenewMode]. Success already notifies via
+  /// [persist]→[setAccount] (top-level) or the explicit notifyListeners()
+  /// at the end of [_renewWithParentCookie] (child) — only failure needs a
+  /// new notify here, to avoid the double-notify storm [markRenewed]'s doc
+  /// comment already explains avoiding.
+  Future<bool> _renewTracked() async {
+    final ok = await doRenew();
+    final status = RenewStatus(
+      at: DateTime.now(),
+      success: ok,
+      error: ok
+          ? null
+          : (_lastRenewWasCredentialError ? 'credential' : 'transient'),
+    );
+    _lastRenewAt = status.at;
+    _lastRenewSucceeded = ok;
+    final rec = recordRenewStatus;
+    if (rec != null) unawaited(rec(id, status));
+    if (!ok) notifyListeners();
+    return ok;
   }
 
   /// Renew only if no renew has completed since [beforeEpoch]. This is the

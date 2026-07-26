@@ -22,11 +22,22 @@ class SyncSettingsPage extends StatefulWidget {
 
 class _SyncSettingsPageState extends State<SyncSettingsPage> {
   bool _busy = false;
+  bool _versionFetchStarted = false;
+  bool _loadingCloudVersion = false;
+  DateTime? _cloudLastModified;
 
   @override
   Widget build(BuildContext context) {
     final sp = ServiceProvider.of(context);
     final sync = sp.syncService;
+    // One-time lazy fetch of the cloud version for the comparison tile.
+    // Deliberately NOT in initState — ServiceProvider.of() depends on
+    // InheritedWidget lookup, which throws if called before initState
+    // completes.
+    if (!_versionFetchStarted && sync.enabled) {
+      _versionFetchStarted = true;
+      unawaited(_loadCloudVersion(sync));
+    }
     final useIosChrome = isIos();
     final useLegacyIosChrome = usesLegacyIosChrome();
     final topInset = useIosChrome || useLegacyIosChrome
@@ -48,6 +59,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
               const SizedBox(height: 8),
               if (sync.enabled) ...[
                 _statusTile(sync),
+                _versionCompareTile(sync),
                 ListTile(
                   leading: const Icon(Icons.download_for_offline_outlined),
                   title: const Text('立即从云端恢复'),
@@ -114,6 +126,60 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     );
   }
 
+  Widget _versionCompareTile(SyncService sync) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    String fmt(DateTime t) =>
+        '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+
+    final local = sync.localLastModified;
+    final cloud = _cloudLastModified;
+    final localLabel = local == null ? '无本地数据' : fmt(local);
+    String cloudLabel;
+    String? compareLabel;
+    if (_loadingCloudVersion) {
+      cloudLabel = '正在获取…';
+    } else if (cloud == null) {
+      cloudLabel = '未知（需先解密一次，例如「立即从云端恢复」）';
+    } else {
+      cloudLabel = fmt(cloud);
+      if (local == null) {
+        compareLabel = '云端较新';
+      } else if (local.isAfter(cloud)) {
+        compareLabel = '本地较新';
+      } else if (cloud.isAfter(local)) {
+        compareLabel = '云端较新';
+      } else {
+        compareLabel = '已一致';
+      }
+    }
+
+    return ListTile(
+      leading: const Icon(Icons.compare_arrows_outlined),
+      title: const Text('版本对比'),
+      subtitle: Text(
+        '本地: $localLabel\n云端: $cloudLabel'
+        '${compareLabel != null ? ' · $compareLabel' : ''}',
+      ),
+      isThreeLine: true,
+      trailing: IconButton(
+        icon: const Icon(Icons.refresh),
+        tooltip: '刷新云端版本',
+        onPressed: _loadingCloudVersion ? null : () => unawaited(_loadCloudVersion(sync)),
+      ),
+    );
+  }
+
+  Future<void> _loadCloudVersion(SyncService sync) async {
+    if (!mounted) return;
+    setState(() => _loadingCloudVersion = true);
+    final at = await sync.cloudLastModified();
+    if (!mounted) return;
+    setState(() {
+      _cloudLastModified = at;
+      _loadingCloudVersion = false;
+    });
+  }
+
   // -- Actions -----------------------------------------------------------------
 
   Future<void> _guard(Future<void> Function() task) async {
@@ -135,6 +201,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     await _guard(() async {
       final outcome = await sync.setupWithMasterPassword(pwd);
       _feedback(outcome);
+      if (outcome.ok) unawaited(_loadCloudVersion(sync));
     });
   }
 
@@ -148,6 +215,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     await _guard(() async {
       final outcome = await sync.restoreWithMasterPassword(pwd);
       _feedback(outcome);
+      if (outcome.ok) unawaited(_loadCloudVersion(sync));
     });
   }
 
@@ -188,6 +256,10 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     await _guard(() async {
       final outcome = await sync.disable();
       _feedback(outcome);
+      if (outcome.ok) {
+        _versionFetchStarted = false;
+        setState(() => _cloudLastModified = null);
+      }
     });
   }
 
@@ -196,6 +268,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       try {
         await sync.pull();
         _toast('已从云端恢复绑定');
+        unawaited(_loadCloudVersion(sync));
       } on NeedMasterPassword {
         _toast('需要主密码，请在下方输入');
       } catch (_) {
@@ -209,6 +282,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       final res = await sync.push();
       if (res.ok) {
         _toast('已备份到云端');
+        unawaited(_loadCloudVersion(sync));
       } else {
         // Surface Casdoor's real reason (e.g. "Unauthorized operation") so the
         // user knows whether it's a network/authz/permission issue.
