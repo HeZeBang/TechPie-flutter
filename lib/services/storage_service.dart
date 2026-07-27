@@ -30,7 +30,6 @@ class StorageService {
   static const _syncMasterKeyKey = 'sync_master_key'; // secure storage
   static const _deviceIdKey = 'device_id';
 
-
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
 
@@ -160,6 +159,26 @@ class StorageService {
     }
   }
 
+  // Session-node renewal schedule. Local-only runtime state; never synced.
+  static const _nextRenewKeyPrefix = 'next_renew_';
+
+  Future<void> saveNextRenewTimestamp(
+    String nodeId,
+    DateTime? timestamp,
+  ) async {
+    final key = '$_nextRenewKeyPrefix$nodeId';
+    if (timestamp == null) {
+      await _prefs.remove(key);
+    } else {
+      await _prefs.setString(key, timestamp.toIso8601String());
+    }
+  }
+
+  DateTime? loadNextRenewTimestamp(String nodeId) {
+    final raw = _prefs.getString('$_nextRenewKeyPrefix$nodeId');
+    return raw == null ? null : DateTime.tryParse(raw);
+  }
+
   // SharedPreferences for non-sensitive data
   bool get debugMode => _prefs.getBool(_debugModeKey) ?? false;
   Future<void> setDebugMode(bool value) => _prefs.setBool(_debugModeKey, value);
@@ -239,8 +258,8 @@ class StorageService {
     return CourseTable.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
-  Future<void> saveTermCalendar(String key, TermCalendar info) => _prefs
-      .setString('$_termBeginPrefix$key', jsonEncode(info.toJson()));
+  Future<void> saveTermCalendar(String key, TermCalendar info) =>
+      _prefs.setString('$_termBeginPrefix$key', jsonEncode(info.toJson()));
 
   TermCalendar? loadTermCalendar(String key) {
     final raw = _prefs.getString('$_termBeginPrefix$key');

@@ -22,12 +22,12 @@ void main() {
 
   late _CountingClient client;
   late LoggingHttpClient httpClient;
+  late List<String> probeDisplays;
   late SessionTree tree;
 
   /// Seed a cpdaily account so the cpdaily node is available. The renew
   /// endpoint (/auth/renew) is mocked to rotate tgc + cookies each call.
-  ThirdPartyAccount seedAccount({String tgc = 'tgc-v0'}) =>
-      ThirdPartyAccount(
+  ThirdPartyAccount seedAccount({String tgc = 'tgc-v0'}) => ThirdPartyAccount(
         platform: ThirdPartyPlatform.cpdaily,
         account: 'student',
         sid: '2024xxxx',
@@ -45,12 +45,14 @@ void main() {
 
   setUp(() {
     client = _CountingClient();
+    probeDisplays = [];
     final logger = DebugLogger();
     httpClient = LoggingHttpClient(logger, inner: client);
     tree = SessionTree(
       persist: (_, {force = false}) async {},
       http: httpClient,
       baseUrl: () => 'https://backend.test',
+      persistProbe: (_, result) async => probeDisplays.add(result.display),
     );
     tree.cpdaily.setAccount(seedAccount());
   });
@@ -69,6 +71,26 @@ void main() {
       tree.cpdaily.cookieProvider!.cookies,
       contains('CASTGC=tgc-v1'),
     );
+  });
+  test('cpdaily schedules the next renewal one month after success', () async {
+    final before = DateTime.now();
+    await tree.cpdaily.renew();
+
+    final next = tree.cpdaily.nextRenewTimestamp;
+    expect(next, isNotNull);
+    expect(next!.isAfter(before.add(const Duration(days: 27))), true);
+    expect(next.isBefore(before.add(const Duration(days: 32))), true);
+  });
+
+  test('derived cookie schedules the next renewal ten minutes after success',
+      () async {
+    final before = DateTime.now();
+    await tree.eams.renew();
+
+    final next = tree.eams.nextRenewTimestamp;
+    expect(next, isNotNull);
+    expect(next!.isAfter(before.add(const Duration(minutes: 9))), true);
+    expect(next.isBefore(before.add(const Duration(minutes: 11))), true);
   });
 
   test('renewIfNeeded skips when epoch already advanced by a concurrent renew',
@@ -95,7 +117,10 @@ void main() {
   test('withCookie retries 401 once with refreshed cookie', () async {
     // First request to /fetch returns 401; retry (after renew) returns 200.
     client.fetchStatuses = [401, 200];
-    client.fetchBodies = ['{}', jsonEncode({'ok': true})];
+    client.fetchBodies = [
+      '{}',
+      jsonEncode({'ok': true}),
+    ];
 
     final resp = await tree.withCookie<http.Response>(
       tree.cpdaily,
@@ -151,6 +176,29 @@ void main() {
     );
   });
 
+  test('withCookie proactively renews when the schedule is due', () async {
+    await tree.cpdaily.renew();
+    tree.cpdaily.seedNextRenewTimestamp(
+      DateTime.now().subtract(const Duration(seconds: 1)),
+    );
+    client.fetchStatuses = [200];
+    client.fetchBodies = ['{}'];
+
+    final response = await tree.withCookie<http.Response>(
+      tree.cpdaily,
+      (cp) async {
+        final r = await httpClient.post(
+          Uri.parse('https://backend.test/fetch'),
+          body: jsonEncode({'cookies': cp.cookies}),
+        );
+        return CookieAction(r, expired: false);
+      },
+    );
+
+    expect(response?.statusCode, 200);
+    expect(client.renewCalls, 2);
+  });
+
   // -- Child node (eams/elearning) downstream renew tests --
 
   test('eams doRenew mints downstream cookie from parent tgc', () async {
@@ -183,6 +231,13 @@ void main() {
     expect(tree.eams.cookieProvider, isNull);
   });
 
+  test('successful child renew runs a silent keepalive probe', () async {
+    final ok = await tree.eams.renew();
+
+    expect(ok, true);
+    expect(probeDisplays, ['Probe User']);
+  });
+
   test('child 401 retry: eams renew succeeds (single-level, fresh parent)',
       () async {
     // Mint the eams cookie first.
@@ -191,7 +246,10 @@ void main() {
 
     // Fetch returns 401 (eams cookie stale), then 200 after re-mint.
     client.fetchStatuses = [401, 200];
-    client.fetchBodies = ['{}', jsonEncode({'ok': true})];
+    client.fetchBodies = [
+      '{}',
+      jsonEncode({'ok': true}),
+    ];
 
     final resp = await tree.withCookie<http.Response>(
       tree.eams,
@@ -225,7 +283,9 @@ void main() {
     // Configure the fetch path to return 200 (the fetch itself is fine once
     // the eams cookie is minted).
     client.fetchStatuses = [200];
-    client.fetchBodies = [jsonEncode({'ok': true})];
+    client.fetchBodies = [
+      jsonEncode({'ok': true}),
+    ];
 
     final resp = await tree.withCookie<http.Response>(
       tree.eams,
@@ -326,6 +386,9 @@ class _CountingClient extends http.BaseClient {
         'data': {'token': token},
       });
       return _resp(resp, status);
+    }
+    if (url.contains('eams.shanghaitech.edu.cn/eams/stdDetail.action')) {
+      return _resp('姓名：</td><td>Probe User</td>', 200);
     }
 
     // Other paths (fetch) consume from the configured sequences.

@@ -62,6 +62,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
       baseUrl: () => apiBaseUrl(_storage),
       persistDerived: _persistDerivedCookie,
       recordRenewStatus: _recordRenewStatus,
+      persistProbe: _persistProbe,
+      persistRenewTimestamp: _persistRenewTimestamp,
     );
     // Tree node notifications propagate to this service's listeners (UI,
     // AssignmentService auto-refetch, etc.) and the cloud-sync push hook.
@@ -122,6 +124,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// wants the push to bypass the throttle so a removal is immediately
   /// reflected in the cloud blob.
   Future<void> Function({bool force})? onBindingsChanged;
+
   /// Hook fired when a platform is deliberately unbound. Wired by
   /// [SyncService] to record a tombstone so the deletion survives the next
   /// LWW merge (instead of being resurrected by an older remote copy).
@@ -187,6 +190,49 @@ class ThirdPartyAuthService extends ChangeNotifier {
     }
   }
 
+  Future<void> _persistRenewTimestamp(
+    String nodeId,
+    DateTime? timestamp,
+  ) =>
+      _storage.saveNextRenewTimestamp(nodeId, timestamp);
+
+  /// Persist data discovered by the silent keepalive probe that follows renew.
+  /// Child cookies are stored locally; probe display values update the parent
+  /// account only when they contain a useful identity value.
+  Future<void> _persistProbe(String nodeId, KeepaliveResult result) async {
+    if (nodeId == 'eams' || nodeId == 'elearning' || nodeId == 'egateApp') {
+      final cookies = result.cookies;
+      if (cookies != null && cookies.isNotEmpty) {
+        await _persistDerivedCookie(nodeId, cookies);
+      }
+    }
+
+    final identity = result.display.trim();
+    if (identity.isEmpty || identity.startsWith('HTTP ')) return;
+    final parent = _treeForNode(nodeId).parent;
+    final account = parent?.account;
+    if (account == null) return;
+
+    final updated = switch (nodeId) {
+      'eams' || 'elearning' => account.copyWith(name: identity),
+      'egateApp' => account.copyWith(sid: identity),
+      _ => null,
+    };
+    if (updated == null) return;
+    if (updated.name == account.name && updated.sid == account.sid) return;
+    await _persistAccount(updated, force: false);
+  }
+
+  SessionNode _treeForNode(String nodeId) => switch (nodeId) {
+        'cpdaily' => _tree.cpdaily,
+        'gradescope' => _tree.gradescope,
+        'hydro' => _tree.hydro,
+        'eams' => _tree.eams,
+        'elearning' => _tree.elearning,
+        'egateApp' => _tree.egateApp,
+        _ => _tree.cpdaily,
+      };
+
   /// Stamp [acc] with this device's id + current time, for LWW merge.
   ThirdPartyAccount _touch(ThirdPartyAccount acc) {
     return acc.copyWith(updatedAt: DateTime.now(), deviceId: _deviceId);
@@ -243,6 +289,23 @@ class ThirdPartyAuthService extends ChangeNotifier {
       final status = _storage.loadRenewStatus(id);
       if (status != null) _renewStatuses[id] = status;
       _sessionNode(id)?.seedRenewStatus(status);
+    }
+    for (final id in _allSessionNodeIds) {
+      _sessionNode(id)?.seedNextRenewTimestamp(
+        _storage.loadNextRenewTimestamp(id),
+      );
+    }
+    for (final node in [
+      _tree.cpdaily,
+      _tree.gradescope,
+      _tree.hydro,
+      _tree.eams,
+      _tree.elearning,
+      _tree.egateApp,
+    ]) {
+      if (node.isAvailable && node.nextRenewTimestamp == null) {
+        await node.scheduleNextRenew();
+      }
     }
     _initialized = true;
     notifyListeners();
@@ -547,48 +610,25 @@ class ThirdPartyAuthService extends ChangeNotifier {
     return touched;
   }
 
-  /// Boot-time best-effort renewal: for each bound account whose token is
-  /// either expired or expires within [window] (default 48h) AND has
-  /// auto-renew enabled with stored credentials, re-authenticate.
-  /// Returns the list of platforms whose renewal attempt failed (so the
-  /// caller can surface a single aggregated toast); platforms that didn't
-  /// need renewal are not included.
-  Future<List<ThirdPartyPlatform>> autoRenewIfNeeded({
-    Duration window = const Duration(hours: 48),
-  }) async {
-    final cutoff = DateTime.now().add(window);
-    final snapshot = _accountsSnapshot;
+  /// Renew nodes whose persisted [SessionNode.nextRenewTimestamp] is due.
+  /// Top-level password nodes still require auto-renew credentials; derived
+  /// nodes can renew independently from their parent while their cookie is
+  /// still usable.
+  Future<List<ThirdPartyPlatform>> autoRenewIfNeeded() async {
     final failed = <ThirdPartyPlatform>[];
-    for (final acc in snapshot) {
-      if (!acc.autoRenew) continue;
-      // cpdaily tokens are renewed via /api/auth/renew using stored tgc,
-      // not via password re-authentication — skip here.
-      if (acc.platform == ThirdPartyPlatform.cpdaily) continue;
-      final pw = acc.password;
-      if (pw == null || pw.isEmpty) continue;
-      final at = acc.expireAt;
-      if (at == null) continue;
-      if (at.isAfter(cutoff)) continue;
-      try {
-        await bind(
-          platform: acc.platform,
-          account: acc.account,
-          password: pw,
-          hydroOrigin: acc.hydroOrigin,
-          hydroDomains: acc.hydroDomains,
-          autoRenew: true,
-          forceSyncPush: true,
-        );
-        await _recordRenewStatus(
-          acc.platform.id,
-          RenewStatus(at: DateTime.now(), success: true),
-        );
-      } catch (e) {
-        failed.add(acc.platform);
-        await _recordRenewStatus(
-          acc.platform.id,
-          RenewStatus(at: DateTime.now(), success: false, error: '$e'),
-        );
+    final nodes = [
+      _tree.cpdaily,
+      _tree.gradescope,
+      _tree.hydro,
+      _tree.eams,
+      _tree.elearning,
+      _tree.egateApp,
+    ];
+    for (final node in nodes) {
+      if (!node.isRenewDue) continue;
+      final ok = await node.renewIfDue();
+      if (!ok && node.parent == null && node.canRenew) {
+        failed.add(ThirdPartyPlatform.fromId(node.id)!);
       }
     }
     return failed;

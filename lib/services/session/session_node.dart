@@ -31,10 +31,15 @@ typedef PersistRenewStatus = Future<void> Function(
   RenewStatus status,
 );
 
+/// Callback invoked after a successful renew when its keepalive probe also succeeds.
+/// Callback the facade installs so every node can persist successful probe data.
+typedef PersistProbe = Future<void> Function(
+  String nodeId,
+  KeepaliveResult result,
+);
+
 /// Callback a non-top-level node installs to persist its derived downstream
-/// cookie into secure storage (so cold start can skip the SSO bounce) or
-/// clear it (when the parent renews and invalidates it). Receives the node
-/// id and the cookie string (null to clear).
+/// cookie into secure storage (or clear it when the parent renews).
 typedef PersistDerivedCookie = Future<void> Function(
   String nodeId,
   String? cookie,
@@ -43,6 +48,19 @@ typedef PersistDerivedCookie = Future<void> Function(
 /// Callback to read the current API base URL (depends on storage settings).
 typedef BaseUrlGetter = String Function();
 
+/// Determines how a node calculates its next scheduled renewal.
+enum RenewSchedule {
+  none,
+  cpdailyDefault,
+  accountExpiry,
+  derivedCookie,
+}
+
+/// Persists the next scheduled renewal timestamp for a session node.
+typedef PersistRenewTimestamp = Future<void> Function(
+  String nodeId,
+  DateTime? timestamp,
+);
 
 /// Result of a [SessionNode.probe] keepalive check.
 class KeepaliveResult {
@@ -50,20 +68,22 @@ class KeepaliveResult {
   final String display;
   final int? statusCode;
   final String? rawBody;
+  final String? cookies;
 
-  const KeepaliveResult(this.success, {
+  const KeepaliveResult(
+    this.success, {
     required this.display,
     this.statusCode,
     this.rawBody,
+    this.cookies,
   });
 }
 
 /// Configuration for a lightweight keepalive probe on a [SessionNode].
 ///
-/// Unlike [SessionNode.renew], a keepalive probe is **read-only**:
-/// it does not mutate credentials, bump the epoch, persist, or cascade
-/// to children.  It only verifies the current session is still alive
-/// and optionally extracts a display name from the response.
+/// A manual [SessionNode.probe] call remains read-only from the caller's
+/// perspective. The silent probe that follows a successful [renew] may return
+/// updated cookies and identity data through [PersistProbe].
 ///
 /// Both [successCheck] and [displayText] have sensible defaults when
 /// omitted (status 200, plain "HTTP NNN" display), so the simplest
@@ -126,7 +146,8 @@ String _mergeSetCookie(String existing, String setCookieHeader) {
     final trimmed = part.trim();
     final eq = trimmed.indexOf('=');
     if (eq > 0) {
-      updated[trimmed.substring(0, eq).trim()] = trimmed.substring(eq + 1).trim();
+      updated[trimmed.substring(0, eq).trim()] =
+          trimmed.substring(eq + 1).trim();
     }
   }
   // Apply updates from Set-Cookie.  Multiple cookies may be present in
@@ -198,6 +219,9 @@ class SessionNode extends ChangeNotifier {
     this.apiPath,
     this.persistDerived,
     this.recordRenewStatus,
+    this.persistProbe,
+    this.persistRenewTimestamp,
+    this.renewSchedule = RenewSchedule.none,
     this.keepaliveConfig,
   });
 
@@ -223,7 +247,11 @@ class SessionNode extends ChangeNotifier {
   final PersistAccount persist;
   final PersistDerivedCookie? persistDerived;
   final PersistRenewStatus? recordRenewStatus;
+  final PersistProbe? persistProbe;
+  final PersistRenewTimestamp? persistRenewTimestamp;
+  final RenewSchedule renewSchedule;
   final LoggingHttpClient http;
+
   /// Optional keepalive probe configuration. When non-null, [probe] can be
   /// called to verify the current session without mutating state.
   final KeepaliveConfig? keepaliveConfig;
@@ -251,22 +279,20 @@ class SessionNode extends ChangeNotifier {
   /// this. Returns an empty map for non-top-level nodes.
   Map<String, dynamic> get rawFields => _account?.raw ?? const {};
 
-  /// Set the bound account. Only meaningful for top-level nodes; calling on
-  /// a non-top-level node is a no-op.
   void setAccount(ThirdPartyAccount? acc) {
     if (parent != null) return; // non-top-level: no account
     _account = acc;
+    _nextRenewTimestamp = acc == null ? null : _defaultNextRenewTimestamp();
     if (acc == null) _lastProbeDisplay = null;
     notifyListeners();
   }
 
-  /// Hydrate the derived cookie from persistent storage at boot. Only
-  /// meaningful for non-top-level nodes; calling on a top-level node is a
-  /// no-op. Does NOT notify — this is a boot-time hydration, not a state
-  /// change the UI needs to react to.
   void setDerivedCookie(String? cookie) {
     if (parent == null) return; // top-level: no derived cookie
     _derivedCookie = (cookie != null && cookie.isNotEmpty) ? cookie : null;
+    _nextRenewTimestamp = _derivedCookie == null
+        ? null
+        : (_nextRenewTimestamp ?? _defaultNextRenewTimestamp());
   }
 
   void attachChild(SessionNode child) {
@@ -336,14 +362,73 @@ class SessionNode extends ChangeNotifier {
         _derivedCookie!.isNotEmpty;
   }
 
+  bool get canRenew {
+    if (parent != null) return parent!.isAvailable;
+    if (renewMode == RenewMode.cpdailySession) return _account != null;
+    return _account?.autoRenew == true &&
+        _account?.password?.isNotEmpty == true;
+  }
+
   /// Human-readable display name for this node, suitable for UI labels.
   ///
   /// Priority: most recent successful probe display > account name > id.
   String get displayName => _lastProbeDisplay ?? _account?.name ?? id;
 
+  /// The next scheduled renewal event for this node.
+  DateTime? _nextRenewTimestamp;
+  DateTime? get nextRenewTimestamp => _nextRenewTimestamp;
+
+  bool get isRenewDue {
+    final next = _nextRenewTimestamp;
+    return next != null && !DateTime.now().isBefore(next);
+  }
+
+  DateTime? _defaultNextRenewTimestamp() {
+    final now = DateTime.now();
+    return switch (renewSchedule) {
+      RenewSchedule.cpdailyDefault => DateTime(
+          now.year,
+          now.month + 1,
+          now.day,
+          now.hour,
+          now.minute,
+          now.second,
+          now.millisecond,
+          now.microsecond,
+        ),
+      RenewSchedule.accountExpiry => _account?.expireAt?.subtract(
+          const Duration(hours: 48),
+        ),
+      RenewSchedule.derivedCookie => now.add(const Duration(minutes: 10)),
+      RenewSchedule.none => null,
+    };
+  }
+
+  Future<void> scheduleNextRenew() async {
+    _nextRenewTimestamp = _defaultNextRenewTimestamp();
+    final persist = persistRenewTimestamp;
+    if (persist != null) await persist(id, _nextRenewTimestamp);
+  }
+
+  void seedNextRenewTimestamp(DateTime? timestamp) {
+    _nextRenewTimestamp = timestamp;
+  }
+
+  Future<bool> renewIfDue() async {
+    if (!isAvailable || !canRenew) return false;
+    if (!isRenewDue) return true;
+    return renew();
+  }
+
   // -- Renewal: single-flight + stale-epoch skip --
 
   int _epoch = 0;
+  Future<void> clearNextRenewTimestamp() async {
+    _nextRenewTimestamp = null;
+    final persist = persistRenewTimestamp;
+    if (persist != null) await persist(id, null);
+  }
+
   Future<bool>? _renewInFlight;
 
   /// Whether the last [doRenew] failure was a credential-level error
@@ -406,6 +491,7 @@ class SessionNode extends ChangeNotifier {
       if (pd != null) {
         unawaited(pd(id, null));
       }
+      unawaited(clearNextRenewTimestamp());
       notifyListeners();
     }
   }
@@ -416,7 +502,7 @@ class SessionNode extends ChangeNotifier {
   ///
   /// Does NOT mutate session state, persist, or trigger cascading renews.
   /// Network/probe failures preserve the previous display name.
-  Future<KeepaliveResult> probe() async {
+  Future<KeepaliveResult> probe({bool silent = false}) async {
     final cfg = keepaliveConfig;
     if (cfg == null) {
       return const KeepaliveResult(false, display: 'no keepalive config');
@@ -446,9 +532,10 @@ class SessionNode extends ChangeNotifier {
         // Pre-flight failure is non-fatal — proceed with original cookies.
       }
     }
-    final uri = cfg.path.startsWith('http://') || cfg.path.startsWith('https://')
-        ? Uri.parse(cfg.path)
-        : Uri.parse('${baseUrl()}${cfg.path}');
+    final uri =
+        cfg.path.startsWith('http://') || cfg.path.startsWith('https://')
+            ? Uri.parse(cfg.path)
+            : Uri.parse('${baseUrl()}${cfg.path}');
     final baseHeaders = <String, String>{
       'Cookie': cookies,
       if (cfg.headers != null) ...cfg.headers!,
@@ -479,11 +566,9 @@ class SessionNode extends ChangeNotifier {
             tag: 'keepalive:$id',
           );
       }
-      // Success detection: callback > bodyRegex > statusCode.
       final ok = cfg.successCheck?.call(resp) ??
           cfg.bodyRegex?.hasMatch(resp.body) ??
           (resp.statusCode == 200);
-      // Display extraction: callback > bodyRegex group 1 > "HTTP NNN".
       String display;
       if (cfg.displayText != null) {
         display = cfg.displayText!(resp);
@@ -493,15 +578,20 @@ class SessionNode extends ChangeNotifier {
       } else {
         display = 'HTTP ${resp.statusCode}';
       }
-      if (!ok) display = 'HTTP ${resp.statusCode}';
       if (ok) {
         _lastProbeDisplay = display;
-        notifyListeners();
+        if (silent && parent != null && cookies.isNotEmpty) {
+          _derivedCookie = cookies;
+          await scheduleNextRenew();
+        }
+        if (!silent) notifyListeners();
       }
-      return KeepaliveResult(ok,
-        display: display,
+      return KeepaliveResult(
+        ok,
+        display: ok ? display : 'HTTP ${resp.statusCode}',
         statusCode: resp.statusCode,
         rawBody: resp.body,
+        cookies: cookies,
       );
     } catch (e) {
       return KeepaliveResult(false, display: e.toString());
@@ -550,16 +640,15 @@ class SessionNode extends ChangeNotifier {
             data['sessionToken'] as String? ?? acc.raw['sessionToken'] ?? '',
         'tgc': data['tgc'] as String? ?? acc.raw['tgc'] ?? '',
         'userId': data['userId'] as String? ?? acc.raw['userId'] ?? '',
-        'tenantId':
-            data['tenantId'] as String? ?? acc.raw['tenantId'] ?? '',
+        'tenantId': data['tenantId'] as String? ?? acc.raw['tenantId'] ?? '',
         'cookies': data['cookies'] as String? ?? acc.raw['cookies'] ?? '',
       };
       final updated = ThirdPartyAccount(
         platform: acc.platform,
         account: acc.account,
-        sid: acc.sid,
-        name: acc.name,
-        email: acc.email,
+        sid: data['sid'] as String? ?? acc.sid,
+        name: data['name'] as String? ?? acc.name,
+        email: data['email'] as String? ?? acc.email,
         token: acc.token,
         expire: acc.expire,
         raw: newRaw,
@@ -699,6 +788,14 @@ class SessionNode extends ChangeNotifier {
   /// comment already explains avoiding.
   Future<bool> _renewTracked() async {
     final ok = await doRenew();
+    if (ok) await scheduleNextRenew();
+    if (ok && keepaliveConfig != null) {
+      final result = await probe(silent: true);
+      if (result.success) {
+        final persist = persistProbe;
+        if (persist != null) await persist(id, result);
+      }
+    }
     final status = RenewStatus(
       at: DateTime.now(),
       success: ok,

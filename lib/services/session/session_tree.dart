@@ -31,6 +31,8 @@ class SessionTree extends ChangeNotifier {
     required this.baseUrl,
     this.persistDerived,
     this.recordRenewStatus,
+    this.persistProbe,
+    this.persistRenewTimestamp,
   }) {
     cpdaily = SessionNode(
       id: 'cpdaily',
@@ -41,6 +43,9 @@ class SessionTree extends ChangeNotifier {
       renewMode: RenewMode.cpdailySession,
       apiPath: 'egate',
       recordRenewStatus: recordRenewStatus,
+      persistProbe: persistProbe,
+      persistRenewTimestamp: persistRenewTimestamp,
+      renewSchedule: RenewSchedule.cpdailyDefault,
     );
     gradescope = SessionNode(
       id: 'gradescope',
@@ -52,6 +57,9 @@ class SessionTree extends ChangeNotifier {
       apiPath: 'gradescope',
       recordRenewStatus: recordRenewStatus,
       keepaliveConfig: const KeepaliveConfig(method: 'HEAD', path: '/'),
+      persistProbe: persistProbe,
+      persistRenewTimestamp: persistRenewTimestamp,
+      renewSchedule: RenewSchedule.accountExpiry,
     );
     hydro = SessionNode(
       id: 'hydro',
@@ -63,6 +71,9 @@ class SessionTree extends ChangeNotifier {
       apiPath: 'hydro',
       recordRenewStatus: recordRenewStatus,
       keepaliveConfig: const KeepaliveConfig(method: 'HEAD', path: '/'),
+      persistProbe: persistProbe,
+      persistRenewTimestamp: persistRenewTimestamp,
+      renewSchedule: RenewSchedule.accountExpiry,
     );
     eams = SessionNode(
       id: 'eams',
@@ -74,6 +85,9 @@ class SessionTree extends ChangeNotifier {
       renewMode: RenewMode.parentCookie,
       persistDerived: persistDerived,
       recordRenewStatus: recordRenewStatus,
+      persistProbe: persistProbe,
+      persistRenewTimestamp: persistRenewTimestamp,
+      renewSchedule: RenewSchedule.derivedCookie,
       keepaliveConfig: KeepaliveConfig(
         path: 'https://eams.shanghaitech.edu.cn/eams/stdDetail.action',
         bodyRegex: RegExp(r'姓名[：:]\s*</td>\s*<td[^>]*>([^<]+)</td>'),
@@ -87,10 +101,14 @@ class SessionTree extends ChangeNotifier {
       parent: cpdaily,
       renewPath: '/auth/third-party/elearning',
       renewMode: RenewMode.parentCookie,
+      persistProbe: persistProbe,
+      persistRenewTimestamp: persistRenewTimestamp,
+      renewSchedule: RenewSchedule.derivedCookie,
       persistDerived: persistDerived,
       recordRenewStatus: recordRenewStatus,
       keepaliveConfig: KeepaliveConfig(
-        path: 'https://elearning.shanghaitech.edu.cn:8443/webapps/portal/execute/tabs/tabAction'
+        path:
+            'https://elearning.shanghaitech.edu.cn:8443/webapps/portal/execute/tabs/tabAction'
             '?tab_tab_group_id=_1_1',
         bodyRegex: RegExp(r'欢迎[，,]\s*(.+?)\s*&ndash;'),
       ),
@@ -102,12 +120,16 @@ class SessionTree extends ChangeNotifier {
       baseUrl: baseUrl,
       parent: cpdaily,
       renewPath: '/auth/third-party/egate-app',
+      persistProbe: persistProbe,
+      renewSchedule: RenewSchedule.derivedCookie,
+      persistRenewTimestamp: persistRenewTimestamp,
       renewMode: RenewMode.parentCookie,
       persistDerived: persistDerived,
       recordRenewStatus: recordRenewStatus,
       keepaliveConfig: KeepaliveConfig(
         method: 'POST',
-        path: 'https://egate.shanghaitech.edu.cn/xsfw/sys/jbxxapp/modules/jbxx/hqdlxsjpcxx.do',
+        path:
+            'https://egate.shanghaitech.edu.cn/xsfw/sys/jbxxapp/modules/jbxx/hqdlxsjpcxx.do',
         preFlightPath:
             'https://egate.shanghaitech.edu.cn/xsfw/sys/funauthapp/api/getAppConfig/'
             'xshdapp-4770201649822494.do?v=0918614558578972',
@@ -118,7 +140,8 @@ class SessionTree extends ChangeNotifier {
         },
         displayText: (r) {
           final data = jsonDecode(r.body);
-          final rows = ((data['datas'] as Map?)?['hqdlxsjpcxx'] as Map?)?['rows'] as List?;
+          final rows = ((data['datas'] as Map?)?['hqdlxsjpcxx']
+              as Map?)?['rows'] as List?;
           return (rows?.firstOrNull as Map?)?['XSBH'] as String? ?? 'egateApp';
         },
       ),
@@ -139,7 +162,9 @@ class SessionTree extends ChangeNotifier {
   }
   final PersistAccount persist;
   final PersistDerivedCookie? persistDerived;
+  final PersistProbe? persistProbe;
   final PersistRenewStatus? recordRenewStatus;
+  final PersistRenewTimestamp? persistRenewTimestamp;
   final LoggingHttpClient http;
   final BaseUrlGetter baseUrl;
 
@@ -240,9 +265,16 @@ class SessionTree extends ChangeNotifier {
     SessionNode node,
     Future<CookieAction<T>> Function(CookieProvider provider) action,
   ) async {
-    // If not available, try to mint credentials first (initial minting for
-    // child nodes, or a no-op for top-level nodes that are already bound).
+    if (node.parent != null &&
+        node.parent!.canRenew &&
+        node.parent!.isRenewDue) {
+      final parentOk = await node.parent!.renewIfDue();
+      if (!parentOk) return null;
+    }
     if (!node.isAvailable) {
+      final ok = await node.renew();
+      if (!ok) return null;
+    } else if (node.canRenew && node.isRenewDue) {
       final ok = await node.renew();
       if (!ok) return null;
     }
