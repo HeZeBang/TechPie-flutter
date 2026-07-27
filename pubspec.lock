@@ -418,6 +418,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.15.0"
+  mobile_scanner:
+    dependency: "direct main"
+    description:
+      name: mobile_scanner
+      sha256: "0b466a0a8a211b366c2e87f3345715faef9b6011c7147556ad22f37de6ba3173"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "6.0.11"
   open_filex:
     dependency: "direct main"
     description:

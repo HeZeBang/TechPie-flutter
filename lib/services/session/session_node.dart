@@ -64,7 +64,8 @@ enum RenewMode {
 /// SessionTree
 /// ├── cpdaily     (top-level, account+password/SMS bind, /auth/renew)
 /// │   ├── eams        (child, /auth/third-party/eams, parent tgc)
-/// │   └── elearning   (child, /auth/third-party/elearning, parent tgc)
+/// │   ├── elearning   (child, /auth/third-party/elearning, parent tgc)
+/// │   └── egateApp    (child, /auth/third-party/egate-app, parent tgc)
 /// ├── gradescope  (top-level, account+password bind, bearer token)
 /// └── hydro       (top-level, account+password bind, sid cookie)
 /// ```
@@ -208,6 +209,7 @@ class SessionNode extends ChangeNotifier {
         'cpdaily' => 'ids.shanghaitech.edu.cn',
         'eams' => 'eams.shanghaitech.edu.cn',
         'elearning' => 'elearning.shanghaitech.edu.cn',
+        'egateApp' => 'egate.shanghaitech.edu.cn',
         _ => '',
       };
 

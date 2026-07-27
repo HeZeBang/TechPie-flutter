@@ -14,7 +14,8 @@ import 'session_node.dart';
 /// SessionTree
 /// ├── cpdaily     (top-level, account+password/SMS bind, /auth/renew)
 /// │   ├── eams        (child, /auth/third-party/eams, parent tgc)
-/// │   └── elearning   (child, /auth/third-party/elearning, parent tgc)
+/// │   ├── elearning   (child, /auth/third-party/elearning, parent tgc)
+/// │   └── egateApp    (child, /auth/third-party/egate-app, parent tgc)
 /// ├── gradescope  (top-level, account+password bind, bearer token)
 /// └── hydro       (top-level, account+password bind, sid cookie)
 /// ```
@@ -82,8 +83,20 @@ class SessionTree extends ChangeNotifier {
       persistDerived: persistDerived,
       recordRenewStatus: recordRenewStatus,
     );
+    egateApp = SessionNode(
+      id: 'egateApp',
+      persist: persist,
+      http: http,
+      baseUrl: baseUrl,
+      parent: cpdaily,
+      renewPath: '/auth/third-party/egate-app',
+      renewMode: RenewMode.parentCookie,
+      persistDerived: persistDerived,
+      recordRenewStatus: recordRenewStatus,
+    );
     cpdaily.attachChild(eams);
     cpdaily.attachChild(elearning);
+    cpdaily.attachChild(egateApp);
 
     // Only top-level node notifications propagate up to the tree (facade →
     // UI / sync / auto-refetch). Child nodes (eams/elearning) mint cookies
@@ -106,6 +119,7 @@ class SessionTree extends ChangeNotifier {
   late final SessionNode hydro;
   late final SessionNode eams;
   late final SessionNode elearning;
+  late final SessionNode egateApp;
 
   /// All top-level nodes in a stable order.
   List<SessionNode> get roots => [cpdaily, gradescope, hydro];
@@ -132,6 +146,7 @@ class SessionTree extends ChangeNotifier {
     final node = switch (nodeId) {
       'eams' => eams,
       'elearning' => elearning,
+      'egateApp' => egateApp,
       _ => null,
     };
     node?.setDerivedCookie(cookie);
@@ -224,7 +239,7 @@ class SessionTree extends ChangeNotifier {
     for (final n in [cpdaily, gradescope, hydro]) {
       n.removeListener(notifyListeners);
     }
-    for (final n in [cpdaily, gradescope, hydro, eams, elearning]) {
+    for (final n in [cpdaily, gradescope, hydro, eams, elearning, egateApp]) {
       n.dispose();
     }
     super.dispose();

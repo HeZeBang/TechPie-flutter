@@ -98,9 +98,10 @@ class ThirdPartyAccountsPage extends StatelessWidget {
           return ListView(
             padding: EdgeInsets.only(top: topInset, bottom: 120),
             children: [
-              // CpDaily/IDS is the parent session — Blackboard (elearning)
-              // and 教务系统 (eams) below are derived from its tgc, not
-              // independent bindings, hence the nested/indented rendering.
+              // CpDaily/IDS is the parent session — Blackboard (elearning),
+              // 教务系统 (eams), and eGate 签到 (egateApp) below are all
+              // derived from its tgc, not independent bindings, hence the
+              // nested/indented rendering.
               _TopLevelTile(
                 platform: ThirdPartyPlatform.cpdaily,
                 account: tpAuth.account(ThirdPartyPlatform.cpdaily),
@@ -122,6 +123,14 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                 cpdailyBound: cpdailyBound,
                 node: tpAuth.eamsNode,
                 renewStatus: tpAuth.renewStatus('eams'),
+              ),
+              _ChildSessionTile(
+                nodeId: 'egateApp',
+                label: 'eGate 签到',
+                icon: Icons.qr_code_scanner_outlined,
+                cpdailyBound: cpdailyBound,
+                node: tpAuth.egateAppNode,
+                renewStatus: tpAuth.renewStatus('egateApp'),
               ),
               const Divider(),
 

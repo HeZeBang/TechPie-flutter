@@ -393,12 +393,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final cookies = <WebViewCookie>[];
     if (cookieType == null) return cookies;
 
-    final sp = ServiceProvider.of(context);
-    // ecourse / student-leave / eams webviews all authenticate against the
-    // CpDaily session, whose cookies are exposed by the cpdaily session node
-    // (the CASTGC-bearing cookie set that webviews consume directly). Read
-    // it through the unified [CookieProvider] view so the source is abstracted.
-    final cp = sp.thirdPartyAuthService.cpdailyNode.cookieProvider;
+    final tpAuth = ServiceProvider.of(context).thirdPartyAuthService;
+    // Each webview feature authenticates against a different derived session:
+    // ecourse against the CpDaily/CASTGC session directly, egate-app (student
+    // leave, etc.) against its own MOD_AUTH_CAS/_WEU session derived from
+    // cpdaily. Read through the unified [CookieProvider] view so the cookie
+    // source per feature is explicit rather than defaulting to cpdaily.
+    final cp = switch (cookieType) {
+      CookieType.ecourse => tpAuth.cpdailyNode.cookieProvider,
+      CookieType.eams => tpAuth.eamsNode.cookieProvider,
+      CookieType.egateApp => tpAuth.egateAppNode.cookieProvider,
+    };
     if (cp == null || cp.isEmpty) return cookies;
 
     final domain = cp.domain.isNotEmpty

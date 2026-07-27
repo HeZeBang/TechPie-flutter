@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'assignment_service.dart';
 import 'auth_service.dart';
 import 'debug_logger.dart';
+import 'egate_app_service.dart';
 import 'oa_gym_service.dart';
 import 'schedule_service.dart';
 import 'storage_service.dart';
@@ -20,6 +21,7 @@ class ServiceProvider extends InheritedWidget {
   final AssignmentService assignmentService;
   final ThirdPartyAuthService thirdPartyAuthService;
   final OaGymService oaGymService;
+  final EgateAppService egateAppService;
   final UniAuthService uniAuthService;
   final SyncService syncService;
 
@@ -33,6 +35,7 @@ class ServiceProvider extends InheritedWidget {
     required this.assignmentService,
     required this.thirdPartyAuthService,
     required this.oaGymService,
+    required this.egateAppService,
     required this.uniAuthService,
     required this.syncService,
     required super.child,
@@ -55,6 +58,7 @@ class ServiceProvider extends InheritedWidget {
       assignmentService != oldWidget.assignmentService ||
       thirdPartyAuthService != oldWidget.thirdPartyAuthService ||
       oaGymService != oldWidget.oaGymService ||
+      egateAppService != oldWidget.egateAppService ||
       uniAuthService != oldWidget.uniAuthService ||
       syncService != oldWidget.syncService;
 }
