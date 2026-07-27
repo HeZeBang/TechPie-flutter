@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http_pkg;
 
 import '../../models/renew_status.dart';
 import '../../models/third_party_account.dart';
@@ -41,6 +42,107 @@ typedef PersistDerivedCookie = Future<void> Function(
 
 /// Callback to read the current API base URL (depends on storage settings).
 typedef BaseUrlGetter = String Function();
+
+
+/// Result of a [SessionNode.probe] keepalive check.
+class KeepaliveResult {
+  final bool success;
+  final String display;
+  final int? statusCode;
+  final String? rawBody;
+
+  const KeepaliveResult(this.success, {
+    required this.display,
+    this.statusCode,
+    this.rawBody,
+  });
+}
+
+/// Configuration for a lightweight keepalive probe on a [SessionNode].
+///
+/// Unlike [SessionNode.renew], a keepalive probe is **read-only**:
+/// it does not mutate credentials, bump the epoch, persist, or cascade
+/// to children.  It only verifies the current session is still alive
+/// and optionally extracts a display name from the response.
+///
+/// Both [successCheck] and [displayText] have sensible defaults when
+/// omitted (status 200, plain "HTTP NNN" display), so the simplest
+/// config is just a [method] + [path].
+class KeepaliveConfig {
+  /// HTTP method. Defaults to GET.
+  final String method;
+
+  /// URL path relative to [SessionNode.baseUrl].
+  final String path;
+
+  /// Optional JSON-encoded request body (POST only).
+  final Map<String, dynamic>? body;
+
+  /// Extra headers merged on top of the injected Cookie header.
+  final Map<String, String>? headers;
+
+  /// Determines whether the response indicates a live session.
+  /// Default: status code 200 when neither [successCheck] nor [bodyRegex]
+  /// is provided.
+  final bool Function(http_pkg.Response response)? successCheck;
+
+  /// If non-null, the response body must match this regex for the probe
+  /// to be considered successful.  Capture group 1 is used as the display
+  /// text (overridden by [displayText] when both are provided).  Falls
+  /// back to the full match when no group is present.
+  final RegExp? bodyRegex;
+
+  /// Extracts a human-readable status string from the response.
+  ///
+  /// Default priority: [displayText] > [bodyRegex] group 1 > `"HTTP NNN"`.
+
+  /// Optional pre-flight URL.  If set, [SessionNode.probe] hits this URL
+  /// first (always GET) and merges any `Set-Cookie` headers from the
+  /// response into the cookie before the main request.  Used when the
+  /// target endpoint requires a fresh session token (e.g. egate's
+  /// `funauthapp/getAppConfig` refreshes the `_WEU` cookie).
+  final String? preFlightPath;
+  final String Function(http_pkg.Response response)? displayText;
+
+  const KeepaliveConfig({
+    this.method = 'GET',
+    required this.path,
+    this.preFlightPath,
+    this.body,
+    this.headers,
+    this.successCheck,
+    this.bodyRegex,
+    this.displayText,
+  });
+}
+
+/// Merge `Set-Cookie` response header values into an existing cookie string.
+/// Extracts `key=value` pairs (ignoring path/domain/expires attributes) and
+/// updates or appends them.
+String _mergeSetCookie(String existing, String setCookieHeader) {
+  final updated = <String, String>{};
+  // Preserve existing cookies.
+  for (final part in existing.split(';')) {
+    final trimmed = part.trim();
+    final eq = trimmed.indexOf('=');
+    if (eq > 0) {
+      updated[trimmed.substring(0, eq).trim()] = trimmed.substring(eq + 1).trim();
+    }
+  }
+  // Apply updates from Set-Cookie.  Multiple cookies may be present in
+  // the header, each separated by a comma NOT inside a quoted value.
+  // A conservative heuristic: split on `; ` first (each set-cookie ends
+  // with attributes terminated by `;`), then extract leading `key=value`.
+  for (final entry in setCookieHeader.split('\n')) {
+    final semi = entry.indexOf(';');
+    final kvPart = semi > 0 ? entry.substring(0, semi) : entry;
+    final eq = kvPart.indexOf('=');
+    if (eq > 0) {
+      updated[kvPart.substring(0, eq).trim()] = kvPart.substring(eq + 1).trim();
+    }
+  }
+  return updated.entries.map((e) => '${e.key}=${e.value}').join('; ');
+}
 
 /// How a [SessionNode] renews its credentials.
 enum RenewMode {
@@ -96,6 +198,7 @@ class SessionNode extends ChangeNotifier {
     this.apiPath,
     this.persistDerived,
     this.recordRenewStatus,
+    this.keepaliveConfig,
   });
 
   /// Stable identifier (matches storage key / platform id, except cpdaily
@@ -121,6 +224,9 @@ class SessionNode extends ChangeNotifier {
   final PersistDerivedCookie? persistDerived;
   final PersistRenewStatus? recordRenewStatus;
   final LoggingHttpClient http;
+  /// Optional keepalive probe configuration. When non-null, [probe] can be
+  /// called to verify the current session without mutating state.
+  final KeepaliveConfig? keepaliveConfig;
   final BaseUrlGetter baseUrl;
 
   final List<SessionNode> _children = [];
@@ -135,6 +241,11 @@ class SessionNode extends ChangeNotifier {
   /// last successful renew; top-level nodes leave this null.
   String? _derivedCookie;
 
+  /// Human-readable display name from the most recent successful [probe].
+  /// Null until a probe has ever succeeded.  [displayName] falls back
+  /// through account.name -> id when this is null.
+  String? _lastProbeDisplay;
+
   /// Raw fields from the bound account (top-level only). Downstream services
   /// (OA gym) and child nodes read tgc/sessionToken/userId/tenantId through
   /// this. Returns an empty map for non-top-level nodes.
@@ -145,6 +256,7 @@ class SessionNode extends ChangeNotifier {
   void setAccount(ThirdPartyAccount? acc) {
     if (parent != null) return; // non-top-level: no account
     _account = acc;
+    if (acc == null) _lastProbeDisplay = null;
     notifyListeners();
   }
 
@@ -224,6 +336,11 @@ class SessionNode extends ChangeNotifier {
         _derivedCookie!.isNotEmpty;
   }
 
+  /// Human-readable display name for this node, suitable for UI labels.
+  ///
+  /// Priority: most recent successful probe display > account name > id.
+  String get displayName => _lastProbeDisplay ?? _account?.name ?? id;
+
   // -- Renewal: single-flight + stale-epoch skip --
 
   int _epoch = 0;
@@ -282,6 +399,7 @@ class SessionNode extends ChangeNotifier {
   void onParentRenewed() {
     if (parent != null) {
       _derivedCookie = null;
+      _lastProbeDisplay = null; // session invalidated, probe data is stale
       // Clear persisted cookie too — it was minted from the old parent tgc
       // and is now invalid. The next withCookie call will re-mint.
       final pd = persistDerived;
@@ -289,6 +407,104 @@ class SessionNode extends ChangeNotifier {
         unawaited(pd(id, null));
       }
       notifyListeners();
+    }
+  }
+
+  /// Lightweight keepalive probe.  Sends the configured request with the
+  /// node's current cookies and returns a [KeepaliveResult].  On success
+  /// the result's display text is cached for [displayName].
+  ///
+  /// Does NOT mutate session state, persist, or trigger cascading renews.
+  /// Network/probe failures preserve the previous display name.
+  Future<KeepaliveResult> probe() async {
+    final cfg = keepaliveConfig;
+    if (cfg == null) {
+      return const KeepaliveResult(false, display: 'no keepalive config');
+    }
+    final cp = cookieProvider;
+    if (cp == null || cp.isEmpty) {
+      return const KeepaliveResult(false, display: 'no session');
+    }
+    String cookies = cp.cookies;
+    // Pre-flight: hit config endpoint to refresh session tokens (e.g. _WEU).
+    if (cfg.preFlightPath != null) {
+      try {
+        final preUri = cfg.preFlightPath!.startsWith('http://') ||
+                cfg.preFlightPath!.startsWith('https://')
+            ? Uri.parse(cfg.preFlightPath!)
+            : Uri.parse('${baseUrl()}${cfg.preFlightPath}');
+        final preResp = await http.get(
+          preUri,
+          headers: {'Cookie': cookies},
+          tag: 'keepalive-pre:$id',
+        );
+        final sc = preResp.headers['set-cookie'];
+        if (sc != null && sc.isNotEmpty) {
+          cookies = _mergeSetCookie(cookies, sc);
+        }
+      } catch (_) {
+        // Pre-flight failure is non-fatal — proceed with original cookies.
+      }
+    }
+    final uri = cfg.path.startsWith('http://') || cfg.path.startsWith('https://')
+        ? Uri.parse(cfg.path)
+        : Uri.parse('${baseUrl()}${cfg.path}');
+    final baseHeaders = <String, String>{
+      'Cookie': cookies,
+      if (cfg.headers != null) ...cfg.headers!,
+    };
+    try {
+      final http_pkg.Response resp;
+      switch (cfg.method.toUpperCase()) {
+        case 'POST':
+          resp = await http.post(
+            uri,
+            headers: {
+              ...baseHeaders,
+              'Content-Type': 'application/json; charset=UTF-8',
+            },
+            body: cfg.body != null ? jsonEncode(cfg.body) : null,
+            tag: 'keepalive:$id',
+          );
+        case 'HEAD':
+          resp = await http.head(
+            uri,
+            headers: baseHeaders,
+            tag: 'keepalive:$id',
+          );
+        default:
+          resp = await http.get(
+            uri,
+            headers: baseHeaders,
+            tag: 'keepalive:$id',
+          );
+      }
+      // Success detection: callback > bodyRegex > statusCode.
+      final ok = cfg.successCheck?.call(resp) ??
+          cfg.bodyRegex?.hasMatch(resp.body) ??
+          (resp.statusCode == 200);
+      // Display extraction: callback > bodyRegex group 1 > "HTTP NNN".
+      String display;
+      if (cfg.displayText != null) {
+        display = cfg.displayText!(resp);
+      } else if (cfg.bodyRegex != null) {
+        final m = cfg.bodyRegex!.firstMatch(resp.body);
+        display = m?.group(1) ?? m?.group(0) ?? 'HTTP ${resp.statusCode}';
+      } else {
+        display = 'HTTP ${resp.statusCode}';
+      }
+      if (!ok) display = 'HTTP ${resp.statusCode}';
+      if (ok) {
+        _lastProbeDisplay = display;
+        notifyListeners();
+      }
+      return KeepaliveResult(ok,
+        display: display,
+        statusCode: resp.statusCode,
+        rawBody: resp.body,
+      );
+    } catch (e) {
+      return KeepaliveResult(false, display: e.toString());
     }
   }
 

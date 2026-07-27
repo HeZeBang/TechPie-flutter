@@ -79,6 +79,32 @@ class LoggingHttpClient {
     }
   }
 
+  Future<http.Response> head(
+    Uri url, {
+    Map<String, String>? headers,
+    String? tag,
+  }) async {
+    _logger.log(method: 'HEAD', url: url.toString(), tag: tag);
+    try {
+      final response = await _inner.head(url, headers: headers);
+      _logger.log(
+        method: 'HEAD',
+        url: url.toString(),
+        statusCode: response.statusCode,
+        tag: tag,
+      );
+      return response;
+    } catch (e) {
+      _logger.log(
+        method: 'HEAD',
+        url: url.toString(),
+        error: e.toString(),
+        tag: tag,
+      );
+      rethrow;
+    }
+  }
+
   String _truncate(String s, [int maxLen = 2000]) =>
       s.length > maxLen ? '${s.substring(0, maxLen)}...' : s;
 

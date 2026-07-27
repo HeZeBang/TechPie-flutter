@@ -395,7 +395,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     final tpAuth = ServiceProvider.of(context).thirdPartyAuthService;
     // Each webview feature authenticates against a different derived session:
-    // ecourse against the CpDaily/CASTGC session directly, egate-app (student
+    // ecourse against the CpDaily/CASTGC session directly, egate (student
     // leave, etc.) against its own MOD_AUTH_CAS/_WEU session derived from
     // cpdaily. Read through the unified [CookieProvider] view so the cookie
     // source per feature is explicit rather than defaulting to cpdaily.

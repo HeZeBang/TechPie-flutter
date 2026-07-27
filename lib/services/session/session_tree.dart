@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -50,6 +51,7 @@ class SessionTree extends ChangeNotifier {
       renewMode: RenewMode.password,
       apiPath: 'gradescope',
       recordRenewStatus: recordRenewStatus,
+      keepaliveConfig: const KeepaliveConfig(method: 'HEAD', path: '/'),
     );
     hydro = SessionNode(
       id: 'hydro',
@@ -60,6 +62,7 @@ class SessionTree extends ChangeNotifier {
       renewMode: RenewMode.password,
       apiPath: 'hydro',
       recordRenewStatus: recordRenewStatus,
+      keepaliveConfig: const KeepaliveConfig(method: 'HEAD', path: '/'),
     );
     eams = SessionNode(
       id: 'eams',
@@ -71,6 +74,10 @@ class SessionTree extends ChangeNotifier {
       renewMode: RenewMode.parentCookie,
       persistDerived: persistDerived,
       recordRenewStatus: recordRenewStatus,
+      keepaliveConfig: KeepaliveConfig(
+        path: 'https://eams.shanghaitech.edu.cn/eams/stdDetail.action',
+        bodyRegex: RegExp(r'姓名[：:]\s*</td>\s*<td[^>]*>([^<]+)</td>'),
+      ),
     );
     elearning = SessionNode(
       id: 'elearning',
@@ -82,6 +89,11 @@ class SessionTree extends ChangeNotifier {
       renewMode: RenewMode.parentCookie,
       persistDerived: persistDerived,
       recordRenewStatus: recordRenewStatus,
+      keepaliveConfig: KeepaliveConfig(
+        path: 'https://elearning.shanghaitech.edu.cn:8443/webapps/portal/execute/tabs/tabAction'
+            '?tab_tab_group_id=_1_1',
+        bodyRegex: RegExp(r'欢迎[，,]\s*(.+?)\s*&ndash;'),
+      ),
     );
     egateApp = SessionNode(
       id: 'egateApp',
@@ -93,6 +105,23 @@ class SessionTree extends ChangeNotifier {
       renewMode: RenewMode.parentCookie,
       persistDerived: persistDerived,
       recordRenewStatus: recordRenewStatus,
+      keepaliveConfig: KeepaliveConfig(
+        method: 'POST',
+        path: 'https://egate.shanghaitech.edu.cn/xsfw/sys/jbxxapp/modules/jbxx/hqdlxsjpcxx.do',
+        preFlightPath:
+            'https://egate.shanghaitech.edu.cn/xsfw/sys/funauthapp/api/getAppConfig/'
+            'xshdapp-4770201649822494.do?v=0918614558578972',
+        successCheck: (r) {
+          if (r.statusCode != 200) return false;
+          final data = jsonDecode(r.body);
+          return data['code'] == '0';
+        },
+        displayText: (r) {
+          final data = jsonDecode(r.body);
+          final rows = ((data['datas'] as Map?)?['hqdlxsjpcxx'] as Map?)?['rows'] as List?;
+          return (rows?.firstOrNull as Map?)?['XSBH'] as String? ?? 'egateApp';
+        },
+      ),
     );
     cpdaily.attachChild(eams);
     cpdaily.attachChild(elearning);

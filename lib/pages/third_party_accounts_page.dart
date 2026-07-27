@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../models/renew_status.dart';
@@ -126,8 +127,8 @@ class ThirdPartyAccountsPage extends StatelessWidget {
               ),
               _ChildSessionTile(
                 nodeId: 'egateApp',
-                label: 'eGate 签到',
-                icon: Icons.qr_code_scanner_outlined,
+                label: 'eGate',
+                icon: Icons.apps_outlined,
                 cpdailyBound: cpdailyBound,
                 node: tpAuth.egateAppNode,
                 renewStatus: tpAuth.renewStatus('egateApp'),
@@ -318,6 +319,21 @@ class _TopLevelTileState extends State<_TopLevelTile> {
     );
   }
 
+  Future<void> _probe(BuildContext context) async {
+    setState(() => _refreshing = true);
+    final result = await widget.node.probe();
+    if (!context.mounted) return;
+    setState(() => _refreshing = false);
+    showAdaptiveFeedback(
+      context: context,
+      message: result.success
+          ? '${widget.platform.label} 检测成功: ${result.display}'
+          : '${widget.platform.label} 检测失败: ${result.display}',
+      style:
+          result.success ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.error,
+    );
+  }
+
   Future<void> _openDetails(BuildContext context) async {
     final acc = widget.account;
     if (acc == null) return;
@@ -340,6 +356,12 @@ class _TopLevelTileState extends State<_TopLevelTile> {
       rows: rows,
       onRefresh: () => unawaited(_refresh(context)),
       onUnbind: () => unawaited(_confirmUnbind(context, widget.platform)),
+      onProbe: widget.node.keepaliveConfig != null
+          ? () => unawaited(_probe(context))
+          : null,
+      cookieText: ServiceProvider.of(context).storageService.debugMode
+          ? widget.node.cookieProvider?.cookies
+          : null,
     );
   }
 }
@@ -405,7 +427,7 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
       contentPadding: const EdgeInsets.only(left: 40, right: 16),
       leading: _dottedIcon(context, widget.icon, theme.colorScheme.primary, health, size: 20),
       title: Text(widget.label),
-      subtitle: Text('随 CpDaily/IDS 自动获取 · ${_renewStatusLabel(widget.renewStatus)}'),
+      subtitle: Text(widget.node.displayName),
       onTap: () => unawaited(_openDetails(context)),
       trailing: _refreshing
           ? const Padding(
@@ -436,9 +458,25 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
     );
   }
 
+  Future<void> _probe(BuildContext context) async {
+    setState(() => _refreshing = true);
+    final result = await widget.node.probe();
+    if (!context.mounted) return;
+    setState(() => _refreshing = false);
+    showAdaptiveFeedback(
+      context: context,
+      message: result.success
+          ? '${widget.label} 检测成功: ${result.display}'
+          : '${widget.label} 检测失败: ${result.display}',
+      style:
+          result.success ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.error,
+    );
+  }
+
   Future<void> _openDetails(BuildContext context) async {
     final rows = <MapEntry<String, String>>[
       MapEntry('状态', widget.node.isAvailable ? '可用' : '不可用'),
+      MapEntry('保活探测', widget.node.displayName),
       MapEntry('最近刷新', _renewStatusLabel(widget.renewStatus)),
       const MapEntry('说明', '由 CpDaily/IDS 会话派生，不单独绑定账号'),
     ];
@@ -448,6 +486,10 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
       rows: rows,
       onRefresh: () => unawaited(_refresh(context)),
       onUnbind: null,
+      onProbe: () => unawaited(_probe(context)),
+      cookieText: ServiceProvider.of(context).storageService.debugMode
+          ? widget.node.cookieProvider?.cookies
+          : null,
     );
   }
 }
@@ -504,6 +546,8 @@ Future<void> _showAccountDetailSheet(
   required List<MapEntry<String, String>> rows,
   required VoidCallback onRefresh,
   VoidCallback? onUnbind,
+  VoidCallback? onProbe,
+  String? cookieText,
 }) {
   final theme = Theme.of(context);
   return showModalBottomSheet<void>(
@@ -541,6 +585,53 @@ Future<void> _showAccountDetailSheet(
                       ],
                     ),
                   ),
+              if (cookieText != null && cookieText.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 88,
+                      child: Text(
+                        'Cookie',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        cookieText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(4),
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: cookieText));
+                        ScaffoldMessenger.of(sheetContext).showSnackBar(
+                          const SnackBar(
+                            content: Text('Cookie 已复制'),
+                            duration: Duration(seconds: 1),
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.copy,
+                          size: 16,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -554,6 +645,19 @@ Future<void> _showAccountDetailSheet(
                       },
                     ),
                   ),
+                  if (onProbe != null) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.favorite_border),
+                        label: const Text('检测'),
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          onProbe();
+                        },
+                      ),
+                    ),
+                  ],
                   if (onUnbind != null) ...[
                     const SizedBox(width: 12),
                     Expanded(

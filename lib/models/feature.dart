@@ -61,14 +61,14 @@ final featureEntries = <Feature>[
     icon: const Icon(Icons.sports_tennis),
   ),
   Feature(
-    id: 'egate_app',
-    description: '校园签到',
+    id: 'egate_xshd',
+    description: '学生活动',
     mode: FeatureMode.native,
     nativeEntry: (context) => Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const EgateAppPage()),
     ),
     icon: const Icon(Icons.qr_code_scanner),
-  ),
+    ),
 ];
 
 final moreFeature = Feature(
