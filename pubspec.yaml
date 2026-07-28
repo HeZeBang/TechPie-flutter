@@ -55,10 +55,7 @@ dependencies:
   url_launcher: ^6.3.0
   web: ^1.1.1
   webview_flutter:
-    git:
-      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
-      path: packages/webview_flutter/webview_flutter
-      ref: br_webview_flutter-v4.13.0_ohos
+    path: ../br_webview_flutter_ohos/webview_flutter
 
 dependency_overrides:
   # Linux: use forked desktop_webview_window (WebKitGTK) for webview
@@ -85,10 +82,7 @@ dependency_overrides:
       url: https://gitee.com/openharmony-sig/flutter_packages.git
       path: packages/url_launcher/url_launcher_ohos
   webview_flutter_platform_interface:
-    git:
-      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
-      path: packages/webview_flutter/webview_flutter_platform_interface
-      ref: br_webview_flutter-v4.13.0_ohos
+    path: ../br_webview_flutter_ohos/webview_flutter_platform_interface
   # flutter_secure_storage:
   #   git:
   #     url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git

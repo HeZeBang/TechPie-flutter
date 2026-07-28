@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TechPie Bridge Test</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; max-width: 600px; }
+  .ok { color: #2e7d32; }
+  .fail { color: #c62828; }
+  pre { background: #f5f5f5; padding: 8px; border-radius: 4px; font-size: 12px; overflow-x: auto; }
+  button { padding: 8px 16px; margin: 4px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<h2>TechPie Bridge Test</h2>
+
+<h3>1. Document-Start Script Check</h3>
+<p id="ready-check">checking…</p>
+
+<h3>2. TechPieBridge Channel</h3>
+<p id="bridge-check">checking…</p>
+<button onclick="sendBridgeMessage()">Send bridge message</button>
+<p id="bridge-reply">—</p>
+
+<h3>3. Cookie Echo</h3>
+<p>document.cookie:</p>
+<pre id="cookie-echo">(empty)</pre>
+
+<h3>4. RunJavaScript Round-trip</h3>
+<button onclick="callResolve()">Call window.__techPieResolve</button>
+<p id="resolve-result">—</p>
+
+<script>
+// This inline script runs at document-start (before DOM).
+// If document-start injection worked, __techPieBridgeReady is already true.
+var readyAtStart = window.__techPieBridgeReady === true;
+window.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('ready-check').innerHTML =
+    readyAtStart
+      ? '<span class="ok">✅ window.__techPieBridgeReady === true at inline script time</span>'
+      : '<span class="fail">❌ window.__techPieBridgeReady was NOT true at inline script time</span>';
+
+  document.getElementById('bridge-check').innerHTML =
+    (window.TechPieBridge && typeof window.TechPieBridge.postMessage === 'function')
+      ? '<span class="ok">✅ TechPieBridge.postMessage is available</span>'
+      : '<span class="fail">❌ TechPieBridge.postMessage not available</span>';
+
+  document.getElementById('cookie-echo').textContent = document.cookie || '(empty)';
+});
+
+function sendBridgeMessage() {
+  if (window.TechPieBridge && window.TechPieBridge.postMessage) {
+    window.TechPieBridge.postMessage(JSON.stringify({ type: 'ping', ready: readyAtStart }));
+    document.getElementById('bridge-reply').textContent = 'sent ✓ (check Flutter console)';
+  } else {
+    document.getElementById('bridge-reply').textContent = 'TechPieBridge not available';
+  }
+}
+
+function callResolve() {
+  if (typeof window.__techPieResolve === 'function') {
+    var result = window.__techPieResolve('hello from page');
+    document.getElementById('resolve-result').textContent = 'resolve() returned: ' + JSON.stringify(result);
+  } else {
+    document.getElementById('resolve-result').textContent = '__techPieResolve not a function';
+  }
+}
+</script>
+</body>
+</html>

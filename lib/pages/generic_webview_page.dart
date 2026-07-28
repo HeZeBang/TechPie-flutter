@@ -5,9 +5,17 @@ import 'package:desktop_webview_window/desktop_webview_window.dart'
     show WebviewWindow, CreateConfiguration;
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart'
-    show WebViewController, JavaScriptMode, NavigationDelegate,
-         NavigationDecision, WebViewWidget, WebViewCookie,
-         WebViewCookieManager;
+    show
+        WebViewController,
+        WebViewUserScript,
+        JavaScriptMode,
+        NavigationDelegate,
+        NavigationDecision,
+        WebViewWidget,
+        WebViewCookie,
+        WebViewCookieManager;
+
+import '../services/webview_bridge.dart';
 
 /// A page that hosts a webview.
 ///
@@ -21,11 +29,14 @@ class GenericWebViewPage extends StatefulWidget {
     required this.title,
     required this.url,
     this.cookies,
+    this.initialUserScripts = const <WebViewUserScript>[],
   });
 
   final String title;
   final String url;
   final List<WebViewCookie>? cookies;
+
+  final List<WebViewUserScript> initialUserScripts;
 
   @override
   State<GenericWebViewPage> createState() => _GenericWebViewPageState();
@@ -82,6 +93,16 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
         onNavigationRequest: (request) => NavigationDecision.navigate,
       ),
     );
+
+    await _controller.addJavaScriptChannel(
+      'TechPieBridge',
+      onMessageReceived: (_) {},
+    );
+
+    await _controller.addUserScripts(<WebViewUserScript>[
+      ...widget.initialUserScripts,
+      const WebViewUserScript(source: techPieDocumentStartScript),
+    ]);
 
     final cookieManager = WebViewCookieManager();
     await cookieManager.clearCookies();

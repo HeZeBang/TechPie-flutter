@@ -16,6 +16,7 @@ import '../widgets/ios_liquid/ios_glass_switch.dart';
 import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
 import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
 import 'debug_log_page.dart';
+import 'debug_webview_page.dart';
 import 'login_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
@@ -260,6 +261,21 @@ class _SettingsPageState extends State<SettingsPage> {
                 unawaited(storage.setUseLocalhost(value));
                 setState(() {});
               },
+            ),
+            ListTile(
+              leading: const Icon(Icons.science_outlined),
+              title: const Text('WebView Test'),
+              subtitle: const Text('Bridge injection and custom URL testing'),
+              onTap: () => unawaited(
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const DebugWebViewPage(
+                      initialUrl: 'http://0.0.0.0:8000/bridge_test.html',
+                    ),
+                  ),
+                ),
+              ),
             ),
             if (logger.enabled)
               ListTile(

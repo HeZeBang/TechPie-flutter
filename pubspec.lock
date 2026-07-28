@@ -773,47 +773,37 @@ packages:
   webview_flutter:
     dependency: "direct main"
     description:
-      path: "packages/webview_flutter/webview_flutter"
-      ref: "br_webview_flutter-v4.13.0_ohos"
-      resolved-ref: de942e79c9057b32ad31106508bd87c0d60aef83
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      path: "../br_webview_flutter_ohos/webview_flutter"
+      relative: true
+    source: path
     version: "4.13.0"
   webview_flutter_android:
     dependency: transitive
     description:
-      path: "packages/webview_flutter/webview_flutter_android"
-      ref: "br_webview_flutter-v4.13.0_ohos"
-      resolved-ref: "4c55cac26756e0a3e74098e837f598587e2e8e83"
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      path: "../br_webview_flutter_ohos/webview_flutter_android"
+      relative: true
+    source: path
     version: "4.7.0"
   webview_flutter_ohos:
     dependency: transitive
     description:
-      path: "packages/webview_flutter/webview_flutter_ohos"
-      ref: "br_webview_flutter-v4.13.0_ohos"
-      resolved-ref: "4c55cac26756e0a3e74098e837f598587e2e8e83"
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      path: "../br_webview_flutter_ohos/webview_flutter_ohos"
+      relative: true
+    source: path
     version: "4.7.0"
   webview_flutter_platform_interface:
     dependency: "direct overridden"
     description:
-      path: "packages/webview_flutter/webview_flutter_platform_interface"
-      ref: "br_webview_flutter-v4.13.0_ohos"
-      resolved-ref: de942e79c9057b32ad31106508bd87c0d60aef83
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      path: "../br_webview_flutter_ohos/webview_flutter_platform_interface"
+      relative: true
+    source: path
     version: "2.13.1"
   webview_flutter_wkwebview:
     dependency: transitive
     description:
-      path: "packages/webview_flutter/webview_flutter_wkwebview"
-      ref: "br_webview_flutter-v4.13.0_ohos"
-      resolved-ref: "4c55cac26756e0a3e74098e837f598587e2e8e83"
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      path: "../br_webview_flutter_ohos/webview_flutter_wkwebview"
+      relative: true
+    source: path
     version: "3.22.0"
   win32:
     dependency: transitive
