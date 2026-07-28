@@ -54,7 +54,8 @@ _LinkHealth? _childHealth({
   return _LinkHealth.normal;
 }
 
-String _formatDateTime(DateTime dt) => DateFormat('yyyy-MM-dd HH:mm').format(dt);
+String _formatDateTime(DateTime dt) =>
+    DateFormat('yyyy-MM-dd HH:mm').format(dt);
 
 class ThirdPartyAccountsPage extends StatelessWidget {
   const ThirdPartyAccountsPage({super.key});
@@ -194,7 +195,9 @@ class _StatusDot extends StatelessWidget {
   }
 }
 
-Widget _dottedIcon(BuildContext context, IconData icon, Color? color, _LinkHealth? health, {double size = 24}) {
+Widget _dottedIcon(
+    BuildContext context, IconData icon, Color? color, _LinkHealth? health,
+    {double size = 24}) {
   return Stack(
     clipBehavior: Clip.none,
     children: [
@@ -295,12 +298,14 @@ class _TopLevelTileState extends State<_TopLevelTile> {
                   confirmTitle: '解绑 ${widget.platform.label}?',
                   confirmLabel: '解绑',
                   destructive: true,
-                  onConfirmed: () => unawaited(_unbind(context, widget.platform)),
+                  onConfirmed: () =>
+                      unawaited(_unbind(context, widget.platform)),
                 )
               : TextButton.icon(
                   icon: const Icon(Icons.link_off, size: 18),
                   label: const Text('Unbind'),
-                  onPressed: () => unawaited(_confirmUnbind(context, widget.platform)),
+                  onPressed: () =>
+                      unawaited(_confirmUnbind(context, widget.platform)),
                 ),
         ],
       ),
@@ -314,7 +319,9 @@ class _TopLevelTileState extends State<_TopLevelTile> {
     setState(() => _refreshing = false);
     showAdaptiveFeedback(
       context: context,
-      message: ok ? '${widget.platform.label} 刷新成功' : '${widget.platform.label} 刷新失败',
+      message: ok
+          ? '${widget.platform.label} 刷新成功'
+          : '${widget.platform.label} 刷新失败',
       style: ok ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.error,
     );
   }
@@ -329,8 +336,9 @@ class _TopLevelTileState extends State<_TopLevelTile> {
       message: result.success
           ? '${widget.platform.label} 检测成功: ${result.display}'
           : '${widget.platform.label} 检测失败: ${result.display}',
-      style:
-          result.success ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.error,
+      style: result.success
+          ? AdaptiveFeedbackStyle.success
+          : AdaptiveFeedbackStyle.error,
     );
   }
 
@@ -343,7 +351,9 @@ class _TopLevelTileState extends State<_TopLevelTile> {
       MapEntry('绑定时间', _formatDateTime(acc.boundAt)),
       MapEntry('更新时间', _formatDateTime(acc.updatedAt)),
       MapEntry('最近刷新', _renewStatusLabel(widget.renewStatus)),
-      MapEntry('Token 有效期', acc.expireAt != null ? _formatDateTime(acc.expireAt!) : '无'),
+      MapEntry('下次刷新', _nextRenewLabel(widget.node.nextRenewTimestamp)),
+      MapEntry('Token 有效期',
+          acc.expireAt != null ? _formatDateTime(acc.expireAt!) : '无'),
       MapEntry('自动续期', acc.autoRenew ? '已开启' : '未开启'),
       if (widget.platform == ThirdPartyPlatform.hydro) ...[
         MapEntry('Hydro 站点', acc.hydroOrigin ?? ''),
@@ -398,19 +408,22 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
       return ListTile(
         dense: true,
         contentPadding: const EdgeInsets.only(left: 40, right: 16),
-        leading: Icon(widget.icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
+        leading: Icon(widget.icon,
+            size: 20, color: theme.colorScheme.onSurfaceVariant),
         title: Text(
           widget.label,
           style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
         ),
         subtitle: Text(
           '需要先绑定 CpDaily/IDS',
-          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         onTap: () => unawaited(
           pushPlatformViewPage<void>(
             context,
-            builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.cpdaily),
+            builder: (_) =>
+                const ThirdPartyBindPage(platform: ThirdPartyPlatform.cpdaily),
           ),
         ),
       );
@@ -425,7 +438,9 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
     return ListTile(
       dense: true,
       contentPadding: const EdgeInsets.only(left: 40, right: 16),
-      leading: _dottedIcon(context, widget.icon, theme.colorScheme.primary, health, size: 20),
+      leading: _dottedIcon(
+          context, widget.icon, theme.colorScheme.primary, health,
+          size: 20),
       title: Text(widget.label),
       subtitle: Text(widget.node.displayName),
       onTap: () => unawaited(_openDetails(context)),
@@ -468,8 +483,9 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
       message: result.success
           ? '${widget.label} 检测成功: ${result.display}'
           : '${widget.label} 检测失败: ${result.display}',
-      style:
-          result.success ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.error,
+      style: result.success
+          ? AdaptiveFeedbackStyle.success
+          : AdaptiveFeedbackStyle.error,
     );
   }
 
@@ -478,6 +494,7 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
       MapEntry('状态', widget.node.isAvailable ? '可用' : '不可用'),
       MapEntry('保活探测', widget.node.displayName),
       MapEntry('最近刷新', _renewStatusLabel(widget.renewStatus)),
+      MapEntry('下次刷新', _nextRenewLabel(widget.node.nextRenewTimestamp)),
       const MapEntry('说明', '由 CpDaily/IDS 会话派生，不单独绑定账号'),
     ];
     await _showAccountDetailSheet(
@@ -507,6 +524,12 @@ String _expireLabel(DateTime at) {
   if (diff.inDays >= 1) return "过期于 ${DateFormat("yyyy-MM-dd").format(at)}";
   if (diff.inHours >= 1) return '${diff.inHours}h 后过期';
   return '${diff.inMinutes}m 后过期';
+}
+
+String _nextRenewLabel(DateTime? timestamp) {
+  if (timestamp == null) return '未安排';
+  final state = timestamp.isBefore(DateTime.now()) ? '已到期 · ' : '';
+  return '$state${_formatDateTime(timestamp)}';
 }
 
 Future<void> _confirmUnbind(
@@ -580,7 +603,8 @@ Future<void> _showAccountDetailSheet(
                           ),
                         ),
                         Expanded(
-                          child: Text(row.value, style: theme.textTheme.bodyMedium),
+                          child: Text(row.value,
+                              style: theme.textTheme.bodyMedium),
                         ),
                       ],
                     ),
@@ -662,8 +686,10 @@ Future<void> _showAccountDetailSheet(
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton.icon(
-                        icon: Icon(Icons.link_off, color: theme.colorScheme.error),
-                        label: Text('解绑', style: TextStyle(color: theme.colorScheme.error)),
+                        icon: Icon(Icons.link_off,
+                            color: theme.colorScheme.error),
+                        label: Text('解绑',
+                            style: TextStyle(color: theme.colorScheme.error)),
                         onPressed: () {
                           Navigator.pop(sheetContext);
                           onUnbind();
