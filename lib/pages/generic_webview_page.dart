@@ -44,6 +44,7 @@ class GenericWebViewPage extends StatefulWidget {
 
 class _GenericWebViewPageState extends State<GenericWebViewPage> {
   late final WebViewController _controller;
+  String? _desktopError;
 
   @override
   void initState() {
@@ -59,29 +60,38 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
   // -- Desktop path (desktop_webview_window popup) --
 
   Future<void> _openDesktop() async {
-    final cookies = widget.cookies ?? const <WebViewCookie>[];
-
-    final webview = await WebviewWindow.create(
-      configuration: CreateConfiguration(
-        title: widget.title,
-        windowWidth: 900,
-        windowHeight: 700,
-      ),
-    );
-
-    for (final c in cookies) {
-      webview.setCookie(
-        url: widget.url,
-        name: c.name,
-        value: c.value,
-        domain: c.domain,
-        path: c.path,
-        isHttpOnly: true,
+    try {
+      final cookies = widget.cookies ?? const <WebViewCookie>[];
+      final webview = await WebviewWindow.create(
+        configuration: CreateConfiguration(
+          title: widget.title,
+          windowWidth: 900,
+          windowHeight: 700,
+        ),
       );
+      webview.addOnWebMessageReceivedCallback((message) {
+        debugPrint('TechPieBridge desktop message: $message');
+      });
+      webview.addScriptToExecuteOnDocumentCreated(techPieDocumentStartScript);
+      for (final script in widget.initialUserScripts) {
+        webview.addScriptToExecuteOnDocumentCreated(script.source);
+      }
+      for (final c in cookies) {
+        webview.setCookie(
+          url: widget.url,
+          name: c.name,
+          value: c.value,
+          domain: c.domain,
+          path: c.path,
+          isHttpOnly: true,
+        );
+      }
+      webview.launch(widget.url);
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      debugPrint('Desktop WebView bridge setup failed: $error');
+      if (mounted) setState(() => _desktopError = error.toString());
     }
-
-    webview.launch(widget.url);
-    if (mounted) Navigator.of(context).pop();
   }
 
   // -- Mobile / webview_flutter in-app widget --
@@ -96,6 +106,7 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
 
     await _controller.addJavaScriptChannel(
       'TechPieBridge',
+
       onMessageReceived: (_) {},
     );
 
@@ -118,7 +129,11 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
     if (Platform.isLinux || Platform.isWindows) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.title), centerTitle: true),
-        body: const Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: _desktopError == null
+              ? const CircularProgressIndicator()
+              : Text(_desktopError!),
+        ),
       );
     }
 

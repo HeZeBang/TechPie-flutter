@@ -116,11 +116,9 @@ packages:
   desktop_webview_window:
     dependency: "direct main"
     description:
-      path: "."
-      ref: master
-      resolved-ref: "7657bf9f66f4955fdb9a41338ad21b21c2b9e87b"
-      url: "https://github.com/HeZeBang/desktop_webview_window_fork.git"
-    source: git
+      path: "packages/desktop_webview_window"
+      relative: true
+    source: path
     version: "0.2.3"
   dynamic_color:
     dependency: "direct main"

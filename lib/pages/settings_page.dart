@@ -271,7 +271,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   context,
                   MaterialPageRoute<void>(
                     builder: (_) => const DebugWebViewPage(
-                      initialUrl: 'http://0.0.0.0:8000/bridge_test.html',
+                      initialUrl: 'http://127.0.0.1:8000/bridge_test.html',
                     ),
                   ),
                 ),

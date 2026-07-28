@@ -1,14 +1,14 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:desktop_webview_window/desktop_webview_window.dart'
+    show CreateConfiguration, WebviewWindow;
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../services/webview_bridge.dart';
 
 /// A debug-only webview page that accepts a custom URL.
-///
-/// Used to test the TechPie bridge document-start script against arbitrary
-/// local or remote URLs.
 class DebugWebViewPage extends StatefulWidget {
   const DebugWebViewPage({super.key, this.initialUrl});
 
@@ -27,8 +27,26 @@ class _DebugWebViewPageState extends State<DebugWebViewPage> {
   void initState() {
     super.initState();
     _urlController.text = widget.initialUrl ?? '';
-    _controller = WebViewController();
-    unawaited(_initController());
+    if (Platform.isLinux || Platform.isWindows) {
+      unawaited(_openDesktop());
+    } else {
+      _controller = WebViewController();
+      unawaited(_initController());
+    }
+  }
+
+  Future<void> _openDesktop() async {
+    final webview = await WebviewWindow.create(
+      configuration: const CreateConfiguration(
+        title: 'Debug WebView', windowWidth: 900, windowHeight: 700,
+      ),
+    );
+    webview.addOnWebMessageReceivedCallback((message) {
+      if (mounted) setState(() => _bridgeMessage = message);
+    });
+    webview.addScriptToExecuteOnDocumentCreated(techPieDocumentStartScript);
+    final url = _urlController.text.trim();
+    if (url.isNotEmpty) webview.launch(url);
   }
 
   Future<void> _initController() async {
@@ -38,16 +56,12 @@ class _DebugWebViewPageState extends State<DebugWebViewPage> {
         onNavigationRequest: (request) => NavigationDecision.navigate,
       ),
     );
-
     await _controller.addJavaScriptChannel(
       'TechPieBridge',
       onMessageReceived: (JavaScriptMessage message) {
-        setState(() {
-          _bridgeMessage = message.message;
-        });
+        setState(() => _bridgeMessage = message.message);
       },
     );
-
     await _controller.addUserScripts(const <WebViewUserScript>[
       WebViewUserScript(source: techPieDocumentStartScript),
     ]);
@@ -59,51 +73,51 @@ class _DebugWebViewPageState extends State<DebugWebViewPage> {
   Future<void> _load() async {
     final url = _urlController.text.trim();
     if (url.isNotEmpty) {
-      await _controller.loadRequest(Uri.parse(url));
+      if (Platform.isLinux || Platform.isWindows) {
+        await _openDesktop();
+      } else {
+        await _controller.loadRequest(Uri.parse(url));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Debug WebView'), centerTitle: true),
-      body: Column(
+    final urlRow = Padding(
+      padding: const EdgeInsets.all(8),
+      child: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _urlController,
-                    decoration: const InputDecoration(
-                      hintText: 'https://…',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.url,
-                    onSubmitted: (_) => unawaited(_load()),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(onPressed: _load, child: const Text('Go')),
-              ],
+          Expanded(
+            child: TextField(
+              controller: _urlController,
+              decoration: const InputDecoration(
+                hintText: 'https://…', isDense: true, border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.url,
+              onSubmitted: (_) => unawaited(_load()),
             ),
           ),
-          if (_bridgeMessage != null)
+          const SizedBox(width: 8),
+          FilledButton(onPressed: _load, child: const Text('Go')),
+        ],
+      ),
+    );
+    final bridgeText = _bridgeMessage == null
+        ? const <Widget>[]
+        : <Widget>[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  'Bridge: $_bridgeMessage',
-                  style: const TextStyle(fontSize: 12, color: Colors.green),
-                ),
+                child: Text('Bridge: $_bridgeMessage', style: const TextStyle(fontSize: 12, color: Colors.green)),
               ),
             ),
-          Expanded(child: WebViewWidget(controller: _controller)),
-        ],
-      ),
+          ];
+    return Scaffold(
+      appBar: AppBar(title: const Text('Debug WebView'), centerTitle: true),
+      body: Platform.isLinux || Platform.isWindows
+          ? Column(children: [urlRow, ...bridgeText, const Text('Desktop WebView opened in separate window')])
+          : Column(children: [urlRow, ...bridgeText, Expanded(child: WebViewWidget(controller: _controller))]),
     );
   }
 }

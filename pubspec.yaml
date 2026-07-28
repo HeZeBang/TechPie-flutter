@@ -62,9 +62,7 @@ dependency_overrides:
   # popup, avoiding WPE WebKit EGL issues on Wayland. The fork adds
   # native setCookie via webkit_cookie_manager_add_cookie.
   desktop_webview_window:
-    git:
-      url: https://github.com/HeZeBang/desktop_webview_window_fork.git
-      ref: master
+    path: packages/desktop_webview_window
 
   # OpenHarmony-SIG forks add OHOS platform implementations for plugins
   # whose upstream pub.dev releases don't ship them. Without these, the
