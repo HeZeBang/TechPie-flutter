@@ -17,6 +17,9 @@ IconData iosIconForSfSymbol(String? symbol, {required IconData fallback}) {
     'chevron.left' => CupertinoIcons.back,
     'ellipsis' => CupertinoIcons.ellipsis,
     'ellipsis.circle' => CupertinoIcons.ellipsis_circle,
+    'gearshape' => CupertinoIcons.gear,
+    'gearshape.fill' => CupertinoIcons.gear_solid,
+    'house' || 'house.fill' => CupertinoIcons.home,
     'icloud.slash' => CupertinoIcons.cloud,
     'key' => CupertinoIcons.lock,
     'link' || 'link.badge.minus' => CupertinoIcons.link,
@@ -28,6 +31,10 @@ IconData iosIconForSfSymbol(String? symbol, {required IconData fallback}) {
     'square.and.arrow.down' => CupertinoIcons.square_arrow_down,
     'square.and.arrow.up' => CupertinoIcons.share,
     'trash' => CupertinoIcons.trash,
+    'calendar' => CupertinoIcons.calendar,
+    'calendar.circle.fill' => CupertinoIcons.calendar_circle_fill,
+    'checkmark.circle' => CupertinoIcons.check_mark_circled,
+    'checkmark.circle.fill' => CupertinoIcons.check_mark_circled_solid,
     _ => fallback,
   };
 }

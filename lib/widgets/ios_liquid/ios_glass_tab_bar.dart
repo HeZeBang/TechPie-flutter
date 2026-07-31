@@ -1,7 +1,6 @@
-import 'dart:async';
+import 'package:flutter/cupertino.dart';
 
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'ios_symbol_icons.dart';
 
 class IosGlassTabBarItem {
   const IosGlassTabBarItem({
@@ -19,7 +18,7 @@ class IosGlassTabBarItem {
   final String selectedSfSymbol;
 }
 
-class IosGlassTabBar extends StatefulWidget {
+class IosGlassTabBar extends StatelessWidget {
   const IosGlassTabBar({
     super.key,
     required this.selectedIndex,
@@ -31,118 +30,36 @@ class IosGlassTabBar extends StatefulWidget {
   final ValueChanged<int> onSelected;
   final List<IosGlassTabBarItem> items;
 
-  @override
-  State<IosGlassTabBar> createState() => _IosGlassTabBarState();
-}
-
-class _IosGlassTabBarState extends State<IosGlassTabBar> {
-  MethodChannel? _channel;
-
   int get _safeSelectedIndex {
-    if (widget.items.isEmpty) return 0;
-    return widget.selectedIndex.clamp(0, widget.items.length - 1);
-  }
-
-  @override
-  void didUpdateWidget(covariant IosGlassTabBar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    if (oldWidget.selectedIndex == widget.selectedIndex) return;
-    unawaited(_sendSelectionUpdate(_safeSelectedIndex));
-  }
-
-  @override
-  void dispose() {
-    _channel?.setMethodCallHandler(null);
-    _channel = null;
-    super.dispose();
+    if (items.isEmpty) return 0;
+    return selectedIndex.clamp(0, items.length - 1);
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
-    const standardTabBarHeight = 49.0;
-    final tabBarHeight = standardTabBarHeight + bottomInset;
+    if (items.isEmpty) return const SizedBox.shrink();
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final mediaWidth = MediaQuery.sizeOf(context).width;
-        final constrainedWidth =
-            constraints.hasBoundedWidth ? constraints.maxWidth : mediaWidth;
-        final width = constrainedWidth.isFinite ? constrainedWidth : mediaWidth;
-
-        if (width <= 40 || tabBarHeight <= 20) {
-          return SizedBox(height: tabBarHeight);
-        }
-
-        final itemSignature = widget.items
-            .map(
-              (item) =>
-                  '${item.label}|${item.sfSymbol}|${item.selectedSfSymbol}',
-            )
-            .join(';');
-
-        return SizedBox(
-          width: width,
-          height: tabBarHeight,
-          child: UiKitView(
-            key: ValueKey(
-              'ios-glass-tabbar-${width.round()}-${tabBarHeight.round()}-$itemSignature',
+    return CupertinoTabBar(
+      currentIndex: _safeSelectedIndex,
+      onTap: onSelected,
+      backgroundColor: CupertinoColors.systemBackground.withValues(alpha: 0.86),
+      activeColor: CupertinoTheme.of(context).primaryColor,
+      inactiveColor: CupertinoColors.inactiveGray.resolveFrom(context),
+      items: [
+        for (final item in items)
+          BottomNavigationBarItem(
+            label: item.label,
+            icon: Icon(
+              iosIconForSfSymbol(item.sfSymbol, fallback: item.icon),
             ),
-            viewType: _viewType,
-            layoutDirection: Directionality.of(context),
-            creationParams: <String, Object?>{
-              'selectedIndex': _safeSelectedIndex,
-              'items': [
-                for (final item in widget.items)
-                  <String, Object?>{
-                    'label': item.label,
-                    'sfSymbol': item.sfSymbol,
-                    'selectedSfSymbol': item.selectedSfSymbol,
-                  },
-              ],
-            },
-            creationParamsCodec: const StandardMessageCodec(),
-            onPlatformViewCreated: _onPlatformViewCreated,
+            activeIcon: Icon(
+              iosIconForSfSymbol(
+                item.selectedSfSymbol,
+                fallback: item.selectedIcon,
+              ),
+            ),
           ),
-        );
-      },
+      ],
     );
   }
-
-  void _onPlatformViewCreated(int viewId) {
-    final channel = MethodChannel('$_channelPrefix/$viewId');
-    _channel = channel;
-
-    channel.setMethodCallHandler((call) async {
-      if (call.method != 'onSelect') return null;
-
-      final arguments = call.arguments;
-      final index = arguments is Map ? arguments['index'] : null;
-
-      if (index is int && index >= 0 && index < widget.items.length) {
-        widget.onSelected(index);
-      }
-
-      return null;
-    });
-  }
-
-  Future<void> _sendSelectionUpdate(int index) async {
-    final channel = _channel;
-    if (channel == null) return;
-
-    try {
-      await channel.invokeMethod<void>('updateSelectedIndex', <String, Object?>{
-        'index': index,
-      });
-    } on PlatformException {
-      // Platform view may be tearing down.
-    } on MissingPluginException {
-      // Platform view may not be wired yet.
-    }
-  }
 }
-
-const _viewType = 'techpie/native_glass_tab_bar';
-const _channelPrefix = 'techpie/native_glass_tab_bar';
