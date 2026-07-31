@@ -1,6 +1,8 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:techpie/utils/platform.dart';
+
+import 'ios_symbol_icons.dart';
 
 class IosGlassDropdownMenuItem {
   const IosGlassDropdownMenuItem({
@@ -18,7 +20,7 @@ class IosGlassDropdownMenuItem {
   final List<IosGlassDropdownMenuItem>? children;
 }
 
-class IosGlassDropdownMenu extends StatefulWidget {
+class IosGlassDropdownMenu extends StatelessWidget {
   const IosGlassDropdownMenu({
     super.key,
     required this.icon,
@@ -41,62 +43,62 @@ class IosGlassDropdownMenu extends StatefulWidget {
   final double height;
 
   @override
-  State<IosGlassDropdownMenu> createState() => _IosGlassDropdownMenuState();
-}
-
-class _IosGlassDropdownMenuState extends State<IosGlassDropdownMenu> {
-  MethodChannel? _channel;
-
-  bool get _usesNative => isIos();
-
-  @override
-  void dispose() {
-    _channel?.setMethodCallHandler(null);
-    _channel = null;
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (!_usesNative) {
-      return _buildFallback();
-    }
+    if (!isIos()) return _buildMaterialMenu();
 
-    final signature = widget.items.map(_itemSignature).join(';');
-    final effectiveWidth = widget.width < iosMinimumInteractiveDimension
+    final effectiveWidth = width < iosMinimumInteractiveDimension
         ? iosMinimumInteractiveDimension
-        : widget.width;
-    final effectiveHeight = widget.height < iosMinimumInteractiveDimension
+        : width;
+    final effectiveHeight = height < iosMinimumInteractiveDimension
         ? iosMinimumInteractiveDimension
-        : widget.height;
+        : height;
+    final hasLabel = label != null && label!.isNotEmpty;
 
-    return SizedBox(
-      width: effectiveWidth,
-      height: effectiveHeight,
-      child: UiKitView(
-        key: ValueKey(
-          'ios-glass-dropdown-$signature-${widget.sfSymbol}-${widget.label ?? ''}',
+    return Semantics(
+      button: true,
+      label: tooltip ?? label,
+      child: SizedBox(
+        width: effectiveWidth,
+        height: effectiveHeight,
+        child: CupertinoButton(
+          minSize: iosMinimumInteractiveDimension,
+          padding: EdgeInsets.symmetric(horizontal: hasLabel ? 10 : 0),
+          onPressed:
+              items.isEmpty ? null : () async => _showMenu(context, items),
+          child: hasLabel
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      iosIconForSfSymbol(sfSymbol, fallback: icon),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        label!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                )
+              : Icon(
+                  iosIconForSfSymbol(sfSymbol, fallback: icon),
+                  size: 20,
+                ),
         ),
-        viewType: _viewType,
-        layoutDirection: Directionality.of(context),
-        creationParams: <String, Object?>{
-          'sfSymbol': widget.sfSymbol,
-          'label': widget.label,
-          'items': [for (final item in widget.items) _encodeItem(item)],
-        },
-        creationParamsCodec: const StandardMessageCodec(),
-        onPlatformViewCreated: _onPlatformViewCreated,
       ),
     );
   }
 
-  Widget _buildFallback() {
+  Widget _buildMaterialMenu() {
     return PopupMenuButton<String>(
-      tooltip: widget.tooltip,
-      icon: Icon(widget.icon),
-      onSelected: widget.onSelected,
+      tooltip: tooltip,
+      icon: Icon(icon),
+      onSelected: onSelected,
       itemBuilder: (context) => [
-        for (final item in widget.items)
+        for (final item in items)
           item.checked
               ? CheckedPopupMenuItem<String>(
                   value: item.value,
@@ -121,42 +123,53 @@ class _IosGlassDropdownMenuState extends State<IosGlassDropdownMenu> {
     );
   }
 
-  void _onPlatformViewCreated(int viewId) {
-    final channel = MethodChannel('$_channelPrefix/$viewId');
-    _channel = channel;
-
-    channel.setMethodCallHandler((call) async {
-      if (call.method != 'onSelect') return null;
-
-      final arguments = call.arguments;
-      final value = arguments is Map ? arguments['value'] : null;
-
-      if (value is String && value.isNotEmpty) {
-        widget.onSelected(value);
-      }
-
-      return null;
-    });
-  }
-
-  Map<String, Object?> _encodeItem(IosGlassDropdownMenuItem item) {
-    return <String, Object?>{
-      'value': item.value,
-      'title': item.label,
-      'checked': item.checked,
-      'destructive': item.destructive,
-      if (item.children != null)
-        'children': [for (final child in item.children!) _encodeItem(child)],
-    };
-  }
-
-  String _itemSignature(IosGlassDropdownMenuItem item) {
-    final childrenSignature = item.children == null
-        ? ''
-        : item.children!.map(_itemSignature).join(',');
-    return '${item.value}|${item.label}|${item.checked}|${item.destructive}|$childrenSignature';
+  Future<void> _showMenu(
+    BuildContext context,
+    List<IosGlassDropdownMenuItem> menuItems, {
+    String? title,
+  }) {
+    return showCupertinoModalPopup<void>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        title: title == null ? null : Text(title),
+        actions: [
+          for (final item in menuItems)
+            CupertinoActionSheetAction(
+              isDestructiveAction: item.destructive,
+              onPressed: () {
+                Navigator.of(sheetContext).pop();
+                final children = item.children;
+                if (children != null && children.isNotEmpty) {
+                  Future<void>.microtask(() {
+                    if (context.mounted) {
+                      _showMenu(context, children, title: item.label);
+                    }
+                  });
+                } else {
+                  onSelected(item.value);
+                }
+              },
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    child: item.checked
+                        ? const Icon(CupertinoIcons.check_mark, size: 18)
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(item.label)),
+                  if (item.children?.isNotEmpty ?? false)
+                    const Icon(CupertinoIcons.chevron_forward, size: 16),
+                ],
+              ),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.of(sheetContext).pop(),
+          child: const Text('取消'),
+        ),
+      ),
+    );
   }
 }
-
-const _viewType = 'techpie/native_glass_dropdown_menu';
-const _channelPrefix = 'techpie/native_glass_dropdown_menu';

@@ -1,5 +1,5 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:techpie/utils/platform.dart';
 
 class IosGlassSelectOption {
@@ -9,7 +9,7 @@ class IosGlassSelectOption {
   final String label;
 }
 
-class IosGlassSelect extends StatefulWidget {
+class IosGlassSelect extends StatelessWidget {
   const IosGlassSelect({
     super.key,
     required this.options,
@@ -30,62 +30,60 @@ class IosGlassSelect extends StatefulWidget {
   final double height;
 
   @override
-  State<IosGlassSelect> createState() => _IosGlassSelectState();
-}
-
-class _IosGlassSelectState extends State<IosGlassSelect> {
-  MethodChannel? _channel;
-
-  bool get _usesNative => isIos();
-
-  @override
-  void dispose() {
-    _channel?.setMethodCallHandler(null);
-    _channel = null;
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (!_usesNative) {
-      return _buildFallback(context);
-    }
+    if (!isIos()) return _buildMaterialSelect(context);
 
-    final signature = widget.options
-        .map((option) => '${option.value}|${option.label}')
-        .join(';');
-    final effectiveWidth = widget.width < iosMinimumInteractiveDimension
+    final effectiveWidth = width < iosMinimumInteractiveDimension
         ? iosMinimumInteractiveDimension
-        : widget.width;
-    final effectiveHeight = widget.height < iosMinimumInteractiveDimension
+        : width;
+    final effectiveHeight = height < iosMinimumInteractiveDimension
         ? iosMinimumInteractiveDimension
-        : widget.height;
+        : height;
+    final selected =
+        options.where((option) => option.value == value).firstOrNull;
+    final foreground = CupertinoColors.label.resolveFrom(context);
+    final secondary = CupertinoColors.secondaryLabel.resolveFrom(context);
 
     return SizedBox(
       width: effectiveWidth,
       height: effectiveHeight,
-      child: UiKitView(
-        key: ValueKey(
-          'ios-glass-select-$signature-${widget.value ?? ''}-${widget.placeholder}',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: CupertinoColors.secondarySystemFill.resolveFrom(context),
+          borderRadius: BorderRadius.circular(10),
         ),
-        viewType: _viewType,
-        layoutDirection: Directionality.of(context),
-        creationParams: <String, Object?>{
-          'value': widget.value,
-          'placeholder': widget.placeholder,
-          'sfSymbol': widget.sfSymbol,
-          'options': [
-            for (final option in widget.options)
-              <String, Object?>{'value': option.value, 'label': option.label},
-          ],
-        },
-        creationParamsCodec: const StandardMessageCodec(),
-        onPlatformViewCreated: _onPlatformViewCreated,
+        child: CupertinoButton(
+          minSize: iosMinimumInteractiveDimension,
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 10, 0),
+          borderRadius: BorderRadius.circular(10),
+          onPressed: options.isEmpty ? null : () async => _showOptions(context),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  selected?.label ?? placeholder,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected == null ? secondary : foreground,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                CupertinoIcons.chevron_up_chevron_down,
+                size: 14,
+                color: secondary,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildFallback(BuildContext context) {
+  Widget _buildMaterialSelect(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHigh,
@@ -96,21 +94,18 @@ class _IosGlassSelectState extends State<IosGlassSelect> {
         child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             isExpanded: true,
-            value: widget.options.any((option) => option.value == widget.value)
-                ? widget.value
-                : null,
-            hint: Text(widget.placeholder),
+            value:
+                options.any((option) => option.value == value) ? value : null,
+            hint: Text(placeholder),
             items: [
-              for (final option in widget.options)
+              for (final option in options)
                 DropdownMenuItem<String>(
                   value: option.value,
                   child: Text(option.label, overflow: TextOverflow.ellipsis),
                 ),
             ],
-            onChanged: (value) {
-              if (value != null) {
-                widget.onChanged(value);
-              }
+            onChanged: (selection) {
+              if (selection != null) onChanged(selection);
             },
           ),
         ),
@@ -118,24 +113,37 @@ class _IosGlassSelectState extends State<IosGlassSelect> {
     );
   }
 
-  void _onPlatformViewCreated(int viewId) {
-    final channel = MethodChannel('$_channelPrefix/$viewId');
-    _channel = channel;
-
-    channel.setMethodCallHandler((call) async {
-      if (call.method != 'onChanged') return null;
-
-      final arguments = call.arguments;
-      final value = arguments is Map ? arguments['value'] : null;
-
-      if (value is String && value.isNotEmpty) {
-        widget.onChanged(value);
-      }
-
-      return null;
-    });
+  Future<void> _showOptions(BuildContext context) {
+    return showCupertinoModalPopup<void>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        actions: [
+          for (final option in options)
+            CupertinoActionSheetAction(
+              isDefaultAction: option.value == value,
+              onPressed: () {
+                Navigator.of(sheetContext).pop();
+                onChanged(option.value);
+              },
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    child: option.value == value
+                        ? const Icon(CupertinoIcons.check_mark, size: 18)
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(option.label)),
+                ],
+              ),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.of(sheetContext).pop(),
+          child: const Text('取消'),
+        ),
+      ),
+    );
   }
 }
-
-const _viewType = 'techpie/native_glass_select';
-const _channelPrefix = 'techpie/native_glass_select';
