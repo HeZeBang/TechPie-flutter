@@ -1,8 +1,13 @@
+import 'dart:async';
+
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:techpie/utils/platform.dart';
 
-class IosGlassConfirmationButton extends StatefulWidget {
+import '../adaptive_alert_dialog.dart';
+import 'ios_symbol_icons.dart';
+
+class IosGlassConfirmationButton extends StatelessWidget {
   const IosGlassConfirmationButton({
     super.key,
     this.label,
@@ -27,88 +32,77 @@ class IosGlassConfirmationButton extends StatefulWidget {
   final double height;
 
   @override
-  State<IosGlassConfirmationButton> createState() =>
-      _IosGlassConfirmationButtonState();
-}
-
-class _IosGlassConfirmationButtonState
-    extends State<IosGlassConfirmationButton> {
-  MethodChannel? _channel;
-
-  bool get _usesNative => isIos();
-
-  @override
-  void dispose() {
-    _channel?.setMethodCallHandler(null);
-    _channel = null;
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (!_usesNative) {
-      if (widget.label == null || widget.label!.isEmpty) {
-        return IconButton(
-          onPressed: widget.onConfirmed,
-          icon: Icon(widget.icon, size: 18),
-          tooltip: widget.confirmTitle,
-        );
-      }
+    final hasLabel = label != null && label!.isNotEmpty;
+    final buttonWidth =
+        width ?? (hasLabel ? 92 : iosMinimumInteractiveDimension);
+    final constrainedWidth = buttonWidth < iosMinimumInteractiveDimension
+        ? iosMinimumInteractiveDimension
+        : buttonWidth;
+    final constrainedHeight = height < iosMinimumInteractiveDimension
+        ? iosMinimumInteractiveDimension
+        : height;
+    void callback() => unawaited(_confirm(context));
 
-      return TextButton.icon(
-        onPressed: widget.onConfirmed,
-        icon: Icon(widget.icon, size: 18),
-        label: Text(widget.label!),
+    if (!isIos()) {
+      return SizedBox(
+        width: width,
+        height: constrainedHeight,
+        child: hasLabel
+            ? TextButton.icon(
+                onPressed: callback,
+                icon: Icon(icon, size: 18),
+                label: Text(label!),
+              )
+            : IconButton(
+                onPressed: callback,
+                icon: Icon(icon, size: 18),
+                tooltip: confirmTitle,
+              ),
       );
     }
 
-    final requestedWidth = widget.width ??
-        ((widget.label == null || widget.label!.isEmpty)
-            ? iosMinimumInteractiveDimension
-            : 92.0);
-    final width = requestedWidth < iosMinimumInteractiveDimension
-        ? iosMinimumInteractiveDimension
-        : requestedWidth;
-    final height = widget.height < iosMinimumInteractiveDimension
-        ? iosMinimumInteractiveDimension
-        : widget.height;
-
+    final color = destructive
+        ? CupertinoColors.systemRed
+        : CupertinoTheme.of(context).primaryColor;
     return SizedBox(
-      width: width,
-      height: height,
-      child: UiKitView(
-        key: ValueKey<String>(
-          'ios-glass-confirm-${widget.label ?? ''}-'
-          '${widget.confirmTitle}-${widget.confirmLabel}-'
-          '${widget.sfSymbol}-${widget.destructive}',
-        ),
-        viewType: _viewType,
-        layoutDirection: Directionality.of(context),
-        creationParams: <String, Object?>{
-          'label': widget.label,
-          'confirmTitle': widget.confirmTitle,
-          'confirmLabel': widget.confirmLabel,
-          'sfSymbol': widget.sfSymbol,
-          'destructive': widget.destructive,
-        },
-        creationParamsCodec: const StandardMessageCodec(),
-        onPlatformViewCreated: _onPlatformViewCreated,
+      width: constrainedWidth,
+      height: constrainedHeight,
+      child: CupertinoButton(
+        minSize: iosMinimumInteractiveDimension,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        onPressed: callback,
+        child: hasLabel
+            ? Text(
+                label!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: color, fontSize: 17),
+              )
+            : Icon(
+                iosIconForSfSymbol(sfSymbol, fallback: icon),
+                color: color,
+                size: 20,
+              ),
       ),
     );
   }
 
-  void _onPlatformViewCreated(int viewId) {
-    final channel = MethodChannel('$_channelPrefix/$viewId');
-    _channel?.setMethodCallHandler(null);
-    _channel = channel;
-
-    channel.setMethodCallHandler((call) async {
-      if (call.method != 'onConfirmed') return null;
-      widget.onConfirmed();
-      return null;
-    });
+  Future<void> _confirm(BuildContext context) async {
+    final confirmed = await showAdaptiveAlertDialog<bool>(
+      context: context,
+      title: confirmTitle,
+      message: '',
+      actions: [
+        const AdaptiveAlertAction<bool>(label: '取消', value: false),
+        AdaptiveAlertAction<bool>(
+          label: confirmLabel,
+          value: true,
+          isDestructive: destructive,
+          isDefault: !destructive,
+        ),
+      ],
+    );
+    if (confirmed == true) onConfirmed();
   }
 }
-
-const _viewType = 'techpie/native_glass_confirmation_button';
-const _channelPrefix = 'techpie/native_glass_confirmation_button';

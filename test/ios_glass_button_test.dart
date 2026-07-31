@@ -1,9 +1,12 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/widgets/ios_liquid/ios_glass_button.dart';
 
 void main() {
+  tearDown(() => debugDefaultTargetPlatformOverride = null);
+
   testWidgets('non-iOS action button uses Material control and handles taps', (
     WidgetTester tester,
   ) async {
@@ -28,7 +31,7 @@ void main() {
     expect(tapCount, 1);
   });
 
-  testWidgets('iOS action button passes semantic state to UIKit', (
+  testWidgets('iOS action button uses composited Cupertino state', (
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -50,17 +53,10 @@ void main() {
       ),
     );
 
-    final platformView = tester.widget<UiKitView>(find.byType(UiKitView));
-    expect(platformView.creationParams, {
-      'sfSymbol': 'icloud.slash',
-      'label': 'Disable sync',
-      'subtitle': 'Remove the cloud backup',
-      'role': 'destructive',
-      'enabled': false,
-      'loading': true,
-      'accessibilityLabel': 'Disable cloud sync',
-      'showsIcon': false,
-    });
+    expect(find.byType(UiKitView), findsNothing);
+    expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
+    final button = tester.widget<CupertinoButton>(find.byType(CupertinoButton));
+    expect(button.onPressed, isNull);
     debugDefaultTargetPlatformOverride = null;
   });
 }

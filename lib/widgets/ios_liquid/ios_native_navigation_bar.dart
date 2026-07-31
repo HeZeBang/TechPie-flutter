@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:techpie/utils/platform.dart';
 
+import 'ios_symbol_icons.dart';
+
 enum IosNativeNavigationBarItemRole { normal, done, destructive }
 
 class IosNativeNavigationBarItem {
@@ -180,7 +182,10 @@ class IosNativeNavigationBar extends StatelessWidget
                   ? FontWeight.w600
                   : FontWeight.w400,
             );
-    final icon = _iconForSymbol(item.sfSymbol);
+    final icon = iosIconForSfSymbol(
+      item.sfSymbol,
+      fallback: CupertinoIcons.circle,
+    );
     final label = item.title;
 
     return Semantics(
@@ -250,7 +255,13 @@ class IosNativeNavigationBar extends StatelessWidget
                         ? const Icon(CupertinoIcons.check_mark, size: 18)
                         : item.sfSymbol == null
                             ? null
-                            : Icon(_iconForSymbol(item.sfSymbol), size: 18),
+                            : Icon(
+                                iosIconForSfSymbol(
+                                  item.sfSymbol,
+                                  fallback: CupertinoIcons.circle,
+                                ),
+                                size: 18,
+                              ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(child: Text(item.title)),
@@ -334,35 +345,4 @@ class _LargeTitle extends StatelessWidget {
       ],
     );
   }
-}
-
-IconData _iconForSymbol(String? symbol) {
-  return switch (symbol) {
-    'arrow.clockwise' ||
-    'arrow.counterclockwise' ||
-    'arrow.triangle.2.circlepath' =>
-      CupertinoIcons.refresh,
-    'arrow.down.circle' ||
-    'icloud.and.arrow.down' =>
-      CupertinoIcons.cloud_download,
-    'arrow.up.circle' || 'icloud.and.arrow.up' => CupertinoIcons.cloud_upload,
-    'arrow.uturn.backward' => CupertinoIcons.arrow_uturn_left,
-    'calendar.badge.clock' => CupertinoIcons.calendar,
-    'checklist' => CupertinoIcons.check_mark_circled,
-    'chevron.left' => CupertinoIcons.back,
-    'ellipsis' => CupertinoIcons.ellipsis,
-    'ellipsis.circle' => CupertinoIcons.ellipsis_circle,
-    'icloud.slash' => CupertinoIcons.cloud,
-    'key' => CupertinoIcons.lock,
-    'link' => CupertinoIcons.link,
-    'magnifyingglass' => CupertinoIcons.search,
-    'message.badge' => CupertinoIcons.chat_bubble,
-    'paperplane.fill' => CupertinoIcons.paperplane_fill,
-    'person.crop.circle.badge.plus' => CupertinoIcons.person_add,
-    'rectangle.portrait.and.arrow.right' => CupertinoIcons.square_arrow_right,
-    'square.and.arrow.down' => CupertinoIcons.square_arrow_down,
-    'square.and.arrow.up' => CupertinoIcons.share,
-    'trash' => CupertinoIcons.trash,
-    _ => CupertinoIcons.circle,
-  };
 }

@@ -1,13 +1,12 @@
-import 'dart:async';
-import 'dart:convert';
-
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:techpie/utils/platform.dart';
+
+import 'ios_symbol_icons.dart';
 
 enum IosNativeButtonRole { prominent, standard, plain, destructive }
 
-class IosGlassButton extends StatefulWidget {
+class IosGlassButton extends StatelessWidget {
   const IosGlassButton({
     super.key,
     required this.onPressed,
@@ -36,161 +35,166 @@ class IosGlassButton extends StatefulWidget {
   final bool showIosIcon;
 
   @override
-  State<IosGlassButton> createState() => _IosGlassButtonState();
-}
-
-class _IosGlassButtonState extends State<IosGlassButton> {
-  MethodChannel? _channel;
-
-  @override
-  void didUpdateWidget(covariant IosGlassButton oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_signature(oldWidget) == _signature(widget)) return;
-    unawaited(_sendConfigurationUpdate());
-  }
-
-  @override
-  void dispose() {
-    _channel?.setMethodCallHandler(null);
-    _channel = null;
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (!isIos()) {
-      return _buildMaterialButton(context);
-    }
+    if (!isIos()) return _buildMaterialButton(context);
 
-    final hasLabel = widget.label != null && widget.label!.isNotEmpty;
-    return SizedBox(
-      width: widget.width ?? (hasLabel ? double.infinity : 44),
-      height: widget.height ?? 44,
-      child: UiKitView(
-        viewType: _viewType,
-        layoutDirection: Directionality.of(context),
-        creationParams: _configuration,
-        creationParamsCodec: const StandardMessageCodec(),
-        onPlatformViewCreated: _onPlatformViewCreated,
+    final hasLabel = label != null && label!.isNotEmpty;
+    final buttonHeight = (height ?? iosMinimumInteractiveDimension).clamp(
+      iosMinimumInteractiveDimension,
+      double.infinity,
+    );
+    final buttonWidth = width ?? (hasLabel ? double.infinity : buttonHeight);
+    final primaryColor = CupertinoTheme.of(context).primaryColor;
+    final foreground = switch (role) {
+      IosNativeButtonRole.prominent => CupertinoColors.white,
+      IosNativeButtonRole.destructive => CupertinoColors.systemRed,
+      _ => primaryColor,
+    };
+    final background = switch (role) {
+      IosNativeButtonRole.prominent => primaryColor,
+      IosNativeButtonRole.standard => CupertinoDynamicColor.resolve(
+          CupertinoColors.secondarySystemFill,
+          context,
+        ),
+      IosNativeButtonRole.plain || IosNativeButtonRole.destructive => null,
+    };
+    final enabled = onPressed != null && !loading;
+
+    return Semantics(
+      button: true,
+      label: accessibilityLabel ?? label,
+      enabled: enabled,
+      child: SizedBox(
+        width: buttonWidth,
+        height: buttonHeight,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: CupertinoButton(
+            minSize: iosMinimumInteractiveDimension,
+            padding: EdgeInsets.symmetric(horizontal: hasLabel ? 16 : 0),
+            borderRadius: BorderRadius.circular(10),
+            onPressed: enabled ? onPressed : null,
+            child: _buildIosContent(context, foreground, hasLabel),
+          ),
+        ),
       ),
     );
   }
 
-  void _onPlatformViewCreated(int viewId) {
-    final channel = MethodChannel('$_channelPrefix/$viewId');
-    _channel = channel;
+  Widget _buildIosContent(
+    BuildContext context,
+    Color foreground,
+    bool hasLabel,
+  ) {
+    if (loading) {
+      return CupertinoActivityIndicator(color: foreground);
+    }
 
-    channel.setMethodCallHandler((call) async {
-      if (call.method != 'onTap') return null;
+    final symbol = Icon(
+      iosIconForSfSymbol(sfSymbol, fallback: icon),
+      size: 20,
+      color: foreground,
+    );
+    if (!hasLabel) return symbol;
 
-      widget.onPressed?.call();
-      return null;
-    });
+    final text = Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          label!,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: CupertinoTheme.of(context).textTheme.actionTextStyle.copyWith(
+                color: foreground,
+                fontWeight: role == IosNativeButtonRole.prominent
+                    ? FontWeight.w600
+                    : FontWeight.w400,
+              ),
+        ),
+        if (subtitle case final subtitle? when subtitle.isNotEmpty)
+          Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
+                  color: foreground.withValues(alpha: 0.72),
+                  fontSize: 12,
+                ),
+          ),
+      ],
+    );
+
+    if (!showIosIcon) return text;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [symbol, const SizedBox(width: 8), Flexible(child: text)],
+    );
   }
 
-  Map<String, Object?> get _configuration => <String, Object?>{
-        'sfSymbol': widget.sfSymbol,
-        'label': widget.label,
-        'subtitle': widget.subtitle,
-        'role': widget.role.name,
-        'enabled': widget.onPressed != null,
-        'loading': widget.loading,
-        'accessibilityLabel': widget.accessibilityLabel,
-        'showsIcon':
-            widget.label == null || widget.label!.isEmpty || widget.showIosIcon,
-      };
-
-  String _signature(IosGlassButton value) => jsonEncode(<String, Object?>{
-        'sfSymbol': value.sfSymbol,
-        'label': value.label,
-        'subtitle': value.subtitle,
-        'role': value.role.name,
-        'enabled': value.onPressed != null,
-        'loading': value.loading,
-        'accessibilityLabel': value.accessibilityLabel,
-        'showsIcon':
-            value.label == null || value.label!.isEmpty || value.showIosIcon,
-      });
-
   Widget _buildMaterialButton(BuildContext context) {
-    final label = widget.label;
-    if (label == null || label.isEmpty) {
+    final buttonLabel = label;
+    if (buttonLabel == null || buttonLabel.isEmpty) {
       return IconButton.filled(
-        onPressed: widget.onPressed,
-        icon: widget.loading
+        onPressed: loading ? null : onPressed,
+        icon: loading
             ? const SizedBox.square(
                 dimension: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : Icon(widget.icon),
+            : Icon(icon),
       );
     }
 
-    final foreground = widget.role == IosNativeButtonRole.destructive
+    final foreground = role == IosNativeButtonRole.destructive
         ? Theme.of(context).colorScheme.error
         : null;
     final child = Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (widget.loading)
+        if (loading)
           const SizedBox.square(
             dimension: 20,
             child: CircularProgressIndicator(strokeWidth: 2),
           )
         else
-          Icon(widget.icon),
+          Icon(icon),
         const SizedBox(width: 8),
         Flexible(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label),
-              if (widget.subtitle != null)
-                Text(
-                  widget.subtitle!,
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
+              Text(buttonLabel),
+              if (subtitle != null)
+                Text(subtitle!, style: Theme.of(context).textTheme.labelSmall),
             ],
           ),
         ),
       ],
     );
     final style = ButtonStyle(
-      minimumSize: WidgetStatePropertyAll(
-        Size.fromHeight(widget.height ?? 56),
-      ),
+      minimumSize: WidgetStatePropertyAll(Size.fromHeight(height ?? 56)),
       foregroundColor:
           foreground == null ? null : WidgetStatePropertyAll(foreground),
     );
+    final callback = loading ? null : onPressed;
 
-    return switch (widget.role) {
+    return switch (role) {
       IosNativeButtonRole.prominent =>
-        FilledButton(onPressed: widget.onPressed, style: style, child: child),
+        FilledButton(onPressed: callback, style: style, child: child),
       IosNativeButtonRole.standard => FilledButton.tonal(
-          onPressed: widget.onPressed,
+          onPressed: callback,
           style: style,
           child: child,
         ),
       IosNativeButtonRole.plain ||
       IosNativeButtonRole.destructive =>
-        TextButton(onPressed: widget.onPressed, style: style, child: child),
+        TextButton(onPressed: callback, style: style, child: child),
     };
   }
-
-  Future<void> _sendConfigurationUpdate() async {
-    final channel = _channel;
-    if (channel == null) return;
-
-    try {
-      await channel.invokeMethod<void>('updateConfiguration', _configuration);
-    } on PlatformException {
-      // Platform view may be tearing down.
-    } on MissingPluginException {
-      // Platform view may not be wired yet.
-    }
-  }
 }
-
-const _viewType = 'techpie/native_glass_button';
-const _channelPrefix = 'techpie/native_glass_button';
