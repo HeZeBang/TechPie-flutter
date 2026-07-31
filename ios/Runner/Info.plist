@@ -22,16 +22,27 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.geekpie.techpie</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>techpie</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSCalendarsUsageDescription</key>
-	<string>TechPie 需要访问日历以将课表导入到你指定的系统日历中。</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>TechPie 需要完整日历权限，以查找或创建你指定名称的日历并导入课表。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>TechPie 需要访问日历以将课表导入到你指定的系统日历中。</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -50,17 +61,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.geekpie.techpie</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>techpie</string>
-			</array>
-		</dict>
 	</array>
 </dict>
 </plist>
