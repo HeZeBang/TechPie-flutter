@@ -161,6 +161,11 @@ class ThemeService extends ChangeNotifier {
           scrolledUnderElevation: 0.5,
           surfaceTintColor: Colors.transparent,
         ),
+        snackBarTheme: const SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          shape: _snackBarShape,
+          insetPadding: _snackBarInsets,
+        ),
       );
     }
 
@@ -173,6 +178,13 @@ class ThemeService extends ChangeNotifier {
     return _buildIosTheme(theme, brightness: Brightness.dark);
   }
 
+  /// Snackbars float as rounded cards above the glass bottom nav (which is a
+  /// 56dp capsule with 8dp margins) instead of a full-width strip glued to it.
+  static const _snackBarShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(16)),
+  );
+  static const _snackBarInsets = EdgeInsets.fromLTRB(12, 0, 12, 12);
+
   ThemeData _buildDesktopTheme(ThemeData base) {
     return base.copyWith(
       appBarTheme: base.appBarTheme.copyWith(
@@ -180,6 +192,11 @@ class ThemeService extends ChangeNotifier {
         elevation: 0.5,
         scrolledUnderElevation: 0.5,
         surfaceTintColor: Colors.transparent,
+      ),
+      snackBarTheme: base.snackBarTheme.copyWith(
+        behavior: SnackBarBehavior.floating,
+        shape: _snackBarShape,
+        insetPadding: _snackBarInsets,
       ),
     );
   }
@@ -260,6 +277,9 @@ class ThemeService extends ChangeNotifier {
         contentTextStyle: TextStyle(
           color: isDark ? Colors.white : Colors.black,
         ),
+        behavior: SnackBarBehavior.floating,
+        shape: _snackBarShape,
+        insetPadding: _snackBarInsets,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,

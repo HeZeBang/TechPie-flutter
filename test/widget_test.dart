@@ -15,6 +15,7 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/widgets/app_shell/app_shell.dart';
+import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
 
 void main() {
   testWidgets('iOS-style destination switching lazily preserves visited pages',
@@ -139,31 +140,25 @@ void main() {
       ),
     );
 
-    final navigationBar = tester.widget<NavigationBar>(
-      find.byType(NavigationBar),
-    );
-    expect(
-      navigationBar.overlayColor?.resolve(<WidgetState>{}),
-      Colors.transparent,
-    );
+    expect(find.byType(TgBottomNavBar), findsOneWidget);
     // Starts on Home
     expect(find.text('Welcome to TechPie'), findsOneWidget);
 
     // Tap Schedule
-    await tester.tap(find.text('Schedule'));
+    await tester.tap(find.text('Schedule').first);
     await tester.pumpAndSettle();
     // Not logged in, so shows login prompt
     expect(find.byIcon(Icons.calendar_month), findsOneWidget);
     expect(find.text('登录以查看课表'), findsOneWidget);
 
     // Tap Deadlines
-    await tester.tap(find.text('Deadlines'));
+    await tester.tap(find.text('Deadlines').first);
     await tester.pumpAndSettle();
     expect(find.text('No upcoming deadlines'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsNothing);
 
     // Tap Settings
-    await tester.tap(find.text('Settings'));
+    await tester.tap(find.text('Settings').first);
     await tester.pumpAndSettle();
     expect(find.text('Appearance'), findsOneWidget);
   });

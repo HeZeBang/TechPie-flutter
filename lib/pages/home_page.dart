@@ -421,17 +421,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (cookieType == null) return cookies;
 
     final sp = ServiceProvider.of(context);
-    // ecourse and student-leave both authenticate against the eGate/IDS
-    // SSO, so they share the eGate binding's CpDaily cookies (which always
-    // include CASTGC via [ThirdPartyAuthService.egateCookies]). Without an
-    // eGate binding there is nothing to inject and the webview opens
-    // unauthenticated — the UI should steer the user to bind eGate first.
-    final String rawCookies = sp.thirdPartyAuthService.egateCookies();
-    if (rawCookies.isEmpty) return cookies;
+    // ecourse / student-leave / eams webviews all authenticate against the
+    // CpDaily session, whose cookies are exposed by the cpdaily session node
+    // (the CASTGC-bearing cookie set that webviews consume directly). Read
+    // it through the unified [CookieProvider] view so the source is abstracted.
+    final cp = sp.thirdPartyAuthService.cpdailyNode.cookieProvider;
+    if (cp == null || cp.isEmpty) return cookies;
 
-    final domain = 'ids.shanghaitech.edu.cn';
+    final domain = cp.domain.isNotEmpty
+        ? cp.domain
+        : 'ids.shanghaitech.edu.cn';
 
-    for (final part in rawCookies.split(';')) {
+    for (final part in cp.cookies.split(';')) {
       final idx = part.indexOf('=');
       if (idx > 0) {
         final key = part.substring(0, idx).trim();

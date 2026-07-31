@@ -531,6 +531,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "6.5.0"
+  reel_text:
+    dependency: "direct main"
+    description:
+      name: reel_text
+      sha256: b129082573b97409d6ae8f2071ab662ada1ebd7491b9b9edf0e3667d55156b65
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "0.4.3"
   shared_preferences:
     dependency: "direct main"
     description:

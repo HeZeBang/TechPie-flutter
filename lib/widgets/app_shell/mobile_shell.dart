@@ -4,6 +4,7 @@ import '../../utils/platform.dart';
 import '../ios/ios_native_tab_bar.dart';
 import 'app_destination.dart';
 import 'app_shell_metrics.dart';
+import 'tg_bottom_nav_bar.dart';
 
 class MobileShell extends StatelessWidget {
   final List<AppDestination> destinations;
@@ -23,7 +24,10 @@ class MobileShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final usesIosChrome = isIos();
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    final bottomObstruction = (usesIosChrome ? 49.0 : 80.0) + bottomInset;
+    final bottomObstruction = (usesIosChrome
+            ? 49.0
+            : TgBottomNavBar.barHeight + TgBottomNavBar.margin * 2) +
+        bottomInset;
 
     return AppShellMetrics(
       bottomObstruction: bottomObstruction,
@@ -38,56 +42,12 @@ class MobileShell extends StatelessWidget {
                     .toList(),
                 onSelected: onDestinationSelected,
               )
-            : NavigationBar(
+            : TgBottomNavBar(
+                destinations: destinations,
                 selectedIndex: selectedIndex,
                 onDestinationSelected: onDestinationSelected,
-                // The selection indicator is the persistent selected state.
-                // Suppress transient state layers so they do not overlap it.
-                overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-                destinations: [
-                  for (var index = 0; index < destinations.length; index++)
-                    NavigationDestination(
-                      icon: _NavigationDestinationIcon(
-                        icon: destinations[index].icon,
-                        selectedIcon: destinations[index].selectedIcon,
-                        selected: index == selectedIndex,
-                      ),
-                      label: destinations[index].label,
-                    ),
-                ],
               ),
       ),
-    );
-  }
-}
-
-class _NavigationDestinationIcon extends StatelessWidget {
-  const _NavigationDestinationIcon({
-    required this.icon,
-    required this.selectedIcon,
-    required this.selected,
-  });
-
-  final IconData icon;
-  final IconData selectedIcon;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final displayedIcon = selected ? selectedIcon : icon;
-
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) => FadeTransition(
-        opacity: animation,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.88, end: 1).animate(animation),
-          child: child,
-        ),
-      ),
-      child: Icon(displayedIcon, key: ValueKey(displayedIcon)),
     );
   }
 }
