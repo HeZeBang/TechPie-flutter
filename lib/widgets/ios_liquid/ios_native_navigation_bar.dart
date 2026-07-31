@@ -1,11 +1,9 @@
-import 'dart:ui';
+import 'dart:async';
+import 'dart:convert';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:techpie/utils/platform.dart';
-
-import 'ios_symbol_icons.dart';
 
 enum IosNativeNavigationBarItemRole { normal, done, destructive }
 
@@ -31,6 +29,20 @@ class IosNativeNavigationBarItem {
   final String? accessibilityLabel;
   final String? placementGroup;
   final List<IosNativeNavigationBarMenuItem> menuItems;
+
+  Map<String, Object?> toMap() {
+    return <String, Object?>{
+      'id': id,
+      'title': title,
+      'sfSymbol': sfSymbol,
+      'role': role.name,
+      'enabled': enabled,
+      'hidden': hidden,
+      'accessibilityLabel': accessibilityLabel,
+      'placementGroup': placementGroup,
+      'menuItems': menuItems.map((item) => item.toMap()).toList(),
+    };
+  }
 }
 
 class IosNativeNavigationBarMenuItem {
@@ -51,15 +63,21 @@ class IosNativeNavigationBarMenuItem {
   final bool destructive;
   final bool displayInline;
   final List<IosNativeNavigationBarMenuItem> children;
+
+  Map<String, Object?> toMap() {
+    return <String, Object?>{
+      'value': value,
+      'title': title,
+      'sfSymbol': sfSymbol,
+      'checked': checked,
+      'destructive': destructive,
+      'displayInline': displayInline,
+      'children': children.map((item) => item.toMap()).toList(),
+    };
+  }
 }
 
-/// A composited Cupertino navigation bar.
-///
-/// Ordinary navigation chrome stays in Flutter's scene so it participates in
-/// [CupertinoPageRoute] as one page instead of becoming a separately animated
-/// UIKit platform view. Native platform views remain reserved for content that
-/// actually requires a native surface.
-class IosNativeNavigationBar extends StatelessWidget
+class IosNativeNavigationBar extends StatefulWidget
     implements PreferredSizeWidget {
   const IosNativeNavigationBar({
     super.key,
@@ -87,262 +105,112 @@ class IosNativeNavigationBar extends StatelessWidget
 
   double get _barHeight {
     final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
-    if (largeTitleMode) return hasSubtitle ? 104 : 92;
-    return hasSubtitle ? 52 : 44;
+    if (largeTitleMode) {
+      return hasSubtitle && usesIosLiquidGlass() ? 112.0 : 96.0;
+    }
+    return hasSubtitle ? 56.0 : 44.0;
+  }
+
+  @override
+  State<IosNativeNavigationBar> createState() => _IosNativeNavigationBarState();
+}
+
+class _IosNativeNavigationBarState extends State<IosNativeNavigationBar> {
+  MethodChannel? _channel;
+
+  @override
+  void didUpdateWidget(covariant IosNativeNavigationBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final channel = _channel;
+    if (channel == null || !_configurationChanged(oldWidget)) return;
+    unawaited(_sendConfigurationUpdate(channel));
+  }
+
+  @override
+  void dispose() {
+    _channel?.setMethodCallHandler(null);
+    _channel = null;
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!isIos()) return AppBar(title: Text(title));
+    if (!isIos()) return AppBar(title: Text(widget.title));
 
-    final brightness = CupertinoTheme.brightnessOf(context);
-    final background = CupertinoDynamicColor.resolve(
-      CupertinoColors.systemBackground.withValues(alpha: 0.86),
-      context,
-    );
-    final separator = CupertinoDynamicColor.resolve(
-      CupertinoColors.separator,
-      context,
-    );
-    final visibleLeading = leadingItems.where((item) => !item.hidden).toList();
-    final visibleTrailing =
-        trailingItems.where((item) => !item.hidden).toList();
-
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: brightness == Brightness.dark
-          ? SystemUiOverlayStyle.light
-          : SystemUiOverlayStyle.dark,
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: background,
-              border: Border(bottom: BorderSide(color: separator, width: 0)),
-            ),
-            child: SafeArea(
-              bottom: false,
-              child: SizedBox(
-                height: _barHeight,
-                child: Stack(
-                  children: [
-                    PositionedDirectional(
-                      top: 0,
-                      start: 4,
-                      child: _buildItems(context, visibleLeading),
-                    ),
-                    PositionedDirectional(
-                      top: 0,
-                      end: 4,
-                      child: _buildItems(context, visibleTrailing),
-                    ),
-                    if (largeTitleMode)
-                      PositionedDirectional(
-                        start: 16,
-                        end: 16,
-                        bottom: subtitle == null ? 8 : 7,
-                        child: _LargeTitle(title: title, subtitle: subtitle),
-                      )
-                    else
-                      PositionedDirectional(
-                        start: 88,
-                        end: 88,
-                        top: 0,
-                        height: _barHeight,
-                        child: _CompactTitle(title: title, subtitle: subtitle),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+    return SafeArea(
+      bottom: false,
+      child: SizedBox(
+        height: widget._barHeight,
+        child: UiKitView(
+          viewType: _viewType,
+          layoutDirection: Directionality.of(context),
+          creationParams: _configuration,
+          creationParamsCodec: const StandardMessageCodec(),
+          onPlatformViewCreated: _onPlatformViewCreated,
         ),
       ),
     );
   }
 
-  Widget _buildItems(
-    BuildContext context,
-    List<IosNativeNavigationBarItem> items,
-  ) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [for (final item in items) _buildItem(context, item)],
-    );
+  bool _configurationChanged(IosNativeNavigationBar oldWidget) {
+    return _signature(oldWidget) != _signature(widget);
   }
 
-  Widget _buildItem(BuildContext context, IosNativeNavigationBarItem item) {
-    final color = item.role == IosNativeNavigationBarItemRole.destructive
-        ? CupertinoColors.systemRed
-        : CupertinoTheme.of(context).primaryColor;
-    final textStyle =
-        CupertinoTheme.of(context).textTheme.actionTextStyle.copyWith(
-              color: color,
-              fontWeight: item.role == IosNativeNavigationBarItemRole.done
-                  ? FontWeight.w600
-                  : FontWeight.w400,
-            );
-    final icon = iosIconForSfSymbol(
-      item.sfSymbol,
-      fallback: CupertinoIcons.circle,
-    );
-    final label = item.title;
-
-    return Semantics(
-      button: true,
-      label: item.accessibilityLabel ?? label,
-      enabled: item.enabled,
-      child: CupertinoButton(
-        minSize: iosMinimumInteractiveDimension,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        onPressed: item.enabled
-            ? () async {
-                if (item.menuItems.isEmpty) {
-                  onItemPressed?.call(item.id);
-                } else {
-                  await _showMenu(context, item.id, item.menuItems);
-                }
-              }
-            : null,
-        child: label != null && label.isNotEmpty
-            ? Text(label, style: textStyle)
-            : Icon(icon, size: 22, color: color),
-      ),
-    );
+  Object _signature(IosNativeNavigationBar widget) {
+    return jsonEncode(<String, Object?>{
+      'title': widget.title,
+      'subtitle': widget.subtitle,
+      'leadingItems': widget.leadingItems.map((item) => item.toMap()).toList(),
+      'trailingItems':
+          widget.trailingItems.map((item) => item.toMap()).toList(),
+      'selectionMode': widget.selectionMode,
+      'largeTitleMode': widget.largeTitleMode,
+    });
   }
 
-  Future<void> _showMenu(
-    BuildContext context,
-    String itemId,
-    List<IosNativeNavigationBarMenuItem> items, {
-    String? menuTitle,
-  }) async {
-    final flattened = <IosNativeNavigationBarMenuItem>[
-      for (final item in items)
-        if (item.displayInline) ...item.children else item,
-    ];
+  Map<String, Object?> get _configuration => <String, Object?>{
+        'title': widget.title,
+        'subtitle': widget.subtitle,
+        'leadingItems':
+            widget.leadingItems.map((item) => item.toMap()).toList(),
+        'trailingItems':
+            widget.trailingItems.map((item) => item.toMap()).toList(),
+        'selectionMode': widget.selectionMode,
+        'largeTitleMode': widget.largeTitleMode,
+      };
 
-    await showCupertinoModalPopup<void>(
-      context: context,
-      builder: (sheetContext) => CupertinoActionSheet(
-        title: menuTitle == null || menuTitle.isEmpty ? null : Text(menuTitle),
-        actions: [
-          for (final item in flattened)
-            CupertinoActionSheetAction(
-              isDestructiveAction: item.destructive,
-              onPressed: () {
-                Navigator.of(sheetContext).pop();
-                if (item.children.isNotEmpty) {
-                  Future<void>.microtask(() {
-                    if (context.mounted) {
-                      _showMenu(
-                        context,
-                        itemId,
-                        item.children,
-                        menuTitle: item.title,
-                      );
-                    }
-                  });
-                } else {
-                  onMenuSelected?.call(itemId, item.value);
-                }
-              },
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 24,
-                    child: item.checked
-                        ? const Icon(CupertinoIcons.check_mark, size: 18)
-                        : item.sfSymbol == null
-                            ? null
-                            : Icon(
-                                iosIconForSfSymbol(
-                                  item.sfSymbol,
-                                  fallback: CupertinoIcons.circle,
-                                ),
-                                size: 18,
-                              ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(item.title)),
-                  if (item.children.isNotEmpty)
-                    const Icon(CupertinoIcons.chevron_forward, size: 16),
-                ],
-              ),
-            ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.of(sheetContext).pop(),
-          child: const Text('取消'),
-        ),
-      ),
-    );
+  Future<void> _sendConfigurationUpdate(MethodChannel channel) async {
+    try {
+      await channel.invokeMethod<void>('updateConfiguration', _configuration);
+    } on PlatformException {
+      // Platform view may be tearing down.
+    } on MissingPluginException {
+      // Platform view may not be wired yet.
+    }
+  }
+
+  void _onPlatformViewCreated(int viewId) {
+    final channel = MethodChannel('$_channelPrefix/$viewId');
+    _channel?.setMethodCallHandler(null);
+    _channel = channel;
+
+    channel.setMethodCallHandler((call) async {
+      final arguments = call.arguments as Map<Object?, Object?>?;
+      switch (call.method) {
+        case 'onItemPressed':
+          final id = arguments?['id'] as String?;
+          if (id != null) widget.onItemPressed?.call(id);
+        case 'onMenuSelected':
+          final id = arguments?['id'] as String?;
+          final value = arguments?['value'] as String?;
+          if (id != null && value != null) {
+            widget.onMenuSelected?.call(id, value);
+          }
+      }
+      return null;
+    });
   }
 }
 
-class _CompactTitle extends StatelessWidget {
-  const _CompactTitle({required this.title, this.subtitle});
-
-  final String title;
-  final String? subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = CupertinoTheme.of(context);
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.navTitleTextStyle,
-        ),
-        if (subtitle case final subtitle? when subtitle.isNotEmpty)
-          Text(
-            subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.textStyle.copyWith(
-              color: CupertinoColors.secondaryLabel.resolveFrom(context),
-              fontSize: 11,
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _LargeTitle extends StatelessWidget {
-  const _LargeTitle({required this.title, this.subtitle});
-
-  final String title;
-  final String? subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = CupertinoTheme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.navLargeTitleTextStyle,
-        ),
-        if (subtitle case final subtitle? when subtitle.isNotEmpty)
-          Text(
-            subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.textStyle.copyWith(
-              color: CupertinoColors.secondaryLabel.resolveFrom(context),
-              fontSize: 13,
-            ),
-          ),
-      ],
-    );
-  }
-}
+const _viewType = 'techpie/native_navigation_bar';
+const _channelPrefix = 'techpie/native_navigation_bar';

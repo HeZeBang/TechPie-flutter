@@ -1,14 +1,11 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/widgets/ios_liquid/ios_glass_tab_bar.dart';
 
 void main() {
-  testWidgets('tab bar uses one composited Cupertino surface', (
+  testWidgets('tab bar is backed by the native UIKit implementation', (
     WidgetTester tester,
   ) async {
-    int? selectedIndex;
-
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -30,16 +27,28 @@ void main() {
                 selectedSfSymbol: 'gearshape.fill',
               ),
             ],
-            onSelected: (value) => selectedIndex = value,
+            onSelected: (_) {},
           ),
         ),
       ),
     );
 
-    expect(find.byType(UiKitView), findsNothing);
-    expect(find.byType(CupertinoTabBar), findsOneWidget);
-
-    await tester.tap(find.text('Settings'));
-    expect(selectedIndex, 1);
+    final platformView = tester.widget<UiKitView>(find.byType(UiKitView));
+    expect(platformView.viewType, 'techpie/native_glass_tab_bar');
+    expect(platformView.creationParams, {
+      'selectedIndex': 0,
+      'items': [
+        {
+          'label': 'Home',
+          'sfSymbol': 'house',
+          'selectedSfSymbol': 'house.fill',
+        },
+        {
+          'label': 'Settings',
+          'sfSymbol': 'gearshape',
+          'selectedSfSymbol': 'gearshape.fill',
+        },
+      ],
+    });
   });
 }
