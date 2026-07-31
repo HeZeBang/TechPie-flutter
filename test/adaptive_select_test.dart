@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/widgets/ios_liquid/ios_glass_select.dart';
+import 'package:techpie/widgets/adaptive_select.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -16,11 +16,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: IosGlassSelect(
+          body: AdaptiveSelect(
             value: 'system',
             options: const [
-              IosGlassSelectOption(value: 'system', label: 'System'),
-              IosGlassSelectOption(value: 'dark', label: 'Dark'),
+              AdaptiveSelectOption(value: 'system', label: 'System'),
+              AdaptiveSelectOption(value: 'dark', label: 'Dark'),
             ],
             onChanged: (value) => selectedValue = value,
           ),

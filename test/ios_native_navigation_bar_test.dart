@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/widgets/ios_liquid/ios_native_navigation_bar.dart';
+import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);

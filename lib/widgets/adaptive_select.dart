@@ -2,30 +2,28 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:techpie/utils/platform.dart';
 
-class IosGlassSelectOption {
-  const IosGlassSelectOption({required this.value, required this.label});
+class AdaptiveSelectOption {
+  const AdaptiveSelectOption({required this.value, required this.label});
 
   final String value;
   final String label;
 }
 
-class IosGlassSelect extends StatelessWidget {
-  const IosGlassSelect({
+class AdaptiveSelect extends StatelessWidget {
+  const AdaptiveSelect({
     super.key,
     required this.options,
     required this.onChanged,
     this.value,
     this.placeholder = 'Select',
-    this.sfSymbol = 'chevron.up.chevron.down',
     this.width = 150,
     this.height = iosMinimumInteractiveDimension,
   });
 
-  final List<IosGlassSelectOption> options;
+  final List<AdaptiveSelectOption> options;
   final String? value;
   final ValueChanged<String> onChanged;
   final String placeholder;
-  final String sfSymbol;
   final double width;
   final double height;
 

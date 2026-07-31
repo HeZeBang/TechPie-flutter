@@ -6,13 +6,13 @@ import '../services/service_provider.dart';
 import '../services/sync_service.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_glass_button.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 /// Cloud-sync settings: turn sync on/off, set / restore / change the master
 /// password, and trigger a manual pull. All cryptography + Casdoor I/O lives
@@ -55,7 +55,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
               ],
               onItemPressed: (id) {
                 if (id == 'back') {
-                  unawaited(maybePopPlatformViewPage<void>(context));
+                  unawaited(maybePopAdaptivePage<void>(context));
                 }
               },
             )
@@ -88,7 +88,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     subtitle: '用本设备绑定覆盖云端备份',
                     icon: Icons.upload_outlined,
                     sfSymbol: 'arrow.up.circle',
-                    role: IosNativeButtonRole.prominent,
+                    role: AdaptiveButtonRole.prominent,
                     onPressed: () => unawaited(_push(sync)),
                   ),
                   _actionButton(
@@ -96,7 +96,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     label: '修改主密码',
                     icon: Icons.lock_outline,
                     sfSymbol: 'key',
-                    role: IosNativeButtonRole.plain,
+                    role: AdaptiveButtonRole.plain,
                     onPressed: () => unawaited(_changePassword(sync)),
                   ),
                   _actionButton(
@@ -105,7 +105,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     subtitle: '清除云端备份与本设备主密码',
                     icon: Icons.cloud_off_outlined,
                     sfSymbol: 'icloud.slash',
-                    role: IosNativeButtonRole.destructive,
+                    role: AdaptiveButtonRole.destructive,
                     onPressed: () => unawaited(_disable(sync)),
                   ),
                 ]),
@@ -125,7 +125,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                     subtitle: '首次设置主密码并加密上传',
                     icon: Icons.cloud_upload_outlined,
                     sfSymbol: 'icloud.and.arrow.up',
-                    role: IosNativeButtonRole.prominent,
+                    role: AdaptiveButtonRole.prominent,
                     onPressed: () => unawaited(_setup(sync)),
                   ),
                 ]),
@@ -180,13 +180,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     required String sfSymbol,
     required VoidCallback onPressed,
     String? subtitle,
-    IosNativeButtonRole role = IosNativeButtonRole.standard,
+    AdaptiveButtonRole role = AdaptiveButtonRole.standard,
   }) {
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        IosGlassButton(
+        AdaptiveButton(
           label: label,
           icon: icon,
           sfSymbol: sfSymbol,
@@ -445,11 +445,11 @@ class _RestoreBanner extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            IosGlassButton(
+            AdaptiveButton(
               label: '恢复备份',
               icon: Icons.cloud_download_outlined,
               sfSymbol: 'icloud.and.arrow.down',
-              role: IosNativeButtonRole.prominent,
+              role: AdaptiveButtonRole.prominent,
               onPressed: onTap,
               accessibilityLabel: '恢复云端备份',
             ),

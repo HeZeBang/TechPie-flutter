@@ -14,16 +14,16 @@ import '../services/service_provider.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/course_detail_panel.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/desktop_select_popover.dart';
-import '../widgets/ios_liquid/ios_glass_button.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'login_page.dart';
 import 'third_party_accounts_page.dart';
 
@@ -714,7 +714,7 @@ class _SchedulePageState extends State<SchedulePage> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    IosGlassButton(
+                    AdaptiveButton(
                       label: auth.isLoggedIn ? '去绑定 eGate' : '登录',
                       icon: auth.isLoggedIn
                           ? Icons.account_tree_outlined
@@ -722,12 +722,12 @@ class _SchedulePageState extends State<SchedulePage> {
                       sfSymbol: auth.isLoggedIn
                           ? 'person.crop.circle.badge.plus'
                           : 'person.crop.circle.badge.checkmark',
-                      role: IosNativeButtonRole.prominent,
+                      role: AdaptiveButtonRole.prominent,
                       width: 220,
                       onPressed: () {
                         if (auth.isLoggedIn) {
                           unawaited(
-                            pushPlatformViewPage<void>(
+                            pushAdaptivePage<void>(
                               context,
                               builder: (_) => const ThirdPartyAccountsPage(),
                             ),

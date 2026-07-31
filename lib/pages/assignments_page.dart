@@ -12,10 +12,10 @@ import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/swipeable_card.dart';
 import 'hidden_assignments_page.dart';
 
@@ -186,7 +186,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               _toggleExamsVisibility();
             case 'hidden':
               unawaited(
-                pushPlatformViewPage<void>(
+                pushAdaptivePage<void>(
                   context,
                   builder: (_) => const HiddenAssignmentsPage(),
                 ),
@@ -209,7 +209,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                 _toggleExamsVisibility();
               case 'hidden':
                 unawaited(
-                  pushPlatformViewPage<void>(
+                  pushAdaptivePage<void>(
                     context,
                     builder: (_) => const HiddenAssignmentsPage(),
                   ),

@@ -7,7 +7,7 @@ import '../services/service_provider.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class DebugLogPage extends StatelessWidget {
   const DebugLogPage({super.key});

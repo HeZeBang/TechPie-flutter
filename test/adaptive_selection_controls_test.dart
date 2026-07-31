@@ -2,8 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/widgets/ios_liquid/ios_glass_switch.dart';
-import 'package:techpie/widgets/ios_liquid/ios_native_segmented_control.dart';
+import 'package:techpie/widgets/adaptive_segmented_control.dart';
+import 'package:techpie/widgets/adaptive_switch.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -17,7 +17,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: IosGlassSwitch(
+          body: AdaptiveSwitch(
             value: false,
             onChanged: (value) => changedValue = value,
           ),
@@ -40,7 +40,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: IosNativeSegmentedControl(
+          body: AdaptiveSegmentedControl(
             value: 0,
             segments: const ['密码登录', '短信登录'],
             onChanged: (value) => selectedValue = value,

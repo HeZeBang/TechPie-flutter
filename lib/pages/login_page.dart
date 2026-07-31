@@ -8,10 +8,10 @@ import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
 import '../services/uni_auth_service.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
-import '../widgets/ios_liquid/ios_glass_button.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -54,7 +54,7 @@ Future<void> presentLoginPage(BuildContext context) async {
   }
 
   if (context.mounted) {
-    await pushPlatformViewPage<void>(
+    await pushAdaptivePage<void>(
       context,
       builder: (_) => const LoginPage(),
     );
@@ -257,7 +257,7 @@ class _LoginPageState extends State<LoginPage> {
         ],
         onItemPressed: (id) {
           if (id == 'back') {
-            unawaited(maybePopPlatformViewPage<void>(context));
+            unawaited(maybePopAdaptivePage<void>(context));
           }
         },
       ),
@@ -273,12 +273,12 @@ class _LoginPageState extends State<LoginPage> {
               _IosInlineFeedback(message: _inlineMessage!),
               const SizedBox(height: 16),
             ],
-            IosGlassButton(
+            AdaptiveButton(
               onPressed: _loading ? null : _geekpieLogin,
               icon: Icons.login,
               sfSymbol: 'person.crop.circle.badge.plus',
               label: '通过 GeekPie Uni-Auth 登录',
-              role: IosNativeButtonRole.prominent,
+              role: AdaptiveButtonRole.prominent,
               loading: _loading,
               height: liquidGlass ? 56 : 52,
               accessibilityLabel: '通过 GeekPie Uni-Auth 登录',

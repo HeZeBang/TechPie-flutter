@@ -15,13 +15,13 @@ import '../services/service_provider.dart';
 import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_glass_button.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'generic_webview_page.dart';
 import 'login_page.dart';
 
@@ -402,7 +402,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final cookies = _buildCookiesForFeature(feature.cookieType);
         if (feature.url != null) {
           unawaited(
-            pushPlatformViewPage<void>(
+            pushAdaptivePage<void>(
               context,
               builder: (_) => GenericWebViewPage(
                 title: feature.description,
@@ -763,11 +763,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
             if (onTap != null && actionLabel != null) ...[
               const SizedBox(height: 16),
-              IosGlassButton(
+              AdaptiveButton(
                 label: actionLabel,
                 icon: icon,
                 sfSymbol: actionSfSymbol ?? 'arrow.right',
-                role: IosNativeButtonRole.prominent,
+                role: AdaptiveButtonRole.prominent,
                 width: 180,
                 onPressed: onTap,
                 accessibilityLabel: actionLabel,

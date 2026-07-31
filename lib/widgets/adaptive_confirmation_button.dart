@@ -4,11 +4,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:techpie/utils/platform.dart';
 
-import '../adaptive_alert_dialog.dart';
-import 'ios_symbol_icons.dart';
+import 'adaptive_alert_dialog.dart';
+import 'cupertino_symbol_icons.dart';
 
-class IosGlassConfirmationButton extends StatelessWidget {
-  const IosGlassConfirmationButton({
+class AdaptiveConfirmationButton extends StatelessWidget {
+  const AdaptiveConfirmationButton({
     super.key,
     this.label,
     required this.confirmTitle,
@@ -80,7 +80,7 @@ class IosGlassConfirmationButton extends StatelessWidget {
                 style: TextStyle(color: color, fontSize: 17),
               )
             : Icon(
-                iosIconForSfSymbol(sfSymbol, fallback: icon),
+                cupertinoIconForSfSymbol(sfSymbol, fallback: icon),
                 color: color,
                 size: 20,
               ),

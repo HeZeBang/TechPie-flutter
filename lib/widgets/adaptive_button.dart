@@ -2,19 +2,19 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:techpie/utils/platform.dart';
 
-import 'ios_symbol_icons.dart';
+import 'cupertino_symbol_icons.dart';
 
-enum IosNativeButtonRole { prominent, standard, plain, destructive }
+enum AdaptiveButtonRole { prominent, standard, plain, destructive }
 
-class IosGlassButton extends StatelessWidget {
-  const IosGlassButton({
+class AdaptiveButton extends StatelessWidget {
+  const AdaptiveButton({
     super.key,
     required this.onPressed,
     required this.icon,
     required this.sfSymbol,
     this.label,
     this.subtitle,
-    this.role = IosNativeButtonRole.standard,
+    this.role = AdaptiveButtonRole.standard,
     this.loading = false,
     this.width,
     this.height,
@@ -27,7 +27,7 @@ class IosGlassButton extends StatelessWidget {
   final String sfSymbol;
   final String? label;
   final String? subtitle;
-  final IosNativeButtonRole role;
+  final AdaptiveButtonRole role;
   final bool loading;
   final double? width;
   final double? height;
@@ -46,17 +46,17 @@ class IosGlassButton extends StatelessWidget {
     final buttonWidth = width ?? (hasLabel ? double.infinity : buttonHeight);
     final primaryColor = CupertinoTheme.of(context).primaryColor;
     final foreground = switch (role) {
-      IosNativeButtonRole.prominent => CupertinoColors.white,
-      IosNativeButtonRole.destructive => CupertinoColors.systemRed,
+      AdaptiveButtonRole.prominent => CupertinoColors.white,
+      AdaptiveButtonRole.destructive => CupertinoColors.systemRed,
       _ => primaryColor,
     };
     final background = switch (role) {
-      IosNativeButtonRole.prominent => primaryColor,
-      IosNativeButtonRole.standard => CupertinoDynamicColor.resolve(
+      AdaptiveButtonRole.prominent => primaryColor,
+      AdaptiveButtonRole.standard => CupertinoDynamicColor.resolve(
           CupertinoColors.secondarySystemFill,
           context,
         ),
-      IosNativeButtonRole.plain || IosNativeButtonRole.destructive => null,
+      AdaptiveButtonRole.plain || AdaptiveButtonRole.destructive => null,
     };
     final enabled = onPressed != null && !loading;
 
@@ -94,7 +94,7 @@ class IosGlassButton extends StatelessWidget {
     }
 
     final symbol = Icon(
-      iosIconForSfSymbol(sfSymbol, fallback: icon),
+      cupertinoIconForSfSymbol(sfSymbol, fallback: icon),
       size: 20,
       color: foreground,
     );
@@ -110,7 +110,7 @@ class IosGlassButton extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: CupertinoTheme.of(context).textTheme.actionTextStyle.copyWith(
                 color: foreground,
-                fontWeight: role == IosNativeButtonRole.prominent
+                fontWeight: role == AdaptiveButtonRole.prominent
                     ? FontWeight.w600
                     : FontWeight.w400,
               ),
@@ -150,7 +150,7 @@ class IosGlassButton extends StatelessWidget {
       );
     }
 
-    final foreground = role == IosNativeButtonRole.destructive
+    final foreground = role == AdaptiveButtonRole.destructive
         ? Theme.of(context).colorScheme.error
         : null;
     final child = Row(
@@ -185,15 +185,15 @@ class IosGlassButton extends StatelessWidget {
     final callback = loading ? null : onPressed;
 
     return switch (role) {
-      IosNativeButtonRole.prominent =>
+      AdaptiveButtonRole.prominent =>
         FilledButton(onPressed: callback, style: style, child: child),
-      IosNativeButtonRole.standard => FilledButton.tonal(
+      AdaptiveButtonRole.standard => FilledButton.tonal(
           onPressed: callback,
           style: style,
           child: child,
         ),
-      IosNativeButtonRole.plain ||
-      IosNativeButtonRole.destructive =>
+      AdaptiveButtonRole.plain ||
+      AdaptiveButtonRole.destructive =>
         TextButton(onPressed: callback, style: style, child: child),
     };
   }

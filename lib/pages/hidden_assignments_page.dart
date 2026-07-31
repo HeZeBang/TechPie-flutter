@@ -7,11 +7,11 @@ import '../models/assignment_overrides.dart';
 import '../services/assignment_service.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_glass_button.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class HiddenAssignmentsPage extends StatefulWidget {
   const HiddenAssignmentsPage({super.key});
@@ -128,7 +128,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                   onItemPressed: (id) {
                     switch (id) {
                       case 'back':
-                        unawaited(maybePopPlatformViewPage<void>(context));
+                        unawaited(maybePopAdaptivePage<void>(context));
                       case 'toggleSelectAll':
                         if (hiddenKeys.isNotEmpty) {
                           _toggleSelectAll(hiddenKeys);
@@ -261,7 +261,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                 },
           trailing: _selectionMode
               ? null
-              : IosGlassButton(
+              : AdaptiveButton(
                   icon: Icons.restore,
                   sfSymbol: 'arrow.uturn.backward',
                   width: 44,

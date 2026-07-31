@@ -4,7 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import 'package:techpie/widgets/adaptive_page_navigation.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -21,7 +21,7 @@ void main() {
         home: Builder(
           builder: (context) => TextButton(
             onPressed: () => unawaited(
-              pushPlatformViewPage<void>(
+              pushAdaptivePage<void>(
                 context,
                 builder: (_) => const Scaffold(body: Text('Next page')),
               ),
@@ -54,7 +54,7 @@ void main() {
         home: Builder(
           builder: (context) => TextButton(
             onPressed: () => unawaited(
-              pushPlatformViewPage<void>(
+              pushAdaptivePage<void>(
                 context,
                 builder: (_) => const Scaffold(body: Text('Next page')),
               ),

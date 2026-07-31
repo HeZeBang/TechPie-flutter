@@ -12,15 +12,15 @@ import '../services/third_party_auth_service.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_confirmation_button.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_select.dart';
+import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
-import '../widgets/ios_liquid/ios_glass_button.dart';
-import '../widgets/ios_liquid/ios_glass_confirmation_button.dart';
-import '../widgets/ios_liquid/ios_glass_select.dart';
-import '../widgets/ios_liquid/ios_glass_switch.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'debug_log_page.dart';
 import 'login_page.dart';
 import 'sync_settings_page.dart';
@@ -122,7 +122,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  pushPlatformViewPage<void>(
+                  pushAdaptivePage<void>(
                     context,
                     builder: (_) => const ThirdPartyAccountsPage(),
                   ),
@@ -134,7 +134,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 subtitle: Text(_cloudSyncSubtitle(sp.syncService)),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  pushPlatformViewPage<void>(
+                  pushAdaptivePage<void>(
                     context,
                     builder: (_) => const SyncSettingsPage(),
                   ),
@@ -143,7 +143,7 @@ class _SettingsPageState extends State<SettingsPage> {
               if (useIosChrome)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: IosGlassConfirmationButton(
+                  child: AdaptiveConfirmationButton(
                     label: 'Logout',
                     icon: Icons.logout,
                     sfSymbol: 'rectangle.portrait.and.arrow.right',
@@ -164,11 +164,11 @@ class _SettingsPageState extends State<SettingsPage> {
             ] else if (useIosChrome)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: IosGlassButton(
+                child: AdaptiveButton(
                   icon: Icons.login,
                   sfSymbol: 'person.crop.circle.badge.plus',
                   label: '通过 GeekPie Uni-Auth 登录',
-                  role: IosNativeButtonRole.prominent,
+                  role: AdaptiveButtonRole.prominent,
                   accessibilityLabel: '登录 TechPie',
                   onPressed: () => unawaited(presentLoginPage(context)),
                 ),
@@ -189,13 +189,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 leading: Icon(themeService.mode.icon),
                 title: const Text('Theme'),
                 subtitle: Text(themeService.mode.label),
-                trailing: IosGlassSelect(
+                trailing: AdaptiveSelect(
                   value: themeService.mode.name,
                   placeholder: 'Choose theme',
                   width: 156,
                   options: [
                     for (final mode in AppThemeMode.values)
-                      IosGlassSelectOption(value: mode.name, label: mode.label),
+                      AdaptiveSelectOption(value: mode.name, label: mode.label),
                   ],
                   onChanged: (value) {
                     final mode = AppThemeMode.values.firstWhere(
@@ -271,7 +271,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: const Text('View Logs'),
                 subtitle: Text('${logger.entries.length} entries'),
                 onTap: () => unawaited(
-                  pushPlatformViewPage<void>(
+                  pushAdaptivePage<void>(
                     context,
                     builder: (_) => const DebugLogPage(),
                   ),
@@ -551,7 +551,7 @@ class _AdaptiveSwitchTile extends StatelessWidget {
       leading: secondary,
       title: Text(title),
       subtitle: Text(subtitle),
-      trailing: IosGlassSwitch(value: value, onChanged: onChanged),
+      trailing: AdaptiveSwitch(value: value, onChanged: onChanged),
       onTap: () => onChanged(!value),
     );
   }
@@ -585,7 +585,7 @@ class _EgateBindingTile extends StatelessWidget {
       onTap: bound
           ? null
           : () => unawaited(
-                pushPlatformViewPage<void>(
+                pushAdaptivePage<void>(
                   context,
                   builder: (_) => const ThirdPartyAccountsPage(),
                 ),

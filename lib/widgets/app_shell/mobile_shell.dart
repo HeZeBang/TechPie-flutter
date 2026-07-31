@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../utils/platform.dart';
-import '../ios_liquid/ios_glass_tab_bar.dart';
+import '../ios/ios_native_tab_bar.dart';
 import 'app_destination.dart';
 import 'app_shell_metrics.dart';
 
@@ -31,10 +31,10 @@ class MobileShell extends StatelessWidget {
         extendBody: true,
         body: child,
         bottomNavigationBar: usesIosChrome
-            ? IosGlassTabBar(
+            ? IosNativeTabBar(
                 selectedIndex: selectedIndex,
                 items: destinations
-                    .map((item) => item.toIosGlassTabBarItem())
+                    .map((item) => item.toIosNativeTabBarItem())
                     .toList(),
                 onSelected: onDestinationSelected,
               )

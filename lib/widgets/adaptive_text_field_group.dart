@@ -1,10 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import '../../utils/platform.dart';
+import '../utils/platform.dart';
 
-class IosNativeTextFieldGroupItem {
-  const IosNativeTextFieldGroupItem({
+class AdaptiveTextFieldGroupItem {
+  const AdaptiveTextFieldGroupItem({
     required this.controller,
     required this.placeholder,
     this.keyboardType = TextInputType.text,
@@ -23,10 +23,10 @@ class IosNativeTextFieldGroupItem {
   final ValueChanged<String>? onSubmitted;
 }
 
-class IosNativeTextFieldGroup extends StatelessWidget {
-  const IosNativeTextFieldGroup({super.key, required this.items});
+class AdaptiveTextFieldGroup extends StatelessWidget {
+  const AdaptiveTextFieldGroup({super.key, required this.items});
 
-  final List<IosNativeTextFieldGroupItem> items;
+  final List<AdaptiveTextFieldGroupItem> items;
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +63,7 @@ class IosNativeTextFieldGroup extends StatelessWidget {
 
   Widget _buildCupertinoField(
     BuildContext context,
-    IosNativeTextFieldGroupItem item,
+    AdaptiveTextFieldGroupItem item,
   ) {
     return SizedBox(
       height: 56,
@@ -89,7 +89,7 @@ class IosNativeTextFieldGroup extends StatelessWidget {
     );
   }
 
-  Widget _buildMaterialField(IosNativeTextFieldGroupItem item) {
+  Widget _buildMaterialField(AdaptiveTextFieldGroupItem item) {
     return TextField(
       controller: item.controller,
       decoration: InputDecoration(hintText: item.placeholder),

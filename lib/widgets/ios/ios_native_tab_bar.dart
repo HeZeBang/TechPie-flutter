@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-class IosGlassTabBarItem {
-  const IosGlassTabBarItem({
+class IosNativeTabBarItem {
+  const IosNativeTabBarItem({
     required this.label,
     required this.icon,
     required this.selectedIcon,
@@ -19,8 +19,8 @@ class IosGlassTabBarItem {
   final String selectedSfSymbol;
 }
 
-class IosGlassTabBar extends StatefulWidget {
-  const IosGlassTabBar({
+class IosNativeTabBar extends StatefulWidget {
+  const IosNativeTabBar({
     super.key,
     required this.selectedIndex,
     required this.onSelected,
@@ -29,13 +29,13 @@ class IosGlassTabBar extends StatefulWidget {
 
   final int selectedIndex;
   final ValueChanged<int> onSelected;
-  final List<IosGlassTabBarItem> items;
+  final List<IosNativeTabBarItem> items;
 
   @override
-  State<IosGlassTabBar> createState() => _IosGlassTabBarState();
+  State<IosNativeTabBar> createState() => _IosNativeTabBarState();
 }
 
-class _IosGlassTabBarState extends State<IosGlassTabBar> {
+class _IosNativeTabBarState extends State<IosNativeTabBar> {
   MethodChannel? _channel;
 
   int get _safeSelectedIndex {
@@ -44,7 +44,7 @@ class _IosGlassTabBarState extends State<IosGlassTabBar> {
   }
 
   @override
-  void didUpdateWidget(covariant IosGlassTabBar oldWidget) {
+  void didUpdateWidget(covariant IosNativeTabBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.selectedIndex == widget.selectedIndex) return;
     unawaited(_sendSelectionUpdate(_safeSelectedIndex));

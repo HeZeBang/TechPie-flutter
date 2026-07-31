@@ -1,6 +1,9 @@
 import 'package:flutter/cupertino.dart';
 
-IconData iosIconForSfSymbol(String? symbol, {required IconData fallback}) {
+IconData cupertinoIconForSfSymbol(
+  String? symbol, {
+  required IconData fallback,
+}) {
   return switch (symbol) {
     'arrow.clockwise' ||
     'arrow.counterclockwise' ||

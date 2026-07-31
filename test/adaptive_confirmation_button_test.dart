@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/widgets/ios_liquid/ios_glass_confirmation_button.dart';
+import 'package:techpie/widgets/adaptive_confirmation_button.dart';
 
 void main() {
   const presenterChannel = MethodChannel('techpie/native_glass_presenter');
@@ -28,7 +28,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: IosGlassConfirmationButton(
+          body: AdaptiveConfirmationButton(
             label: 'Logout',
             confirmTitle: '退出登录?',
             confirmLabel: '退出',

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/widgets/ios_liquid/ios_glass_tab_bar.dart';
+import 'package:techpie/widgets/ios/ios_native_tab_bar.dart';
 
 void main() {
   testWidgets('tab bar is backed by the native UIKit implementation', (
@@ -9,17 +9,17 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          bottomNavigationBar: IosGlassTabBar(
+          bottomNavigationBar: IosNativeTabBar(
             selectedIndex: 0,
             items: const [
-              IosGlassTabBarItem(
+              IosNativeTabBarItem(
                 label: 'Home',
                 icon: Icons.home_outlined,
                 selectedIcon: Icons.home,
                 sfSymbol: 'house',
                 selectedSfSymbol: 'house.fill',
               ),
-              IosGlassTabBarItem(
+              IosNativeTabBarItem(
                 label: 'Settings',
                 icon: Icons.settings_outlined,
                 selectedIcon: Icons.settings,

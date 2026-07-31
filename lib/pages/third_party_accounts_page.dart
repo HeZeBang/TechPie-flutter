@@ -7,11 +7,11 @@ import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_confirmation_button.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_glass_confirmation_button.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'login_page.dart';
 import 'third_party_bind_page.dart';
 
@@ -46,7 +46,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
               ],
               onItemPressed: (id) {
                 if (id == 'back') {
-                  unawaited(maybePopPlatformViewPage<void>(context));
+                  unawaited(maybePopAdaptivePage<void>(context));
                 }
               },
             )
@@ -139,7 +139,7 @@ class _ThirdPartyTile extends StatelessWidget {
         subtitle: const Text('未绑定'),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => unawaited(
-          pushPlatformViewPage<void>(
+          pushAdaptivePage<void>(
             context,
             builder: (_) => ThirdPartyBindPage(platform: platform),
           ),
@@ -164,7 +164,7 @@ class _ThirdPartyTile extends StatelessWidget {
       subtitle: Text(subtitleParts.join('\n')),
       isThreeLine: subtitleParts.length > 1,
       trailing: isIos()
-          ? IosGlassConfirmationButton(
+          ? AdaptiveConfirmationButton(
               label: 'Unbind',
               confirmTitle: '解绑 ${platform.label}?',
               confirmLabel: '解绑',

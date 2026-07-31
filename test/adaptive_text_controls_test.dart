@@ -2,8 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/widgets/ios_liquid/ios_native_text_field_group.dart';
-import 'package:techpie/widgets/ios_liquid/ios_native_text_view.dart';
+import 'package:techpie/widgets/adaptive_text_area.dart';
+import 'package:techpie/widgets/adaptive_text_field_group.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -21,13 +21,13 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: IosNativeTextFieldGroup(
+          body: AdaptiveTextFieldGroup(
             items: [
-              IosNativeTextFieldGroupItem(
+              AdaptiveTextFieldGroupItem(
                 controller: account,
                 placeholder: '学号',
               ),
-              IosNativeTextFieldGroupItem(
+              AdaptiveTextFieldGroupItem(
                 controller: password,
                 placeholder: '密码',
                 obscureText: true,
@@ -56,7 +56,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: IosNativeTextView(
+          body: AdaptiveTextArea(
             controller: controller,
             placeholder: 'Domain',
             minLines: 2,

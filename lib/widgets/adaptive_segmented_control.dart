@@ -1,10 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import '../../utils/platform.dart';
+import '../utils/platform.dart';
 
-class IosNativeSegmentedControl extends StatelessWidget {
-  const IosNativeSegmentedControl({
+class AdaptiveSegmentedControl extends StatelessWidget {
+  const AdaptiveSegmentedControl({
     super.key,
     required this.value,
     required this.segments,

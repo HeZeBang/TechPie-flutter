@@ -1,10 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import '../../utils/platform.dart';
+import '../utils/platform.dart';
 
-class IosNativeTextView extends StatelessWidget {
-  const IosNativeTextView({
+class AdaptiveTextArea extends StatelessWidget {
+  const AdaptiveTextArea({
     super.key,
     required this.controller,
     required this.placeholder,

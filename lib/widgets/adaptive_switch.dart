@@ -1,10 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import '../../utils/platform.dart';
+import '../utils/platform.dart';
 
-class IosGlassSwitch extends StatelessWidget {
-  const IosGlassSwitch({
+class AdaptiveSwitch extends StatelessWidget {
+  const AdaptiveSwitch({
     super.key,
     required this.value,
     required this.onChanged,

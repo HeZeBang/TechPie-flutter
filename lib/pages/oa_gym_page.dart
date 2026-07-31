@@ -6,13 +6,13 @@ import 'package:flutter/material.dart';
 import '../models/oa_gym.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_glass_button.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'login_page.dart';
 import 'third_party_accounts_page.dart';
 
@@ -59,7 +59,7 @@ class _OaGymPageState extends State<OaGymPage>
   }
 
   Future<void> _openThirdPartyAccounts() async {
-    await pushPlatformViewPage<void>(
+    await pushAdaptivePage<void>(
       context,
       builder: (_) => const ThirdPartyAccountsPage(),
     );
@@ -93,7 +93,7 @@ class _OaGymPageState extends State<OaGymPage>
               onItemPressed: (id) {
                 switch (id) {
                   case 'back':
-                    unawaited(maybePopPlatformViewPage<void>(context));
+                    unawaited(maybePopAdaptivePage<void>(context));
                 }
               },
             )
@@ -186,7 +186,7 @@ class _OaGymPageState extends State<OaGymPage>
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                             const SizedBox(height: 16),
-                            IosGlassButton(
+                            AdaptiveButton(
                               onPressed: _handlePrerequisite,
                               icon: auth.isLoggedIn
                                   ? Icons.vpn_key_outlined
@@ -195,7 +195,7 @@ class _OaGymPageState extends State<OaGymPage>
                                   ? 'key.horizontal'
                                   : 'person.crop.circle.badge.plus',
                               label: auth.isLoggedIn ? '去绑定 eGate' : '去登录',
-                              role: IosNativeButtonRole.prominent,
+                              role: AdaptiveButtonRole.prominent,
                               accessibilityLabel:
                                   auth.isLoggedIn ? '前往绑定 eGate' : '登录 TechPie',
                             ),
@@ -453,12 +453,12 @@ class _BookingTabState extends State<_BookingTab> {
                 ),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: IosGlassButton(
+                  child: AdaptiveButton(
                     onPressed: _checking ? null : _refreshAvailability,
                     icon: Icons.refresh,
                     sfSymbol: 'arrow.clockwise',
                     label: '刷新可用场地',
-                    role: IosNativeButtonRole.plain,
+                    role: AdaptiveButtonRole.plain,
                     loading: _checking,
                     width: 180,
                     height: 44,
@@ -510,12 +510,12 @@ class _BookingTabState extends State<_BookingTab> {
             ),
             const SizedBox(height: 12),
           ],
-        IosGlassButton(
+        AdaptiveButton(
           onPressed: _submitting || _selectedCount == 0 ? null : _submit,
           icon: Icons.send,
           sfSymbol: 'paperplane.fill',
           label: _selectedCount == 0 ? '提交预约' : '提交预约 ($_selectedCount)',
-          role: IosNativeButtonRole.prominent,
+          role: AdaptiveButtonRole.prominent,
           loading: _submitting,
           accessibilityLabel: '提交场馆预约',
         ),
@@ -848,12 +848,12 @@ class _SearchTabState extends State<_SearchTab> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                IosGlassButton(
+                AdaptiveButton(
                   onPressed: _loading ? null : _search,
                   icon: Icons.search,
                   sfSymbol: 'magnifyingglass',
                   label: _loading ? '查询中...' : '查询预约记录',
-                  role: IosNativeButtonRole.prominent,
+                  role: AdaptiveButtonRole.prominent,
                   loading: _loading,
                   accessibilityLabel: '查询预约记录',
                 ),
@@ -1101,12 +1101,12 @@ class _ProfileTabState extends State<_ProfileTab> {
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 16),
-                IosGlassButton(
+                AdaptiveButton(
                   onPressed: _save,
                   icon: Icons.save_outlined,
                   sfSymbol: 'square.and.arrow.down',
                   label: '保存',
-                  role: IosNativeButtonRole.prominent,
+                  role: AdaptiveButtonRole.prominent,
                   accessibilityLabel: '保存预约信息',
                 ),
               ],
