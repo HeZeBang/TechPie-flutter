@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:techpie/main.dart';
+import 'package:techpie/services/ai_service.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/debug_logger.dart';
@@ -83,6 +84,7 @@ void main() {
         AssignmentService(storage, http, auth, tpAuth, schedule);
     final oaGym = OaGymService(auth, storage, tpAuth);
     final sync = SyncService(auth, tpAuth, storage);
+    final ai = AiService(storage, schedule, assignments, tpAuth);
 
     await tester.pumpWidget(
       TechPieApp(
@@ -96,6 +98,7 @@ void main() {
         oaGymService: oaGym,
         uniAuthService: uniAuth,
         syncService: sync,
+        aiService: ai,
       ),
     );
 
@@ -124,6 +127,7 @@ void main() {
         AssignmentService(storage, http, auth, tpAuth, schedule);
     final oaGym = OaGymService(auth, storage, tpAuth);
     final sync = SyncService(auth, tpAuth, storage);
+    final ai = AiService(storage, schedule, assignments, tpAuth);
 
     await tester.pumpWidget(
       TechPieApp(
@@ -137,6 +141,7 @@ void main() {
         oaGymService: oaGym,
         uniAuthService: uniAuth,
         syncService: sync,
+        aiService: ai,
       ),
     );
 

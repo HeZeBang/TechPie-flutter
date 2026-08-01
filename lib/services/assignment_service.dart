@@ -205,47 +205,9 @@ class AssignmentService extends ChangeNotifier {
     _platformErrors.clear();
     notifyListeners();
 
-    final successfulResults = <String, List<Assignment>>{};
-
-    final futures = <Future<void>>[];
-
-    if (_tpAuth.hasCpdailyBinding) {
-      futures.add(
-        _fetchBlackboard().then((items) {
-          if (items != null) successfulResults['blackboard'] = items;
-        }),
-      );
-      futures.add(
-        _fetchExamTable().then((items) {
-          if (items != null) successfulResults['exam'] = items;
-        }),
-      );
-    }
-
-    for (final acc in _tpAuth.accounts) {
-      switch (acc.platform) {
-        case ThirdPartyPlatform.gradescope:
-          futures.add(
-            _fetchGradescope(acc).then((items) {
-              if (items != null) successfulResults[acc.platform.id] = items;
-            }),
-          );
-          break;
-        case ThirdPartyPlatform.hydro:
-          futures.add(
-            _fetchHydro(acc).then((items) {
-              if (items != null) successfulResults[acc.platform.id] = items;
-            }),
-          );
-          break;
-        case ThirdPartyPlatform.cpdaily:
-          // cpdaily provides the CpDaily session, not deadline data — skip.
-          break;
-      }
-    }
+    final successfulResults = await _fanOutFetches(_platformErrors);
 
     try {
-      await Future.wait(futures);
       final merged = _mergeAssignments(
         successfulResults: successfulResults,
       );
@@ -260,6 +222,76 @@ class AssignmentService extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  /// Fan out all platform deadline fetches concurrently, writing per-platform
+  /// failures into [errors] and returning the successful platforms' results.
+  /// Shared by the state-mutating [fetchAssignments] (which uses
+  /// [_platformErrors]) and the non-mutating [fetchAssignmentsLive] (which
+  /// uses a local map). Never throws — a single platform failure is recorded
+  /// in [errors] and simply omitted from the results.
+  Future<Map<String, List<Assignment>>> _fanOutFetches(
+    Map<String, String> errors,
+  ) async {
+    final successfulResults = <String, List<Assignment>>{};
+
+    final futures = <Future<void>>[];
+
+    if (_tpAuth.hasCpdailyBinding) {
+      futures.add(
+        _fetchBlackboard(errors).then((items) {
+          if (items != null) successfulResults['blackboard'] = items;
+        }),
+      );
+      futures.add(
+        _fetchExamTable(errors).then((items) {
+          if (items != null) successfulResults['exam'] = items;
+        }),
+      );
+    }
+
+    for (final acc in _tpAuth.accounts) {
+      switch (acc.platform) {
+        case ThirdPartyPlatform.gradescope:
+          futures.add(
+            _fetchGradescope(acc, errors).then((items) {
+              if (items != null) successfulResults[acc.platform.id] = items;
+            }),
+          );
+          break;
+        case ThirdPartyPlatform.hydro:
+          futures.add(
+            _fetchHydro(acc, errors).then((items) {
+              if (items != null) successfulResults[acc.platform.id] = items;
+            }),
+          );
+          break;
+        case ThirdPartyPlatform.cpdaily:
+          // cpdaily provides the CpDaily session, not deadline data — skip.
+          break;
+      }
+    }
+
+    await Future.wait(futures);
+    return successfulResults;
+  }
+
+  /// Live, non-mutating fetch of all deadlines. Mirrors the fetch fan-out of
+  /// [fetchAssignments] but returns the merged list + per-platform errors
+  /// without touching [_assignments], [_platformErrors], the cache, or the
+  /// listeners. Used by the AI tools so a query for deadlines doesn't disturb
+  /// the UI's assignment state. Only successfully-fetched platforms are
+  /// included — there is no blending with the cached [_assignments] (so a
+  /// transient platform failure simply omits that platform from the result).
+  Future<({List<Assignment> assignments, Map<String, String> errors})>
+      fetchAssignmentsLive() async {
+    final errors = <String, String>{};
+    final successfulResults = await _fanOutFetches(errors);
+    final assignments = successfulResults.values
+        .expand((items) => items)
+        .toList()
+      ..sort((a, b) => a.due.compareTo(b.due));
+    return (assignments: assignments, errors: errors);
   }
 
   List<Assignment> _mergeAssignments({
@@ -287,22 +319,22 @@ class AssignmentService extends ChangeNotifier {
     Future<void>? future;
 
     if (platformId == 'blackboard' && _tpAuth.hasCpdailyBinding) {
-      future = _fetchBlackboard().then((items) {
+      future = _fetchBlackboard(_platformErrors).then((items) {
         if (items != null) successfulResults['blackboard'] = items;
       });
     } else if (platformId == 'exam' && _tpAuth.hasCpdailyBinding) {
-      future = _fetchExamTable().then((items) {
+      future = _fetchExamTable(_platformErrors).then((items) {
         if (items != null) successfulResults['exam'] = items;
       });
     } else {
       for (final acc in _tpAuth.accounts) {
         if (acc.platform.id == platformId) {
           if (acc.platform == ThirdPartyPlatform.gradescope) {
-            future = _fetchGradescope(acc).then((items) {
+            future = _fetchGradescope(acc, _platformErrors).then((items) {
               if (items != null) successfulResults[platformId] = items;
             });
           } else if (acc.platform == ThirdPartyPlatform.hydro) {
-            future = _fetchHydro(acc).then((items) {
+            future = _fetchHydro(acc, _platformErrors).then((items) {
               if (items != null) successfulResults[platformId] = items;
             });
           }
@@ -331,7 +363,9 @@ class AssignmentService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<List<Assignment>?> _fetchBlackboard() async {
+  Future<List<Assignment>?> _fetchBlackboard(
+    Map<String, String> errors,
+  ) async {
     final node = _tpAuth.elearningNode;
     // withCookie handles initial minting if the downstream cookie isn't set.
     if (!_tpAuth.hasCpdailyBinding) return null;
@@ -353,14 +387,16 @@ class AssignmentService extends ChangeNotifier {
         },
       );
       if (resp == null) return null;
-      return _parseDeadlinesResponse(resp, 'blackboard');
+      return _parseDeadlinesResponse(resp, 'blackboard', errors);
     } catch (e) {
-      _platformErrors['blackboard'] = '同步失败，请检查网络或稍后重试';
+      errors['blackboard'] = '同步失败，请检查网络或稍后重试';
       return null;
     }
   }
 
-  Future<List<Assignment>?> _fetchExamTable() async {
+  Future<List<Assignment>?> _fetchExamTable(
+    Map<String, String> errors,
+  ) async {
     final semesterId = _selectedSemesterId();
     final node = _tpAuth.eamsNode;
     if (!_tpAuth.hasCpdailyBinding ||
@@ -386,14 +422,17 @@ class AssignmentService extends ChangeNotifier {
         },
       );
       if (resp == null) return null;
-      return _parseExamTableResponse(resp);
+      return _parseExamTableResponse(resp, errors);
     } catch (e) {
-      _platformErrors['exam'] = '同步失败，请检查网络或稍后重试';
+      errors['exam'] = '同步失败，请检查网络或稍后重试';
       return null;
     }
   }
 
-  Future<List<Assignment>?> _fetchGradescope(ThirdPartyAccount acc) async {
+  Future<List<Assignment>?> _fetchGradescope(
+    ThirdPartyAccount acc,
+    Map<String, String> errors,
+  ) async {
     final node = _tpAuth.gradescopeNode;
     if (!node.isAvailable) return null;
     try {
@@ -413,21 +452,24 @@ class AssignmentService extends ChangeNotifier {
       if (resp == null) return null;
       if (resp.statusCode == 401) {
         await _tpAuth.unbind(ThirdPartyPlatform.gradescope);
-        _platformErrors['gradescope'] = 'token 已失效,请重新绑定';
+        errors['gradescope'] = 'token 已失效,请重新绑定';
         return null;
       }
-      return _parseDeadlinesResponse(resp, 'gradescope');
+      return _parseDeadlinesResponse(resp, 'gradescope', errors);
     } catch (e) {
-      _platformErrors['gradescope'] = '同步失败，请检查网络或稍后重试';
+      errors['gradescope'] = '同步失败，请检查网络或稍后重试';
       return null;
     }
   }
 
-  Future<List<Assignment>?> _fetchHydro(ThirdPartyAccount acc) async {
+  Future<List<Assignment>?> _fetchHydro(
+    ThirdPartyAccount acc,
+    Map<String, String> errors,
+  ) async {
     final origin = acc.hydroOrigin ?? 'https://acm.shanghaitech.edu.cn';
     final domains = acc.hydroDomains ?? const <String>[];
     if (domains.isEmpty) {
-      _platformErrors['hydro'] = '未配置 Hydro 课程域 (domain),前往设置补全';
+      errors['hydro'] = '未配置 Hydro 课程域 (domain),前往设置补全';
       return null;
     }
 
@@ -458,17 +500,17 @@ class AssignmentService extends ChangeNotifier {
         if (resp == null) return null;
         if (resp.statusCode == 401) {
           await _tpAuth.unbind(ThirdPartyPlatform.hydro);
-          _platformErrors['hydro'] = 'token 已失效,请重新绑定';
+          errors['hydro'] = 'token 已失效,请重新绑定';
           return null;
         }
-        final items = _parseDeadlinesResponse(resp, 'hydro');
+        final items = _parseDeadlinesResponse(resp, 'hydro', errors);
         if (items != null) {
           all.addAll(items);
         } else {
           hadError = true;
         }
       } catch (e) {
-        _platformErrors['hydro'] = '同步失败，请检查网络或稍后重试';
+        errors['hydro'] = '同步失败，请检查网络或稍后重试';
         hadError = true;
       }
     }
@@ -479,17 +521,18 @@ class AssignmentService extends ChangeNotifier {
   List<Assignment>? _parseDeadlinesResponse(
     http.Response resp,
     String platformKey,
+    Map<String, String> errors,
   ) {
     Map<String, dynamic> data;
     try {
       data = jsonDecode(resp.body) as Map<String, dynamic>;
     } catch (_) {
-      _platformErrors[platformKey] = '同步失败，服务器返回异常数据';
+      errors[platformKey] = '同步失败，服务器返回异常数据';
       return null;
     }
 
     if (resp.statusCode != 200 || data['success'] != true) {
-      _platformErrors[platformKey] =
+      errors[platformKey] =
           (data['error'] as String?) ?? '同步失败 (HTTP ${resp.statusCode})';
       return null;
     }
@@ -500,17 +543,20 @@ class AssignmentService extends ChangeNotifier {
         .toList();
   }
 
-  List<Assignment>? _parseExamTableResponse(http.Response resp) {
+  List<Assignment>? _parseExamTableResponse(
+    http.Response resp,
+    Map<String, String> errors,
+  ) {
     Map<String, dynamic> data;
     try {
       data = jsonDecode(resp.body) as Map<String, dynamic>;
     } catch (_) {
-      _platformErrors['exam'] = '同步失败，服务器返回异常数据';
+      errors['exam'] = '同步失败，服务器返回异常数据';
       return null;
     }
 
     if (resp.statusCode != 200 || data['success'] != true) {
-      _platformErrors['exam'] =
+      errors['exam'] =
           (data['error'] as String?) ?? '同步失败 (HTTP ${resp.statusCode})';
       return null;
     }

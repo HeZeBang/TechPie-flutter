@@ -334,7 +334,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(height: 16),
-          _buildAppCard(featureEntries),
+          _buildAppCard(
+            featureEntries.where((f) => !f.debugOnly || isDebug).toList(),
+          ),
           const SizedBox(height: 16),
           _buildTodayClasses(theme, auth.isLoggedIn),
           const SizedBox(height: 8),

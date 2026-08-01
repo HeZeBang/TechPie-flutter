@@ -38,12 +38,42 @@ dependencies:
   dynamic_color: ">=1.7.0 <1.8.0"
   flutter:
     sdk: flutter
+  # AI chat UI: the flutter_ai library family, from the HeZeBang fork
+  # (upstream ananmouaz/flutter_ai + OHOS/tool-call fixes not yet published
+  # to pub.dev). Pinned to a commit for reproducible builds.
+  flutter_ai_client:
+    git:
+      url: https://github.com/HeZeBang/flutter_ai.git
+      path: packages/flutter_ai_client
+      ref: 589a47d2262864dfd0ddbac27de0926748b26130
+  flutter_ai_core:
+    git:
+      url: https://github.com/HeZeBang/flutter_ai.git
+      path: packages/flutter_ai_core
+      ref: 589a47d2262864dfd0ddbac27de0926748b26130
+  flutter_ai_elements:
+    git:
+      url: https://github.com/HeZeBang/flutter_ai.git
+      path: packages/flutter_ai_elements
+      ref: 589a47d2262864dfd0ddbac27de0926748b26130
+  flutter_ai_provider_anthropic:
+    git:
+      url: https://github.com/HeZeBang/flutter_ai.git
+      path: packages/flutter_ai_provider_anthropic
+      ref: 589a47d2262864dfd0ddbac27de0926748b26130
+  flutter_ai_tools:
+    git:
+      url: https://github.com/HeZeBang/flutter_ai.git
+      path: packages/flutter_ai_tools
+      ref: 589a47d2262864dfd0ddbac27de0926748b26130
   flutter_secure_storage: ^9.2.4
   flutter_secure_storage_ohos: # HarmonyOS 安全存储
     git:
       url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
       path: flutter_secure_storage_ohos
       ref: br_v9.2.2_ohos
+  # Syntax highlighting for AI code blocks (port of highlight.js, pure Dart).
+  highlight: ^0.7.0
   http: ^1.4.0
   intl: ^0.20.2
   open_filex: ^4.5.0
@@ -67,6 +97,20 @@ dependency_overrides:
     git:
       url: https://github.com/HeZeBang/desktop_webview_window_fork.git
       ref: master
+
+  # The flutter_ai packages declare transitive deps on flutter_ai_core/client
+  # as hosted (pub.dev) ranges, but we consume them from the fork. Force every
+  # transitive reference to the same git source so version solving agrees.
+  flutter_ai_client:
+    git:
+      url: https://github.com/HeZeBang/flutter_ai.git
+      path: packages/flutter_ai_client
+      ref: 589a47d2262864dfd0ddbac27de0926748b26130
+  flutter_ai_core:
+    git:
+      url: https://github.com/HeZeBang/flutter_ai.git
+      path: packages/flutter_ai_core
+      ref: 589a47d2262864dfd0ddbac27de0926748b26130
 
   # OpenHarmony-SIG forks add OHOS platform implementations for plugins
   # whose upstream pub.dev releases don't ship them. Without these, the

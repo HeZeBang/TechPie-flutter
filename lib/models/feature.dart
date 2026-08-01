@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../pages/ai_assistant_page.dart';
+import '../pages/ai_demo/ai_demo_page.dart';
 import '../pages/oa_gym_page.dart';
 import '../widgets/adaptive_page_navigation.dart';
 
@@ -23,6 +25,9 @@ class Feature {
   final Icon icon;
   final void Function(BuildContext context)? nativeEntry;
 
+  /// Only shown when the debug-mode setting is on.
+  final bool debugOnly;
+
   Feature({
     required this.id,
     required this.description,
@@ -31,6 +36,7 @@ class Feature {
     this.cookieType,
     required this.icon,
     this.nativeEntry,
+    this.debugOnly = false,
   });
 }
 
@@ -60,6 +66,25 @@ final featureEntries = <Feature>[
       builder: (_) => const OaGymPage(),
     ),
     icon: const Icon(Icons.sports_tennis),
+  ),
+  Feature(
+    id: 'ai_assistant',
+    description: 'AI 助手',
+    mode: FeatureMode.native,
+    nativeEntry: (context) => Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const AiAssistantPage()),
+    ),
+    icon: const Icon(Icons.smart_toy_outlined),
+  ),
+  Feature(
+    id: 'ai_demo',
+    description: 'AI 演示',
+    mode: FeatureMode.native,
+    debugOnly: true,
+    nativeEntry: (context) => Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const AiDemoPage()),
+    ),
+    icon: const Icon(Icons.auto_awesome),
   ),
 ];
 
