@@ -24,38 +24,6 @@ enum NativeGlassRegistry {
       withId: NativeGlassTabBarPlatformView.viewType
     )
     registrar.register(
-      NativeGlassButtonFactory(messenger: messenger),
-      withId: NativeGlassButtonPlatformView.viewType
-    )
-    registrar.register(
-      NativeGlassDropdownMenuFactory(messenger: messenger),
-      withId: NativeGlassDropdownMenuPlatformView.viewType
-    )
-    registrar.register(
-      NativeGlassSelectFactory(messenger: messenger),
-      withId: NativeGlassSelectPlatformView.viewType
-    )
-    registrar.register(
-      NativeGlassSwitchFactory(messenger: messenger),
-      withId: NativeGlassSwitchPlatformView.viewType
-    )
-    registrar.register(
-      NativeGlassConfirmationButtonFactory(messenger: messenger),
-      withId: NativeGlassConfirmationButtonPlatformView.viewType
-    )
-    registrar.register(
-      NativeTextViewFactory(messenger: messenger),
-      withId: NativeTextViewPlatformView.viewType
-    )
-    registrar.register(
-      NativeTextFieldGroupFactory(messenger: messenger),
-      withId: NativeTextFieldGroupPlatformView.viewType
-    )
-    registrar.register(
-      NativeSegmentedControlFactory(messenger: messenger),
-      withId: NativeSegmentedControlPlatformView.viewType
-    )
-    registrar.register(
       NativeNavigationBarFactory(messenger: messenger),
       withId: NativeNavigationBarPlatformView.viewType
     )

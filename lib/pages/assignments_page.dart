@@ -8,11 +8,14 @@ import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
 import '../services/assignment_service.dart';
 import '../services/service_provider.dart';
+import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/swipeable_card.dart';
 import 'hidden_assignments_page.dart';
 
@@ -183,11 +186,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               _toggleExamsVisibility();
             case 'hidden':
               unawaited(
-                Navigator.push(
+                pushAdaptivePage<void>(
                   context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => const HiddenAssignmentsPage(),
-                  ),
+                  builder: (_) => const HiddenAssignmentsPage(),
                 ),
               );
           }
@@ -208,11 +209,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                 _toggleExamsVisibility();
               case 'hidden':
                 unawaited(
-                  Navigator.push(
+                  pushAdaptivePage<void>(
                     context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const HiddenAssignmentsPage(),
-                    ),
+                    builder: (_) => const HiddenAssignmentsPage(),
                   ),
                 );
             }
@@ -283,6 +282,67 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   ) {
     final allSelected =
         visible.isNotEmpty && _selected.length == visible.length;
+    if (isIos()) {
+      return IosNativeNavigationBar(
+        title: '已选择 ${_selected.length} 个',
+        selectionMode: true,
+        leadingItems: const [
+          IosNativeNavigationBarItem(
+            id: 'cancelSelection',
+            title: 'Cancel',
+            accessibilityLabel: '退出多选',
+            placementGroup: 'leading-main',
+          ),
+        ],
+        trailingItems: [
+          IosNativeNavigationBarItem(
+            id: 'toggleSelectAll',
+            title: allSelected ? 'Deselect All' : 'Select All',
+            enabled: visible.isNotEmpty,
+            accessibilityLabel: allSelected ? '全不选' : '全选',
+            placementGroup: 'selection-actions',
+          ),
+          IosNativeNavigationBarItem(
+            id: 'selectionMore',
+            sfSymbol: 'ellipsis.circle',
+            accessibilityLabel: '更多选择操作',
+            placementGroup: 'selection-actions',
+            menuItems: [
+              const IosNativeNavigationBarMenuItem(
+                value: 'invertSelection',
+                title: '反选',
+                sfSymbol: 'arrow.triangle.2.circlepath',
+              ),
+              IosNativeNavigationBarMenuItem(
+                value: 'resetSelected',
+                title: '重置状态',
+                sfSymbol: 'arrow.counterclockwise',
+                destructive: _selected.isNotEmpty,
+              ),
+            ],
+          ),
+        ],
+        onItemPressed: (id) {
+          switch (id) {
+            case 'cancelSelection':
+              _exitSelection();
+            case 'toggleSelectAll':
+              if (visible.isNotEmpty) _selectAll(visible);
+          }
+        },
+        onMenuSelected: (_, value) {
+          switch (value) {
+            case 'invertSelection':
+              _invertSelection(visible);
+            case 'resetSelected':
+              if (_selected.isNotEmpty) {
+                unawaited(_resetSelected(service));
+              }
+          }
+        },
+      );
+    }
+
     return BlurredAppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
@@ -399,7 +459,12 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     return RefreshIndicator(
       onRefresh: () async => _refresh(service),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          AppShellMetrics.bottomContentPaddingOf(context),
+        ),
         children: [
           InkWell(
             onTap: () => setState(() => _pastCollapsed = !_pastCollapsed),
@@ -754,7 +819,7 @@ class _AssignmentCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       color: selected ? theme.colorScheme.secondaryContainer : null,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         side: selected
             ? BorderSide(color: theme.colorScheme.primary, width: 2)
             : BorderSide.none,
@@ -813,9 +878,16 @@ class _AssignmentCard extends StatelessWidget {
                   ],
                   const Spacer(),
                   AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 280),
-                    switchInCurve: Curves.easeInOutCubicEmphasized,
-                    switchOutCurve: Curves.easeInOutCubicEmphasized,
+                    duration: appAnimationDuration(
+                      context,
+                      const Duration(milliseconds: 280),
+                    ),
+                    switchInCurve: isIos()
+                        ? Curves.easeInOut
+                        : Curves.easeInOutCubicEmphasized,
+                    switchOutCurve: isIos()
+                        ? Curves.easeInOut
+                        : Curves.easeInOutCubicEmphasized,
                     transitionBuilder: (child, animation) => FadeTransition(
                       opacity: animation,
                       child: ScaleTransition(scale: animation, child: child),
@@ -871,9 +943,14 @@ class _AssignmentCard extends StatelessWidget {
                   ),
                   const Spacer(),
                   AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 320),
-                    switchInCurve: Curves.easeOutBack,
-                    switchOutCurve: Curves.easeInCubic,
+                    duration: appAnimationDuration(
+                      context,
+                      const Duration(milliseconds: 320),
+                    ),
+                    switchInCurve:
+                        isIos() ? Curves.easeOut : Curves.easeOutBack,
+                    switchOutCurve:
+                        isIos() ? Curves.easeIn : Curves.easeInCubic,
                     transitionBuilder: (child, animation) => FadeTransition(
                       opacity: animation,
                       child: ScaleTransition(scale: animation, child: child),

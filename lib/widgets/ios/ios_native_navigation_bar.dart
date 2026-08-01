@@ -135,9 +135,7 @@ class _IosNativeNavigationBarState extends State<IosNativeNavigationBar> {
 
   @override
   Widget build(BuildContext context) {
-    if (!isIos()) {
-      return AppBar(title: Text(widget.title));
-    }
+    if (!isIos()) return AppBar(title: Text(widget.title));
 
     return SafeArea(
       bottom: false,
@@ -170,17 +168,16 @@ class _IosNativeNavigationBarState extends State<IosNativeNavigationBar> {
     });
   }
 
-  Map<String, Object?> get _configuration {
-    return <String, Object?>{
-      'title': widget.title,
-      'subtitle': widget.subtitle,
-      'leadingItems': widget.leadingItems.map((item) => item.toMap()).toList(),
-      'trailingItems':
-          widget.trailingItems.map((item) => item.toMap()).toList(),
-      'selectionMode': widget.selectionMode,
-      'largeTitleMode': widget.largeTitleMode,
-    };
-  }
+  Map<String, Object?> get _configuration => <String, Object?>{
+        'title': widget.title,
+        'subtitle': widget.subtitle,
+        'leadingItems':
+            widget.leadingItems.map((item) => item.toMap()).toList(),
+        'trailingItems':
+            widget.trailingItems.map((item) => item.toMap()).toList(),
+        'selectionMode': widget.selectionMode,
+        'largeTitleMode': widget.largeTitleMode,
+      };
 
   Future<void> _sendConfigurationUpdate(MethodChannel channel) async {
     try {

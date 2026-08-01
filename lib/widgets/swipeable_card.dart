@@ -1,4 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+
+import '../utils/platform.dart';
 
 class SwipeAction {
   final IconData icon;
@@ -129,6 +134,10 @@ class _SwipeableCardState extends State<SwipeableCard>
       await _springBack();
       return;
     }
+    await _dismissToEnd();
+  }
+
+  Future<void> _dismissToEnd() async {
     await _flyOff(-1);
     if (!mounted) return;
     await _collapseDown();
@@ -137,22 +146,39 @@ class _SwipeableCardState extends State<SwipeableCard>
   }
 
   Future<void> _springBack() {
+    if (_reduceMotion) {
+      _move.value = 0;
+      return Future<void>.value();
+    }
     return _move.animateTo(
       0,
-      duration: const Duration(milliseconds: 280),
-      curve: _emphasized,
+      duration: Duration(milliseconds: isIos() ? 250 : 280),
+      curve: isIos() ? Curves.easeOut : _emphasized,
     );
   }
 
   Future<void> _flyOff(int sign) {
+    if (_reduceMotion) {
+      _move.value = sign * 1.25;
+      return Future<void>.value();
+    }
     return _move.animateTo(
       sign * 1.25,
-      duration: const Duration(milliseconds: 220),
-      curve: _emphasizedAccelerate,
+      duration: Duration(milliseconds: isIos() ? 200 : 220),
+      curve: isIos() ? Curves.easeIn : _emphasizedAccelerate,
     );
   }
 
-  Future<void> _collapseDown() => _collapse.forward();
+  Future<void> _collapseDown() {
+    if (_reduceMotion) {
+      _collapse.value = 1;
+      return Future<void>.value();
+    }
+    return _collapse.forward();
+  }
+
+  bool get _reduceMotion =>
+      MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
   // ------------------------------------------------------------------
 
@@ -163,7 +189,7 @@ class _SwipeableCardState extends State<SwipeableCard>
       builder: (context, child) {
         final t = _collapse.value;
         // Use Curves.easeInOutCubicEmphasized via direct curve evaluation.
-        final eased = _emphasized.transform(t);
+        final eased = (isIos() ? Curves.easeInOut : _emphasized).transform(t);
         return ClipRect(
           child: Align(
             heightFactor: (1 - eased).clamp(0.0, 1.0),
@@ -204,14 +230,17 @@ class _SwipeableCardState extends State<SwipeableCard>
                 Transform.translate(
                   offset: Offset(value * _width * 0.92, 0),
                   child: Transform.scale(
-                    scale: 1 - progress * 0.04,
+                    scale: isIos() ? 1 : 1 - progress * 0.04,
                     alignment: Alignment.center,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onHorizontalDragStart: _onStart,
-                      onHorizontalDragUpdate: _onUpdate,
-                      onHorizontalDragEnd: _onEnd,
-                      child: widget.child,
+                    child: Semantics(
+                      customSemanticsActions: _semanticActions,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragStart: _onStart,
+                        onHorizontalDragUpdate: _onUpdate,
+                        onHorizontalDragEnd: _onEnd,
+                        child: widget.child,
+                      ),
                     ),
                   ),
                 ),
@@ -221,6 +250,20 @@ class _SwipeableCardState extends State<SwipeableCard>
         },
       ),
     );
+  }
+
+  Map<CustomSemanticsAction, VoidCallback>? get _semanticActions {
+    if (!widget.enabled) return null;
+    final actions = <CustomSemanticsAction, VoidCallback>{};
+    if (widget.startAction != null && widget.onStartSwipe != null) {
+      actions[CustomSemanticsAction(label: widget.startAction!.label)] =
+          widget.onStartSwipe!;
+    }
+    if (widget.endAction != null && widget.onDismissed != null) {
+      actions[CustomSemanticsAction(label: widget.endAction!.label)] =
+          () => unawaited(_dismissToEnd());
+    }
+    return actions.isEmpty ? null : actions;
   }
 }
 
@@ -251,7 +294,18 @@ class _CardEnterAnimationState extends State<CardEnterAnimation>
   late final AnimationController _ctrl = AnimationController(
     vsync: this,
     duration: widget.duration,
-  )..forward();
+  );
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (!(MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
+      _ctrl.forward();
+    }
+  }
 
   @override
   void dispose() {

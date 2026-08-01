@@ -104,6 +104,8 @@ class ThemeService extends ChangeNotifier {
   bool get _usesIosTheme =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
+  bool get supportsColorSchemeSelection => !_usesIosTheme;
+
   ColorScheme _resolveScheme(Brightness brightness) {
     if (_colorScheme == AppColorScheme.system) {
       final system =

@@ -6,9 +6,13 @@ import '../services/service_provider.dart';
 import '../services/sync_service.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_text_input_dialog.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 /// Cloud-sync settings: turn sync on/off, set / restore / change the master
 /// password, and trigger a manual pull. All cryptography + Casdoor I/O lives
@@ -21,7 +25,9 @@ class SyncSettingsPage extends StatefulWidget {
 }
 
 class _SyncSettingsPageState extends State<SyncSettingsPage> {
-  bool _busy = false;
+  String? _busyAction;
+
+  bool get _busy => _busyAction != null;
 
   @override
   Widget build(BuildContext context) {
@@ -36,60 +42,98 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     return Scaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
-          ? const IosNativeNavigationBar(title: 'Cloud sync')
+          ? IosNativeNavigationBar(
+              title: 'Cloud sync',
+              leadingItems: const [
+                IosNativeNavigationBarItem(
+                  id: 'back',
+                  title: 'Settings',
+                  sfSymbol: 'chevron.left',
+                  accessibilityLabel: '返回 Settings',
+                  placementGroup: 'leading-main',
+                ),
+              ],
+              onItemPressed: (id) {
+                if (id == 'back') {
+                  unawaited(maybePopAdaptivePage<void>(context));
+                }
+              },
+            )
           : const BlurredAppBar(title: Text('Cloud sync')),
       body: ListenableBuilder(
         listenable: sync,
         builder: (context, _) {
           return ListView(
-            padding: EdgeInsets.only(top: topInset, bottom: 120),
+            padding: EdgeInsets.only(
+              top: topInset,
+              bottom: AppShellMetrics.bottomContentPaddingOf(context),
+            ),
             children: [
               _ExplanationCard(enabled: sync.enabled),
               const SizedBox(height: 8),
               if (sync.enabled) ...[
                 _statusTile(sync),
-                ListTile(
-                  leading: const Icon(Icons.download_for_offline_outlined),
-                  title: const Text('立即从云端恢复'),
-                  subtitle: const Text('用云端备份覆盖本设备绑定'),
-                  onTap: _busy ? null : () => unawaited(_pull(sync)),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.upload_outlined),
-                  title: const Text('立即备份到云端'),
-                  subtitle: const Text('用本设备绑定覆盖云端备份'),
-                  onTap: _busy ? null : () => unawaited(_push(sync)),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.lock_outline),
-                  title: const Text('修改主密码'),
-                  onTap: _busy ? null : () => unawaited(_changePassword(sync)),
-                ),
-                ListTile(
-                  leading: Icon(
-                    Icons.cloud_off_outlined,
-                    color: Theme.of(context).colorScheme.error,
+                _actionPanel([
+                  _actionButton(
+                    id: 'pull',
+                    label: '立即从云端恢复',
+                    subtitle: '用云端备份覆盖本设备绑定',
+                    icon: Icons.download_for_offline_outlined,
+                    sfSymbol: 'arrow.down.circle',
+                    onPressed: () => unawaited(_pull(sync)),
                   ),
-                  title: const Text('关闭云同步'),
-                  subtitle: const Text('清除云端备份与本设备主密码'),
-                  onTap: _busy ? null : () => unawaited(_disable(sync)),
-                ),
+                  _actionButton(
+                    id: 'push',
+                    label: '立即备份到云端',
+                    subtitle: '用本设备绑定覆盖云端备份',
+                    icon: Icons.upload_outlined,
+                    sfSymbol: 'arrow.up.circle',
+                    role: AdaptiveButtonRole.prominent,
+                    onPressed: () => unawaited(_push(sync)),
+                  ),
+                  _actionButton(
+                    id: 'password',
+                    label: '修改主密码',
+                    icon: Icons.lock_outline,
+                    sfSymbol: 'key',
+                    role: AdaptiveButtonRole.plain,
+                    onPressed: () => unawaited(_changePassword(sync)),
+                  ),
+                  _actionButton(
+                    id: 'disable',
+                    label: '关闭云同步',
+                    subtitle: '清除云端备份与本设备主密码',
+                    icon: Icons.cloud_off_outlined,
+                    sfSymbol: 'icloud.slash',
+                    role: AdaptiveButtonRole.destructive,
+                    onPressed: () => unawaited(_disable(sync)),
+                  ),
+                ]),
               ] else ...[
-                ListTile(
-                  leading: const Icon(Icons.lock_reset_outlined),
-                  title: const Text('从云端恢复（已有备份）'),
-                  subtitle: const Text('在其它设备设置过云同步时使用'),
-                  onTap: _busy ? null : () => unawaited(_restore(sync)),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.cloud_upload_outlined),
-                  title: const Text('开启并备份（首次设置）'),
-                  subtitle: const Text('设置主密码，把当前绑定加密上传'),
-                  onTap: _busy ? null : () => unawaited(_setup(sync)),
-                ),
+                _actionPanel([
+                  _actionButton(
+                    id: 'restore',
+                    label: '从云端恢复',
+                    subtitle: '已有备份时输入主密码恢复',
+                    icon: Icons.lock_reset_outlined,
+                    sfSymbol: 'icloud.and.arrow.down',
+                    onPressed: () => unawaited(_restore(sync)),
+                  ),
+                  _actionButton(
+                    id: 'setup',
+                    label: '开启并备份',
+                    subtitle: '首次设置主密码并加密上传',
+                    icon: Icons.cloud_upload_outlined,
+                    sfSymbol: 'icloud.and.arrow.up',
+                    role: AdaptiveButtonRole.prominent,
+                    onPressed: () => unawaited(_setup(sync)),
+                  ),
+                ]),
               ],
               if (sync.needsRestore)
-                _RestoreBanner(onTap: _busy ? null : () => unawaited(_restore(sync))),
+                _RestoreBanner(
+                  onTap: _busy ? null : () => unawaited(_restore(sync)),
+                ),
             ],
           );
         },
@@ -114,14 +158,72 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     );
   }
 
+  Widget _actionPanel(List<Widget> actions) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var index = 0; index < actions.length; index++) ...[
+            if (index > 0) const SizedBox(height: 10),
+            actions[index],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _actionButton({
+    required String id,
+    required String label,
+    required IconData icon,
+    required String sfSymbol,
+    required VoidCallback onPressed,
+    String? subtitle,
+    AdaptiveButtonRole role = AdaptiveButtonRole.standard,
+  }) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AdaptiveButton(
+          label: label,
+          icon: icon,
+          sfSymbol: sfSymbol,
+          role: role,
+          height: 44,
+          loading: _busyAction == id,
+          onPressed: _busy ? null : onPressed,
+          accessibilityLabel: label,
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   // -- Actions -----------------------------------------------------------------
 
-  Future<void> _guard(Future<void> Function() task) async {
-    setState(() => _busy = true);
+  Future<void> _guard(
+    String action,
+    Future<void> Function() task,
+  ) async {
+    setState(() => _busyAction = action);
     try {
       await task();
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyAction = null);
     }
   }
 
@@ -132,7 +234,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       warning: _e2eExplanation,
     );
     if (pwd == null) return;
-    await _guard(() async {
+    await _guard('setup', () async {
       final outcome = await sync.setupWithMasterPassword(pwd);
       _feedback(outcome);
     });
@@ -145,7 +247,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       warning: _e2eExplanation,
     );
     if (pwd == null) return;
-    await _guard(() async {
+    await _guard('restore', () async {
       final outcome = await sync.restoreWithMasterPassword(pwd);
       _feedback(outcome);
     });
@@ -164,7 +266,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       warning: _e2eExplanation,
     );
     if (newPwd == null) return;
-    await _guard(() async {
+    await _guard('password', () async {
       final outcome = await sync.changeMasterPassword(oldPwd, newPwd);
       _feedback(outcome);
     });
@@ -185,14 +287,14 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       ],
     );
     if (ok != true) return;
-    await _guard(() async {
+    await _guard('disable', () async {
       final outcome = await sync.disable();
       _feedback(outcome);
     });
   }
 
   Future<void> _pull(SyncService sync) async {
-    await _guard(() async {
+    await _guard('pull', () async {
       try {
         await sync.pull();
         _toast('已从云端恢复绑定');
@@ -205,7 +307,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   Future<void> _push(SyncService sync) async {
-    await _guard(() async {
+    await _guard('push', () async {
       final res = await sync.push();
       if (res.ok) {
         _toast('已备份到云端');
@@ -232,7 +334,8 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     showAdaptiveFeedback(
       context: context,
       message: message,
-      style: isError ? AdaptiveFeedbackStyle.error : AdaptiveFeedbackStyle.success,
+      style:
+          isError ? AdaptiveFeedbackStyle.error : AdaptiveFeedbackStyle.success,
     );
   }
 
@@ -241,83 +344,15 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     required bool confirm,
     required String? warning,
   }) async {
-    final controller = TextEditingController();
-    final confirmController = TextEditingController();
-    return showDialog<String>(
+    return showAdaptiveTextInputDialog(
       context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            final obscure = true;
-            final canSubmit = controller.text.isNotEmpty &&
-                (!confirm || controller.text == confirmController.text);
-            return AlertDialog(
-              title: Text(title),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (warning != null) ...[
-                      Text(
-                        warning,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    TextField(
-                      controller: controller,
-                      obscureText: obscure,
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: '主密码',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    if (confirm) ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: confirmController,
-                        obscureText: obscure,
-                        decoration: const InputDecoration(
-                          labelText: '再次输入',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      if (confirmController.text.isNotEmpty &&
-                          controller.text != confirmController.text)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            '两次输入不一致',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: canSubmit
-                      ? () => Navigator.pop(context, controller.text)
-                      : null,
-                  child: const Text('确定'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      title: title,
+      message: warning,
+      fieldLabel: '主密码',
+      confirmationFieldLabel: confirm ? '再次输入' : null,
+      mismatchMessage: '两次输入不一致',
+      confirmLabel: '确定',
+      obscureText: true,
     );
   }
 }
@@ -376,23 +411,50 @@ class _RestoreBanner extends StatelessWidget {
     return Card.filled(
       margin: const EdgeInsets.all(16),
       color: theme.colorScheme.secondaryContainer,
-      child: ListTile(
-        leading: Icon(
-          Icons.cloud_download_outlined,
-          color: theme.colorScheme.onSecondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.cloud_download_outlined,
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '云端有可恢复的备份',
+                    style: TextStyle(
+                      color: theme.colorScheme.onSecondaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '检测到其它设备设置了云同步，输入主密码即可恢复绑定。',
+              style: TextStyle(
+                color: theme.colorScheme.onSecondaryContainer.withValues(
+                  alpha: 0.8,
+                ),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 12),
+            AdaptiveButton(
+              label: '恢复备份',
+              icon: Icons.cloud_download_outlined,
+              sfSymbol: 'icloud.and.arrow.down',
+              role: AdaptiveButtonRole.prominent,
+              onPressed: onTap,
+              accessibilityLabel: '恢复云端备份',
+            ),
+          ],
         ),
-        title: Text(
-          '云端有备份，点此恢复',
-          style: TextStyle(color: theme.colorScheme.onSecondaryContainer),
-        ),
-        subtitle: Text(
-          '检测到其它设备设置了云同步，输入主密码即可恢复绑定',
-          style: TextStyle(
-            color: theme.colorScheme.onSecondaryContainer.withValues(alpha: 0.8),
-            fontSize: 12,
-          ),
-        ),
-        onTap: onTap,
       ),
     );
   }

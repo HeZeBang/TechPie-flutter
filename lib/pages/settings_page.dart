@@ -9,14 +9,18 @@ import '../services/service_provider.dart';
 import '../services/sync_service.dart';
 import '../services/theme_service.dart';
 import '../services/third_party_auth_service.dart';
+import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_confirmation_button.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_select.dart';
+import '../widgets/adaptive_switch.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
-import '../widgets/ios_liquid/ios_glass_select.dart';
-import '../widgets/ios_liquid/ios_glass_switch.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'debug_log_page.dart';
 import 'login_page.dart';
 import 'sync_settings_page.dart';
@@ -50,7 +54,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (isDesktopLayout(context)) {
+    if (usesSidebarLayout(context)) {
       return Navigator(
         onGenerateRoute: (settings) => MaterialPageRoute<void>(
           settings: settings,
@@ -87,7 +91,10 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListenableBuilder(
         listenable: Listenable.merge([auth, logger, themeService, tpAuth]),
         builder: (context, _) => ListView(
-          padding: EdgeInsets.only(top: topInset, bottom: 120),
+          padding: EdgeInsets.only(
+            top: topInset,
+            bottom: AppShellMetrics.bottomContentPaddingOf(context),
+          ),
           children: [
             // Account section
             _sectionHeader(theme, 'Account'),
@@ -115,7 +122,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  pushPlatformViewPage<void>(
+                  pushAdaptivePage<void>(
                     context,
                     builder: (_) => const ThirdPartyAccountsPage(),
                   ),
@@ -127,20 +134,46 @@ class _SettingsPageState extends State<SettingsPage> {
                 subtitle: Text(_cloudSyncSubtitle(sp.syncService)),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  Navigator.push(
+                  pushAdaptivePage<void>(
                     context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SyncSettingsPage(),
-                    ),
+                    builder: (_) => const SyncSettingsPage(),
                   ),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text('Logout'),
-                onTap: () => unawaited(_confirmLogout(auth)),
-              ),
-            ] else
+              if (useIosChrome)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: AdaptiveConfirmationButton(
+                    label: 'Logout',
+                    icon: Icons.logout,
+                    sfSymbol: 'rectangle.portrait.and.arrow.right',
+                    confirmTitle: '退出登录？',
+                    confirmLabel: '退出登录',
+                    destructive: true,
+                    width: double.infinity,
+                    height: 44,
+                    onConfirmed: () => unawaited(auth.logout()),
+                  ),
+                )
+              else
+                ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Logout'),
+                  onTap: () => unawaited(_confirmLogout(auth)),
+                ),
+            ] else if (useIosChrome)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: AdaptiveButton(
+                  icon: Icons.login,
+                  sfSymbol: 'person.crop.circle.badge.plus',
+                  label: '通过 GeekPie Uni-Auth 登录',
+                  role: AdaptiveButtonRole.prominent,
+                  accessibilityLabel: '登录 TechPie',
+                  onPressed: () => unawaited(presentLoginPage(context)),
+                ),
+              )
+            else
               ListTile(
                 leading: const Icon(Icons.login),
                 title: const Text('Login'),
@@ -156,13 +189,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 leading: Icon(themeService.mode.icon),
                 title: const Text('Theme'),
                 subtitle: Text(themeService.mode.label),
-                trailing: IosGlassSelect(
+                trailing: AdaptiveSelect(
                   value: themeService.mode.name,
                   placeholder: 'Choose theme',
                   width: 156,
                   options: [
                     for (final mode in AppThemeMode.values)
-                      IosGlassSelectOption(value: mode.name, label: mode.label),
+                      AdaptiveSelectOption(value: mode.name, label: mode.label),
                   ],
                   onChanged: (value) {
                     final mode = AppThemeMode.values.firstWhere(
@@ -182,32 +215,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   onTap: () => _showThemePicker(tileContext, themeService),
                 ),
               ),
-            if (useIosChrome)
-              ListTile(
-                leading: Icon(themeService.colorScheme.icon),
-                title: const Text('Color'),
-                subtitle: Text(_colorSubtitle(themeService)),
-                trailing: IosGlassSelect(
-                  value: themeService.colorScheme.name,
-                  placeholder: 'Choose color',
-                  width: 156,
-                  options: [
-                    for (final scheme in AppColorScheme.values)
-                      IosGlassSelectOption(
-                        value: scheme.name,
-                        label: scheme.label,
-                      ),
-                  ],
-                  onChanged: (value) {
-                    final scheme = AppColorScheme.values.firstWhere(
-                      (item) => item.name == value,
-                      orElse: () => AppColorScheme.system,
-                    );
-                    unawaited(themeService.setColorScheme(scheme));
-                  },
-                ),
-              )
-            else
+            if (themeService.supportsColorSchemeSelection)
               Builder(
                 builder: (tileContext) => ListTile(
                   leading: Icon(themeService.colorScheme.icon),
@@ -221,12 +229,6 @@ class _SettingsPageState extends State<SettingsPage> {
             // General section
             _sectionHeader(theme, 'General'),
             ListTile(
-              leading: const Icon(Icons.notifications_outlined),
-              title: const Text('Notifications'),
-              subtitle: const Text('Manage notification preferences'),
-              onTap: () {},
-            ),
-            ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('About'),
               subtitle: Text(
@@ -234,7 +236,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     ? 'Version Unknown'
                     : 'Version $_appVersion',
               ),
-              onTap: () {},
             ),
             const Divider(),
 
@@ -270,11 +271,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: const Text('View Logs'),
                 subtitle: Text('${logger.entries.length} entries'),
                 onTap: () => unawaited(
-                  Navigator.push(
+                  pushAdaptivePage<void>(
                     context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const DebugLogPage(),
-                    ),
+                    builder: (_) => const DebugLogPage(),
                   ),
                 ),
               ),
@@ -305,7 +304,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showThemePicker(BuildContext context, ThemeService themeService) {
-    if (isDesktopLayout(context)) {
+    if (usesSidebarLayout(context)) {
       showDesktopPopover(
         anchorContext: context,
         width: 260,
@@ -404,7 +403,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showColorPicker(BuildContext context, ThemeService themeService) {
-    if (isDesktopLayout(context)) {
+    if (usesSidebarLayout(context)) {
       showDesktopPopover(
         anchorContext: context,
         width: 260,
@@ -552,7 +551,7 @@ class _AdaptiveSwitchTile extends StatelessWidget {
       leading: secondary,
       title: Text(title),
       subtitle: Text(subtitle),
-      trailing: IosGlassSwitch(value: value, onChanged: onChanged),
+      trailing: AdaptiveSwitch(value: value, onChanged: onChanged),
       onTap: () => onChanged(!value),
     );
   }
@@ -586,7 +585,7 @@ class _CpdailyBindingTile extends StatelessWidget {
       onTap: bound
           ? null
           : () => unawaited(
-                pushPlatformViewPage<void>(
+                pushAdaptivePage<void>(
                   context,
                   builder: (_) => const ThirdPartyAccountsPage(),
                 ),

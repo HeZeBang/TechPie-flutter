@@ -5,7 +5,8 @@ import '../../pages/assignments_page.dart';
 import '../../pages/home_page.dart';
 import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
-import '../../utils/motion.dart';
+import '../../utils/adaptive_layout.dart';
+import '../../utils/platform.dart';
 import 'app_destination.dart';
 import 'desktop/desktop_shell.dart';
 import 'mobile_shell.dart';
@@ -18,8 +19,6 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  static const int _assignmentsIndex = 2;
-
   int _selectedIndex = 0;
   int _previousSelectedIndex = 0;
   bool _sidebarCollapsed = false;
@@ -68,50 +67,13 @@ class _AppShellState extends State<AppShell> {
     setState(() => _sidebarCollapsed = !_sidebarCollapsed);
   }
 
-  Widget _buildPageView({
-    Duration duration = const Duration(milliseconds: 300),
-    Curve curve = Curves.easeInOutCubicEmphasized,
-  }) {
-    return PageTransitionSwitcher(
-      duration: duration,
-      layoutBuilder: (entries) => Stack(
-        fit: StackFit.expand,
-        children: entries,
-      ),
-      transitionBuilder: (child, animation, secondaryAnimation) {
-        // Pure horizontal slide — no fade, no scale, no color fill.
-        // Controllers always run forward: the new entry's primary (0→1)
-        // drives its incoming slide; the old entry's secondary (0→1)
-        // drives its outgoing slide. Direction is encoded only in the
-        // tween sign, so backward navigation mirrors forward correctly
-        // and the easing curve stays consistent in both directions.
-        final direction = _selectedIndex >= _previousSelectedIndex ? 1.0 : -1.0;
-        final incoming = Tween<Offset>(
-          begin: Offset(direction, 0),
-          end: Offset.zero,
-        );
-        final outgoing = Tween<Offset>(
-          begin: Offset.zero,
-          end: Offset(-direction, 0),
-        );
-        return AnimatedBuilder(
-          animation: Listenable.merge([animation, secondaryAnimation]),
-          builder: (context, built) {
-            final incomingOffset = incoming.transform(
-              curve.transform(animation.value),
-            );
-            final outgoingOffset = outgoing.transform(
-              curve.transform(secondaryAnimation.value),
-            );
-            return FractionalTranslation(
-              translation: incomingOffset + outgoingOffset,
-              child: built,
-            );
-          },
-          child: child,
-        );
-      },
-      child: _destinations[_selectedIndex].page,
+  Widget _buildPageView(BuildContext context) {
+    return AppDestinationSwitcher(
+      selectedIndex: _selectedIndex,
+      previousSelectedIndex: _previousSelectedIndex,
+      preserveVisitedPages: isIos(),
+      animationsEnabled: !MediaQuery.disableAnimationsOf(context),
+      pages: _destinations.map((destination) => destination.page).toList(),
     );
   }
 
@@ -127,10 +89,10 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
+    final windowSizeClass = appWindowSizeClassOf(context);
+    final pageView = _buildPageView(context);
 
-    if (width >= 960) {
-      final pageView = _buildPageView();
+    if (windowSizeClass == AppWindowSizeClass.expanded) {
       return DesktopShell(
         destinations: _destinations,
         selectedIndex: _selectedIndex,
@@ -141,7 +103,7 @@ class _AppShellState extends State<AppShell> {
       );
     }
 
-    if (width >= 600) {
+    if (windowSizeClass == AppWindowSizeClass.medium) {
       return DesktopShell(
         destinations: _destinations,
         selectedIndex: _selectedIndex,
@@ -149,22 +111,119 @@ class _AppShellState extends State<AppShell> {
         showToggleButton: false,
         onDestinationSelected: _onDestinationSelected,
         onToggleSidebarCollapsed: () {},
-        child: _buildDesktopContentNavigator(_buildPageView()),
+        child: _buildDesktopContentNavigator(pageView),
       );
     }
 
-    // Mobile: page slide uses Telegram's main-tabs pager settle (320ms
-    // EASE_OUT_QUINT) — the same length as the tab selector pop, so the
-    // bottom bar and the page move on one shared timeline.
     return MobileShell(
       destinations: _destinations,
       selectedIndex: _selectedIndex,
-      assignmentsIndex: _assignmentsIndex,
       onDestinationSelected: _onDestinationSelected,
-      child: _buildPageView(
-        duration: TgMotion.tabsPageSwitch,
-        curve: TgMotion.easeOutQuint,
+      child: pageView,
+    );
+  }
+}
+
+class AppDestinationSwitcher extends StatefulWidget {
+  const AppDestinationSwitcher({
+    super.key,
+    required this.pages,
+    required this.selectedIndex,
+    required this.previousSelectedIndex,
+    required this.preserveVisitedPages,
+    required this.animationsEnabled,
+  });
+
+  final List<Widget> pages;
+  final int selectedIndex;
+  final int previousSelectedIndex;
+  final bool preserveVisitedPages;
+  final bool animationsEnabled;
+
+  @override
+  State<AppDestinationSwitcher> createState() => _AppDestinationSwitcherState();
+}
+
+class _AppDestinationSwitcherState extends State<AppDestinationSwitcher> {
+  late final Set<int> _visitedIndexes = {widget.selectedIndex};
+
+  @override
+  void didUpdateWidget(covariant AppDestinationSwitcher oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _visitedIndexes.add(widget.selectedIndex);
+    _visitedIndexes.removeWhere((index) => index >= widget.pages.length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    assert(widget.pages.isNotEmpty);
+    assert(
+      widget.selectedIndex >= 0 && widget.selectedIndex < widget.pages.length,
+    );
+
+    if (widget.preserveVisitedPages) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          for (var index = 0; index < widget.pages.length; index++)
+            if (_visitedIndexes.contains(index))
+              Offstage(
+                offstage: index != widget.selectedIndex,
+                child: TickerMode(
+                  enabled: index == widget.selectedIndex,
+                  child: widget.pages[index],
+                ),
+              ),
+        ],
+      );
+    }
+
+    if (!widget.animationsEnabled) {
+      return widget.pages[widget.selectedIndex];
+    }
+
+    return PageTransitionSwitcher(
+      duration: const Duration(milliseconds: 300),
+      layoutBuilder: (entries) => Stack(
+        fit: StackFit.expand,
+        children: entries,
       ),
+      transitionBuilder: (child, animation, secondaryAnimation) {
+        // Pure horizontal slide — no fade, no scale, no color fill.
+        // Controllers always run forward: the new entry's primary (0→1)
+        // drives its incoming slide; the old entry's secondary (0→1)
+        // drives its outgoing slide. Direction is encoded only in the
+        // tween sign, so backward navigation mirrors forward correctly
+        // and the easing curve stays consistent in both directions.
+        final direction =
+            widget.selectedIndex >= widget.previousSelectedIndex ? 1.0 : -1.0;
+        final incoming = Tween<Offset>(
+          begin: Offset(direction, 0),
+          end: Offset.zero,
+        );
+        final outgoing = Tween<Offset>(
+          begin: Offset.zero,
+          end: Offset(-direction, 0),
+        );
+        return AnimatedBuilder(
+          animation: Listenable.merge([animation, secondaryAnimation]),
+          builder: (context, built) {
+            final incomingOffset = incoming.transform(
+              Curves.easeInOutCubicEmphasized.transform(animation.value),
+            );
+            final outgoingOffset = outgoing.transform(
+              Curves.easeInOutCubicEmphasized
+                  .transform(secondaryAnimation.value),
+            );
+            return FractionalTranslation(
+              translation: incomingOffset + outgoingOffset,
+              child: built,
+            );
+          },
+          child: child,
+        );
+      },
+      child: widget.pages[widget.selectedIndex],
     );
   }
 }

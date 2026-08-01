@@ -9,13 +9,13 @@ import '../services/third_party_auth_service.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_segmented_control.dart';
+import '../widgets/adaptive_switch.dart';
+import '../widgets/adaptive_text_area.dart';
+import '../widgets/adaptive_text_field_group.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_glass_switch.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
-import '../widgets/ios_liquid/ios_native_segmented_control.dart';
-import '../widgets/ios_liquid/ios_native_text_field_group.dart';
-import '../widgets/ios_liquid/ios_native_text_view.dart';
-import '../widgets/ios_liquid/ios_platform_view_page_transitions.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class ThirdPartyBindPage extends StatefulWidget {
   final ThirdPartyPlatform platform;
@@ -186,7 +186,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
           style: AdaptiveFeedbackStyle.success,
         );
       }
-      await maybePopPlatformViewPage<void>(context);
+      await maybePopAdaptivePage<void>(context);
     } on ThirdPartyBindException catch (e) {
       if (!mounted) return;
       if (isIos()) {
@@ -432,7 +432,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('自动更新 Token'),
                   subtitle: const Text('过期前 48 小时内自动重登,免去手动重绑'),
-                  trailing: IosGlassSwitch(
+                  trailing: AdaptiveSwitch(
                     value: _autoRenew,
                     onChanged: (v) => unawaited(_onAutoRenewChanged(v)),
                   ),
@@ -490,7 +490,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
         ],
         onItemPressed: (id) {
           if (id == 'back') {
-            unawaited(maybePopPlatformViewPage<void>(context));
+            unawaited(maybePopAdaptivePage<void>(context));
           }
         },
       ),
@@ -505,7 +505,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
               const SizedBox(height: 16),
             ],
             if (_isCpdaily) ...[
-              IosNativeSegmentedControl(
+              AdaptiveSegmentedControl(
                 value: _cpdailyLoginMethod,
                 segments: const ['密码登录', '短信登录'],
                 onChanged: (value) {
@@ -517,14 +517,14 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
               ),
               const SizedBox(height: 18),
               if (_cpdailyLoginMethod == 0)
-                IosNativeTextFieldGroup(
+                AdaptiveTextFieldGroup(
                   items: [
-                    IosNativeTextFieldGroupItem(
+                    AdaptiveTextFieldGroupItem(
                       placeholder: '学号',
                       controller: _accountCtrl,
                       textInputAction: TextInputAction.next,
                     ),
-                    IosNativeTextFieldGroupItem(
+                    AdaptiveTextFieldGroupItem(
                       placeholder: '密码',
                       controller: _passwordCtrl,
                       obscureText: _obscure,
@@ -534,9 +534,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                   ],
                 )
               else ...[
-                IosNativeTextFieldGroup(
+                AdaptiveTextFieldGroup(
                   items: [
-                    IosNativeTextFieldGroupItem(
+                    AdaptiveTextFieldGroupItem(
                       placeholder: '手机号码',
                       controller: _cpdailyPhoneCtrl,
                       keyboardType: TextInputType.phone,
@@ -548,9 +548,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: IosNativeTextFieldGroup(
+                      child: AdaptiveTextFieldGroup(
                         items: [
-                          IosNativeTextFieldGroupItem(
+                          AdaptiveTextFieldGroupItem(
                             placeholder: '验证码',
                             controller: _cpdailyCodeCtrl,
                             keyboardType: TextInputType.number,
@@ -582,9 +582,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                 ),
               ],
             ] else
-              IosNativeTextFieldGroup(
+              AdaptiveTextFieldGroup(
                 items: [
-                  IosNativeTextFieldGroupItem(
+                  AdaptiveTextFieldGroupItem(
                     placeholder: _isGradescope ? '邮箱' : '用户名',
                     controller: _accountCtrl,
                     keyboardType: _isGradescope
@@ -592,7 +592,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                         : TextInputType.text,
                     textInputAction: TextInputAction.next,
                   ),
-                  IosNativeTextFieldGroupItem(
+                  AdaptiveTextFieldGroupItem(
                     placeholder: '密码',
                     controller: _passwordCtrl,
                     obscureText: _obscure,
@@ -606,9 +606,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
               ),
             if (_isHydro) ...[
               const SizedBox(height: 16),
-              IosNativeTextFieldGroup(
+              AdaptiveTextFieldGroup(
                 items: [
-                  IosNativeTextFieldGroupItem(
+                  AdaptiveTextFieldGroupItem(
                     placeholder: 'Origin',
                     controller: _hydroOriginCtrl,
                     keyboardType: TextInputType.url,
@@ -624,7 +624,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                 ),
               ),
               const SizedBox(height: 10),
-              IosNativeTextView(
+              AdaptiveTextArea(
                 placeholder: 'Domain',
                 controller: _hydroDomainsCtrl,
                 minLines: 2,
@@ -649,7 +649,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                     '过期前 48 小时内自动重登,免去手动重绑',
                     style: TextStyle(color: secondaryLabel),
                   ),
-                  trailing: IosGlassSwitch(
+                  trailing: AdaptiveSwitch(
                     value: _autoRenew,
                     onChanged: (value) => unawaited(_onAutoRenewChanged(value)),
                   ),

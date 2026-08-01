@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../pages/oa_gym_page.dart';
+import '../widgets/adaptive_page_navigation.dart';
 
 enum FeatureMode {
   native,
@@ -54,8 +55,9 @@ final featureEntries = <Feature>[
     id: 'oa_gym',
     description: '场馆预约',
     mode: FeatureMode.native,
-    nativeEntry: (context) => Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const OaGymPage()),
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const OaGymPage(),
     ),
     icon: const Icon(Icons.sports_tennis),
   ),

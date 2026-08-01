@@ -8,8 +8,10 @@ import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
 import '../services/uni_auth_service.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -52,8 +54,9 @@ Future<void> presentLoginPage(BuildContext context) async {
   }
 
   if (context.mounted) {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LoginPage()),
+    await pushAdaptivePage<void>(
+      context,
+      builder: (_) => const LoginPage(),
     );
   }
 }
@@ -254,7 +257,7 @@ class _LoginPageState extends State<LoginPage> {
         ],
         onItemPressed: (id) {
           if (id == 'back') {
-            unawaited(Navigator.maybePop(context));
+            unawaited(maybePopAdaptivePage<void>(context));
           }
         },
       ),
@@ -270,26 +273,15 @@ class _LoginPageState extends State<LoginPage> {
               _IosInlineFeedback(message: _inlineMessage!),
               const SizedBox(height: 16),
             ],
-            FilledButton(
+            AdaptiveButton(
               onPressed: _loading ? null : _geekpieLogin,
-              child: SizedBox(
-                height: liquidGlass ? 56 : 52,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_loading) ...[
-                      const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    const Text('通过 GeekPie Uni-Auth 登录'),
-                  ],
-                ),
-              ),
+              icon: Icons.login,
+              sfSymbol: 'person.crop.circle.badge.plus',
+              label: '通过 GeekPie Uni-Auth 登录',
+              role: AdaptiveButtonRole.prominent,
+              loading: _loading,
+              height: liquidGlass ? 56 : 52,
+              accessibilityLabel: '通过 GeekPie Uni-Auth 登录',
             ),
           ],
         ),

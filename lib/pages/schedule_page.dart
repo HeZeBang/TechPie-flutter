@@ -2,9 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
-import 'package:reel_text/reel_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/course.dart';
@@ -14,13 +12,21 @@ import '../services/ics/ics_export_service.dart';
 import '../services/ics/ics_file_saver.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
+import '../utils/adaptive_layout.dart';
+import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_text_input_dialog.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/course_detail_panel.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/desktop_select_popover.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
+import 'login_page.dart';
+import 'third_party_accounts_page.dart';
 
 class SchedulePage extends StatefulWidget {
   const SchedulePage({super.key});
@@ -31,7 +37,6 @@ class SchedulePage extends StatefulWidget {
 
 class _SchedulePageState extends State<SchedulePage> {
   final IcsExportService _icsExport = IcsExportService();
-  final TextEditingController _calendarNameController = TextEditingController();
   late ScheduleService _schedule;
   List<Course> _courses = [];
   List<Period> _periods = defaultPeriods.toList();
@@ -64,7 +69,6 @@ class _SchedulePageState extends State<SchedulePage> {
 
   @override
   void dispose() {
-    _calendarNameController.dispose();
     _weekPageController.dispose();
     _schedule.removeListener(_onScheduleChanged);
     super.dispose();
@@ -94,17 +98,11 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
-  Future<void> _dismissKeyboard() async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    if (isIos()) {
-      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
-    }
-  }
-
   void _rebuildCourses() {
     if (!mounted) return;
     setState(() {
-      _currentWeek = _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
+      _currentWeek =
+          _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
       final table = _schedule.courseTable;
       if (table != null) {
         if (table.periods.isNotEmpty) {
@@ -146,8 +144,11 @@ class _SchedulePageState extends State<SchedulePage> {
     unawaited(
       _weekPageController.animateToPage(
         _currentWeek - 1,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutCubic,
+        duration: appAnimationDuration(
+          context,
+          const Duration(milliseconds: 280),
+        ),
+        curve: appAnimationCurve(Curves.easeOutCubic),
       ),
     );
   }
@@ -259,7 +260,7 @@ class _SchedulePageState extends State<SchedulePage> {
 
   void _showWeekPicker() {
     // Desktop is handled directly by _DesktopWeekTitleMenu.
-    if (isDesktopLayout(context)) return;
+    if (usesSidebarLayout(context)) return;
 
     final computedWeek =
         _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
@@ -523,48 +524,14 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<String?> _promptCalendarName({required String initialValue}) async {
-    _calendarNameController
-      ..text = initialValue
-      ..selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: initialValue.length,
-      );
-
-    return showDialog<String>(
+    return showAdaptiveTextInputDialog(
       context: context,
-      builder: (dialogContext) {
-        Future<void> closeDialog([String? value]) async {
-          await _dismissKeyboard();
-          if (!dialogContext.mounted) return;
-          Navigator.of(dialogContext).pop(value);
-        }
-
-        return AlertDialog(
-          title: const Text('请输入日历名称'),
-          content: TextField(
-            controller: _calendarNameController,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '日历名',
-              hintText: '例如：2025-2026 春季学期',
-            ),
-            textInputAction: TextInputAction.done,
-            onSubmitted: (value) {
-              closeDialog(value.trim());
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => closeDialog(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => closeDialog(_calendarNameController.text.trim()),
-              child: const Text('导入'),
-            ),
-          ],
-        );
-      },
+      title: '请输入日历名称',
+      fieldLabel: '日历名',
+      hintText: '例如：2025-2026 春季学期',
+      initialValue: initialValue,
+      confirmLabel: '导入',
+      trimResult: true,
     );
   }
 
@@ -651,7 +618,7 @@ class _SchedulePageState extends State<SchedulePage> {
               title: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  if (isDesktopLayout(context))
+                  if (usesSidebarLayout(context))
                     _DesktopWeekTitleMenu(
                       currentWeek: _currentWeek,
                       semesterLabel: _semesterLabel,
@@ -670,7 +637,7 @@ class _SchedulePageState extends State<SchedulePage> {
                         trailingIcon: Icons.unfold_more,
                       ),
                     ),
-                  if (isDesktopLayout(context) &&
+                  if (usesSidebarLayout(context) &&
                       isInTerm &&
                       !isViewingCurrentWeek) ...[
                     const SizedBox(width: 12),
@@ -705,7 +672,7 @@ class _SchedulePageState extends State<SchedulePage> {
                         )
                       : const Icon(Icons.ios_share_rounded),
                 ),
-                if (isDesktopLayout(context))
+                if (usesSidebarLayout(context))
                   IconButton(
                     key: _viewSettingsAnchorKey,
                     icon: const Icon(Icons.more_vert),
@@ -763,6 +730,32 @@ class _SchedulePageState extends State<SchedulePage> {
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
+                    ),
+                    const SizedBox(height: 20),
+                    AdaptiveButton(
+                      label: auth.isLoggedIn ? '去绑定 eGate' : '登录',
+                      icon: auth.isLoggedIn
+                          ? Icons.account_tree_outlined
+                          : Icons.login,
+                      sfSymbol: auth.isLoggedIn
+                          ? 'person.crop.circle.badge.plus'
+                          : 'person.crop.circle.badge.checkmark',
+                      role: AdaptiveButtonRole.prominent,
+                      width: 220,
+                      onPressed: () {
+                        if (auth.isLoggedIn) {
+                          unawaited(
+                            pushAdaptivePage<void>(
+                              context,
+                              builder: (_) => const ThirdPartyAccountsPage(),
+                            ),
+                          );
+                        } else {
+                          unawaited(presentLoginPage(context));
+                        }
+                      },
+                      accessibilityLabel:
+                          auth.isLoggedIn ? '绑定 eGate 账号' : '登录 TechPie',
                     ),
                   ],
                 ),
@@ -850,7 +843,10 @@ class _SchedulePageState extends State<SchedulePage> {
         Expanded(
           child: animated
               ? AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
+                  duration: appAnimationDuration(
+                    context,
+                    const Duration(milliseconds: 300),
+                  ),
                   switchInCurve: Curves.easeOut,
                   switchOutCurve: Curves.easeIn,
                   child: content,
@@ -1117,8 +1113,7 @@ class _SemesterWheelPickerState extends State<_SemesterWheelPicker> {
     final terms = widget.info.semesters[year] ?? const <String, String>{};
     final entries = terms.entries.toList()
       ..sort(
-        (a, b) =>
-            semesterTermRank(a.key).compareTo(semesterTermRank(b.key)),
+        (a, b) => semesterTermRank(a.key).compareTo(semesterTermRank(b.key)),
       );
     return entries;
   }
@@ -1139,9 +1134,8 @@ class _SemesterWheelPickerState extends State<_SemesterWheelPicker> {
       final labelIndex = previousLabel == null
           ? -1
           : _termsForYear.indexWhere((entry) => entry.key == previousLabel);
-      _termIndex = labelIndex < 0
-          ? 0
-          : labelIndex.clamp(0, _termsForYear.length - 1);
+      _termIndex =
+          labelIndex < 0 ? 0 : labelIndex.clamp(0, _termsForYear.length - 1);
     });
     _termController.jumpToItem(_termIndex);
     _reportSelection();
@@ -1284,13 +1278,27 @@ class _WeekTitleContent extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ReelText(
-              '第 $currentWeek 周',
-              style: theme.textTheme.titleMedium,
-              options: ReelTextOptions(
-                direction: slideDirection < 0
-                    ? ReelTextDirection.down
-                    : ReelTextDirection.up,
+            AnimatedSwitcher(
+              duration: appAnimationDuration(
+                context,
+                const Duration(milliseconds: 200),
+              ),
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: Offset(0, slideDirection >= 0 ? 0.3 : -0.3),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+              child: Text(
+                '第 $currentWeek 周',
+                key: ValueKey<int>(currentWeek),
+                style: theme.textTheme.titleMedium,
               ),
             ),
             if (semesterLabel.isNotEmpty)
@@ -1334,7 +1342,10 @@ class _DayHeader extends StatelessWidget {
             width: 48,
             child: Center(
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
+                duration: appAnimationDuration(
+                  context,
+                  const Duration(milliseconds: 250),
+                ),
                 child: Text(
                   '${weekStart.month}\n月',
                   key: ValueKey<String>('${weekStart.year}-${weekStart.month}'),
@@ -1396,7 +1407,10 @@ class _DayHeaderCell extends StatelessWidget {
         ),
         const SizedBox(height: 2),
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
+          duration: appAnimationDuration(
+            context,
+            const Duration(milliseconds: 250),
+          ),
           child: Container(
             key: ValueKey<String>('${date.year}-${date.month}-${date.day}'),
             width: 28,
@@ -1444,7 +1458,9 @@ class _TimetableGrid extends StatelessWidget {
     final theme = Theme.of(context);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 120),
+      padding: EdgeInsets.only(
+        bottom: AppShellMetrics.bottomContentPaddingOf(context),
+      ),
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1679,7 +1695,7 @@ class _CourseBlock extends StatelessWidget {
   }
 
   void _showCourseDetail(BuildContext context) {
-    if (isDesktopLayout(context)) {
+    if (usesSidebarLayout(context)) {
       showDesktopPopover(
         anchorContext: context,
         width: 360,

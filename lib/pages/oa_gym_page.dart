@@ -1,13 +1,18 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../models/oa_gym.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios_liquid/ios_native_navigation_bar.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'login_page.dart';
 import 'third_party_accounts_page.dart';
 
@@ -21,38 +26,42 @@ class OaGymPage extends StatefulWidget {
 class _OaGymPageState extends State<OaGymPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  int _selectedTab = 0;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (_selectedTab == _tabController.index || !mounted) return;
+    setState(() => _selectedTab = _tabController.index);
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+  Future<void> _handlePrerequisite() async {
     final sp = ServiceProvider.of(context);
-    final alreadyLoggedIn = sp.authService.isLoggedIn;
+    if (sp.authService.isLoggedIn) {
+      await _openThirdPartyAccounts();
+      return;
+    }
     await presentLoginPage(context);
     if (!mounted) return;
-    // Already logged into the primary SSO account but missing the eGate
-    // binding — route the user to the third-party accounts page instead of
-    // re-showing the login sheet.
-    if (alreadyLoggedIn && sp.authService.isLoggedIn) {
-      unawaited(_openThirdPartyAccounts());
-    }
     setState(() {});
   }
 
   Future<void> _openThirdPartyAccounts() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const ThirdPartyAccountsPage(),
-      ),
+    await pushAdaptivePage<void>(
+      context,
+      builder: (_) => const ThirdPartyAccountsPage(),
     );
   }
 
@@ -84,7 +93,7 @@ class _OaGymPageState extends State<OaGymPage>
               onItemPressed: (id) {
                 switch (id) {
                   case 'back':
-                    unawaited(Navigator.maybePop(context));
+                    unawaited(maybePopAdaptivePage<void>(context));
                 }
               },
             )
@@ -99,20 +108,37 @@ class _OaGymPageState extends State<OaGymPage>
                     SizedBox(height: topInset),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: Card.outlined(
-                        clipBehavior: Clip.antiAlias,
-                        child: TabBar(
-                          controller: _tabController,
-                          tabs: const [
-                            Tab(
-                              text: '预约',
-                              icon: Icon(Icons.event_available),
+                      child: isIos()
+                          ? CupertinoSlidingSegmentedControl<int>(
+                              groupValue: _selectedTab,
+                              children: const {
+                                0: Text('预约'),
+                                1: Text('查询'),
+                                2: Text('个人'),
+                              },
+                              onValueChanged: (value) {
+                                if (value != null) {
+                                  _tabController.animateTo(value);
+                                }
+                              },
+                            )
+                          : Card.outlined(
+                              clipBehavior: Clip.antiAlias,
+                              child: TabBar(
+                                controller: _tabController,
+                                tabs: const [
+                                  Tab(
+                                    text: '预约',
+                                    icon: Icon(Icons.event_available),
+                                  ),
+                                  Tab(text: '查询', icon: Icon(Icons.search)),
+                                  Tab(
+                                    text: '个人',
+                                    icon: Icon(Icons.person_outline),
+                                  ),
+                                ],
+                              ),
                             ),
-                            Tab(text: '查询', icon: Icon(Icons.search)),
-                            Tab(text: '个人', icon: Icon(Icons.person_outline)),
-                          ],
-                        ),
-                      ),
                     ),
                     Expanded(
                       child: TabBarView(
@@ -127,7 +153,12 @@ class _OaGymPageState extends State<OaGymPage>
                   ],
                 )
               : ListView(
-                  padding: EdgeInsets.fromLTRB(16, topInset + 16, 16, 120),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    topInset + 16,
+                    16,
+                    AppShellMetrics.bottomContentPaddingOf(context),
+                  ),
                   children: [
                     Card.filled(
                       child: Padding(
@@ -155,12 +186,18 @@ class _OaGymPageState extends State<OaGymPage>
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                             const SizedBox(height: 16),
-                            FilledButton.icon(
-                              onPressed: _handleLogin,
-                              icon: const Icon(Icons.login),
-                              label: Text(
-                                auth.isLoggedIn ? '去绑定 eGate' : '去登录',
-                              ),
+                            AdaptiveButton(
+                              onPressed: _handlePrerequisite,
+                              icon: auth.isLoggedIn
+                                  ? Icons.vpn_key_outlined
+                                  : Icons.login,
+                              sfSymbol: auth.isLoggedIn
+                                  ? 'key.horizontal'
+                                  : 'person.crop.circle.badge.plus',
+                              label: auth.isLoggedIn ? '去绑定 eGate' : '去登录',
+                              role: AdaptiveButtonRole.prominent,
+                              accessibilityLabel:
+                                  auth.isLoggedIn ? '前往绑定 eGate' : '登录 TechPie',
                             ),
                           ],
                         ),
@@ -211,7 +248,7 @@ class _BookingTabState extends State<_BookingTab> {
     final maxDate = now.hour >= 12
         ? DateTime(now.year, now.month, now.day + 2)
         : DateTime(now.year, now.month, now.day + 1);
-    final picked = await showDatePicker(
+    final picked = await showAdaptiveDatePicker(
       context: context,
       initialDate: _date,
       firstDate: DateTime(now.year, now.month, now.day),
@@ -346,7 +383,12 @@ class _BookingTabState extends State<_BookingTab> {
     };
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        AppShellMetrics.bottomContentPaddingOf(context),
+      ),
       children: [
         Card.outlined(
           child: Padding(
@@ -411,15 +453,16 @@ class _BookingTabState extends State<_BookingTab> {
                 ),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton.icon(
+                  child: AdaptiveButton(
                     onPressed: _checking ? null : _refreshAvailability,
-                    icon: _checking
-                        ? const SizedBox.square(
-                            dimension: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh),
-                    label: const Text('刷新可用场地'),
+                    icon: Icons.refresh,
+                    sfSymbol: 'arrow.clockwise',
+                    label: '刷新可用场地',
+                    role: AdaptiveButtonRole.plain,
+                    loading: _checking,
+                    width: 180,
+                    height: 44,
+                    accessibilityLabel: '刷新可用场地',
                   ),
                 ),
               ],
@@ -467,15 +510,14 @@ class _BookingTabState extends State<_BookingTab> {
             ),
             const SizedBox(height: 12),
           ],
-        FilledButton.icon(
+        AdaptiveButton(
           onPressed: _submitting || _selectedCount == 0 ? null : _submit,
-          icon: _submitting
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.send),
-          label: Text(_selectedCount == 0 ? '提交预约' : '提交预约 ($_selectedCount)'),
+          icon: Icons.send,
+          sfSymbol: 'paperplane.fill',
+          label: _selectedCount == 0 ? '提交预约' : '提交预约 ($_selectedCount)',
+          role: AdaptiveButtonRole.prominent,
+          loading: _submitting,
+          accessibilityLabel: '提交场馆预约',
         ),
       ],
     );
@@ -586,7 +628,7 @@ class _SearchTabState extends State<_SearchTab> {
   }
 
   Future<void> _pickStartDate() async {
-    final picked = await showDatePicker(
+    final picked = await showAdaptiveDatePicker(
       context: context,
       initialDate: _startDate,
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
@@ -596,7 +638,7 @@ class _SearchTabState extends State<_SearchTab> {
   }
 
   Future<void> _pickEndDate() async {
-    final picked = await showDatePicker(
+    final picked = await showAdaptiveDatePicker(
       context: context,
       initialDate: _endDate,
       firstDate: _startDate,
@@ -654,7 +696,12 @@ class _SearchTabState extends State<_SearchTab> {
     );
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        AppShellMetrics.bottomContentPaddingOf(context),
+      ),
       children: [
         Card.outlined(
           child: Padding(
@@ -801,15 +848,14 @@ class _SearchTabState extends State<_SearchTab> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                FilledButton.icon(
+                AdaptiveButton(
                   onPressed: _loading ? null : _search,
-                  icon: _loading
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.search),
-                  label: Text(_loading ? '查询中...' : '查询预约记录'),
+                  icon: Icons.search,
+                  sfSymbol: 'magnifyingglass',
+                  label: _loading ? '查询中...' : '查询预约记录',
+                  role: AdaptiveButtonRole.prominent,
+                  loading: _loading,
+                  accessibilityLabel: '查询预约记录',
                 ),
               ],
             ),
@@ -985,7 +1031,12 @@ class _ProfileTabState extends State<_ProfileTab> {
     final avatarText = displayName.characters.firstOrNull ?? 'U';
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        AppShellMetrics.bottomContentPaddingOf(context),
+      ),
       children: [
         Card.filled(
           child: Padding(
@@ -1050,10 +1101,13 @@ class _ProfileTabState extends State<_ProfileTab> {
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 16),
-                FilledButton.icon(
+                AdaptiveButton(
                   onPressed: _save,
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('保存'),
+                  icon: Icons.save_outlined,
+                  sfSymbol: 'square.and.arrow.down',
+                  label: '保存',
+                  role: AdaptiveButtonRole.prominent,
+                  accessibilityLabel: '保存预约信息',
                 ),
               ],
             ),
