@@ -84,7 +84,7 @@ class UniAuthService extends ChangeNotifier {
       } else {
         callbackUrl = await casdoor.showFullscreen(context);
       }
-      final code = _extractCode(callbackUrl);
+      final code = extractUniAuthCallbackCode(callbackUrl);
       if (code.isEmpty) {
         throw Exception('Login cancelled or failed');
       }
@@ -103,7 +103,7 @@ class UniAuthService extends ChangeNotifier {
     try {
       final casdoor = _getCasdoor();
       final callbackUrl = await casdoor.show();
-      final code = _extractCode(callbackUrl);
+      final code = extractUniAuthCallbackCode(callbackUrl);
       if (code.isEmpty) {
         throw Exception('Login cancelled or failed');
       }
@@ -170,16 +170,6 @@ class UniAuthService extends ChangeNotifier {
     );
   }
 
-  /// Pull the `code` query parameter out of the callback URL the SDK returns.
-  /// casdoor.showFullscreen / casdoor.show yield the full redirect URL
-  /// (e.g. `techpie://auth-callback?code=xxx&state=yyy`), not just the code.
-  String _extractCode(String callbackUrl) {
-    if (callbackUrl.isEmpty) return '';
-    final uri = Uri.tryParse(callbackUrl);
-    if (uri == null) return '';
-    return uri.queryParameters['code'] ?? '';
-  }
-
   /// Refresh an existing access token using [refreshToken]. Returns the new
   /// token bundle (the refresh token may be rotated by Casdoor). Throws on
   /// failure so the caller can fall back to prompting for re-login.
@@ -204,4 +194,15 @@ class UniAuthService extends ChangeNotifier {
       expiresAt: data['expires_at'] as String?,
     );
   }
+}
+
+/// Pull the authorization code out of the full callback URL returned by the
+/// Casdoor SDK. Kept as a small pure function so the URL contract stays covered
+/// without opening a real login WebView in tests.
+@visibleForTesting
+String extractUniAuthCallbackCode(String callbackUrl) {
+  if (callbackUrl.isEmpty) return '';
+  final uri = Uri.tryParse(callbackUrl);
+  if (uri == null) return '';
+  return uri.queryParameters['code'] ?? '';
 }
