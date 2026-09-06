@@ -1,0 +1,178 @@
+[
+  {
+    "name": "人机交互",
+    "id": "7ec1125f299e43bc8cf19946a5421385",
+    "courseNo": "CS160",
+    "reviewId": "2858",
+    "classNo": "CS160.01",
+    "term": "2025-2026-2"
+  },
+  {
+    "name": "现代生命科学导论C",
+    "id": "08e31cf5bf2842c495dcba118ff7cb93",
+    "courseNo": "BIO1011",
+    "reviewId": "1624",
+    "classNo": "BIO1011.04",
+    "term": "2024-2025-2"
+  },
+  {
+    "name": "算法与数据结构",
+    "id": "dba3a88c0d1747acb5f05d0e7ba8724b",
+    "courseNo": "CS101",
+    "reviewId": "1114",
+    "classNo": "CS101.01",
+    "term": "2024-2025-1"
+  },
+  {
+    "name": "计算机体系结构I",
+    "id": "27618ef169924738b2d624089a0540db",
+    "courseNo": "CS110",
+    "reviewId": "1703",
+    "classNo": "CS110.02",
+    "term": "2024-2025-2"
+  },
+  {
+    "name": "计算机体系结构I课程设计",
+    "id": "dc5dd8acce2a4a7491c862a2222ccdde",
+    "courseNo": "CS110P",
+    "reviewId": "1853",
+    "classNo": "CS110P.06",
+    "term": "2024-2025-2"
+  },
+  {
+    "name": "并行计算",
+    "id": "0a02d1907805473c8b5f20d977eac7c2",
+    "courseNo": "CS121",
+    "reviewId": "3148",
+    "classNo": "CS121.01",
+    "term": "2026-2027-1"
+  },
+  {
+    "name": "操作系统I",
+    "id": "27fa60c6a72d421eba0c1a36e7ceff9d",
+    "courseNo": "CS130",
+    "reviewId": "2260",
+    "classNo": "CS130.01",
+    "term": "2025-2026-1"
+  },
+  {
+    "name": "计算机图形学I",
+    "id": "d2d210841cf541018593203ad11a68a1",
+    "courseNo": "CS171",
+    "reviewId": "3024",
+    "classNo": "CS171.01",
+    "term": "2026-2027-1"
+  },
+  {
+    "name": "机器学习引论",
+    "id": "ebb7337cecab43d49dfebd69b72f2ca6",
+    "courseNo": "CS182",
+    "reviewId": "2726",
+    "classNo": "CS182.01",
+    "term": "2025-2026-2"
+  },
+  {
+    "name": "网络与信息安全",
+    "id": "05f30990874648e283fc873ac5fbdb6d",
+    "courseNo": "CS253",
+    "reviewId": "3201",
+    "classNo": "CS253.01",
+    "term": "2026-2027-1"
+  },
+  {
+    "name": "自然语言处理",
+    "id": "6ea6e6fd77d54f6b8aee7c4437304e0e",
+    "courseNo": "CS274A",
+    "reviewId": "1653",
+    "classNo": "CS274A.01",
+    "term": "2024-2025-2"
+  },
+  {
+    "name": "深度学习",
+    "id": "8dd309ae4dcf4e349a71d5145c7ae085",
+    "courseNo": "CS280",
+    "reviewId": "1782",
+    "classNo": "CS280.01",
+    "term": "2024-2025-2"
+  },
+  {
+    "name": "信号与系统",
+    "id": "6487c680f9664cec9026a5f232e5be38",
+    "courseNo": "EE150",
+    "reviewId": "2610",
+    "classNo": "EE150.02",
+    "term": "2025-2026-2"
+  },
+  {
+    "name": "科技文明通论",
+    "id": "452ef903a1f246438c53f6b8542a5460",
+    "courseNo": "GEHA1004",
+    "reviewId": "1609",
+    "classNo": "GEHA1004.02",
+    "term": "2024-2025-2"
+  },
+  {
+    "name": "启蒙时代英国小说的兴起",
+    "id": "39b029718e9646c8b2746d52da26fa44",
+    "courseNo": "GEHA1164",
+    "reviewId": "1105",
+    "classNo": "GEHA1164.02",
+    "term": "2024-2025-1"
+  },
+  {
+    "name": "毛泽东思想和中国特色社会主义理论体系概论（理论课）",
+    "id": "b5a0a4d4bbaf4c0285376e960ff6393e",
+    "courseNo": "GESS1023",
+    "reviewId": "2468",
+    "classNo": "GESS1023.02",
+    "term": "2025-2026-2"
+  },
+  {
+    "name": "马克思主义基本原理",
+    "id": "43c5bd4ee61a4ed38df78d2d5b70ca29",
+    "courseNo": "GESS1027",
+    "reviewId": "3466",
+    "classNo": "GESS1027.03",
+    "term": "2026-2027-1"
+  },
+  {
+    "name": "法治与社会",
+    "id": "27e04bbc050941ef8dfc4b3dcd998146",
+    "courseNo": "MT1013",
+    "reviewId": "1873",
+    "classNo": "MT1013.01",
+    "term": "2024-2025-3"
+  },
+  {
+    "name": "法治与社会",
+    "id": "cc6146a812a64acd8daaeba9ebedf4f5",
+    "courseNo": "MT1013",
+    "reviewId": "2716",
+    "classNo": "MT1013.01",
+    "term": "2025-2026-2"
+  },
+  {
+    "name": "领导力与管理评审",
+    "id": "8198b28f035a49f4b497b4b65e1eb6df",
+    "courseNo": "QMS2206",
+    "reviewId": "1443",
+    "classNo": "QMS2206.01",
+    "term": "2024-2025-1"
+  },
+  {
+    "name": "面向信息科学的概率论与数理统计",
+    "id": "4cdde5940bde4d008edd905ef34c82d3",
+    "courseNo": "SI140A",
+    "reviewId": "1090",
+    "classNo": "SI140A.01",
+    "term": "2024-2025-1"
+  },
+  {
+    "name": "强化学习",
+    "id": "9bbf14a6759a4d2b8a7514592228ac46",
+    "courseNo": "SI252",
+    "reviewId": "3431",
+    "classNo": "SI252.01",
+    "term": "2026-2027-1"
+  }
+]

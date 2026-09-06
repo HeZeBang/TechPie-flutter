@@ -10,9 +10,11 @@ import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
 import 'services/debug_logger.dart';
+import 'services/elrc_session_service.dart';
 import 'services/http_client.dart';
 import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
+import 'services/school_web_session_service.dart';
 import 'services/service_provider.dart';
 import 'services/storage_service.dart';
 import 'services/sync_service.dart';
@@ -254,6 +256,23 @@ class TechPieApp extends StatefulWidget {
 }
 
 class _TechPieAppState extends State<TechPieApp> {
+  // Anonymous recordings have no dependency on the primary account.
+  final _elrcSession = ElrcSessionService();
+  late final SchoolWebSessionService _schoolWebSession;
+
+  @override
+  void initState() {
+    super.initState();
+    _schoolWebSession = SchoolWebSessionService(widget.thirdPartyAuthService);
+  }
+
+  @override
+  void dispose() {
+    _schoolWebSession.dispose();
+    _elrcSession.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return DynamicColorBuilder(
@@ -280,6 +299,8 @@ class _TechPieAppState extends State<TechPieApp> {
         oaGymService: widget.oaGymService,
         uniAuthService: widget.uniAuthService,
         syncService: widget.syncService,
+        elrcSessionService: _elrcSession,
+        schoolWebSessionService: _schoolWebSession,
         child: MaterialApp(
           scaffoldMessengerKey: rootMessengerKey,
           navigatorObservers: [FeedbackRouteObserver()],
