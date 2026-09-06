@@ -52,9 +52,10 @@ void main() {
       ),
     );
 
-    final loginButton = find.widgetWithText(
-      FilledButton,
-      '通过 GeekPie Uni-Auth 登录',
+    // Older Flutter versions use a private subclass for FilledButton.icon.
+    final loginButton = find.ancestor(
+      of: find.text('通过 GeekPie Uni-Auth 登录'),
+      matching: find.byWidgetPredicate((widget) => widget is FilledButton),
     );
     await tester.ensureVisible(loginButton);
     await tester.pumpAndSettle();
