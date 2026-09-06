@@ -1,0 +1,8 @@
+# Copy this file to android/key.properties for local release builds.
+# android/key.properties and keystore files are ignored by Git.
+# Relative storeFile paths are resolved from the android directory.
+storeFile=C:/secure/offline/path/geekpie-techpie-release.p12
+storePassword=replace-with-keystore-password
+keyAlias=techpie-release
+keyPassword=replace-with-key-password
+storeType=PKCS12
