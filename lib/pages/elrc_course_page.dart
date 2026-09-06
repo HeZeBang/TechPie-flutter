@@ -38,7 +38,13 @@ class _ElrcCoursePageState extends State<ElrcCoursePage> {
   @override
   void didUpdateWidget(ElrcCoursePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.course.key != widget.course.key) {
+    final clientChanged = !identical(oldWidget.client, widget.client);
+    if (clientChanged) {
+      oldWidget.client.session.removeListener(_sessionChanged);
+      _generation = widget.client.session.generation;
+      widget.client.session.addListener(_sessionChanged);
+    }
+    if (clientChanged || oldWidget.course.key != widget.course.key) {
       _request++;
       _outline = null;
       _error = null;

@@ -21,6 +21,8 @@ class ElrcPlayerPage extends StatefulWidget {
   final ElrcCourse course;
   final ElrcRecordingLesson lesson;
   final ElrcClient client;
+
+  /// An injected playback stays owned by its caller; the page pauses it on exit.
   final ElrcPlayback? playback;
 
   @override
@@ -29,6 +31,7 @@ class ElrcPlayerPage extends StatefulWidget {
 
 class _ElrcPlayerPageState extends State<ElrcPlayerPage> with WidgetsBindingObserver {
   late ElrcPlayback _playback;
+  bool _ownsPlayback = false;
   bool _fullScreen = false;
   double? _dragPosition;
 
@@ -40,20 +43,41 @@ class _ElrcPlayerPageState extends State<ElrcPlayerPage> with WidgetsBindingObse
   }
 
   void _initialize() {
+    _ownsPlayback = widget.playback == null;
     _playback = widget.playback ??
         ElrcPlayback(
           course: widget.course,
           lesson: widget.lesson,
           client: widget.client,
         );
-    unawaited(_playback.load());
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _playback.setForeground(
+      lifecycle == null ||
+          lifecycle == AppLifecycleState.resumed ||
+          lifecycle == AppLifecycleState.inactive,
+    );
+    if (_ownsPlayback || (!_playback.loading && _playback.sources == null)) {
+      unawaited(_playback.load());
+    }
+  }
+
+  void _releasePlayback() {
+    if (_ownsPlayback) {
+      _playback.dispose();
+    } else {
+      _playback.setForeground(false);
+    }
   }
 
   @override
   void didUpdateWidget(ElrcPlayerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.lesson.id != widget.lesson.id || oldWidget.course.key != widget.course.key) {
-      _playback.dispose();
+    if (!identical(oldWidget.playback, widget.playback) ||
+        !identical(oldWidget.client, widget.client) ||
+        oldWidget.lesson.id != widget.lesson.id ||
+        oldWidget.course.key != widget.course.key) {
+      _releasePlayback();
+      _dragPosition = null;
       _initialize();
     }
   }
@@ -78,7 +102,7 @@ class _ElrcPlayerPageState extends State<ElrcPlayerPage> with WidgetsBindingObse
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _playback.dispose();
+    _releasePlayback();
     super.dispose();
   }
 

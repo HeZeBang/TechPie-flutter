@@ -27,6 +27,7 @@ jobs:
         run: |
           # Git-hosted OHOS plugins can receive transient HTTP 429 responses.
           # Preserve the final failure so analysis never runs without dependencies.
+          set -o pipefail
           log=$(mktemp)
           trap 'rm -f "$log"' EXIT
           for attempt in 1 2 3; do
