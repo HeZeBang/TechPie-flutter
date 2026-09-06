@@ -22,7 +22,31 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: flutter pub get
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          # Git-hosted OHOS plugins can receive transient HTTP 429 responses.
+          # Preserve the final failure so analysis never runs without dependencies.
+          log=$(mktemp)
+          trap 'rm -f "$log"' EXIT
+          for attempt in 1 2 3; do
+            if flutter pub get 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            if ! grep -Eiq 'HTTP (429|5[0-9]{2})|timed out|Connection reset|Could not resolve host|Failed host lookup|Network is unreachable|SocketException' "$log"; then
+              exit 1
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 20))
+              echo "::warning::Dependency download failed; retrying in ${delay}s (${attempt}/3)."
+              sleep "$delay"
+            fi
+          done
+          echo "::error::Dependency installation failed after 3 attempts."
+          exit 1
 
       - name: Analyze
-        run: flutter analyze
+        run: flutter analyze --no-pub
+
+      - name: Test
+        run: flutter test --no-pub --concurrency=1

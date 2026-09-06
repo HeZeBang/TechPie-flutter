@@ -179,7 +179,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       );
     }
 
-    _staggerController!.forward();
+    unawaited(_staggerController!.forward());
   }
 
   String _timeForCourse(Course course) {
@@ -408,6 +408,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 title: feature.description,
                 url: feature.url!,
                 cookies: cookies,
+                schoolSession: ServiceProvider.of(context).schoolWebSessionService,
+                allowedHostSuffixes: const {'shanghaitech.edu.cn'},
               ),
             ),
           );
