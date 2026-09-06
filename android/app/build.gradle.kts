@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -5,22 +7,97 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val releaseSigningEnvironment = mapOf(
-    "storeFile" to System.getenv("ANDROID_KEYSTORE_PATH"),
-    "storePassword" to System.getenv("ANDROID_KEYSTORE_PASSWORD"),
-    "keyAlias" to System.getenv("ANDROID_KEY_ALIAS"),
-    "keyPassword" to System.getenv("ANDROID_KEY_PASSWORD"),
-)
-val releaseSigningValueCount = releaseSigningEnvironment.values.count { !it.isNullOrBlank() }
+val releaseSigningProperties = Properties()
+val releaseSigningPropertiesFile = rootProject.file("key.properties")
 
-require(releaseSigningValueCount == 0 || releaseSigningValueCount == releaseSigningEnvironment.size) {
-    "Android release signing requires all ANDROID_KEYSTORE_* and ANDROID_KEY_* environment variables."
+if (releaseSigningPropertiesFile.isFile) {
+    releaseSigningPropertiesFile.inputStream().use(releaseSigningProperties::load)
+}
+
+fun releaseSigningValue(propertyName: String, environmentName: String): String? =
+    releaseSigningProperties.getProperty(propertyName)?.takeIf(String::isNotEmpty)
+        ?: System.getenv(environmentName)?.takeIf(String::isNotEmpty)
+
+val releaseStoreFilePath = releaseSigningValue(
+    "storeFile",
+    "ANDROID_KEYSTORE_PATH",
+)
+val releaseStorePassword = releaseSigningValue(
+    "storePassword",
+    "ANDROID_KEYSTORE_PASSWORD",
+)
+val releaseKeyAlias = releaseSigningValue(
+    "keyAlias",
+    "ANDROID_KEY_ALIAS",
+)
+val releaseKeyPassword = releaseSigningValue(
+    "keyPassword",
+    "ANDROID_KEY_PASSWORD",
+)
+val releaseStoreType = releaseSigningValue(
+    "storeType",
+    "ANDROID_KEYSTORE_TYPE",
+) ?: "PKCS12"
+val releaseStoreFile = releaseStoreFilePath?.let { rootProject.file(it) }
+val releaseSigningValueCount = listOf(
+    releaseStoreFilePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).count { !it.isNullOrBlank() }
+val releaseSigningConfigured = releaseSigningValueCount == 4
+val releaseTaskRequested = gradle.startParameter.taskNames.any {
+    it.contains("release", ignoreCase = true)
+}
+
+require(releaseSigningValueCount == 0 || releaseSigningConfigured) {
+    "Android release signing requires all ANDROID_KEYSTORE_* and ANDROID_KEY_* values."
+}
+
+if (releaseTaskRequested) {
+    val missingValues = buildList {
+        if (releaseStoreFilePath == null) add("storeFile / ANDROID_KEYSTORE_PATH")
+        if (releaseStorePassword == null) {
+            add("storePassword / ANDROID_KEYSTORE_PASSWORD")
+        }
+        if (releaseKeyAlias == null) add("keyAlias / ANDROID_KEY_ALIAS")
+        if (releaseKeyPassword == null) {
+            add("keyPassword / ANDROID_KEY_PASSWORD")
+        }
+    }
+
+    require(missingValues.isEmpty()) {
+        "Release signing is not configured. Missing: ${missingValues.joinToString()}. " +
+            "Copy android/key.properties.example to android/key.properties or set the " +
+            "ANDROID_* environment variables."
+    }
+    require(releaseStoreFile?.isFile == true) {
+        "Release keystore does not exist: ${releaseStoreFile?.absolutePath}"
+    }
 }
 
 android {
-    namespace = "com.example.techpie"
+    namespace = "club.geekpie.techpie"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
+
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                storeType = releaseStoreType
+
+                // Direct-distribution APKs must remain installable on old devices
+                // while also getting whole-APK integrity and signing-key rotation.
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -32,8 +109,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.techpie"
+        applicationId = "club.geekpie.techpie"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -42,20 +118,15 @@ android {
         versionName = flutter.versionName
     }
 
-    signingConfigs {
-        if (releaseSigningValueCount == releaseSigningEnvironment.size) {
-            create("release") {
-                storeFile = file(releaseSigningEnvironment.getValue("storeFile")!!)
-                storePassword = releaseSigningEnvironment.getValue("storePassword")
-                keyAlias = releaseSigningEnvironment.getValue("keyAlias")
-                keyPassword = releaseSigningEnvironment.getValue("keyPassword")
-            }
-        }
-    }
-
     buildTypes {
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

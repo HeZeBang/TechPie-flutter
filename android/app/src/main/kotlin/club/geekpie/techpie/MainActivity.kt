@@ -1,4 +1,4 @@
-package com.example.techpie
+package club.geekpie.techpie
 
 import android.Manifest
 import android.content.ContentUris
