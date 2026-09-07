@@ -3,8 +3,10 @@ import 'package:flutter/widgets.dart';
 import 'assignment_service.dart';
 import 'auth_service.dart';
 import 'debug_logger.dart';
+import 'elrc_session_service.dart';
 import 'oa_gym_service.dart';
 import 'schedule_service.dart';
+import 'school_web_session_service.dart';
 import 'storage_service.dart';
 import 'sync_service.dart';
 import 'theme_service.dart';
@@ -22,6 +24,8 @@ class ServiceProvider extends InheritedWidget {
   final OaGymService oaGymService;
   final UniAuthService uniAuthService;
   final SyncService syncService;
+  final ElrcSessionService? elrcSessionService;
+  final SchoolWebSessionService? schoolWebSessionService;
 
   const ServiceProvider({
     super.key,
@@ -35,6 +39,8 @@ class ServiceProvider extends InheritedWidget {
     required this.oaGymService,
     required this.uniAuthService,
     required this.syncService,
+    this.elrcSessionService,
+    this.schoolWebSessionService,
     required super.child,
   });
 
@@ -56,5 +62,7 @@ class ServiceProvider extends InheritedWidget {
       thirdPartyAuthService != oldWidget.thirdPartyAuthService ||
       oaGymService != oldWidget.oaGymService ||
       uniAuthService != oldWidget.uniAuthService ||
-      syncService != oldWidget.syncService;
+      syncService != oldWidget.syncService ||
+      elrcSessionService != oldWidget.elrcSessionService ||
+      schoolWebSessionService != oldWidget.schoolWebSessionService;
 }
