@@ -1,9 +1,11 @@
 name: Auto Tag iOS Release
 
 on:
-  pull_request_target:
+  workflow_run:
+    workflows:
+      - Analyze
     types:
-      - closed
+      - completed
 
 permissions:
   actions: write
@@ -20,30 +22,45 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: >
-      github.event.pull_request.merged == true &&
-      (github.event.pull_request.base.ref == 'main' || github.event.pull_request.base.ref == 'master') &&
-      (
-        contains(github.event.pull_request.labels.*.name, 'ios:release:patch') ||
-        contains(github.event.pull_request.labels.*.name, 'ios:release:minor') ||
-        contains(github.event.pull_request.labels.*.name, 'ios:release:major')
-      )
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master' &&
+      github.event.workflow_run.conclusion == 'success'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Determine next release tag
         id: next-tag
         shell: bash
         env:
-          PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
 
-          mapfile -t release_labels < <(jq -r '.[] | select(test("^ios:release:(patch|minor|major)$"))' <<< "$PR_LABELS_JSON")
+          pull_request="$(
+            gh api "/repos/${{ github.repository }}/commits/$TARGET_SHA/pulls" \
+              --jq "map(select(.merge_commit_sha == \"$TARGET_SHA\" and .base.ref == \"master\")) | .[0] // empty"
+          )"
+
+          if [[ -z "$pull_request" ]]; then
+            echo "No merged PR found for analyzed SHA $TARGET_SHA; skipping release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          mapfile -t release_labels < <(jq -r '.labels[].name | select(test("^ios:release:(patch|minor|major)$"))' <<< "$pull_request")
           release_label_count="${#release_labels[@]}"
+
+          if [[ "$release_label_count" -eq 0 ]]; then
+            echo "Merged PR has no iOS release label; skipping release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [[ "$release_label_count" -ne 1 ]]; then
             echo "Expected exactly one iOS release label, found $release_label_count:"
@@ -56,26 +73,52 @@ jobs:
 
           git fetch --force --tags origin
 
-          latest_tag="$(
+          mapfile -t release_tags < <(
             git tag --list 'ios-v*' |
               grep -E '^ios-v[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$' |
-              sed -E 's/^ios-v//' |
-              sort -V |
-              tail -n 1 ||
+              sort -V ||
               true
-          )"
+          )
+          release_tag_count="${#release_tags[@]}"
 
-          if [[ -z "$latest_tag" ]]; then
+          existing_release_tag=""
+          for release_tag in "${release_tags[@]}"; do
+            release_tag_sha="$(git rev-list -n 1 "refs/tags/$release_tag")"
+            if [[ "$release_tag_sha" == "$TARGET_SHA" ]]; then
+              existing_release_tag="$release_tag"
+            fi
+          done
+
+          if [[ -n "$existing_release_tag" ]]; then
+            echo "Analyzed SHA is already tagged as $existing_release_tag; skipping release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$release_tag_count" -eq 0 ]]; then
             major=0
             minor=0
             patch=0
-          elif [[ "$latest_tag" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\+([0-9]+)$ ]]; then
+          else
+            latest_release_tag="${release_tags[$((release_tag_count - 1))]}"
+            latest_tag="${latest_release_tag#ios-v}"
+            latest_release_sha="$(git rev-list -n 1 "refs/tags/$latest_release_tag")"
+
+            if ! git merge-base --is-ancestor "$latest_release_sha" "$TARGET_SHA"; then
+              echo "Latest release $latest_release_tag points to $latest_release_sha,"
+              echo "which is not an ancestor of analyzed SHA $TARGET_SHA."
+              echo "Refusing to publish older history as a newer version."
+              exit 1
+            fi
+
+            if [[ ! "$latest_tag" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\+([0-9]+)$ ]]; then
+              echo "Could not parse latest iOS release tag: $latest_release_tag"
+              exit 1
+            fi
+
             major="${BASH_REMATCH[1]}"
             minor="${BASH_REMATCH[2]}"
             patch="${BASH_REMATCH[3]}"
-          else
-            echo "Could not parse latest iOS release tag: ios-v$latest_tag"
-            exit 1
           fi
 
           case "$bump" in
@@ -107,21 +150,22 @@ jobs:
 
           {
             echo "bump=$bump"
+            echo "release=true"
             echo "tag=$next_tag"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create and push release tag
+        if: steps.next-tag.outputs.release == 'true'
         shell: bash
         env:
           NEXT_TAG: ${{ steps.next-tag.outputs.tag }}
-          TARGET_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          BASE_REF: master
         run: |
           set -euo pipefail
 
           if [[ -z "$TARGET_SHA" || "$TARGET_SHA" == "null" ]]; then
-            echo "Missing merged result SHA for PR #$PR_NUMBER"
+            echo "Missing analyzed SHA."
             exit 1
           fi
 
@@ -136,11 +180,12 @@ jobs:
           git push origin "refs/tags/$NEXT_TAG"
 
       - name: Dispatch iOS release workflow
+        if: steps.next-tag.outputs.release == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           NEXT_TAG: ${{ steps.next-tag.outputs.tag }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_REF: master
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
