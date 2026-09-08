@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/assignment.dart';
 import '../models/course.dart';
@@ -399,7 +398,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         feature.nativeEntry?.call(context);
         break;
       case FeatureMode.webviewWithCookie:
-        final cookies = _buildCookiesForFeature(feature.cookieType);
         if (feature.url != null) {
           unawaited(
             pushAdaptivePage<void>(
@@ -407,50 +405,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               builder: (_) => GenericWebViewPage(
                 title: feature.description,
                 url: feature.url!,
-                cookies: cookies,
               ),
             ),
           );
         }
         break;
     }
-  }
-
-  List<WebViewCookie> _buildCookiesForFeature(CookieType? cookieType) {
-    final cookies = <WebViewCookie>[];
-    if (cookieType == null) return cookies;
-
-    final sp = ServiceProvider.of(context);
-    // ecourse / student-leave / eams webviews all authenticate against the
-    // CpDaily session, whose cookies are exposed by the cpdaily session node
-    // (the CASTGC-bearing cookie set that webviews consume directly). Read
-    // it through the unified [CookieProvider] view so the source is abstracted.
-    final cp = sp.thirdPartyAuthService.cpdailyNode.cookieProvider;
-    if (cp == null || cp.isEmpty) return cookies;
-
-    final domain = cp.domain.isNotEmpty
-        ? cp.domain
-        : 'ids.shanghaitech.edu.cn';
-
-    for (final part in cp.cookies.split(';')) {
-      final idx = part.indexOf('=');
-      if (idx > 0) {
-        final key = part.substring(0, idx).trim();
-        final value = part.substring(idx + 1).trim();
-        if (key.isNotEmpty && value.isNotEmpty) {
-          cookies.add(
-            WebViewCookie(
-              name: key,
-              value: value,
-              domain: domain,
-              path: '/',
-            ),
-          );
-        }
-      }
-    }
-
-    return cookies;
   }
 
   Widget _buildTodayClasses(ThemeData theme, bool isLoggedIn) {
