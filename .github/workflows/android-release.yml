@@ -1,0 +1,216 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - "android-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Android release tag to build
+        required: true
+        type: string
+      artifact:
+        description: Package format
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - apk
+          - appbundle
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build signed Android release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: android-release
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Validate release request
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          REQUESTED_ARTIFACT: ${{ github.event_name == 'workflow_dispatch' && inputs.artifact || 'both' }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$REQUESTED_TAG" =~ ^android-v([0-9]+)\.([0-9]+)\.([0-9]+)\+([0-9]+)$ ]]; then
+            echo "::error::Invalid Android release tag: $REQUESTED_TAG"
+            echo "Expected format: android-vX.Y.Z+B"
+            exit 1
+          fi
+          build_name="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+          build_number="${BASH_REMATCH[4]}"
+
+          case "$REQUESTED_ARTIFACT" in
+            both)
+              build_apk=true
+              build_appbundle=true
+              ;;
+            apk)
+              build_apk=true
+              build_appbundle=false
+              ;;
+            appbundle)
+              build_apk=false
+              build_appbundle=true
+              ;;
+            *)
+              echo "::error::Unsupported package format: $REQUESTED_ARTIFACT"
+              exit 1
+              ;;
+          esac
+
+          tag_sha="$(git rev-list -n 1 "$REQUESTED_TAG")"
+          git fetch --no-tags origin main:refs/remotes/origin/main || true
+          git fetch --no-tags origin master:refs/remotes/origin/master || true
+
+          reachable=false
+          for branch in origin/main origin/master; do
+            if git rev-parse --verify --quiet "$branch" >/dev/null &&
+              git merge-base --is-ancestor "$tag_sha" "$branch"; then
+              reachable=true
+              break
+            fi
+          done
+
+          if [[ "$reachable" != true ]]; then
+            echo "::error::Release tag must point to a commit reachable from main or master."
+            exit 1
+          fi
+
+          {
+            echo "TAG_NAME=$REQUESTED_TAG"
+            echo "BUILD_NAME=$build_name"
+            echo "BUILD_NUMBER=$build_number"
+            echo "BUILD_APK=$build_apk"
+            echo "BUILD_APPBUNDLE=$build_appbundle"
+          } >> "$GITHUB_ENV"
+
+      - name: Set up Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: 3.27.4
+          cache: true
+
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Restore signing key
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" ]]; then
+            echo "::error::Missing android-release environment secret: ANDROID_KEYSTORE_BASE64"
+            exit 1
+          fi
+
+          umask 077
+          keystore_path="$RUNNER_TEMP/techpie-release.p12"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          test -s "$keystore_path"
+          echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
+
+      - name: Build signed packages
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          for secret_name in \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!secret_name:-}" ]]; then
+              echo "::error::Missing android-release environment secret: $secret_name"
+              exit 1
+            fi
+          done
+
+          if [[ "$BUILD_APK" == true ]]; then
+            flutter build apk \
+              --release \
+              --no-pub \
+              --split-per-abi \
+              --target-platform android-arm64 \
+              --build-name "$BUILD_NAME" \
+              --build-number "$BUILD_NUMBER"
+          fi
+
+          if [[ "$BUILD_APPBUNDLE" == true ]]; then
+            flutter build appbundle \
+              --release \
+              --no-pub \
+              --build-name "$BUILD_NAME" \
+              --build-number "$BUILD_NUMBER"
+          fi
+
+      - name: Verify signatures and collect artifacts
+        shell: bash
+        env:
+          EXPECTED_CERT_SHA256: 1c8155ee7940f2bef76816f24fce3044a7a083ed2032bb9dcef3de7be4284a98
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          apksigner="$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$apksigner"
+
+          if [[ "$BUILD_APK" == true ]]; then
+            apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            "$apksigner" verify --verbose --print-certs "$apk"
+            apk_cert="$("$apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')"
+            if [[ "$apk_cert" != "$EXPECTED_CERT_SHA256" ]]; then
+              echo "::error::APK signing certificate does not match the production certificate."
+              exit 1
+            fi
+            cp "$apk" "dist/TechPie-${TAG_NAME}-arm64.apk"
+          fi
+
+          if [[ "$BUILD_APPBUNDLE" == true ]]; then
+            appbundle=build/app/outputs/bundle/release/app-release.aab
+            jarsigner -verify "$appbundle"
+            appbundle_cert="$(keytool -printcert -jarfile "$appbundle" | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]' | head -n 1)"
+            if [[ "$appbundle_cert" != "$EXPECTED_CERT_SHA256" ]]; then
+              echo "::error::App Bundle signing certificate does not match the production certificate."
+              exit 1
+            fi
+            cp "$appbundle" "dist/TechPie-${TAG_NAME}.aab"
+          fi
+
+      - name: Upload signed packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: TechPie-${{ env.TAG_NAME }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
