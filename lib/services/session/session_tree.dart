@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../models/third_party_account.dart';
 import '../http_client.dart';
 import 'cookie_provider.dart';
+import 'session_failure.dart';
 import 'session_node.dart';
 
 /// The unified session tree.
@@ -114,8 +115,9 @@ class SessionTree extends ChangeNotifier {
   /// Feed an account mutation from the facade into the matching top-level
   /// node. Used by bind/unbind/replaceAll/updateRaw. Child nodes ignore
   /// this (they carry no account).
-  void setAccount(ThirdPartyPlatform p, ThirdPartyAccount? acc) {
-    nodeFor(p).setAccount(acc);
+  void setAccount(ThirdPartyPlatform p, ThirdPartyAccount? acc,
+      {bool renewed = false,}) {
+    nodeFor(p).setAccount(acc, renewed: renewed);
   }
 
   /// Hydrate a child node's derived cookie from persistent storage at boot.
@@ -160,7 +162,10 @@ class SessionTree extends ChangeNotifier {
     Future<CookieAction<T>> Function(CookieProvider provider) action,
   ) async {
     // First level: single-node renew-retry (handles initial minting + 401).
+    final generation = node.generation;
+    final parentEpoch = node.parent?.epoch;
     var result = await _renewRetry(node, action);
+    if (node.generation != generation) return null;
     if (result != null) return result;
 
     // Second level: for child nodes whose first-level retry returned null.
@@ -171,13 +176,19 @@ class SessionTree extends ChangeNotifier {
     // This prevents wasteful /auth/renew calls on transient backend errors.
     if (node.parent == null) return null;
     if (!node.lastRenewWasCredentialError) return null;
-    final parentOk = await node.parent!.renewIfNeeded(node.parent!.epoch);
-    if (!parentOk) return null;
+    final parentOk = await node.parent!.renewIfNeeded(parentEpoch!);
+    if (node.generation != generation) return null;
+    if (!parentOk) {
+      node.lastFailure = node.parent!.lastFailure;
+      return null;
+    }
     final childOk = await node.renew();
-    if (!childOk) return null;
+    if (!childOk || node.generation != generation) return null;
     final cp = node.cookieProvider;
     if (cp == null) return null;
     final retried = await action(cp);
+    if (node.generation != generation) return null;
+    if (retried.expired) node.lastFailure = SessionFailure.fromStatus(401);
     return retried.value;
   }
 
@@ -189,26 +200,30 @@ class SessionTree extends ChangeNotifier {
     SessionNode node,
     Future<CookieAction<T>> Function(CookieProvider provider) action,
   ) async {
+    final generation = node.generation;
     // If not available, try to mint credentials first (initial minting for
     // child nodes, or a no-op for top-level nodes that are already bound).
     if (!node.isAvailable) {
       final ok = await node.renew();
-      if (!ok) return null;
+      if (!ok || node.generation != generation) return null;
     }
     var cp = node.cookieProvider;
     if (cp == null) return null;
 
+    final beforeEpoch = node.epoch;
     var result = await action(cp);
+    if (node.generation != generation) return null;
     if (!result.expired) return result.value;
 
     // 401: renew if the cookie hasn't already been refreshed since we read it.
-    final beforeEpoch = node.epoch;
     final ok = await node.renewIfNeeded(beforeEpoch);
-    if (!ok) return null;
+    if (!ok || node.generation != generation) return null;
 
     cp = node.cookieProvider;
     if (cp == null) return null;
     final retried = await action(cp);
+    if (node.generation != generation) return null;
+    if (retried.expired) node.lastFailure = SessionFailure.fromStatus(401);
     return retried.value;
   }
 

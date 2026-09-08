@@ -6,7 +6,10 @@ import 'package:http/http.dart' as http;
 import '../models/oa_gym.dart';
 import 'api_base_url.dart';
 import 'auth_service.dart';
+import 'debug_logger.dart';
+import 'http_client.dart';
 import 'session/cookie_provider.dart';
+import 'session/session_failure.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
@@ -23,7 +26,8 @@ class OaGymService extends ChangeNotifier {
   final AuthService _auth;
   final StorageService _storage;
   final ThirdPartyAuthService _tpAuth;
-  final http.Client _client;
+  final LoggingHttpClient _client;
+  int _generation = -1;
 
   bool _sessionReady = false;
   bool _metadataReady = false;
@@ -37,7 +41,24 @@ class OaGymService extends ChangeNotifier {
     this._storage,
     this._tpAuth, {
     http.Client? client,
-  }) : _client = client ?? http.Client();
+    DebugLogger? logger,
+  }) : _client = LoggingHttpClient(logger ?? DebugLogger(), inner: client) {
+    _tpAuth.addListener(_onBindingChanged);
+  }
+
+  void _onBindingChanged() {
+    final generation = _tpAuth.cpdailyNode.generation;
+    if (_generation == generation) return;
+    _generation = generation;
+    clearSession();
+  }
+
+  @override
+  void dispose() {
+    _tpAuth.removeListener(_onBindingChanged);
+    _client.close();
+    super.dispose();
+  }
 
   String get _baseUrl => apiBaseUrl(_storage);
 
@@ -263,7 +284,7 @@ class OaGymService extends ChangeNotifier {
       'tgc': (raw['tgc'] as String?) ?? '',
       'cookies': cp.cookies,
       'sessionToken': (raw['sessionToken'] as String?) ?? '',
-      'userId': (raw['userId'] as String?) ?? '',
+      'userId': (raw['userId'] as String?) ?? cp.studentId,
       'tenantId': (raw['tenantId'] as String?) ?? '',
     };
   }
@@ -277,39 +298,54 @@ class OaGymService extends ChangeNotifier {
   ) async {
     _requireAuth();
     final node = _tpAuth.cpdailyNode;
-    final response = await _tpAuth.sessionTree.withCookie<http.Response>(
-      node,
-      (cp) async {
-        final body = {...extra, 'auth': _authPayload(cp)};
-        final r = await _client
-            .post(
-              Uri.parse('$_baseUrl/$path'),
-              headers: const {
-                'Content-Type': 'application/json; charset=UTF-8',
-              },
-              body: jsonEncode(body),
-            )
-            .timeout(const Duration(seconds: 30));
-        return CookieAction(r, expired: r.statusCode == 401);
-      },
-    );
-    if (response == null) {
-      throw OaGymException('当前 eGate 登录态已失效，请重新绑定 eGate');
+    final generation = node.generation;
+    final submitting = path == 'oa/gym/book';
+    Future<CookieAction<http.Response>> send(CookieProvider cp) async {
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/$path'),
+        headers: const {'Content-Type': 'application/json; charset=UTF-8'},
+        body: jsonEncode({...extra, 'auth': _authPayload(cp)}),
+        tag: path,
+      );
+      return CookieAction(response, expired: response.statusCode == 401);
     }
-    if (response.statusCode == 401) {
-      _sessionReady = false;
-    }
-    final decoded = response.body.isEmpty
-        ? <String, dynamic>{}
-        : (jsonDecode(response.body) as Map).cast<String, dynamic>();
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300 ||
-        decoded['success'] == false) {
+
+    try {
+      // Submission is sent once. A timeout cannot tell whether OA accepted it.
+      final http.Response? response;
+      if (submitting) {
+        final cp = node.cookieProvider;
+        if (cp == null) throw SessionFailure.fromStatus(401);
+        response = (await send(cp)).value;
+      } else {
+        response =
+            await _tpAuth.sessionTree.withCookie<http.Response>(node, send);
+      }
+      if (generation != node.generation) throw SessionFailure.changed;
+      if (response == null) {
+        throw node.lastFailure ?? SessionFailure.unavailable;
+      }
+      if (response.statusCode != 200) {
+        throw SessionFailure.fromStatus(response.statusCode);
+      }
+      final decoded =
+          (jsonDecode(response.body) as Map).cast<String, dynamic>();
+      if (decoded['success'] != true) throw SessionFailure.unavailable;
+      node.lastFailure = null;
+      return decoded;
+    } catch (error) {
+      final failure =
+          error is SessionFailure ? error : SessionFailure.unavailable;
+      if (generation == node.generation) {
+        node.lastFailure = failure;
+        if (failure.needsLogin) _sessionReady = false;
+      }
       throw OaGymException(
-        decoded['error'] as String? ?? 'OA 场馆服务请求失败，请稍后重试',
+        submitting && !failure.needsLogin
+            ? '未能确认预约结果，请先在 OA 查看预约记录，确认后再提交'
+            : failure.message,
       );
     }
-    return decoded;
   }
 
   Map<String, String> _stringMap(Object? value) {

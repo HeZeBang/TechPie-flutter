@@ -11,6 +11,7 @@ class LogEntry {
   final String? responseBody;
   final String? error;
   final String? tag;
+  final int? elapsedMs;
 
   LogEntry({
     required this.timestamp,
@@ -21,6 +22,7 @@ class LogEntry {
     this.responseBody,
     this.error,
     this.tag,
+    this.elapsedMs,
   });
 }
 
@@ -46,6 +48,7 @@ class DebugLogger extends ChangeNotifier {
     String? responseBody,
     String? error,
     String? tag,
+    int? elapsedMs,
   }) {
     if (!_enabled) return;
     if (_entries.length >= _maxEntries) {
@@ -60,19 +63,28 @@ class DebugLogger extends ChangeNotifier {
       responseBody: redactSensitive(responseBody),
       error: error,
       tag: tag,
+      elapsedMs: elapsedMs,
     );
     _entries.add(entry);
     notifyListeners();
     if (kDebugMode) {
       debugPrint(
         '[HTTP] ${entry.method} ${entry.url} '
-        '${entry.statusCode ?? '—'} ${entry.tag ?? ''}',
+        '${entry.statusCode ?? '—'} ${entry.tag ?? ''} ${entry.elapsedMs ?? 0}ms ${entry.error ?? ''}',
       );
     }
   }
 
   static const _sensitiveKeys = {
     'password',
+    'phone',
+    'mobile',
+    'code',
+    'chk',
+    'fhk',
+    'ticket',
+    'secretKey',
+    'authorization',
     'token',
     'tgc',
     'sessionToken',

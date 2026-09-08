@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -12,6 +11,7 @@ import 'api_base_url.dart';
 import 'auth_service.dart';
 import 'http_client.dart';
 import 'schedule_service.dart';
+import 'session/session_failure.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
@@ -67,6 +67,24 @@ class AssignmentService extends ChangeNotifier {
   }
 
   bool _autoRefetchEnabled = false;
+  bool _pendingBindingFetch = false;
+  int _request = 0;
+  String? _bindingStamp;
+  String get _currentStamp => '${_auth.isLoggedIn}:'
+      '${_tpAuth.cpdailyNode.generation}:${_tpAuth.gradescopeNode.generation}:'
+      '${_tpAuth.hydroNode.generation}';
+  Map<String, String> get _owners => {
+        if (_tpAuth.cpdailyNode.identityKey case final String owner) ...{
+          'blackboard': '$owner:blackboard',
+          'exam': '$owner:exam:${_schedule.selectedSemesterId ?? ""}',
+        },
+        if (_tpAuth.gradescopeNode.identityKey case final String owner)
+          'gradescope': owner,
+        if (_tpAuth.hydroNode.identityKey case final String owner)
+          'hydro': '$owner:${_tpAuth.hydroNode.account?.hydroOrigin ?? ""}',
+      };
+  String get _overrideOwner => jsonEncode(_owners);
+
   // Track the last semester we refetched for, so schedule notifies that
   // don't change the semester (loading flips, course_table updates, errors)
   // do NOT trigger a redundant assignment refetch.
@@ -76,6 +94,7 @@ class AssignmentService extends ChangeNotifier {
   /// explicit fetch from app boot has been kicked off.
   void enableAutoRefetch() {
     _autoRefetchEnabled = true;
+    _bindingStamp = _currentStamp;
     // Seed so the first schedule notify (which doesn't change the semester)
     // doesn't trigger a redundant refetch of the same semester.
     _lastRefetchedSemesterId = _schedule.selectedSemesterId;
@@ -83,8 +102,16 @@ class AssignmentService extends ChangeNotifier {
 
   /// Auth or binding changed — always refetch (tokens, accounts differ).
   void _onBindingsOrAuthChanged() {
-    if (!_autoRefetchEnabled) return;
+    if (!_autoRefetchEnabled || _bindingStamp == _currentStamp) return;
+    _bindingStamp = _currentStamp;
+    _request++;
+    _loading = false;
+    loadCached();
     _lastRefetchedSemesterId = _schedule.selectedSemesterId;
+    if (_schedule.suppressAssignmentRefetch) {
+      _pendingBindingFetch = true;
+      return;
+    }
     unawaited(fetchAssignments());
   }
 
@@ -99,8 +126,14 @@ class AssignmentService extends ChangeNotifier {
     if (!_autoRefetchEnabled) return;
     if (_schedule.suppressAssignmentRefetch) return;
     final currentSemester = _schedule.selectedSemesterId;
-    if (currentSemester == _lastRefetchedSemesterId) return;
+    if (currentSemester == _lastRefetchedSemesterId && !_pendingBindingFetch) {
+      return;
+    }
+    _pendingBindingFetch = false;
     _lastRefetchedSemesterId = currentSemester;
+    _request++;
+    _loading = false;
+    loadCached();
     unawaited(fetchAssignments());
   }
 
@@ -112,34 +145,37 @@ class AssignmentService extends ChangeNotifier {
     super.dispose();
   }
 
-
   /// Clear cached + in-memory deadlines (called on primary logout).
   Future<void> clearCache() async {
+    _request++;
+    _loading = false;
     _assignments = [];
     _platformErrors.clear();
     _error = null;
-    await _storage.clearCachedAssignments();
+    for (final owner in _owners.values) {
+      await _storage.clearCachedAssignments(owner: owner);
+    }
     notifyListeners();
   }
 
-  /// Hydrate from local cache so the UI doesn't flash empty on app start
-  /// or tab switch. Safe to call before login. Also loads overrides.
   void loadCached() {
-    _overrides = _storage.loadAssignmentOverrides();
-    final raw = _storage.loadCachedAssignments();
-    if (raw.isEmpty) {
-      notifyListeners();
-      return;
-    }
-    _assignments = raw.map((e) => Assignment.fromJson(e)).toList()
-      ..sort((a, b) => a.due.compareTo(b.due));
+    _platformErrors.clear();
+    _error = null;
+    _overrides = _storage.loadAssignmentOverrides(owner: _overrideOwner);
+    _assignments = [
+      for (final entry in _owners.entries)
+        ..._storage
+            .loadCachedAssignments(owner: entry.value)
+            .map(Assignment.fromJson)
+            .where((a) => a.platform.toLowerCase() == entry.key),
+    ]..sort((a, b) => a.due.compareTo(b.due));
     notifyListeners();
   }
 
   // -- Override mutators --
 
   Future<void> _persistOverrides() =>
-      _storage.saveAssignmentOverrides(_overrides);
+      _storage.saveAssignmentOverrides(_overrides, owner: _overrideOwner);
 
   Future<void> setCompleted(Assignment a, bool completed) async {
     _overrides.completed[AssignmentOverrides.keyFor(a)] = completed;
@@ -190,7 +226,7 @@ class AssignmentService extends ChangeNotifier {
 
   Future<void> clearAllOverrides() async {
     _overrides = AssignmentOverrides();
-    await _storage.clearAssignmentOverrides();
+    await _persistOverrides();
     notifyListeners();
   }
 
@@ -198,140 +234,62 @@ class AssignmentService extends ChangeNotifier {
         'Content-Type': 'application/json; charset=UTF-8',
       };
 
-  Future<void> fetchAssignments() async {
-    if (_loading) return; // 避免启动时 listener 链触发的并发重复调用
+  Future<void> fetchAssignments([String? onlyPlatform]) async {
+    if (_loading) return;
+    final request = ++_request;
+    final owners = _owners;
     _loading = true;
     _error = null;
-    _platformErrors.clear();
-    notifyListeners();
-
-    final successfulResults = <String, List<Assignment>>{};
-
-    final futures = <Future<void>>[];
-
-    if (_tpAuth.hasCpdailyBinding) {
-      futures.add(
-        _fetchBlackboard().then((items) {
-          if (items != null) successfulResults['blackboard'] = items;
-        }),
-      );
-      futures.add(
-        _fetchExamTable().then((items) {
-          if (items != null) successfulResults['exam'] = items;
-        }),
-      );
-    }
-
-    for (final acc in _tpAuth.accounts) {
-      switch (acc.platform) {
-        case ThirdPartyPlatform.gradescope:
-          futures.add(
-            _fetchGradescope(acc).then((items) {
-              if (items != null) successfulResults[acc.platform.id] = items;
-            }),
-          );
-          break;
-        case ThirdPartyPlatform.hydro:
-          futures.add(
-            _fetchHydro(acc).then((items) {
-              if (items != null) successfulResults[acc.platform.id] = items;
-            }),
-          );
-          break;
-        case ThirdPartyPlatform.cpdaily:
-          // cpdaily provides the CpDaily session, not deadline data — skip.
-          break;
-      }
-    }
-
-    try {
-      await Future.wait(futures);
-      final merged = _mergeAssignments(
-        successfulResults: successfulResults,
-      );
-
-      _assignments = merged;
-      await _storage.saveCachedAssignments(
-        merged.map((a) => a.toJson()).toList(),
-      );
-    } catch (e) {
-      _error = '同步失败，请检查网络或稍后重试';
-    } finally {
-      _loading = false;
-      notifyListeners();
-    }
-  }
-
-  List<Assignment> _mergeAssignments({
-    required Map<String, List<Assignment>> successfulResults,
-  }) {
-    final successfulPlatforms =
-        successfulResults.keys.map((p) => p.toLowerCase()).toSet();
-
-    final merged = <Assignment>[
-      for (final a in _assignments)
-        if (!successfulPlatforms.contains(a.platform.toLowerCase())) a,
-      ...successfulResults.values.expand((items) => items),
-    ]..sort((a, b) => a.due.compareTo(b.due));
-
-    return merged;
-  }
-
-  Future<void> fetchPlatform(String platformId) async {
-    _loading = true;
-    _error = null;
-    _platformErrors.remove(platformId);
-    notifyListeners();
-
-    final successfulResults = <String, List<Assignment>>{};
-    Future<void>? future;
-
-    if (platformId == 'blackboard' && _tpAuth.hasCpdailyBinding) {
-      future = _fetchBlackboard().then((items) {
-        if (items != null) successfulResults['blackboard'] = items;
-      });
-    } else if (platformId == 'exam' && _tpAuth.hasCpdailyBinding) {
-      future = _fetchExamTable().then((items) {
-        if (items != null) successfulResults['exam'] = items;
-      });
+    if (onlyPlatform == null) {
+      _platformErrors.clear();
     } else {
-      for (final acc in _tpAuth.accounts) {
-        if (acc.platform.id == platformId) {
-          if (acc.platform == ThirdPartyPlatform.gradescope) {
-            future = _fetchGradescope(acc).then((items) {
-              if (items != null) successfulResults[platformId] = items;
-            });
-          } else if (acc.platform == ThirdPartyPlatform.hydro) {
-            future = _fetchHydro(acc).then((items) {
-              if (items != null) successfulResults[platformId] = items;
-            });
-          }
-          break;
-        }
-      }
+      _platformErrors.remove(onlyPlatform);
     }
-
-    if (future != null) {
-      try {
-        await future;
-        final merged = _mergeAssignments(
-          successfulResults: successfulResults,
-        );
-
-        _assignments = merged;
-        await _storage.saveCachedAssignments(
-          merged.map((a) => a.toJson()).toList(),
-        );
-      } catch (e) {
-        _error = e.toString();
-      }
-    }
-
-    _loading = false;
     notifyListeners();
+    try {
+      final results = <String, List<Assignment>>{};
+      await Future.wait(
+        owners.keys
+            .where((p) => onlyPlatform == null || p == onlyPlatform)
+            .map((p) async {
+          final items = switch (p) {
+            'blackboard' => await _fetchBlackboard(),
+            'exam' => await _fetchExamTable(),
+            'gradescope' =>
+              await _fetchGradescope(_tpAuth.gradescopeNode.account!),
+            'hydro' => await _fetchHydro(_tpAuth.hydroNode.account!),
+            _ => null,
+          };
+          if (items != null) results[p] = items;
+        }),
+      );
+      if (request != _request) return;
+      // Failed platforms keep their last successful data, including on 401.
+      _assignments = [
+        for (final a in _assignments)
+          if (!results.containsKey(a.platform.toLowerCase())) a,
+        ...results.values.expand((items) => items),
+      ]..sort((a, b) => a.due.compareTo(b.due));
+      for (final entry in results.entries) {
+        await _storage.saveCachedAssignments(
+          entry.value.map((a) => a.toJson()).toList(),
+          owner: owners[entry.key],
+        );
+      }
+    } catch (_) {
+      if (request == _request) _error = '同步失败，请稍后重试';
+    } finally {
+      if (request == _request) {
+        _loading = false;
+        notifyListeners();
+      }
+    }
   }
+
+  Future<void> fetchPlatform(String platformId) => fetchAssignments(platformId);
 
   Future<List<Assignment>?> _fetchBlackboard() async {
+    final request = _request;
     final node = _tpAuth.elearningNode;
     // withCookie handles initial minting if the downstream cookie isn't set.
     if (!_tpAuth.hasCpdailyBinding) return null;
@@ -352,15 +310,22 @@ class AssignmentService extends ChangeNotifier {
           return CookieAction(r, expired: r.statusCode == 401);
         },
       );
-      if (resp == null) return null;
-      return _parseDeadlinesResponse(resp, 'blackboard');
+      if (request != _request) return null;
+      if (resp == null) throw node.lastFailure ?? SessionFailure.unavailable;
+      final items = _parseDeadlinesResponse(resp, 'blackboard');
+      if (items != null) node.markVerified();
+      return items;
     } catch (e) {
-      _platformErrors['blackboard'] = '同步失败，请检查网络或稍后重试';
+      if (request == _request) {
+        _platformErrors['blackboard'] =
+            e is SessionFailure ? e.message : '同步失败，请稍后重试';
+      }
       return null;
     }
   }
 
   Future<List<Assignment>?> _fetchExamTable() async {
+    final request = _request;
     final semesterId = _selectedSemesterId();
     final node = _tpAuth.eamsNode;
     if (!_tpAuth.hasCpdailyBinding ||
@@ -385,15 +350,20 @@ class AssignmentService extends ChangeNotifier {
           return CookieAction(r, expired: r.statusCode == 401);
         },
       );
-      if (resp == null) return null;
+      if (request != _request) return null;
+      if (resp == null) throw node.lastFailure ?? SessionFailure.unavailable;
       return _parseExamTableResponse(resp);
     } catch (e) {
-      _platformErrors['exam'] = '同步失败，请检查网络或稍后重试';
+      if (request == _request) {
+        _platformErrors['exam'] =
+            e is SessionFailure ? e.message : '同步失败，请稍后重试';
+      }
       return null;
     }
   }
 
   Future<List<Assignment>?> _fetchGradescope(ThirdPartyAccount acc) async {
+    final request = _request;
     final node = _tpAuth.gradescopeNode;
     if (!node.isAvailable) return null;
     try {
@@ -410,20 +380,21 @@ class AssignmentService extends ChangeNotifier {
           return CookieAction(r, expired: r.statusCode == 401);
         },
       );
-      if (resp == null) return null;
-      if (resp.statusCode == 401) {
-        await _tpAuth.unbind(ThirdPartyPlatform.gradescope);
-        _platformErrors['gradescope'] = 'token 已失效,请重新绑定';
-        return null;
-      }
+      if (request != _request) return null;
+      if (resp == null) throw node.lastFailure ?? SessionFailure.unavailable;
+
       return _parseDeadlinesResponse(resp, 'gradescope');
     } catch (e) {
-      _platformErrors['gradescope'] = '同步失败，请检查网络或稍后重试';
+      if (request == _request) {
+        _platformErrors['gradescope'] =
+            e is SessionFailure ? e.message : '同步失败，请稍后重试';
+      }
       return null;
     }
   }
 
   Future<List<Assignment>?> _fetchHydro(ThirdPartyAccount acc) async {
+    final request = _request;
     final origin = acc.hydroOrigin ?? 'https://acm.shanghaitech.edu.cn';
     final domains = acc.hydroDomains ?? const <String>[];
     if (domains.isEmpty) {
@@ -450,17 +421,14 @@ class AssignmentService extends ChangeNotifier {
                 'token': cp.cookies,
                 'args': {'url': url},
               }),
-              tag: 'deadlines:hydro:$domain',
+              tag: 'deadlines:hydro',
             );
             return CookieAction(r, expired: r.statusCode == 401);
           },
         );
-        if (resp == null) return null;
-        if (resp.statusCode == 401) {
-          await _tpAuth.unbind(ThirdPartyPlatform.hydro);
-          _platformErrors['hydro'] = 'token 已失效,请重新绑定';
-          return null;
-        }
+        if (request != _request) return null;
+        if (resp == null) throw node.lastFailure ?? SessionFailure.unavailable;
+
         final items = _parseDeadlinesResponse(resp, 'hydro');
         if (items != null) {
           all.addAll(items);
@@ -468,7 +436,10 @@ class AssignmentService extends ChangeNotifier {
           hadError = true;
         }
       } catch (e) {
-        _platformErrors['hydro'] = '同步失败，请检查网络或稍后重试';
+        if (request == _request) {
+          _platformErrors['hydro'] =
+              e is SessionFailure ? e.message : '同步失败，请稍后重试';
+        }
         hadError = true;
       }
     }
@@ -490,11 +461,15 @@ class AssignmentService extends ChangeNotifier {
 
     if (resp.statusCode != 200 || data['success'] != true) {
       _platformErrors[platformKey] =
-          (data['error'] as String?) ?? '同步失败 (HTTP ${resp.statusCode})';
+          SessionFailure.fromStatus(resp.statusCode).message;
       return null;
     }
 
-    final raw = data['data'] as List<dynamic>? ?? const [];
+    if (data['data'] is! List) {
+      _platformErrors[platformKey] = '服务返回异常，请稍后重试';
+      return null;
+    }
+    final raw = data['data'] as List<dynamic>;
     return raw
         .map((e) => Assignment.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -511,7 +486,7 @@ class AssignmentService extends ChangeNotifier {
 
     if (resp.statusCode != 200 || data['success'] != true) {
       _platformErrors['exam'] =
-          (data['error'] as String?) ?? '同步失败 (HTTP ${resp.statusCode})';
+          SessionFailure.fromStatus(resp.statusCode).message;
       return null;
     }
 
@@ -522,7 +497,11 @@ class AssignmentService extends ChangeNotifier {
     final batchName = payload['examBatchName']?.toString() ?? '考试';
     final semesterId =
         payload['semesterId']?.toString() ?? _selectedSemesterId() ?? '';
-    final raw = payload['exams'] as List<dynamic>? ?? const [];
+    if (payload['exams'] is! List) {
+      _platformErrors['exam'] = '服务返回异常，请稍后重试';
+      return null;
+    }
+    final raw = payload['exams'] as List<dynamic>;
 
     return raw
         .map((exam) => exam is Map ? exam.cast<String, dynamic>() : null)
@@ -603,7 +582,5 @@ class AssignmentService extends ChangeNotifier {
   }
 
   String? _selectedSemesterId() =>
-      _schedule.selectedSemesterId ??
-      _storage.selectedSemester ??
-      _schedule.semesterInfo?.defaultSemester;
+      _schedule.selectedSemesterId ?? _schedule.semesterInfo?.defaultSemester;
 }

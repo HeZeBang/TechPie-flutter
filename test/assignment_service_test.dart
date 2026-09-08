@@ -35,7 +35,14 @@ void main() {
       platform: 'gradescope',
       due: DateTime.utc(2026, 1, 20),
     );
-    await storage.saveCachedAssignments([oldBlackboard, oldGradescope]);
+    await storage.saveCachedAssignments(
+      [oldBlackboard],
+      owner: 'cpdaily:tenant:student:blackboard',
+    );
+    await storage.saveCachedAssignments(
+      [oldGradescope],
+      owner: 'gradescope::gradescope@example.com',
+    );
     // Primary account is the SSO identity session — no CASTGC on it.
     await storage.saveSession(
       UserSession(
@@ -125,10 +132,16 @@ void main() {
       service.assignments.map((a) => a.id),
       isNot(contains('blackboard-old')),
     );
-    expect(service.platformErrors['gradescope'], 'upstream failed');
+    expect(service.platformErrors['gradescope'], isNotNull);
 
-    final cachedIds =
-        storage.loadCachedAssignments().map((a) => a['id']).toList();
+    final cachedIds = [
+      ...storage.loadCachedAssignments(
+        owner: 'cpdaily:tenant:student:blackboard',
+      ),
+      ...storage.loadCachedAssignments(
+        owner: 'gradescope::gradescope@example.com',
+      ),
+    ].map((a) => a['id']).toList();
     expect(cachedIds, containsAll(['blackboard-new', 'gradescope-old']));
     expect(cachedIds, isNot(contains('blackboard-old')));
   });
@@ -138,7 +151,7 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
-    await storage.setSelectedSemester('263');
+    await storage.setSelectedSemester('263', owner: 'cpdaily:tenant:student');
     await storage.saveSession(
       UserSession(
         userId: 'user',
@@ -259,7 +272,12 @@ void main() {
         }),
       ),
     );
-    expect(storage.loadCachedAssignments().single['kind'], 'exam');
+    expect(
+      storage.loadCachedAssignments(
+        owner: 'cpdaily:tenant:student:exam:263',
+      ).single['kind'],
+      'exam',
+    );
   });
 }
 

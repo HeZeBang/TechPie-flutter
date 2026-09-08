@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,7 @@ import 'api_base_url.dart';
 import 'auth_service.dart';
 import 'http_client.dart';
 import 'session/cookie_provider.dart';
+import 'session/session_failure.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
@@ -16,283 +18,202 @@ class ScheduleService extends ChangeNotifier {
   final StorageService _storage;
   final LoggingHttpClient _http;
   final ThirdPartyAuthService _tpAuth;
-
   SemesterInfo? _semesterInfo;
   CourseTable? _courseTable;
   TermCalendar? _termCalendar;
   String? _selectedSemesterId;
+  String? _owner;
+  int _generation = -1;
+  int _request = 0;
+  bool _ready = false;
   bool _loading = false;
-  String? _error;
-  // While true, AssignmentService should NOT refetch on our notifies —
-  // selectSemester sets this during its own network fetch to avoid a
-  // concurrent exam_table + course_table race on EAMS's stateful session.
-  bool _suppressAssignmentRefetch = false;
-  bool get suppressAssignmentRefetch => _suppressAssignmentRefetch;
+  SessionFailure? _failure;
+  DateTime? _updatedAt;
 
-  String get _baseUrl => apiBaseUrl(_storage);
-
-  // Fallback used before the school calendar has been fetched at least once.
-  static const _fallbackTotalWeeks = 25;
+  ScheduleService(this._storage, this._http, AuthService _, this._tpAuth) {
+    _tpAuth.addListener(_onBindingChanged);
+  }
 
   SemesterInfo? get semesterInfo => _semesterInfo;
   CourseTable? get courseTable => _courseTable;
   TermCalendar? get termCalendar => _termCalendar;
   DateTime? get termBegin => _termCalendar?.termBegin;
   String? get selectedSemesterId => _selectedSemesterId;
+  String? get owner => _owner;
   bool get loading => _loading;
-  String? get error => _error;
-
-  /// Teaching weeks in the selected semester, i.e. the upper bound for week
-  /// navigation. Falls back to a generous default until the calendar loads.
-  int get totalWeeks =>
-      (_termCalendar?.allTeachWeeks ?? 0) > 0
-          ? _termCalendar!.allTeachWeeks
-          : _fallbackTotalWeeks;
-
-  ScheduleService(this._storage, this._http, AuthService _, this._tpAuth);
+  String? get error => _failure?.message;
+  SessionFailure? get failure => _failure;
+  DateTime? get updatedAt => _updatedAt;
+  // EAMS initializes its course and exam pages in the same server session.
+  bool get suppressAssignmentRefetch => _loading;
+  int get totalWeeks => (_termCalendar?.allTeachWeeks ?? 0) > 0
+      ? _termCalendar!.allTeachWeeks
+      : 25;
 
   int currentWeek() {
     final begin = termBegin;
     if (begin == null) return 1;
-    final diff = DateTime.now().difference(begin).inDays;
-    if (diff < 0) return 1;
-    return ((diff ~/ 7) + 1).clamp(1, totalWeeks).toInt();
+    return ((DateTime.now().difference(begin).inDays ~/ 7) + 1)
+        .clamp(1, totalWeeks)
+        .toInt();
   }
 
-  /// Whether "today" actually falls within the selected semester — false
-  /// before the calendar has loaded, before the term begins, or after its
-  /// last teaching week. Callers should hide "this week"/"today" indicators
-  /// when this is false, since there is no meaningful "current week".
   bool get isTodayInTerm {
     final begin = termBegin;
     if (begin == null) return false;
-    final diff = DateTime.now().difference(begin).inDays;
-    if (diff < 0) return false;
-    final week = (diff ~/ 7) + 1;
-    return week <= totalWeeks;
+    final days = DateTime.now().difference(begin).inDays;
+    return days >= 0 && days ~/ 7 < totalWeeks;
   }
 
-  Map<String, String> _jsonHeaders() => {
-        'Content-Type': 'application/json; charset=UTF-8',
-      };
+  void _readCache() {
+    _semesterInfo =
+        _owner == null ? null : _storage.loadSemesters(owner: _owner);
+    _selectedSemesterId = _owner == null
+        ? null
+        : _storage.selectedSemesterFor(_owner!) ??
+            _semesterInfo?.defaultSemester;
+    _readSemesterCache();
+  }
 
-  /// Auth payload built from a [CookieProvider] snapshot captured at request
-  /// time. The epoch captured alongside is what makes the renew-retry
-  /// storm-safe (see [_postWithRetry]).
-  Map<String, dynamic> _authBody(CookieProvider cp) => {
-        // eams downstream cookie; studentId comes from the cpdaily binding.
-        'studentId': _tpAuth.cpdailyNode.account?.sid ?? '',
-        'cookies': cp.cookies,
-      };
+  void _readSemesterCache() {
+    final id = _selectedSemesterId;
+    _courseTable = _owner == null || id == null
+        ? null
+        : _storage.loadCourseTable(id, owner: _owner);
+    _termCalendar = _owner == null || id == null
+        ? null
+        : _storage.loadTermCalendar(id, owner: _owner);
+    _updatedAt = _owner == null || id == null
+        ? null
+        : _storage.scheduleUpdatedAt(_owner!, id);
+  }
 
-  bool get _hasCpdailyBinding => _tpAuth.cpdailyNode.isAvailable;
+  void _onBindingChanged() {
+    final node = _tpAuth.cpdailyNode;
+    if (_generation == node.generation) return;
+    _generation = node.generation;
+    _owner = node.identityKey;
+    _request++;
+    _loading = false;
+    _failure = null;
+    _readCache();
+    notifyListeners();
+    if (_ready && _owner != null) unawaited(fetchAll());
+  }
 
   Future<void> loadCachedData() async {
-    _semesterInfo = _storage.loadSemesters();
-    _selectedSemesterId =
-        _storage.selectedSemester ?? _semesterInfo?.defaultSemester;
-    if (_selectedSemesterId != null) {
-      _courseTable = _storage.loadCourseTable(_selectedSemesterId!);
-    }
-    _termCalendar = _storage.loadTermCalendar(_selectedSemesterId ?? '');
-    notifyListeners();
-  }
-
-  Future<void> fetchAll() async {
-    if (_loading) return; // 避免启动时并发重复调用
-    if (!_hasCpdailyBinding) return;
-    _loading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      await fetchSemesters();
-      _selectedSemesterId ??= _semesterInfo?.defaultSemester;
-      if (_selectedSemesterId != null) {
-        await Future.wait([
-          fetchCourseTable(_selectedSemesterId!),
-          _fetchTermBeginForSemester(_selectedSemesterId!),
-        ]);
-      }
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _loading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> fetchSemesters() async {
-    final resp = await _postWithRetry(
-      '$_baseUrl/schedule/semesters',
-      const <String, dynamic>{},
-      'fetchSemesters',
-    );
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (data['success'] != true) {
-      throw Exception(data['error'] as String? ?? 'Failed to fetch semesters');
-    }
-
-    _semesterInfo = SemesterInfo.fromJson(data['data'] as Map<String, dynamic>);
-    await _storage.saveSemesters(_semesterInfo!);
-    notifyListeners();
-  }
-
-  Future<void> fetchCourseTable(String semesterId) async {
-    final extra = <String, dynamic>{
-      'semester_id': semesterId,
-      if (_semesterInfo?.tableId.isNotEmpty == true)
-        'table_id': _semesterInfo!.tableId,
-    };
-
-    final resp = await _postWithRetry(
-      '$_baseUrl/schedule/course_table',
-      extra,
-      'fetchCourseTable',
-    );
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (data['success'] != true) {
-      throw Exception(
-        data['error'] as String? ?? 'Failed to fetch course table',
-      );
-    }
-
-    _courseTable = CourseTable.fromApiResponse(
-      data['data'] as Map<String, dynamic>,
-    );
-    await _storage.saveCourseTable(semesterId, _courseTable!);
-    notifyListeners();
-  }
-
-  Future<void> _fetchTermBeginForSemester(String semesterId) async {
-    // Try to find the year and semester number from semesterInfo
-    if (_semesterInfo == null) return;
-
-    String? year;
-    String? semNum;
-    for (final yearEntry in _semesterInfo!.semesters.entries) {
-      for (final semEntry in yearEntry.value.entries) {
-        if (semEntry.value == semesterId) {
-          // yearEntry.key is like "2024-2025"
-          year = yearEntry.key.split('-').first;
-          // rank 0/1/2 (秋/春/暑) -> the term number the backend expects (1/2/3);
-          // unrecognized term keys fall back to spring (2).
-          final rank = semesterTermRank(semEntry.key);
-          semNum = rank < kSemesterTermNames.length
-              ? (rank + 1).toString()
-              : '2';
-          break;
-        }
-      }
-      if (year != null) break;
-    }
-
-    if (year == null || semNum == null) return;
-    await fetchTermBegin(year, semNum, semesterId);
-  }
-
-  Future<void> fetchTermBegin(
-    String year,
-    String semester,
-    String cacheKey,
-  ) async {
-    final extra = <String, dynamic>{'year': year, 'semester': semester};
-
-    final resp = await _postWithRetry(
-      '$_baseUrl/schedule/term_begin',
-      extra,
-      'fetchTermBegin',
-    );
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (data['success'] != true) {
-      throw Exception(data['error'] as String? ?? 'Failed to fetch term begin');
-    }
-
-    _termCalendar = TermCalendar.fromJson(data['data'] as Map<String, dynamic>);
-    await _storage.saveTermCalendar(cacheKey, _termCalendar!);
-    notifyListeners();
+    _onBindingChanged();
+    _ready = true;
   }
 
   Future<void> selectSemester(String semesterId) async {
-    // No-op if the semester is already selected.
-    if (_selectedSemesterId == semesterId) return;
+    if (_selectedSemesterId == semesterId || _owner == null) return;
+    _request++;
+    _loading = false;
     _selectedSemesterId = semesterId;
-    await _storage.setSelectedSemester(semesterId);
+    _readSemesterCache();
+    await _storage.setSelectedSemester(semesterId, owner: _owner);
+    await fetchAll();
+  }
 
-    // Load cached data for the new semester so the UI updates instantly.
-    _courseTable = _storage.loadCourseTable(semesterId);
-    _termCalendar = _storage.loadTermCalendar(semesterId);
-    // Notify the cached-swap UI update. AssignmentService._onScheduleChanged
-    // sees the semester changed and would fire fetchAssignments here — but
-    // that would race our own fetchCourseTable below (both hit
-    // courseTableForStd.action on the same EAMS session, and concurrent
-    // access to EAMS's stateful Spring/Struts session returns a partially
-    // initialized page → "Failed to extract numeric ids"). We suppress the
-    // assignment refetch during our own fetch and fire it once at the end.
-    _suppressAssignmentRefetch = true;
-    notifyListeners();
-
-    if (!_hasCpdailyBinding) {
-      _suppressAssignmentRefetch = false;
-      return;
-    }
-
+  Future<void> fetchAll() async {
+    if (_loading || _owner == null) return;
+    final owner = _owner!;
+    final request = ++_request;
     _loading = true;
-    _error = null;
+    _failure = null;
     notifyListeners();
-
     try {
-      await Future.wait([
-        fetchCourseTable(semesterId),
-        _fetchTermBeginForSemester(semesterId),
-      ]);
+      final semesters = SemesterInfo.fromJson(await _post('semesters', {}));
+      if (request != _request) return;
+      final id = _selectedSemesterId ?? semesters.defaultSemester;
+      if (id.isEmpty) throw SessionFailure.unavailable;
+      final tableData = await _post('course_table', {
+        'semester_id': id,
+        if (semesters.tableId.isNotEmpty) 'table_id': semesters.tableId,
+      });
+      if (tableData['courses'] is! List || tableData['periods'] is! List) {
+        throw SessionFailure.unavailable;
+      }
+      final table = CourseTable.fromApiResponse(tableData);
+      if (request != _request) return;
+      String? year;
+      String? term;
+      for (final entry in semesters.semesters.entries) {
+        for (final item in entry.value.entries) {
+          if (item.value == id) {
+            year = entry.key.split('-').first;
+            final rank = semesterTermRank(item.key);
+            term = rank < kSemesterTermNames.length ? '${rank + 1}' : '2';
+          }
+        }
+      }
+      if (year == null || term == null) throw SessionFailure.unavailable;
+      final calendar = TermCalendar.fromJson(
+        await _post('term_begin', {
+          'year': year,
+          'semester': term,
+        }),
+      );
+      if (request != _request) return;
+      final now = DateTime.now();
+      _semesterInfo = semesters;
+      _selectedSemesterId = id;
+      _courseTable = table;
+      _termCalendar = calendar;
+      _updatedAt = now;
+      await _storage.saveSemesters(semesters, owner: owner);
+      await _storage.setSelectedSemester(id, owner: owner);
+      await _storage.saveCourseTable(id, table, owner: owner);
+      await _storage.saveTermCalendar(id, calendar, owner: owner);
+      await _storage.saveScheduleUpdatedAt(owner, id, now);
     } catch (e) {
-      _error = e.toString();
+      if (request == _request) {
+        _failure = e is SessionFailure ? e : SessionFailure.unavailable;
+      }
     } finally {
-      _loading = false;
-      _suppressAssignmentRefetch = false;
-      // This final notify fires _onScheduleChanged again. Because
-      // _suppressAssignmentRefetch is now false, AssignmentService will
-      // refetch (the EAMS session is primed by our fetchCourseTable above,
-      // so exam_table succeeds on the first try).
-      notifyListeners();
+      if (request == _request) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
-  /// POST [url] with CpDaily auth + [extra] body fields. On 401 the eams
-  /// node is renewed exactly once (single-flighted across all concurrent
- /// callers) and the request retried with the fresh cookie. For a stale
- /// parent tgc, [SessionTree.withCookie] falls back to renewing the
- /// cpdaily parent then re-minting the eams cookie. Throws on any non-200
- /// after the retry budget is exhausted.
-  Future<http.Response> _postWithRetry(
-    String url,
-    Map<String, dynamic> extra,
-    String tag,
-  ) async {
+  Future<Map<String, dynamic>> _post(
+      String path, Map<String, dynamic> extra,) async {
     final node = _tpAuth.eamsNode;
-    final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
-      node,
-      (cp) async {
-        final body = {..._authBody(cp), ...extra};
-        final r = await _http.post(
-          Uri.parse(url),
-          headers: _jsonHeaders(),
-          body: jsonEncode(body),
-          tag: tag,
-        );
-        return CookieAction(
-          r,
-          expired: r.statusCode == 401,
-        );
-      },
-    );
-    if (resp == null) {
-      throw Exception('cpdaily session unavailable');
+    final generation = node.generation;
+    final response =
+        await _tpAuth.sessionTree.withCookie<http.Response>(node, (cp) async {
+      final r = await _http.post(
+        Uri.parse('${apiBaseUrl(_storage)}/schedule/$path'),
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: jsonEncode({..._authBody(cp), ...extra}),
+        tag: 'schedule:$path',
+      );
+      return CookieAction(r, expired: r.statusCode == 401);
+    });
+    if (generation != node.generation) throw SessionFailure.changed;
+    if (response == null) throw node.lastFailure ?? SessionFailure.unavailable;
+    if (response.statusCode != 200) {
+      throw SessionFailure.fromStatus(response.statusCode);
     }
-    if (resp.statusCode != 200) {
-      throw Exception('Request failed with status ${resp.statusCode}');
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (data['success'] != true || data['data'] is! Map) {
+      throw SessionFailure.unavailable;
     }
-    return resp;
+    return (data['data'] as Map).cast<String, dynamic>();
+  }
+
+  Map<String, dynamic> _authBody(CookieProvider cp) => {
+        'studentId': cp.studentId,
+        'cookies': cp.cookies,
+      };
+
+  @override
+  void dispose() {
+    _request++;
+    _tpAuth.removeListener(_onBindingChanged);
+    super.dispose();
   }
 }

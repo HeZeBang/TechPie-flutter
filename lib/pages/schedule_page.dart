@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/course.dart';
 import '../models/course_table.dart';
+import '../models/third_party_account.dart';
 import '../services/calendar/calendar_importer.dart';
 import '../services/ics/ics_export_service.dart';
 import '../services/ics/ics_file_saver.dart';
@@ -27,6 +28,7 @@ import '../widgets/desktop_select_popover.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'login_page.dart';
 import 'third_party_accounts_page.dart';
+import 'third_party_bind_page.dart';
 
 class SchedulePage extends StatefulWidget {
   const SchedulePage({super.key});
@@ -43,6 +45,8 @@ class _SchedulePageState extends State<SchedulePage> {
   int _currentWeek = 1;
   bool _initialized = false;
   bool _exportingCalendar = false;
+  String? _displayedSemester;
+  String? _displayedOwner;
 
   // Settings
   bool _showSaturday = true;
@@ -101,8 +105,13 @@ class _SchedulePageState extends State<SchedulePage> {
   void _rebuildCourses() {
     if (!mounted) return;
     setState(() {
-      _currentWeek =
-          _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
+      if (_displayedSemester != _schedule.selectedSemesterId ||
+          _displayedOwner != _schedule.owner) {
+        _currentWeek = _schedule.currentWeek();
+        _displayedSemester = _schedule.selectedSemesterId;
+        _displayedOwner = _schedule.owner;
+      }
+      _currentWeek = _currentWeek.clamp(1, _schedule.totalWeeks).toInt();
       final table = _schedule.courseTable;
       if (table != null) {
         if (table.periods.isNotEmpty) {
@@ -814,7 +823,9 @@ class _SchedulePageState extends State<SchedulePage> {
                 height: 300,
                 child: Center(
                   child: Text(
-                    '本周没有课程',
+                    _schedule.courseTable == null
+                        ? (_schedule.loading ? '正在获取课表…' : '课表尚未获取成功')
+                        : '本周没有课程',
                     style: theme.textTheme.bodyLarge?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -834,6 +845,33 @@ class _SchedulePageState extends State<SchedulePage> {
 
     return Column(
       children: [
+        if (_schedule.error != null)
+          ListTile(
+            dense: true,
+            title: Text(_schedule.error!),
+            subtitle: _schedule.updatedAt == null
+                ? null
+                : Text(
+                    '显示上次成功同步的课表 · ${_schedule.updatedAt!.toLocal().toString().substring(0, 16)}',
+                  ),
+            trailing: TextButton(
+              onPressed: _schedule.loading
+                  ? null
+                  : () async {
+                      if (_schedule.failure?.needsLogin == true) {
+                        final ok = await pushAdaptivePage<bool>(
+                          context,
+                          builder: (_) => const ThirdPartyBindPage(
+                              platform: ThirdPartyPlatform.cpdaily,),
+                        );
+                        if (ok != true || !mounted) return;
+                      }
+                      await _refresh();
+                    },
+              child:
+                  Text(_schedule.failure?.needsLogin == true ? '重新登录' : '重试'),
+            ),
+          ),
         _DayHeader(
           weekStart: _weekStartForWeek(week),
           today: today,
