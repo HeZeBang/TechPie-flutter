@@ -35,6 +35,21 @@ class StorageService {
   Future<void> setCampusWebOwner(String owner) =>
       _prefs.setString('campus_web_owner', owner);
 
+  Future<Map<String, dynamic>?> loadCalendarSubscription() async {
+    final raw = await _secure.read(key: 'calendar_subscription');
+    if (raw == null) return null;
+    try {
+      return (jsonDecode(raw) as Map).cast<String, dynamic>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveCalendarSubscription(Map<String, dynamic>? value) => value ==
+          null
+      ? _secure.delete(key: 'calendar_subscription')
+      : _secure.write(key: 'calendar_subscription', value: jsonEncode(value));
+
   // Secure session storage
   Future<void> saveSession(UserSession session) async {
     await _writeCredential(() =>

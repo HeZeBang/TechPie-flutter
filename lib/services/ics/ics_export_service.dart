@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../../models/course_table.dart';
@@ -108,7 +110,7 @@ class IcsExportService {
     for (final event in _expandCalendarEvents(table, termBegin)) {
       buffer.writeln('BEGIN:VEVENT');
       buffer.writeln(
-        'UID:${_buildUid(event.course, event.week, event.day, event.startPeriodIndex, event.endPeriodIndex)}',
+        'UID:${_buildUid(event.course, event.classDate, event.startPeriodIndex)}',
       );
       buffer.writeln(
         'DTSTAMP:${_formatUtcTimestamp(DateTime.now().toUtc())}',
@@ -139,7 +141,22 @@ class IcsExportService {
     }
 
     buffer.writeln('END:VCALENDAR');
-    return buffer.toString();
+    // RFC 5545 limits content lines to 75 octets, including continuation space.
+    return '${buffer.toString().trimRight().split('\n').map((line) {
+      final folded = StringBuffer();
+      var bytes = 0;
+      for (final rune in line.runes) {
+        final character = String.fromCharCode(rune);
+        final length = utf8.encode(character).length;
+        if (bytes + length > 75) {
+          folded.write('\r\n ');
+          bytes = 1;
+        }
+        folded.write(character);
+        bytes += length;
+      }
+      return folded.toString();
+    }).join('\r\n')}\r\n';
   }
 
   Future<SavedIcsFile> saveCalendar({
@@ -178,13 +195,11 @@ class IcsExportService {
 
   String _buildUid(
     EamsCourse course,
-    int week,
-    int day,
+    DateTime date,
     int startPeriod,
-    int endPeriod,
   ) {
     final seed =
-        '${course.name}-${course.classroom}-$week-$day-$startPeriod-$endPeriod';
+        '${course.name}-${date.year}-${date.month}-${date.day}-$startPeriod';
     return '${Uri.encodeComponent(seed)}@techpie';
   }
 
@@ -257,14 +272,16 @@ class IcsExportService {
 
   String _escapeText(String value) {
     return value
-        .replaceAll(r'', r'')
+        .replaceAll('\\', '\\\\')
         .replaceAll(';', r'\;')
         .replaceAll(',', r'\,')
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
         .replaceAll('\n', r'\n');
   }
 
   String _escapeAppleText(String value) {
-    return value.replaceAll(r'', r'').replaceAll('"', r'\"');
+    return _escapeText(value).replaceAll('"', r'\"');
   }
 }
 
