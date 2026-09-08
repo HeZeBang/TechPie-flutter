@@ -263,15 +263,6 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.1.3"
-  flutter_secure_storage_ohos:
-    dependency: "direct main"
-    description:
-      path: flutter_secure_storage_ohos
-      ref: "br_v9.2.2_ohos"
-      resolved-ref: cc6c28d6ea1d46ee83cc97d1328707946a1a2d38
-      url: "https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git"
-    source: git
-    version: "1.0.0"
   flutter_secure_storage_platform_interface:
     dependency: transitive
     description:
@@ -429,12 +420,11 @@ packages:
   package_info_plus:
     dependency: "direct main"
     description:
-      path: "packages/package_info_plus/package_info_plus"
-      ref: HEAD
-      resolved-ref: "8720286d1b4b664dbc1d87ba169125242d4f10fb"
-      url: "https://gitee.com/openharmony-sig/flutter_plus_plugins.git"
-    source: git
-    version: "4.2.0"
+      name: package_info_plus
+      sha256: a75164ade98cb7d24cfd0a13c6408927c6b217fa60dee5a7ff5c116a58f28918
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "8.0.2"
   package_info_plus_platform_interface:
     dependency: transitive
     description:
@@ -499,14 +489,6 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.3.0"
-  petitparser:
-    dependency: transitive
-    description:
-      name: petitparser
-      sha256: c15605cd28af66339f8eb6fbe0e541bfe2d1b72d5825efc6598f3e0a31b9ad27
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "6.0.2"
   platform:
     dependency: transitive
     description:
@@ -571,15 +553,6 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.4.1"
-  shared_preferences_ohos:
-    dependency: "direct overridden"
-    description:
-      path: "packages/shared_preferences/shared_preferences_ohos"
-      ref: HEAD
-      resolved-ref: "35fb467533e174411a117b2a030c15d2a3a9687c"
-      url: "https://gitee.com/openharmony-sig/flutter_packages.git"
-    source: git
-    version: "2.2.0"
   shared_preferences_platform_interface:
     dependency: transitive
     description:
@@ -705,15 +678,6 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.2.2"
-  url_launcher_ohos:
-    dependency: "direct overridden"
-    description:
-      path: "packages/url_launcher/url_launcher_ohos"
-      ref: HEAD
-      resolved-ref: "35fb467533e174411a117b2a030c15d2a3a9687c"
-      url: "https://gitee.com/openharmony-sig/flutter_packages.git"
-    source: git
-    version: "6.0.38"
   url_launcher_platform_interface:
     dependency: transitive
     description:
@@ -765,47 +729,34 @@ packages:
   webview_flutter:
     dependency: "direct main"
     description:
-      path: "packages/webview_flutter/webview_flutter"
-      ref: "br_webview_flutter-v4.13.0_ohos"
-      resolved-ref: de942e79c9057b32ad31106508bd87c0d60aef83
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      name: webview_flutter
+      sha256: c3e4fe614b1c814950ad07186007eff2f2e5dd2935eba7b9a9a1af8e5885f1ba
+      url: "https://pub.flutter-io.cn"
+    source: hosted
     version: "4.13.0"
   webview_flutter_android:
     dependency: transitive
     description:
-      path: "packages/webview_flutter/webview_flutter_android"
-      ref: "br_webview_flutter-v4.13.0_ohos"
-      resolved-ref: "4c55cac26756e0a3e74098e837f598587e2e8e83"
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
-    version: "4.7.0"
-  webview_flutter_ohos:
-    dependency: transitive
-    description:
-      path: "packages/webview_flutter/webview_flutter_ohos"
-      ref: "br_webview_flutter-v4.13.0_ohos"
-      resolved-ref: "4c55cac26756e0a3e74098e837f598587e2e8e83"
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      name: webview_flutter_android
+      sha256: f6e6afef6e234801da77170f7a1847ded8450778caf2fe13979d140484be3678
+      url: "https://pub.flutter-io.cn"
+    source: hosted
     version: "4.7.0"
   webview_flutter_platform_interface:
-    dependency: "direct overridden"
+    dependency: transitive
     description:
-      path: "packages/webview_flutter/webview_flutter_platform_interface"
-      ref: "br_webview_flutter-v4.13.0_ohos"
-      resolved-ref: de942e79c9057b32ad31106508bd87c0d60aef83
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      name: webview_flutter_platform_interface
+      sha256: f0dc2dc3a2b1e3a6abdd6801b9355ebfeb3b8f6cde6b9dc7c9235909c4a1f147
+      url: "https://pub.flutter-io.cn"
+    source: hosted
     version: "2.13.1"
   webview_flutter_wkwebview:
     dependency: transitive
     description:
-      path: "packages/webview_flutter/webview_flutter_wkwebview"
-      ref: "br_webview_flutter-v4.13.0_ohos"
-      resolved-ref: "4c55cac26756e0a3e74098e837f598587e2e8e83"
-      url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
-    source: git
+      name: webview_flutter_wkwebview
+      sha256: a3d461fe3467014e05f3ac4962e5fdde2a4bf44c561cb53e9ae5c586600fdbc3
+      url: "https://pub.flutter-io.cn"
+    source: hosted
     version: "3.22.0"
   win32:
     dependency: transitive
@@ -823,14 +774,6 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.1.0"
-  xml:
-    dependency: transitive
-    description:
-      name: xml
-      sha256: b015a8ad1c488f66851d762d3090a21c600e479dc75e68328c52774040cf9226
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "6.5.0"
   yaml:
     dependency: transitive
     description:

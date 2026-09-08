@@ -39,11 +39,6 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_secure_storage: ^9.2.4
-  flutter_secure_storage_ohos: # HarmonyOS 安全存储
-    git:
-      url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
-      path: flutter_secure_storage_ohos
-      ref: br_v9.2.2_ohos
   http: ^1.4.0
   intl: ^0.20.2
   open_filex: ^4.5.0
@@ -53,11 +48,7 @@ dependencies:
   shared_preferences: ^2.3.0
   url_launcher: ^6.3.0
   web: ^1.1.1
-  webview_flutter:
-    git:
-      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
-      path: packages/webview_flutter/webview_flutter
-      ref: br_webview_flutter-v4.13.0_ohos
+  webview_flutter: 4.13.0
 
 dependency_overrides:
   # Linux: use forked desktop_webview_window (WebKitGTK) for webview
@@ -67,39 +58,6 @@ dependency_overrides:
     git:
       url: https://github.com/HeZeBang/desktop_webview_window_fork.git
       ref: master
-
-  # OpenHarmony-SIG forks add OHOS platform implementations for plugins
-  # whose upstream pub.dev releases don't ship them. Without these, the
-  # MethodChannel calls on OHOS throw MissingPluginException at boot.
-  package_info_plus:
-    git:
-      url: https://gitee.com/openharmony-sig/flutter_plus_plugins.git
-      path: packages/package_info_plus/package_info_plus
-  shared_preferences_ohos:
-    git:
-      url: https://gitee.com/openharmony-sig/flutter_packages.git
-      path: packages/shared_preferences/shared_preferences_ohos
-  url_launcher_ohos:
-    git:
-      url: https://gitee.com/openharmony-sig/flutter_packages.git
-      path: packages/url_launcher/url_launcher_ohos
-  webview_flutter_platform_interface:
-    git:
-      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
-      path: packages/webview_flutter/webview_flutter_platform_interface
-      ref: br_webview_flutter-v4.13.0_ohos
-  # flutter_secure_storage:
-  #   git:
-  #     url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
-  #     path: flutter_secure_storage
-  # flutter_secure_storage_platform_interface:
-  #   git:
-  #     url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
-  #     path: flutter_secure_storage_platform_interface
-  # flutter_secure_storage_ohos:
-  #   git:
-  #     url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
-  #     path: flutter_secure_storage_ohos
 
 dev_dependencies:
   # The "flutter_lints" package below contains a set of recommended lints to

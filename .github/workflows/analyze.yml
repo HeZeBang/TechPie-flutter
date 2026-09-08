@@ -31,46 +31,17 @@ jobs:
           flutter-version: "3.27.4"
           cache: true
 
-      - name: Use non-OHOS dependencies for analysis
-        shell: bash
-        run: |
-          ruby <<'RUBY'
-          require "yaml"
-
-          manifest_path = "pubspec.yaml"
-          manifest = YAML.safe_load(File.read(manifest_path), aliases: true)
-          dependencies = manifest.fetch("dependencies")
-          overrides = manifest.fetch("dependency_overrides")
-
-          dependencies.delete("flutter_secure_storage_ohos")
-          dependencies["webview_flutter"] = "4.13.0"
-          %w[
-            package_info_plus
-            shared_preferences_ohos
-            url_launcher_ohos
-            webview_flutter_platform_interface
-          ].each { |package| overrides.delete(package) }
-
-          File.write(manifest_path, YAML.dump(manifest))
-
-          storage_path = "lib/services/storage_service.dart"
-          storage = File.read(storage_path)
-          ohos_import = "package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart"
-          upstream_import = "package:flutter_secure_storage/flutter_secure_storage.dart"
-          abort "Expected OHOS storage import was not found" unless storage.include?(ohos_import)
-          File.write(storage_path, storage.sub(ohos_import, upstream_import))
-          RUBY
-
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Verify analysis dependency graph
+      - name: Verify dependency graph
         shell: bash
         run: |
           if grep -Eqi 'gitee\.com/openharmony|gitcode\.com/openharmony|^[[:space:]]+[a-z0-9_]+_ohos:' pubspec.lock; then
-            echo "::error::The analysis dependency graph still contains an OHOS package or source."
+            echo "::error::The dependency graph still contains an OHOS package or source."
             exit 1
           fi
+          git diff --exit-code -- pubspec.lock
 
       - name: Analyze
         run: flutter analyze --no-pub
