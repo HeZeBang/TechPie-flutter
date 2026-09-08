@@ -177,16 +177,24 @@ jobs:
       - name: Verify signatures and collect artifacts
         shell: bash
         env:
+          EXPECTED_APPLICATION_ID: club.geekpie.techpie
           EXPECTED_CERT_SHA256: 1c8155ee7940f2bef76816f24fce3044a7a083ed2032bb9dcef3de7be4284a98
         run: |
           set -euo pipefail
 
           mkdir -p dist
+          aapt="$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           apksigner="$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$aapt"
           test -x "$apksigner"
 
           if [[ "$BUILD_APK" == true ]]; then
             apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            apk_application_id="$("$aapt" dump badging "$apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+            if [[ "$apk_application_id" != "$EXPECTED_APPLICATION_ID" ]]; then
+              echo "::error::APK application ID does not match the production application ID."
+              exit 1
+            fi
             "$apksigner" verify --verbose --print-certs "$apk"
             apk_cert="$("$apksigner" verify --print-certs "$apk" | sed -n 's/^.*certificate SHA-256 digest: //p' | sed -n '1p' | tr '[:upper:]' '[:lower:]')"
             if [[ "$apk_cert" != "$EXPECTED_CERT_SHA256" ]]; then
