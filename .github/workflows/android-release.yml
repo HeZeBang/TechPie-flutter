@@ -188,7 +188,7 @@ jobs:
           if [[ "$BUILD_APK" == true ]]; then
             apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
             "$apksigner" verify --verbose --print-certs "$apk"
-            apk_cert="$("$apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')"
+            apk_cert="$("$apksigner" verify --print-certs "$apk" | sed -n 's/^.*certificate SHA-256 digest: //p' | sed -n '1p' | tr '[:upper:]' '[:lower:]')"
             if [[ "$apk_cert" != "$EXPECTED_CERT_SHA256" ]]; then
               echo "::error::APK signing certificate does not match the production certificate."
               exit 1
