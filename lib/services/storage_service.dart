@@ -1,13 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
-// NOTE: import the OHOS package, not the upstream `flutter_secure_storage`.
-// Despite the name, `flutter_secure_storage_ohos` is a hard fork (declares
-// `library flutter_secure_storage;` and ships its own FlutterSecureStorage
-// class with OhosOptions) — it is NOT a federated platform implementation.
-// Importing the upstream facade falls through to UNSUPPORTED_PLATFORM on OHOS
-// and crashes at boot. Keep this import as-is on the OHOS branch.
-import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/assignment_overrides.dart';

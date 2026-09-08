@@ -6,14 +6,24 @@ on:
       - master
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: analyze-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   flutter-analyze:
     name: Flutter analyze
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -24,5 +34,14 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify dependency graph
+        shell: bash
+        run: |
+          if grep -Eqi 'gitee\.com/openharmony|gitcode\.com/openharmony|^[[:space:]]+[a-z0-9_]+_ohos:' pubspec.lock; then
+            echo "::error::The dependency graph still contains an OHOS package or source."
+            exit 1
+          fi
+          git diff --exit-code -- pubspec.lock
+
       - name: Analyze
-        run: flutter analyze
+        run: flutter analyze --no-pub
