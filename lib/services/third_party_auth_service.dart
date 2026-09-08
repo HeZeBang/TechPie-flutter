@@ -26,12 +26,19 @@ class ThirdPartyAuthService extends ChangeNotifier {
   bool _suppressSyncPush = false;
   // SMS context for cpdaily binding flow (set by sendCpdailySmsCode).
   Map<String, dynamic>? _cpdailySmsContext;
+  String? _cpdailySmsPhone;
+  int _smsAttempt = 0;
+
+  void cancelCpdailySms() {
+    _smsAttempt++;
+    _cpdailySmsContext = null;
+    _cpdailySmsPhone = null;
+  }
 
   late final SessionTree _tree;
   // Stable per-device id, loaded in [initialize]. Stamped onto every locally
   // mutated account so the cloud-sync LWW merge converges.
   String _deviceId = '';
-
 
   ThirdPartyAuthService(this._storage, this._http) {
     _tree = SessionTree(
@@ -95,6 +102,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// wants the push to bypass the throttle so a removal is immediately
   /// reflected in the cloud blob.
   Future<void> Function({bool force})? onBindingsChanged;
+
   /// Hook fired when a platform is deliberately unbound. Wired by
   /// [SyncService] to record a tombstone so the deletion survives the next
   /// LWW merge (instead of being resurrected by an older remote copy).
@@ -123,17 +131,22 @@ class ThirdPartyAuthService extends ChangeNotifier {
   Future<void> _persistAccount(ThirdPartyAccount updated) async {
     // Stamp the renewed/refreshed account with this device's id + a fresh
     // updatedAt so the cloud-sync LWW merge treats it as the newest version.
+    final node = _tree.nodeFor(updated.platform);
+    if (!identical(node.account, updated)) return;
+    final version = node.generation;
     final touched = _touch(updated);
     await _storage.saveThirdPartyAccount(touched);
+    if (node.generation != version) return;
     // Re-sync the node's in-memory copy so UI + cookieProvider see the
     // stamped version. setAccount notifies; _onTreeChanged funnels it.
-    _tree.setAccount(touched.platform, touched);
+    _tree.setAccount(touched.platform, touched, renewed: true);
   }
 
   /// Persist/clear a child node's derived cookie. Installed as the tree's
   /// [PersistDerivedCookie] callback so eams/elearning cookie minting and
   /// parent-renew cascades flow through storage.
   Future<void> _persistDerivedCookie(String nodeId, String? cookie) async {
+    if (!_initialized) return;
     if (cookie == null) {
       await _storage.clearDerivedCookie(nodeId);
     } else {
@@ -195,6 +208,29 @@ class ThirdPartyAuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<ThirdPartyAccount> _storeBinding(
+      ThirdPartyAccount account, int version,) async {
+    final node = _tree.nodeFor(account.platform);
+    if (node.generation != version) {
+      throw ThirdPartyBindException(account.platform, '账号已变更，请重新登录');
+    }
+    final previous = node.account;
+    final touched = _touch(account);
+    _tree.setAccount(account.platform, touched);
+    try {
+      await _storage.saveThirdPartyAccount(touched);
+    } catch (_) {
+      if (identical(node.account, touched)) {
+        _tree.setAccount(account.platform, previous);
+      }
+      rethrow;
+    }
+    if (!identical(node.account, touched)) {
+      throw ThirdPartyBindException(account.platform, '账号已变更，请重新登录');
+    }
+    return touched;
+  }
+
   Future<ThirdPartyAccount> bind({
     required ThirdPartyPlatform platform,
     required String account,
@@ -203,6 +239,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     List<String>? hydroDomains,
     bool autoRenew = false,
   }) async {
+    final version = _tree.nodeFor(platform).generation;
     final body = <String, dynamic>{
       'account': account,
       'password': password,
@@ -265,14 +302,12 @@ class ThirdPartyAuthService extends ChangeNotifier {
       password: autoRenew ? password : null,
     );
 
-    final touched = _touch(acc);
-    await _storage.saveThirdPartyAccount(touched);
-    _tree.setAccount(platform, touched);
-    return touched;
+    return _storeBinding(acc, version);
   }
 
   Future<void> unbind(ThirdPartyPlatform platform) async {
     _tree.setAccount(platform, null);
+    if (platform == ThirdPartyPlatform.cpdaily) cancelCpdailySms();
     await _storage.clearThirdPartyAccount(platform);
     // Unbinding cpdaily invalidates all downstream derived cookies.
     if (platform == ThirdPartyPlatform.cpdaily) {
@@ -341,8 +376,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
         if (next != null && cur != null && _accountEqual(cur, next)) continue;
         if (next == null && cur == null) continue;
         if (next != null) {
-          await _storage.saveThirdPartyAccount(next);
           _tree.setAccount(p, next);
+          await _storage.saveThirdPartyAccount(next);
         } else {
           // Clearing cpdaily invalidates downstream derived cookies.
           if (p == ThirdPartyPlatform.cpdaily && cur != null) {
@@ -379,8 +414,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
     final acc = _nodeAccount(platform);
     if (acc == null) return;
     final touched = _touch(acc.copyWith(raw: newRaw));
-    await _storage.saveThirdPartyAccount(touched);
     _tree.setAccount(platform, touched);
+    await _storage.saveThirdPartyAccount(touched);
   }
 
   // -- CpDaily SMS binding flow --
@@ -388,6 +423,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// Step 1: Send an SMS verification code for cpdaily binding.
   /// Reuses the existing /api/auth/mobile/send-sms endpoint.
   Future<void> sendCpdailySmsCode(String phone) async {
+    cancelCpdailySms();
+    final attempt = _smsAttempt;
     final resp = await _http.post(
       Uri.parse('$_baseUrl/auth/mobile/send-sms'),
       headers: {'Content-Type': 'application/json; charset=UTF-8'},
@@ -403,6 +440,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
       );
     }
 
+    if (attempt != _smsAttempt) return;
+    _cpdailySmsPhone = phone;
     _cpdailySmsContext = data['context'] as Map<String, dynamic>?;
   }
 
@@ -412,10 +451,12 @@ class ThirdPartyAuthService extends ChangeNotifier {
     required String code,
     bool autoRenew = false,
   }) async {
-    if (_cpdailySmsContext == null) {
+    final version = _tree.cpdaily.generation;
+    final attempt = _smsAttempt;
+    if (_cpdailySmsContext == null || _cpdailySmsPhone != phone) {
       throw ThirdPartyBindException(
         ThirdPartyPlatform.cpdaily,
-        'Send SMS code first',
+        '请先为当前手机号发送验证码',
       );
     }
 
@@ -470,11 +511,13 @@ class ThirdPartyAuthService extends ChangeNotifier {
       autoRenew: false, // SMS binding does not support auto-renew
     );
 
-    final touched = _touch(acc);
-    await _storage.saveThirdPartyAccount(touched);
-    _tree.setAccount(ThirdPartyPlatform.cpdaily, touched);
-    _cpdailySmsContext = null;
-    return touched;
+    if (attempt != _smsAttempt) {
+      throw ThirdPartyBindException(
+          ThirdPartyPlatform.cpdaily, '登录已取消，请重新发送验证码',);
+    }
+    final saved = await _storeBinding(acc, version);
+    cancelCpdailySms();
+    return saved;
   }
 
   /// Boot-time best-effort renewal: for each bound account whose token is

@@ -70,6 +70,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     authService,
     storageService,
     thirdPartyAuthService,
+    logger: debugLogger,
   );
   final assignmentService = AssignmentService(
     storageService,

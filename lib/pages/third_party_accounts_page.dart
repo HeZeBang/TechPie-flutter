@@ -12,7 +12,6 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
-import 'login_page.dart';
 import 'third_party_bind_page.dart';
 
 class ThirdPartyAccountsPage extends StatelessWidget {
@@ -52,7 +51,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
             )
           : const BlurredAppBar(title: Text('Linked Accounts')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([tpAuth, auth]),
+        listenable: Listenable.merge([tpAuth, auth, tpAuth.elearningNode]),
         builder: (context, _) {
           return ListView(
             padding: EdgeInsets.only(
@@ -77,7 +76,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
                   '绑定信息加密存储于设备本地 Keychain / EncryptedSharedPreferences,'
-                  '不会上传到服务器。',
+                  '开启云同步后会按同步设置加密备份。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -94,23 +93,28 @@ class ThirdPartyAccountsPage extends StatelessWidget {
 class _BlackboardTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final auth = ServiceProvider.of(context).authService;
-    final theme = Theme.of(context);
-    final loggedIn = auth.isLoggedIn;
-
+    final tpAuth = ServiceProvider.of(context).thirdPartyAuthService;
+    final verified = tpAuth.elearningNode.verifiedAt != null;
     return ListTile(
       leading: const Icon(Icons.school_outlined),
       title: const Text('Blackboard'),
       subtitle: Text(
-        loggedIn
-            ? '通过主账号自动启用 (CASTGC) · ${auth.session!.studentId.isNotEmpty ? auth.session!.studentId : auth.session!.userId}'
-            : '登录主账号后自动启用',
-        style: theme.textTheme.bodySmall,
+        !tpAuth.hasCpdailyBinding
+            ? '需要绑定 CpDaily / IDS'
+            : verified
+                ? '最近一次同步成功'
+                : '通过校园账号访问，尚未验证同步',
       ),
-      trailing: loggedIn
-          ? Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 20)
+      trailing: verified
+          ? const Icon(Icons.check_circle_outline)
           : const Icon(Icons.chevron_right),
-      onTap: loggedIn ? null : () => unawaited(presentLoginPage(context)),
+      onTap: () => unawaited(
+        pushAdaptivePage<bool>(
+          context,
+          builder: (_) =>
+              const ThirdPartyBindPage(platform: ThirdPartyPlatform.cpdaily),
+        ),
+      ),
     );
   }
 }
@@ -139,7 +143,7 @@ class _ThirdPartyTile extends StatelessWidget {
         subtitle: const Text('未绑定'),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => unawaited(
-          pushAdaptivePage<void>(
+          pushAdaptivePage<bool>(
             context,
             builder: (_) => ThirdPartyBindPage(platform: platform),
           ),
@@ -149,6 +153,7 @@ class _ThirdPartyTile extends StatelessWidget {
 
     final subtitleParts = <String>[
       acc.displayName,
+      '点击重新登录',
       if (acc.expireAt != null) _expireLabel(acc.expireAt!),
       if (acc.autoRenew) '自动更新 Token 已开启',
     ];
@@ -163,6 +168,12 @@ class _ThirdPartyTile extends StatelessWidget {
       title: Text(platform.label),
       subtitle: Text(subtitleParts.join('\n')),
       isThreeLine: subtitleParts.length > 1,
+      onTap: () => unawaited(
+        pushAdaptivePage<bool>(
+          context,
+          builder: (_) => ThirdPartyBindPage(platform: platform),
+        ),
+      ),
       trailing: isIos()
           ? AdaptiveConfirmationButton(
               label: 'Unbind',

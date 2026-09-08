@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
+import '../models/third_party_account.dart';
 import '../services/assignment_service.dart';
 import '../services/service_provider.dart';
 import '../utils/adaptive_motion.dart';
@@ -18,6 +19,7 @@ import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/swipeable_card.dart';
 import 'hidden_assignments_page.dart';
+import 'third_party_bind_page.dart';
 
 class AssignmentsPage extends StatefulWidget {
   const AssignmentsPage({super.key});
@@ -705,6 +707,18 @@ class _PlatformErrorsBanner extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: errors.entries.map((entry) {
+        final tpAuth = ServiceProvider.of(context).thirdPartyAuthService;
+        final platform = switch (entry.key) {
+          'gradescope' => ThirdPartyPlatform.gradescope,
+          'hydro' => ThirdPartyPlatform.hydro,
+          _ => ThirdPartyPlatform.cpdaily,
+        };
+        final node = switch (entry.key) {
+          'blackboard' => tpAuth.elearningNode,
+          'exam' => tpAuth.eamsNode,
+          _ => tpAuth.sessionTree.nodeFor(platform),
+        };
+        final needsLogin = node.lastFailure?.needsLogin == true;
         return Material(
           color: theme.colorScheme.errorContainer,
           child: Padding(
@@ -727,10 +741,23 @@ class _PlatformErrorsBanner extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.refresh, size: 20),
-                  onPressed: () => unawaited(service.fetchPlatform(entry.key)),
+                  icon:
+                      Icon(needsLogin ? Icons.login : Icons.refresh, size: 20),
+                  onPressed: service.loading
+                      ? null
+                      : () async {
+                          if (needsLogin) {
+                            final ok = await pushAdaptivePage<bool>(
+                              context,
+                              builder: (_) =>
+                                  ThirdPartyBindPage(platform: platform),
+                            );
+                            if (ok != true) return;
+                          }
+                          await service.fetchPlatform(entry.key);
+                        },
                   color: theme.colorScheme.onErrorContainer,
-                  tooltip: '重试 ${entry.key}',
+                  tooltip: needsLogin ? '重新登录 ${entry.key}' : '重试 ${entry.key}',
                 ),
               ],
             ),

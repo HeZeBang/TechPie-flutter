@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../models/oa_gym.dart';
+import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_button.dart';
@@ -15,6 +16,7 @@ import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'login_page.dart';
 import 'third_party_accounts_page.dart';
+import 'third_party_bind_page.dart';
 
 class OaGymPage extends StatefulWidget {
   const OaGymPage({super.key});
@@ -1026,7 +1028,9 @@ class _ProfileTabState extends State<_ProfileTab> {
     // meaning in the OA booking context.
     final displayName = cpdaily?.name?.isNotEmpty == true
         ? cpdaily!.name!
-        : (cpdaily?.account.isNotEmpty == true ? cpdaily!.account : 'TechPie 用户');
+        : (cpdaily?.account.isNotEmpty == true
+            ? cpdaily!.account
+            : 'TechPie 用户');
     final studentId = cpdaily?.sid ?? '';
     final avatarText = displayName.characters.firstOrNull ?? 'U';
 
@@ -1134,12 +1138,32 @@ class _MessageCard extends StatelessWidget {
       color: isError ? scheme.errorContainer : scheme.secondaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Text(
-          message,
-          style: TextStyle(
-            color:
-                isError ? scheme.onErrorContainer : scheme.onSecondaryContainer,
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message,
+                style: TextStyle(
+                    color: isError
+                        ? scheme.onErrorContainer
+                        : scheme.onSecondaryContainer,),),
+            if (isError &&
+                ServiceProvider.of(context)
+                        .thirdPartyAuthService
+                        .cpdailyNode
+                        .lastFailure
+                        ?.needsLogin ==
+                    true)
+              TextButton(
+                onPressed: () => unawaited(
+                  pushAdaptivePage<bool>(
+                    context,
+                    builder: (_) => const ThirdPartyBindPage(
+                        platform: ThirdPartyPlatform.cpdaily,),
+                  ),
+                ),
+                child: const Text('重新登录校园账号'),
+              ),
+          ],
         ),
       ),
     );

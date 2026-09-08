@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../../models/third_party_account.dart';
 import '../http_client.dart';
 import 'cookie_provider.dart';
+import 'session_failure.dart';
 
 /// Callback the facade ([ThirdPartyAuthService]) installs so a top-level
 /// node can persist a refreshed [ThirdPartyAccount] back into secure storage
@@ -125,9 +126,43 @@ class SessionNode extends ChangeNotifier {
 
   /// Set the bound account. Only meaningful for top-level nodes; calling on
   /// a non-top-level node is a no-op.
-  void setAccount(ThirdPartyAccount? acc) {
-    if (parent != null) return; // non-top-level: no account
+  String? get identityKey {
+    final acc = _account;
+    if (acc == null) return null;
+    final identity = (acc.sid?.isNotEmpty == true) ? acc.sid! : acc.account;
+    return '$id:${acc.raw['tenantId'] ?? ''}:$identity';
+  }
+
+  int _generation = 0;
+  int get generation => parent?.generation ?? _generation;
+  SessionFailure? lastFailure;
+  DateTime? verifiedAt;
+
+  void setAccount(ThirdPartyAccount? acc, {bool renewed = false}) {
+    if (parent != null) return;
+    final previous = _account;
+    final changed = previous?.token != acc?.token ||
+        previous?.sid != acc?.sid ||
+        previous?.account != acc?.account ||
+        previous?.raw['tgc'] != acc?.raw['tgc'] ||
+        previous?.raw['tenantId'] != acc?.raw['tenantId'] ||
+        previous?.raw['sessionToken'] != acc?.raw['sessionToken'];
     _account = acc;
+    if (changed && !renewed) {
+      _generation++;
+      _renewInFlight = null;
+      markRenewed();
+    }
+    if (changed) {
+      lastFailure = null;
+      verifiedAt = null;
+    }
+    notifyListeners();
+  }
+
+  void markVerified() {
+    lastFailure = null;
+    verifiedAt = DateTime.now();
     notifyListeners();
   }
 
@@ -172,7 +207,11 @@ class SessionNode extends ChangeNotifier {
     // Non-top-level: derived cookie
     final c = _derivedCookie;
     if (c == null || c.isEmpty) return null;
-    return CookieProvider(cookies: c, domain: _domain);
+    return CookieProvider(
+      cookies: c,
+      domain: _domain,
+      studentId: parent?.account?.sid ?? '',
+    );
   }
 
   /// Top-level credential extraction: cpdaily concatenates CASTGC onto the
@@ -211,14 +250,8 @@ class SessionNode extends ChangeNotifier {
   int _epoch = 0;
   Future<bool>? _renewInFlight;
 
-  /// Whether the last [doRenew] failure was a credential-level error
-  /// (HTTP 401 from the renew endpoint), as opposed to a server error (500)
-  /// or network issue. [SessionTree.withCookie] uses this to decide whether
-  /// the two-level parent-renew fallback is worth attempting: a 500 from the
-  /// downstream endpoint won't be fixed by re-minting the parent tgc, so we
-  /// skip the escalation entirely.
-  bool _lastRenewWasCredentialError = false;
-  bool get lastRenewWasCredentialError => _lastRenewWasCredentialError;
+  bool get lastRenewWasCredentialError =>
+      lastFailure?.kind == SessionFailureKind.expired;
 
   /// Current epoch. Bumped after every successful [renew]. Callers capture
   /// this when reading cookies and pass it to [renewIfNeeded].
@@ -249,6 +282,8 @@ class SessionNode extends ChangeNotifier {
   void onParentRenewed() {
     if (parent != null) {
       _derivedCookie = null;
+      _epoch++;
+      verifiedAt = null;
       // Clear persisted cookie too — it was minted from the old parent tgc
       // and is now invalid. The next withCookie call will re-mint.
       final pd = persistDerived;
@@ -278,7 +313,12 @@ class SessionNode extends ChangeNotifier {
   /// CpDaily keep-alive: POST /auth/renew with stored session fields.
   Future<bool> _renewCpdailySession() async {
     final acc = _account;
-    if (acc == null) return false;
+    if (acc == null) {
+      lastFailure =
+          const SessionFailure(SessionFailureKind.unbound, '请先绑定校园账号');
+      return false;
+    }
+    final version = generation;
     try {
       final resp = await http.post(
         Uri.parse('${baseUrl()}${renewPath ?? '/auth/renew'}'),
@@ -286,23 +326,30 @@ class SessionNode extends ChangeNotifier {
         body: jsonEncode({
           'sessionToken': acc.raw['sessionToken'] ?? '',
           'tgc': acc.raw['tgc'] ?? '',
-          'userId': acc.raw['userId'] ?? '',
+          'userId': acc.raw['userId'] ?? acc.sid ?? '',
           'tenantId': acc.raw['tenantId'] ?? '',
         }),
         tag: 'cpdailyRenew',
       );
-      if (resp.statusCode != 200) return false;
+      if (generation != version) return false;
+      if (resp.statusCode != 200) {
+        lastFailure = SessionFailure.fromStatus(resp.statusCode);
+        return false;
+      }
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      if (data['success'] != true) return false;
+      if (data['success'] != true) {
+        lastFailure = SessionFailure.unavailable;
+        return false;
+      }
 
       final newRaw = {
         ...acc.raw,
         'sessionToken':
             data['sessionToken'] as String? ?? acc.raw['sessionToken'] ?? '',
         'tgc': data['tgc'] as String? ?? acc.raw['tgc'] ?? '',
-        'userId': data['userId'] as String? ?? acc.raw['userId'] ?? '',
-        'tenantId':
-            data['tenantId'] as String? ?? acc.raw['tenantId'] ?? '',
+        'userId':
+            data['userId'] as String? ?? acc.raw['userId'] ?? acc.sid ?? '',
+        'tenantId': data['tenantId'] as String? ?? acc.raw['tenantId'] ?? '',
         'cookies': data['cookies'] as String? ?? acc.raw['cookies'] ?? '',
       };
       final updated = ThirdPartyAccount(
@@ -322,9 +369,12 @@ class SessionNode extends ChangeNotifier {
       );
       _account = updated;
       await persist(updated);
+      if (generation != version) return false;
+      lastFailure = null;
       markRenewed();
       return true;
     } catch (_) {
+      if (generation == version) lastFailure = SessionFailure.unavailable;
       return false;
     }
   }
@@ -333,9 +383,17 @@ class SessionNode extends ChangeNotifier {
   /// account+password, receive a fresh token.
   Future<bool> _renewWithPassword() async {
     final acc = _account;
-    if (acc == null || !acc.autoRenew) return false;
+    if (acc == null || !acc.autoRenew) {
+      lastFailure =
+          const SessionFailure(SessionFailureKind.expired, '登录状态已失效，请重新登录');
+      return false;
+    }
+    final version = generation;
     final pw = acc.password;
-    if (pw == null || pw.isEmpty) return false;
+    if (pw == null || pw.isEmpty) {
+      lastFailure = SessionFailure.fromStatus(401);
+      return false;
+    }
     try {
       final body = <String, dynamic>{
         'account': acc.account,
@@ -352,9 +410,16 @@ class SessionNode extends ChangeNotifier {
         body: jsonEncode(body),
         tag: 'thirdPartyRenew:$id',
       );
-      if (resp.statusCode != 200) return false;
+      if (generation != version) return false;
+      if (resp.statusCode != 200) {
+        lastFailure = SessionFailure.fromStatus(resp.statusCode);
+        return false;
+      }
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      if (data['success'] != true) return false;
+      if (data['success'] != true) {
+        lastFailure = SessionFailure.unavailable;
+        return false;
+      }
       final d = (data['data'] as Map?)?.cast<String, dynamic>() ?? const {};
       final token = d['token'] as String?;
       if (token == null || token.isEmpty) return false;
@@ -375,9 +440,12 @@ class SessionNode extends ChangeNotifier {
       );
       _account = renewed;
       await persist(renewed);
+      if (generation != version) return false;
+      lastFailure = null;
       markRenewed();
       return true;
     } catch (_) {
+      if (generation == version) lastFailure = SessionFailure.unavailable;
       return false;
     }
   }
@@ -385,9 +453,11 @@ class SessionNode extends ChangeNotifier {
   /// Downstream cookie minting (eams, elearning): POST the parent's tgc,
   /// receive a downstream cookie string.
   Future<bool> _renewWithParentCookie() async {
+    final version = generation;
+    final parentEpoch = parent?.epoch;
     final tgc = parent?.rawFields['tgc'] as String? ?? '';
     if (tgc.isEmpty) {
-      _lastRenewWasCredentialError = true;
+      lastFailure = SessionFailure.fromStatus(401);
       return false;
     }
     try {
@@ -400,13 +470,20 @@ class SessionNode extends ChangeNotifier {
       // 401 → parent tgc is stale/invalid → credential error (worth
       // escalating to parent renew). 5xx → server/transient failure →
       // NOT a credential error (escalation won't help).
-      _lastRenewWasCredentialError = resp.statusCode == 401;
-      if (resp.statusCode != 200) return false;
+      if (generation != version || parent?.epoch != parentEpoch) return false;
+      if (resp.statusCode != 200) {
+        lastFailure = SessionFailure.fromStatus(resp.statusCode);
+        return false;
+      }
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      if (data['success'] != true) return false;
+      if (data['success'] != true) {
+        lastFailure = SessionFailure.unavailable;
+        return false;
+      }
       final d = (data['data'] as Map?)?.cast<String, dynamic>() ?? const {};
       final cookie = d['token'] as String?;
       if (cookie == null || cookie.isEmpty) return false;
+      lastFailure = null;
       _derivedCookie = cookie;
       // Persist so cold start can skip the SSO bounce.
       final pd = persistDerived;
@@ -419,7 +496,7 @@ class SessionNode extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (_) {
-      _lastRenewWasCredentialError = false;
+      if (generation == version) lastFailure = SessionFailure.unavailable;
       return false;
     }
   }
@@ -428,7 +505,10 @@ class SessionNode extends ChangeNotifier {
   /// share one in-flight renew and observe the same result.
   Future<bool> renew() {
     if (_renewInFlight != null) return _renewInFlight!;
-    final f = doRenew().whenComplete(() => _renewInFlight = null);
+    late final Future<bool> f;
+    f = doRenew().whenComplete(() {
+      if (identical(_renewInFlight, f)) _renewInFlight = null;
+    });
     _renewInFlight = f;
     return f;
   }

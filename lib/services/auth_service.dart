@@ -67,12 +67,15 @@ class AuthService extends ChangeNotifier {
 
     try {
       final tokens = await _uniAuth.refresh(refreshToken);
-      _session = session.copyWith(
+      if (!identical(_session, session)) return false;
+      final renewed = session.copyWith(
         geekpieToken: tokens.accessToken,
         geekpieExpiresAt: tokens.expiresAt ?? session.geekpieExpiresAt,
         geekpieRefreshToken: tokens.refreshToken ?? refreshToken,
       );
-      await _storage.saveSession(_session!);
+      _session = renewed;
+      await _storage.saveSession(renewed);
+      if (!identical(_session, renewed)) return false;
       notifyListeners();
       return true;
     } catch (_) {
@@ -125,8 +128,8 @@ class AuthService extends ChangeNotifier {
   // -- Logout --
 
   Future<void> logout() async {
-    await _storage.clearSession();
     _session = null;
+    await _storage.clearSession();
     if (onLogout != null) {
       try {
         await onLogout!();

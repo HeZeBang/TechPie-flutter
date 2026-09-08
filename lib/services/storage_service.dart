@@ -23,7 +23,6 @@ class StorageService {
   static const _syncMasterKeyKey = 'sync_master_key'; // secure storage
   static const _deviceIdKey = 'device_id';
 
-
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
 
@@ -34,7 +33,8 @@ class StorageService {
 
   // Secure session storage
   Future<void> saveSession(UserSession session) async {
-    await _secure.write(key: _sessionKey, value: jsonEncode(session.toJson()));
+    await _writeCredential(() =>
+        _secure.write(key: _sessionKey, value: jsonEncode(session.toJson())),);
   }
 
   Future<UserSession?> loadSession() async {
@@ -44,7 +44,15 @@ class StorageService {
   }
 
   Future<void> clearSession() async {
-    await _secure.delete(key: _sessionKey);
+    await _writeCredential(() => _secure.delete(key: _sessionKey));
+  }
+
+  Future<void> _credentialWrites = Future.value();
+
+  Future<void> _writeCredential(Future<void> Function() action) {
+    final pending = _credentialWrites.then((_) => action());
+    _credentialWrites = pending.catchError((Object _) {});
+    return pending;
   }
 
   // Secure third-party account storage (one secure key per platform)
@@ -52,9 +60,11 @@ class StorageService {
   String _thirdPartyKey(ThirdPartyPlatform p) => '$_thirdPartyKeyPrefix${p.id}';
 
   Future<void> saveThirdPartyAccount(ThirdPartyAccount acc) async {
-    await _secure.write(
-      key: _thirdPartyKey(acc.platform),
-      value: jsonEncode(acc.toJson()),
+    await _writeCredential(
+      () => _secure.write(
+        key: _thirdPartyKey(acc.platform),
+        value: jsonEncode(acc.toJson()),
+      ),
     );
   }
 
@@ -99,12 +109,12 @@ class StorageService {
   }
 
   Future<void> clearThirdPartyAccount(ThirdPartyPlatform p) async {
-    await _secure.delete(key: _thirdPartyKey(p));
+    await _writeCredential(() => _secure.delete(key: _thirdPartyKey(p)));
   }
 
   Future<void> clearAllThirdPartyAccounts() async {
     for (final p in ThirdPartyPlatform.values) {
-      await _secure.delete(key: _thirdPartyKey(p));
+      await _writeCredential(() => _secure.delete(key: _thirdPartyKey(p)));
     }
   }
 
@@ -113,9 +123,11 @@ class StorageService {
   static const _derivedCookieKeyPrefix = 'derived_cookie_';
 
   Future<void> saveDerivedCookie(String nodeId, String cookie) async {
-    await _secure.write(
-      key: '$_derivedCookieKeyPrefix$nodeId',
-      value: cookie,
+    await _writeCredential(
+      () => _secure.write(
+        key: '$_derivedCookieKeyPrefix$nodeId',
+        value: cookie,
+      ),
     );
   }
 
@@ -124,12 +136,14 @@ class StorageService {
   }
 
   Future<void> clearDerivedCookie(String nodeId) async {
-    await _secure.delete(key: '$_derivedCookieKeyPrefix$nodeId');
+    await _writeCredential(
+        () => _secure.delete(key: '$_derivedCookieKeyPrefix$nodeId'),);
   }
 
   Future<void> clearAllDerivedCookies() async {
     for (final id in const ['eams', 'elearning']) {
-      await _secure.delete(key: '$_derivedCookieKeyPrefix$id');
+      await _writeCredential(
+          () => _secure.delete(key: '$_derivedCookieKeyPrefix$id'),);
     }
   }
 
@@ -194,29 +208,37 @@ class StorageService {
   static const _termBeginPrefix = 'schedule_term_begin_';
   static const _selectedSemesterKey = 'schedule_selected_semester';
 
-  Future<void> saveSemesters(SemesterInfo info) =>
-      _prefs.setString(_semestersKey, jsonEncode(info.toJson()));
+  String _ownedKey(String key, String? owner) =>
+      owner == null ? key : '$key:$owner';
 
-  SemesterInfo? loadSemesters() {
-    final raw = _prefs.getString(_semestersKey);
+  Future<void> saveSemesters(SemesterInfo info, {String? owner}) => _prefs
+      .setString(_ownedKey(_semestersKey, owner), jsonEncode(info.toJson()));
+
+  SemesterInfo? loadSemesters({String? owner}) {
+    final raw = _prefs.getString(_ownedKey(_semestersKey, owner));
     if (raw == null) return null;
     return SemesterInfo.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
-  Future<void> saveCourseTable(String semesterId, CourseTable table) => _prefs
-      .setString('$_courseTablePrefix$semesterId', jsonEncode(table.toJson()));
+  Future<void> saveCourseTable(String semesterId, CourseTable table,
+          {String? owner,}) =>
+      _prefs.setString(_ownedKey('$_courseTablePrefix$semesterId', owner),
+          jsonEncode(table.toJson()),);
 
-  CourseTable? loadCourseTable(String semesterId) {
-    final raw = _prefs.getString('$_courseTablePrefix$semesterId');
+  CourseTable? loadCourseTable(String semesterId, {String? owner}) {
+    final raw =
+        _prefs.getString(_ownedKey('$_courseTablePrefix$semesterId', owner));
     if (raw == null) return null;
     return CourseTable.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
-  Future<void> saveTermCalendar(String key, TermCalendar info) => _prefs
-      .setString('$_termBeginPrefix$key', jsonEncode(info.toJson()));
+  Future<void> saveTermCalendar(String key, TermCalendar info,
+          {String? owner,}) =>
+      _prefs.setString(
+          _ownedKey('$_termBeginPrefix$key', owner), jsonEncode(info.toJson()),);
 
-  TermCalendar? loadTermCalendar(String key) {
-    final raw = _prefs.getString('$_termBeginPrefix$key');
+  TermCalendar? loadTermCalendar(String key, {String? owner}) {
+    final raw = _prefs.getString(_ownedKey('$_termBeginPrefix$key', owner));
     if (raw == null) return null;
     try {
       return TermCalendar.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -226,17 +248,30 @@ class StorageService {
   }
 
   String? get selectedSemester => _prefs.getString(_selectedSemesterKey);
-  Future<void> setSelectedSemester(String id) =>
-      _prefs.setString(_selectedSemesterKey, id);
+  String? selectedSemesterFor(String owner) =>
+      _prefs.getString(_ownedKey(_selectedSemesterKey, owner));
+  Future<void> setSelectedSemester(String id, {String? owner}) =>
+      _prefs.setString(_ownedKey(_selectedSemesterKey, owner), id);
+
+  DateTime? scheduleUpdatedAt(String owner, String semester) {
+    final value = _prefs.getString('schedule_updated:$owner:$semester');
+    return value == null ? null : DateTime.tryParse(value);
+  }
+
+  Future<void> saveScheduleUpdatedAt(
+          String owner, String semester, DateTime at,) =>
+      _prefs.setString(
+          'schedule_updated:$owner:$semester', at.toIso8601String(),);
 
   // Assignments cache (non-sensitive — stored as JSON in SharedPreferences)
   static const _assignmentsKey = 'cached_assignments';
 
-  Future<void> saveCachedAssignments(List<Map<String, dynamic>> items) =>
-      _prefs.setString(_assignmentsKey, jsonEncode(items));
+  Future<void> saveCachedAssignments(List<Map<String, dynamic>> items,
+          {String? owner,}) =>
+      _prefs.setString(_ownedKey(_assignmentsKey, owner), jsonEncode(items));
 
-  List<Map<String, dynamic>> loadCachedAssignments() {
-    final raw = _prefs.getString(_assignmentsKey);
+  List<Map<String, dynamic>> loadCachedAssignments({String? owner}) {
+    final raw = _prefs.getString(_ownedKey(_assignmentsKey, owner));
     if (raw == null) return const [];
     try {
       final list = jsonDecode(raw) as List<dynamic>;
@@ -246,16 +281,19 @@ class StorageService {
     }
   }
 
-  Future<void> clearCachedAssignments() => _prefs.remove(_assignmentsKey);
+  Future<void> clearCachedAssignments({String? owner}) =>
+      _prefs.remove(_ownedKey(_assignmentsKey, owner));
 
   // Local user overrides on assignments (completion flips + hidden ids).
   static const _assignmentOverridesKey = 'assignment_overrides';
 
-  Future<void> saveAssignmentOverrides(AssignmentOverrides ov) =>
-      _prefs.setString(_assignmentOverridesKey, jsonEncode(ov.toJson()));
+  Future<void> saveAssignmentOverrides(AssignmentOverrides ov,
+          {String? owner,}) =>
+      _prefs.setString(
+          _ownedKey(_assignmentOverridesKey, owner), jsonEncode(ov.toJson()),);
 
-  AssignmentOverrides loadAssignmentOverrides() {
-    final raw = _prefs.getString(_assignmentOverridesKey);
+  AssignmentOverrides loadAssignmentOverrides({String? owner}) {
+    final raw = _prefs.getString(_ownedKey(_assignmentOverridesKey, owner));
     if (raw == null) return AssignmentOverrides();
     try {
       return AssignmentOverrides.fromJson(

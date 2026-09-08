@@ -40,12 +40,28 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
   String? _inlineError;
 
   // cpdaily SMS state
-  int _cpdailyLoginMethod = 0; // 0 = password, 1 = SMS
+  int _cpdailyLoginMethod = 1; // 0 = password, 1 = SMS
   final _cpdailyPhoneCtrl = TextEditingController();
   final _cpdailyCodeCtrl = TextEditingController();
   bool _sendingSms = false;
   int _smsCooldown = 0;
   Timer? _smsCooldownTimer;
+  ThirdPartyAuthService? _tpAuth;
+  String _smsPhone = '';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_tpAuth != null) return;
+    _tpAuth = ServiceProvider.of(context).thirdPartyAuthService;
+    _cpdailyPhoneCtrl.addListener(() {
+      final phone = _cpdailyPhoneCtrl.text.trim();
+      if (phone == _smsPhone) return;
+      _smsPhone = phone;
+      _tpAuth!.cancelCpdailySms();
+      _cpdailyCodeCtrl.clear();
+    });
+  }
 
   bool get _isHydro => widget.platform == ThirdPartyPlatform.hydro;
   bool get _isGradescope => widget.platform == ThirdPartyPlatform.gradescope;
@@ -60,6 +76,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
 
   @override
   void dispose() {
+    if (_isCpdaily) _tpAuth?.cancelCpdailySms();
     _accountCtrl.dispose();
     _passwordCtrl.dispose();
     _hydroOriginCtrl.dispose();
@@ -186,7 +203,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
           style: AdaptiveFeedbackStyle.success,
         );
       }
-      await maybePopAdaptivePage<void>(context);
+      await maybePopAdaptivePage<bool>(context, true);
     } on ThirdPartyBindException catch (e) {
       if (!mounted) return;
       if (isIos()) {
