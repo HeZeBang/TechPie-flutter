@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'assignment_service.dart';
 import 'auth_service.dart';
+import 'calendar_subscription_service.dart';
 import 'debug_logger.dart';
 import 'oa_gym_service.dart';
 import 'schedule_service.dart';
@@ -18,6 +19,7 @@ class ServiceProvider extends InheritedWidget {
   final ThemeService themeService;
   final ScheduleService scheduleService;
   final AssignmentService assignmentService;
+  final CalendarSubscriptionService calendarSubscriptionService;
   final ThirdPartyAuthService thirdPartyAuthService;
   final OaGymService oaGymService;
   final UniAuthService uniAuthService;
@@ -31,6 +33,7 @@ class ServiceProvider extends InheritedWidget {
     required this.themeService,
     required this.scheduleService,
     required this.assignmentService,
+    required this.calendarSubscriptionService,
     required this.thirdPartyAuthService,
     required this.oaGymService,
     required this.uniAuthService,
@@ -53,6 +56,7 @@ class ServiceProvider extends InheritedWidget {
       themeService != oldWidget.themeService ||
       scheduleService != oldWidget.scheduleService ||
       assignmentService != oldWidget.assignmentService ||
+      calendarSubscriptionService != oldWidget.calendarSubscriptionService ||
       thirdPartyAuthService != oldWidget.thirdPartyAuthService ||
       oaGymService != oldWidget.oaGymService ||
       uniAuthService != oldWidget.uniAuthService ||
