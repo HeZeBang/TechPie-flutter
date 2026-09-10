@@ -12,6 +12,7 @@ import 'package:webview_flutter/webview_flutter.dart'
         NavigationDecision,
         WebViewWidget;
 
+import '../services/auth_service.dart';
 import '../services/service_provider.dart';
 import '../services/third_party_auth_service.dart';
 
@@ -39,6 +40,8 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
   late final WebViewController _controller;
 
   ThirdPartyAuthService? _tpAuth;
+  AuthService? _auth;
+  String? _primaryUserId;
   int _generation = -1;
   String? _error;
 
@@ -46,7 +49,15 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_tpAuth != null) return;
-    _tpAuth = ServiceProvider.of(context).thirdPartyAuthService;
+    final services = ServiceProvider.of(context);
+    _tpAuth = services.thirdPartyAuthService;
+    _auth = services.authService;
+    _primaryUserId = _auth!.session?.userId;
+    _auth!.addListener(_primaryAccountChanged);
+    if (!_auth!.isLoggedIn) {
+      _error = '请先登录 TechPie';
+      return;
+    }
     _generation = _tpAuth!.cpdailyNode.generation;
     _tpAuth!.addListener(_bindingChanged);
     if (Platform.isLinux || Platform.isWindows) {
@@ -62,8 +73,18 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  bool get _authorized =>
+      _auth!.isLoggedIn && _auth!.session?.userId == _primaryUserId;
+
+  void _primaryAccountChanged() {
+    if (_authorized || !mounted) return;
+    setState(() => _error = '请先登录 TechPie');
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   @override
   void dispose() {
+    _auth?.removeListener(_primaryAccountChanged);
     _tpAuth?.removeListener(_bindingChanged);
     super.dispose();
   }
@@ -90,12 +111,18 @@ class _GenericWebViewPageState extends State<GenericWebViewPage> {
       await _controller.setJavaScriptMode(JavaScriptMode.unrestricted);
       await _controller.setNavigationDelegate(
         NavigationDelegate(
-          onNavigationRequest: (request) => NavigationDecision.navigate,
+          onNavigationRequest: (request) => _authorized
+              ? NavigationDecision.navigate
+              : NavigationDecision.prevent,
         ),
       );
 
       await _tpAuth!.campusWebSession.useIdsSession();
-      if (!mounted || _generation != _tpAuth!.cpdailyNode.generation) return;
+      if (!mounted ||
+          !_authorized ||
+          _generation != _tpAuth!.cpdailyNode.generation) {
+        return;
+      }
       await _controller.loadRequest(Uri.parse(widget.url));
     } catch (_) {
       if (mounted) setState(() => _error = '校园网页加载失败，请稍后重试');

@@ -393,6 +393,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _handleFeatureTap(Feature feature) {
+    if (!ServiceProvider.of(context).authService.isLoggedIn) {
+      unawaited(presentLoginPage(context));
+      return;
+    }
     switch (feature.mode) {
       case FeatureMode.native:
         feature.nativeEntry?.call(context);

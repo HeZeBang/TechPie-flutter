@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../services/auth_service.dart';
 import '../services/elrc_client.dart';
 import '../services/service_provider.dart';
 import '../services/third_party_auth_service.dart';
@@ -43,6 +44,8 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   bool _loginPresented = false;
   var _expectedMainFrameCancellations = 0;
   ThirdPartyAuthService? _tpAuth;
+  AuthService? _auth;
+  String? _primaryUserId;
   int _bindingGeneration = -1;
   bool _campusAttempted = false;
 
@@ -55,10 +58,39 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_tpAuth != null) return;
-    _tpAuth = ServiceProvider.of(context).thirdPartyAuthService;
+    final services = ServiceProvider.of(context);
+    _tpAuth = services.thirdPartyAuthService;
+    _auth = services.authService;
+    _primaryUserId = _auth!.session?.userId;
+    _auth!.addListener(_primaryAccountChanged);
+    if (!_auth!.isLoggedIn) {
+      _starting = false;
+      _error = '请先登录 TechPie';
+      return;
+    }
     _bindingGeneration = _tpAuth!.cpdailyNode.generation;
     _tpAuth!.addListener(_bindingChanged);
     if (_supported) unawaited(_prepare());
+  }
+
+  bool get _authorized =>
+      _auth!.isLoggedIn && _auth!.session?.userId == _primaryUserId;
+
+  void _primaryAccountChanged() {
+    if (_authorized || !mounted) return;
+    _request++;
+    _client?.dispose();
+    _client = null;
+    _controller = null;
+    setState(() {
+      _courses = null;
+      _lessons = null;
+      _selectedCourse = null;
+      _starting = false;
+      _webVisible = false;
+      _error = '请先登录 TechPie';
+    });
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   void _bindingChanged() {
@@ -87,8 +119,9 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
     final controller = WebViewController();
     final client = ElrcClient(controller);
     try {
-      await _tpAuth!.campusWebSession.prepare();
-      if (!mounted || generation != _bindingGeneration) {
+      await _tpAuth!.campusWebSession.useIdsSession();
+      _campusAttempted = true;
+      if (!mounted || !_authorized || generation != _bindingGeneration) {
         client.dispose();
         return;
       }
@@ -97,7 +130,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       await controller.setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (request) {
-            if (!identical(_controller, controller)) {
+            if (!_authorized || !identical(_controller, controller)) {
               return NavigationDecision.prevent;
             }
             final uri = Uri.tryParse(request.url);
@@ -146,7 +179,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
           },
         ),
       );
-      if (!mounted || generation != _bindingGeneration) {
+      if (!mounted || !_authorized || generation != _bindingGeneration) {
         client.dispose();
         return;
       }
@@ -302,7 +335,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
     try {
       await controller.loadRequest(_reviewUri);
     } catch (_) {
-      if (!mounted || request != _request) return;
+      if (!mounted || !_authorized || request != _request) return;
       setState(() {
         _starting = false;
         _sessionReloadRequired = true;
@@ -332,9 +365,11 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       if (!_campusAttempted) {
         _campusAttempted = true;
         final reused = await _tpAuth!.campusWebSession.useIdsSession();
-        _trace(reused
-            ? 'IDS cookie prepared; awaiting official SSO'
-            : 'manual login required',);
+        _trace(
+          reused
+              ? 'IDS cookie prepared; awaiting official SSO'
+              : 'manual login required',
+        );
       }
       if (!mounted || request != _request) return;
       await controller.loadRequest(_loginUri);
@@ -616,6 +651,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
 
   @override
   void dispose() {
+    _auth?.removeListener(_primaryAccountChanged);
     _request++;
     _tpAuth?.removeListener(_bindingChanged);
     _client?.dispose();

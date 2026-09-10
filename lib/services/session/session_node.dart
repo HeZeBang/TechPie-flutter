@@ -135,6 +135,16 @@ class SessionNode extends ChangeNotifier {
 
   int _generation = 0;
   int get generation => parent?.generation ?? _generation;
+
+  /// Discard pending requests without deleting the saved account binding.
+  void cancelPendingRequests() {
+    _generation++;
+    _renewInFlight = null;
+    for (final child in _children) {
+      child.cancelPendingRequests();
+    }
+  }
+
   SessionFailure? lastFailure;
   DateTime? verifiedAt;
 
