@@ -52,7 +52,8 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   bool get _supported =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.android);
+          defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.macOS);
 
   @override
   void didChangeDependencies() {
@@ -559,7 +560,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
 
   Widget _content() {
     if (!_supported) {
-      return const Center(child: Text('请在 iPhone 或 Android 手机中观看录播'));
+      return const Center(child: Text('当前平台暂不支持课程录播'));
     }
     if (_error != null && _courses == null && !_webVisible) {
       return _message(_error!, _retryCourses);
@@ -692,12 +693,23 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
           body: SafeArea(
             child: Stack(
               children: [
-                Positioned.fill(child: _content()),
+                // macOS suspends an Offstage WKWebView before asynchronous
+                // fetches finish. Keep it attached beneath the native content.
                 if (_controller != null)
                   Positioned.fill(
-                    child: Offstage(
-                      offstage: !_webVisible,
-                      child: WebViewWidget(controller: _controller!),
+                    child: IgnorePointer(
+                      ignoring: !_webVisible,
+                      child: ExcludeSemantics(
+                        excluding: !_webVisible,
+                        child: WebViewWidget(controller: _controller!),
+                      ),
+                    ),
+                  ),
+                if (!_webVisible)
+                  Positioned.fill(
+                    child: ColoredBox(
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                      child: _content(),
                     ),
                   ),
                 if (_busy &&

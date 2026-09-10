@@ -118,7 +118,6 @@ class CampusWebSession {
     final owner = _owner;
     final revision = _authRevision;
     final generation = node.generation;
-    final epoch = node.epoch;
     return _queue(() async {
       await _syncOwner();
       void checkOwner() {
@@ -132,18 +131,19 @@ class CampusWebSession {
 
       checkOwner();
       if (node.account == null) return false;
-      // Reuse the existing single-flight renewal before handing IDS its TGC.
-      final renewed = await node.renewIfNeeded(epoch);
+      final manager = CookieManager.instance();
+      final ids = WebUri('https://ids.shanghaitech.edu.cn/authserver/');
+      // A browser login can be newer than the saved CpDaily binding. Preserve
+      // it and let IDS validate the session through the service's SSO redirect.
+      final existing = await manager.getCookie(url: ids, name: 'CASTGC');
       checkOwner();
-      if (!renewed) {
-        if (node.lastRenewWasCredentialError) return false;
-        throw node.lastFailure ?? SessionFailure.unavailable;
-      }
+      final currentTgc = existing?.value;
+      if (currentTgc is String && currentTgc.isNotEmpty) return true;
       final tgc = node.rawFields['tgc'] as String? ?? '';
       if (tgc.isEmpty) return false;
       for (final name in const ['CASTGC', 'AUTHTGC']) {
-        final saved = await CookieManager.instance().setCookie(
-          url: WebUri('https://ids.shanghaitech.edu.cn/authserver/'),
+        final saved = await manager.setCookie(
+          url: ids,
           name: name,
           value: tgc,
           path: '/authserver',

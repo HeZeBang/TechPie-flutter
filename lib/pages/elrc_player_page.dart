@@ -160,16 +160,19 @@ JSON.stringify((() => {
       return;
     }
 
+    final isWebKit = defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+
     // WKWebView reports direct video documents as WebKit error 204 when AVKit
     // takes over playback. The video is usable; this callback is its success path.
-    if (defaultTargetPlatform == TargetPlatform.iOS && failure.errorCode == 204) {
+    if (isWebKit && failure.errorCode == 204) {
       _mediaReady(_loadGeneration, 'native player accepted the media document');
       return;
     }
 
     // Replacing a media document can cancel the retired navigation.
     if (failure.errorCode == -999 ||
-        (defaultTargetPlatform == TargetPlatform.iOS && failure.errorCode == 102)) {
+        (isWebKit && failure.errorCode == 102)) {
       _trace('ignored retired media navigation');
       return;
     }
