@@ -87,6 +87,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     await assignmentService.clearCache();
     await assignmentService.clearAllOverrides();
     oaGymService.clearSession();
+    await thirdPartyAuthService.campusWebSession.prepare();
   };
 
   // Cloud-sync push hook: after any binding mutation, best-effort push the new
@@ -114,6 +115,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // Hydrate everything from caches so the first frame paints with data.
   await authService.loadSession();
   await thirdPartyAuthService.initialize();
+  thirdPartyAuthService.campusWebSession.attachAuth(authService);
   await syncService.loadCachedKey();
   assignmentService.loadCached();
   await scheduleService.loadCachedData();

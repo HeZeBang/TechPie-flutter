@@ -4,7 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../services/auth_service.dart';
 import '../services/elrc_client.dart';
+import '../services/service_provider.dart';
+import '../services/third_party_auth_service.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import 'elrc_player_page.dart';
 
@@ -40,27 +43,97 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   bool _sessionReloadRequired = false;
   bool _loginPresented = false;
   var _expectedMainFrameCancellations = 0;
+  ThirdPartyAuthService? _tpAuth;
+  AuthService? _auth;
+  String? _primaryUserId;
+  int _bindingGeneration = -1;
+  bool _campusAttempted = false;
 
   bool get _supported =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.android);
+          defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.macOS);
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_tpAuth != null) return;
+    final services = ServiceProvider.of(context);
+    _tpAuth = services.thirdPartyAuthService;
+    _auth = services.authService;
+    _primaryUserId = _auth!.session?.userId;
+    _auth!.addListener(_primaryAccountChanged);
+    if (!_auth!.isLoggedIn) {
+      _starting = false;
+      _error = '请先登录 TechPie';
+      return;
+    }
+    _bindingGeneration = _tpAuth!.cpdailyNode.generation;
+    _tpAuth!.addListener(_bindingChanged);
+    if (_supported) unawaited(_prepare());
+  }
+
+  bool get _authorized =>
+      _auth!.isLoggedIn && _auth!.session?.userId == _primaryUserId;
+
+  void _primaryAccountChanged() {
+    if (_authorized || !mounted) return;
+    _request++;
+    _client?.dispose();
+    _client = null;
+    _controller = null;
+    setState(() {
+      _courses = null;
+      _lessons = null;
+      _selectedCourse = null;
+      _starting = false;
+      _webVisible = false;
+      _error = '请先登录 TechPie';
+    });
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  void _bindingChanged() {
+    final generation = _tpAuth!.cpdailyNode.generation;
+    if (generation == _bindingGeneration || !mounted) return;
+    _bindingGeneration = generation;
+    _request++;
+    _campusAttempted = false;
+    _loginPresented = false;
+    _client?.dispose();
+    _client = null;
+    _controller = null;
+    setState(() {
+      _courses = null;
+      _lessons = null;
+      _selectedCourse = null;
+      _busy = false;
+      _starting = true;
+      _webVisible = false;
+    });
     if (_supported) unawaited(_prepare());
   }
 
   Future<void> _prepare() async {
+    final generation = _bindingGeneration;
     final controller = WebViewController();
     final client = ElrcClient(controller);
     try {
+      await _tpAuth!.campusWebSession.useIdsSession();
+      _campusAttempted = true;
+      if (!mounted || !_authorized || generation != _bindingGeneration) {
+        client.dispose();
+        return;
+      }
       await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
       await client.initialize();
       await controller.setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (request) {
+            if (!_authorized || !identical(_controller, controller)) {
+              return NavigationDecision.prevent;
+            }
             final uri = Uri.tryParse(request.url);
             _trace('navigation request ${_safeUri(uri)}');
             if (request.url == 'about:blank') {
@@ -75,27 +148,39 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
               );
               return NavigationDecision.prevent;
             }
+            if (_isLogin(uri) &&
+                !_campusAttempted &&
+                _tpAuth!.hasCpdailyBinding) {
+              _expectedMainFrameCancellations++;
+              unawaited(_openLogin());
+              return NavigationDecision.prevent;
+            }
             if (_isHttpsElrc(uri) || _isLogin(uri)) {
               return NavigationDecision.navigate;
             }
             return NavigationDecision.prevent;
           },
           onPageStarted: (url) {
+            if (!identical(_controller, controller)) return;
             _trace('page started ${_safeUri(Uri.tryParse(url))}');
             _activate(url, pageStarted: true);
           },
           onUrlChange: (change) {
+            if (!identical(_controller, controller)) return;
             _trace('URL changed ${_safeUri(Uri.tryParse(change.url ?? ''))}');
             _activate(change.url);
           },
           onPageFinished: (url) {
+            if (!identical(_controller, controller)) return;
             _trace('page finished ${_safeUri(Uri.tryParse(url))}');
             _navigationFinished(url);
           },
-          onWebResourceError: _webResourceFailed,
+          onWebResourceError: (error) {
+            if (identical(_controller, controller)) _webResourceFailed(error);
+          },
         ),
       );
-      if (!mounted) {
+      if (!mounted || !_authorized || generation != _bindingGeneration) {
         client.dispose();
         return;
       }
@@ -105,7 +190,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       await controller.loadRequest(_reviewUri);
     } catch (_) {
       client.dispose();
-      if (!mounted) return;
+      if (!mounted || generation != _bindingGeneration) return;
       if (identical(_client, client)) {
         _client = null;
         _controller = null;
@@ -137,7 +222,8 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       (uri?.path == '/learn/videoreview' || uri?.path == '/learn/videoreview/');
 
   bool _isAppSide(Uri? uri) =>
-      _isHttpsElrc(uri) && (uri?.path == '/appside' || uri?.path == '/appside/');
+      _isHttpsElrc(uri) &&
+      (uri?.path == '/appside' || uri?.path == '/appside/');
 
   bool _isSessionPage(Uri? uri) => _isReview(uri) || _isAppSide(uri);
 
@@ -250,7 +336,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
     try {
       await controller.loadRequest(_reviewUri);
     } catch (_) {
-      if (!mounted || request != _request) return;
+      if (!mounted || !_authorized || request != _request) return;
       setState(() {
         _starting = false;
         _sessionReloadRequired = true;
@@ -275,7 +361,18 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       _sessionReloadRequired = true;
     });
     _trace('opening fixed ELRC login entry');
+    final request = ++_request;
     try {
+      if (!_campusAttempted) {
+        _campusAttempted = true;
+        final reused = await _tpAuth!.campusWebSession.useIdsSession();
+        _trace(
+          reused
+              ? 'IDS cookie prepared; awaiting official SSO'
+              : 'manual login required',
+        );
+      }
+      if (!mounted || request != _request) return;
       await controller.loadRequest(_loginUri);
     } catch (_) {
       if (!mounted) return;
@@ -300,7 +397,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
     try {
       final courses = await client.courses();
       if (!mounted || request != _request) return;
-      _trace('course request completed with ${courses.length} courses');
+      _trace('course request completed');
       if (courses.isEmpty && !_loginPresented) {
         _trace('empty initial course list; opening login');
         await _openLogin();
@@ -313,7 +410,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       });
     } on ElrcException catch (error) {
       if (!mounted || request != _request) return;
-      _trace('course request failed: ${error.message}');
+      _trace('course request failed; needsLogin=${error.needsLogin}');
       if (error.needsLogin) {
         await _openLogin();
         return;
@@ -463,7 +560,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
 
   Widget _content() {
     if (!_supported) {
-      return const Center(child: Text('请在 iPhone 或 Android 手机中观看录播'));
+      return const Center(child: Text('当前平台暂不支持课程录播'));
     }
     if (_error != null && _courses == null && !_webVisible) {
       return _message(_error!, _retryCourses);
@@ -501,7 +598,8 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
             Card.outlined(
               child: ListTile(
                 title: Text(lesson.title),
-                subtitle: lesson.weekDate.isEmpty ? null : Text(lesson.weekDate),
+                subtitle:
+                    lesson.weekDate.isEmpty ? null : Text(lesson.weekDate),
                 trailing: const Icon(Icons.play_circle_outline),
                 onTap: _busy ? null : () => unawaited(_openLesson(lesson)),
               ),
@@ -542,7 +640,8 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
             child: ListTile(
               leading: const Icon(Icons.video_library_outlined),
               title: Text(course.name),
-              subtitle: course.description.isEmpty ? null : Text(course.description),
+              subtitle:
+                  course.description.isEmpty ? null : Text(course.description),
               trailing: const Icon(Icons.chevron_right),
               onTap: _busy ? null : () => unawaited(_loadLessons(course)),
             ),
@@ -553,7 +652,9 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
 
   @override
   void dispose() {
+    _auth?.removeListener(_primaryAccountChanged);
     _request++;
+    _tpAuth?.removeListener(_bindingChanged);
     _client?.dispose();
     _client = null;
     _controller = null;
@@ -592,15 +693,28 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
           body: SafeArea(
             child: Stack(
               children: [
-                Positioned.fill(child: _content()),
+                // macOS suspends an Offstage WKWebView before asynchronous
+                // fetches finish. Keep it attached beneath the native content.
                 if (_controller != null)
                   Positioned.fill(
-                    child: Offstage(
-                      offstage: !_webVisible,
-                      child: WebViewWidget(controller: _controller!),
+                    child: IgnorePointer(
+                      ignoring: !_webVisible,
+                      child: ExcludeSemantics(
+                        excluding: !_webVisible,
+                        child: WebViewWidget(controller: _controller!),
+                      ),
                     ),
                   ),
-                if (_busy && (_courses != null || _lessons != null) && !_webVisible)
+                if (!_webVisible)
+                  Positioned.fill(
+                    child: ColoredBox(
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                      child: _content(),
+                    ),
+                  ),
+                if (_busy &&
+                    (_courses != null || _lessons != null) &&
+                    !_webVisible)
                   const Align(
                     alignment: Alignment.topCenter,
                     child: LinearProgressIndicator(),

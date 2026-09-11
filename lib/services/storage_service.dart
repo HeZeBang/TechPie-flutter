@@ -31,6 +31,10 @@ class StorageService {
           aOptions: AndroidOptions(encryptedSharedPreferences: true),
         );
 
+  String? get campusWebOwner => _prefs.getString('campus_web_owner');
+  Future<void> setCampusWebOwner(String owner) =>
+      _prefs.setString('campus_web_owner', owner);
+
   // Secure session storage
   Future<void> saveSession(UserSession session) async {
     await _writeCredential(() =>
