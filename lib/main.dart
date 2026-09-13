@@ -9,6 +9,7 @@ import 'package:techpie/utils/platform.dart';
 import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
+import 'services/calendar_subscription_service.dart';
 import 'services/debug_logger.dart';
 import 'services/http_client.dart';
 import 'services/oa_gym_service.dart';
@@ -257,6 +258,25 @@ class TechPieApp extends StatefulWidget {
 }
 
 class _TechPieAppState extends State<TechPieApp> {
+  late final CalendarSubscriptionService _calendarSubscriptionService;
+
+  @override
+  void initState() {
+    super.initState();
+    _calendarSubscriptionService = CalendarSubscriptionService(
+      widget.authService,
+      widget.storageService,
+      widget.scheduleService,
+    );
+    unawaited(_calendarSubscriptionService.initialize());
+  }
+
+  @override
+  void dispose() {
+    _calendarSubscriptionService.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return DynamicColorBuilder(
@@ -279,6 +299,7 @@ class _TechPieAppState extends State<TechPieApp> {
         themeService: widget.themeService,
         scheduleService: widget.scheduleService,
         assignmentService: widget.assignmentService,
+        calendarSubscriptionService: _calendarSubscriptionService,
         thirdPartyAuthService: widget.thirdPartyAuthService,
         oaGymService: widget.oaGymService,
         uniAuthService: widget.uniAuthService,

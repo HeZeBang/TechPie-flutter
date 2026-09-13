@@ -26,6 +26,7 @@ import '../widgets/course_detail_panel.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/desktop_select_popover.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import 'calendar_subscription_page.dart';
 import 'login_page.dart';
 import 'third_party_accounts_page.dart';
 import 'third_party_bind_page.dart';
@@ -386,6 +387,13 @@ class _SchedulePageState extends State<SchedulePage> {
   String get _defaultCalendarName =>
       _semesterLabel.isEmpty ? '课程表' : _semesterLabel;
 
+  void _openSubscription() => unawaited(
+        pushAdaptivePage<void>(
+          context,
+          builder: (_) => const CalendarSubscriptionPage(),
+        ),
+      );
+
   void _startExportCalendar() {
     if (_exportingCalendar) return;
     unawaited(_exportCalendar());
@@ -596,6 +604,10 @@ class _SchedulePageState extends State<SchedulePage> {
                       title: '',
                       displayInline: true,
                       children: [
+                        const IosNativeNavigationBarMenuItem(
+                            value: 'subscribeCalendar',
+                            title: '课表订阅',
+                            sfSymbol: 'calendar.badge.plus',),
                         IosNativeNavigationBarMenuItem(
                           value: 'exportCalendar',
                           title: _exportingCalendar ? '正在导出…' : '导出课表',
@@ -660,6 +672,11 @@ class _SchedulePageState extends State<SchedulePage> {
                 ],
               ),
               actions: [
+                IconButton(
+                  tooltip: '课表订阅',
+                  onPressed: _openSubscription,
+                  icon: const Icon(Icons.calendar_month_outlined),
+                ),
                 IconButton(
                   icon: const Icon(Icons.chevron_left),
                   tooltip: 'Previous week',
@@ -910,6 +927,8 @@ class _SchedulePageState extends State<SchedulePage> {
           _showGhostCourses = !_showGhostCourses;
           _filterCoursesForWeek();
         });
+      case 'subscribeCalendar':
+        _openSubscription();
       case 'exportCalendar':
         _startExportCalendar();
     }
