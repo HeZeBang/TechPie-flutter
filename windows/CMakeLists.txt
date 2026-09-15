@@ -57,6 +57,12 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# The desktop_webview_window fork uses the old WebView2 accessor spelling.
+if(TARGET desktop_webview_window_plugin)
+  target_compile_definitions(desktop_webview_window_plugin PRIVATE
+    GetCookieManager=get_CookieManager)
+endif()
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
