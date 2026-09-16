@@ -12,6 +12,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -71,6 +72,44 @@ jobs:
             echo "BUILD_NUMBER=$BUILD_NUMBER"
             echo "TAG_SHA=$TAG_SHA"
           } >> "$GITHUB_ENV"
+
+      - name: Require successful Analyze for release SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          analyze_runs="$(
+            gh api --method GET \
+              "/repos/$REPOSITORY/actions/workflows/analyze.yml/runs" \
+              -f event=push \
+              -f status=success \
+              -f head_sha="$TAG_SHA" \
+              -f per_page=100
+          )"
+
+          matching_run="$(
+            jq -r \
+              --arg sha "$TAG_SHA" \
+              '.workflow_runs
+               | map(select(
+                   .event == "push" and
+                   .head_branch == "master" and
+                   .head_sha == $sha and
+                   .conclusion == "success"
+                 ))
+               | first
+               | .html_url // empty' <<< "$analyze_runs"
+          )"
+
+          if [[ -z "$matching_run" ]]; then
+            echo "No successful master Analyze run found for release SHA: $TAG_SHA"
+            exit 1
+          fi
+
+          echo "Using Analyze result: $matching_run"
 
       - name: Create GitHub App installation token
         id: app-token
