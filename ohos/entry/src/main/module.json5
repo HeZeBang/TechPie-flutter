@@ -5,8 +5,17 @@
     "type": "entry",
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
+    // The devices this pack claims. AppGallery refuses to accept a pack narrower
+    // than the app's declared 支持设备, and each entry here is a promise the UI has
+    // to keep — the phone is what this app is designed for, the wider layouts come
+    // from the same responsive shell (`lib/widgets/app_shell/`), and tv means the
+    // HarmonyOS TV surface (focus-driven navigation), which is why it is listed
+    // only because the app's AppGallery listing does.
     "deviceTypes": [
-      "phone"
+      "phone",
+      "tablet",
+      "2in1",
+      "tv"
     ],
     "deliveryWithInstall": true,
     "installationFree": false,

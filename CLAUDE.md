@@ -550,6 +550,14 @@ three `AGC_*` credentials in the environment.
   `203886599 the type of clientId not match`. No request shape fixes that one (the
   plain `grant_type` form is correct, and adding a `type` of 0 or 1 changes
   nothing), so the script's error names where the right values live.
+- **The pack's `deviceTypes` must match the app's 支持设备.** AGC refuses an upload
+  whose pack claims *less* than the app's listing does, with 「上传的软件包与声明支持
+  设备不一致」 and a list of what is missing. The pack's list comes from
+  `ohos/entry/src/main/module.json5` — hand-maintained, and the only place a device
+  claim is made — so widening it there (then rebuilding and re-uploading, which is
+  repeatable) or narrowing the listing are the two ways to agree. Each entry is a
+  claim about the UI on that device: the wider layouts are the same responsive
+  shell, `tv` is a focus-driven surface of its own.
 - **`.app` goes through `app-package-info`, not `app-file-info`.** The latter takes
   icons and screenshots; it also *accepts* a package upload while leaving 软件包管理
   empty, so the mistake looks like success. And because AGC compiles a pack before

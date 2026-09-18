@@ -97,6 +97,10 @@ else
 fi
 
 mkdir -p dist
+# A previous run's copy of the other variant would otherwise stay behind, claiming
+# whatever that run declared — and nothing keeps the two in step, since only one of
+# them is written here. Anything else in dist/ (the hap, its digest) is left alone.
+rm -f dist/*-ohos-arm64v8*.app dist/*-ohos-arm64v8*.app.sha256
 # TechPie-<release name>-ohos-<arch>[-unsigned].app, by the same grammar as every
 # other artifact. The token names what the pack was built for, which is the one
 # architecture the hap beside it carries.
