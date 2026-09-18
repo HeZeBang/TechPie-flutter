@@ -57,6 +57,8 @@ app.*.map.json
 
 # Environment files
 .envrc
+# Local AGC credentials for scripts/appgallery-publish.mjs (never commit secrets)
+.env
 # Local Xcode overrides
 macos/Runner/Configs/Local.xcconfig
 macos/buildServer.json

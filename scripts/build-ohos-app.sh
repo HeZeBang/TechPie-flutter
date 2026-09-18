@@ -25,11 +25,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Unsigned is the point of this script: with OHOS_UNSIGNED=1 the generator writes
-# a build-profile.json5 with no signingConfigs block, which is what makes hvigor
-# pack `-unsigned` artifacts instead of looking for a certificate. (`flutter build
-# app` only refuses when that block is an *empty list*; absent is fine.)
-export OHOS_UNSIGNED=1
+# Unsigned is the default here — a runner with no signing secrets and a
+# contributor without signing material both need it to work. `flutter build
+# app` only refuses an *empty* signingConfigs list, so with OHOS_UNSIGNED=1 the
+# generator writes a profile without that block and hvigor packs
+# `-unsigned` artifacts instead of looking for a certificate.
+#
+# .github/workflows/appgallery-release.yml sets OHOS_UNSIGNED=0 and supplies
+# OHOS_{CERT,PROFILE,STORE}_* instead, because AppGallery rejects an unsigned
+# pack: that run is what produces the `-signed` pack this script can also name.
+export OHOS_UNSIGNED="${OHOS_UNSIGNED:-1}"
 
 pack_dir="ohos/build/outputs/default"
 
@@ -67,29 +72,36 @@ flutter build app --release
 build_status=$?
 set -e
 
-# The pack is named after the project rather than the module, and flutter looks
-# for the `-signed` one, so find whatever hvigor actually wrote.
+# The pack is named after the project rather than the module, and a run with
+# signing material writes *both* kinds: the signed pack, plus the unsigned one it
+# produced on the way. The signed one is what such a run was for, so it wins — and
+# the directory was cleared above, so neither can be a leftover from a past run.
 shopt -s nullglob
-built=("$pack_dir"/*-unsigned.app)
+signed=("$pack_dir"/*-signed.app)
+unsigned=("$pack_dir"/*-unsigned.app)
 shopt -u nullglob
 
-if (( ${#built[@]} == 0 )); then
-  echo "hvigor produced no App Pack in $pack_dir (flutter exited $build_status)" >&2
+if (( ${#signed[@]} == 1 )); then
+  built="${signed[0]}"
+  signing=""
+elif (( ${#signed[@]} == 0 && ${#unsigned[@]} == 1 )); then
+  built="${unsigned[0]}"
+  # `-unsigned` only when nothing signed it (CLAUDE.md → Artifact names), so the
+  # name follows the pack rather than the script's intention.
+  signing="-unsigned"
+else
+  echo "hvigor produced no single App Pack in $pack_dir (flutter exited $build_status)" >&2
+  printf '  signed: %s\n  unsigned: %s\n' "${#signed[@]}" "${#unsigned[@]}" >&2
   ls -l "$pack_dir" >&2 || true
-  exit 1
-fi
-if (( ${#built[@]} > 1 )); then
-  echo "More than one unsigned App Pack in $pack_dir:" >&2
-  printf '  %s\n' "${built[@]}" >&2
   exit 1
 fi
 
 mkdir -p dist
-# TechPie-<release name>-ohos-<arch>-unsigned.app, by the same grammar as every
+# TechPie-<release name>-ohos-<arch>[-unsigned].app, by the same grammar as every
 # other artifact. The token names what the pack was built for, which is the one
 # architecture the hap beside it carries.
-artifact="TechPie-${release_name}-ohos-arm64v8-unsigned.app"
-cp "${built[0]}" "dist/$artifact"
+artifact="TechPie-${release_name}-ohos-arm64v8${signing}.app"
+cp "$built" "dist/$artifact"
 
 # Downloaders cannot verify what they cannot see, so publish the digest next to
 # the artifact and let release notes reference it.

@@ -441,7 +441,8 @@ distinguishable in git, and the file names deliberately do not try to.
 ### Operating the pipeline
 
 - CI signs and publishes every platform's artifacts and stops there: **uploading
-  to Play, AppGallery and the App Store is manual**, from those artifacts. Android
+  to Play, AppGallery and the App Store is manual**, from those artifacts (for
+  AppGallery, that is the dispatch below). Android
   gets three APKs (arm64 and arm32 splits plus a universal one), Linux a `tar.gz`
   of the bundle, Windows a `zip` of the release directory, OHOS the unsigned hap.
   The `publish` job waits for all of them and is what writes the SHA-256 block —
@@ -507,6 +508,61 @@ distinguishable in git, and the file names deliberately do not try to.
   packs as versionName `1.0.0.4` with versionCode 5. Android and iOS strip the
   suffix instead (iOS forbids it in `CFBundleShortVersionString`), so `+B` is
   what identifies a build on every platform.
+
+### Publishing to AppGallery
+
+A release stops at GitHub, AppGallery included, and what the store needs is not
+there yet: an AppGallery release is a **`.app` App Pack whose signature Huawei
+validates**, and every pack we publish is unsigned. So publishing is its own
+dispatch, and the run that performs it is the only one that ever sees the signing
+material:
+
+```bash
+gh workflow run appgallery-release.yml --ref master \
+  -f tag=v1.0.1+11 -f submit=false        # ... -f submit=true to also submit
+```
+
+`.github/workflows/appgallery-release.yml` builds the pack **signed** from the
+certificate, profile and keystore in the `appgallery-release` environment (the
+release's own unsigned `dist/*.app` stays the public artifact), then hands it to
+`scripts/appgallery-publish.mjs`, which does the whole flow: OAuth token, version
+check, presigned upload to OBS, package registration, and — only when asked —
+submission for review. The same script works from a developer machine with the
+three `AGC_*` credentials in the environment.
+
+- **Upload is repeatable; submitting is the publishing act.** An upload registers a
+  software package in the app's draft. Submitting puts that version in front of
+  Huawei's reviewers, so it is a dispatch input defaulting to `false`, and the
+  script additionally requires `AGC_CONFIRM_SUBMIT=YES` (which the workflow derives
+  from that input) — a second lock, so a later change that adds `--submit` to a
+  step still cannot publish anything by itself.
+- **The version guard.** Before uploading, the script reads AGC's app info and
+  refuses a pack whose `+B` is not above the shelf — the never-reuse-a-build-number
+  rule the release plan enforces locally, which AGC enforces by rejecting the
+  submission. `--dry-run` stops right after that check: it proves the credentials
+  and the version, and changes nothing.
+- **The API client must be team-level, and must actually be an API client.** In
+  AGC → 用户与访问 → API 密钥 → Connect API the client's 项目 has to be `N/A`, with
+  at least the APP管理员 role; a project-scoped client answers every publishing
+  call with `403 client token authorization fail`. A value that is *not* an API
+  client's at all — the app's 客户端ID, its App ID, or an `agconnect-services.json`
+  `client_id` — fails earlier and more confusingly, at the token call:
+  `203886599 the type of clientId not match`. No request shape fixes that one (the
+  plain `grant_type` form is correct, and adding a `type` of 0 or 1 changes
+  nothing), so the script's error names where the right values live.
+- **`.app` goes through `app-package-info`, not `app-file-info`.** The latter takes
+  icons and screenshots; it also *accepts* a package upload while leaving 软件包管理
+  empty, so the mistake looks like success. And because AGC compiles a pack before
+  it can be submitted, `app-submit` answers HTTP 200 with `ret.code=204144719`
+  until it finishes — the script polls that code (15 s, 10 attempts) instead of
+  reporting a failure.
+- **The version published is pubspec's** (`version: X.Y.Z+B`), because that is what
+  hvigor stamps into the pack.
+- **Not run yet.** The first dispatch needs the environment filled in: the three
+  `AGC_*` values, plus `OHOS_CERT_BASE64`, `OHOS_PROFILE_BASE64`,
+  `OHOS_STORE_BASE64`, `OHOS_KEY_ALIAS`, `OHOS_STORE_PASSWORD`,
+  `OHOS_KEY_PASSWORD` — and optionally the `OHOS_SIGN_ALG` variable, which
+  defaults to `SHA256withECDSA`.
 
 ## OHOS-Specific Gotchas
 
