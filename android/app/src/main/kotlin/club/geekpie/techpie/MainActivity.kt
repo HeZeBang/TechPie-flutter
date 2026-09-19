@@ -3,6 +3,7 @@ package club.geekpie.techpie
 import android.Manifest
 import android.content.ContentUris
 import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import android.provider.CalendarContract.Calendars
@@ -16,9 +17,15 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var pendingCalendarImport: PendingCalendarImport? = null
+    private var ecardWidgets: EcardWidgetBridge? = null
+    private var ecardFeedback: EcardFeedback? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        ecardWidgets = EcardWidgetBridge(this, flutterEngine.dartExecutor.binaryMessenger).also {
+            it.capture(intent, notifyFlutter = false)
+        }
+        ecardFeedback = EcardFeedback(this, flutterEngine.dartExecutor.binaryMessenger)
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -29,6 +36,20 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        ecardWidgets?.capture(intent, notifyFlutter = true)
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        ecardWidgets?.dispose()
+        ecardWidgets = null
+        ecardFeedback?.dispose()
+        ecardFeedback = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     private fun handleImportCalendarEvents(

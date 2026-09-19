@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import 'package:techpie/main.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
+import 'package:techpie/services/campus_card_service.dart';
 import 'package:techpie/services/debug_logger.dart';
+import 'package:techpie/services/ecard_bind_service.dart';
 import 'package:techpie/services/egate_app_service.dart';
 import 'package:techpie/services/http_client.dart';
 import 'package:techpie/services/oa_gym_service.dart';
@@ -16,6 +17,7 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
+import 'package:techpie/widgets/adaptive_select.dart';
 import 'package:techpie/widgets/app_shell/app_shell.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
 
@@ -101,6 +103,8 @@ void main() {
         uniAuthService: uniAuth,
         syncService: sync,
         updateService: UpdateService(),
+        campusCardService: CampusCardService(),
+        ecardBindService: EcardBindService(),
       ),
     );
 
@@ -145,12 +149,16 @@ void main() {
         uniAuthService: uniAuth,
         syncService: sync,
         updateService: UpdateService(),
+        campusCardService: CampusCardService(),
+        ecardBindService: EcardBindService(),
       ),
     );
 
     expect(find.byType(TgBottomNavBar), findsOneWidget);
     // Starts on Home
     expect(find.text('Welcome to TechPie'), findsOneWidget);
+    expect(find.text('校园卡'), findsOneWidget);
+    expect(find.text('消费码'), findsNothing);
 
     // Tap Schedule
     await tester.tap(find.text('Schedule').first);
@@ -169,6 +177,24 @@ void main() {
     await tester.tap(find.text('Settings').first);
     await tester.pumpAndSettle();
     expect(find.text('Appearance'), findsOneWidget);
+    expect(find.text('OPENID'), findsNothing);
+    expect(find.text('Linked accounts'), findsOneWidget);
+    await tester.tap(find.text('Linked accounts'));
+    await tester.pumpAndSettle();
+    expect(find.text('eCard'), findsOneWidget);
+    final icon = tester.widget<Icon>(find.byIcon(Icons.account_balance_wallet_outlined));
+    expect(icon.color, isNull);
+    await tester.tap(find.text('eCard'));
+    await tester.pumpAndSettle();
+    expect(find.text('eCard'), findsWidgets);
+    expect(find.text('连接 eCard'), findsOneWidget);
+    expect(find.text('OPENID 渠道'), findsOneWidget);
+    await tester.tap(find.text('WeChat（微信）'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Alipay（支付宝）').last);
+    await tester.pumpAndSettle();
+    expect(tester.widget<AdaptiveSelect>(find.byType(AdaptiveSelect).last).value, 'alipay_openid');
+    expect(find.textContaining('Cloud sync'), findsOneWidget);
   });
 }
 

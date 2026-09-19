@@ -137,6 +137,14 @@ class _LogTile extends StatelessWidget {
             ),
           if (entry.tag != null)
             Text(entry.tag!, style: theme.textTheme.labelSmall),
+          if (entry.durationMicros != null) ...[
+            const SizedBox(width: 8),
+            Text(
+              '${(entry.durationMicros! / 1000).round()}ms'
+              '${entry.prepMicros == null ? '' : ' (prep ${(entry.prepMicros! / 1000).round()}ms)'}',
+              style: theme.textTheme.labelSmall,
+            ),
+          ],
           const Spacer(),
           Text(
             '${entry.timestamp.hour.toString().padLeft(2, '0')}:'

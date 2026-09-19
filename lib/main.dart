@@ -1,15 +1,21 @@
 import 'dart:async';
+
 import 'package:desktop_webview_window/desktop_webview_window.dart'
     show runWebViewTitleBarWidget;
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/utils/platform.dart';
 
+import 'features/campus_card/app/app_providers.dart';
 import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
+import 'services/campus_card_service.dart';
 import 'services/debug_logger.dart';
+import 'services/ecard_bind_service.dart';
+import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
 import 'services/http_client.dart';
 import 'services/oa_gym_service.dart';
@@ -59,6 +65,9 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final uniAuthService = UniAuthService();
   final authService = AuthService(storageService, httpClient, uniAuthService);
   final themeService = ThemeService(storageService);
+  final campusCardService = CampusCardService(debugLogger: debugLogger, storage: storageService);
+  final ecardBindService = EcardBindService();
+  final ecardWidgetService = EcardWidgetService();
   final thirdPartyAuthService = ThirdPartyAuthService(
     storageService,
     httpClient,
@@ -86,7 +95,14 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService,
     scheduleService,
   );
-  final syncService = SyncService(authService, thirdPartyAuthService, storageService);
+  final syncService = SyncService(
+    authService,
+    thirdPartyAuthService,
+    storageService,
+    ecard: campusCardService,
+    logger: debugLogger,
+  );
+  campusCardService.onBindingChanged = syncService.forcePush;
   // It talks to GitHub rather than our backend, so it keeps its own client
   // instead of the logging one the API services share.
   final updateService = UpdateService();
@@ -129,12 +145,21 @@ Future<void> _realMain(SharedPreferences prefs) async {
     } catch (_) {}
   };
 
+  // Boot timings, debug only: this is exactly what the splash waits for. Work
+  // that the first frame does not need belongs after `runApp` below.
+  final bootWatch = Stopwatch()..start();
+  void bootMark(String phase) {
+    if (!kDebugMode) return;
+    debugPrint('[BOOT] $phase ${bootWatch.elapsedMilliseconds}ms');
+  }
+
+  bootMark('services built');
+
   // -- Boot critical path: local I/O only --
   // Hydrate everything from caches so the first frame paints with data.
   await authService.loadSession();
   await thirdPartyAuthService.initialize();
   thirdPartyAuthService.campusWebSession.attachAuth(authService);
-  await syncService.loadCachedKey();
   assignmentService.loadCached();
   await scheduleService.loadCachedData();
 
@@ -152,8 +177,23 @@ Future<void> _realMain(SharedPreferences prefs) async {
       uniAuthService: uniAuthService,
       syncService: syncService,
       updateService: updateService,
+      campusCardService: campusCardService,
+      ecardBindService: ecardBindService,
+      ecardWidgetService: ecardWidgetService,
     ),
   );
+
+  bootMark('cached data ready');
+
+  unawaited(campusCardService.refreshAccount());
+
+  // The home-screen widget only needs its handler once something could press it.
+  if (isIos() || isAndroid()) ecardWidgetService.initialize();
+
+  // Build the campus-card runtime now that the first frame is up, so tapping the
+  // pass does not pay for it. Nothing session-related happens here: a request
+  // that needs a session issues one itself.
+  campusCardService.prepare();
 
   // -- Background: renew tokens first (main SSO session + third-party in
   // parallel — they touch independent state), then fan out fetches that
@@ -207,6 +247,8 @@ Future<void> _realMain(SharedPreferences prefs) async {
     // fires. If the device is enabled but has no key (new device with a cloud
     // backup), set the needsRestore flag so the UI can prompt for the master
     // password. All best-effort — sync failures never block boot.
+    await syncService.loadCachedKey();
+
     if (syncService.enabled && authService.isLoggedIn) {
       try {
         await syncService.pull();
@@ -261,6 +303,9 @@ class TechPieApp extends StatefulWidget {
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
+  final CampusCardService campusCardService;
+  final EcardBindService ecardBindService;
+  final EcardWidgetService? ecardWidgetService;
 
   const TechPieApp({
     super.key,
@@ -276,6 +321,9 @@ class TechPieApp extends StatefulWidget {
     required this.uniAuthService,
     required this.syncService,
     required this.updateService,
+    required this.campusCardService,
+    required this.ecardBindService,
+    this.ecardWidgetService,
   });
 
   @override
@@ -283,6 +331,8 @@ class TechPieApp extends StatefulWidget {
 }
 
 class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+
   /// The silent check runs at launch and whenever the app comes back to the
   /// foreground, but not more often than this: a resume is not a reason to hit
   /// the network, and the answer does not change that fast.
@@ -296,11 +346,22 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_checkForUpdatesQuietly());
+    widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
+  }
+
+  @override
+  void didUpdateWidget(covariant TechPieApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
+    oldWidget.ecardWidgetService?.clearOpenPayHandler();
+    widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.ecardWidgetService?.clearOpenPayHandler();
+    widget.campusCardService.dispose();
     super.dispose();
   }
 
@@ -340,6 +401,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     await showUpdateAvailableDialog(context, release);
   }
 
+  Future<void> _openEcardPayCode() async {
+    // The shell performs the push: it knows whether the entry belongs inside the
+    // selected destination's stack or on the root navigator, and it is still
+    // there after a cold start.
+    appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
+  }
+
   @override
   Widget build(BuildContext context) {
     // The plugin has no implementation on iOS, web or OHOS, where asking for
@@ -371,7 +439,11 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         uniAuthService: widget.uniAuthService,
         syncService: widget.syncService,
         updateService: widget.updateService,
+        campusCardService: widget.campusCardService,
+        ecardBindService: widget.ecardBindService,
+        ecardWidgetService: widget.ecardWidgetService,
         child: MaterialApp(
+          navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
           navigatorObservers: [FeedbackRouteObserver()],
           builder: (context, child) => AdaptiveFeedbackHost(

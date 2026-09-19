@@ -90,6 +90,16 @@ class ScheduleService extends ChangeNotifier {
 
     _pendingFetch?.cancel();
     _pendingFetch = Timer(const Duration(milliseconds: 600), () {
+      // Decide again now, not only when the trigger arrived. A round that was
+      // still running then could not answer "is the data usable?" — it had not
+      // finished — so a trigger landing inside it (the keep-alive and renewal
+      // notifications do exactly that) scheduled a second identical round of
+      // semesters, course table and term begin. `force` is not a reason to round
+      // again either: it means "do not trust what a previous launch cached", and
+      // a round already fetched in this process for this account is the answer.
+      final current = _campusAccount();
+      final changed = current != null && current != _fetchedForAccount;
+      if (_fetchedForAccount != null && !changed && _error == null) return;
       unawaited(_fetchAndStamp());
     });
   }

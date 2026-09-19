@@ -7,6 +7,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val ecardWidgetResources = layout.buildDirectory.dir("generated/ecardWidgetResources")
+val prepareEcardWidgetResources by tasks.registering(Copy::class) {
+    from("../../assets/campus_card/images/widget-background.png") {
+        rename { "ecard_widget_background.png" }
+    }
+    into(ecardWidgetResources.map { it.dir("drawable-nodpi") })
+}
+
 val releaseSigningProperties = Properties()
 val releaseSigningPropertiesFile = rootProject.file("key.properties")
 
@@ -81,6 +89,7 @@ android {
     // mobile_scanner compiles against SDK 36; the SDK's default lags behind it.
     compileSdk = 36
     ndkVersion = "28.2.13676358"
+    sourceSets.getByName("main").res.srcDir(ecardWidgetResources)
 
     signingConfigs {
         if (releaseSigningConfigured) {
@@ -131,6 +140,8 @@ android {
         }
     }
 }
+
+tasks.named("preBuild") { dependsOn(prepareEcardWidgetResources) }
 
 flutter {
     source = "../.."

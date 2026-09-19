@@ -4,9 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
-import 'package:flutter/services.dart';
 
 import '../../utils/glass.dart';
+import '../../utils/haptics.dart';
 import '../../utils/motion.dart';
 import 'app_destination.dart';
 
@@ -126,7 +126,7 @@ class _TgBottomNavBarState extends State<TgBottomNavBar> with TickerProviderStat
   void _onLongPressStart(LongPressStartDetails details) {
     if (_contentWidth <= 0) return;
     _restoreToken++;
-    unawaited(HapticFeedback.mediumImpact());
+    unawaited(AppHaptics.play(AppHaptics.tabHold));
     _settleX.stop();
     _dragging = true;
     _settling = false;

@@ -1,0 +1,19 @@
+# export PATH="$HOME/dev/flutter/bin:$PATH"
+export PATH="$HOME/dev/flutter_flutter/bin:$PATH"
+export PATH="$HOME/dev/command-line-tools/bin:$HOME/dev/command-line-tools/sdk/default/openharmony/toolchains:$PATH"
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn
+export FLUTTER_OHOS_STORAGE_BASE_URL=https://flutter-ohos.obs.cn-south-1.myhuaweicloud.com
+export PUB_HOSTED_URL=https://pub.flutter-io.cn
+export HOS_SDK_HOME="$HOME/dev/command-line-tools/sdk"
+# unset HTTP_PROXY HTTPS_PROXY ALL_PROXY
+
+# OHOS signing material — consumed by ohos/scripts/generate-build-profile.mjs.
+# Paths are relative to ohos/ (where build-profile.json5 lives).
+export OHOS_CERT_PATH="./signature/techpie-release.cer"
+export OHOS_PROFILE_PATH="./signature/techpie-release.p7b"
+export OHOS_STORE_FILE="./signature/techpie.p12"
+export OHOS_KEY_ALIAS="techpie_release"
+export OHOS_SIGN_ALG="SHA256withECDSA"
+export OHOS_STORE_PASSWORD="0000003c8d878d34622cc84c16cf8999bfbb28d45f1b8978756033a96708b6c4f9069da4dad6a447521658f078263ec35b70d597213408c7be26e17b6b46462401323ed83e6e0da81f1bde56"
+export OHOS_KEY_PASSWORD="0000003c8d878d34622cc84c16cf8999bfbb28d45f1b8978756033a96708b6c4f9069da4dad6a447521658f078263ec35b70d597213408c7be26e17b6b46462401323ed83e6e0da81f1bde56"

@@ -1,15 +1,29 @@
+import 'dart:async';
+
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 
+import '../../features/campus_card/app/app_providers.dart';
 import '../../pages/assignments_page.dart';
+import '../../pages/campus_card_page.dart';
 import '../../pages/home_page.dart';
 import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
 import '../../utils/adaptive_layout.dart';
 import '../../utils/platform.dart';
+import '../../widgets/adaptive_page_navigation.dart';
 import 'app_destination.dart';
 import 'desktop/desktop_shell.dart';
 import 'mobile_shell.dart';
+
+/// A campus-card entry the host asked for — a home-screen widget tap, a
+/// shortcut, a `techpie://ecard/pay` link — that has not been shown yet.
+///
+/// The shell owns the push because the shell is what knows where the page
+/// belongs: inside the selected destination's stack on a wide window, on the
+/// root navigator on a phone. A value set before the shell mounts waits for it,
+/// which is what a cold start needs.
+final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -69,6 +83,41 @@ class _AppShellState extends State<AppShell> {
     ),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    appShellPendingEcardEntry.addListener(_showPendingEcardEntry);
+    if (appShellPendingEcardEntry.value != null) {
+      // Deferred: a push during the first build is a build-time side effect.
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _showPendingEcardEntry(),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    appShellPendingEcardEntry.removeListener(_showPendingEcardEntry);
+    super.dispose();
+  }
+
+  /// Pushes the entry the host asked for into the destination the user is on.
+  void _showPendingEcardEntry() {
+    final entry = appShellPendingEcardEntry.value;
+    if (entry == null || !mounted) return;
+    appShellPendingEcardEntry.value = null;
+    // Inside the selected destination's stack on a wide window (the sidebar
+    // stays), on the root navigator on a phone — the same place any other page
+    // goes.
+    final nested = _contentNavigatorKeys[_selectedIndex]?.currentContext;
+    unawaited(
+      pushAdaptivePage<void>(
+        nested ?? context,
+        builder: (_) => CampusCardPage(entry: entry),
+      ),
+    );
+  }
+
   void _onDestinationSelected(int index) {
     if (index == _selectedIndex) return;
     _previousSelectedIndex = _selectedIndex;
@@ -102,7 +151,7 @@ class _AppShellState extends State<AppShell> {
       onPopWithResult: (_) => navigatorKey.currentState?.pop(),
       child: Navigator(
         key: navigatorKey,
-        onGenerateRoute: (settings) => MaterialPageRoute<void>(
+        onGenerateRoute: (settings) => adaptivePageRoute<void>(
           settings: settings,
           builder: (context) => pageView,
         ),

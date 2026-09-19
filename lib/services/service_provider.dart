@@ -2,7 +2,10 @@ import 'package:flutter/widgets.dart';
 
 import 'assignment_service.dart';
 import 'auth_service.dart';
+import 'campus_card_service.dart';
 import 'debug_logger.dart';
+import 'ecard_bind_service.dart';
+import 'ecard_widget_service.dart';
 import 'egate_app_service.dart';
 import 'oa_gym_service.dart';
 import 'schedule_service.dart';
@@ -26,6 +29,9 @@ class ServiceProvider extends InheritedWidget {
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
+  final CampusCardService campusCardService;
+  final EcardBindService ecardBindService;
+  final EcardWidgetService? ecardWidgetService;
 
   const ServiceProvider({
     super.key,
@@ -41,6 +47,9 @@ class ServiceProvider extends InheritedWidget {
     required this.uniAuthService,
     required this.syncService,
     required this.updateService,
+    required this.campusCardService,
+    required this.ecardBindService,
+    this.ecardWidgetService,
     required super.child,
   });
 
@@ -64,5 +73,8 @@ class ServiceProvider extends InheritedWidget {
       egateAppService != oldWidget.egateAppService ||
       uniAuthService != oldWidget.uniAuthService ||
       syncService != oldWidget.syncService ||
-      updateService != oldWidget.updateService;
+      updateService != oldWidget.updateService ||
+      campusCardService != oldWidget.campusCardService ||
+      ecardBindService != oldWidget.ecardBindService ||
+      ecardWidgetService != oldWidget.ecardWidgetService;
 }

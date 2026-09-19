@@ -6,6 +6,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/egate_app_service.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'login_page.dart';
@@ -41,8 +42,9 @@ class _EgateAppPageState extends State<EgateAppPage> {
   }
 
   Future<void> _openThirdPartyAccounts() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const ThirdPartyAccountsPage()),
+    await pushAdaptivePage<void>(
+      context,
+      builder: (_) => const ThirdPartyAccountsPage(),
     );
   }
 
@@ -86,8 +88,9 @@ class _EgateAppPageState extends State<EgateAppPage> {
   }
 
   Future<void> _scanQrCode(EgateAppService service) async {
-    final wid = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(builder: (_) => const _QrScanPage()),
+    final wid = await pushAdaptivePage<String>(
+      context,
+      builder: (_) => const _QrScanPage(),
     );
     if (wid == null || wid.isEmpty || !mounted) return;
     unawaited(_submitCheckin(service, wid));

@@ -117,6 +117,17 @@ class IosNativeNavigationBar extends StatefulWidget
 
 class _IosNativeNavigationBarState extends State<IosNativeNavigationBar> {
   MethodChannel? _channel;
+  Brightness _brightness = Brightness.light;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = Theme.of(context).brightness;
+    if (_brightness == brightness) return;
+    _brightness = brightness;
+    final channel = _channel;
+    if (channel != null) unawaited(_sendConfigurationUpdate(channel));
+  }
 
   @override
   void didUpdateWidget(covariant IosNativeNavigationBar oldWidget) {
@@ -169,6 +180,7 @@ class _IosNativeNavigationBarState extends State<IosNativeNavigationBar> {
   }
 
   Map<String, Object?> get _configuration => <String, Object?>{
+        'brightness': _brightness.name,
         'title': widget.title,
         'subtitle': widget.subtitle,
         'leadingItems':
@@ -193,6 +205,7 @@ class _IosNativeNavigationBarState extends State<IosNativeNavigationBar> {
     final channel = MethodChannel('$_channelPrefix/$viewId');
     _channel?.setMethodCallHandler(null);
     _channel = channel;
+    unawaited(_sendConfigurationUpdate(channel));
 
     channel.setMethodCallHandler((call) async {
       final arguments = call.arguments as Map<Object?, Object?>?;

@@ -103,6 +103,9 @@ final class NativeNavigationBarPlatformView: NSObject, FlutterPlatformView {
   }
 
   private func applyConfiguration(animated: Bool) {
+    // The app can override the system theme, including AMOLED dark mode.
+    // Let UIKit resolve its semantic title and button colors in that appearance.
+    rootView.overrideUserInterfaceStyle = configuration.userInterfaceStyle
     nextTag = 1
     itemIdByTag.removeAll()
 
@@ -134,9 +137,21 @@ final class NativeNavigationBarPlatformView: NSObject, FlutterPlatformView {
   private func makeVisibleBarButtonItems(
     _ items: [NativeNavigationBarItem]
   ) -> [UIBarButtonItem] {
-    items
-      .filter { !$0.hidden }
-      .map(makeBarButtonItem)
+    var buttons: [UIBarButtonItem] = []
+    var previousGroup: String?
+    for item in items where !item.hidden {
+      if #available(iOS 26.0, *),
+        let group = item.placementGroup,
+        let previousGroup,
+        group != previousGroup
+      {
+        // A zero-width fixed space separates UIKit's shared glass backgrounds.
+        buttons.append(.fixedSpace(0))
+      }
+      buttons.append(makeBarButtonItem(item))
+      previousGroup = item.placementGroup
+    }
+    return buttons
   }
 
   private func makeBarButtonItem(_ item: NativeNavigationBarItem) -> UIBarButtonItem {
@@ -258,6 +273,7 @@ final class NativeNavigationBarPlatformView: NSObject, FlutterPlatformView {
 }
 
 private struct NativeNavigationBarConfiguration {
+  var userInterfaceStyle: UIUserInterfaceStyle = .unspecified
   var title = ""
   var subtitle: String?
   var leadingItems: [NativeNavigationBarItem] = []
@@ -269,6 +285,11 @@ private struct NativeNavigationBarConfiguration {
 
   init(arguments: Any?) {
     guard let params = arguments as? [String: Any] else { return }
+    switch params["brightness"] as? String {
+    case "dark": userInterfaceStyle = .dark
+    case "light": userInterfaceStyle = .light
+    default: userInterfaceStyle = .unspecified
+    }
     title = params["title"] as? String ?? ""
     subtitle = params["subtitle"] as? String
     selectionMode = params["selectionMode"] as? Bool ?? false

@@ -30,14 +30,19 @@ environment:
 dependencies:
   animations: ^2.0.11
   casdoor_flutter_sdk: ^1.0.0
+  clock: ">=1.1.1 <1.2.0"
+  connectivity_plus: 6.1.4
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
+  crypto: 3.0.7
   cryptography: ^2.9.0
   cupertino_icons: ^1.0.8
   desktop_webview_window: any
+  dio: ^5.8.0
   dynamic_color: ">=1.7.0 <1.8.0"
   flutter:
     sdk: flutter
+  flutter_riverpod: 2.6.1
   flutter_secure_storage: ^9.2.4
   flutter_secure_storage_ohos: # HarmonyOS 安全存储
     git:
@@ -55,7 +60,10 @@ dependencies:
   open_filex: ^4.5.0
   package_info_plus: ^8.0.2
   path_provider: ^2.1.5
+  pointycastle: 4.0.0
+  qr_flutter: 4.1.0
   reel_text: ^0.4.3
+  screen_brightness: 2.1.11
   shared_preferences: ^2.3.0
   url_launcher: ^6.3.0
   web: ^1.1.1
@@ -106,6 +114,10 @@ dependency_overrides:
       url: https://gitee.com/openharmony-sig/flutter_packages.git
       path: packages/path_provider/path_provider_ohos
       ref: br_path_provider-v2.1.4_ohos
+  # Match Flutter 3.27's Android SDK 35 without raising the host toolchain.
+  screen_brightness_android: 2.1.3
+  # Newer iOS releases require FlutterSceneLifeCycleDelegate, absent in Flutter 3.27.
+  screen_brightness_ios: 2.1.2
   shared_preferences_ohos:
     git:
       url: https://gitee.com/openharmony-sig/flutter_packages.git
@@ -131,12 +143,14 @@ dependency_overrides:
   #   git:
   #     url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
   #     path: flutter_secure_storage_ohos
+
 dev_dependencies:
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
+  fake_async: ">=1.3.1 <1.4.0"
   flutter_launcher_icons: ^0.14.4
   flutter_lints: ^5.0.0
   flutter_test:
@@ -173,6 +187,11 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/campus_card/audio/
+    - assets/campus_card/data/
+    - assets/campus_card/images/
 
   fonts:
     # Roboto Medium, the exact face Telegram Android renders its "bold" UI

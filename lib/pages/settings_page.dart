@@ -26,9 +26,11 @@ import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/update_dialogs.dart';
 import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
+import 'developer_lab_page.dart';
 import 'login_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
+import 'watch_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -127,7 +129,7 @@ class _SettingsPageState extends State<SettingsPage> {
         onPopWithResult: (_) => _nestedNavigatorKey.currentState?.pop(),
         child: Navigator(
           key: _nestedNavigatorKey,
-          onGenerateRoute: (settings) => MaterialPageRoute<void>(
+          onGenerateRoute: (settings) => adaptivePageRoute<void>(
             settings: settings,
             builder: (context) => _buildSettingsScaffold(context),
           ),
@@ -146,6 +148,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final storage = sp.storageService;
     final themeService = sp.themeService;
     final tpAuth = sp.thirdPartyAuthService;
+    final campusCard = sp.campusCardService;
     final useIosChrome = isIos();
     final useLegacyIosChrome = usesLegacyIosChrome();
     final topInset = useIosChrome || useLegacyIosChrome
@@ -161,7 +164,13 @@ class _SettingsPageState extends State<SettingsPage> {
             )
           : const BlurredAppBar(title: Text('Settings')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([auth, logger, themeService, tpAuth]),
+        listenable: Listenable.merge([
+          auth,
+          logger,
+          themeService,
+          tpAuth,
+          campusCard,
+        ]),
         builder: (context, _) => ListView(
           padding: EdgeInsets.only(
             top: topInset,
@@ -183,20 +192,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     'GeekPie Uni-Auth',
                     if (auth.session!.userId.isNotEmpty) auth.session!.userId,
                   ].join(' · '),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.account_tree_outlined),
-                title: const Text('Linked accounts'),
-                subtitle: Text(
-                  '${tpAuth.boundPlatforms.length} bound · CpDaily/IDS · Gradescope · Hydro',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => unawaited(
-                  pushAdaptivePage<void>(
-                    context,
-                    builder: (_) => const ThirdPartyAccountsPage(),
-                  ),
                 ),
               ),
               ListTile(
@@ -262,6 +257,23 @@ class _SettingsPageState extends State<SettingsPage> {
                 subtitle: const Text('通过 GeekPie Uni-Auth 登录'),
                 onTap: () => unawaited(presentLoginPage(context)),
               ),
+            // Bindings are configured independently of the primary account, so
+            // this row sits outside the signed-in block (it replaces the old
+            // OPENID row, which was reachable the same way).
+            ListTile(
+              leading: const Icon(Icons.account_tree_outlined),
+              title: const Text('Linked accounts'),
+              subtitle: Text(
+                '${tpAuth.boundPlatforms.length + (campusCard.configured ? 1 : 0)} bound · eCard / eGate / Gradescope / Hydro',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => unawaited(
+                pushAdaptivePage<void>(
+                  context,
+                  builder: (_) => const ThirdPartyAccountsPage(),
+                ),
+              ),
+            ),
             const Divider(),
 
             ListTile(
@@ -276,6 +288,15 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const Divider(),
+            if (isIos())
+              ListTile(
+                leading: const Icon(Icons.watch_outlined),
+                title: const Text('Apple Watch'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => unawaited(
+                  pushAdaptivePage<void>(context, builder: (_) => const WatchSettingsPage()),
+                ),
+              ),
 
             // Appearance section
             _sectionHeader(theme, 'Appearance'),
@@ -383,6 +404,18 @@ class _SettingsPageState extends State<SettingsPage> {
                     builder: (_) => const DebugWebViewPage(
                       initialUrl: 'http://127.0.0.1:8000/bridge_test.html',
                     ),
+                  ),
+                ),
+              ),
+            if (!kReleaseMode)
+              ListTile(
+                leading: const Icon(Icons.vibration),
+                title: const Text('Developer Lab'),
+                subtitle: const Text('Play every waveform and sound'),
+                onTap: () => unawaited(
+                  pushAdaptivePage<void>(
+                    context,
+                    builder: (_) => const DeveloperLabPage(),
                   ),
                 ),
               ),

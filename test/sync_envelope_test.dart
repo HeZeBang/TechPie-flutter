@@ -81,6 +81,45 @@ void main() {
       expect(decoded.tombstones.first.deviceId, 'devB');
     });
 
+    test('a newer build\'s fields survive decode, merge and encode', () {
+      // v4 is not a version this build knows: it is read as far as it can be
+      // understood, and the part it cannot read is carried, not dropped.
+      final decoded = SyncSchema.migrate(
+        jsonDecode('{"v":4,"futureField":{"a":1},"accounts":[],"tombstones":[]}'),
+      )!;
+      expect(decoded.v, SyncSchema.current);
+      expect(decoded.unknown, {
+        'futureField': {'a': 1},
+      });
+
+      // A device that has never seen the field keeps it when it merges the
+      // cloud copy into its own state…
+      final local = SyncEnvelope.fromLocal(
+        accounts: const [],
+        tombstones: const [],
+      );
+      expect(
+        (jsonDecode(local.mergeWith(decoded).encode())
+            as Map<String, dynamic>)['futureField'],
+        {'a': 1},
+      );
+
+      // …and the cloud's copy is the one that stands when both sides have it,
+      // because the cloud is what the newer build wrote.
+      final duplicate = SyncEnvelope.fromLocal(
+        accounts: const [],
+        tombstones: const [],
+        unknown: const {
+          'futureField': {'a': 2},
+        },
+      );
+      expect(
+        (jsonDecode(duplicate.mergeWith(decoded).encode())
+            as Map<String, dynamic>)['futureField'],
+        {'a': 1},
+      );
+    });
+
     test('garbage plaintext returns null', () {
       expect(SyncEnvelope.decode('not json'), isNull);
       expect(SyncEnvelope.decode('123'), isNull);

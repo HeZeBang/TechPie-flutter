@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart' show WebViewCookie;
 import '../models/feature.dart';
 import '../services/service_provider.dart';
 import '../services/webview_bridge.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import 'campus_session_handle.dart';
 import 'generic_webview_page.dart';
 
@@ -160,13 +161,12 @@ mixin BhWebViewHost<T extends StatefulWidget> on State<T>
       );
       return;
     }
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => GenericWebViewPage(
-          title: url,
-          url: url,
-          cookieType: hostCookieType,
-        ),
+    await pushAdaptivePage<void>(
+      context,
+      builder: (_) => GenericWebViewPage(
+        title: url,
+        url: url,
+        cookieType: hostCookieType,
       ),
     );
   }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="open_pay_code"
+        android:enabled="true"
+        android:icon="@drawable/ic_ecard_widget_qr"
+        android:shortcutShortLabel="@string/ecard_widget_title"
+        android:shortcutLongLabel="@string/ecard_shortcut_open">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="club.geekpie.techpie"
+            android:targetClass="club.geekpie.techpie.MainActivity"
+            android:data="techpie://ecard/pay" />
+    </shortcut>
+</shortcuts>

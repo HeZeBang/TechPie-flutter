@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ecard_widget_root"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/ecard_widget_shape" android:clipToOutline="true"
+    android:contentDescription="@string/ecard_widget_description">
+    <ImageView android:layout_width="match_parent" android:layout_height="match_parent"
+        android:src="@drawable/ecard_widget_background" android:scaleType="centerCrop"
+        android:importantForAccessibility="no"/>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
+        android:padding="16dp" android:orientation="vertical">
+        <ImageView android:layout_width="36dp" android:layout_height="36dp"
+            android:src="@drawable/ic_ecard_widget_qr" android:importantForAccessibility="no"/>
+        <TextView android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1"
+            android:importantForAccessibility="no"/>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:text="@string/ecard_widget_title"
+            android:textColor="#242428" android:textSize="18sp" android:fontFamily="sans-serif-medium"
+            android:maxLines="1" android:ellipsize="end"/>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="3dp" android:text="@string/ecard_widget_subtitle"
+            android:textColor="#76656A" android:textSize="12sp"
+            android:maxLines="1" android:ellipsize="end"/>
+    </LinearLayout>
+</FrameLayout>

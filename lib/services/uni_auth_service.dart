@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../pages/macos_casdoor_auth_page.dart';
 import '../pages/ohos_casdoor_auth_page.dart';
+import '../widgets/adaptive_page_navigation.dart';
 
 // ---------------------------------------------------------------------------
 // GeekPie Uni-Auth configuration (powered by Casdoor)
@@ -119,7 +120,7 @@ class UniAuthService extends ChangeNotifier {
     Casdoor casdoor,
   ) async {
     final callbackUrl = await navigator.push<String>(
-      MaterialPageRoute<String>(
+      adaptivePageRoute<String>(
         builder: (_) => OhosCasdoorAuthPage(
           authorizeUrl: casdoor.getSigninUrl().toString(),
           callbackScheme: _uniAuthCallbackScheme,
@@ -137,7 +138,7 @@ class UniAuthService extends ChangeNotifier {
     Casdoor casdoor,
   ) async {
     final callbackUrl = await navigator.push<String>(
-      MaterialPageRoute<String>(
+      adaptivePageRoute<String>(
         builder: (_) => MacosCasdoorAuthPage(
           authorizeUrl: casdoor.getSigninUrl().toString(),
           callbackScheme: _uniAuthCallbackScheme,
