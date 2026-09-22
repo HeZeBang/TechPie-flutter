@@ -1,4 +1,4 @@
-minimum_ios_version = '15.0'
+minimum_ios_version = '15.5'
 platform :ios, minimum_ios_version
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.

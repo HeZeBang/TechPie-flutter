@@ -25,7 +25,8 @@ class CampusCardAccountPage extends StatefulWidget {
   State<CampusCardAccountPage> createState() => _CampusCardAccountPageState();
 }
 
-class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
+class _CampusCardAccountPageState extends State<CampusCardAccountPage>
+    with WidgetsBindingObserver {
   final _openIdController = TextEditingController();
   final _bindCodeController = TextEditingController();
   bool _loaded = false;
@@ -36,6 +37,20 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
   bool _bindBusy = false;
   String? _inlineMessage;
   bool _inlineError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _loaded) {
+      // The VPN may have been disconnected in Settings while WeChat was open.
+      unawaited(ServiceProvider.of(context).ecardBindService.refreshStatus());
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -50,6 +65,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _openIdController.dispose();
     _bindCodeController.dispose();
     super.dispose();
@@ -136,6 +152,13 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
                       '3. 把绑定码填到下面并点「获取 OPENID」，随后自动连接 eCard。',
                       style: hintStyle,
                     ),
+                    if (isIos()) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '此功能会添加临时 VPN 配置，可能与现有 VPN 冲突。仅修改校园卡域名解析；获取后请停止自动获取。需要在 iPhone 真机上使用。',
+                        style: hintStyle,
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     AdaptiveButton(
                       key: const Key('ecard-bind-hijack-button'),
@@ -148,9 +171,8 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
                       role: AdaptiveButtonRole.standard,
                       loading: _hijackBusy,
                       width: double.infinity,
-                      accessibilityLabel: bindService.hijackActive
-                          ? '停止自动获取'
-                          : '开启自动获取',
+                      accessibilityLabel:
+                          bindService.hijackActive ? '停止自动获取' : '开启自动获取',
                     ),
                     const SizedBox(height: 8),
                     AdaptiveTextFieldGroup(
@@ -183,22 +205,33 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
               ),
             ),
             const SizedBox(height: 16),
-            Row(children: [
-              const Expanded(child: Text('OPENID 渠道')),
-              SizedBox(width: 200, child: IgnorePointer(ignoring: busy, child: AdaptiveSelect(
-                value: _channel.method,
-                width: 200,
-                options: [for (final channel in EcardOpenIdChannel.values)
-                  AdaptiveSelectOption(value: channel.method, label: channel.label),],
-                onChanged: (value) {
-                  if (busy) return;
-                  setState(() {
-                    _channel = EcardOpenIdChannel.parse(value);
-                    _inlineMessage = null;
-                  });
-                },
-              ),),),
-            ],),
+            Row(
+              children: [
+                const Expanded(child: Text('OPENID 渠道')),
+                SizedBox(
+                  width: 200,
+                  child: IgnorePointer(
+                    ignoring: busy,
+                    child: AdaptiveSelect(
+                      value: _channel.method,
+                      width: 200,
+                      options: [
+                        for (final channel in EcardOpenIdChannel.values)
+                          AdaptiveSelectOption(
+                              value: channel.method, label: channel.label,),
+                      ],
+                      onChanged: (value) {
+                        if (busy) return;
+                        setState(() {
+                          _channel = EcardOpenIdChannel.parse(value);
+                          _inlineMessage = null;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             AdaptiveTextFieldGroup(
               key: const Key('openid-field'),
@@ -244,8 +277,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
               role: AdaptiveButtonRole.prominent,
               loading: _saving,
               width: double.infinity,
-              accessibilityLabel:
-                  service.configured ? '更新 eCard' : '连接 eCard',
+              accessibilityLabel: service.configured ? '更新 eCard' : '连接 eCard',
             ),
             const SizedBox(height: 8),
             AdaptiveButton(
@@ -285,7 +317,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
       final EcardBindHijackStatus status;
       if (wasActive) {
         await bindService.stopHijack();
-        status = EcardBindHijackStatus.inactive;
+        status = bindService.status;
       } else {
         status = await bindService.startHijack();
       }
@@ -295,12 +327,15 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
           _inlineError = true;
           _inlineMessage = '未获得系统授权，无法开启自动获取';
         });
-      } else if (!wasActive && status != EcardBindHijackStatus.active) {
+      } else if (status !=
+          (wasActive
+              ? EcardBindHijackStatus.inactive
+              : EcardBindHijackStatus.active)) {
         // Starting can fail quietly (no tunnel, refused interface); say so
         // instead of leaving the button looking untouched.
         setState(() {
           _inlineError = true;
-          _inlineMessage = '未能开启自动获取，请重试';
+          _inlineMessage = wasActive ? '未能停止自动获取，请检查系统 VPN 设置' : '未能开启自动获取，请重试';
         });
       } else {
         setState(() {
@@ -309,8 +344,14 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
         });
         // The tunnel being up is not proof it carries this app's lookups; verify
         // quietly and only report when it did not work.
-        unawaited(_silentSelfCheck(bindService));
+        if (!wasActive) unawaited(_silentSelfCheck(bindService));
       }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _inlineError = true;
+        _inlineMessage = _safeMessage(error);
+      });
     } finally {
       if (mounted) setState(() => _hijackBusy = false);
     }

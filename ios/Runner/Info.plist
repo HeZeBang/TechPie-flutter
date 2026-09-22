@@ -50,12 +50,12 @@
 	<key>UIApplicationShortcutItems</key>
 	<array>
 		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>techpie.ecard.pay</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Pay Code</string>
 			<key>UIApplicationShortcutItemIconSymbolName</key>
 			<string>qrcode</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Pay Code</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>techpie.ecard.pay</string>
 		</dict>
 	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

@@ -194,7 +194,8 @@ void main() {
     await tester.pumpWidget(app);
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byKey(const Key('openid-field')), 'not-an-openid');
+    await tester.enterText(
+        find.byKey(const Key('openid-field')), 'not-an-openid',);
     await tester.tap(find.text('检查登录'));
     await tester.pumpAndSettle();
 
@@ -285,7 +286,8 @@ void main() {
     expect(find.text('开启自动获取'), findsOneWidget);
   });
 
-  testWidgets('a start that never comes up says so', (WidgetTester tester) async {
+  testWidgets('a start that never comes up says so',
+      (WidgetTester tester) async {
     final app = await mount(tester);
     await tester.pumpWidget(app);
     await tester.pumpAndSettle();
@@ -297,6 +299,44 @@ void main() {
 
     expect(find.text('未能开启自动获取，请重试'), findsOneWidget);
     expect(find.text('开启自动获取'), findsOneWidget);
+  });
+
+  testWidgets('returning from Settings refreshes a disconnected VPN',
+      (tester) async {
+    final app = await mount(tester);
+    tunnel.current = EcardBindHijackStatus.active;
+    await tester.pumpWidget(app);
+    await tester.pumpAndSettle();
+    expect(find.text('停止自动获取'), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tunnel.current = EcardBindHijackStatus.inactive;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(find.text('开启自动获取'), findsOneWidget);
+    expect(find.text('停止自动获取'), findsNothing);
+  });
+
+  testWidgets('failed VPN stop remains active and lets the user retry',
+      (tester) async {
+    final app = await mount(tester);
+    tunnel.current = EcardBindHijackStatus.active;
+    tunnel.stopFailure =
+        const AppFailure(FailureKind.unavailable, 'VPN still connected');
+    await tester.pumpWidget(app);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('ecard-bind-hijack-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('停止自动获取'), findsOneWidget);
+    expect(find.text('VPN still connected'), findsOneWidget);
+
+    tunnel.stopFailure = null;
+    await tester.tap(find.byKey(const Key('ecard-bind-hijack-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('开启自动获取'), findsOneWidget);
+    expect(find.text('VPN still connected'), findsNothing);
   });
 
   testWidgets('a platform without the tunnel keeps the manual path', (
@@ -322,6 +362,7 @@ final class _ScriptedTunnel implements EcardBindHijackPort {
   EcardBindHijackStatus current = EcardBindHijackStatus.inactive;
   int startCalls = 0;
   int stopCalls = 0;
+  AppFailure? stopFailure;
 
   @override
   Future<EcardBindHijackStatus> start() async {
@@ -333,6 +374,7 @@ final class _ScriptedTunnel implements EcardBindHijackPort {
   @override
   Future<void> stop() async {
     stopCalls += 1;
+    if (stopFailure case final failure?) throw failure;
     current = EcardBindHijackStatus.inactive;
   }
 

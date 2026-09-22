@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/campus_card/core/errors/app_failure.dart';
 import 'package:techpie/features/campus_card/data/auth/ecard_bind_code_client.dart';
@@ -12,6 +13,7 @@ import 'package:techpie/services/ecard_bind_service.dart';
 /// tunnel's state, hands back a plain OPENID, and stores nothing itself, so
 /// `CampusCardService` stays the only writer of the account.
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late _ScriptedTunnel tunnel;
   late List<String> bodies;
 
@@ -21,17 +23,17 @@ void main() {
   });
 
   EcardBindService serviceIssuing({String userType = '8'}) => EcardBindService(
-    hijack: tunnel,
-    client: EcardBindCodeClient(
-      send: (method, url, headers, body) async {
-        bodies.add(body);
-        return (
-          200,
-          '{"ok":true,"openid":"SYNTHETIC_OPENID_FROM_CODE","usertype":"$userType","orgid":"2"}',
-        );
-      },
-    ),
-  );
+        hijack: tunnel,
+        client: EcardBindCodeClient(
+          send: (method, url, headers, body) async {
+            bodies.add(body);
+            return (
+              200,
+              '{"ok":true,"openid":"SYNTHETIC_OPENID_FROM_CODE","usertype":"$userType","orgid":"2"}',
+            );
+          },
+        ),
+      );
 
   /// A service whose client answers the health probe with [health] and the
   /// exchange with a valid payload.
@@ -43,14 +45,16 @@ void main() {
     return EcardBindService(
       hijack: tunnel,
       client: EcardBindCodeClient(
-        send: (method, url, headers, body) async =>
-            method == 'GET' ? health : (200, '{"ok":true,"openid":"SYNTHETIC"}'),
+        send: (method, url, headers, body) async => method == 'GET'
+            ? health
+            : (200, '{"ok":true,"openid":"SYNTHETIC"}'),
       ),
       resolve: resolve,
     );
   }
 
-  test('startHijack mirrors the platform and notifies only on a change', () async {
+  test('startHijack mirrors the platform and notifies only on a change',
+      () async {
     final service = serviceIssuing();
     var notifications = 0;
     service.addListener(() => notifications += 1);
@@ -77,7 +81,8 @@ void main() {
     expect(service.hijackActive, isFalse);
   });
 
-  test('redeem returns the OPENID with the channel the code was issued for', () async {
+  test('redeem returns the OPENID with the channel the code was issued for',
+      () async {
     final service = serviceIssuing(userType: '18');
 
     final redeemed = await service.redeem(' ab12cd ');
@@ -87,7 +92,8 @@ void main() {
     expect(bodies, ['{"code":"AB12CD"}']);
   });
 
-  test('redeem leaves the tunnel up so the caller decides when to stop it', () async {
+  test('redeem leaves the tunnel up so the caller decides when to stop it',
+      () async {
     final service = serviceIssuing();
     await service.startHijack();
 
@@ -97,17 +103,46 @@ void main() {
     expect(service.hijackActive, isTrue);
   });
 
-  test('the tunnel reports unsupported where there is no VpnService', () async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+  test('the tunnel reports unsupported on desktop', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
 
-    final android = EcardBindHijackService();
+    final platformTunnel = EcardBindHijackService();
 
-    expect(await android.start(), EcardBindHijackStatus.unsupported);
-    expect(await android.status(), EcardBindHijackStatus.unsupported);
+    expect(await platformTunnel.start(), EcardBindHijackStatus.unsupported);
+    expect(await platformTunnel.status(), EcardBindHijackStatus.unsupported);
   });
 
-  test('diagnose separates a hijacked host from an answering bind service', () async {
+  test('iOS VPN errors remain actionable without exposing native details',
+      () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    const channel = MethodChannel('techpie/ecard_bind');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      messenger.setMockMethodCallHandler(channel, null);
+    });
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      throw PlatformException(
+        code: 'ECARD_BIND_START_FAILED',
+        message: 'sensitive native configuration',
+      );
+    });
+
+    final service = EcardBindService();
+    addTearDown(service.dispose);
+    await expectLater(
+        service.startHijack(),
+        throwsA(isA<AppFailure>()
+            .having((error) => error.kind, 'kind', FailureKind.unavailable)
+            .having((error) => error.safeMessage, 'safe message',
+                isNot(contains('sensitive')),),),);
+    expect(service.hijackActive, isFalse);
+  });
+
+  test('diagnose separates a hijacked host from an answering bind service',
+      () async {
     final diagnosis = await diagnoseService(
       resolve: (host) async => <String>['119.78.254.196'],
       health: (200, '{"ok": true, "codes": 0}'),

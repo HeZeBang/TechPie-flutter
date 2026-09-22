@@ -40,7 +40,7 @@ TechPie 的所有重要变更。每个版本一节，按产品版本号排列（
 - 校园网页支持附件选择、脚本注入与桌面端桥接消息
 - HarmonyOS：扫码可用，校园签到等场景不必再手输
 - 会话保活：可查看各节点的续期情况与下次续期时间
-- eCard：可用小程序里的 6 位绑定码自动获取 OPENID 并连接（Android / HarmonyOS，首次需授权一次 VPN）
+- eCard：可用小程序里的 6 位绑定码自动获取 OPENID 并连接（Android / HarmonyOS / iOS 真机，首次需授权一次 VPN）
 - HarmonyOS：长按桌面图标可一键打开付款码
 
 ### 变更
