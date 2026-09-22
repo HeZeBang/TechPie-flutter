@@ -40,6 +40,12 @@
 		ECAD00000000000000000047 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = ECAD00000000000000000043 /* Localizable.strings */; };
 		ECAD0000000000000000004C /* AppShortcuts.strings in Resources */ = {isa = PBXBuildFile; fileRef = ECAD00000000000000000048 /* AppShortcuts.strings */; };
 		ECAD00000000000000000054 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = ECAD00000000000000000050 /* InfoPlist.strings */; };
+		ECBT00000000000000000001 /* EcardBindPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECBT00000000000000000011 /* EcardBindPlugin.swift */; };
+		ECBT00000000000000000002 /* EcardBindTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECBT00000000000000000012 /* EcardBindTunnelProvider.swift */; };
+		ECBT00000000000000000003 /* EcardBindPackets.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECBT00000000000000000013 /* EcardBindPackets.swift */; };
+		ECBT00000000000000000004 /* EcardBindTunnel.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = ECBT00000000000000000014 /* EcardBindTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		ECBT00000000000000000005 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ECBT00000000000000000015 /* NetworkExtension.framework */; };
+		ECBT00000000000000000006 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ECBT00000000000000000015 /* NetworkExtension.framework */; };
 		EEFBA20129D4C2B5677B93CD /* WatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0987CA72269BC175F4FC0A1A /* WatchStore.swift */; };
 /* End PBXBuildFile section */
 
@@ -64,6 +70,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = ECAD0000000000000000000B;
 			remoteInfo = EcardPayWidget;
+		};
+		ECBT00000000000000000020 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = ECBT00000000000000000040;
+			remoteInfo = EcardBindTunnel;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -96,6 +109,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				ECAD00000000000000000005 /* EcardPayWidget.appex in Embed App Extensions */,
+				ECBT00000000000000000004 /* EcardBindTunnel.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -159,6 +173,14 @@
 		ECAD00000000000000000051 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		ECAD00000000000000000052 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		ECAD00000000000000000053 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		ECBT00000000000000000011 /* EcardBindPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EcardBindPlugin.swift; sourceTree = "<group>"; };
+		ECBT00000000000000000012 /* EcardBindTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EcardBindTunnelProvider.swift; sourceTree = "<group>"; };
+		ECBT00000000000000000013 /* EcardBindPackets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EcardBindPackets.swift; sourceTree = "<group>"; };
+		ECBT00000000000000000014 /* EcardBindTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = EcardBindTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		ECBT00000000000000000015 /* NetworkExtension.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NetworkExtension.framework; path = System/Library/Frameworks/NetworkExtension.framework; sourceTree = SDKROOT; };
+		ECBT00000000000000000016 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
+		ECBT00000000000000000017 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		ECBT00000000000000000018 /* EcardBindTunnel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EcardBindTunnel.entitlements; sourceTree = "<group>"; };
 		EDBA650E1E348D1232D8FA94 /* Logo.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; name = Logo.png; path = ../assets/logo/Logo.png; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -187,6 +209,7 @@
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
 				6BFBE954DB868241E9E9810B /* Pods_Runner.framework in Frameworks */,
 				05B05AA7B58B0CE3C234F319 /* WatchSupport in Frameworks */,
+				ECBT00000000000000000005 /* NetworkExtension.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -194,6 +217,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ECBT00000000000000000031 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ECBT00000000000000000006 /* NetworkExtension.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -206,6 +237,7 @@
 				052EF181B45C1F8AB028A91F /* Pods_Runner.framework */,
 				95DFA3F27C43BF6B489182B8 /* Pods_RunnerTests.framework */,
 				954067E0D5BD4C9CCA60F151 /* watchOS */,
+				ECBT00000000000000000015 /* NetworkExtension.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -278,6 +310,7 @@
 				9740EEB11CF90186004384FC /* Flutter */,
 				97C146F01CF9000F007C117D /* Runner */,
 				ECAD0000000000000000000A /* EcardPayWidget */,
+				ECBT00000000000000000030 /* EcardBindTunnel */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				1FD71643C385FC3B24A7C891 /* Pods */,
@@ -293,6 +326,7 @@
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
 				ECAD00000000000000000003 /* EcardPayWidget.appex */,
 				D2C4C3D10C634BB53BF3F9A6 /* TechPieWatch.app */,
+				ECBT00000000000000000014 /* EcardBindTunnel.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -307,6 +341,8 @@
 				1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */,
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
+				ECBT00000000000000000011 /* EcardBindPlugin.swift */,
+				ECBT00000000000000000016 /* Runner.entitlements */,
 				ECAD00000000000000000031 /* EcardFeedback.swift */,
 				ECAD00000000000000000042 /* Shortcuts */,
 				5A0010082F1A000100000001 /* NativeGlass */,
@@ -349,6 +385,17 @@
 				ECAD00000000000000000050 /* InfoPlist.strings */,
 			);
 			path = Shortcuts;
+			sourceTree = "<group>";
+		};
+		ECBT00000000000000000030 /* EcardBindTunnel */ = {
+			isa = PBXGroup;
+			children = (
+				ECBT00000000000000000012 /* EcardBindTunnelProvider.swift */,
+				ECBT00000000000000000013 /* EcardBindPackets.swift */,
+				ECBT00000000000000000017 /* Info.plist */,
+				ECBT00000000000000000018 /* EcardBindTunnel.entitlements */,
+			);
+			path = EcardBindTunnel;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -394,6 +441,7 @@
 			dependencies = (
 				ECAD00000000000000000011 /* PBXTargetDependency */,
 				A12CF311F3590B09CDF532E5 /* PBXTargetDependency */,
+				ECBT00000000000000000021 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -441,6 +489,23 @@
 			productReference = ECAD00000000000000000003 /* EcardPayWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		ECBT00000000000000000040 /* EcardBindTunnel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ECBT00000000000000000053 /* Build configuration list for PBXNativeTarget "EcardBindTunnel" */;
+			buildPhases = (
+				ECBT00000000000000000042 /* Sources */,
+				ECBT00000000000000000031 /* Frameworks */,
+				ECBT00000000000000000041 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = EcardBindTunnel;
+			productName = EcardBindTunnel;
+			productReference = ECBT00000000000000000014 /* EcardBindTunnel.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -458,9 +523,22 @@
 					97C146ED1CF9000F007C117D = {
 						CreatedOnToolsVersion = 7.3.1;
 						LastSwiftMigration = 1100;
+						SystemCapabilities = {
+							com.apple.NetworkExtensions = {
+								enabled = 1;
+							};
+						};
 					};
 					ECAD0000000000000000000B = {
 						CreatedOnToolsVersion = 16.4;
+					};
+					ECBT00000000000000000040 = {
+						CreatedOnToolsVersion = 16.4;
+						SystemCapabilities = {
+							com.apple.NetworkExtensions = {
+								enabled = 1;
+							};
+						};
 					};
 				};
 			};
@@ -487,6 +565,7 @@
 				331C8080294A63A400263BE5 /* RunnerTests */,
 				ECAD0000000000000000000B /* EcardPayWidget */,
 				E34C05B9C95E87D00F79F0EE /* TechPieWatch */,
+				ECBT00000000000000000040 /* EcardBindTunnel */,
 			);
 		};
 /* End PBXProject section */
@@ -529,6 +608,13 @@
 			files = (
 				ECAD00000000000000000020 /* widget-background.png in Resources */,
 				ECAD00000000000000000026 /* Localizable.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ECBT00000000000000000041 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -665,6 +751,7 @@
 				5A0010052F1A000100000001 /* NativeGlassTabBarView.swift in Sources */,
 				5A0010032F1A000100000001 /* NativeGlassRegistry.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
+				ECBT00000000000000000001 /* EcardBindPlugin.swift in Sources */,
 				ECAD00000000000000000030 /* EcardFeedback.swift in Sources */,
 				ECAD00000000000000000040 /* EcardShortcuts.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
@@ -677,6 +764,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				ECAD00000000000000000004 /* EcardPayWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ECBT00000000000000000042 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ECBT00000000000000000002 /* EcardBindTunnelProvider.swift in Sources */,
+				ECBT00000000000000000003 /* EcardBindPackets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -707,6 +803,11 @@
 			isa = PBXTargetDependency;
 			target = ECAD0000000000000000000B /* EcardPayWidget */;
 			targetProxy = ECAD00000000000000000010 /* PBXContainerItemProxy */;
+		};
+		ECBT00000000000000000021 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = ECBT00000000000000000040 /* EcardBindTunnel */;
+			targetProxy = ECBT00000000000000000020 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -830,6 +931,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -1067,6 +1169,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -1090,6 +1193,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -1188,6 +1292,90 @@
 			};
 			name = Profile;
 		};
+		ECBT00000000000000000050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = EcardBindTunnel/EcardBindTunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				INFOPLIST_FILE = EcardBindTunnel/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.techpie.EcardBindTunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		ECBT00000000000000000051 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = EcardBindTunnel/EcardBindTunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				INFOPLIST_FILE = EcardBindTunnel/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.techpie.EcardBindTunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		ECBT00000000000000000052 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = EcardBindTunnel/EcardBindTunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				INFOPLIST_FILE = EcardBindTunnel/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.techpie.EcardBindTunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Profile;
+		};
 		FFA2093A804C5BE8133E2207 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 3A18B1C545E34121D35EA8DC /* Watch.xcconfig */;
@@ -1262,6 +1450,16 @@
 				ECAD0000000000000000000C /* Debug */,
 				ECAD0000000000000000000D /* Release */,
 				ECAD0000000000000000000E /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ECBT00000000000000000053 /* Build configuration list for PBXNativeTarget "EcardBindTunnel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ECBT00000000000000000050 /* Debug */,
+				ECBT00000000000000000051 /* Release */,
+				ECBT00000000000000000052 /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

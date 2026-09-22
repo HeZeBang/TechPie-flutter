@@ -9,6 +9,7 @@ import WidgetKit
   private var pendingEcardRoute: String?
   private var ecardFeedback: EcardFeedback?
   private var watchBridge: WatchConnectivityBridge?
+  private var ecardBindPlugin: EcardBindPlugin?
 
   override func application(
     _ application: UIApplication,
@@ -28,6 +29,7 @@ import WidgetKit
     NativeGlassRegistry.registerAll(with: registrar)
     ecardFeedback = EcardFeedback(registrar: registrar)
     watchBridge = WatchConnectivityBridge(registrar: registrar)
+    ecardBindPlugin = EcardBindPlugin(registrar: registrar)
 
     let deepLinkChannel = FlutterMethodChannel(
       name: "techpie/ecard_deep_link",
