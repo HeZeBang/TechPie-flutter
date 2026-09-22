@@ -227,6 +227,29 @@ class ScheduleService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<Map<String, dynamic>> createCalendarSubscription({
+    String? semesterId,
+  }) async {
+    final selectedSemesterId = semesterId ?? _selectedSemesterId;
+    if (selectedSemesterId == null || selectedSemesterId.isEmpty) {
+      throw Exception('Missing semesterId');
+    }
+
+    final resp = await _postWithRetry(
+      '$_baseUrl/calendar/create',
+      {'semesterId': selectedSemesterId},
+      'createCalendarSubscription',
+    );
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (data['success'] != true) {
+      throw Exception(
+        data['error'] as String? ??
+            'Request failed with status ${resp.statusCode}',
+      );
+    }
+    return data;
+  }
+
   Future<void> _fetchTermBeginForSemester(String semesterId) async {
     // Try to find the year and semester number from semesterInfo
     if (_semesterInfo == null) return;
