@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
+import '../../models/course.dart';
 import '../../models/course_table.dart';
+import '../../models/custom_course.dart';
 import 'ics_file_saver.dart';
 
 class StructuredLocation {
@@ -18,24 +20,20 @@ class StructuredLocation {
 }
 
 class _CalendarEventData {
-  final EamsCourse course;
-  final int week;
-  final int day;
-  final int startPeriodIndex;
-  final int endPeriodIndex;
-  final DateTime classDate;
+  final String name;
+  final String classroom;
+  final String teachers;
+  final String uidSeed;
   final DateTime startDateTime;
   final DateTime endDateTime;
   final String location;
   final StructuredLocation? structuredLocation;
 
   const _CalendarEventData({
-    required this.course,
-    required this.week,
-    required this.day,
-    required this.startPeriodIndex,
-    required this.endPeriodIndex,
-    required this.classDate,
+    required this.name,
+    required this.classroom,
+    required this.teachers,
+    required this.uidSeed,
     required this.startDateTime,
     required this.endDateTime,
     required this.location,
@@ -95,6 +93,7 @@ class IcsExportService {
     required CourseTable table,
     required DateTime termBegin,
     String calendarName = '课表',
+    List<CustomCourse> customCourses = const [],
   }) {
     final buffer = StringBuffer()
       ..writeln('BEGIN:VCALENDAR')
@@ -105,11 +104,9 @@ class IcsExportService {
       ..writeln('X-WR-CALNAME:${_escapeText(calendarName)}')
       ..writeln('X-WR-TIMEZONE:Asia/Shanghai');
 
-    for (final event in _expandCalendarEvents(table, termBegin)) {
+    for (final event in _expandCalendarEvents(table, termBegin, customCourses)) {
       buffer.writeln('BEGIN:VEVENT');
-      buffer.writeln(
-        'UID:${_buildUid(event.course, event.week, event.day, event.startPeriodIndex, event.endPeriodIndex)}',
-      );
+      buffer.writeln('UID:${_buildUid(event)}');
       buffer.writeln(
         'DTSTAMP:${_formatUtcTimestamp(DateTime.now().toUtc())}',
       );
@@ -119,7 +116,7 @@ class IcsExportService {
       buffer.writeln(
         'DTEND;TZID=Asia/Shanghai:${_formatDateTimeForIcs(event.endDateTime)}',
       );
-      buffer.writeln('SUMMARY:${_escapeText(event.course.name)}');
+      buffer.writeln('SUMMARY:${_escapeText(event.name)}');
       buffer.writeln('LOCATION-TYPE:SCHOOL');
       buffer.writeln('LOCATION:${_escapeText(event.location)}');
       final structuredLocation = event.structuredLocation;
@@ -131,8 +128,8 @@ class IcsExportService {
           'X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS="${_escapeAppleText(_structuredLocationAddress)}";X-APPLE-RADIUS=200;X-TITLE="${_escapeAppleText(structuredLocation.title)}":geo:${structuredLocation.latitude},${structuredLocation.longitude}',
         );
       }
-      if (event.course.teachers.trim().isNotEmpty) {
-        buffer.writeln('DESCRIPTION:${_escapeText(event.course.teachers)}');
+      if (event.teachers.trim().isNotEmpty) {
+        buffer.writeln('DESCRIPTION:${_escapeText(event.teachers)}');
       }
       buffer.writeln('SEQUENCE:0');
       buffer.writeln('END:VEVENT');
@@ -148,11 +145,13 @@ class IcsExportService {
     required String fileName,
     required IcsSaveLocation location,
     String calendarName = 'Course Table',
+    List<CustomCourse> customCourses = const [],
   }) async {
     final content = await compute(_buildCalendarInBackground, {
       'table': table.toJson(),
       'termBegin': termBegin.toIso8601String(),
       'calendarName': calendarName,
+      'customCourses': customCourses.map((c) => c.toJson()).toList(),
     });
     return saveIcsFile(fileName, content, location: location);
   }
@@ -160,10 +159,12 @@ class IcsExportService {
   Future<List<Map<String, Object?>>> buildCalendarEventPayloads({
     required CourseTable table,
     required DateTime termBegin,
+    List<CustomCourse> customCourses = const [],
   }) {
     return compute(_buildCalendarEventPayloadsInBackground, {
       'table': table.toJson(),
       'termBegin': termBegin.toIso8601String(),
+      'customCourses': customCourses.map((c) => c.toJson()).toList(),
     });
   }
 
@@ -176,21 +177,14 @@ class IcsExportService {
     return null;
   }
 
-  String _buildUid(
-    EamsCourse course,
-    int week,
-    int day,
-    int startPeriod,
-    int endPeriod,
-  ) {
-    final seed =
-        '${course.name}-${course.classroom}-$week-$day-$startPeriod-$endPeriod';
-    return '${Uri.encodeComponent(seed)}@techpie';
+  String _buildUid(_CalendarEventData event) {
+    return '${Uri.encodeComponent(event.uidSeed)}@techpie';
   }
 
   Iterable<_CalendarEventData> _expandCalendarEvents(
     CourseTable table,
     DateTime termBegin,
+    List<CustomCourse> customCourses,
   ) sync* {
     final mondayOfWeekOne = termBegin.subtract(
       Duration(days: termBegin.weekday - 1),
@@ -199,11 +193,13 @@ class IcsExportService {
       for (final period in table.periods) period.index: period.toPeriod(),
     };
 
+    DateTime mondayOf(int week) => mondayOfWeekOne.add(Duration(days: (week - 1) * 7));
+
     for (final course in table.courses) {
       for (int week = 1; week < course.weeks.length; week++) {
         if (course.weeks[week] != '1') continue;
 
-        final monday = mondayOfWeekOne.add(Duration(days: (week - 1) * 7));
+        final monday = mondayOf(week);
         for (final entry in course.times.entries) {
           final periods = [...entry.value]..sort();
           if (periods.isEmpty) continue;
@@ -218,14 +214,13 @@ class IcsExportService {
           final classroom = course.classroom.trim();
           final location = classroom.isEmpty ? '上海科技大学' : '$classroom 上海科技大学';
           yield _CalendarEventData(
-            course: course,
-            week: week,
-            day: entry.key,
-            startPeriodIndex: startPeriodIndex,
-            endPeriodIndex: endPeriodIndex,
-            classDate: classDate,
-            startDateTime:
-                _combineDateAndTime(classDate, startPeriod.startTime),
+            name: course.name,
+            classroom: classroom,
+            teachers: course.teachers,
+            // Preserve the existing UID scheme for fetched courses.
+            uidSeed: '${course.name}-$classroom-$week-${entry.key}'
+                '-$startPeriodIndex-$endPeriodIndex',
+            startDateTime: _combineDateAndTime(classDate, startPeriod.startTime),
             endDateTime: _combineDateAndTime(classDate, endPeriod.endTime),
             location: location,
             structuredLocation: _findStructuredLocation(classroom),
@@ -233,6 +228,39 @@ class IcsExportService {
         }
       }
     }
+
+    for (final custom in customCourses) {
+      final weeks = custom.isOneOff
+          ? [teachingWeekOf(custom.date!, termBegin)].whereType<int>()
+          : custom.weeks;
+      for (final week in weeks) {
+        for (final day in custom.effectiveWeekdays) {
+          final classDate = mondayOf(week).add(Duration(days: day - 1));
+          final times = _customEventTimes(custom, periodsByIndex);
+          if (times == null) continue;
+
+          final classroom = custom.location.trim();
+          yield _CalendarEventData(
+            name: custom.name,
+            classroom: classroom,
+            teachers: custom.teachers,
+            uidSeed: 'custom-${custom.id}-${_formatDateForUid(classDate)}',
+            startDateTime: _combineDateAndTime(classDate, times.$1),
+            endDateTime: _combineDateAndTime(classDate, times.$2),
+            location: classroom.isEmpty ? '上海科技大学' : '$classroom 上海科技大学',
+            structuredLocation: _findStructuredLocation(classroom),
+          );
+        }
+      }
+    }
+  }
+
+  /// The session's own clock times, else the ones its periods carry.
+  (String, String)? _customEventTimes(
+    CustomCourse course,
+    Map<int, Period> periodsByIndex,
+  ) {
+    return course.time.clockRange(periodsByIndex.values.toList());
   }
 
   String _formatDateTimeForIcs(DateTime dateTime) {
@@ -268,6 +296,15 @@ class IcsExportService {
   }
 }
 
+String _formatDateForUid(DateTime date) => '${date.year.toString().padLeft(4, '0')}'
+    '${date.month.toString().padLeft(2, '0')}'
+    '${date.day.toString().padLeft(2, '0')}';
+
+List<CustomCourse> _customCoursesFromPayload(Map<String, Object?> payload) =>
+    ((payload['customCourses'] as List?) ?? const [])
+        .map((e) => CustomCourse.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+
 String _buildCalendarInBackground(Map<String, Object?> payload) {
   final table = CourseTable.fromJson(
     (payload['table'] as Map<Object?, Object?>).cast<String, dynamic>(),
@@ -279,6 +316,7 @@ String _buildCalendarInBackground(Map<String, Object?> payload) {
     table: table,
     termBegin: termBegin,
     calendarName: calendarName,
+    customCourses: _customCoursesFromPayload(payload),
   );
 }
 
@@ -290,11 +328,12 @@ List<Map<String, Object?>> _buildCalendarEventPayloadsInBackground(
   );
   final termBegin = DateTime.parse(payload['termBegin'] as String);
   final service = IcsExportService();
-  return service._expandCalendarEvents(table, termBegin).map((event) {
+  final customCourses = _customCoursesFromPayload(payload);
+  return service._expandCalendarEvents(table, termBegin, customCourses).map((event) {
     final payload = <String, Object?>{
-      'title': event.course.name,
+      'title': event.name,
       'location': event.location,
-      'notes': event.course.teachers.trim(),
+      'notes': event.teachers.trim(),
       'startMillis': event.startDateTime.millisecondsSinceEpoch,
       'endMillis': event.endDateTime.millisecondsSinceEpoch,
     };
