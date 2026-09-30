@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/course_table.dart';
+import '../models/custom_course.dart';
 import 'api_base_url.dart';
 import 'auth_service.dart';
 import 'http_client.dart';
@@ -46,9 +47,7 @@ class ScheduleService extends ChangeNotifier {
   /// Teaching weeks in the selected semester, i.e. the upper bound for week
   /// navigation. Falls back to a generous default until the calendar loads.
   int get totalWeeks =>
-      (_termCalendar?.allTeachWeeks ?? 0) > 0
-          ? _termCalendar!.allTeachWeeks
-          : _fallbackTotalWeeks;
+      (_termCalendar?.allTeachWeeks ?? 0) > 0 ? _termCalendar!.allTeachWeeks : _fallbackTotalWeeks;
 
   ScheduleService(this._storage, this._http, AuthService _, this._tpAuth) {
     // A renewed campus session, a cookie minted for a child service (eams,
@@ -150,10 +149,62 @@ class ScheduleService extends ChangeNotifier {
 
   bool get _hasCpdailyBinding => _tpAuth.cpdailyNode.isAvailable;
 
+  // ── Sessions the user entered by hand ──
+  // Read straight from storage, so no second copy can go stale on a semester
+  // change.
+
+  List<CustomCourse> get customCourses => customCoursesFor(_selectedSemesterId);
+
+  CourseTable? courseTableFor(String? semesterId) {
+    if (semesterId == null) return null;
+    return semesterId == _selectedSemesterId ? _courseTable : _storage.loadCourseTable(semesterId);
+  }
+
+  TermCalendar? termCalendarFor(String? semesterId) {
+    if (semesterId == null) return null;
+    return semesterId == _selectedSemesterId
+        ? _termCalendar
+        : _storage.loadTermCalendar(semesterId);
+  }
+
+  List<CustomCourse> customCoursesFor(String? semesterId) =>
+      semesterId == null ? const [] : _storage.loadCustomCourses(semesterId);
+
+  CustomCourse? findCustomCourse(String id) =>
+      customCourses.where((course) => course.id == id).firstOrNull;
+
+  /// Adds [course], or replaces the session sharing its id. A session moved to
+  /// another semester is dropped from the old one in the same step.
+  Future<void> saveCustomCourse(String semesterId, CustomCourse course) async {
+    final previous = course.semesterId;
+    final courses = [...customCoursesFor(semesterId)];
+    final index = courses.indexWhere((existing) => existing.id == course.id);
+    final stored = course.copyWith(semesterId: semesterId);
+    if (index < 0) {
+      courses.add(stored);
+    } else {
+      courses[index] = stored;
+    }
+    await _storage.saveCustomCourses(semesterId, courses);
+    if (previous.isNotEmpty && previous != semesterId) {
+      await _removeCustomCourse(previous, course.id);
+    }
+    notifyListeners();
+  }
+
+  Future<void> deleteCustomCourse(String semesterId, String id) async {
+    await _removeCustomCourse(semesterId, id);
+    notifyListeners();
+  }
+
+  Future<void> _removeCustomCourse(String semesterId, String id) => _storage.saveCustomCourses(
+        semesterId,
+        customCoursesFor(semesterId).where((course) => course.id != id).toList(),
+      );
+
   Future<void> loadCachedData() async {
     _semesterInfo = _storage.loadSemesters();
-    _selectedSemesterId =
-        _storage.selectedSemester ?? _semesterInfo?.defaultSemester;
+    _selectedSemesterId = _storage.selectedSemester ?? _semesterInfo?.defaultSemester;
     if (_selectedSemesterId != null) {
       _courseTable = _storage.loadCourseTable(_selectedSemesterId!);
     }
@@ -204,8 +255,7 @@ class ScheduleService extends ChangeNotifier {
   Future<void> fetchCourseTable(String semesterId) async {
     final extra = <String, dynamic>{
       'semester_id': semesterId,
-      if (_semesterInfo?.tableId.isNotEmpty == true)
-        'table_id': _semesterInfo!.tableId,
+      if (_semesterInfo?.tableId.isNotEmpty == true) 'table_id': _semesterInfo!.tableId,
     };
 
     final resp = await _postWithRetry(
@@ -241,9 +291,7 @@ class ScheduleService extends ChangeNotifier {
           // rank 0/1/2 (秋/春/暑) -> the term number the backend expects (1/2/3);
           // unrecognized term keys fall back to spring (2).
           final rank = semesterTermRank(semEntry.key);
-          semNum = rank < kSemesterTermNames.length
-              ? (rank + 1).toString()
-              : '2';
+          semNum = rank < kSemesterTermNames.length ? (rank + 1).toString() : '2';
           break;
         }
       }
@@ -324,10 +372,10 @@ class ScheduleService extends ChangeNotifier {
 
   /// POST [url] with CpDaily auth + [extra] body fields. On 401 the eams
   /// node is renewed exactly once (single-flighted across all concurrent
- /// callers) and the request retried with the fresh cookie. For a stale
- /// parent tgc, [SessionTree.withCookie] falls back to renewing the
- /// cpdaily parent then re-minting the eams cookie. Throws on any non-200
- /// after the retry budget is exhausted.
+  /// callers) and the request retried with the fresh cookie. For a stale
+  /// parent tgc, [SessionTree.withCookie] falls back to renewing the
+  /// cpdaily parent then re-minting the eams cookie. Throws on any non-200
+  /// after the retry budget is exhausted.
   Future<http.Response> _postWithRetry(
     String url,
     Map<String, dynamic> extra,

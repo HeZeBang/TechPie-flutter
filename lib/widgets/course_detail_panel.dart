@@ -4,24 +4,26 @@ import '../models/course.dart';
 
 class CourseDetailContent extends StatelessWidget {
   final Course course;
-  final List<Period> periods;
   final EdgeInsetsGeometry padding;
   final bool compact;
+
+  /// Shown only for a session the user entered by hand — a fetched course has
+  /// nothing here to edit.
+  final VoidCallback? onEdit;
 
   const CourseDetailContent({
     super.key,
     required this.course,
-    required this.periods,
     this.padding = const EdgeInsets.fromLTRB(24, 20, 24, 24),
     this.compact = false,
+    this.onEdit,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final titleStyle =
-        compact ? theme.textTheme.titleLarge : theme.textTheme.headlineSmall;
+    final titleStyle = compact ? theme.textTheme.titleLarge : theme.textTheme.headlineSmall;
     final detailColor = colorScheme.onSurfaceVariant;
 
     return Padding(
@@ -66,19 +68,24 @@ class CourseDetailContent extends StatelessWidget {
               text: course.weeksText!,
               color: detailColor,
             ),
+          if (onEdit != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('编辑'),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
   String _timeRange() {
-    if (course.startPeriod - 1 < periods.length &&
-        course.endPeriod - 1 < periods.length) {
-      final start = periods[course.startPeriod - 1];
-      final end = periods[course.endPeriod - 1];
-      return '${start.startTime} – ${end.endTime}  (第${course.startPeriod}-${course.endPeriod}节)';
-    }
-    return '第${course.startPeriod}-${course.endPeriod}节';
+    return course.timeLabel;
   }
 
   String _dayName() {

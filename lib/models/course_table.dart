@@ -34,10 +34,8 @@ class EamsCourse {
   final String name;
   final String classroom;
   final String teachers;
-  final String
-      weeks; // binary string: "01111111111111111000..." (index 1 = week 1)
-  final Map<int, List<int>>
-      times; // { weekday(1-7): [period_numbers(1-based)] }
+  final String weeks; // binary string: "01111111111111111000..." (index 1 = week 1)
+  final Map<int, List<int>> times; // { weekday(1-7): [period_numbers(1-based)] }
 
   const EamsCourse({
     required this.name,
@@ -66,25 +64,7 @@ class EamsCourse {
   String get weeksText {
     final weekNums = _activeWeeks();
     if (weekNums.isEmpty) return '';
-    return _numsToRanges(weekNums);
-  }
-
-  static String _numsToRanges(List<int> nums) {
-    if (nums.isEmpty) return '';
-    final ranges = <String>[];
-    int start = nums[0];
-    int end = nums[0];
-    for (int i = 1; i < nums.length; i++) {
-      if (nums[i] == end + 1) {
-        end = nums[i];
-      } else {
-        ranges.add(start == end ? '$start' : '$start-$end');
-        start = nums[i];
-        end = nums[i];
-      }
-    }
-    ranges.add(start == end ? '$start' : '$start-$end');
-    return '${ranges.join(', ')}周';
+    return formatWeekRanges(weekNums);
   }
 
   Map<String, dynamic> toJson() => {
@@ -151,9 +131,7 @@ class CourseTable {
     periods.sort((a, b) => a.index.compareTo(b.index));
 
     final rawCourses = data['courses'] as List<dynamic>? ?? [];
-    final courses = rawCourses
-        .map((c) => EamsCourse.fromJson(c as Map<String, dynamic>))
-        .toList();
+    final courses = rawCourses.map((c) => EamsCourse.fromJson(c as Map<String, dynamic>)).toList();
 
     return CourseTable(periods: periods, courses: courses);
   }
@@ -211,9 +189,7 @@ const List<String> kSemesterTermNames = ['秋', '春', '暑'];
 /// way, resolve it to the Chinese term name for display.
 String semesterTermDisplayName(String rawTermKey) {
   final asNumber = int.tryParse(rawTermKey);
-  if (asNumber != null &&
-      asNumber >= 1 &&
-      asNumber <= kSemesterTermNames.length) {
+  if (asNumber != null && asNumber >= 1 && asNumber <= kSemesterTermNames.length) {
     return kSemesterTermNames[asNumber - 1];
   }
   for (final name in kSemesterTermNames) {
@@ -296,6 +272,7 @@ List<Course> eamsToDisplayCourses(
   List<EamsCourse> eamsCourses,
   int? weekFilter, {
   bool includeGhosts = false,
+  List<Period> timetablePeriods = defaultPeriods,
 }) {
   final result = <Course>[];
   for (int i = 0; i < eamsCourses.length; i++) {
@@ -306,7 +283,7 @@ List<Course> eamsToDisplayCourses(
     final color = CourseColor.values[i % CourseColor.values.length];
     for (final entry in eams.times.entries) {
       final day = entry.key;
-      final periods = entry.value..sort();
+      final periods = [...entry.value]..sort();
       if (periods.isEmpty) continue;
 
       // Group consecutive periods into blocks
@@ -317,36 +294,46 @@ List<Course> eamsToDisplayCourses(
         if (periods[j] == end + 1) {
           end = periods[j];
         } else {
-          result.add(
-            Course(
-              name: eams.name,
-              location: eams.classroom,
-              dayOfWeek: day,
-              startPeriod: start,
-              endPeriod: end,
-              color: color,
-              teachers: eams.teachers,
-              weeksText: eams.weeksText,
-              isGhost: !active,
-            ),
-          );
+          final placement = PeriodCourseTime(
+            startPeriod: start,
+            endPeriod: end,
+          ).resolve(timetablePeriods);
+          if (placement != null) {
+            result.add(
+              Course(
+                name: eams.name,
+                location: eams.classroom,
+                dayOfWeek: day,
+                placement: placement,
+                color: color,
+                teachers: eams.teachers,
+                weeksText: eams.weeksText,
+                isGhost: !active,
+              ),
+            );
+          }
           start = periods[j];
           end = periods[j];
         }
       }
-      result.add(
-        Course(
-          name: eams.name,
-          location: eams.classroom,
-          dayOfWeek: day,
-          startPeriod: start,
-          endPeriod: end,
-          color: color,
-          teachers: eams.teachers,
-          weeksText: eams.weeksText,
-          isGhost: !active,
-        ),
-      );
+      final placement = PeriodCourseTime(
+        startPeriod: start,
+        endPeriod: end,
+      ).resolve(timetablePeriods);
+      if (placement != null) {
+        result.add(
+          Course(
+            name: eams.name,
+            location: eams.classroom,
+            dayOfWeek: day,
+            placement: placement,
+            color: color,
+            teachers: eams.teachers,
+            weeksText: eams.weeksText,
+            isGhost: !active,
+          ),
+        );
+      }
     }
   }
   return result;
