@@ -386,15 +386,8 @@ class SessionNode extends ChangeNotifier {
   DateTime? _defaultNextRenewTimestamp() {
     final now = DateTime.now();
     return switch (renewSchedule) {
-      RenewSchedule.cpdailyDefault => DateTime(
-          now.year,
-          now.month + 1,
-          now.day,
-          now.hour,
-          now.minute,
-          now.second,
-          now.millisecond,
-          now.microsecond,
+      RenewSchedule.cpdailyDefault => _account?.expireAt?.subtract(
+          const Duration(days: 3),
         ),
       RenewSchedule.accountExpiry => _account?.expireAt?.subtract(
           const Duration(hours: 48),
