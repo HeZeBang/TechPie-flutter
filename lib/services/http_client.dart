@@ -1,15 +1,23 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
+import 'atrust_routing.dart';
 import 'debug_logger.dart';
 
 class LoggingHttpClient {
   final http.Client _inner;
   final DebugLogger _logger;
 
+  /// The default client asks [AtrustRouting] where each request goes, so the
+  /// campus tunnel can be armed for campus hosts without every service knowing
+  /// about it. Tests pass their own [inner] and are unaffected.
   LoggingHttpClient(this._logger, {http.Client? inner})
-      : _inner = inner ?? http.Client();
+      : _inner =
+            inner ??
+            IOClient(HttpClient()..findProxy = AtrustRouting.forUri);
 
   Future<http.Response> get(
     Uri url, {
@@ -72,6 +80,34 @@ class LoggingHttpClient {
       _logger.log(
         method: 'POST',
         url: url.toString(),
+        error: e.toString(),
+        tag: tag,
+      );
+      rethrow;
+    }
+  }
+
+  /// Sends [request] exactly as given, **without** following redirects, so a
+  /// handshake that has to read each hop's `Location` (CAS, SSO bounces) can do
+  /// so itself. `http.Client`'s own redirect handling is on by default and would
+  /// swallow the hop that carries the ticket.
+  Future<http.Response> send(http.BaseRequest request, {String? tag}) async {
+    _logger.log(method: request.method, url: request.url.toString(), tag: tag);
+    try {
+      final response = await http.Response.fromStream(
+        await _inner.send(request),
+      );
+      _logger.log(
+        method: request.method,
+        url: request.url.toString(),
+        statusCode: response.statusCode,
+        tag: tag,
+      );
+      return response;
+    } catch (e) {
+      _logger.log(
+        method: request.method,
+        url: request.url.toString(),
         error: e.toString(),
         tag: tag,
       );

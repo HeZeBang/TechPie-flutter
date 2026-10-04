@@ -1,7 +1,10 @@
 import 'dart:async';
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
-
+import 'package:techpie/services/atrust_control_client.dart';
+import 'package:techpie/services/atrust_routing.dart';
+import 'package:techpie/services/atrust_tunnel_service.dart';
+import 'package:techpie/services/http_client.dart';
 import '../services/ecard_bind_hijack.dart';
 import '../services/ecard_bind_service.dart';
 import '../services/service_provider.dart';
@@ -51,6 +54,15 @@ final class DeveloperLabPage extends StatelessWidget {
         padding: EdgeInsets.only(top: topPad, bottom: 32),
         children: [
           if (!AppHaptics.hasPlayer) const _NoPlayerNotice(),
+          const _Section(
+            key: Key('lab-atrust'),
+            header: 'aTrust tunnel',
+            footer:
+                'The core library carries campus traffic only. Arming the '
+                'switch sends this app\'s own campus requests through it; '
+                'everything else in the app keeps going direct.',
+            children: [_AtrustPanel()],
+          ),
           _Section(
             key: const Key('lab-haptics'),
             header: 'Haptics',
@@ -248,6 +260,214 @@ final class _EcardBindProbeState extends State<_EcardBindProbe> {
                 )
               : const Icon(Icons.play_arrow),
           onTap: _busy ? null : () => unawaited(_check()),
+        ),
+      ],
+    );
+  }
+}
+
+
+/// The campus tunnel, driven by hand. The control plane lives in the app (login,
+/// SMS, session), the packet path in the pinned core library; this panel is the
+/// seam between them and the only place either is exercised outside a test.
+final class _AtrustPanel extends StatefulWidget {
+  const _AtrustPanel();
+
+  @override
+  State<_AtrustPanel> createState() => _AtrustPanelState();
+}
+
+final class _AtrustPanelState extends State<_AtrustPanel> {
+  late final AtrustTunnelService _tunnel;
+  AtrustControlClient? _control;
+  AtrustLoginState? _login;
+  AtrustTunnelStatus? _tunnelStatus;
+  AtrustClientType _clientType = AtrustClientType.desktop;
+  String _detail = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // Loading is cheap and never throws: a platform without the library (or one
+    // built for a different ABI) reports itself here instead of breaking boot.
+    _tunnel = AtrustTunnelService.load();
+  }
+
+  AtrustControlClient _client(BuildContext context) {
+    final services = ServiceProvider.of(context);
+    return _control ??= AtrustControlClient(
+      http: LoggingHttpClient(services.debugLogger),
+      storage: services.storageService,
+      castgc: services.thirdPartyAuthService.cpdailyCookies,
+      clientType: _clientType,
+    );
+  }
+
+  Future<void> _signIn(BuildContext context) async {
+    final control = _client(context);
+    try {
+      var state = await control.login();
+      if (state.stage == AtrustStage.needSms) {
+        if (!context.mounted) return;
+        final code = await _askForCode(context, state.hint);
+        if (code.isEmpty) {
+          _set(state, '已取消');
+          return;
+        }
+        state = await control.submitSms(code);
+      }
+      if (state.stage != AtrustStage.online) {
+        _set(state, '未登录');
+        return;
+      }
+      final session = control.session!;
+      _tunnel.start(
+        sessionJson: jsonEncode({
+          'sid': session.sid,
+          'device_id': session.deviceId,
+          'username': session.username,
+          'base_url': session.baseUrl,
+          'gateways': session.gateways,
+          'dns': session.dns,
+        }),
+        policyJson: session.policyJson,
+      );
+      _tunnel.startProxies(socksAddress: AtrustRouting.socksProxy);
+      _set(
+        state,
+        '已上线 ${session.username}'
+        '${session.trusted ? '（本机已授信）' : '（未授信，下次仍要短信）'}',
+      );
+    } on Object catch (error) {
+      _set(_login, '失败：$error');
+    }
+  }
+
+  Future<String> _askForCode(BuildContext context, String hint) async {
+    final controller = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('短信验证码'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    return code ?? '';
+  }
+
+  void _stop({bool logout = false}) {
+    AtrustRouting.enabled = false;
+    _tunnel.stop();
+    if (logout) {
+      final control = _control;
+      if (control != null) unawaited(control.logout());
+      _control = null;
+      _login = null;
+    }
+    _set(_login, logout ? '已登出' : '已停止');
+  }
+
+  void _set(AtrustLoginState? login, String detail) {
+    if (!mounted) return;
+    setState(() {
+      _login = login;
+      _detail = detail;
+      _tunnelStatus = _tunnel.isSupported ? _tunnel.status() : null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = _login;
+    final status = _tunnelStatus;
+    final lines = <String>[
+      _tunnel.isSupported
+          ? '库：${_tunnel.version}（ABI ${_tunnel.abi}）'
+          : '库不可用：${_tunnel.unsupportedReason}',
+      session == null
+          ? '会话：未登录'
+          : '会话：${session.restored ? '恢复' : '新建'} · ${session.stage.name}'
+                '${session.hint.isEmpty ? '' : ' · ${session.hint}'}',
+      status == null
+          ? '隧道：未运行'
+          : '隧道：${status.alive ? '在线' : '未连'}'
+                '${status.vip.isEmpty ? '' : ' · ${status.vip}'}'
+                '${status.gateway.isEmpty ? '' : ' · ${status.gateway}'}',
+      if (_detail.isNotEmpty) _detail,
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(
+            lines.join('\n'),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.shield_outlined),
+          title: const Text('客户端类型'),
+          subtitle: Text(
+            _clientType == AtrustClientType.desktop
+                ? 'SDPClient — 可绑定授信终端，绑定后不再每次要短信'
+                : 'SDPBrowserClient — 每次都需短信',
+          ),
+          trailing: Switch(
+            value: _clientType == AtrustClientType.desktop,
+            onChanged: (desktop) => setState(() {
+              _clientType = desktop
+                  ? AtrustClientType.desktop
+                  : AtrustClientType.browser;
+              _control = null;
+            }),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.login),
+          title: const Text('登录并接入隧道'),
+          subtitle: const Text('首次会要求短信验证码'),
+          onTap: () => unawaited(_signIn(context)),
+        ),
+        ListTile(
+          leading: const Icon(Icons.route_outlined),
+          title: const Text('校园请求走隧道'),
+          subtitle: const Text('仅 *.shanghaitech.edu.cn，其余保持直连'),
+          trailing: Switch(
+            value: AtrustRouting.enabled,
+            onChanged: (enabled) => setState(() {
+              AtrustRouting.enabled = enabled;
+              _detail = enabled ? '已启用：校园请求走 SOCKS5' : '已关闭';
+            }),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.stop_circle_outlined),
+          title: const Text('停止隧道'),
+          subtitle: const Text('保留会话，下次可直接恢复'),
+          onTap: _stop,
+        ),
+        ListTile(
+          leading: const Icon(Icons.logout),
+          title: const Text('登出'),
+          subtitle: const Text('丢弃本地会话'),
+          onTap: () => _stop(logout: true),
         ),
       ],
     );

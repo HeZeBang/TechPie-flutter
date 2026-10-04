@@ -94,6 +94,13 @@ set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
+# The campus tunnel's core library. Loaded with DynamicLibrary.open() at
+# runtime, which finds it through the bundle's RUNPATH ($ORIGIN/lib) — the same
+# path every plugin library already arrives by. Built from the pinned submodule
+# in third_party/geektrust-core; see that repository's build.sh.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/libgeektrust.so"
+        DESTINATION "${INSTALL_BUNDLE_LIB_DIR}")
+
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
 

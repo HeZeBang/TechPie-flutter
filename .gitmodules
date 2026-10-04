@@ -1,0 +1,3 @@
+[submodule "third_party/geektrust-core"]
+	path = third_party/geektrust-core
+	url = https://github.com/HeZeBang/GeekTrust-Core.git

@@ -40,6 +40,7 @@ dependencies:
   desktop_webview_window: any
   dio: ^5.8.0
   dynamic_color: ">=1.7.0 <1.8.0"
+  ffi: ^2.1.0
   flutter:
     sdk: flutter
   flutter_riverpod: 2.6.1
@@ -51,10 +52,16 @@ dependencies:
       ref: br_v9.2.2_ohos
   http: ^1.4.0
   image_picker:
+    # The OpenHarmony-SIG fork at its new gitcode home, pinned by the commit
+    # whose OHOS side drives the picker through
+    # photoAccessHelper.PhotoViewPicker. The gitee mirror stopped at 4500f9d
+    # (Dec 2024), whose startAbilityForResult('ohos.want.action.photoPicker')
+    # path hands nothing back to the caller on HarmonyOS NEXT — a picked
+    # picture simply never arrived.
     git:
-      url: https://gitee.com/openharmony-sig/flutter_packages.git
+      url: https://gitcode.com/openharmony-sig/flutter_packages.git
       path: packages/image_picker/image_picker
-      ref: br_image_picker-v1.1.2_ohos
+      ref: 881e0dbe8fbf67faf541574f93557f826f3ceb3e
   intl: ^0.20.2
   mobile_scanner: ^6.0.10
   open_filex: ^4.5.0
@@ -90,9 +97,9 @@ dependency_overrides:
   # MethodChannel calls on OHOS throw MissingPluginException at boot.
   image_picker_ohos:
     git:
-      url: https://gitee.com/openharmony-sig/flutter_packages.git
+      url: https://gitcode.com/openharmony-sig/flutter_packages.git
       path: packages/image_picker/image_picker_ohos
-      ref: br_image_picker-v1.1.2_ohos
+      ref: 881e0dbe8fbf67faf541574f93557f826f3ceb3e
   mobile_scanner:
     # HeZeBang/mobile_scanner_ohos: the OHOS fork of mobile_scanner 6.0.10 plus
     # TechPie's patches — the preview freezes on its last frame, and every start

@@ -146,6 +146,29 @@ class StorageService {
   // gradescope, hydro, eams, elearning). Local-only UI signal, never synced.
   static const _renewStatusKeyPrefix = 'renew_status_';
 
+  // aTrust control-plane session (ids/cookies + the controller's routing
+  // policy). The packet path in the core library is handed this, never the
+  // primary account's credentials.
+  static const _atrustSessionKey = 'atrust_session';
+  static const _atrustDeviceIdKey = 'atrust_device_id';
+
+  /// The aTrust device identity: 32 uppercase hex, stable per install. The
+  /// controller treats a new value as a new device, which costs one SMS, so it
+  /// is deliberately separate from the sync device id.
+  Future<String?> loadAtrustDeviceId() async =>
+      _prefs.getString(_atrustDeviceIdKey);
+
+  Future<void> saveAtrustDeviceId(String id) async {
+    await _prefs.setString(_atrustDeviceIdKey, id);
+  }
+
+  Future<void> saveAtrustSession(String json) =>
+      _secure.write(key: _atrustSessionKey, value: json);
+
+  Future<String?> loadAtrustSession() => _secure.read(key: _atrustSessionKey);
+
+  Future<void> clearAtrustSession() => _secure.delete(key: _atrustSessionKey);
+
   Future<void> saveRenewStatus(String nodeId, RenewStatus status) =>
       _prefs.setString(
         '$_renewStatusKeyPrefix$nodeId',
