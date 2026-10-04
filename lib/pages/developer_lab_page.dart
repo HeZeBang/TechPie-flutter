@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:techpie/services/atrust_control_client.dart';
 import 'package:techpie/services/atrust_routing.dart';
 import 'package:techpie/services/atrust_tunnel_service.dart';
 import 'package:techpie/services/atrust_vpn_service.dart';
 import 'package:techpie/services/http_client.dart';
+
 import '../services/ecard_bind_hijack.dart';
 import '../services/ecard_bind_service.dart';
 import '../services/service_provider.dart';
@@ -287,6 +290,9 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
   AtrustTunnelStatus? _vpnTunnelStatus;
   AtrustClientType _clientType = AtrustClientType.desktop;
   String _detail = '';
+  bool _probing = false;
+  String _probeResult = '';
+
 
   @override
   void initState() {
@@ -438,6 +444,46 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
       _set(_login, '停止系统 VPN 失败：$error');
     }
   }
+  Future<void> _probeCampus() async {
+    if (_probing) return;
+    setState(() {
+      _probing = true;
+      _probeResult = '测试中…';
+    });
+    final client = http.Client();
+    final results = <String>[];
+    try {
+      for (final target in const [
+        'https://netinfo.shanghaitech.edu.cn/',
+        'http://10.15.89.181/',
+      ]) {
+        final stopwatch = Stopwatch()..start();
+        try {
+          final response = await client
+              .get(Uri.parse(target))
+              .timeout(const Duration(seconds: 12));
+          results.add(
+            '$target → HTTP ${response.statusCode}, '
+            '${response.bodyBytes.length} B, ${stopwatch.elapsedMilliseconds} ms',
+          );
+        } on Object catch (error) {
+          results.add(
+            '$target → ${error.runtimeType}: $error '
+            '(${stopwatch.elapsedMilliseconds} ms)',
+          );
+        }
+      }
+    } finally {
+      client.close();
+      if (mounted) {
+        setState(() {
+          _probing = false;
+          _probeResult = results.join('\\n');
+        });
+      }
+    }
+  }
+
 
   void _set(AtrustLoginState? login, String detail) {
     if (!mounted) return;
@@ -534,6 +580,19 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
             onTap: () => unawaited(_stopVpn()),
           ),
         ],
+        ListTile(
+          leading: const Icon(Icons.network_check),
+          title: const Text('测试校内地址'),
+          subtitle: Text(
+            _probing
+                ? '请求中…'
+                : (_probeResult.isEmpty
+                    ? 'netinfo.shanghaitech.edu.cn 与 10.15.89.181'
+                    : _probeResult),
+          ),
+          onTap: _probing ? null : _probeCampus,
+        ),
+        const Divider(height: 1),
         ListTile(
           leading: const Icon(Icons.logout),
           title: const Text('登出'),
