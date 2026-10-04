@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:techpie/features/campus_card/core/errors/app_failure.dart';
 import 'package:techpie/features/campus_card/platform/scanner/mobile_scanner_session.dart';
@@ -91,6 +92,24 @@ void main() {
     expect(controller.events, ['start', 'stop', 'dispose']);
     await expectLater(session.start(), throwsStateError);
   });
+
+  test('a gallery picture is analyzed with the camera running again',
+      () async {
+    // The picker covered the page and the camera session went with it: a
+    // decode handed in during that window reads the picture against a
+    // camera that is only just coming back, and the picture is never read.
+    final controller = _GalleryScannerController();
+    final session = MobileScannerSession(
+      controller: controller,
+      imagePicker: _GalleryImagePicker(),
+    );
+    await session.start();
+    await session.stop();
+    final code = await session.scanImage();
+    expect(code, 'TECHPIE_GALLERY_CODE');
+    expect(controller.events, ['start', 'stop', 'start', 'analyze']);
+    await session.dispose();
+  });
 }
 
 class _DelayedScannerController extends MobileScannerController {
@@ -142,6 +161,63 @@ class _FailedScannerController extends MobileScannerController {
       error: const MobileScannerException(errorCode: MobileScannerErrorCode.permissionDenied),
     );
   }
+  @override
+  // No native resources are acquired by this fake.
+  // ignore: must_call_super
+  Future<void> dispose() async {}
+}
+
+/// The picker handed a picture back after the camera session went away.
+class _GalleryImagePicker extends ImagePicker {
+  @override
+  Future<XFile?> pickImage({
+    required ImageSource source,
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+    CameraDevice preferredCameraDevice = CameraDevice.rear,
+    bool requestFullMetadata = true,
+  }) async =>
+      XFile('/tmp/techpie-gallery-picture');
+}
+
+/// A camera whose decode only answers while its session is running: the
+/// platform reads a picture against the camera, and one that is still coming
+/// back answers with nothing.
+class _GalleryScannerController extends MobileScannerController {
+  _GalleryScannerController() : super(autoStart: false);
+
+  final events = <String>[];
+  bool running = false;
+
+  @override
+  Stream<void> get previewStartedStream => Stream<void>.value(null);
+
+  @override
+  Future<void> start({CameraFacing? cameraDirection}) async {
+    events.add('start');
+    running = true;
+    value = value.copyWith(isInitialized: true, isRunning: true);
+  }
+
+  @override
+  Future<void> stop({bool force = false}) async {
+    events.add('stop');
+    running = false;
+  }
+
+  @override
+  Future<BarcodeCapture?> analyzeImage(
+    String path, {
+    List<BarcodeFormat> formats = const <BarcodeFormat>[],
+  }) async {
+    events.add('analyze');
+    if (!running) return null;
+    return const BarcodeCapture(
+      barcodes: [Barcode(rawValue: 'TECHPIE_GALLERY_CODE')],
+    );
+  }
+
   @override
   // No native resources are acquired by this fake.
   // ignore: must_call_super

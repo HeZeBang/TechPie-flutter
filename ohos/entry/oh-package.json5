@@ -9,7 +9,8 @@
   "author": "",
   "license": "",
   "dependencies": {
-    "libecardbind_reader.so": "file:./src/main/cpp/types/libecardbind_reader"
+    "libecardbind_reader.so": "file:./src/main/cpp/ecardbind_reader/types/libecardbind_reader",
+    "libgeektrust_vpn.so": "file:./src/main/cpp/geektrust_vpn/types/libgeektrust_vpn"
   },
 }
 

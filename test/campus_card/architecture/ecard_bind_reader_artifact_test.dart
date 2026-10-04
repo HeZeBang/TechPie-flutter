@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// embeds a digest of that source tree in the .so and this recomputes it. A
 /// failure below means exactly one thing: rebuild the reader and commit it.
 void main() {
-  const cppDirectory = 'ohos/entry/src/main/cpp';
+  const cppDirectory = 'ohos/entry/src/main/cpp/ecardbind_reader';
   final library = File('ohos/entry/libs/arm64-v8a/libecardbind_reader.so');
 
   test('the prebuilt reader was built from the source in this tree', () {

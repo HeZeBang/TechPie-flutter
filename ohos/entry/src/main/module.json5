@@ -44,6 +44,12 @@
     ],
     "extensionAbilities": [
       {
+        "name": "GeekTrustVpnAbility",
+        "srcEntry": "./ets/geektrustvpn/GeekTrustVpnExtensionAbility.ets",
+        "type": "vpn",
+        "exported": false
+      },
+      {
         "name": "EcardBindVpnAbility",
         "srcEntry": "./ets/ecardbind/EcardBindVpnAbility.ets",
         "type": "vpn",

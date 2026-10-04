@@ -46,15 +46,16 @@ void main() {
       ),
     );
 
-    // The tun-fd shape is not wired into the library yet: calling it must fail
-    // loudly and say so, never silently succeed.
+    // The descriptor goes to an engine that has not been given a session yet,
+    // so it refuses and says which step is missing — rather than attaching a
+    // descriptor to nothing.
     expect(
       () => tunnel.attachTunFd(-1),
       throwsA(
         isA<AtrustTunnelException>().having(
           (error) => error.message,
           'message',
-          contains('not implemented'),
+          contains('geektrust_init'),
         ),
       ),
     );

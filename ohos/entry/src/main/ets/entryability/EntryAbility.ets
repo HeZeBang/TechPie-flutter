@@ -1,6 +1,7 @@
 import { FlutterAbility, FlutterEngine } from '@ohos/flutter_ohos';
 import { CampusCardPlatformPlugin } from '../campuscard/CampusCardPlatformPlugin';
 import { EcardBindPlugin } from '../ecardbind/EcardBindPlugin';
+import { GeekTrustVpnPlugin } from '../geektrustvpn/GeekTrustVpnPlugin';
 import { EcardShortcutPlugin } from '../ecardshortcut/EcardShortcutPlugin';
 import SystemFeedbackPlugin from '../platform/SystemFeedbackPlugin';
 import { GeneratedPluginRegistrant } from '../plugins/GeneratedPluginRegistrant';
@@ -15,6 +16,7 @@ export default class EntryAbility extends FlutterAbility {
     GeneratedPluginRegistrant.registerWith(flutterEngine)
     flutterEngine.getPlugins()?.add(new CampusCardPlatformPlugin())
     flutterEngine.getPlugins()?.add(new EcardBindPlugin())
+    flutterEngine.getPlugins()?.add(new GeekTrustVpnPlugin())
     flutterEngine.getPlugins()?.add(new SystemFeedbackPlugin())
     this.ecardShortcuts = new EcardShortcutPlugin()
     flutterEngine.getPlugins()?.add(this.ecardShortcuts)

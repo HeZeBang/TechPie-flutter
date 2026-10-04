@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:techpie/services/atrust_control_client.dart';
 import 'package:techpie/services/atrust_routing.dart';
 import 'package:techpie/services/atrust_tunnel_service.dart';
+import 'package:techpie/services/atrust_vpn_service.dart';
 import 'package:techpie/services/http_client.dart';
 import '../services/ecard_bind_hijack.dart';
 import '../services/ecard_bind_service.dart';
@@ -279,6 +280,7 @@ final class _AtrustPanel extends StatefulWidget {
 
 final class _AtrustPanelState extends State<_AtrustPanel> {
   late final AtrustTunnelService _tunnel;
+  final AtrustVpnService _vpn = AtrustVpnService();
   AtrustControlClient? _control;
   AtrustLoginState? _login;
   AtrustTunnelStatus? _tunnelStatus;
@@ -382,6 +384,34 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
     _set(_login, logout ? '已登出' : '已停止');
   }
 
+  Future<void> _startVpn(BuildContext context) async {
+    final session = _control?.session;
+    if (session == null) {
+      setState(() => _detail = '先登录，系统 VPN 需要一份会话');
+      return;
+    }
+    try {
+      final verdict = await _vpn.start(session);
+      final status = await _vpn.status();
+      _set(
+        _login,
+        '系统 VPN：$verdict'
+        '${status == null ? '' : ' · ${status['engineStatus'] ?? ''}'}',
+      );
+    } on Object catch (error) {
+      _set(_login, '系统 VPN 失败：$error');
+    }
+  }
+
+  Future<void> _stopVpn() async {
+    try {
+      await _vpn.stop();
+      _set(_login, '系统 VPN 已停止');
+    } on Object catch (error) {
+      _set(_login, '停止系统 VPN 失败：$error');
+    }
+  }
+
   void _set(AtrustLoginState? login, String detail) {
     if (!mounted) return;
     setState(() {
@@ -463,6 +493,20 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
           subtitle: const Text('保留会话，下次可直接恢复'),
           onTap: _stop,
         ),
+        if (_vpn.isSupported) ...[
+          ListTile(
+            leading: const Icon(Icons.vpn_lock),
+            title: const Text('启动系统 VPN（实验）'),
+            subtitle: const Text('整机路由，WebView 与其它应用也能到校园内网'),
+            onTap: () => unawaited(_startVpn(context)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.vpn_lock_outlined),
+            title: const Text('停止系统 VPN'),
+            subtitle: const Text('只影响系统接口，不动隧道会话'),
+            onTap: () => unawaited(_stopVpn()),
+          ),
+        ],
         ListTile(
           leading: const Icon(Icons.logout),
           title: const Text('登出'),

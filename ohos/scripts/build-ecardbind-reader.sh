@@ -14,7 +14,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-CPP_DIR="$ROOT/ohos/entry/src/main/cpp"
+CPP_DIR="$ROOT/ohos/entry/src/main/cpp/ecardbind_reader"
 OUT="$ROOT/ohos/entry/libs/arm64-v8a/libecardbind_reader.so"
 CLD_DIR="${CLD_DIR:-$HOME/dev/command-line-tools}"
 SDK="$CLD_DIR/sdk/default"
