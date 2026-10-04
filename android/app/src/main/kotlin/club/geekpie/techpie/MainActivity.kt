@@ -14,6 +14,7 @@ import android.provider.CalendarContract.Events
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import club.geekpie.techpie.ecardbind.EcardBindVpnService
+import club.geekpie.techpie.atrust.AtrustVpnService
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -22,6 +23,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var pendingCalendarImport: PendingCalendarImport? = null
     private var pendingVpnConsent: PendingVpnConsent? = null
+    private var pendingAtrustConsent: PendingAtrustConsent? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var ecardWidgets: EcardWidgetBridge? = null
     private var ecardFeedback: EcardFeedback? = null
@@ -39,6 +41,23 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "importCalendarEvents" -> handleImportCalendarEvents(call, result)
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            ATRUST_VPN_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> handleStartAtrustVpn(call, result)
+                "stop" -> {
+                    // The engine runs in this process, so the Dart side stops it
+                    // too; this only takes the interface down.
+                    AtrustVpnService.stopTunnel()
+                    stopService(Intent(this, AtrustVpnService::class.java))
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -85,6 +104,63 @@ class MainActivity : FlutterActivity() {
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
+    /**
+     * Raises the system-wide campus tunnel and answers with the interface's file
+     * descriptor: the engine runs in this process (Dart calls it over FFI), so
+     * the descriptor is exactly what it needs. -1 means the user declined.
+     */
+    private fun handleStartAtrustVpn(
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        val routes = call.argument<List<String>>("routes").orEmpty()
+        val dns = call.argument<List<String>>("dns").orEmpty()
+        if (routes.isEmpty()) {
+            result.error("bad_args", "No routes for the campus tunnel.", null)
+            return
+        }
+        if (pendingAtrustConsent != null) {
+            result.error("vpn_request_in_progress", "A VPN consent request is already pending.", null)
+            return
+        }
+
+        val pending = PendingAtrustConsent(routes = routes, dns = dns, result = result)
+        val consent = VpnService.prepare(this)
+        if (consent == null) {
+            startAtrustVpn(pending)
+            return
+        }
+        pendingAtrustConsent = pending
+        @Suppress("DEPRECATION")
+        startActivityForResult(consent, REQUEST_ATRUST_CONSENT)
+    }
+
+    private fun startAtrustVpn(pending: PendingAtrustConsent) {
+        val intent = Intent(this, AtrustVpnService::class.java)
+            .putStringArrayListExtra(AtrustVpnService.REQUEST_ROUTES_ARG, ArrayList(pending.routes))
+            .putStringArrayListExtra(AtrustVpnService.REQUEST_DNS_ARG, ArrayList(pending.dns))
+        startService(intent)
+        // The interface exists a moment after the service starts, so answer with
+        // what is actually true instead of a hopeful descriptor.
+        reportAtrustTunnelFd(pending.result)
+    }
+
+    private fun reportAtrustTunnelFd(result: MethodChannel.Result, attempt: Int = 0) {
+        val fd = AtrustVpnService.descriptorFd()
+        if (fd >= 0) {
+            result.success(fd)
+            return
+        }
+        if (attempt >= VPN_STATE_ATTEMPTS) {
+            result.error("vpn_unavailable", "The campus tunnel interface did not come up.", null)
+            return
+        }
+        mainHandler.postDelayed(
+            { reportAtrustTunnelFd(result, attempt + 1) },
+            VPN_STATE_INTERVAL_MS,
+        )
+    }
+
     private fun handleStartEcardBindHijack(
         call: MethodCall,
         result: MethodChannel.Result,
@@ -120,6 +196,16 @@ class MainActivity : FlutterActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
+        if (requestCode == REQUEST_ATRUST_CONSENT) {
+            val pending = pendingAtrustConsent ?: return
+            pendingAtrustConsent = null
+            if (resultCode == RESULT_OK) {
+                startAtrustVpn(pending)
+            } else {
+                pending.result.success(-1)
+            }
+            return
+        }
         if (requestCode != REQUEST_VPN_CONSENT) return
         val request = pendingVpnConsent ?: return
         pendingVpnConsent = null
@@ -333,6 +419,8 @@ class MainActivity : FlutterActivity() {
     private companion object {
         const val CALENDAR_IMPORTER_CHANNEL = "techpie/calendar_importer"
         const val ECARD_BIND_CHANNEL = "techpie/ecard_bind"
+        const val ATRUST_VPN_CHANNEL = "techpie/atrust_vpn"
+        const val REQUEST_ATRUST_CONSENT = 0x4154
         const val REQUEST_CALENDAR_PERMISSIONS = 48291
         const val REQUEST_VPN_CONSENT = 0x0ECB
         const val VPN_STATE_ATTEMPTS = 15
@@ -341,4 +429,10 @@ class MainActivity : FlutterActivity() {
         const val TIME_ZONE = "Asia/Shanghai"
         const val CALENDAR_COLOR = -13660983
     }
+
+    private data class PendingAtrustConsent(
+        val routes: List<String>,
+        val dns: List<String>,
+        val result: MethodChannel.Result,
+    )
 }

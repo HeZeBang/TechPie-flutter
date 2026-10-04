@@ -52,6 +52,16 @@
             </intent-filter>
         </activity>
         <!-- DNS-only tunnel for the eCard bind-code flow (see EcardBindVpnService). -->
+        <!-- System-wide campus tunnel (see AtrustVpnService). -->
+        <service
+            android:name=".atrust.AtrustVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.VpnService"/>
+            </intent-filter>
+        </service>
+
         <service
             android:name=".ecardbind.EcardBindVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"

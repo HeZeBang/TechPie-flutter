@@ -391,7 +391,7 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
       return;
     }
     try {
-      final verdict = await _vpn.start(session);
+      final verdict = await _vpn.start(session, engine: _tunnel);
       final status = await _vpn.status();
       _set(
         _login,
@@ -405,7 +405,7 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
 
   Future<void> _stopVpn() async {
     try {
-      await _vpn.stop();
+      await _vpn.stop(engine: _tunnel);
       _set(_login, '系统 VPN 已停止');
     } on Object catch (error) {
       _set(_login, '停止系统 VPN 失败：$error');

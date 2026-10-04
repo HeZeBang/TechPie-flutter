@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../utils/platform.dart';
 import 'atrust_control_client.dart';
+import 'atrust_tunnel_service.dart';
 
 /// The **system-VPN** shape on OHOS: an interface the whole device routes
 /// through, which is what reaches the campus from WebViews and from other apps —
@@ -14,7 +15,8 @@ import 'atrust_control_client.dart';
 /// controller's policy and the destinations to route, and reads the extension's
 /// verdict back. Everything the engine refuses is reported, never guessed at.
 class AtrustVpnService {
-  static const _channel = MethodChannel('techpie/geektrust_vpn');
+  static const _ohosChannel = MethodChannel('techpie/geektrust_vpn');
+  static const _androidChannel = MethodChannel('techpie/atrust_vpn');
 
   /// Campus destinations to route into the tunnel. Deliberately broad: the
   /// engine still authorizes every flow against the controller's policy, so a
@@ -26,45 +28,77 @@ class AtrustVpnService {
     '59.78.0.0/16',
   ];
 
-  /// Only OHOS has this shape here: Android would need its own `VpnService`
-  /// shell, and the desktops use the proxy instead.
-  bool get isSupported => isOhos();
+  /// OHOS and Android; the desktops use the proxy shape instead.
+  bool get isSupported => isOhos() || isAndroid();
 
   /// Raises the tunnel. Returns the extension's verdict: `active`, or a
   /// `failed: …` string carrying the engine's own words.
-  Future<String> start(AtrustSession session) async {
-    if (!isSupported) {
-      return 'failed: the system tunnel is OHOS-only on this build';
+  ///
+  /// On Android the engine runs in this same process, so the interface's
+  /// descriptor comes back over the channel and goes straight to it. On OHOS the
+  /// extension process owns both, and only a verdict comes back.
+  Future<String> start(AtrustSession session, {AtrustTunnelService? engine}) async {
+    if (isOhos()) {
+      // Plain strings across the channel: ArkTS refuses `any`, and JSON.parse is
+      // typed as one, so lists travel joined.
+      final status = await _ohosChannel.invokeMethod<String>('start', {
+        'session': _sessionJson(session),
+        'policy': session.policyJson,
+        'routes': campusRoutes.join(','),
+        'dns': session.dns.join(','),
+      });
+      return status ?? 'failed: the extension said nothing';
     }
-    // Plain strings across the channel: ArkTS refuses `any`, and JSON.parse is
-    // typed as one, so lists travel joined.
-    final status = await _channel.invokeMethod<String>('start', {
-      'session': jsonEncode({
-        'sid': session.sid,
-        'device_id': session.deviceId,
-        'username': session.username,
-        'base_url': session.baseUrl,
-        'gateways': session.gateways,
+    if (isAndroid()) {
+      final fd = await _androidChannel.invokeMethod<int>('start', {
+        'routes': campusRoutes,
         'dns': session.dns,
-      }),
-      'policy': session.policyJson,
-      'routes': campusRoutes.join(','),
-      'dns': session.dns.join(','),
-    });
-    return status ?? 'failed: the extension said nothing';
+      });
+      if (fd == null || fd < 0) {
+        return 'failed: the interface did not come up';
+      }
+      final tunnel = engine ?? AtrustTunnelService.load();
+      if (!tunnel.isSupported) {
+        await _androidChannel.invokeMethod<void>('stop');
+        return 'failed: ${tunnel.unsupportedReason}';
+      }
+      tunnel.start(
+        sessionJson: _sessionJson(session),
+        policyJson: session.policyJson,
+      );
+      tunnel.attachTunFd(fd);
+      return 'active';
+    }
+    return 'failed: the system tunnel is not available on this platform';
   }
 
-  /// Takes the interface down and forgets the request.
-  Future<void> stop() async {
+  String _sessionJson(AtrustSession session) => jsonEncode({
+    'sid': session.sid,
+    'device_id': session.deviceId,
+    'username': session.username,
+    'base_url': session.baseUrl,
+    'gateways': session.gateways,
+    'dns': session.dns,
+  });
+
+  /// Takes the interface down and forgets the request. On Android the engine
+  /// runs here, so it is stopped first.
+  Future<void> stop({AtrustTunnelService? engine}) async {
     if (!isSupported) return;
-    await _channel.invokeMethod<void>('stop');
+    if (isAndroid()) {
+      engine?.stop();
+      await _androidChannel.invokeMethod<void>('stop');
+      return;
+    }
+    await _ohosChannel.invokeMethod<void>('stop');
   }
 
-  /// The extension's record: `status`, `engineStatus` (the engine's own JSON),
-  /// `routes`, `error`. Empty when nothing was ever asked for.
+  /// The extension's record (OHOS): `status`, `engineStatus` (the engine's own
+  /// JSON), `routes`, `error`. Null when nothing was ever asked for, and null on
+  /// Android, where the engine's own status is the answer.
   Future<Map<String, dynamic>?> status() async {
-    if (!isSupported) return null;
-    final raw = await _channel.invokeMethod<String>('status');
+    if (!isOhos()) return null;
+    final raw = await _ohosChannel.invokeMethod<String>('status');
     if (raw == null || raw.isEmpty) return null;
     final decoded = jsonDecode(raw);
     return decoded is Map<String, dynamic> ? decoded : null;
