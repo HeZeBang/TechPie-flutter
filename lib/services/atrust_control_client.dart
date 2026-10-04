@@ -107,6 +107,8 @@ class AtrustSession {
     String str(String key) => (raw[key] as String?) ?? '';
     List<String> list(String key) =>
         (raw[key] as List?)?.whereType<String>().toList() ?? const [];
+    final policyJson = str('policy');
+    final storedDns = list('dns');
     final session = AtrustSession(
       sid: str('sid'),
       deviceId: str('device_id'),
@@ -115,8 +117,10 @@ class AtrustSession {
       csrfToken: str('csrf_token'),
       cookies: cookies,
       gateways: list('gateways'),
-      dns: list('dns'),
-      policyJson: str('policy'),
+      dns: storedDns.isEmpty
+          ? AtrustControlClient._extractPolicyDns(policyJson)
+          : storedDns,
+      policyJson: policyJson,
       trusted: raw['trusted'] == true,
       savedAt: DateTime.tryParse(str('saved_at')) ??
           DateTime.fromMillisecondsSinceEpoch(0),
@@ -394,8 +398,9 @@ class AtrustControlClient {
     if (info['isOnline'] != true) {
       throw const AtrustException('onlineInfo', 'controller reports offline');
     }
-    final trusted = await _tryBindDevice(csrf);
     final policy = await _clientResource(csrf);
+    final policyDns = _extractPolicyDns(policy);
+    final trusted = await _tryBindDevice(csrf);
     final session = AtrustSession(
       sid: _cookies['sid'] ?? '',
       deviceId: deviceId,
@@ -404,7 +409,7 @@ class AtrustControlClient {
       csrfToken: csrf,
       cookies: Map<String, String>.from(_cookies),
       gateways: const [],
-      dns: const [],
+      dns: policyDns,
       policyJson: policy,
       trusted: trusted,
       savedAt: DateTime.now(),
@@ -614,6 +619,43 @@ class AtrustControlClient {
     // Re-encoded, not the raw substring: the envelope's `data` is what the
     // policy means, and the core parses JSON either way.
     return jsonEncode(data);
+  }
+
+  /// The controller places split-horizon resolvers in both legacy and V2 client
+  /// options. Keep valid IPv4 entries in first-seen order; the VPN extension
+  /// must receive these or names such as netinfo.shanghaitech.edu.cn cannot be
+  /// resolved inside the tunnel.
+  static List<String> _extractPolicyDns(String policyJson) {
+    final decoded = jsonDecode(policyJson);
+    if (decoded is! Map<String, dynamic>) return const [];
+    final sdpPolicy = decoded['sdpPolicy'];
+    if (sdpPolicy is! Map) return const [];
+    final data = sdpPolicy['data'];
+    if (data is! Map) return const [];
+    final clientOption = data['clientOption'];
+    if (clientOption is! Map) return const [];
+
+    final result = <String>[];
+    for (final optionName in const ['dnsOption', 'dnsOptionV2']) {
+      final option = clientOption[optionName];
+      if (option is! Map) continue;
+      for (final key in const ['firstDNS', 'secondDNS']) {
+        final value = option[key];
+        if (value is String && _isIpv4(value) && !result.contains(value)) {
+          result.add(value);
+        }
+      }
+    }
+    return result;
+  }
+
+  static bool _isIpv4(String value) {
+    final parts = value.split('.');
+    if (parts.length != 4) return false;
+    return parts.every((part) {
+      final number = int.tryParse(part);
+      return number != null && number >= 0 && number <= 255;
+    });
   }
 
   // --- trusted terminal -----------------------------------------------------
