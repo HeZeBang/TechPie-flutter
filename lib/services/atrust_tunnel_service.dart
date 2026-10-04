@@ -26,6 +26,8 @@ class AtrustTunnelStatus {
     required this.vip,
     required this.gateway,
     required this.dialAttempts,
+    this.gateways = const [],
+    this.tun = const {},
   });
 
   final bool alive;
@@ -36,6 +38,18 @@ class AtrustTunnelStatus {
   final String gateway;
   final int dialAttempts;
 
+  /// The gateway lines the engine flattened out of the policy (`host:port`).
+  ///
+  /// Only the engine knows them — the session the app holds never carries the
+  /// flattening — and a system-VPN shell has to keep them out of the routes it
+  /// configures. See [AtrustRouting.withoutGateways].
+  final List<String> gateways;
+
+  /// The attached interface's own counters, empty while nothing is attached.
+  /// They are the only evidence a data plane is alive on a platform that gives
+  /// the engine no log channel.
+  final Map<String, int> tun;
+
   static AtrustTunnelStatus fromJson(Map<String, dynamic> json) =>
       AtrustTunnelStatus(
         alive: json['alive'] == true,
@@ -45,6 +59,13 @@ class AtrustTunnelStatus {
         vip: (json['vip'] as String?) ?? '',
         gateway: (json['gateway'] as String?) ?? '',
         dialAttempts: (json['dial_attempts'] as num?)?.toInt() ?? 0,
+        gateways: (json['gateways'] as List?)?.whereType<String>().toList() ??
+            const [],
+        tun: {
+          if (json['tun'] case final Map<dynamic, dynamic> counters)
+            for (final entry in counters.entries)
+              if (entry.value is num) '${entry.key}': (entry.value as num).toInt(),
+        },
       );
 }
 

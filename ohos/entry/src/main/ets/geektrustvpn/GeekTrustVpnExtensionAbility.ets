@@ -16,7 +16,8 @@ import Want from '@ohos.app.ability.Want';
 import hilog from '@ohos.hilog';
 import { BusinessError } from '@kit.BasicServicesKit';
 import engine from 'libgeektrust_vpn.so';
-import { clearState, readState, updateStatus } from './GeekTrustVpnState';
+import { clearState, readState, writeVerdict } from './GeekTrustVpnState';
+import { gatewaysOf, routesWithoutGateways } from './GeekTrustVpnRoutes';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'GeekTrustVpn';
@@ -98,6 +99,17 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
         );
       }
       hilog.info(DOMAIN, TAG, 'engine alive before VPN creation');
+      // The engine is the only thing that knows the flattened gateway list (the
+      // app's session has never carried it), and a gateway covered by these
+      // routes is captured by the very interface they configure — see
+      // GeekTrustVpnRoutes. Read them off the engine's own status.
+      const gateways = gatewaysOf(engine.status());
+      const routes = routesWithoutGateways(state.routes, gateways);
+      hilog.info(
+        DOMAIN, TAG,
+        'vpn inputs routes=%{public}s gateways=%{public}s dns=%{public}s',
+        JSON.stringify(routes), JSON.stringify(gateways), JSON.stringify(state.dns),
+      );
 
       const config: vpnExtension.VpnConfig = {
         addresses: [
@@ -106,7 +118,7 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
             prefixLength: 32,
           },
         ],
-        routes: [routeTo(TUN_ADDRESS)].concat(state.routes.map(routeTo)),
+        routes: [routeTo(TUN_ADDRESS)].concat(routes.map(routeTo)),
         dnsAddresses: state.dns,
         mtu: DEFAULT_MTU,
         isIPv4Accepted: true,
@@ -123,10 +135,23 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
       // it can enter this VPN.
       await this.connection.protectProcessNet();
       hilog.info(DOMAIN, TAG, 'this process bypasses its own tunnel');
+      // Raising the interface can cut the gateway connection that was
+      // established before it: those packets now belong to the tunnel they
+      // just raised, and the engine's own tunnel dies with them (a device log
+      // showed exactly that — alive, then "no live tunnel yet" at attach,
+      // 70ms after the interface came up). The supervisor redials over the
+      // protected path, so what has to be alive when the descriptor is
+      // attached is the tunnel *after* the interface, not the one before it.
+      if (!await waitForEngine()) {
+        throw new Error(
+          'the engine brought no tunnel back after the interface came up: ' +
+            engine.status(),
+        );
+      }
       engine.attachTunFd(tunFd);
       hilog.info(DOMAIN, TAG, 'tunnel attached');
       this.up = true;
-      updateStatus(filesDir, 'active', engine.status(), '');
+      writeVerdict(filesDir, state, 'active', engine.status(), '');
     } catch (error) {
       const failure = error as BusinessError;
       // 2200001 / 401 is the user declining the system dialog; everything else
@@ -137,7 +162,7 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
       const reason = `${failure.code ?? ''} ${failure.message ?? ''}`.trim() ||
         String(error);
       hilog.error(DOMAIN, TAG, 'cannot raise the tunnel: %{public}s', reason);
-      updateStatus(filesDir, 'failed', '', denied ? 'denied' : reason);
+      writeVerdict(filesDir, state, 'failed', '', denied ? 'denied' : reason);
       this.teardown();
     }
   }

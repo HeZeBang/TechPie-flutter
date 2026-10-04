@@ -17,6 +17,14 @@
 // all — this never invents a success.
 
 #include <dlfcn.h>
+
+// hilog/log.h defaults to domain 0 and a null tag, and a null tag is one of the
+// two reasons a shim's lines never showed up in a device log. Both are set
+// before the header, which is where OH_LOG_* takes them from.
+#undef LOG_DOMAIN
+#define LOG_DOMAIN 0x0000
+#undef LOG_TAG
+#define LOG_TAG "GeekTrustVpnEngine"
 #include <hilog/log.h>
 #include <mutex>
 #include <string>
@@ -115,11 +123,13 @@ void ForwardOutputToHilog() {
   std::call_once(once, []() {
     int pipeFd[2] = {-1, -1};
     if (pipe(pipeFd) != 0) {
+      OH_LOG_WARN(LOG_APP, "engine output forwarding unavailable: pipe() failed");
       return;
     }
     dup2(pipeFd[1], STDOUT_FILENO);
     dup2(pipeFd[1], STDERR_FILENO);
     close(pipeFd[1]);
+    OH_LOG_INFO(LOG_APP, "engine output is forwarded to this log");
     std::thread([readFd = pipeFd[0]]() {
       std::string line;
       char buffer[512];

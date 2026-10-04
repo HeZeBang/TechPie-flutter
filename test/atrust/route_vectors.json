@@ -1,0 +1,14 @@
+[
+  {
+    "name": "exclude one IPv4 gateway from a /30",
+    "prefixes": ["192.0.2.0/30"],
+    "gateways": ["192.0.2.1:441"],
+    "expected": ["192.0.2.0/32", "192.0.2.2/31"]
+  },
+  {
+    "name": "IPv6 gateway does not alter IPv4 routes",
+    "prefixes": ["10.0.0.0/8"],
+    "gateways": ["[2001:db8::1]:441"],
+    "expected": ["10.0.0.0/8"]
+  }
+]

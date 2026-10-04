@@ -52,22 +52,25 @@ export function writeRequest(
   });
 }
 
-/** The extension's verdict on the request it is running. */
-export function updateStatus(
+/** The extension's verdict on the request it is running.
+ *
+ * `base` is the record the extension read when it started, so a verdict needs
+ * no second read: an `updateStatus` that re-read the file and silently did
+ * nothing when the read failed left the app polling a `requested` state until
+ * its timeout, and a tunnel that was up looked exactly like one that never
+ * started. */
+export function writeVerdict(
   filesDir: string,
+  base: GeekTrustVpnStateFile,
   status: GeekTrustVpnStatus,
   engineStatus: string,
   error: string,
 ): void {
-  const current = readState(filesDir);
-  if (current === null) {
-    return;
-  }
-  current.status = status;
-  current.engineStatus = engineStatus;
-  current.error = error;
-  current.at = Date.now();
-  writeRecord(filesDir, current);
+  base.status = status;
+  base.engineStatus = engineStatus;
+  base.error = error;
+  base.at = Date.now();
+  writeRecord(filesDir, base);
 }
 
 /** The record, or null when there is none (or it is unreadable). */
