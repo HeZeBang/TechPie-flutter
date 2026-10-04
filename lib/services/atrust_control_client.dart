@@ -226,12 +226,27 @@ class AtrustControlClient {
   /// challenge, it also signs post-login trusted requests.
   String _signKey = '';
 
+  /// Serializes the login sequence. Two taps in a row would otherwise run two
+  /// handshakes over one controller session: the second one's reportEnv lands on
+  /// a session the first already owns, and the controller answers with a refusal
+  /// that looks like a credentials problem.
+  Future<void> _gate = Future<void>.value();
+
+  Future<T> _serialize<T>(Future<T> Function() body) {
+    final result = _gate.then((_) => body());
+    _gate = result.then((_) {}, onError: (Object _) {});
+    return result;
+  }
+
   AtrustSession? get session => _session;
 
   /// A session from storage, or one just obtained. [restored] distinguishes the
   /// two. Returns [AtrustStage.needSms] when the controller wants a code — the
   /// caller then drives the UI and calls [submitSms].
-  Future<AtrustLoginState> ensureOnline() async {
+  Future<AtrustLoginState> ensureOnline() =>
+      _serialize(() => _ensureOnline());
+
+  Future<AtrustLoginState> _ensureOnline() async {
     if (_session != null) {
       return const AtrustLoginState(AtrustStage.online, restored: true);
     }
@@ -254,12 +269,14 @@ class AtrustControlClient {
         _session = null;
       }
     }
-    return login();
+    return _login();
   }
 
-  /// Runs the whole login. Returns [AtrustStage.needSms] when the controller
+  /// Runs the whole login. Serialized with [ensureOnline]/[submitSms]. Returns [AtrustStage.needSms] when the controller
   /// demanded a code (having asked it to send one), [online] otherwise.
-  Future<AtrustLoginState> login() async {
+  Future<AtrustLoginState> login() => _serialize(_login);
+
+  Future<AtrustLoginState> _login() async {
     final castgc = _castgc();
     if (castgc.isEmpty) {
       return const AtrustLoginState(
@@ -270,6 +287,7 @@ class AtrustControlClient {
     final deviceId = await _deviceId();
     final config = await _authConfig();
     final csrf = (config['security'] as Map?)?['csrfToken'] as String? ?? '';
+    await _trace('authConfig ok (client $wireClientType)');
     if (csrf.isEmpty) {
       throw const AtrustException('authConfig', 'missing security.csrfToken');
     }
@@ -303,22 +321,40 @@ class AtrustControlClient {
     }
 
     final casTicket = await _casTicket();
+    await _trace('CAS ok, ticket ${casTicket.length}B');
     await _reportEnv(casTicket, deviceId, config, csrf, encryptedChallenge);
+    await _trace('reportEnv ok (desktop=${clientType == AtrustClientType.desktop})');
     final needsSms = await _authCheck(csrf);
+    await _trace('authCheck: ${needsSms ? 'SMS required' : 'no SMS required'}');
 
     String sidTicket;
     String hint = '';
     if (needsSms) {
       hint = await _sendSms(csrf);
+      await _trace('SMS requested');
       _pending = _PendingLogin(deviceId: deviceId, csrf: csrf, hint: hint);
       return AtrustLoginState(AtrustStage.needSms, hint: hint);
     }
-    sidTicket = await _ticketExchange(csrf);
+    // No SMS was demanded. That is the trusted-device path — but a device that
+    // is *not* trusted yet refuses it, and the honest recovery is to ask for the
+    // code after all rather than to fail with the controller's refusal.
+    try {
+      sidTicket = await _ticketExchange(csrf);
+      await _trace('ticketExchange ok (already trusted)');
+    } on AtrustException catch (error) {
+      await _trace('ticketExchange refused (${error.code}); asking for SMS');
+      hint = await _sendSms(csrf);
+      _pending = _PendingLogin(deviceId: deviceId, csrf: csrf, hint: hint);
+      return AtrustLoginState(AtrustStage.needSms, hint: hint);
+    }
     return _finishLogin(sidTicket, deviceId, csrf, hint);
   }
 
   /// Completes a login that [login] left at [AtrustStage.needSms].
-  Future<AtrustLoginState> submitSms(String code) async {
+  Future<AtrustLoginState> submitSms(String code) =>
+      _serialize(() => _submitSms(code));
+
+  Future<AtrustLoginState> _submitSms(String code) async {
     final pending = _pending;
     if (pending == null) {
       throw const AtrustException(
@@ -353,6 +389,7 @@ class AtrustControlClient {
     String hint,
   ) async {
     await _sessionIdExchange(sidTicket, csrf);
+    await _trace('sessionIdExchange ok');
     final info = await _onlineInfo();
     if (info['isOnline'] != true) {
       throw const AtrustException('onlineInfo', 'controller reports offline');

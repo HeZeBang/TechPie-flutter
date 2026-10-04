@@ -21,6 +21,36 @@ import { clearState, readState, updateStatus } from './GeekTrustVpnState';
 const DOMAIN: number = 0x0000;
 const TAG: string = 'GeekTrustVpn';
 
+/** How long the engine is given to dial the gateway before the attempt fails. */
+const ENGINE_TIMEOUT_MS: number = 20000;
+const ENGINE_POLL_MS: number = 150;
+
+/**
+ * Waits for the engine to report a live tunnel. It dials the gateway in the
+ * background, so its address (`vip`) is unknown until then — and
+ * `geektrust_attach_tun_fd` refuses an attachment before that, on purpose.
+ *
+ * `status()` is matched as text rather than parsed: ArkTS refuses `any`, and
+ * `JSON.parse` is typed as one, while the engine's own JSON is stable
+ * (`{"alive":true,...}`).
+ */
+async function waitForEngine(): Promise<boolean> {
+  const deadline = Date.now() + ENGINE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const status = engine.status();
+      hilog.info(DOMAIN, TAG, 'engine status: %{public}s', status);
+      if (status.includes('"alive":true')) {
+        return true;
+      }
+    } catch (error) {
+      // The engine has an opinion; keep waiting until the deadline.
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, ENGINE_POLL_MS));
+  }
+  return false;
+}
+
 /** The interface's own address. Private and distinct from the bind tunnel's. */
 const TUN_ADDRESS: string = '10.111.223.1';
 const ADDRESS_FAMILY_IPV4: number = 1;
@@ -54,12 +84,21 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
       return;
     }
     try {
-      // The engine first: it needs the session and the policy before any packet
-      // can be authorized, and it must refuse before an interface exists.
-      engine.start(state.sessionJson, state.policyJson);
-      hilog.info(DOMAIN, TAG, 'engine up: %{public}s', engine.version());
-
+      // Match ohtailscale's lifecycle: the Go engine must establish its own
+      // outbound path before the OS starts routing campus ranges into the VPN.
+      // Otherwise the first gateway dial can be captured by the interface it is
+      // trying to create and the engine never reaches alive.
       this.connection = vpnExtension.createVpnConnection(this.context);
+      engine.start(state.sessionJson, state.policyJson);
+      hilog.info(DOMAIN, TAG, 'engine started: %{public}s', engine.version());
+      if (!await waitForEngine()) {
+        throw new Error(
+          'the engine never reported a live tunnel before VPN creation: ' +
+            engine.status(),
+        );
+      }
+      hilog.info(DOMAIN, TAG, 'engine alive before VPN creation');
+
       const config: vpnExtension.VpnConfig = {
         addresses: [
           {
@@ -73,14 +112,19 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
         isIPv4Accepted: true,
         // The engine carries IPv4 only; capturing IPv6 would black-hole it.
         isIPv6Accepted: false,
-        // Everything that is not routed above keeps the underlying network, and
-        // the engine authorizes what is.
         isBlocking: false,
       };
       hilog.info(DOMAIN, TAG, 'creating the tunnel: %{public}s', JSON.stringify(config));
       const tunFd = await this.connection.create(config);
       hilog.info(DOMAIN, TAG, 'tunnel is up, tun fd = %{public}d', tunFd);
+
+      // Protect only the extension process. Its gateway sockets must stay on
+      // the underlying network; app/WebView traffic must remain unprotected so
+      // it can enter this VPN.
+      await this.connection.protectProcessNet();
+      hilog.info(DOMAIN, TAG, 'this process bypasses its own tunnel');
       engine.attachTunFd(tunFd);
+      hilog.info(DOMAIN, TAG, 'tunnel attached');
       this.up = true;
       updateStatus(filesDir, 'active', engine.status(), '');
     } catch (error) {
@@ -88,7 +132,10 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
       // 2200001 / 401 is the user declining the system dialog; everything else
       // is a configuration or engine failure.
       const denied = failure.code === 2200001 || failure.code === 401;
-      const reason = JSON.stringify(error);
+      // JSON.stringify on these errors prints "{}" — the message is on the
+      // object, and without it a device log says nothing at all.
+      const reason = `${failure.code ?? ''} ${failure.message ?? ''}`.trim() ||
+        String(error);
       hilog.error(DOMAIN, TAG, 'cannot raise the tunnel: %{public}s', reason);
       updateStatus(filesDir, 'failed', '', denied ? 'denied' : reason);
       this.teardown();

@@ -60,4 +60,17 @@ if ! "$NATIVE/llvm/bin/llvm-nm" -D "$OUT" 2>/dev/null | grep -q "dlopen\|dlsym";
   echo "libgeektrust_vpn.so does not resolve dlopen/dlsym" >&2
   exit 1
 fi
+# The C++ runtime the shim is linked against rides along with it. The extension
+# process searches this directory — it says so in its own loader error — but the
+# bundle does not otherwise carry libc++_shared.so, and without it the shim fails
+# to load with "Error loading shared library libc++_shared.so" and every call
+# into the engine dies before it starts.
+CXX_LIB="$NATIVE/llvm/lib/aarch64-linux-ohos/libc++_shared.so"
+if [[ -f "$CXX_LIB" ]]; then
+  cp "$CXX_LIB" "$(dirname "$OUT")/libc++_shared.so"
+  chmod 644 "$(dirname "$OUT")/libc++_shared.so"
+else
+  echo "warning: $CXX_LIB not found; the shim will not load on a device" >&2
+fi
+
 ls -l "$OUT"

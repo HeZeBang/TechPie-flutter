@@ -13,8 +13,8 @@ set(CMAKE_CXX_STANDARD 17)
 
 add_library(geektrust_vpn SHARED geektrust_vpn.cpp)
 
-# NAPI is provided by the OHOS NDK; dlopen/dlsym come from libc.
-target_link_libraries(geektrust_vpn PUBLIC libace_napi.z.so)
+# NAPI and hilog are provided by the OHOS NDK; dlopen/dlsym come from libc.
+target_link_libraries(geektrust_vpn PUBLIC libace_napi.z.so libhilog_ndk.z.so)
 
 # Every file that can change the artifact, in one digest. The recipe is a line
 # per file — "<path relative to this directory> <sha256>" — over the files of

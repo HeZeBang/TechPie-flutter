@@ -284,6 +284,7 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
   AtrustControlClient? _control;
   AtrustLoginState? _login;
   AtrustTunnelStatus? _tunnelStatus;
+  AtrustTunnelStatus? _vpnTunnelStatus;
   AtrustClientType _clientType = AtrustClientType.desktop;
   String _detail = '';
 
@@ -302,6 +303,7 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
       storage: services.storageService,
       castgc: services.thirdPartyAuthService.cpdailyCookies,
       clientType: _clientType,
+      onTrace: (stage) async => debugPrint('[atrust] $stage'),
     );
   }
 
@@ -385,18 +387,42 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
   }
 
   Future<void> _startVpn(BuildContext context) async {
-    final session = _control?.session;
+    // A stored session is enough: asking for a fresh login would spend another
+    // SMS for nothing when the campus session is still alive.
+    final control = _client(context);
+    var session = control.session;
     if (session == null) {
-      setState(() => _detail = '先登录，系统 VPN 需要一份会话');
-      return;
+      final restored = await control.ensureOnline();
+      if (!restored.isOnline) {
+        _set(restored, '先登录，系统 VPN 需要一份会话');
+        return;
+      }
+      session = control.session!;
+      _set(restored, restored.restored ? '已恢复会话' : '已上线');
     }
     try {
-      final verdict = await _vpn.start(session, engine: _tunnel);
-      final status = await _vpn.status();
+      var verdict = await _vpn.start(session, engine: _tunnel);
+      final extensionStatus = await _vpn.status();
+      AtrustTunnelStatus? systemStatus;
+      final engineStatus = extensionStatus?['engineStatus'];
+      if (engineStatus is String && engineStatus.isNotEmpty) {
+        final decoded = jsonDecode(engineStatus);
+        if (decoded is Map<String, dynamic>) {
+          systemStatus = AtrustTunnelStatus.fromJson(decoded);
+        }
+      }
+      if (verdict.startsWith('failed') &&
+          '${extensionStatus?['status']}' == 'active') {
+        // The extension won after the app stopped waiting.
+        verdict = 'active';
+      }
+      if (mounted) {
+        setState(() => _vpnTunnelStatus = systemStatus);
+      }
       _set(
         _login,
         '系统 VPN：$verdict'
-        '${status == null ? '' : ' · ${status['engineStatus'] ?? ''}'}',
+        '${engineStatus == null ? '' : ' · $engineStatus'}',
       );
     } on Object catch (error) {
       _set(_login, '系统 VPN 失败：$error');
@@ -406,6 +432,7 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
   Future<void> _stopVpn() async {
     try {
       await _vpn.stop(engine: _tunnel);
+      if (mounted) setState(() => _vpnTunnelStatus = null);
       _set(_login, '系统 VPN 已停止');
     } on Object catch (error) {
       _set(_login, '停止系统 VPN 失败：$error');
@@ -424,7 +451,7 @@ final class _AtrustPanelState extends State<_AtrustPanel> {
   @override
   Widget build(BuildContext context) {
     final session = _login;
-    final status = _tunnelStatus;
+    final status = _vpnTunnelStatus ?? _tunnelStatus;
     final lines = <String>[
       _tunnel.isSupported
           ? '库：${_tunnel.version}（ABI ${_tunnel.abi}）'

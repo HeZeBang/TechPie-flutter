@@ -38,8 +38,13 @@ function splitList(text: string): string[] {
   return entries;
 }
 
-/** How long the system's authorization dialog is given to be answered. */
-const START_TIMEOUT_MS: number = 20000;
+/**
+ * How long the extension is given to raise the interface *and* bring the engine
+ * up. The engine dials the gateway in the background, which a mobile network can
+ * stretch past ten seconds, and the extension only reports `active` after it —
+ * so this is a generously patient number on purpose.
+ */
+const START_TIMEOUT_MS: number = 60000;
 const POLL_INTERVAL_MS: number = 120;
 
 export class GeekTrustVpnPlugin implements FlutterPlugin, MethodCallHandler, AbilityAware {
@@ -75,8 +80,11 @@ export class GeekTrustVpnPlugin implements FlutterPlugin, MethodCallHandler, Abi
       this.start(call)
         .then((status: string) => result.success(status))
         .catch((error: BusinessError) => {
-          hilog.error(DOMAIN, TAG, 'start failed: %{public}s', JSON.stringify(error));
-          result.success('failed: ' + JSON.stringify(error));
+          const failure = error as BusinessError;
+          const reason = `${failure.code ?? ''} ${failure.message ?? ''}`.trim() ||
+            String(error);
+          hilog.error(DOMAIN, TAG, 'start failed: %{public}s', reason);
+          result.success('failed: ' + reason);
         });
     } else if (call.method === 'stop') {
       this.stop()
@@ -140,7 +148,8 @@ export class GeekTrustVpnPlugin implements FlutterPlugin, MethodCallHandler, Abi
       }
       await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     }
-    return 'failed: the extension did not come up';
+    return 'failed: the extension did not report a live tunnel within ' +
+      `${START_TIMEOUT_MS}ms`;
   }
 
   private async stop(): Promise<void> {

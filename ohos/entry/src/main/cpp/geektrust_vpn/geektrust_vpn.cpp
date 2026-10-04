@@ -17,8 +17,11 @@
 // all — this never invents a success.
 
 #include <dlfcn.h>
+#include <hilog/log.h>
 #include <mutex>
 #include <string>
+#include <thread>
+#include <unistd.h>
 
 #include <napi/native_api.h>
 
@@ -102,6 +105,45 @@ std::string EnsureCore() {
   return {};
 }
 
+// The engine logs through Go's slog, which writes to the process's stderr — and
+// nothing on OHOS forwards a native process's stderr to hilog, so a device run
+// showed a refusal with no reason attached. This hands stderr (and stdout) to a
+// thread that logs each line, so the engine's own account of what it is doing
+// lands in `hdc shell hilog` with everything else.
+void ForwardOutputToHilog() {
+  static std::once_flag once;
+  std::call_once(once, []() {
+    int pipeFd[2] = {-1, -1};
+    if (pipe(pipeFd) != 0) {
+      return;
+    }
+    dup2(pipeFd[1], STDOUT_FILENO);
+    dup2(pipeFd[1], STDERR_FILENO);
+    close(pipeFd[1]);
+    std::thread([readFd = pipeFd[0]]() {
+      std::string line;
+      char buffer[512];
+      ssize_t count = 0;
+      while ((count = read(readFd, buffer, sizeof(buffer))) > 0) {
+        for (ssize_t index = 0; index < count; index++) {
+          if (buffer[index] == '\n') {
+            if (!line.empty()) {
+              OH_LOG_INFO(LOG_APP, "engine: %{public}s", line.c_str());
+              line.clear();
+            }
+          } else {
+            line.push_back(buffer[index]);
+          }
+        }
+        if (line.size() > 1024) {
+          OH_LOG_INFO(LOG_APP, "engine: %{public}s", line.c_str());
+          line.clear();
+        }
+      }
+    }).detach();
+  });
+}
+
 napi_value Throw(napi_env env, const std::string& message) {
   napi_throw_error(env, nullptr, message.c_str());
   return nullptr;
@@ -153,6 +195,7 @@ napi_value Start(napi_env env, napi_callback_info info) {
   if (!loadError.empty()) {
     return Throw(env, loadError);
   }
+  ForwardOutputToHilog();
   char error[kErrorBytes] = {0};
   if (g_init(session.c_str(), policy.c_str(), error, kErrorBytes) != 0) {
     return Throw(env, error[0] == '\0' ? "the core engine refused the session" : error);

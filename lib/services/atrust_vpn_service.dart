@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../utils/platform.dart';
@@ -41,7 +42,8 @@ class AtrustVpnService {
     if (isOhos()) {
       // Plain strings across the channel: ArkTS refuses `any`, and JSON.parse is
       // typed as one, so lists travel joined.
-      final status = await _ohosChannel.invokeMethod<String>('start', {
+      debugPrint('[atrust] asking the OHOS extension to raise the tunnel');
+    final status = await _ohosChannel.invokeMethod<String>('start', {
         'session': _sessionJson(session),
         'policy': session.policyJson,
         'routes': campusRoutes.join(','),
@@ -50,6 +52,7 @@ class AtrustVpnService {
       return status ?? 'failed: the extension said nothing';
     }
     if (isAndroid()) {
+      debugPrint('[atrust] asking the VpnService for an interface');
       final fd = await _androidChannel.invokeMethod<int>('start', {
         'routes': campusRoutes,
         'dns': session.dns,
@@ -67,6 +70,7 @@ class AtrustVpnService {
         policyJson: session.policyJson,
       );
       tunnel.attachTunFd(fd);
+      debugPrint('[atrust] tunnel attached to fd $fd');
       return 'active';
     }
     return 'failed: the system tunnel is not available on this platform';

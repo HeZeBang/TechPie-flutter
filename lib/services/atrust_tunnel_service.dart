@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:ffi';
-
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
 
 /// A refusal reported by the core library, passed through verbatim: the library
 /// writes human-readable messages and this never invents its own.
@@ -120,10 +120,14 @@ class AtrustTunnelService {
 
   /// Loads the library and checks that it speaks [expectedAbi]. Never throws.
   factory AtrustTunnelService.load({String libraryPath = defaultLibraryName}) {
+    // A device verification needs this in the log: the panel can only show a
+    // line, and "why is the tunnel unavailable" is the first question.
+    debugPrint('[atrust] loading $libraryPath');
     final DynamicLibrary library;
     try {
       library = DynamicLibrary.open(libraryPath);
     } catch (error) {
+      debugPrint('[atrust] tunnel unavailable: $libraryPath ($error)');
       return AtrustTunnelService._unsupported(
         '$libraryPath could not be loaded ($error)',
       );
@@ -151,12 +155,16 @@ class AtrustTunnelService {
         '$libraryPath speaks ABI $abi, this app needs $expectedAbi',
       );
     }
-    return AtrustTunnelService._(
+    final service = AtrustTunnelService._(
       library: library,
       version: marker.group(2) ?? '',
       abi: abi,
       sourceDigest: marker.group(3) ?? '',
     );
+    debugPrint(
+      '[atrust] tunnel library ${service.version} (abi ${service.abi})',
+    );
+    return service;
   }
 
   /// Brings the tunnel up for [sessionJson] (`sid`, `device_id`, `username`,
