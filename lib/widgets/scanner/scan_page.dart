@@ -258,9 +258,14 @@ final class ScannerPageState extends State<ScannerPage>
     if (scanner == null) return;
     try {
       final code = await scanner.scanImage();
-      if (code != null && mounted) {
-        _handleCode(ScannerReading(code));
+      if (code != null) {
+        if (mounted) _handleCode(ScannerReading(code));
+        return;
       }
+      // A picture whose code could not be read and a picker that was dismissed
+      // are the same answer through here: both are "nothing came back
+      // readable", and the tap says so instead of ending without a trace.
+      if (mounted) setState(() => _error = '没有从相册图片里识别到二维码');
     } catch (_) {
       if (mounted) setState(() => _error = '无法读取相册图片');
     }

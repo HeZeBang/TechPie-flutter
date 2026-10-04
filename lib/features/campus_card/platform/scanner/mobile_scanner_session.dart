@@ -151,6 +151,12 @@ final class MobileScannerSession implements ScannerPort {
     final path =
         (await _imagePicker.pickImage(source: ImageSource.gallery))?.path;
     if (path == null) return null;
+    // The picker covered the camera and took the session down with it, and the
+    // camera is what the platform reads a gallery image against. Starting here —
+    // before the picture is analyzed — is the difference between reading it
+    // against a live session and reading it against the rebuild that the resume
+    // just kicked off.
+    await start();
     final capture = await controller.analyzeImage(path);
     return _firstValue(capture);
   }
