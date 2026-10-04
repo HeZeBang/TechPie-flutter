@@ -1,0 +1,10 @@
+{
+  "name": "libgeektrust_vpn.so",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "NAPI shim that lets an OpenHarmony VPN extension drive the aTrust tunnel's core engine.",
+  "main": "",
+  "author": "ShanghaiTech GeekPie",
+  "license": "MIT",
+  "dependencies": {}
+}
