@@ -18,6 +18,7 @@ void main() {
   /// Committed library → the ELF machine it must be built for.
   const libraries = {
     'ohos/entry/libs/arm64-v8a/libgeektrust.so': 0xb7, // EM_AARCH64
+    'android/app/src/main/jniLibs/arm64-v8a/libgeektrust.so': 0xb7, // EM_AARCH64
     'linux/libgeektrust.so': 0x3e, // EM_X86_64
   };
 
