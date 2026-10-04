@@ -11,6 +11,7 @@ import 'package:techpie/utils/platform.dart';
 import 'features/campus_card/app/app_providers.dart';
 import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
+import 'services/atrust_service.dart';
 import 'services/auth_service.dart';
 import 'services/campus_card_service.dart';
 import 'services/debug_logger.dart';
@@ -72,6 +73,13 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final thirdPartyAuthService = ThirdPartyAuthService(
     storageService,
     httpClient,
+  );
+  // The campus tunnel: one owner for the session, the engine and the platform
+  // shell, so the feature page and the lab cannot each hold their own.
+  final atrustService = AtrustService(
+    http: httpClient,
+    storage: storageService,
+    castgc: thirdPartyAuthService.cpdailyCookies,
   );
   final scheduleService = ScheduleService(
     storageService,
@@ -180,6 +188,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       updateService: updateService,
       campusCardService: campusCardService,
       ecardBindService: ecardBindService,
+      atrustService: atrustService,
       ecardWidgetService: ecardWidgetService,
     ),
   );
@@ -307,6 +316,7 @@ class TechPieApp extends StatefulWidget {
   final UpdateService updateService;
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
+  final AtrustService atrustService;
   final EcardWidgetService? ecardWidgetService;
 
   const TechPieApp({
@@ -325,6 +335,7 @@ class TechPieApp extends StatefulWidget {
     required this.updateService,
     required this.campusCardService,
     required this.ecardBindService,
+    required this.atrustService,
     this.ecardWidgetService,
   });
 
@@ -446,6 +457,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         updateService: widget.updateService,
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
+        atrustService: widget.atrustService,
         ecardWidgetService: widget.ecardWidgetService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,

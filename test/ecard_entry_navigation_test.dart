@@ -9,6 +9,7 @@ import 'package:techpie/features/campus_card/domain/models/auth_models.dart';
 import 'package:techpie/main.dart';
 import 'package:techpie/pages/campus_card_page.dart';
 import 'package:techpie/services/assignment_service.dart';
+import 'package:techpie/services/atrust_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
 import 'package:techpie/services/debug_logger.dart';
@@ -74,6 +75,11 @@ void main() {
         syncService: SyncService(auth, tpAuth, storage),
         updateService: UpdateService(),
         ecardBindService: EcardBindService(),
+        atrustService: AtrustService(
+          http: http,
+          storage: storage,
+          castgc: () => '',
+        ),
         campusCardService: CampusCardService.withStore(
           InMemorySecureCredentialStore(),
           runtimeFactory: () => runtime,

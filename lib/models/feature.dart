@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../features/campus_card/app/app_providers.dart';
 import '../pages/campus_card_page.dart';
+import '../pages/campus_network_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
@@ -76,6 +77,16 @@ final featureEntries = <Feature>[
       ),
     ),
     icon: const Icon(Icons.account_balance_wallet_outlined),
+  ),
+  Feature(
+    id: 'campus_network',
+    description: '校园内网',
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const CampusNetworkPage(),
+    ),
+    icon: const Icon(Icons.vpn_lock_outlined),
   ),
   Feature(
     id: 'oa_gym',

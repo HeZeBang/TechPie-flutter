@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart' show Hmac, sha256;
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:cryptography/cryptography.dart' hide Hmac;
 import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,18 +113,25 @@ class _RecordingCampus {
                   },
           );
         }
+        if (path == '/passport/v1/security/untrustDevice') {
+          return _json({'code': 0, 'message': '成功'});
+        }
         if (path == '/passport/v1/security/queryDevice') {
           return _json({
             'code': 0,
             'data': {
               'selfId': 'dev-self',
               'currentTrustStatus': 1,
-              'trustDeviceConfig': {'enable': true},
+              'trustDeviceConfig': {
+                'enable': true,
+                'pcLimit': 1,
+                'mobileLimit': 3,
+              },
               'data': [
                 {
                   'id': 'dev-self',
                   'deviceName': 'Mac',
-                  'deviceType': 'Mac',
+                  'deviceType': 'SDPClient',
                   'onlineStatus': true,
                 },
               ],
@@ -256,7 +263,7 @@ void main() {
     });
   });
 
-  test('a desktop login proves itself, is bound, and signs its resource fetch',
+  test('a desktop login marks client mode on reportEnv and stays unsigned',
       () async {
     final campus = _RecordingCampus();
     final client = clientFor(campus);
@@ -267,39 +274,39 @@ void main() {
     expect(state.stage, AtrustStage.online);
     expect(client.session!.trusted, isTrue);
 
-    // reportEnv: enable=1 plus the encrypted challenge, addressed as SDPClient
-    // with the platform first and no `lang` (a signed request's target is
-    // covered byte for byte).
+    // reportEnv is the one call addressed as SDPClient — that query parameter
+    // alone is what makes the session client mode (protocol notes §3.9), so no
+    // anti-MITM challenge proof goes with it.
     final reportEnv = campus.last('/controller/v1/public/reportEnv')!;
     final body = jsonDecode(reportEnv.body) as Map<String, dynamic>;
     final antiMitm = body['antiMITMAttackData'] as Map<String, dynamic>;
-    expect(antiMitm['enable'], 1);
-    expect((antiMitm['encryptedChallenge'] as String).isNotEmpty, isTrue);
+    expect(antiMitm['enable'], 0);
+    expect(antiMitm.containsKey('encryptedChallenge'), isFalse);
+    // `clientType=SDPClient` is the one thing that makes the session client
+    // mode (§3.9). Everything else about the query matches the browser path and
+    // the reference client: the platform-first, no-`lang` shape §10.3 asks for
+    // is a rule for *signed* requests, and none of these are signed.
     expect(reportEnv.url.queryParameters['clientType'], 'SDPClient');
-    expect(reportEnv.url.queryParameters.containsKey('lang'), isFalse);
-    expect(
-      reportEnv.url.queryParameters.keys.toList().sublist(0, 2),
-      ['platform', 'clientType'],
-    );
+    expect(reportEnv.url.queryParameters['platform'], 'Mac');
+    expect(reportEnv.url.queryParameters['lang'], 'zh-CN');
 
     // The device was bound after the login completed.
     expect(campus.calledEvery('/passport/v1/security/trustDevice'), isTrue);
 
-    // The resource fetch on this path is signed over its exact target + body.
-    final resource = campus.last('/controller/v1/user/clientResource')!;
-    final expected = Hmac(
-      sha256,
-      _hexToBytes(AtrustCrypto.signKey(
-        devicePubKeyMod: 'B9D641',
-        devicePubKeyExp: '10001',
-        challenge: 'Y2hhbGxlbmdlLWJhc2U2NA==',
-      ),),
-    ).convert(utf8.encode('${resource.url.path}?${resource.url.query}'
-        '${jsonEncode(jsonDecode(resource.body))}'),);
-    expect(
-      resource.headers['X-Request-Sig']?.toUpperCase(),
-      expected.toString().toUpperCase(),
-    );
+    // Every other call — the trusted-terminal ones and the resource fetch
+    // included — keeps the browser shape and stays unsigned.
+    for (final path in const [
+      '/passport/v1/auth/authCheck',
+      '/passport/v1/security/trustDevice',
+      '/controller/v1/user/clientResource',
+      '/passport/v1/user/onlineInfo',
+    ]) {
+      final request = campus.last(path)!;
+      expect(request.url.queryParameters['clientType'], 'SDPBrowserClient',
+          reason: path,);
+      expect(request.url.queryParameters['lang'], 'zh-CN', reason: path);
+      expect(request.headers['X-Request-Sig'], isNull, reason: path);
+    }
   });
 
   test('a browser login stays unsigned and never tries to bind', () async {
@@ -345,6 +352,43 @@ void main() {
 
     expect(trust.isTrusted, isTrue);
     expect(trust.devices.single.name, 'Mac');
+
+    // The policy states how many terminals of each kind may be trusted and the
+    // list says how many there are, so a full list is visible before a binding
+    // is attempted — and only the kinds the policy names have a limit at all.
+    expect(trust.slotsFor('SDPClient'), (1, 1));
+    expect(trust.slotsFor('MobileClient'), (0, 3));
+    expect(trust.slotsFor('SDPBrowserClient'), isNull);
+
+    // Binding addresses the controller with this device's own row id, in
+    // `idList` on `trustDevice` — the shape the campus portal sends (captured);
+    // an empty body names no device to bind.
+    final binds = campus.requests
+        .where((r) => r.url.path == '/passport/v1/security/trustDevice')
+        .map((r) => jsonDecode(r.body.isEmpty ? '{}' : r.body))
+        .toList();
+    expect(
+      binds,
+      equals([
+        {'idList': ['dev-self']},
+      ]),
+    );
+
+    // A removal is the same call with `untrustIdList`, naming device ids — not
+    // `/security/untrustDevice`, which this controller answers `75510008` for
+    // every id its own list hands out.
+    await client.untrustDevices([trust.devices.single.id]);
+    final removal = campus.last('/passport/v1/security/trustDevice')!;
+    expect(jsonDecode(removal.body), {
+      'untrustIdList': ['dev-self'],
+    });
+
+    // Even on a client-mode session the trusted-terminal query is a browser
+    // call (protocol notes §3.9).
+    final query = campus.last('/passport/v1/security/queryDevice')!;
+    expect(query.url.queryParameters['clientType'], 'SDPBrowserClient');
+    expect(query.url.queryParameters['status'], 'trust');
+    expect(query.headers['X-Request-Sig'], isNull);
   });
 }
 

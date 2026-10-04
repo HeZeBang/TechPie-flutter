@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'assignment_service.dart';
+import 'atrust_service.dart';
 import 'auth_service.dart';
 import 'campus_card_service.dart';
 import 'debug_logger.dart';
@@ -32,6 +33,7 @@ class ServiceProvider extends InheritedWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final AtrustService atrustService;
 
   const ServiceProvider({
     super.key,
@@ -49,6 +51,7 @@ class ServiceProvider extends InheritedWidget {
     required this.updateService,
     required this.campusCardService,
     required this.ecardBindService,
+    required this.atrustService,
     this.ecardWidgetService,
     required super.child,
   });
@@ -76,5 +79,6 @@ class ServiceProvider extends InheritedWidget {
       updateService != oldWidget.updateService ||
       campusCardService != oldWidget.campusCardService ||
       ecardBindService != oldWidget.ecardBindService ||
+      atrustService != oldWidget.atrustService ||
       ecardWidgetService != oldWidget.ecardWidgetService;
 }

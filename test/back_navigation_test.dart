@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/main.dart';
 import 'package:techpie/pages/debug_log_page.dart';
 import 'package:techpie/services/assignment_service.dart';
+import 'package:techpie/services/atrust_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
 import 'package:techpie/services/debug_logger.dart';
@@ -83,6 +84,11 @@ void main() {
         updateService: UpdateService(),
         campusCardService: CampusCardService(),
         ecardBindService: EcardBindService(),
+        atrustService: AtrustService(
+          http: http,
+          storage: storage,
+          castgc: () => '',
+        ),
       ),
     );
     await tester.pumpAndSettle();

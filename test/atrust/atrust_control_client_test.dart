@@ -15,13 +15,32 @@ import 'package:techpie/services/storage_service.dart';
 /// live pair produced, so the client is driven through the real sequence rather
 /// than a happy-path stub.
 class _FakeCampus {
-  _FakeCampus({this.smsRequired = true, this.castgcAccepted = true});
+  _FakeCampus({
+    this.smsRequired = true,
+    this.castgcAccepted = true,
+    this.sendsmsErrorCode,
+  });
 
   final bool smsRequired;
 
   /// False models an expired campus session: IDS answers with its login page
   /// instead of bouncing back with a ticket.
   final bool castgcAccepted;
+
+  /// When set, `sendsms` answers this controller code instead of sending.
+  /// 75500401 is what the real controller answers to a repeat inside a code's
+  /// lifetime.
+  final int? sendsmsErrorCode;
+
+  /// Whether the controller accepts a trusted-terminal binding. False models the
+  /// refusal that leaves a session untrusted — and so costs an SMS on the next
+  /// full login.
+  bool trustDeviceAccepted = true;
+
+  /// Bodies the controller received for the terminal-management calls.
+  Map<String, dynamic>? untrustBody;
+  Map<String, dynamic>? trustBody;
+  Map<String, dynamic>? logoutBody;
 
   final List<String> calls = [];
   final List<Map<String, String>> requestHeaders = [];
@@ -94,6 +113,12 @@ class _FakeCampus {
         if (path == '/passport/v1/auth/sms') {
           final action = request.url.queryParameters['action'];
           if (action == 'sendsms') {
+            if (sendsmsErrorCode != null) {
+              return _json({
+                'code': sendsmsErrorCode,
+                'message': '短信发送被拒',
+              });
+            }
             return _json({
               'code': 0,
               'message': '短信发送成功',
@@ -124,6 +149,36 @@ class _FakeCampus {
             {'code': 0, 'message': '成功'},
             cookies: const {'sid': 'sid-final', 'sid.sig': 'sig-final'},
           );
+        }
+        if (path == '/passport/v1/security/queryDevice') {
+          return _json({
+            'code': 0,
+            'message': '成功',
+            'data': {
+              'selfId': 'dev-self',
+              'currentTrustStatus': 0,
+              'trustDeviceConfig': {'enable': true},
+              'data': const <Object>[],
+            },
+          });
+        }
+        if (path == '/passport/v1/security/logoutDevice') {
+          logoutBody = jsonDecode(request.body) as Map<String, dynamic>;
+          return _json({'code': 0, 'message': '成功'});
+        }
+        if (path == '/passport/v1/security/trustDevice') {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          // A removal is the same call with `untrustIdList` (captured from the
+          // campus portal); a binding carries `idList`.
+          if (body.containsKey('untrustIdList')) {
+            untrustBody = body;
+            return _json({'code': 0, 'message': '成功'});
+          }
+          trustBody = body;
+          return _json({
+            'code': trustDeviceAccepted ? 0 : 75500000,
+            'message': trustDeviceAccepted ? '成功' : '当前会话无法添加授信终端',
+          });
         }
         if (path == '/passport/v1/user/onlineInfo') {
           return _json({
@@ -197,12 +252,16 @@ void main() {
     storage = StorageService(await SharedPreferences.getInstance());
   });
 
-  AtrustControlClient clientFor(_FakeCampus campus,
-          {String castgc = 'CASTGC=TGT-1',}) =>
+  AtrustControlClient clientFor(
+    _FakeCampus campus, {
+    String castgc = 'CASTGC=TGT-1',
+    AtrustClientType type = AtrustClientType.browser,
+  }) =>
       AtrustControlClient(
         http: LoggingHttpClient(DebugLogger(), inner: campus.client()),
         storage: storage,
         castgc: () => castgc,
+        clientType: type,
         baseUrl: Uri.parse('https://vpn.test'),
       );
 
@@ -261,6 +320,90 @@ void main() {
     expect(state.stage, AtrustStage.online);
     expect(campus.calls, contains('POST /passport/v1/public/ticketExchange'));
     expect(campus.calls, isNot(contains('POST /passport/v1/auth/sms')));
+  });
+
+  test('a code that is still valid is not a failure', () async {
+    final campus = _FakeCampus(sendsmsErrorCode: 75500401);
+    final client = clientFor(campus);
+
+    final state = await client.login();
+
+    // No second text was sent, but the retry still lands on the code prompt
+    // instead of failing — the user has a code, they just have to type it.
+    expect(state.stage, AtrustStage.needSms);
+    expect(state.hint, isNotEmpty);
+
+    final online = await client.submitSms('720235');
+    expect(online.stage, AtrustStage.online);
+    expect(campus.submittedCode, '720235');
+  });
+
+  test('any other refusal to send the code is still a failure', () async {
+    final campus = _FakeCampus(sendsmsErrorCode: 75599999);
+    await expectLater(
+      clientFor(campus).login(),
+      throwsA(
+        isA<AtrustException>()
+            .having((e) => e.code, 'code', 'sendsms')
+            .having((e) => e.controllerCode, 'controllerCode', 75599999),
+      ),
+    );
+  });
+
+  test('a restored client-mode session can be bound manually', () async {
+    final campus = _FakeCampus()..trustDeviceAccepted = false;
+    final first = clientFor(campus, type: AtrustClientType.desktop);
+    await first.submitSmsAfterLogin('720235');
+    expect(first.session!.trusted, isFalse);
+    // The refusal is kept, because the caller turns it into the sentence the
+    // user reads (a full list vs. a session that needs an SMS code).
+    expect(first.lastBindRefusal, 75500000);
+
+    // A refusal is not fatal; when the controller starts accepting bindings,
+    // the feature page's explicit bind action can retry on the same session.
+    campus.trustDeviceAccepted = true;
+    final restoredClient = clientFor(campus, type: AtrustClientType.desktop);
+    final restored = await restoredClient.ensureOnline();
+
+    expect(restored.stage, AtrustStage.online);
+    expect(restored.restored, isTrue);
+    expect(await restoredClient.bindDevice(), isTrue);
+    expect(campus.calls, contains('POST /passport/v1/security/trustDevice'));
+  });
+
+  test('a terminal can be removed from the trusted list', () async {
+    final campus = _FakeCampus();
+    final client = clientFor(campus, type: AtrustClientType.desktop);
+    await client.submitSmsAfterLogin('720235');
+
+    // The list has a limit, so removing a terminal is how a new device fits.
+    await client.untrustDevices(const ['dev-1', 'dev-2']);
+    await client.logoutDevice('dev-3');
+
+    // The captured campus portal removes terminals with `trustDevice` itself,
+    // carrying `untrustIdList` — not with `/security/untrustDevice`, which this
+    // controller answers 75510008 for every id its own list hands out.
+    expect(campus.calls, contains('POST /passport/v1/security/trustDevice'));
+    expect(campus.calls, contains('POST /passport/v1/security/logoutDevice'));
+    expect(campus.untrustBody, {
+      'untrustIdList': ['dev-1', 'dev-2'],
+    });
+    expect(campus.logoutBody, {'id': 'dev-3'});
+  });
+
+  test('removing nothing is refused before it reaches the controller', () async {
+    final campus = _FakeCampus();
+    final client = clientFor(campus, type: AtrustClientType.desktop);
+    await client.submitSmsAfterLogin('720235');
+
+    await expectLater(
+      client.untrustDevices(const []),
+      throwsA(
+        isA<AtrustException>()
+            .having((e) => e.code, 'code', 'trustDevice'),
+      ),
+    );
+    expect(campus.untrustBody, isNull);
   });
 
   test('an expired campus session fails as a CAS failure, not a crash',

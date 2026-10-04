@@ -14,6 +14,7 @@ import 'package:techpie/features/campus_card/domain/ports/auth_port.dart';
 import 'package:techpie/features/campus_card/domain/ports/credential_store.dart';
 import 'package:techpie/pages/campus_card_account_page.dart';
 import 'package:techpie/services/assignment_service.dart';
+import 'package:techpie/services/atrust_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
 import 'package:techpie/services/debug_logger.dart';
@@ -138,6 +139,11 @@ void main() {
       updateService: UpdateService(),
       campusCardService: service,
       ecardBindService: bindService,
+      atrustService: AtrustService(
+        http: http,
+        storage: storage,
+        castgc: () => '',
+      ),
       child: const MaterialApp(home: CampusCardAccountPage()),
     );
   }

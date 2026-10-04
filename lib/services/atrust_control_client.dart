@@ -3,17 +3,22 @@ import 'dart:math';
 
 import 'package:http/http.dart' as http;
 
-import 'atrust_crypto.dart';
 import 'http_client.dart';
 import 'storage_service.dart';
 
 /// Which path the controller is asked to open the session on.
 ///
-/// [browser] is unsigned and always available, but the controller re-verifies
-/// the device with an SMS on every fresh login. [desktop] is what a trusted
-/// terminal requires — only a session opened this way can be bound with
+/// [browser] is the plain web session, but the controller re-verifies the
+/// device with an SMS on every fresh login. [desktop] marks the session as
+/// "client mode" — only such a session can be bound with
 /// [AtrustControlClient.bindDevice], and only a trusted terminal skips the SMS
 /// on later logins.
+///
+/// The distinction is exactly one query parameter on `reportEnv`
+/// (`clientType=SDPClient`) and nothing else: the controller picks client mode
+/// from that parameter alone (protocol notes §3.9), so no anti-MITM challenge
+/// proof and no request signature is involved — which is also what keeps this
+/// path free of the byte-exactness a signed request would demand (§10.3).
 enum AtrustClientType { browser, desktop }
 
 /// A login attempt's outcome.
@@ -139,7 +144,11 @@ class AtrustTrustedDevice {
     required this.online,
   });
 
+  /// The device's row id, which is also what a removal names: `trustDevice`
+  /// takes an `untrustIdList` of these (the entry's `trusDevDbId` is not used by
+  /// the captured portal flow).
   final String id;
+
   final String name;
   final String deviceType;
   final bool online;
@@ -152,6 +161,7 @@ class AtrustTrustState {
     required this.currentTrustStatus,
     required this.enable,
     required this.devices,
+    this.config = const {},
   });
 
   final String selfId;
@@ -161,16 +171,47 @@ class AtrustTrustState {
   final bool enable;
   final List<AtrustTrustedDevice> devices;
 
+  /// How many terminals of [deviceType] the account trusts, and how many the
+  /// policy allows — `null` when the policy states no limit for that kind.
+  ///
+  /// Both numbers are the controller's own: the limits are `pcLimit` /
+  /// `mobileLimit` inside `trustDeviceConfig`, and the device type on each entry
+  /// is the `clientType` the session reported. So a full list is visible before
+  /// a binding is attempted — which is the only reason a binding to a full list
+  /// is refused at all.
+  (int, int)? slotsFor(String deviceType) {
+    final limit = switch (deviceType) {
+      'SDPClient' => config['pcLimit'],
+      'MobileClient' => config['mobileLimit'],
+      _ => null,
+    };
+    if (limit is! num) return null;
+    final used = devices.where((d) => d.deviceType == deviceType).length;
+    return (used, limit.toInt());
+  }
+
+  /// `trustDeviceConfig` as the controller sent it.
+  ///
+  /// Only `enable` is interpreted, deliberately: a campus can put a quota or a
+  /// policy in here that no public document describes, and a binding refused for
+  /// a reason the app threw away is undiagnosable. Keeping the raw map means the
+  /// next attempt against a reachable controller can be read rather than guessed
+  /// at.
+  final Map<String, dynamic> config;
+
   bool get isTrusted => currentTrustStatus != 0;
 }
 
-/// A control-plane failure. [code] is stable enough to branch on, [message] is
-/// meant for a log line (never for the user verbatim).
+/// A control-plane failure. [code] is the step that failed (the request's tag),
+/// [message] is meant for a log line (never for the user verbatim), and
+/// [controllerCode] is the controller's own numeric code when the failure was
+/// one — the only thing worth branching on.
 class AtrustException implements Exception {
-  const AtrustException(this.code, this.message);
+  const AtrustException(this.code, this.message, {this.controllerCode});
 
   final String code;
   final String message;
+  final int? controllerCode;
 
   @override
   String toString() => 'AtrustException($code): $message';
@@ -221,14 +262,11 @@ class AtrustControlClient {
   AtrustSession? _session;
   final Map<String, String> _cookies = {};
 
-  /// The controller's own name for [clientType]; the desktop one is what a
-  /// trusted terminal requires.
+  /// The controller's own name for [clientType] — the value `reportEnv` is
+  /// addressed with, which is the sole thing that makes the session "client
+  /// mode" and so bindable as a trusted terminal.
   String get wireClientType =>
       clientType == AtrustClientType.desktop ? 'SDPClient' : 'SDPBrowserClient';
-
-  /// §10.1's key, kept for the life of the session: derived from the pre-login
-  /// challenge, it also signs post-login trusted requests.
-  String _signKey = '';
 
   /// Serializes the login sequence. Two taps in a row would otherwise run two
   /// handshakes over one controller session: the second one's reportEnv lands on
@@ -291,42 +329,15 @@ class AtrustControlClient {
     final deviceId = await _deviceId();
     final config = await _authConfig();
     final csrf = (config['security'] as Map?)?['csrfToken'] as String? ?? '';
-    await _trace('authConfig ok (client $wireClientType)');
+    await _trace('authConfig ok');
     if (csrf.isEmpty) {
       throw const AtrustException('authConfig', 'missing security.csrfToken');
     }
     _cookies.addAll(_parseCookieHeader(castgc));
 
-    // The desktop path has to prove it holds the key the controller derived
-    // from the challenge it just issued; that proof is what lets the session be
-    // bound as a trusted terminal later.
-    String encryptedChallenge = '';
-    if (clientType == AtrustClientType.desktop) {
-      final antiMitm = (config['antiMITMAttackData'] as Map?) ?? const {};
-      final modulus = (antiMitm['devicePubKeyMod'] as String?) ?? '';
-      final exponent = (antiMitm['devicePubKeyExp'] as String?) ?? '';
-      final challenge = (antiMitm['challenge'] as String?) ?? '';
-      if (modulus.isEmpty || challenge.isEmpty) {
-        throw const AtrustException(
-          'authConfig',
-          'desktop login needs antiMITMAttackData.challenge',
-        );
-      }
-      _signKey = AtrustCrypto.signKey(
-        devicePubKeyMod: modulus,
-        devicePubKeyExp: exponent,
-        challenge: challenge,
-      );
-      encryptedChallenge = await AtrustCrypto.encryptedChallenge(
-        devicePubKeyMod: modulus,
-        devicePubKeyExp: exponent,
-        challenge: challenge,
-      );
-    }
-
     final casTicket = await _casTicket();
     await _trace('CAS ok, ticket ${casTicket.length}B');
-    await _reportEnv(casTicket, deviceId, config, csrf, encryptedChallenge);
+    await _reportEnv(casTicket, deviceId, config, csrf);
     await _trace('reportEnv ok (desktop=${clientType == AtrustClientType.desktop})');
     final needsSms = await _authCheck(csrf);
     await _trace('authCheck: ${needsSms ? 'SMS required' : 'no SMS required'}');
@@ -400,7 +411,8 @@ class AtrustControlClient {
     }
     final policy = await _clientResource(csrf);
     final policyDns = _extractPolicyDns(policy);
-    final trusted = await _tryBindDevice(csrf);
+    await _trace('policy DNS: ${policyDns.join(',')}');
+    final trusted = await bindDevice();
     final session = AtrustSession(
       sid: _cookies['sid'] ?? '',
       deviceId: deviceId,
@@ -485,20 +497,28 @@ class AtrustControlClient {
     return ticket is String && ticket.isNotEmpty ? ticket : null;
   }
 
+  /// The environment report — the one call whose `clientType` decides whether
+  /// the session comes out as "client mode" (protocol notes §3.9).
+  ///
+  /// `antiMITMAttackData.enable` stays 0 even on the desktop path: client mode
+  /// is picked from the query parameter alone, and submitting a challenge proof
+  /// is what makes the controller run its anti-MITM check — a proof it cannot
+  /// satisfy is answered with a passport-layer signature failure (the SDK's
+  /// "检测到中间人攻击"), failing the whole login. geekTrust's working client
+  /// mode sends `enable: 0` with the same public-key fields.
   Future<void> _reportEnv(
     String casTicket,
     String deviceId,
     Map<String, dynamic> config,
     String csrf,
-    String encryptedChallenge,
   ) async {
     final antiMitm = (config['antiMITMAttackData'] as Map?) ?? const {};
-    final desktop = clientType == AtrustClientType.desktop;
     await _controller(
       'POST',
       '/controller/v1/public/reportEnv',
       csrf: csrf,
       tag: 'reportEnv',
+      desktopPath: clientType == AtrustClientType.desktop,
       body: {
         'ticket': casTicket,
         'timing': 'pre-login',
@@ -509,11 +529,10 @@ class AtrustControlClient {
           },
         },
         'antiMITMAttackData': {
-          'enable': desktop ? 1 : 0,
+          'enable': 0,
           'devicePubKeyMod': antiMitm['devicePubKeyMod'] ?? '',
           'devicePubKeyExp': antiMitm['devicePubKeyExp'] ?? '10001',
           'rsaCert': antiMitm['rsaCert'] ?? '',
-          if (desktop) 'encryptedChallenge': encryptedChallenge,
         },
       },
     );
@@ -532,16 +551,33 @@ class AtrustControlClient {
     return list.any((e) => (e as Map?)?['authType'] == 'auth/sms');
   }
 
+  /// A repeated `sendsms` inside a code's lifetime is answered with this instead
+  /// of a new text (protocol notes §11.1; geekTrust calls it `CodeSMSStillValid`).
+  static const int _smsStillValid = 75500401;
+
+  /// Asks the controller to text a code, and returns the line the UI shows while
+  /// the code is typed.
+  ///
+  /// The controller refuses a second `sendsms` while a code is alive, because
+  /// there is nothing to send: the user already holds one. That refusal is not a
+  /// failure — the login continues into the code prompt, which is exactly what
+  /// the retry was after.
   Future<String> _sendSms(String csrf) async {
-    final data = await _controller(
-      'POST',
-      '/passport/v1/auth/sms',
-      query: {'action': 'sendsms'},
-      csrf: csrf,
-      tag: 'sendsms',
-      body: const <String, dynamic>{},
-    );
-    return (data['tips'] as String?) ?? '';
+    try {
+      final data = await _controller(
+        'POST',
+        '/passport/v1/auth/sms',
+        query: {'action': 'sendsms'},
+        csrf: csrf,
+        tag: 'sendsms',
+        body: const <String, dynamic>{},
+      );
+      return (data['tips'] as String?) ?? '';
+    } on AtrustException catch (error) {
+      if (error.controllerCode != _smsStillValid) rethrow;
+      await _trace('a code from an earlier attempt is still valid');
+      return '验证码仍在有效期内，请输入上一条短信中的验证码';
+    }
   }
 
   Future<String> _checkSms(String code, String csrf) async {
@@ -597,13 +633,18 @@ class AtrustControlClient {
   }
 
   /// The routing policy, exactly as the controller states it.
+  ///
+  /// Stays on the browser shape and unsigned: the notes' signed desktop variant
+  /// only answers env config, and it makes the controller verify an interface
+  /// signature over a body that has to match the official client byte for byte
+  /// (§4.1, §10.3). The browser shape returns the full policy on a client-mode
+  /// session too.
   Future<String> _clientResource(String csrf) async {
     final data = await _controller(
       'POST',
       '/controller/v1/user/clientResource',
       csrf: csrf,
       tag: 'clientResource',
-      signed: true,
       body: {
         'resourceType': {
           'sdpPolicy': <String, dynamic>{},
@@ -677,6 +718,10 @@ class AtrustControlClient {
       selfId: (data['selfId'] as String?) ?? '',
       currentTrustStatus: (data['currentTrustStatus'] as num?)?.toInt() ?? 0,
       enable: ((data['trustDeviceConfig'] as Map?)?['enable']) == true,
+      config: {
+        if (data['trustDeviceConfig'] case final Map<dynamic, dynamic> config)
+          for (final entry in config.entries) '${entry.key}': entry.value,
+      },
       devices: [
         for (final entry in devices)
           if (entry is Map)
@@ -690,33 +735,107 @@ class AtrustControlClient {
     );
   }
 
-  /// Binds this device as a trusted terminal. The controller only accepts this
-  /// from a session opened on the desktop path; afterwards it stops demanding an
-  /// SMS for this device. Returns false when the controller refused (the session
-  /// keeps working, it just keeps asking for codes).
-  Future<bool> bindDevice() async {
-    if (clientType != AtrustClientType.desktop) return false;
-    return _tryBindDevice(_session?.csrfToken ?? '');
+  /// Records the controller's verdict on this device.
+  ///
+  /// Without it a successful binding leaves the stored session saying
+  /// "untrusted", and the app keeps asking for a code it no longer needs.
+  Future<void> _recordTrusted() async {
+    final session = _session;
+    if (session == null || session.trusted) return;
+    final stored = Map<String, dynamic>.from(session.toJson())..['trusted'] = true;
+    final updated = AtrustSession.fromJson(stored);
+    if (updated == null) return;
+    _session = updated;
+    await _storage.saveAtrustSession(jsonEncode(stored));
   }
 
-  Future<bool> _tryBindDevice(String csrf) async {
-    if (clientType != AtrustClientType.desktop || csrf.isEmpty) return false;
+  /// Removes terminals from the account's trusted list, by the ids [trustState]
+  /// reports for them.
+  ///
+  /// The endpoint is `trustDevice` again — the *same* call that binds — with
+  /// `untrustIdList` instead of `idList` (captured from the campus portal: the
+  /// `/security/untrustDevice` path and its `idList` are the reference client's
+  /// invention, and this controller answers it `75510008 授信记录未找到` for
+  /// every id its own list hands out). The id is the device's row id, exactly
+  /// what [AtrustTrustedDevice.id] carries.
+  ///
+  /// The list has a limit, so removing a terminal is how a device that no longer
+  /// belongs — or a new one that cannot fit — makes room.
+  Future<void> untrustDevices(List<String> deviceIds) async {
+    if (deviceIds.isEmpty) {
+      throw const AtrustException('trustDevice', 'untrustIdList must not be empty');
+    }
+    await _controller(
+      'POST',
+      '/passport/v1/security/trustDevice',
+      csrf: _session?.csrfToken ?? '',
+      tag: 'untrustDevice',
+      body: {'untrustIdList': deviceIds},
+    );
+  }
+
+  /// Ends another terminal's session on the account, leaving it on the list.
+  Future<void> logoutDevice(String id) async {
+    if (id.isEmpty) {
+      throw const AtrustException('logoutDevice', 'id must not be empty');
+    }
+    await _controller(
+      'POST',
+      '/passport/v1/security/logoutDevice',
+      csrf: _session?.csrfToken ?? '',
+      tag: 'logoutDevice',
+      body: {'id': id},
+    );
+  }
+
+
+  /// Binds this device as a trusted terminal.
+  ///
+  /// The controller is addressed with the `idList` of *this device's own row* —
+  /// the `selfId` its `queryDevice` reports — which is what the campus portal
+  /// sends (captured). An empty body names no device to bind.
+  Future<bool> bindDevice() async {
+    if (clientType != AtrustClientType.desktop) return false;
     try {
+      final state = await trustState();
+      if (state.selfId.isEmpty) {
+        throw const AtrustException(
+          'trustDevice',
+          'the controller reported no selfId to bind',
+        );
+      }
       await _controller(
         'POST',
         '/passport/v1/security/trustDevice',
-        csrf: csrf,
+        csrf: _session?.csrfToken ?? '',
         tag: 'trustDevice',
-        body: const <String, dynamic>{},
+        body: {
+          'idList': [state.selfId],
+        },
       );
+      await _recordTrusted();
       await _trace('device bound as a trusted terminal');
       return true;
     } on AtrustException catch (error) {
-      // Binding is an optimisation: a refusal must not fail the login.
-      await _trace('trusted-terminal binding refused: ${error.code}');
+      // Binding is an optimisation: a refusal must not fail the login. The
+      // controller's own code is what says why, and the caller can act on two of
+      // them: 75500311 is a full list of trusted terminals for this kind of
+      // device (remove one), and 73700001 is the policy's `enhanceAuthType`
+      // demanding a verified session — which the login flow has, having just
+      // taken an SMS code, and a restored session has not.
+      _lastBindRefusal = error.controllerCode;
+      await _trace(
+        'trusted-terminal binding refused: code=${error.controllerCode} '
+        'detail=${error.message}',
+      );
       return false;
     }
   }
+
+  /// The controller's code from the last refused binding, or null when the last
+  /// one was accepted (or never attempted).
+  int? get lastBindRefusal => _lastBindRefusal;
+  int? _lastBindRefusal;
 
   // --- plumbing -------------------------------------------------------------
 
@@ -727,34 +846,30 @@ class AtrustControlClient {
     String csrf = '',
     String? tag,
     Object? body,
-    bool signed = false,
+    bool desktopPath = false,
   }) async {
-    // The desktop path's query is kept to the shape the official client sends —
-    // platform first, no `lang` — because a signature would cover it byte for
-    // byte (protocol notes §10.3).
+    // `desktopPath` is set by `reportEnv` alone: it is the one call whose
+    // `clientType` the controller reads to decide client mode (protocol notes
+    // §3.9). Every other call is the browser path.
+    //
+    // `platform` and `lang` are sent on every call, exactly as the working
+    // reference client sends them. The platform-first, no-`lang` shape §10.3
+    // describes is a requirement for a *signed* request, and nothing here is
+    // signed any more — keeping the deviation for no reason is how a controller
+    // ends up refusing a request the reference gets accepted.
     final url = Uri.parse('$baseUrl$path').replace(
-      queryParameters: clientType == AtrustClientType.desktop
-          ? {'platform': platform, 'clientType': wireClientType, ...?query}
-          : {
-              'clientType': wireClientType,
-              'platform': platform,
-              'lang': lang,
-              ...?query,
-            },
+      queryParameters: {
+        'clientType': desktopPath ? wireClientType : 'SDPBrowserClient',
+        'platform': platform,
+        'lang': lang,
+        ...?query,
+      },
     );
     final bodyText = body == null ? '' : jsonEncode(body);
     final headers = <String, String>{
       'Content-Type': 'application/json;charset=utf-8',
       if (csrf.isNotEmpty) 'x-csrf-token': csrf,
       if (_cookies.isNotEmpty) 'Cookie': _cookieHeader(null),
-      // §10.3: a trusted request on the desktop path is signed over the exact
-      // request target and the exact body bytes.
-      if (signed && _signKey.isNotEmpty)
-        'X-Request-Sig': AtrustCrypto.requestSignature(
-          signKey: _signKey,
-          pathWithQuery: url.path + (url.hasQuery ? '?${url.query}' : ''),
-          body: bodyText,
-        ),
     };
     final response = method == 'POST'
         ? await _http.post(
@@ -777,6 +892,7 @@ class AtrustControlClient {
       throw AtrustException(
         tag ?? path,
         'controller code $code: ${decoded['message']}',
+        controllerCode: code,
       );
     }
     final data = decoded['data'];
@@ -860,6 +976,7 @@ class AtrustControlClient {
   }
 
   Future<void> _trace(String message) async => _onTrace?.call(message);
+
 }
 
 /// What a half-finished login keeps between [AtrustControlClient.login] and
