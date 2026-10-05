@@ -173,10 +173,14 @@ class AtrustService extends ChangeNotifier {
   set clientType(AtrustClientType value) {
     if (value == _clientType) return;
     _clientType = value;
-    // The session was opened on the other path; a client is per-path.
+    // The session was opened on the other path; a client is per-path. The
+    // stored one has to go with it: a session carries the mode it was opened
+    // on, so leaving it behind only produces a restore that the tunnel can
+    // never use — and the next use re-opens it on the path asked for here.
     _client = null;
     _login = null;
     _trust = null;
+    unawaited(_storage.clearAtrustSession());
     _detail = value == AtrustClientType.desktop
         ? '客户端模式：可绑定授信终端'
         : '浏览器模式：每次都需短信';

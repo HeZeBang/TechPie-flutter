@@ -65,6 +65,7 @@ class AtrustSession {
     required this.dns,
     required this.policyJson,
     required this.savedAt,
+    this.clientType,
     this.trusted = false,
   });
 
@@ -87,6 +88,14 @@ class AtrustSession {
   /// what stops it demanding an SMS on every fresh login.
   final bool trusted;
 
+  /// The path this session was opened on. The controller fixes the mode from
+  /// the `reportEnv` clientType, so it is a property of the session and not of
+  /// the client that happens to be asking: a session left behind by the other
+  /// path is a pure web session and can never carry this path's tunnel. Null
+  /// when it came from a build that did not record one yet, which is treated as
+  /// "not this path's".
+  final AtrustClientType? clientType;
+
   Map<String, dynamic> toJson() => {
         'sid': sid,
         'device_id': deviceId,
@@ -99,7 +108,18 @@ class AtrustSession {
         'policy': policyJson,
         'trusted': trusted,
         'saved_at': savedAt.toIso8601String(),
+        'client_type': clientType?.name,
       };
+
+  /// The mode a stored name stands for, or null when it names none of them.
+  static AtrustClientType? _modeOf(String name) {
+    for (final value in AtrustClientType.values) {
+      if (value.name == name) {
+        return value;
+      }
+    }
+    return null;
+  }
 
   static AtrustSession? fromJson(Object? raw) {
     if (raw is! Map<String, dynamic>) return null;
@@ -127,6 +147,7 @@ class AtrustSession {
           ? AtrustControlClient._extractPolicyDns(policyJson)
           : storedDns,
       policyJson: policyJson,
+      clientType: _modeOf(str('client_type')),
       trusted: raw['trusted'] == true,
       savedAt: DateTime.tryParse(str('saved_at')) ??
           DateTime.fromMillisecondsSinceEpoch(0),
@@ -296,7 +317,11 @@ class AtrustControlClient {
     final raw = await _storage.loadAtrustSession();
     if (raw != null) {
       final restored = AtrustSession.fromJson(jsonDecode(raw));
-      if (restored != null) {
+      // A session belongs to the path that opened it. Restoring one across
+      // paths is what kept a browser-mode session — a pure web session, which
+      // the server refuses the tunnel for — in play indefinitely: the control
+      // plane kept answering `isOnline` while every tunnel attempt was refused.
+      if (restored != null && restored.clientType == clientType) {
         _session = restored;
         _cookies
           ..clear()
@@ -424,6 +449,7 @@ class AtrustControlClient {
       gateways: const [],
       dns: policyDns,
       policyJson: policy,
+      clientType: clientType,
       trusted: trusted,
       savedAt: DateTime.now(),
     );

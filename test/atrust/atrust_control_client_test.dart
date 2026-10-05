@@ -436,6 +436,36 @@ void main() {
     expect(client.session, isNull);
     expect(await storage.loadAtrustSession(), isNull);
   });
+
+  test('a stored session records the path it was opened on', () async {
+    final campus = _FakeCampus();
+    await clientFor(campus, type: AtrustClientType.desktop)
+        .submitSmsAfterLogin('720235');
+
+    final raw = jsonDecode((await storage.loadAtrustSession())!)
+        as Map<String, dynamic>;
+    expect(raw['client_type'], 'desktop');
+
+    // A session from a build that recorded no path belongs to neither one, so
+    // it is never handed to a client that asks on one of them.
+    raw.remove('client_type');
+    expect(AtrustSession.fromJson(raw)!.clientType, isNull);
+  });
+
+  test('a session opened on one path is not handed to the other', () async {
+    final campus = _FakeCampus();
+    await clientFor(campus, type: AtrustClientType.desktop)
+        .submitSmsAfterLogin('720235');
+
+    // The mode is a property of the session — the server fixes it from the path
+    // that opened it, and a pure web session never carries the client path's
+    // tunnel. Restoring it onto the other path is what kept such a session in
+    // play forever while every tunnel attempt was refused, so this re-opens the
+    // session instead of answering from storage.
+    final other = await clientFor(campus).ensureOnline();
+    expect(other.restored, isFalse);
+    expect(other.stage, AtrustStage.needSms);
+  });
 }
 
 extension on AtrustControlClient {
