@@ -16,7 +16,12 @@ import Want from '@ohos.app.ability.Want';
 import hilog from '@ohos.hilog';
 import { BusinessError } from '@kit.BasicServicesKit';
 import engine from 'libgeektrust_vpn.so';
-import { clearState, readState, writeVerdict } from './GeekTrustVpnState';
+import {
+  GeekTrustVpnStateFile,
+  markStopped,
+  readState,
+  writeVerdict,
+} from './GeekTrustVpnState';
 import { gatewaysOf, routesWithoutGateways } from './GeekTrustVpnRoutes';
 
 const DOMAIN: number = 0x0000;
@@ -25,6 +30,13 @@ const TAG: string = 'GeekTrustVpn';
 /** How long the engine is given to dial the gateway before the attempt fails. */
 const ENGINE_TIMEOUT_MS: number = 20000;
 const ENGINE_POLL_MS: number = 150;
+
+/**
+ * How often the record's copy of the engine's counters is refreshed while the
+ * tunnel is up. The app re-reads the record about once a second, so anything
+ * slower than this is a panel that lags a live tunnel.
+ */
+const ENGINE_REFRESH_MS: number = 5000;
 
 /**
  * Waits for the engine to report a live tunnel. It dials the gateway in the
@@ -103,6 +115,7 @@ async function underlyingDnsServers(): Promise<string[]> {
 export default class GeekTrustVpnAbility extends VpnExtensionAbility {
   private connection: vpnExtension.VpnConnection | null = null;
   private up: boolean = false;
+  private refreshTimer: number = -1;
 
   async onCreate(want: Want): Promise<void> {
     const filesDir = this.context.filesDir;
@@ -185,6 +198,7 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
       hilog.info(DOMAIN, TAG, 'tunnel attached');
       this.up = true;
       writeVerdict(filesDir, state, 'active', engine.status(), '');
+      this.watchEngine(filesDir, state);
     } catch (error) {
       const failure = error as BusinessError;
       // 2200001 / 401 is the user declining the system dialog; everything else
@@ -202,10 +216,48 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
 
   onDestroy(): void {
     hilog.info(DOMAIN, TAG, 'onDestroy');
+    // Order matters: the refresh timer is stopped with the tunnel, and only then
+    // is the record marked stopped, so nothing can write `active` after it.
     this.teardown();
+    // The interface goes with this ability, so the record must not outlive it.
+    markStopped(this.context.filesDir);
+  }
+
+  /**
+   * Keeps the record's copy of the engine's counters current.
+   *
+   * The verdict is a snapshot, and the counters in it are zero at the moment a
+   * tunnel comes up — the interface has carried nothing yet. Left at that, the
+   * app's diagnostics panel shows a field of zeros over a tunnel that is moving
+   * traffic, which reads as a tunnel doing nothing at all.
+   */
+  private watchEngine(filesDir: string, state: GeekTrustVpnStateFile): void {
+    this.stopWatching();
+    this.refreshTimer = setInterval(() => {
+      if (!this.up) {
+        return;
+      }
+      try {
+        writeVerdict(filesDir, state, 'active', engine.status(), '');
+      } catch (error) {
+        hilog.warn(
+          DOMAIN, TAG,
+          'engine status unreadable: %{public}s',
+          JSON.stringify(error),
+        );
+      }
+    }, ENGINE_REFRESH_MS);
+  }
+
+  private stopWatching(): void {
+    if (this.refreshTimer >= 0) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = -1;
+    }
   }
 
   private teardown(): void {
+    this.stopWatching();
     if (this.up) {
       try {
         this.connection?.destroy();

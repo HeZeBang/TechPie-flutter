@@ -10,11 +10,12 @@
  */
 
 import fs from '@ohos.file.fs';
+import process from '@ohos.process';
 
 const STATE_FILE = 'geektrust_vpn_state.json';
 
 /** `requested` until the extension has an opinion; then one of the others. */
-export type GeekTrustVpnStatus = 'requested' | 'active' | 'failed';
+export type GeekTrustVpnStatus = 'requested' | 'active' | 'failed' | 'stopped';
 
 export interface GeekTrustVpnStateFile {
   status: GeekTrustVpnStatus;
@@ -29,6 +30,13 @@ export interface GeekTrustVpnStateFile {
   /** The engine's own status JSON, once it is up. */
   engineStatus: string;
   error: string;
+  /**
+   * The extension process that reached the verdict, or 0 while the request is
+   * only a request. A record outlives the tunnel it describes — the file is on
+   * disk, the interface is not — so the app asks whether this process is still
+   * there before it believes `active`.
+   */
+  pid: number;
   at: number;
 }
 
@@ -48,6 +56,7 @@ export function writeRequest(
     dns: dns,
     engineStatus: '',
     error: '',
+    pid: 0,
     at: Date.now(),
   });
 }
@@ -69,8 +78,27 @@ export function writeVerdict(
   base.status = status;
   base.engineStatus = engineStatus;
   base.error = error;
+  base.pid = process.pid;
   base.at = Date.now();
   writeRecord(filesDir, base);
+}
+
+/** Records that the extension that owned the tunnel has let it go.
+ *
+ * A record that says `active` outlives the interface it describes — the app
+ * then draws a connection that is not there and offers to *stop* it, so nothing
+ * ever raises a real one. The teardown is the moment that knows. A `failed`
+ * record is left alone: the app is waiting to read it. */
+export function markStopped(filesDir: string): void {
+  const state = readState(filesDir);
+  if (state === null || state.status !== 'active') {
+    return;
+  }
+  state.status = 'stopped';
+  state.engineStatus = '';
+  state.pid = 0;
+  state.at = Date.now();
+  writeRecord(filesDir, state);
 }
 
 /** The record, or null when there is none (or it is unreadable). */

@@ -59,6 +59,8 @@ class AtrustService extends ChangeNotifier {
   bool _busy = false;
   bool _systemVpnActive = false;
 
+  Future<String>? _systemVpnStart;
+
   /// Whether the last attempt to raise the tunnel ended without it coming up.
   /// Only then does "retry" mean anything: a tunnel that is up needs no retry,
   /// and one that was never started needs a start, not a retry.
@@ -132,15 +134,18 @@ class AtrustService extends ChangeNotifier {
     final active = await _vpn.active();
     final wasActive = _systemVpnActive;
     _systemVpnActive = active;
+    if (isOhos()) {
+      await _refreshOhosTunnelStatus(notify: false);
+    }
     if (!active && _stopPending) {
       _stopPending = false;
-      tunnel.stop();
+      if (!isOhos()) tunnel.stop();
       _tunnelFailed = false;
       refreshTunnelStatus();
       _detail = '系统 VPN 已关闭，隧道已停止';
     } else if (active != wasActive) {
       _detail = active ? '系统 VPN：全局模式' : '系统 VPN 已关闭';
-    } else {
+    } else if (!isOhos()) {
       return;
     }
     notifyListeners();
@@ -181,9 +186,8 @@ class AtrustService extends ChangeNotifier {
     _login = null;
     _trust = null;
     unawaited(_storage.clearAtrustSession());
-    _detail = value == AtrustClientType.desktop
-        ? '客户端模式：可绑定授信终端'
-        : '浏览器模式：每次都需短信';
+    _detail =
+        value == AtrustClientType.desktop ? '客户端模式：可绑定授信终端' : '浏览器模式：每次都需短信';
     notifyListeners();
   }
 
@@ -209,9 +213,8 @@ class AtrustService extends ChangeNotifier {
       // it is worth answering: it is the difference between "an SMS every time"
       // and "no SMS".
       if (state.isOnline) await refreshTrust();
-      _detail = state.stage == AtrustStage.needSms
-          ? '验证码已发送，请输入短信验证码'
-          : '账号已登录';
+      _detail =
+          state.stage == AtrustStage.needSms ? '验证码已发送，请输入短信验证码' : '账号已登录';
       return state;
     } on Object catch (error) {
       _login = null;
@@ -260,6 +263,13 @@ class AtrustService extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+    // The OHOS extension owns both the system interface and its engine.
+    // Starting the local library here would create a second connection with
+    // the same device/session and make the gateway evict one of them.
+    if (isOhos()) {
+      final verdict = await startSystemVpn();
+      return verdict == 'active';
+    }
     _error = null;
     try {
       tunnel.start(
@@ -292,11 +302,6 @@ class AtrustService extends ChangeNotifier {
     }
     notifyListeners();
     if (alive && systemVpnSupported) {
-      // The mobile shape: the whole device comes up with the tunnel, one action.
-      // There is no separate switch for it, because a system interface that has
-      // to be *asked for* separately is one the app cannot reliably take back —
-      // the platform binds the service for as long as the interface exists (see
-      // AtrustVpnService).
       await startSystemVpn();
     }
     return alive;
@@ -309,7 +314,6 @@ class AtrustService extends ChangeNotifier {
       return 0;
     }
   }
-
 
   Future<bool> _waitForAlive() async {
     final deadline = DateTime.now().add(const Duration(seconds: 20));
@@ -337,7 +341,7 @@ class AtrustService extends ChangeNotifier {
     final released = await _releaseSystemVpn();
     AtrustRouting.enabled = false;
     if (released) {
-      tunnel.stop();
+      if (!isOhos()) tunnel.stop();
       _stopPending = false;
     } else {
       // The platform will not let the interface go, and it must not be left
@@ -352,9 +356,7 @@ class AtrustService extends ChangeNotifier {
     _trust = null;
     _tunnelStatus = null;
     _tunnelFailed = false;
-    _detail = released
-        ? '已登出'
-        : '已登出；系统 VPN 未释放';
+    _detail = released ? '已登出' : '已登出；系统 VPN 未释放';
     notifyListeners();
   }
 
@@ -379,15 +381,12 @@ class AtrustService extends ChangeNotifier {
     AtrustRouting.enabled = false;
     if (released) {
       _stopPending = false;
-      tunnel.stop();
+      if (!isOhos()) tunnel.stop();
       _tunnelFailed = false;
       refreshTunnelStatus();
       _detail = '隧道已停止（会话保留）';
     } else {
-      // The interface is still carrying traffic, so the engine stays: one whose
-      // routes outlive its engine drops every campus destination into a
-      // descriptor nobody reads. The ask is kept, and the system's own
-      // disconnect completes it ([refreshSystemVpn]).
+      // Keep the engine while the platform still owns the interface.
       _stopPending = true;
       _detail = '系统 VPN 未释放，隧道保留';
     }
@@ -516,9 +515,11 @@ class AtrustService extends ChangeNotifier {
     return _trust;
   }
 
-  /// Re-reads the engine's snapshot. The ABI calls it cheap and meant to be
-  /// polled, which is what lets the UI show the tunnel coming up on its own.
   void refreshTunnelStatus() {
+    if (isOhos()) {
+      unawaited(_refreshOhosTunnelStatus());
+      return;
+    }
     if (!tunnel.isSupported) {
       _tunnelStatus = null;
       return;
@@ -530,11 +531,50 @@ class AtrustService extends ChangeNotifier {
     }
   }
 
+  Future<void> _refreshOhosTunnelStatus({bool notify = true}) async {
+    try {
+      final state = await _vpn.status();
+      final raw = state?['engineStatus'];
+      if (raw is String && raw.isNotEmpty) {
+        _tunnelStatus = AtrustTunnelStatus.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>,
+        );
+      } else {
+        _tunnelStatus = null;
+      }
+      final active = state?['status'] == 'active';
+      if (_systemVpnActive != active) _systemVpnActive = active;
+      if (notify) notifyListeners();
+    } on Object {
+      _tunnelStatus = null;
+    }
+  }
+
   /// The system interface's shape: an interface the whole device routes through,
   /// which is what reaches the campus from WebViews and from other apps. Mobile
   /// raises it with the tunnel; the desktops have no such interface and use the
   /// local listeners instead.
-  Future<String> startSystemVpn() async {
+  Future<String> startSystemVpn() {
+    final pending = _systemVpnStart;
+    if (pending != null) return pending;
+    final operation = _startSystemVpn();
+    _systemVpnStart = operation;
+    operation.then<void>(
+      (_) {
+        if (identical(_systemVpnStart, operation)) _systemVpnStart = null;
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_systemVpnStart, operation)) _systemVpnStart = null;
+      },
+    );
+    return operation;
+  }
+
+  Future<String> _startSystemVpn() async {
+    if (await _vpn.active()) {
+      _systemVpnActive = true;
+      return 'active';
+    }
     var session = _control.session;
     if (session == null) {
       final restored = await restore();
@@ -543,24 +583,23 @@ class AtrustService extends ChangeNotifier {
       }
       session = _control.session!;
     }
-    if (!(tunnelStatus?.alive ?? false)) {
+    if (!isOhos() && !(tunnelStatus?.alive ?? false)) {
       final alive = await startTunnel();
       if (!alive) return 'failed: 隧道未连接';
     }
     try {
-      final verdict = await _vpn.start(session, engine: tunnel);
+      final verdict =
+          await _vpn.start(session, engine: isOhos() ? null : tunnel);
       _systemVpnActive = verdict == 'active';
-      if (_systemVpnActive) {
-        // On OHOS this is the long-running task that keeps the process — and so
-        // the tunnel it drives — out of the system's background freezer.
-        await _vpn.startContinuousTask();
-      }
-      refreshTunnelStatus();
+      if (_systemVpnActive) await _vpn.startContinuousTask();
+      if (!isOhos()) refreshTunnelStatus();
       _detail = '系统 VPN：$verdict';
       if (verdict != 'active') _error = '系统 VPN 未能建立：$verdict';
       notifyListeners();
+      await refreshSystemVpn();
       return verdict;
     } on Object catch (error) {
+      _systemVpnActive = false;
       _detail = '系统 VPN 启动失败';
       _error = '$error';
       notifyListeners();
@@ -636,7 +675,7 @@ class AtrustService extends ChangeNotifier {
 
   @override
   void dispose() {
-    _tunnel?.stop();
+    if (!isOhos()) _tunnel?.stop();
     super.dispose();
   }
 }
@@ -654,8 +693,8 @@ Future<String> probeCampusTarget(String target) async {
   final stopwatch = Stopwatch()..start();
   final resolved = <String>[];
   try {
-    final addresses =
-        await InternetAddress.lookup(uri.host).timeout(const Duration(seconds: 8));
+    final addresses = await InternetAddress.lookup(uri.host)
+        .timeout(const Duration(seconds: 8));
     resolved.addAll(addresses.map((address) => address.address));
   } on Object catch (error) {
     resolved.add('解析失败($error)');
@@ -668,11 +707,11 @@ Future<String> probeCampusTarget(String target) async {
       refused.add('$host:$port ${certificate.subject} / ${certificate.issuer}');
       return true;
     };
-  String tail() =>
-      ' · ${uri.host} → ${resolved.join(', ')}'
+  String tail() => ' · ${uri.host} → ${resolved.join(', ')}'
       '${refused.isEmpty ? '' : ' · 拒绝了证书：${refused.join('; ')}'}';
   try {
-    final request = await client.getUrl(uri).timeout(const Duration(seconds: 12));
+    final request =
+        await client.getUrl(uri).timeout(const Duration(seconds: 12));
     final response = await request.close().timeout(const Duration(seconds: 12));
     final body = await response
         .fold<int>(0, (sum, chunk) => sum + chunk.length)

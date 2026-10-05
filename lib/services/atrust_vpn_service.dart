@@ -81,7 +81,7 @@ class AtrustVpnService {
           campusRoutes,
           controlPlane,
         ).join(','),
-        'dns': '',
+        'dns': session.dns.join(','),
       });
       return status ?? 'failed: the extension said nothing';
     }

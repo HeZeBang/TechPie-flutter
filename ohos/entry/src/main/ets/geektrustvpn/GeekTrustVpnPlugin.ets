@@ -19,6 +19,7 @@ import Want from '@ohos.app.ability.Want';
 import { WantAgent } from '@ohos.app.ability.wantAgent';
 import wantAgent from '@ohos.app.ability.wantAgent';
 import backgroundTaskManager from '@ohos.resourceschedule.backgroundTaskManager';
+import appManager from '@ohos.app.ability.appManager';
 import hilog from '@ohos.hilog';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { clearState, readState, writeRequest } from './GeekTrustVpnState';
@@ -114,16 +115,71 @@ export class GeekTrustVpnPlugin implements FlutterPlugin, MethodCallHandler, Abi
           result.success(false);
         });
     } else if (call.method === 'status') {
-      const filesDir = this.ability?.context.filesDir;
-      if (filesDir === undefined) {
-        result.success('');
-        return;
-      }
-      const state = readState(filesDir);
-      result.success(state === null ? '' : JSON.stringify(state));
+      this.report(result);
     } else {
       result.notImplemented();
     }
+  }
+
+  /**
+   * Answers with the extension's record — but only while the process that wrote
+   * it is still running.
+   *
+   * The record is a file, so it outlives the tunnel it describes: after the app
+   * is force-stopped, after a reboot, after the system reclaims the extension,
+   * the file still says `active`. A reader that believed it drew "已连接" and
+   * offered to *stop* a tunnel that was not there, so no start ever happened.
+   * The extension's pid is in the record and the app can see its own processes,
+   * so the record is checked against the process before it is believed.
+   */
+  private async report(result: MethodResult): Promise<void> {
+    const filesDir = this.ability?.context.filesDir;
+    if (filesDir === undefined) {
+      result.success('');
+      return;
+    }
+    const state = readState(filesDir);
+    if (state === null) {
+      result.success('');
+      return;
+    }
+    if (state.status === 'active' && !await this.extensionAlive(state.pid)) {
+      hilog.warn(
+        DOMAIN, TAG,
+        'record says active, but the process that wrote it (pid %{public}d) is gone',
+        state.pid,
+      );
+      result.success('');
+      return;
+    }
+    result.success(JSON.stringify(state));
+  }
+
+  private async extensionAlive(pid: number): Promise<boolean> {
+    // A verdict record always carries its writer; one without it was written
+    // before this field existed, and an `active` one cannot be believed.
+    if (pid <= 0) {
+      return false;
+    }
+    let processes: Array<appManager.ProcessInformation> = [];
+    try {
+      processes = await appManager.getRunningProcessInformation();
+    } catch (error) {
+      // Without the answer the record is all there is: report it rather than
+      // invent a disconnect over a tunnel that may be up.
+      hilog.warn(
+        DOMAIN, TAG,
+        'running processes unreadable: %{public}s',
+        JSON.stringify(error),
+      );
+      return true;
+    }
+    for (const entry of processes) {
+      if (entry.pid === pid && entry.processName === `${this.bundleName}:vpn`) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private async start(call: MethodCall): Promise<string> {
