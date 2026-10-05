@@ -1,3 +1,5 @@
+import 'dart:io';
+
 /// Whether the app's own campus traffic goes through the aTrust tunnel — and
 /// the single place that answers "through what".
 ///
@@ -14,6 +16,11 @@ abstract final class AtrustRouting {
 
   /// Where the core library serves SOCKS5 (`geektrust_start_proxies`).
   static String socksProxy = '127.0.0.1:1080';
+
+  /// Where it serves HTTP CONNECT. An empty address disables a listener, exactly
+  /// as it does for SOCKS5, and the two defaults are the ones geektrust's own
+  /// example config ships.
+  static String httpProxy = '127.0.0.1:8080';
 
   /// Hosts the tunnel exists for: the campus's own namespace.
   static bool isCampusHost(String host) =>
@@ -57,6 +64,36 @@ abstract final class AtrustRouting {
       kept.addAll(_withoutHosts(parsed, excluded));
     }
     return kept;
+  }
+
+  /// Hosts the app itself has to reach while the interface is up: the controller
+  /// it drives the tunnel with, and the CAS that fronts a login.
+  ///
+  /// Their addresses are cut out of the routes for exactly the reason the engine's
+  /// own gateways are. Measured on this campus: `vpn.shanghaitech.edu.cn` is
+  /// 59.78.171.240 and `ids.shanghaitech.edu.cn` is 119.78.254.19, both inside the
+  /// ranges below — while they were routed in, the login's first request died as
+  /// `HandshakeException: Connection terminated during handshake`, because the
+  /// engine does not carry its own controller.
+  static const controlPlaneHosts = <String>[
+    'vpn.shanghaitech.edu.cn',
+    'ids.shanghaitech.edu.cn',
+  ];
+
+  /// [hosts] resolved to addresses for [withoutGateways]. A host that does not
+  /// resolve contributes nothing rather than failing a tunnel start.
+  static Future<List<String>> resolveHosts(Iterable<String> hosts) async {
+    final addresses = <String>[];
+    for (final host in hosts) {
+      try {
+        for (final address in await InternetAddress.lookup(host)) {
+          addresses.add(address.address);
+        }
+      } on Object {
+        // Unresolvable now, resolvable later: not a prefix to keep.
+      }
+    }
+    return addresses;
   }
 
   /// The IPv4 addresses in a `geektrust_status` gateway list (`host:port`).

@@ -36,20 +36,17 @@ class AtrustVpnService {
     '59.78.0.0/16',
   ];
 
-  /// Nameservers for the interface — deliberately none.
+  /// Nameservers to hand the interface. Empty here on purpose: the platform
+  /// shell fills it in with the resolvers of the network the interface sits
+  /// above.
   ///
-  /// The policy hands out the campus resolver, and pushing it makes the tunnel
-  /// the device's only resolver. The campus resolver does not answer for the
-  /// aTrust controller (`vpn.shanghaitech.edu.cn` is an off-campus name), so
-  /// raising the system VPN made the app unable to reach the controller it had
-  /// just authenticated against: login, session refresh and trusted-terminal
-  /// queries all failed with "unknown host" until the VPN was switched off.
-  ///
-  /// Leaving this empty keeps the device on the resolver its network gave it.
-  /// Measured on a phone: with the VPN up and the policy DNS pushed, the name
-  /// did not resolve; with it empty, it did. The cost is split-horizon names the
-  /// policy DNS exists for — `netinfo.shanghaitech.edu.cn` and the like — which
-  /// the app's own campus hosts do not depend on.
+  /// The policy hands out the *campus* resolver, and that one cannot answer for
+  /// the aTrust controller (`vpn.shanghaitech.edu.cn` is an off-campus name), so
+  /// pushing it made the app unable to reach the controller it had just
+  /// authenticated against. Declaring *no* resolver is worse still: an interface
+  /// with nowhere to ask becomes the device's default network and every lookup
+  /// fails — measured with `ping vpn.shanghaitech.edu.cn` from the device shell
+  /// answering "unknown host" while this interface was up.
   static const interfaceDns = <String>[];
 
   /// OHOS and Android; the desktops use the proxy shape instead.
@@ -65,6 +62,14 @@ class AtrustVpnService {
     AtrustSession session, {
     AtrustTunnelService? engine,
   }) async {
+    // The control plane is cut out of the routes on every platform: a destination
+    // the interface carries cannot be reached by the code that drives it, and the
+    // login's first request is to the controller itself (see
+    // [AtrustRouting.controlPlaneHosts]). Resolved here, before the interface
+    // exists, while the name still resolves the ordinary way.
+    final controlPlane = await AtrustRouting.resolveHosts(
+      AtrustRouting.controlPlaneHosts,
+    );
     if (isOhos()) {
       // Plain strings across the channel: ArkTS refuses `any`, and JSON.parse is
       // typed as one, so lists travel joined.
@@ -72,7 +77,10 @@ class AtrustVpnService {
       final status = await _ohosChannel.invokeMethod<String>('start', {
         'session': _sessionJson(session),
         'policy': session.policyJson,
-        'routes': campusRoutes.join(','),
+        'routes': AtrustRouting.withoutGateways(
+          campusRoutes,
+          controlPlane,
+        ).join(','),
         'dns': '',
       });
       return status ?? 'failed: the extension said nothing';
@@ -103,10 +111,14 @@ class AtrustVpnService {
         return 'failed: the engine never reported a live tunnel';
       }
       final gateways = tunnel.status().gateways;
-      final routes = AtrustRouting.withoutGateways(campusRoutes, gateways);
+      final routes = AtrustRouting.withoutGateways(campusRoutes, [
+        ...gateways,
+        ...controlPlane,
+      ]);
       debugPrint(
         '[atrust] asking the VpnService for an interface: '
-        '${routes.length} routes, gateways kept out of it: $gateways',
+        '${routes.length} routes, gateways kept out of it: $gateways, '
+        'control plane kept out: $controlPlane',
       );
       final fd = await _androidChannel.invokeMethod<int>('start', {
         'routes': routes,
@@ -150,16 +162,47 @@ class AtrustVpnService {
         'dns': session.dns,
       });
 
-  /// Takes the interface down and forgets the request. On Android the engine
-  /// runs here, so it is stopped first.
-  Future<void> stop({AtrustTunnelService? engine}) async {
-    if (!isSupported) return;
+  /// Whether the platform says the interface is up.
+  ///
+  /// Asked rather than remembered: the system's own VPN entry can disconnect it
+  /// without the app, and that revoke is the only thing that releases the
+  /// interface at all (see [stop]).
+  Future<bool> active() async {
+    if (!isAndroid()) return false;
+    final verdict = await _androidChannel.invokeMethod<String>('status');
+    return verdict == 'active';
+  }
+
+  /// Takes the system interface down, and answers whether it really went.
+  ///
+  /// The engine is not touched. It is the tunnel, and this interface sits above
+  /// it: stopping the engine here is what made "close the system proxy" mean
+  /// "close the tunnel" as well, which the two controls are deliberately
+  /// separate about. The tunnel's own stop is what takes this interface down
+  /// with it — see `AtrustService.stopTunnel`.
+  ///
+  /// The answer is not a formality: the platform may hold the service for the
+  /// interface it carries. Measured on Android 12 (MAA-AN00): `stopSelf()` with
+  /// the descriptor open was acknowledged and changed nothing — the service, the
+  /// interface and its 56 routes stayed — because the VPN framework binds a
+  /// service whose interface exists; with the descriptor closed the service went
+  /// and the framework immediately started it again; and the interface is
+  /// released, every time, when the app's process ends. A caller that assumed
+  /// success would draw a switch that is off over an interface that is on, so
+  /// the verdict is read back from the service and the switch follows it.
+  ///
+  /// (OHOS is the exception in the other direction: there the extension owns the
+  /// engine, so its teardown is both layers at once.)
+  Future<bool> stop() async {
+    if (!isSupported) return true;
     if (isAndroid()) {
-      engine?.stop();
-      await _androidChannel.invokeMethod<void>('stop');
-      return;
+      debugPrint('[atrust] asking the VpnService to take its interface down');
+      final verdict = await _androidChannel.invokeMethod<String>('stop');
+      debugPrint('[atrust] interface is $verdict');
+      return verdict != 'active';
     }
     await _ohosChannel.invokeMethod<void>('stop');
+    return true;
   }
 
   /// The extension's record (OHOS): `status`, `engineStatus` (the engine's own

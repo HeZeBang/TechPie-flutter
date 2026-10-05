@@ -80,7 +80,7 @@ final featureEntries = <Feature>[
   ),
   Feature(
     id: 'campus_network',
-    description: '校园内网',
+    description: '校园网 VPN',
     mode: FeatureMode.native,
     nativeEntry: (context) => pushAdaptivePage<void>(
       context,

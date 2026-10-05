@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -871,14 +872,17 @@ class AtrustControlClient {
       if (csrf.isNotEmpty) 'x-csrf-token': csrf,
       if (_cookies.isNotEmpty) 'Cookie': _cookieHeader(null),
     };
-    final response = method == 'POST'
-        ? await _http.post(
-            url,
-            headers: headers,
-            body: bodyText.isEmpty ? null : bodyText,
-            tag: tag,
-          )
-        : await _http.get(url, headers: headers, tag: tag);
+    final response = await _bounded(
+      tag ?? path,
+      method == 'POST'
+          ? _http.post(
+              url,
+              headers: headers,
+              body: bodyText.isEmpty ? null : bodyText,
+              tag: tag,
+            )
+          : _http.get(url, headers: headers, tag: tag),
+    );
     _absorbCookies(response);
     if (response.statusCode >= 400) {
       throw AtrustException(tag ?? path, 'HTTP ${response.statusCode}');
@@ -901,6 +905,27 @@ class AtrustControlClient {
     throw AtrustException(tag ?? path, 'unexpected data shape');
   }
 
+  /// How long one control-plane request is given.
+  ///
+  /// Every name here is a campus one, and a campus route that goes nowhere — an
+  /// interface whose engine is gone, which the platform can leave behind — does
+  /// not refuse the connection, it swallows it. Without this bound the CAS hop of
+  /// a login sits there for good, which is what "正在恢复校园会话…" forever was.
+  static const _requestTimeout = Duration(seconds: 15);
+
+  /// Runs [request] under [_requestTimeout], in the vocabulary the rest of this
+  /// class uses, so every caller's existing handling applies.
+  Future<http.Response> _bounded(
+    String tag,
+    Future<http.Response> request,
+  ) async {
+    try {
+      return await request.timeout(_requestTimeout);
+    } on TimeoutException {
+      throw AtrustException(tag, '请求超时（校园路由可能不可达）');
+    }
+  }
+
   Future<http.Response> _get(
     Uri url, {
     required String tag,
@@ -908,12 +933,15 @@ class AtrustControlClient {
     String? cookieHeader,
   }) async {
     if (follow) {
-      return _http.get(url, headers: _headers(cookieHeader), tag: tag);
+      return _bounded(
+        tag,
+        _http.get(url, headers: _headers(cookieHeader), tag: tag),
+      );
     }
     final request = http.Request('GET', url)
       ..followRedirects = false
       ..headers.addAll(_headers(cookieHeader));
-    return _http.send(request, tag: tag);
+    return _bounded(tag, _http.send(request, tag: tag));
   }
 
   Map<String, String> _headers(String? cookieHeader) => {

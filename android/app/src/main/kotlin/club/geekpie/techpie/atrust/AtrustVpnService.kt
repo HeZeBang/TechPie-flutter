@@ -1,9 +1,11 @@
 package club.geekpie.techpie.atrust
 
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import java.io.IOException
 
 /**
  * The system-VPN shape on Android: an interface the whole device routes through
@@ -20,13 +22,31 @@ class AtrustVpnService : VpnService() {
     private var tunnel: ParcelFileDescriptor? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Only a start that carries this app's request builds an interface. The
+        // VPN framework starts the service again on its own once the descriptor
+        // it was given closes — with no arguments — and building from those would
+        // leave a second interface carrying no routes at all: measured, that is
+        // what made a "stopped" VPN look like one that would not stop.
+        if (intent?.action != ACTION_START) {
+            Log.i(TAG, "start without a request (action=${intent?.action}); refusing")
+            return failStart()
+        }
         if (tunnel != null) {
             active = true
             instance = this
             return START_STICKY
         }
         val routes = intent?.getStringArrayListExtra(REQUEST_ROUTES_ARG).orEmpty()
-        val dns = intent?.getStringArrayListExtra(REQUEST_DNS_ARG).orEmpty()
+        val dns = intent?.getStringArrayListExtra(REQUEST_DNS_ARG).orEmpty().ifEmpty {
+            // An interface that declares no resolver becomes a default network
+            // with nowhere to ask, and every lookup on the device then fails —
+            // measured: `ping vpn.shanghaitech.edu.cn` from the device shell
+            // answered "unknown host" while the app's own interface was up. The
+            // network already under this one has resolvers that work, so they are
+            // carried rather than the campus's own (which cannot answer for the
+            // controller, an off-campus name).
+            underlyingDnsServers()
+        }
 
         val builder = Builder()
             .setSession(SESSION_NAME)
@@ -74,17 +94,46 @@ class AtrustVpnService : VpnService() {
         return START_STICKY
     }
 
+    /** The resolvers of the network this interface sits above. */
+    private fun underlyingDnsServers(): List<String> {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return emptyList()
+        val active = manager.activeNetwork ?: return emptyList()
+        return manager.getLinkProperties(active)?.dnsServers
+            ?.mapNotNull { it.hostAddress }
+            .orEmpty()
+    }
+
+    /** Nothing is left running; the caller must return START_NOT_STICKY. */
+    private fun failStart(): Int {
+        closeTunnel()
+        active = false
+        stopSelf()
+        return START_NOT_STICKY
+    }
+
     override fun onRevoke() {
         // The user (or another VPN) revoked us: take the interface down.
+        Log.i(TAG, "revoked")
+        closeTunnel()
+        active = false
         stopSelf()
     }
 
     override fun onDestroy() {
-        tunnel?.close()
-        tunnel = null
+        Log.i(TAG, "service destroyed, fd=${tunnel?.fd}")
+        closeTunnel()
         instance = null
-        active = false
         super.onDestroy()
+    }
+
+    /** Closing the descriptor is what removes the interface. */
+    private fun closeTunnel() {
+        try {
+            tunnel?.close()
+        } catch (_: IOException) {
+            // Already gone; nothing left to release.
+        }
+        tunnel = null
     }
 
     companion object {
@@ -97,6 +146,9 @@ class AtrustVpnService : VpnService() {
          */
         private const val TUN_ADDRESS = "10.111.223.2"
         private const val MTU = 1400
+
+        /** The action an interface request is started with. */
+        const val ACTION_START = "club.geekpie.techpie.action.ATRUST_VPN_START"
 
         const val REQUEST_ROUTES_ARG = "routes"
         const val REQUEST_DNS_ARG = "dns"
@@ -112,15 +164,20 @@ class AtrustVpnService : VpnService() {
         fun descriptorFd(): Int = instance?.tunnel?.fd ?: -1
 
         /**
-         * Takes the interface down now. `stopService()` alone would not: the VPN
-         * framework holds a binding for as long as the interface exists.
+         * Takes the interface down now — the same shape the eCard bind tunnel
+         * uses, for the same reason.
+         *
+         * `stopSelf()`/`stopService()` are not enough on their own: the VPN
+         * framework keeps this service bound for as long as the interface exists,
+         * so the system never destroys it and `onDestroy` — where the teardown
+         * otherwise lives — would never run. Closing the descriptor is what
+         * actually removes the interface.
          */
         fun stopTunnel() {
-            val service = instance
-            service?.tunnel?.close()
-            service?.tunnel = null
+            val service = instance ?: return
+            service.closeTunnel()
             active = false
-            service?.stopSelf()
+            service.stopSelf()
         }
     }
 }

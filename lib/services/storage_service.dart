@@ -151,6 +151,8 @@ class StorageService {
   // primary account's credentials.
   static const _atrustSessionKey = 'atrust_session';
   static const _atrustDeviceIdKey = 'atrust_device_id';
+  static const _atrustSocksProxyKey = 'atrust_socks_proxy';
+  static const _atrustHttpProxyKey = 'atrust_http_proxy';
 
   /// The aTrust device identity: 32 uppercase hex, stable per install. The
   /// controller treats a new value as a new device, which costs one SMS, so it
@@ -160,6 +162,22 @@ class StorageService {
 
   Future<void> saveAtrustDeviceId(String id) async {
     await _prefs.setString(_atrustDeviceIdKey, id);
+  }
+
+  /// The tunnel's local listener addresses, as `host:port`. Null means never
+  /// chosen, which is different from an empty string — that one is a listener
+  /// the user turned off.
+  Future<String?> loadAtrustSocksProxy() async =>
+      _prefs.getString(_atrustSocksProxyKey);
+  Future<String?> loadAtrustHttpProxy() async =>
+      _prefs.getString(_atrustHttpProxyKey);
+
+  Future<void> saveAtrustProxies({
+    required String socks,
+    required String http,
+  }) async {
+    await _prefs.setString(_atrustSocksProxyKey, socks);
+    await _prefs.setString(_atrustHttpProxyKey, http);
   }
 
   Future<void> saveAtrustSession(String json) =>

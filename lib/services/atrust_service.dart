@@ -59,6 +59,16 @@ class AtrustService extends ChangeNotifier {
   bool _busy = false;
   bool _systemVpnActive = false;
 
+  /// Whether the last attempt to raise the tunnel ended without it coming up.
+  /// Only then does "retry" mean anything: a tunnel that is up needs no retry,
+  /// and one that was never started needs a start, not a retry.
+  bool _tunnelFailed = false;
+
+  /// Whether a stop is waiting on the platform to release the interface. The
+  /// system's own disconnect finishes it — see [refreshSystemVpn] — because that
+  /// revoke is the only thing that releases an interface here.
+  bool _stopPending = false;
+
   AtrustVpnService get vpn => _vpn;
 
   /// The last login outcome, or null before the first attempt.
@@ -91,6 +101,65 @@ class AtrustService extends ChangeNotifier {
   String get tunnelVersion => tunnel.version;
   String get tunnelUnsupportedReason => tunnel.unsupportedReason;
 
+  /// Whether the system interface is up right now.
+  bool get systemVpnActive => _systemVpnActive;
+
+  /// Whether the last tunnel start ended without the engine coming up.
+  bool get tunnelFailed => _tunnelFailed;
+
+  /// The tunnel's local listener addresses (`host:port`; empty = that listener
+  /// is off). The desktop shape, and what geektrust's own config carries.
+  String get socksProxy => AtrustRouting.socksProxy;
+  String get httpProxy => AtrustRouting.httpProxy;
+
+  /// Reads the listener addresses from storage, so the page shows — and the
+  /// engine binds — what was last chosen.
+  Future<void> hydrateProxies() async {
+    final socks = await _storage.loadAtrustSocksProxy();
+    final http = await _storage.loadAtrustHttpProxy();
+    AtrustRouting.socksProxy = socks ?? AtrustRouting.socksProxy;
+    AtrustRouting.httpProxy = http ?? AtrustRouting.httpProxy;
+  }
+
+  /// Reads the platform's verdict on the interface into [systemVpnActive].
+  ///
+  /// Asked rather than remembered: the system's own VPN entry can disconnect the
+  /// interface without the app, and that is the only lever that releases it. A
+  /// stop that was waiting on the platform finishes here, once the interface is
+  /// really gone.
+  Future<void> refreshSystemVpn() async {
+    if (!systemVpnSupported) return;
+    final active = await _vpn.active();
+    final wasActive = _systemVpnActive;
+    _systemVpnActive = active;
+    if (!active && _stopPending) {
+      _stopPending = false;
+      tunnel.stop();
+      _tunnelFailed = false;
+      refreshTunnelStatus();
+      _detail = '系统 VPN 已关闭，隧道已停止';
+    } else if (active != wasActive) {
+      _detail = active ? '系统 VPN：全局模式' : '系统 VPN 已关闭';
+    } else {
+      return;
+    }
+    notifyListeners();
+  }
+
+  /// Sets the listener addresses. They are applied when the tunnel next starts:
+  /// the engine binds each listener once, at start, and rebinding a live one is
+  /// not something it does.
+  Future<void> setProxies({required String socks, required String http}) async {
+    AtrustRouting.socksProxy = socks.trim();
+    AtrustRouting.httpProxy = http.trim();
+    await _storage.saveAtrustProxies(
+      socks: AtrustRouting.socksProxy,
+      http: AtrustRouting.httpProxy,
+    );
+    _detail = '端口已保存，下次启动隧道生效';
+    notifyListeners();
+  }
+
   /// Which path the *session* is opened on. Client mode is the only kind that
   /// can be bound as a trusted terminal, and so the only kind that ever stops
   /// asking for an SMS — the alternative exists to prove that by contrast.
@@ -121,7 +190,7 @@ class AtrustService extends ChangeNotifier {
   Future<AtrustLoginState> signIn() async {
     if (_busy) return _login ?? const AtrustLoginState(AtrustStage.unavailable);
     _busy = true;
-    _detail = '正在登录校园账号…';
+    _detail = '正在登录 VPN 账号…';
     _error = null;
     notifyListeners();
     try {
@@ -178,7 +247,7 @@ class AtrustService extends ChangeNotifier {
   Future<bool> startTunnel() async {
     final session = _control.session;
     if (session == null) {
-      _detail = '请先登录校园账号';
+      _detail = '请先登录 VPN 账号';
       notifyListeners();
       return false;
     }
@@ -188,16 +257,23 @@ class AtrustService extends ChangeNotifier {
         sessionJson: _sessionJson(session),
         policyJson: session.policyJson,
       );
-      tunnel.startProxies(socksAddress: AtrustRouting.socksProxy);
+      // The desktop shape: the engine's local listeners, the addresses from the
+      // page (geektrust's own default ports until one is chosen).
+      tunnel.startProxies(
+        socksAddress: AtrustRouting.socksProxy,
+        httpAddress: AtrustRouting.httpProxy,
+      );
     } on Object catch (error) {
       _detail = '隧道启动失败';
       _error = '$error';
+      _tunnelFailed = true;
       refreshTunnelStatus();
       notifyListeners();
       return false;
     }
     final alive = await _waitForAlive();
     refreshTunnelStatus();
+    _tunnelFailed = !alive;
     if (alive) {
       _detail = '隧道已连接';
     } else {
@@ -206,6 +282,14 @@ class AtrustService extends ChangeNotifier {
           '（已拨号 ${_tunnelDialAttempts()} 次）';
     }
     notifyListeners();
+    if (alive && systemVpnSupported) {
+      // The mobile shape: the whole device comes up with the tunnel, one action.
+      // There is no separate switch for it, because a system interface that has
+      // to be *asked for* separately is one the app cannot reliably take back —
+      // the platform binds the service for as long as the interface exists (see
+      // AtrustVpnService).
+      await startSystemVpn();
+    }
     return alive;
   }
 
@@ -231,37 +315,80 @@ class AtrustService extends ChangeNotifier {
     return false;
   }
 
-  /// Takes the tunnel (and the system interface, if it is up) down and forgets
-  /// the session locally. The controller's session expires on its own.
+  /// Forgets the session, and takes the packet layers down as far as the platform
+  /// allows.
+  ///
+  /// The interface is stopped first and the result is *checked*: where the
+  /// platform refuses to release it (see [AtrustVpnService.stop]) the engine is
+  /// deliberately left running. An interface whose routes outlive its engine is
+  /// worse than a tunnel that stays up — every campus destination, the controller
+  /// and the CAS host included, is then dropped into a descriptor nobody reads,
+  /// and the next login hangs on the way there.
   Future<void> signOut() async {
-    await stopSystemVpn();
+    final released = await _releaseSystemVpn();
     AtrustRouting.enabled = false;
-    tunnel.stop();
+    if (released) {
+      tunnel.stop();
+      _stopPending = false;
+    } else {
+      // The platform will not let the interface go, and it must not be left
+      // without an engine: that is the black hole that made the next login hang.
+      // Signing out keeps the tunnel until the interface is really gone, which
+      // the system's own disconnect can do — [refreshSystemVpn] finishes it.
+      _stopPending = true;
+    }
     await _control.logout();
     _client = null;
     _login = null;
     _trust = null;
     _tunnelStatus = null;
-    _detail = '已登出';
+    _tunnelFailed = false;
+    _detail = released
+        ? '已登出'
+        : '已登出；系统 VPN 未释放';
     notifyListeners();
   }
 
-  /// Keeps the account session but stops both packet layers. The system VPN is
-  /// stopped first; leaving a global interface above a dead engine black-holes
-  /// campus traffic.
+  /// Stops the system interface when there is one, and answers whether the
+  /// platform let it go. Platforms without such an interface have nothing to
+  /// release, so they answer yes.
+  Future<bool> _releaseSystemVpn() async {
+    if (!systemVpnSupported || !_systemVpnActive) return true;
+    await stopSystemVpn();
+    return !_systemVpnActive;
+  }
+
+  /// Keeps the account session but stops the packet layers — as far as the
+  /// platform allows.
+  ///
+  /// The interface goes first, and only if it really went does the engine stop:
+  /// an interface whose routes outlive its engine drops every campus destination
+  /// into a descriptor nobody reads (see [signOut]). Where the platform refuses
+  /// to release it, that refusal is what the status line says.
   Future<void> stopTunnel() async {
-    if (_systemVpnActive) await stopSystemVpn();
+    final released = await _releaseSystemVpn();
     AtrustRouting.enabled = false;
-    tunnel.stop();
-    refreshTunnelStatus();
-    _detail = '隧道已停止（会话保留）';
+    if (released) {
+      _stopPending = false;
+      tunnel.stop();
+      _tunnelFailed = false;
+      refreshTunnelStatus();
+      _detail = '隧道已停止（会话保留）';
+    } else {
+      // The interface is still carrying traffic, so the engine stays: one whose
+      // routes outlive its engine drops every campus destination into a
+      // descriptor nobody reads. The ask is kept, and the system's own
+      // disconnect completes it ([refreshSystemVpn]).
+      _stopPending = true;
+      _detail = '系统 VPN 未释放，隧道保留';
+    }
     notifyListeners();
   }
 
   /// Which campus hosts the app's own requests send through the tunnel.
   void setRouting(bool enabled) {
     AtrustRouting.enabled = enabled;
-    _detail = enabled ? '校园请求走隧道' : '校园请求直连';
+    _detail = enabled ? '仅校园网段代理' : '校园网段直连';
     notifyListeners();
   }
 
@@ -276,7 +403,7 @@ class AtrustService extends ChangeNotifier {
     try {
       final bound = await _control.bindDevice();
       await refreshTrust();
-      _detail = bound ? '本机已授信：以后不再要短信' : _refusalReason();
+      _detail = bound ? '已授信：以后不再要短信' : _refusalReason();
       notifyListeners();
       return bound;
     } on Object catch (error) {
@@ -394,9 +521,10 @@ class AtrustService extends ChangeNotifier {
     }
   }
 
-  /// The system-VPN shape, where the platform has one: an interface the whole
-  /// device routes through, which is what reaches the campus from WebViews and
-  /// from other apps.
+  /// The system interface's shape: an interface the whole device routes through,
+  /// which is what reaches the campus from WebViews and from other apps. Mobile
+  /// raises it with the tunnel; the desktops have no such interface and use the
+  /// local listeners instead.
   Future<String> startSystemVpn() async {
     var session = _control.session;
     if (session == null) {
@@ -426,15 +554,20 @@ class AtrustService extends ChangeNotifier {
     }
   }
 
+  /// Takes the interface down and leaves the tunnel it sits above running.
+  ///
+  /// The platform does not always let go — see [AtrustVpnService.stop] — so the
+  /// verdict is what the status line reports rather than what was asked for.
   Future<void> stopSystemVpn() async {
     try {
-      await _vpn.stop(engine: tunnel);
+      final released = await _vpn.stop();
+      _systemVpnActive = !released;
+      _detail = released ? '系统 VPN 已关闭' : '系统 VPN 未释放';
     } on Object catch (error) {
       _error = '$error';
+      _detail = '系统 VPN 未能关闭';
     }
-    _systemVpnActive = false;
     refreshTunnelStatus();
-    _detail = '系统 VPN 已关闭，会话保留，隧道已停止';
     notifyListeners();
   }
 
@@ -476,9 +609,6 @@ class AtrustService extends ChangeNotifier {
 
   /// Whether this platform can raise a whole-device interface at all.
   bool get systemVpnSupported => _vpn.isSupported && (isAndroid() || isOhos());
-
-  /// Whether that interface is up right now.
-  bool get systemVpnActive => _systemVpnActive;
 
   String _sessionJson(AtrustSession session) => jsonEncode({
         'sid': session.sid,

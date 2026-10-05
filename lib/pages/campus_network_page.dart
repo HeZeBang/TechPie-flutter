@@ -44,7 +44,9 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
     // The trusted-terminal list is answerable as soon as there is a session, so
     // ask on open rather than only right after a login.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _service.session != null) {
+      if (!mounted) return;
+      unawaited(_service.refreshSystemVpn());
+      if (_service.session != null) {
         unawaited(_service.refreshTrust());
       }
     });
@@ -57,6 +59,12 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
   void _refresh() {
     final service = _service;
     service.refreshTunnelStatus();
+    // The platform's own disconnect happens outside the app — in the system's
+    // VPN entry — so its verdict is re-read, slowly: it is a channel call, and
+    // the state it reports changes at human speed.
+    if (service.systemVpnSupported && ++_ticks % 5 == 0) {
+      unawaited(service.refreshSystemVpn());
+    }
     final alive = service.tunnelStatus?.alive == true;
     if (!alive) {
       _trustAsked = false;
@@ -65,6 +73,9 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
       unawaited(service.refreshTrust());
     }
   }
+
+  /// Poll ticks since the page was opened, for the slow platform re-read.
+  int _ticks = 0;
 
   @override
   void dispose() {
@@ -76,7 +87,7 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
   Widget build(BuildContext context) {
     final service = _service;
     return Scaffold(
-      appBar: AppBar(title: const Text('校园内网')),
+      appBar: AppBar(title: const Text('校园网 VPN')),
       body: SafeArea(
         child: ListenableBuilder(
           listenable: service,
@@ -111,7 +122,7 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
     final (IconData icon, String headline, Color color) = switch (session) {
       final AtrustSession _ when tunnelAlive => (
           Icons.shield_outlined,
-          '已连接校园内网',
+          '校园网 VPN 已连接',
           scheme.primary,
         ),
       _ when login?.stage == AtrustStage.needSms => (
@@ -119,7 +130,7 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
           '等待短信验证码',
           scheme.tertiary,
         ),
-      _ => (Icons.shield_outlined, '未连接校园内网', scheme.outline),
+      _ => (Icons.shield_outlined, '校园网 VPN 未连接', scheme.outline),
     };
 
     // One labelled fact per layer, so the three states read as three answers
@@ -141,7 +152,9 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
       ),
       if (tunnelAlive && tunnel!.gateway.isNotEmpty) ('网关', tunnel.gateway),
       if (service.systemVpnSupported)
-        ('系统 VPN', service.systemVpnActive ? '已开启' : '已关闭'),
+        ('系统 VPN', service.systemVpnActive ? '全局模式' : '未启用'),
+      if (service.tunnelSupported && !service.systemVpnSupported)
+        ('代理端口', _proxyPortsLabel(service)),
       if (service.busy && service.detail.isNotEmpty) ('状态', service.detail),
       if (!service.tunnelSupported)
         ('隧道库', service.tunnelUnsupportedReason),
@@ -149,12 +162,20 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
         ('状态', service.detail),
     ];
 
-    // What a retry would do next: there is nothing to retry once both steps have
-    // succeeded, and the two steps fail independently.
-    final String? retry = switch ((session, tunnelAlive)) {
-      (null, _) => '重试登录',
-      (_, false) => '重试启动隧道',
-      _ => null,
+    // One control for the data channel, and it says what it will do: start when
+    // nothing is up, stop when it is, and *retry* only after an attempt that
+    // failed — a tunnel that was never started has nothing to retry. The
+    // account's own step is separate: with no session, this is the way back in.
+    final ({String label, IconData actionIcon}) action = switch (
+      (session, tunnelAlive, service.tunnelFailed)
+    ) {
+      (null, _, _) => (label: '重试登录', actionIcon: Icons.refresh),
+      (_, true, _) => (label: '停止隧道', actionIcon: Icons.stop_circle_outlined),
+      (_, false, true) => (label: '重试启动隧道', actionIcon: Icons.refresh),
+      (_, false, false) => (
+          label: '启动隧道',
+          actionIcon: Icons.play_circle_outline,
+        ),
     };
 
     return Padding(
@@ -215,13 +236,13 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
                     ],
                   ),
                 ),
-              if (retry != null && !service.busy)
+              if (!service.busy)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(32, 4, 0, 0),
                   child: FilledButton.tonalIcon(
-                    onPressed: () => unawaited(_retry(retry)),
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: Text(retry),
+                    onPressed: () => unawaited(_run(action.label)),
+                    icon: Icon(action.actionIcon, size: 18),
+                    label: Text(action.label),
                   ),
                 ),
             ],
@@ -229,6 +250,15 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
         ),
       ),
     );
+  }
+
+  /// The desktop's two listeners, in the shape the config has them.
+  static String _proxyPortsLabel(AtrustService service) {
+    final listeners = [
+      if (service.socksProxy.isNotEmpty) 'SOCKS5 ${service.socksProxy}',
+      if (service.httpProxy.isNotEmpty) 'HTTP ${service.httpProxy}',
+    ];
+    return listeners.isEmpty ? '未开启' : listeners.join(' · ');
   }
 
   /// What a binding would run into, said before it is attempted.
@@ -258,9 +288,9 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
       switch (trust) {
         final AtrustTrustState state when !state.enable => '校园未开启授信',
         final AtrustTrustState state when state.isTrusted || session.trusted =>
-          '本机已授信',
-        final AtrustTrustState _ => '未授信，登录需短信',
-        null => session.trusted ? '上次登录已授信' : '上次登录未授信',
+          '已授信',
+        final AtrustTrustState _ => '未授信（登录需短信）',
+        null => session.trusted ? '已授信（上次登录）' : '未授信（上次登录）',
       };
 
   /// Whether offering to bind this device is worth it: the campus has to allow it
@@ -395,11 +425,20 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
     _toast(done ? '已解除「$name」的授信' : service.detail, ok: done);
   }
 
-  Future<void> _retry(String label) async {
-    if (label == '重试启动隧道') {
-      await _service.startTunnel();
-    } else {
-      await _connect();
+  /// Runs whatever the card's one button currently says — the account's way back
+  /// in, or the tunnel's start, stop and retry.
+  Future<void> _run(String label) async {
+    switch (label) {
+      case '重试登录':
+        await _connect();
+      case '停止隧道':
+        await _service.stopTunnel();
+        // A stop the platform would not honour has something to say — where the
+        // interface can be released — and that belongs in front of the user, not
+        // only in the status line.
+        if (mounted) _toast(_service.detail, ok: !_service.systemVpnActive);
+      default:
+        await _service.startTunnel();
     }
   }
 
@@ -428,26 +467,10 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
     final tunnelAlive = service.tunnelStatus?.alive == true;
     return [
       ListTile(
-        leading: Icon(tunnelAlive ? Icons.stop_circle_outlined : Icons.play_circle_outline),
-        title: Text(tunnelAlive ? '停止隧道' : '启动隧道'),
-        subtitle: Text(tunnelAlive ? '保留账号会话' : '只影响数据通道'),
-        enabled: !busy && service.session != null,
-        trailing: service.busy
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : null,
-        onTap: service.session == null || busy
-            ? null
-            : () => unawaited(_toggleTunnel(tunnelAlive)),
-      ),
-      ListTile(
         leading: Icon(service.session == null ? Icons.login : Icons.logout),
-        title: Text(service.session == null ? '登录校园账号' : '断开并登出'),
+        title: Text(service.session == null ? '登录 VPN 账号' : '退出登录'),
         subtitle: Text(
-          service.session == null ? '只建立账号会话' : '停隧道并清除本地会话',
+          service.session == null ? '登录并注册设备会话' : '停止隧道并退出登录的会话',
         ),
         enabled: !busy,
         onTap: busy
@@ -466,28 +489,82 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
         ),
       SwitchListTile(
         secondary: const Icon(Icons.route_outlined),
-        title: const Text('校园请求走隧道'),
+        title: const Text('仅校园网段代理'),
         subtitle: const Text('仅 *.shanghaitech.edu.cn，其余保持直连'),
         value: service.routingEnabled,
         onChanged: tunnelAlive ? service.setRouting : null,
       ),
-      if (service.systemVpnSupported)
-        SwitchListTile(
-          secondary: const Icon(Icons.vpn_lock_outlined),
-          title: const Text('系统 VPN（整机路由）'),
-          subtitle: const Text('WebView 和其它应用也能到校园内网'),
-          value: service.systemVpnActive,
-          onChanged: busy ? null : (on) => unawaited(_toggleSystemVpn(on)),
+      if (service.tunnelSupported && !service.systemVpnSupported) ...[
+        ListTile(
+          leading: const Icon(Icons.vpn_lock_outlined),
+          title: const Text('SOCKS5 端口'),
+          subtitle: Text(
+            service.socksProxy.isEmpty ? '未开启' : service.socksProxy,
+          ),
+          enabled: !busy,
+          onTap: busy ? null : () => unawaited(_editProxy(service, socks: true)),
         ),
+        ListTile(
+          leading: const Icon(Icons.http_outlined),
+          title: const Text('HTTP 端口'),
+          subtitle: Text(service.httpProxy.isEmpty ? '未开启' : service.httpProxy),
+          enabled: !busy,
+          onTap:
+              busy ? null : () => unawaited(_editProxy(service, socks: false)),
+        ),
+      ],
     ];
   }
 
-  Future<void> _toggleTunnel(bool running) async {
-    if (running) {
-      await _service.stopTunnel();
-    } else {
-      await _service.startTunnel();
+  /// Edits one local listener. An empty address turns that listener off, which is
+  /// how the engine says it and how geektrust's config says it.
+  Future<void> _editProxy(AtrustService service, {required bool socks}) async {
+    final current = socks ? service.socksProxy : service.httpProxy;
+    final controller = TextEditingController(text: current);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(socks ? 'SOCKS5 端口' : 'HTTP 端口'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '127.0.0.1:1080',
+            helperText: 'host:port；留空则不开启这个监听',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (value == null) return;
+    if (value.isNotEmpty && !_isHostPort(value)) {
+      _toast('要写成 host:port，例如 127.0.0.1:1080', ok: false);
+      return;
     }
+    await service.setProxies(
+      socks: socks ? value : service.socksProxy,
+      http: socks ? service.httpProxy : value,
+    );
+    if (!mounted) return;
+    _toast(service.detail, ok: true);
+  }
+
+  /// `host:port`, with a port in range — the engine binds this address itself.
+  static bool _isHostPort(String value) {
+    final parts = value.split(':');
+    if (parts.length != 2) return false;
+    final host = parts[0].trim();
+    final port = int.tryParse(parts[1].trim());
+    return host.isNotEmpty && port != null && port > 0 && port < 65536;
   }
 
   Future<void> _connect() async {
@@ -515,17 +592,6 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
     final bound = await service.bindTrustedTerminal();
     if (!mounted) return;
     _toast(service.detail, ok: bound);
-  }
-
-  Future<void> _toggleSystemVpn(bool on) async {
-    final service = _service;
-    if (on) {
-      final verdict = await service.startSystemVpn();
-      if (!mounted) return;
-      _toast(verdict, ok: verdict == 'active');
-    } else {
-      await service.stopSystemVpn();
-    }
   }
 
   void _toast(String message, {required bool ok}) {

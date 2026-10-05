@@ -51,12 +51,31 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "start" -> handleStartAtrustVpn(call, result)
+                "status" -> {
+                    // What the interface is actually doing, so the page can show
+                    // the platform's verdict rather than the app's last intent —
+                    // the system's own disconnect changes it behind the app.
+                    result.success(
+                        if (AtrustVpnService.active) "active" else "inactive",
+                    )
+                }
                 "stop" -> {
-                    // The engine runs in this process, so the Dart side stops it
-                    // too; this only takes the interface down.
                     AtrustVpnService.stopTunnel()
                     stopService(Intent(this, AtrustVpnService::class.java))
-                    result.success(null)
+                    // Answer with what is true a moment later, not with what was
+                    // asked for: the platform holds a service for as long as its
+                    // interface exists, so an acknowledged stop is not a released
+                    // interface. The Dart side keeps the engine while this says
+                    // active — an interface whose routes outlive its engine drops
+                    // every campus destination into a descriptor nobody reads.
+                    mainHandler.postDelayed(
+                        {
+                            result.success(
+                                if (AtrustVpnService.active) "active" else "inactive",
+                            )
+                        },
+                        VPN_STOP_SETTLE_MS,
+                    )
                 }
                 else -> result.notImplemented()
             }
@@ -137,6 +156,7 @@ class MainActivity : FlutterActivity() {
 
     private fun startAtrustVpn(pending: PendingAtrustConsent) {
         val intent = Intent(this, AtrustVpnService::class.java)
+            .setAction(AtrustVpnService.ACTION_START)
             .putStringArrayListExtra(AtrustVpnService.REQUEST_ROUTES_ARG, ArrayList(pending.routes))
             .putStringArrayListExtra(AtrustVpnService.REQUEST_DNS_ARG, ArrayList(pending.dns))
         startService(intent)
@@ -424,6 +444,9 @@ class MainActivity : FlutterActivity() {
         const val REQUEST_CALENDAR_PERMISSIONS = 48291
         const val REQUEST_VPN_CONSENT = 0x0ECB
         const val VPN_STATE_ATTEMPTS = 15
+
+        /** How long a teardown is given before its result is read back. */
+        const val VPN_STOP_SETTLE_MS = 400L
         const val VPN_STATE_INTERVAL_MS = 100L
         const val LOCAL_ACCOUNT_NAME = "TechPie"
         const val TIME_ZONE = "Asia/Shanghai"

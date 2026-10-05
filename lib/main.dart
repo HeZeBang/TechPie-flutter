@@ -171,6 +171,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   thirdPartyAuthService.campusWebSession.attachAuth(authService);
   assignmentService.loadCached();
   await scheduleService.loadCachedData();
+  await atrustService.hydrateProxies();
 
   runApp(
     TechPieApp(

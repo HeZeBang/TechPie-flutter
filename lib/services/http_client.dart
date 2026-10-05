@@ -11,13 +11,69 @@ class LoggingHttpClient {
   final http.Client _inner;
   final DebugLogger _logger;
 
+  /// The aTrust controller, and the address to reach it at when its name does
+  /// not resolve.
+  ///
+  /// `vpn.shanghaitech.edu.cn` is split-horizon: it resolves on the campus
+  /// network path and nowhere else — measured from a phone off that path, the
+  /// carrier's resolver and Cloudflare's DoT both answered "unknown host" while
+  /// every other name worked. Its address is stable (59.78.171.240, measured),
+  /// so a lookup that fails falls back to it.
+  ///
+  /// Only the *socket* moves. The TLS handshake still runs against the name in
+  /// the URL, so the SNI and the certificate check are the controller's own:
+  /// an address answering for something else cannot be reached quietly.
+  static const controllerHost = 'vpn.shanghaitech.edu.cn';
+  static const controllerAddress = '59.78.171.240';
+
+  /// Where the connection for [url] is made: by name, by address when the name
+  /// goes unanswered, and with TLS either way.
+  ///
+  /// Three things this has to get exactly right, each of them learned from a
+  /// breakage:
+  ///
+  ///  * the lookup is done here, because [Socket.startConnect] hands back a task
+  ///    whose resolution failure surfaces after this function has returned —
+  ///    too late to fall back from;
+  ///  * the TLS handshake is also this function's job: with a connection factory
+  ///    set, `dart:io` uses its socket as-is and never layers TLS on top (see
+  ///    `_http/http_impl.dart`), so returning a bare socket sent *plaintext* to
+  ///    port 443 and the gateway answered 400;
+  ///  * the handshake runs against the *name in the URL* even when the socket
+  ///    went to the address, so the fallback cannot quietly reach something whose
+  ///    certificate is not the controller's.
+  static Future<ConnectionTask<Socket>> connectByNameOrAddress(
+    Uri url,
+    String? proxyHost,
+    int? proxyPort,
+  ) async {
+    var host = url.host;
+    try {
+      await InternetAddress.lookup(host);
+    } on SocketException {
+      if (host != controllerHost) rethrow;
+      host = controllerAddress;
+    }
+    final task = await Socket.startConnect(host, url.port);
+    if (!url.isScheme('https')) return task;
+    return ConnectionTask.fromSocket(
+      task.socket.then((socket) => SecureSocket.secure(socket, host: url.host)),
+      task.cancel,
+    );
+  }
+
   /// The default client asks [AtrustRouting] where each request goes, so the
   /// campus tunnel can be armed for campus hosts without every service knowing
-  /// about it. Tests pass their own [inner] and are unaffected.
+  /// about it, and [connectByNameOrAddress] where the socket goes. Tests pass
+  /// their own [inner] and are unaffected.
   LoggingHttpClient(this._logger, {http.Client? inner})
       : _inner =
             inner ??
-            IOClient(HttpClient()..findProxy = AtrustRouting.forUri);
+            IOClient(
+              HttpClient()
+                ..findProxy = AtrustRouting.forUri
+                ..connectionFactory = connectByNameOrAddress,
+            );
 
   Future<http.Response> get(
     Uri url, {

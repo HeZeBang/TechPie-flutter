@@ -81,7 +81,7 @@ Future<void> main() async {
     }
   }
 
-  await vpn.stop(engine: tunnel);
+  await vpn.stop();
 
   AtrustSession? session;
   await check('the stored session is still good (no SMS)', () async {
@@ -142,7 +142,7 @@ Future<void> main() async {
   } else {
     // A clean start: a VpnService that is already up keeps the routes it was
     // created with, so a second run would silently test the first run's.
-    await vpn.stop(engine: tunnel);
+    await vpn.stop();
 
     await check('the interface comes up with the gateways kept out of it',
         () async {
@@ -195,7 +195,7 @@ Future<void> main() async {
   // Leave the device as it was found. An interface whose engine died with this
   // process would route every campus destination into nothing, and the device
   // would keep doing it until someone noticed.
-  await vpn.stop(engine: tunnel);
+  await vpn.stop();
 
   debugPrint('ANDROID_ATRUST_SMOKE COMPLETE failures=$failures');
   exit(failures == 0 ? 0 : 1);
