@@ -5,6 +5,11 @@ import 'package:flutter/material.dart';
 import '../services/atrust_control_client.dart';
 import '../services/atrust_service.dart';
 import '../services/service_provider.dart';
+import '../utils/platform.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
+import '../widgets/blurred_app_bar.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 /// The campus network, as a feature rather than a lab experiment.
 ///
@@ -86,23 +91,53 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
   @override
   Widget build(BuildContext context) {
     final service = _service;
+    final useIosChrome = isIos();
+    final useLegacyIosChrome = usesLegacyIosChrome();
+    final topInset = useIosChrome || useLegacyIosChrome
+        ? 0.0
+        : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('校园网 VPN')),
-      body: SafeArea(
-        child: ListenableBuilder(
-          listenable: service,
-          builder: (context, _) => ListView(
-            padding: const EdgeInsets.only(bottom: 32),
-            children: [
-              _status(context, service),
-              const Divider(height: 1),
-              ..._actions(context, service),
-              const Divider(height: 1),
-              _devices(context, service),
-              const Divider(height: 1),
-              _diagnostics(context, service),
-            ],
+      // The list scrolls behind the bar, which is what the bar's blur is for.
+      extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
+      appBar: useIosChrome
+          ? IosNativeNavigationBar(
+              title: '校园网 VPN',
+              leadingItems: [
+                if (Navigator.canPop(context))
+                  const IosNativeNavigationBarItem(
+                    id: 'back',
+                    title: 'Home',
+                    sfSymbol: 'chevron.left',
+                    accessibilityLabel: '返回 Home',
+                  ),
+              ],
+              onItemPressed: (id) {
+                if (id == 'back') {
+                  unawaited(maybePopAdaptivePage<void>(context));
+                }
+              },
+            )
+          : const BlurredAppBar(title: Text('校园网 VPN')),
+      body: ListenableBuilder(
+        listenable: service,
+        builder: (context, _) => ListView(
+          // The bar is not reserved twice: the list starts under it and its
+          // own height is the only space taken, so the first card sits against
+          // the bar and everything after it scrolls underneath.
+          padding: EdgeInsets.only(
+            top: topInset,
+            bottom: AppShellMetrics.bottomContentPaddingOf(context),
           ),
+          children: [
+            _status(context, service),
+            const Divider(height: 1),
+            ..._actions(context, service),
+            const Divider(height: 1),
+            _devices(context, service),
+            const Divider(height: 1),
+            _diagnostics(context, service),
+          ],
         ),
       ),
     );
