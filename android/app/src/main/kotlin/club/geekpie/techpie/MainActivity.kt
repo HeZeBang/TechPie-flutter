@@ -6,11 +6,13 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.CalendarContract
 import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
+import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import club.geekpie.techpie.ecardbind.EcardBindVpnService
@@ -58,6 +60,14 @@ class MainActivity : FlutterActivity() {
                     result.success(
                         if (AtrustVpnService.active) "active" else "inactive",
                     )
+                }
+                "openBatterySettings" -> {
+                    // Where the system stops reclaiming the app in the background.
+                    // The list rather than a one-tap dialog: one tap is nicer, but
+                    // asking for the exemption by name is a permission the stores
+                    // read closely, and the list is the same setting.
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    result.success(null)
                 }
                 "stop" -> {
                     AtrustVpnService.stopTunnel()
@@ -141,6 +151,20 @@ class MainActivity : FlutterActivity() {
         if (pendingAtrustConsent != null) {
             result.error("vpn_request_in_progress", "A VPN consent request is already pending.", null)
             return
+        }
+
+        // The foreground service that keeps the interface alive needs a
+        // notification; on 13+ that needs the user's permission, and the service
+        // runs either way.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                REQUEST_NOTIFICATION_PERMISSION,
+            )
         }
 
         val pending = PendingAtrustConsent(routes = routes, dns = dns, result = result)
@@ -443,6 +467,7 @@ class MainActivity : FlutterActivity() {
         const val REQUEST_ATRUST_CONSENT = 0x4154
         const val REQUEST_CALENDAR_PERMISSIONS = 48291
         const val REQUEST_VPN_CONSENT = 0x0ECB
+        const val REQUEST_NOTIFICATION_PERMISSION = 0x4E4F
         const val VPN_STATE_ATTEMPTS = 15
 
         /** How long a teardown is given before its result is read back. */

@@ -173,6 +173,13 @@ class AtrustVpnService {
     return verdict == 'active';
   }
 
+  /// Opens the system's battery-optimisation list, where this app can be exempted
+  /// from the system reclaiming it in the background.
+  Future<void> openBatterySettings() async {
+    if (!isAndroid()) return;
+    await _androidChannel.invokeMethod<void>('openBatterySettings');
+  }
+
   /// Takes the system interface down, and answers whether it really went.
   ///
   /// The engine is not touched. It is the tunnel, and this interface sits above

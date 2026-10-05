@@ -1,10 +1,18 @@
 package club.geekpie.techpie.atrust
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import club.geekpie.techpie.MainActivity
+import club.geekpie.techpie.R
 import java.io.IOException
 
 /**
@@ -90,6 +98,7 @@ class AtrustVpnService : VpnService() {
         tunnel = descriptor
         instance = this
         active = true
+        showForeground("$TUN_ADDRESS · ${routes.size} 条校园路由")
         Log.i(TAG, "interface up, fd=${descriptor.fd} routes=${routes.size} dns=${dns.size}")
         return START_STICKY
     }
@@ -126,6 +135,41 @@ class AtrustVpnService : VpnService() {
         super.onDestroy()
     }
 
+    /**
+     * Puts the interface under a foreground service, which is what keeps the
+     * system from reclaiming the app in the background — the shape every Android
+     * VPN client uses (Clash Meta, sing-box, v2rayNG, Tailscale all raise one).
+     * The notification is the price, and it is a fair one: a client whose tunnel
+     * disappears without saying so is worse than one with a status line.
+     */
+    private fun showForeground(address: String) {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "校园网 VPN",
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply { description = "校园网 VPN 的连接状态" },
+            )
+        }
+        val open = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("校园网 VPN 已连接")
+            .setContentText(address)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(open)
+            .build()
+        startForeground(NOTIFICATION_ID, notification)
+    }
+
     /** Closing the descriptor is what removes the interface. */
     private fun closeTunnel() {
         try {
@@ -134,6 +178,8 @@ class AtrustVpnService : VpnService() {
             // Already gone; nothing left to release.
         }
         tunnel = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
     }
 
     companion object {
@@ -146,6 +192,9 @@ class AtrustVpnService : VpnService() {
          */
         private const val TUN_ADDRESS = "10.111.223.2"
         private const val MTU = 1400
+
+        private const val CHANNEL_ID = "campus-vpn"
+        private const val NOTIFICATION_ID = 0x4156
 
         /** The action an interface request is started with. */
         const val ACTION_START = "club.geekpie.techpie.action.ATRUST_VPN_START"

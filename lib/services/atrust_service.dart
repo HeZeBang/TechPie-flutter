@@ -146,6 +146,11 @@ class AtrustService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Opens the system's battery-optimisation list. On Android the tunnel lives in
+  /// this app's process, so an app the system reclaims takes the interface with
+  /// it.
+  Future<void> openBatterySettings() => _vpn.openBatterySettings();
+
   /// Sets the listener addresses. They are applied when the tunnel next starts:
   /// the engine binds each listener once, at start, and rebinding a live one is
   /// not something it does.

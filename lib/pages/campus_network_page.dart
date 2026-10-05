@@ -494,6 +494,14 @@ class _CampusNetworkPageState extends State<CampusNetworkPage> {
         value: service.routingEnabled,
         onChanged: tunnelAlive ? service.setRouting : null,
       ),
+      if (service.systemVpnSupported)
+        ListTile(
+          leading: const Icon(Icons.battery_saver_outlined),
+          title: const Text('忽略电池优化'),
+          subtitle: const Text('添加 TechPie 到电池优化白名单，防止 VPN 意外中断'),
+          enabled: !busy,
+          onTap: busy ? null : () => unawaited(service.openBatterySettings()),
+        ),
       if (service.tunnelSupported && !service.systemVpnSupported) ...[
         ListTile(
           leading: const Icon(Icons.vpn_lock_outlined),
