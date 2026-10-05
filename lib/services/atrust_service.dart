@@ -546,6 +546,11 @@ class AtrustService extends ChangeNotifier {
     try {
       final verdict = await _vpn.start(session, engine: tunnel);
       _systemVpnActive = verdict == 'active';
+      if (_systemVpnActive) {
+        // On OHOS this is the long-running task that keeps the process — and so
+        // the tunnel it drives — out of the system's background freezer.
+        await _vpn.startContinuousTask();
+      }
       refreshTunnelStatus();
       _detail = '系统 VPN：$verdict';
       if (verdict != 'active') _error = '系统 VPN 未能建立：$verdict';
@@ -567,6 +572,7 @@ class AtrustService extends ChangeNotifier {
     try {
       final released = await _vpn.stop();
       _systemVpnActive = !released;
+      await _vpn.stopContinuousTask();
       _detail = released ? '系统 VPN 已关闭' : '系统 VPN 未释放';
     } on Object catch (error) {
       _error = '$error';

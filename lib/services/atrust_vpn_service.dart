@@ -164,13 +164,35 @@ class AtrustVpnService {
 
   /// Whether the platform says the interface is up.
   ///
-  /// Asked rather than remembered: the system's own VPN entry can disconnect it
-  /// without the app, and that revoke is the only thing that releases the
-  /// interface at all (see [stop]).
+  /// Asked rather than remembered: on Android the system's own VPN entry can
+  /// disconnect it, and on OHOS the extension process can end on its own. Both
+  /// happen outside the app, so the app asks instead of trusting its own last
+  /// request.
   Future<bool> active() async {
-    if (!isAndroid()) return false;
-    final verdict = await _androidChannel.invokeMethod<String>('status');
-    return verdict == 'active';
+    if (isAndroid()) {
+      final verdict = await _androidChannel.invokeMethod<String>('status');
+      return verdict == 'active';
+    }
+    if (isOhos()) {
+      final state = await status();
+      return state != null && state['status'] == 'active';
+    }
+    return false;
+  }
+
+  /// Keeps this app's process out of the system's background freezer while the
+  /// tunnel is up: a `dataTransfer` long-running task, which is the OHOS
+  /// counterpart of the foreground service the Android side raises. Without one
+  /// the process is frozen as soon as the app leaves the foreground — and the
+  /// tunnel, which this process drives, goes with it.
+  Future<void> startContinuousTask() async {
+    if (!isOhos()) return;
+    await _ohosChannel.invokeMethod<bool>('startContinuousTask');
+  }
+
+  Future<void> stopContinuousTask() async {
+    if (!isOhos()) return;
+    await _ohosChannel.invokeMethod<bool>('stopContinuousTask');
   }
 
   /// Opens the system's battery-optimisation list, where this app can be exempted
@@ -208,8 +230,10 @@ class AtrustVpnService {
       debugPrint('[atrust] interface is $verdict');
       return verdict != 'active';
     }
+    // OHOS: the extension owns both layers — its teardown is the tunnel's — so
+    // the verdict is read back rather than assumed.
     await _ohosChannel.invokeMethod<void>('stop');
-    return true;
+    return !await active();
   }
 
   /// The extension's record (OHOS): `status`, `engineStatus` (the engine's own

@@ -73,6 +73,33 @@ function routeTo(cidr: string): connection.RouteInfo {
   };
 }
 
+/**
+ * The resolvers of the network this interface sits above.
+ *
+ * An interface that declares none becomes a default network with nowhere to ask,
+ * and every lookup on the device then fails — the controller's included. Measured
+ * on the Android side of this same tunnel; the hazard is the platform's, not that
+ * one's.
+ */
+async function underlyingDnsServers(): Promise<string[]> {
+  try {
+    const net = await connection.getDefaultNet();
+    const properties = await connection.getConnectionProperties(net);
+    const addresses: string[] = [];
+    for (const entry of properties.dnses ?? []) {
+      addresses.push(entry.address);
+    }
+    return addresses;
+  } catch (error) {
+    hilog.warn(
+      DOMAIN, TAG,
+      'underlying resolvers unreadable: %{public}s',
+      JSON.stringify(error),
+    );
+    return [];
+  }
+}
+
 export default class GeekTrustVpnAbility extends VpnExtensionAbility {
   private connection: vpnExtension.VpnConnection | null = null;
   private up: boolean = false;
@@ -105,10 +132,16 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
       // GeekTrustVpnRoutes. Read them off the engine's own status.
       const gateways = gatewaysOf(engine.status());
       const routes = routesWithoutGateways(state.routes, gateways);
+      // An interface that declares no resolver becomes a default network with
+      // nowhere to ask, and then every lookup on the device fails — the
+      // controller's included (measured on the Android side of this tunnel, and
+      // the same hazard here). The network under this one has resolvers that
+      // work, so they are carried when the policy names none.
+      const dns: string[] = state.dns.length > 0 ? state.dns : await underlyingDnsServers();
       hilog.info(
         DOMAIN, TAG,
         'vpn inputs routes=%{public}s gateways=%{public}s dns=%{public}s',
-        JSON.stringify(routes), JSON.stringify(gateways), JSON.stringify(state.dns),
+        JSON.stringify(routes), JSON.stringify(gateways), JSON.stringify(dns),
       );
 
       const config: vpnExtension.VpnConfig = {
@@ -119,7 +152,7 @@ export default class GeekTrustVpnAbility extends VpnExtensionAbility {
           },
         ],
         routes: [routeTo(TUN_ADDRESS)].concat(routes.map(routeTo)),
-        dnsAddresses: state.dns,
+        dnsAddresses: dns,
         mtu: DEFAULT_MTU,
         isIPv4Accepted: true,
         // The engine carries IPv4 only; capturing IPv6 would black-hole it.

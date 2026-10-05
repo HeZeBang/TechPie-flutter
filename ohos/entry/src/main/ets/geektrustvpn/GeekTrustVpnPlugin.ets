@@ -16,6 +16,9 @@ import MethodCall from '@ohos/flutter_ohos/src/main/ets/plugin/common/MethodCall
 import UIAbility from '@ohos.app.ability.UIAbility';
 import vpnExtension from '@ohos.net.vpnExtension';
 import Want from '@ohos.app.ability.Want';
+import { WantAgent } from '@ohos.app.ability.wantAgent';
+import wantAgent from '@ohos.app.ability.wantAgent';
+import backgroundTaskManager from '@ohos.resourceschedule.backgroundTaskManager';
 import hilog from '@ohos.hilog';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { clearState, readState, writeRequest } from './GeekTrustVpnState';
@@ -51,6 +54,7 @@ export class GeekTrustVpnPlugin implements FlutterPlugin, MethodCallHandler, Abi
   private methods: MethodChannel | null = null;
   private ability: UIAbility | null = null;
   private bundleName: string = '';
+  private continuousTask: boolean = false;
 
   getUniqueClassName(): string {
     return 'GeekTrustVpnPlugin';
@@ -92,6 +96,22 @@ export class GeekTrustVpnPlugin implements FlutterPlugin, MethodCallHandler, Abi
         .catch((error: BusinessError) => {
           hilog.error(DOMAIN, TAG, 'stop failed: %{public}s', JSON.stringify(error));
           result.success(null);
+        });
+    } else if (call.method === 'startContinuousTask') {
+      this.startContinuousTask()
+        .then(() => result.success(true))
+        .catch((error: BusinessError) => {
+          hilog.error(DOMAIN, TAG, 'startContinuousTask failed: %{public}s',
+            JSON.stringify(error));
+          result.success(false);
+        });
+    } else if (call.method === 'stopContinuousTask') {
+      this.stopContinuousTask()
+        .then(() => result.success(true))
+        .catch((error: BusinessError) => {
+          hilog.error(DOMAIN, TAG, 'stopContinuousTask failed: %{public}s',
+            JSON.stringify(error));
+          result.success(false);
         });
     } else if (call.method === 'status') {
       const filesDir = this.ability?.context.filesDir;
@@ -150,6 +170,52 @@ export class GeekTrustVpnPlugin implements FlutterPlugin, MethodCallHandler, Abi
     }
     return 'failed: the extension did not report a live tunnel within ' +
       `${START_TIMEOUT_MS}ms`;
+  }
+
+  /**
+   * Asks the system for a `dataTransfer` long-running task. This is the OHOS
+   * counterpart of what the Android side gets from a foreground service: without
+   * it the app's process — the one that drives the tunnel — is frozen once it
+   * leaves the foreground, and the tunnel goes with it. The pack already declares
+   * `backgroundModes: ["dataTransfer"]` and KEEP_BACKGROUND_RUNNING, which is
+   * what makes the request grantable; the system renders its own notification.
+   */
+  private async startContinuousTask(): Promise<void> {
+    const ability = this.ability;
+    if (ability === null) {
+      throw new Error('no ability to ask from');
+    }
+    if (this.continuousTask) {
+      return;
+    }
+    const want: Want = {
+      bundleName: this.bundleName,
+      abilityName: 'EntryAbility',
+    };
+    const info: wantAgent.WantAgentInfo = {
+      wants: [want],
+      actionType: wantAgent.OperationType.START_ABILITY,
+      requestCode: 0,
+      wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG],
+    };
+    const agent: WantAgent = await wantAgent.getWantAgent(info);
+    // The string-array overload (since API 12). The object form serialises to
+    // null on the ArkTS side, and the call then fails with 9800005.
+    const notification: backgroundTaskManager.ContinuousTaskNotification =
+      await backgroundTaskManager.startBackgroundRunning(ability.context, ['dataTransfer'], agent);
+    this.continuousTask = true;
+    hilog.info(DOMAIN, TAG, 'continuous task started id=%{public}d',
+      notification.notificationId);
+  }
+
+  private async stopContinuousTask(): Promise<void> {
+    const ability = this.ability;
+    if (ability === null || !this.continuousTask) {
+      return;
+    }
+    await backgroundTaskManager.stopBackgroundRunning(ability.context);
+    this.continuousTask = false;
+    hilog.info(DOMAIN, TAG, 'continuous task stopped');
   }
 
   private async stop(): Promise<void> {
