@@ -23,6 +23,27 @@ final class MaximizePaymentCodeBrightnessController
   }
 }
 
+final showAllTransactionRecordsProvider =
+    AsyncNotifierProvider<ShowAllTransactionRecordsController, bool>(
+  ShowAllTransactionRecordsController.new,
+);
+
+final class ShowAllTransactionRecordsController extends AsyncNotifier<bool> {
+  static const preferenceKey = 'geekpay.show_all_transaction_records';
+
+  @override
+  Future<bool> build() async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getBool(preferenceKey) ?? false;
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(preferenceKey, enabled);
+    state = AsyncData(enabled);
+  }
+}
+
 /// Whether the pass shows a locally generated code straight away and hands the
 /// surface over to the online code as soon as it arrives ("离线码优先"). On by
 /// default: the local code is the fast path, the online one takes over.

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../../core/errors/app_failure.dart';
+import '../../core/iso_date_time.dart';
 import '../../domain/models/bill_models.dart';
 import '../../domain/money_fen.dart';
 import '../../domain/ports/bill_ports.dart';
@@ -220,14 +221,22 @@ final class EcardTransactionHistoryRepository
       'merchantname',
       'merchant',
     ]);
+    final occurredAt = _dateText(rawDateText);
     return TransactionRecord(
       id: id,
-      occurredAt: _dateText(rawDateText) ??
-          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      occurredAt:
+          occurredAt ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      hasValidDate: occurredAt != null,
       title: title,
       amount: amount,
       kind: kind,
       merchantName: merchantName ?? title,
+      merchantId: _identifier(row, const ['merchantno', 'merno', 'merchantid']),
+      posCode: _identifier(row, const ['poscode', 'terminalno']),
+      isDining: kind == TransactionKind.consumption &&
+          (_text(row, const ['txname', 'tradename', 'summary'])
+                  ?.contains('餐饮') ??
+              false),
       location: _text(row, const ['location', 'address', 'tradestation']),
       balance: _money(row, const ['balance', 'cardbal', 'afterbalance']),
       rawDateText: rawDateText,
@@ -241,6 +250,9 @@ final class EcardTransactionHistoryRepository
   }
 
   TransactionKind _kind(String type, String source, MoneyFen amount) {
+    if (source.contains('补足信用额度')) {
+      return TransactionKind.creditReplenishment;
+    }
     switch (type) {
       case '1':
         return TransactionKind.consumption;
@@ -290,6 +302,18 @@ final class EcardTransactionHistoryRepository
     return null;
   }
 
+  String? _identifier(Map<String, Object?> row, List<String> keys) {
+    final values = <String>{};
+    for (final key in keys) {
+      final value = row[key];
+      if (value is! String && value is! int) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty && text != '-' && text != '--') values.add(text);
+    }
+    // Conflicting response fields cannot identify a merchant reliably.
+    return values.length == 1 ? values.single : null;
+  }
+
   MoneyFen? _money(Map<String, Object?> row, List<String> keys) {
     for (final key in keys) {
       final value = row[key];
@@ -307,9 +331,13 @@ final class EcardTransactionHistoryRepository
     final epoch = int.tryParse(value);
     if (epoch != null) {
       final milliseconds = epoch < 100000000000 ? epoch * 1000 : epoch;
-      return DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true);
+      try {
+        return DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true);
+      } on ArgumentError {
+        return null;
+      }
     }
-    return DateTime.tryParse(value.replaceFirst(' ', 'T'))?.toUtc();
+    return parseIsoDateTime(value)?.toUtc();
   }
 
   int _integer(Object? value, int fallback) =>
