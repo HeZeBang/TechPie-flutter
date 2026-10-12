@@ -111,10 +111,6 @@ class DeadlineWidgetService with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed || _disposed) return;
     _changed();
-    final last = _assignments.lastFetchAt;
-    if (last == null || _now().difference(last) >= const Duration(minutes: 5)) {
-      unawaited(_assignments.fetchAssignments());
-    }
   }
 
   void setOpenHandler(OpenDeadlinesHandler handler) {

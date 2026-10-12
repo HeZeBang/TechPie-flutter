@@ -9,12 +9,12 @@ struct DeadlineEntry: TimelineEntry {
 
 struct DeadlineProvider: TimelineProvider {
   func placeholder(in context: Context) -> DeadlineEntry {
-    DeadlineEntry(date: Date(), state: .ready(Self.preview(at: Date())))
+    DeadlineEntry(date: Date(), state: .notSynced)
   }
 
   func getSnapshot(in context: Context, completion: @escaping (DeadlineEntry) -> Void) {
     let now = Date()
-    completion(DeadlineEntry(date: now, state: context.isPreview ? .ready(Self.preview(at: now)) : read()))
+    completion(DeadlineEntry(date: now, state: read()))
   }
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<DeadlineEntry>) -> Void) {
@@ -28,16 +28,6 @@ struct DeadlineProvider: TimelineProvider {
 
   private func read() -> DeadlineSnapshotState {
     DeadlineSnapshotStore.configured()?.read() ?? .unavailable
-  }
-
-  static func preview(at now: Date) -> DeadlineSnapshot {
-    let items: [DeadlineItem] = (0..<8).map { (index: Int) -> DeadlineItem in
-      DeadlineItem(id: "preview-\(index)", kind: index == 2 ? .exam : .assignment,
-                   title: ["Problem Set 3", "Lab Report", "Midterm Exam", "Reading Response"][index % 4],
-                   course: ["Calculus", "Physics", "Computer Science", "Academic Writing"][index % 4],
-                   dueAt: now.addingTimeInterval(Double(index + 1) * 6 * 3600).timeIntervalSince1970)
-    }
-    return DeadlineSnapshot(writtenAt: now.timeIntervalSince1970, items: items)
   }
 }
 

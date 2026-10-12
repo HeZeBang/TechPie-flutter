@@ -32,7 +32,6 @@ class AssignmentService extends ChangeNotifier {
   bool _refetchPending = false;
   bool _signedOut = false;
   bool _disposed = false;
-  DateTime? _lastFetchAt;
   String? _primaryIdentity;
   Map<String, String> _sourceIdentities = {};
   String? _error;
@@ -54,7 +53,6 @@ class AssignmentService extends ChangeNotifier {
   bool get loading => _loading;
   int get identityEpoch => _identityEpoch;
   bool get hasCachedData => _hasCachedData;
-  DateTime? get lastFetchAt => _lastFetchAt;
   String? get error => _error;
   Map<String, String> get platformErrors => Map.unmodifiable(_platformErrors);
 
@@ -273,7 +271,6 @@ class AssignmentService extends ChangeNotifier {
   Future<void> fetchAssignments() async {
     if (_loading || _signedOut || _disposed) return;
     final epoch = _identityEpoch;
-    _lastFetchAt = DateTime.now();
     _loading = true;
     _error = null;
     _platformErrors.clear();
@@ -361,7 +358,6 @@ class AssignmentService extends ChangeNotifier {
   Future<void> fetchPlatform(String platformId) async {
     if (_loading || _signedOut || _disposed) return;
     final epoch = _identityEpoch;
-    _lastFetchAt = DateTime.now();
     _loading = true;
     _error = null;
     _platformErrors.remove(platformId);
