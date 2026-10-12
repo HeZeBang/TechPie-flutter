@@ -32,10 +32,12 @@ final class EcardFeedback {
   private enum Failure: Error { case missingAsset, audioUnavailable }
   private let registrar: FlutterPluginRegistrar
   private let channel: FlutterMethodChannel
-  private var engine: CHHapticEngine?
+  private var hapticsOnlyEngine: CHHapticEngine?
+  private var audioHapticEngine: CHHapticEngine?
   private var resources: [String: CHHapticAudioResourceID] = [:]
   private var hapticPlayer: CHHapticPatternPlayer?
   private var audioPlayer: AVAudioPlayer?
+  private var audioSessionActive = false
   private var work: [DispatchWorkItem] = []
   private var generation = 0
 
@@ -57,7 +59,6 @@ final class EcardFeedback {
         result(nil)
       } catch {
         self.stopPlayback()
-        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
         result(FlutterError(code: "feedback_failed", message: "Feedback could not be played.", details: nil))
       }
     }
@@ -98,14 +99,21 @@ final class EcardFeedback {
     generation += 1
     let current = generation
     stopPlayback()
-    let session = AVAudioSession.sharedInstance()
+    var session: AVAudioSession?
     if request.sound {
-      try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-      try session.setActive(true)
+      let activeSession = AVAudioSession.sharedInstance()
+      try activeSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+      try activeSession.setActive(true)
+      audioSessionActive = true
+      session = activeSession
     }
     if request.vibration && CHHapticEngine.capabilitiesForHardware().supportsHaptics {
       do {
-        try playSynchronized(request, session: session)
+        if let session {
+          try playSynchronized(request, session: session)
+        } else {
+          try playHapticsOnly(request)
+        }
       } catch {
         // Keep audio usable after an engine interruption or on older devices.
         try playFallback(request, generation: current)
@@ -121,23 +129,47 @@ final class EcardFeedback {
     let cleanup = DispatchWorkItem { [weak self] in
       guard let self, self.generation == current else { return }
       self.stopPlayback()
-      try? session.setActive(false, options: [.notifyOthersOnDeactivation])
     }
     work.append(cleanup)
     DispatchQueue.main.asyncAfter(deadline: .now() + request.windowMs / 1000 + 0.04, execute: cleanup)
   }
 
+  private func playHapticsOnly(_ request: Request) throws {
+    if hapticsOnlyEngine == nil {
+      // A vibration must not take ownership of the app's shared audio session.
+      // Passing nil gives Core Haptics its UIKit audio behavior, and this mode
+      // prevents the engine from preparing an audio path it will never use.
+      let created = try CHHapticEngine(audioSession: nil)
+      created.playsHapticsOnly = true
+      created.isAutoShutdownEnabled = true
+      hapticsOnlyEngine = created
+    }
+    guard let hapticsOnlyEngine else { throw Failure.audioUnavailable }
+    try hapticsOnlyEngine.start()
+    let events = request.pulses.map { pulse in
+      CHHapticEvent(eventType: .hapticTransient, parameters: [
+        CHHapticEventParameter(parameterID: .hapticIntensity, value: pulse.intensity),
+        CHHapticEventParameter(parameterID: .hapticSharpness, value: pulse.sharpness),
+      ], relativeTime: pulse.atMs / 1000)
+    }
+    let player = try hapticsOnlyEngine.makePlayer(
+      with: CHHapticPattern(events: events, parameters: [])
+    )
+    hapticPlayer = player
+    try player.start(atTime: CHHapticTimeImmediate)
+  }
+
   private func playSynchronized(_ request: Request, session: AVAudioSession) throws {
-    if engine == nil {
+    if audioHapticEngine == nil {
       let created = try CHHapticEngine(audioSession: session)
       created.isAutoShutdownEnabled = true
       created.resetHandler = { [weak self] in
         DispatchQueue.main.async { self?.resources.removeAll() }
       }
-      engine = created
+      audioHapticEngine = created
     }
-    guard let engine else { throw Failure.audioUnavailable }
-    try engine.start()
+    guard let audioHapticEngine else { throw Failure.audioUnavailable }
+    try audioHapticEngine.start()
     var events: [CHHapticEvent] = []
     if request.sound, let asset = request.soundAsset {
       let resource: CHHapticAudioResourceID
@@ -145,9 +177,9 @@ final class EcardFeedback {
         resource = cached
       } else {
         if #available(iOS 15.0, *) {
-          resource = try engine.registerAudioResource(assetURL(asset), options: [CHHapticAudioResourceKeyUseVolumeEnvelope: false])
+          resource = try audioHapticEngine.registerAudioResource(assetURL(asset), options: [CHHapticAudioResourceKeyUseVolumeEnvelope: false])
         } else {
-          resource = try engine.registerAudioResource(assetURL(asset), options: [:])
+          resource = try audioHapticEngine.registerAudioResource(assetURL(asset), options: [:])
         }
         resources[asset] = resource
       }
@@ -162,7 +194,9 @@ final class EcardFeedback {
         ], relativeTime: pulse.atMs / 1000)
       })
     }
-    let player = try engine.makePlayer(with: CHHapticPattern(events: events, parameters: []))
+    let player = try audioHapticEngine.makePlayer(
+      with: CHHapticPattern(events: events, parameters: [])
+    )
     hapticPlayer = player
     try player.start(atTime: CHHapticTimeImmediate)
   }
@@ -203,5 +237,12 @@ final class EcardFeedback {
     hapticPlayer = nil
     audioPlayer?.stop()
     audioPlayer = nil
+    if audioSessionActive {
+      audioSessionActive = false
+      try? AVAudioSession.sharedInstance().setActive(
+        false,
+        options: [.notifyOthersOnDeactivation]
+      )
+    }
   }
 }
