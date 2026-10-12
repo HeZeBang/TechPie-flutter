@@ -85,7 +85,10 @@ app navigation.
 
 - Flutter's full test suite passed. Focused tests also verify cold/warm navigation,
   cache publication, completion/hidden changes, account replacement, logout,
-  stale requests and deduplication. `flutter analyze --no-pub` and
+  stale requests and deduplication. Four HTTP 500 renewal regression cases
+  verify full/platform sync, scheduled/401 renewal, cache retention and explicit
+  retries. Renewal status notifications do not queue another active sync.
+  `flutter analyze --no-pub` and
   `git diff --check` passed.
 - All eight Swift tests passed, covering schema validation, atomic storage, local dates/year
   boundaries, hourly updates for distant deadlines, urgency transitions, expiry

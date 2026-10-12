@@ -95,7 +95,7 @@ class AssignmentService extends ChangeNotifier {
     _lastRefetchedSemesterId = _schedule.selectedSemesterId;
   }
 
-  /// Auth or binding changed — always refetch (tokens, accounts differ).
+  /// Queue a refetch during an active sync only when the identity changes.
   void _onBindingsOrAuthChanged() {
     final primary = _auth.session?.userId;
     final sources = _currentSources();
@@ -139,7 +139,8 @@ class AssignmentService extends ChangeNotifier {
     if (_signedOut) return;
     _lastRefetchedSemesterId = _schedule.selectedSemesterId;
     if (_loading) {
-      _refetchPending = true;
+      // Renewal status notifications must not retry the active sync.
+      if (primaryChanged || changed.isNotEmpty) _refetchPending = true;
       return;
     }
     unawaited(fetchAssignments());

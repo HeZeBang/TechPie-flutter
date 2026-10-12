@@ -21,6 +21,71 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   for (final singlePlatform in [false, true]) {
+    for (final expired in [false, true]) {
+      test(
+          'failed ${expired ? 'scheduled' : '401'} renewal does not repeat ${singlePlatform ? 'platform' : 'all'} sync',
+          () async {
+        var renewCalls = 0;
+        var deadlineCalls = 0;
+        final unexpectedRenewal = Completer<http.Response>();
+        final fixture = await _identityFixture(
+          (url, body) {
+            if (url.path.endsWith('/auth/third-party/gradescope')) {
+              renewCalls++;
+              // Bound a regression's retry loop so the test can report it.
+              if (renewCalls > 2) return unexpectedRenewal.future;
+              return http.Response(
+                jsonEncode({'success': false, 'error': 'server unavailable'}),
+                500,
+              );
+            }
+            if (url.path.endsWith('/deadlines/gradescope')) {
+              deadlineCalls++;
+              return http.Response('{"success":false}', 401);
+            }
+            return http.Response('not found', 404);
+          },
+          account: _gradescopeAccount('old-account', 'old-token').copyWith(
+            autoRenew: true,
+            password: 'synthetic-password',
+            expire: DateTime.now()
+                    .add(
+                      expired
+                          ? const Duration(days: -1)
+                          : const Duration(days: 30),
+                    )
+                    .millisecondsSinceEpoch ~/
+                1000,
+          ),
+        );
+        fixture.service.enableAutoRefetch();
+        final fetch = singlePlatform
+            ? () => fixture.service.fetchPlatform('gradescope')
+            : fixture.service.fetchAssignments;
+
+        await fetch();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(renewCalls, 1);
+        expect(deadlineCalls, expired ? 0 : 1);
+        expect(fixture.service.loading, isFalse);
+        expect(fixture.thirdParty.renewStatus('gradescope')?.success, isFalse);
+        expect(
+          fixture.service.assignments.map((a) => a.id),
+          ['old-cache', 'unrelated'],
+        );
+
+        await fetch();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(renewCalls, 2, reason: 'an explicit retry remains available');
+        expect(deadlineCalls, expired ? 0 : 2);
+        expect(fixture.service.loading, isFalse);
+      });
+    }
+  }
+
+  for (final singlePlatform in [false, true]) {
     test(
         'account replacement rejects old ${singlePlatform ? 'platform' : 'all'} fetch and refetches',
         () async {
@@ -429,8 +494,9 @@ Future<
       AuthService auth,
       StorageService storage
     })> _identityFixture(
-  FutureOr<http.Response> Function(Uri, Map<String, dynamic>) handler,
-) async {
+  FutureOr<http.Response> Function(Uri, Map<String, dynamic>) handler, {
+  ThirdPartyAccount? account,
+}) async {
   SharedPreferences.setMockInitialValues({});
   FlutterSecureStorage.setMockInitialValues({});
   final storage = StorageService(await SharedPreferences.getInstance());
@@ -442,8 +508,9 @@ Future<
       createdAt: DateTime.utc(2026),
     ),
   );
-  await storage
-      .saveThirdPartyAccount(_gradescopeAccount('old-account', 'old-token'));
+  await storage.saveThirdPartyAccount(
+    account ?? _gradescopeAccount('old-account', 'old-token'),
+  );
   await storage.saveCachedAssignments([
     _assignmentJson(
       id: 'old-cache',
