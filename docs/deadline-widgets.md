@@ -1,109 +1,80 @@
 # Deadline Widgets
 
-The native macOS and iOS widgets display upcoming, incomplete assignments and
-exams from TechPie's latest local data. Hidden items and completion overrides
-apply to widgets. Small, medium and large show at most 2, 4 and 8 items.
-The existing iOS campus-code widget remains in the same extension and keeps its
-`EcardPayWidget` kind and extension bundle identifier.
+## Display contract
 
-## Data and updates
+Widgets display future, incomplete assignments and exams from local data,
+respecting hidden items and completion overrides. Items are ordered by deadline,
+then internal identifier. Small, medium and large display at most 2, 4 and 8 items.
+Each item shows its title, course, type, absolute deadline and remaining time.
+Truncated text retains the full title, course and deadline in accessibility labels.
 
-Flutter publishes through `techpie/deadline_widgets` after cache hydration and
-deadline changes. The native bridge atomically writes `deadline-widget-v1.json`
-in the App Group's `Library/Application Support` directory and reloads only the
-`DeadlineWidget` timelines. The snapshot contains schema version 1, a write
-timestamp and display items (`id`, `kind`, `title`, `course`, Unix `dueAt`).
-It never contains tokens, cookies, account details or source URLs.
+Remaining time is rounded down to whole hours and displayed as days/hours or
+hours only. Below one hour it becomes red "Due soon" ("即将截止" in Chinese).
+Remaining minutes and seconds are never displayed. Absolute deadlines use the
+device's local time zone and include the year when it differs from the current
+year. Compact list rows use "Today" or "Tomorrow" where applicable.
 
-Widgets do not fetch from the network. Returning to the foreground republishes
-current data and requests a normal deadline fetch if the last attempt was at
-least five minutes ago. New server data requires opening or refreshing TechPie.
-Account changes invalidate pending requests and clear the shared snapshot.
+An empty snapshot displays "No upcoming deadlines". A missing snapshot requests
+opening TechPie to sync; unreadable or invalid data displays an unavailable state.
+`techpie://deadlines` selects the existing Deadlines page, waiting for navigation
+to become ready on a cold launch.
 
-Every upcoming deadline displays full remaining days and hours, or just hours
-when less than one day remains. With less than one hour remaining they display a
-red "Due soon" label ("即将截止" in Chinese). Hours are rounded down, so 1 hour
-30 minutes displays 1 hour. Minutes and seconds are never shown in the
-remaining-time label. Timelines precompute hourly transitions for all upcoming
-deadlines, the one-hour urgency threshold, local midnight and expiry,
-so these labels update while the app is closed. The system may delay a timeline
-transition. Absolute due times remain visible in the device's local time zone.
-Widgets do not request per-second reloads or network data.
+## Snapshot protocol
 
-Single deadlines use layouts adapted to each size: a compact vertical stack on
-small, a title/time split on medium, and larger title/remaining-time typography
-on large. Multiple deadlines use a compact list with subtle separators. Normal
-remaining time uses the primary text color, deadlines within one day use the
-accent color, and deadlines within one hour use red. System fonts and backgrounds
-adapt to light and dark appearance.
+The Flutter channel is `techpie/deadline_widgets`. The native bridge atomically
+writes a complete snapshot to `Library/Application Support/deadline-widget-v1.json`
+inside the shared App Group:
 
-## Signing and installation
-
-Both the host and widget extension need the same App Group entitlement and must
-be signed by the same team. `TECHPIE_DEADLINE_APP_GROUP` is a project build setting:
-
-- macOS: `$(TeamIdentifierPrefix)club.geekpie.techpie.deadlines`.
-- iOS: `group.club.geekpie.techpie.deadlines`.
-
-For iOS distribution, register that App Group in the Apple developer account,
-enable it for Runner and EcardPayWidget, and regenerate both provisioning
-profiles. The private signing workflow must preserve the App Group entitlement
-when replacing bundle identifiers or entitlements. No certificates, private
-keys or personal team identifiers belong in this repository.
-
-macOS 11+ supports Notification Center widgets, and macOS 14+ also supports
-desktop widgets. Runner still supports its previous minimum OS version. The
-widget extension is embedded during a normal Runner build.
-`TECHPIE_HOST_BUNDLE_IDENTIFIER` controls the macOS extension's parent bundle ID
-and must match Runner's bundle identifier when packaging a renamed host.
-
-`TECHPIE_WIDGET_URL_SCHEME` defaults to `techpie`; `techpie://deadlines` opens the
-existing Deadlines destination on cold and warm launches. Local QA builds should
-override the group, scheme and host/extension bundle identifiers using an ignored
-or external xcconfig. Use a unique display name, install the host in an application
-directory, and select its native widget rather than the iPhone/TestFlight widget.
-
-## Validation
-
-```sh
-swift test --package-path apple/DeadlineWidgets
-flutter test
-flutter analyze --no-pub
-git diff --check
+```json
+{
+  "schemaVersion": 1,
+  "writtenAt": 1791763200,
+  "items": [
+    {
+      "id": "assignment:example",
+      "kind": "assignment",
+      "title": "Problem Set",
+      "course": "Example Course",
+      "dueAt": 1791849600
+    }
+  ]
+}
 ```
 
-The `DeadlineWidgets` macOS scheme and `EcardPayWidget` iOS scheme allow compiling
-the extensions without building the Flutter host. iOS can be compiled using the
-installed `iphoneos` SDK and `CODE_SIGNING_ALLOWED=NO`; no simulator is required.
-Real iOS installation, App Group access and system widget behavior still require
-physical-device validation. Native system tests should cover all three sizes,
-long titles, empty and single-item states, light/dark appearance, hourly and
-expiry transitions with the host closed, completion/hidden changes and correct
-app navigation.
+`writtenAt` and `dueAt` are Unix timestamps in seconds. Identifiers must be
+nonempty and unique; `kind` is `assignment` or `exam`. Unsupported schema versions,
+invalid timestamps and duplicate identifiers are rejected before replacing the
+existing snapshot. Snapshots contain display data only, without credentials,
+account details or source URLs.
 
-### Validation performed
+## Update rules
 
-- Flutter's full test suite passed. Focused tests also verify cold/warm navigation,
-  cache publication, completion/hidden changes, account replacement, logout,
-  stale requests and deduplication. Four HTTP 500 renewal regression cases
-  verify full/platform sync, scheduled/401 renewal, cache retention and explicit
-  retries. Renewal status notifications do not queue another active sync.
-  `flutter analyze --no-pub` and
-  `git diff --check` passed.
-- All eight Swift tests passed, covering schema validation, atomic storage, local dates/year
-  boundaries, hourly updates for distant deadlines, urgency transitions, expiry
-  and 2/4/8 limits.
-- A signed macOS source build was installed under a separate QA identity. All
-  three native widget sizes displayed real deadlines, and widget navigation
-  opened the QA app's Deadlines page. Synthetic long titles/course names and
-  2/4/8-item layouts were checked without overlap. Full-hour labels and red
-  "Due soon" labels were also checked on all three sizes. Remaining days/hours
-  and the single-item layout were checked against real data. Synthetic SwiftUI
-  renders cover all sizes, light/dark appearance, single/empty/full lists and
-  long single-item titles. These renders do not replace WidgetKit runtime checks.
-- The iOS widget extension compiled unsigned for arm64 with the installed
-  iPhoneOS 18.5 SDK. The native host bridge passed type checking. A full Runner
-  build was blocked by the local Xcode installation reporting
-  `iOS 18.5 Platform Not Installed` when compiling a plugin storyboard.
-  No simulator or platform download was performed. Full host compilation,
-  signing and device runtime checks remain necessary before iOS distribution.
+The host publishes after cache hydration, deadline/completion/visibility changes
+and foreground return. Unchanged display data does not request another widget
+reload. Foreground return also requests a deadline fetch if the last attempt was
+at least five minutes ago. Widgets perform no network requests.
+
+Logout clears shared data. Source-account changes remove affected deadlines;
+identity generation checks prevent older asynchronous work from restoring them.
+
+Widget timelines schedule hourly label changes, local midnight and deadline
+expiry over the next 24 hours. Expired items are removed and later items become
+visible. WidgetKit may delay transitions, so the absolute deadline remains visible.
+
+## Platform configuration
+
+macOS embeds `DeadlineWidgets`, supporting Notification Center on macOS 11+ and
+desktop widgets on macOS 14+. iOS uses the existing `EcardPayWidget` extension's
+WidgetBundle, preserving its bundle identifier and campus-code widget kind.
+The deadline widget kind is `DeadlineWidget` on both platforms.
+
+The host and extension must use the same App Group and signing team. Build settings:
+
+- `TECHPIE_DEADLINE_APP_GROUP`: `$(TeamIdentifierPrefix)club.geekpie.techpie.deadlines`
+  on macOS; `group.club.geekpie.techpie.deadlines` on iOS.
+- `TECHPIE_HOST_BUNDLE_IDENTIFIER`: must match the macOS host bundle identifier.
+- `TECHPIE_WIDGET_URL_SCHEME`: defaults to `techpie`; must match the host URL scheme.
+
+Before iOS distribution, register the App Group for Runner and EcardPayWidget
+and regenerate both provisioning profiles. Signing must preserve the shared
+App Group entitlement when changing bundle identifiers.
