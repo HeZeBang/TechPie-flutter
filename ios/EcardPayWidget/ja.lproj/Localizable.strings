@@ -1,3 +1,10 @@
 "widget.title" = "支払いコード";
 "widget.subtitle" = "タップで支払い";
 "widget.description" = "TechPie の学内支払いコードを開く";
+"deadline.widget.title" = "Deadlines";
+"deadline.widget.description" = "今後の課題と試験";
+"deadline.widget.empty" = "予定されている締切はありません";
+"deadline.widget.notSynced" = "TechPie を開いて同期";
+"deadline.widget.unavailable" = "締切データを読み込めません";
+"deadline.widget.hours" = "残り %ld 時間";
+"deadline.widget.dueSoon" = "まもなく締切";

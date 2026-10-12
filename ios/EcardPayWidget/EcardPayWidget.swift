@@ -82,7 +82,6 @@ private struct EcardPayWidgetView: View {
   }
 }
 
-@main
 struct EcardPayWidget: Widget {
   let kind = "EcardPayWidget"
 
@@ -93,5 +92,13 @@ struct EcardPayWidget: Widget {
     .configurationDisplayName("widget.title")
     .description("widget.description")
     .supportedFamilies([.systemSmall])
+  }
+}
+
+@main
+struct TechPieWidgets: WidgetBundle {
+  var body: some Widget {
+    EcardPayWidget()
+    DeadlineWidget()
   }
 }

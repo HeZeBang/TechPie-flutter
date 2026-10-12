@@ -11,6 +11,7 @@ import WidgetKit
   private var ecardBindTunnel: EcardBindTunnelPlugin?
   private var watchBridge: WatchConnectivityBridge?
   private var flutterConfigured = false
+  private let deadlineWidgetBridge = DeadlineWidgetBridge()
 
   override func application(
     _ application: UIApplication,
@@ -18,6 +19,7 @@ import WidgetKit
   ) -> Bool {
     if let url = launchOptions?[.url] as? URL {
       _ = captureEcardPayURL(url, notifyFlutter: false)
+      _ = deadlineWidgetBridge.capture(url)
     }
 
     let launched = super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -58,6 +60,7 @@ import WidgetKit
     ecardFeedback = EcardFeedback(registrar: registrar)
     ecardBindTunnel = EcardBindTunnelPlugin(messenger: registrar.messenger())
     watchBridge = WatchConnectivityBridge(registrar: registrar)
+    deadlineWidgetBridge.configure(messenger: registrar.messenger())
 
     let deepLinkChannel = FlutterMethodChannel(
       name: "techpie/ecard_deep_link",
@@ -116,7 +119,7 @@ import WidgetKit
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
-    if captureEcardPayURL(url, notifyFlutter: true) {
+    if deadlineWidgetBridge.capture(url) || captureEcardPayURL(url, notifyFlutter: true) {
       return true
     }
     return super.application(app, open: url, options: options)

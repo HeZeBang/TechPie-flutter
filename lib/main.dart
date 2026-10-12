@@ -13,6 +13,7 @@ import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
 import 'services/campus_card_service.dart';
+import 'services/deadline_widget_service.dart';
 import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
@@ -96,6 +97,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService,
     scheduleService,
   );
+  final deadlineWidgetService = DeadlineWidgetService(assignmentService);
   final syncService = SyncService(
     authService,
     thirdPartyAuthService,
@@ -181,10 +183,16 @@ Future<void> _realMain(SharedPreferences prefs) async {
       campusCardService: campusCardService,
       ecardBindService: ecardBindService,
       ecardWidgetService: ecardWidgetService,
+      deadlineWidgetService: deadlineWidgetService,
     ),
   );
 
   bootMark('cached data ready');
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS)) {
+    deadlineWidgetService.initialize();
+  }
 
   oaGymService.startProfileSync();
   unawaited(campusCardService.refreshAccount());
@@ -309,6 +317,7 @@ class TechPieApp extends StatefulWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final DeadlineWidgetService? deadlineWidgetService;
 
   const TechPieApp({
     super.key,
@@ -327,6 +336,7 @@ class TechPieApp extends StatefulWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.deadlineWidgetService,
   });
 
   @override
@@ -350,11 +360,16 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     unawaited(_checkForUpdatesQuietly());
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
+    widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
   }
 
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.deadlineWidgetService != widget.deadlineWidgetService) {
+      oldWidget.deadlineWidgetService?.clearOpenHandler();
+      widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
+    }
     if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
     oldWidget.ecardWidgetService?.clearOpenPayHandler();
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
@@ -364,6 +379,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.ecardWidgetService?.clearOpenPayHandler();
+    widget.deadlineWidgetService?.dispose();
     widget.campusCardService.dispose();
     super.dispose();
   }
@@ -405,6 +421,12 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
 
     _promptedThisLaunch = true;
     await showUpdateAvailableDialog(context, release);
+  }
+
+  Future<void> _openDeadlines() async {
+    // Dismiss overlays and select the existing destination on warm launches.
+    _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+    appShellPendingDeadlines.value = true;
   }
 
   Future<void> _openEcardPayCode() async {

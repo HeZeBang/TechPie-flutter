@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>TechPieDeadlineAppGroup</key><string>$(TECHPIE_DEADLINE_APP_GROUP)</string>
+  <key>TechPieWidgetURLScheme</key><string>$(TECHPIE_WIDGET_URL_SCHEME)</string>
+  <key>CFBundleURLTypes</key><array><dict>
+    <key>CFBundleURLName</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleURLSchemes</key><array><string>$(TECHPIE_WIDGET_URL_SCHEME)</string></array>
+  </dict></array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleExecutable</key>

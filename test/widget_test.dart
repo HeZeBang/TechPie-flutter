@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/main.dart';
+import 'package:techpie/pages/assignments_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -113,6 +114,55 @@ void main() {
     expect(find.text('Schedule'), findsWidgets);
     expect(find.text('Deadlines'), findsWidgets);
     expect(find.text('Settings'), findsWidgets);
+  });
+
+  testWidgets('deadline widget cold and repeated warm routes reuse the page',
+      (tester) async {
+    appShellPendingDeadlines.value = true;
+    addTearDown(() => appShellPendingDeadlines.value = false);
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    final logger = DebugLogger();
+    final http = LoggingHttpClient(logger);
+    final uniAuth = UniAuthService();
+    final auth = AuthService(storage, http, uniAuth);
+    final tpAuth = ThirdPartyAuthService(storage, http);
+    final schedule = ScheduleService(storage, http, auth, tpAuth);
+    final assignments = AssignmentService(storage, http, auth, tpAuth, schedule);
+    await tester.pumpWidget(
+      TechPieApp(
+        authService: auth,
+        debugLogger: logger,
+        storageService: storage,
+        themeService: ThemeService(storage),
+        scheduleService: schedule,
+        assignmentService: assignments,
+        thirdPartyAuthService: tpAuth,
+        oaGymService: OaGymService(auth, storage, tpAuth),
+        egateAppService: EgateAppService(auth, storage, tpAuth),
+        uniAuthService: uniAuth,
+        syncService: SyncService(auth, tpAuth, storage),
+        updateService: UpdateService(),
+        campusCardService: CampusCardService(),
+        ecardBindService: EcardBindService(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(AssignmentsPage), findsOneWidget);
+    expect(appShellPendingDeadlines.value, isFalse);
+    final original = tester.element(find.byType(AssignmentsPage));
+    for (var i = 0; i < 2; i++) {
+      appShellPendingDeadlines.value = true;
+      await tester.pumpAndSettle();
+      expect(tester.element(find.byType(AssignmentsPage)), same(original));
+    }
+    await tester.tap(find.text('Home').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(AssignmentsPage), findsNothing);
+    appShellPendingDeadlines.value = true;
+    await tester.pumpAndSettle();
+    expect(find.byType(AssignmentsPage), findsOneWidget);
+    expect(appShellPendingDeadlines.value, isFalse);
   });
 
   testWidgets('Navigation switches pages', (WidgetTester tester) async {

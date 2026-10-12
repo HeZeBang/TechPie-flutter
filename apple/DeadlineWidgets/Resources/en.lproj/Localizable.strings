@@ -1,0 +1,7 @@
+"deadline.widget.title" = "Deadlines";
+"deadline.widget.description" = "Upcoming assignments and exams";
+"deadline.widget.empty" = "No upcoming deadlines";
+"deadline.widget.notSynced" = "Open TechPie to sync";
+"deadline.widget.unavailable" = "Deadline data unavailable";
+"deadline.widget.hours" = "%ld hr left";
+"deadline.widget.dueSoon" = "Due soon";

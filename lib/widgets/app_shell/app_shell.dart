@@ -24,6 +24,7 @@ import 'mobile_shell.dart';
 /// root navigator on a phone. A value set before the shell mounts waits for it,
 /// which is what a cold start needs.
 final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
+final appShellPendingDeadlines = ValueNotifier<bool>(false);
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -87,6 +88,10 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     appShellPendingEcardEntry.addListener(_showPendingEcardEntry);
+    appShellPendingDeadlines.addListener(_showDeadlines);
+    if (appShellPendingDeadlines.value) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showDeadlines());
+    }
     if (appShellPendingEcardEntry.value != null) {
       // Deferred: a push during the first build is a build-time side effect.
       WidgetsBinding.instance.addPostFrameCallback(
@@ -98,7 +103,15 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     appShellPendingEcardEntry.removeListener(_showPendingEcardEntry);
+    appShellPendingDeadlines.removeListener(_showDeadlines);
     super.dispose();
+  }
+
+  void _showDeadlines() {
+    if (!mounted || !appShellPendingDeadlines.value) return;
+    appShellPendingDeadlines.value = false;
+    _contentNavigatorKeys[2]?.currentState?.popUntil((route) => route.isFirst);
+    _onDestinationSelected(2);
   }
 
   /// Pushes the entry the host asked for into the destination the user is on.
