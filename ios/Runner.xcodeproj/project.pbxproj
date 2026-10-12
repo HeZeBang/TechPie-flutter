@@ -22,10 +22,12 @@
 		5A0010182F1A000100000001 /* NativeNavigationBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010172F1A000100000001 /* NativeNavigationBar.swift */; };
 		674C1E9FBF132F0F79A1B9EB /* EcardBindTunnelPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A57A3E0C7844F433A2F16B /* EcardBindTunnelPlugin.swift */; };
 		6BFBE954DB868241E9E9810B /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 052EF181B45C1F8AB028A91F /* Pods_Runner.framework */; };
+		713F49B77717FAE6822B2F3C /* DeadlineWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38716F6453DEE11F5FB03567 /* DeadlineWidgetBridge.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		75CE913AF0FADB4E2A1F4D42 /* WatchSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 5D3F4FB42B7E14FFEF02E328 /* WatchSupport */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		8066B5453B1AFDE3DDF599AF /* Logo.png in Resources */ = {isa = PBXBuildFile; fileRef = EDBA650E1E348D1232D8FA94 /* Logo.png */; };
+		854FCED35C013603DF29BFBD /* DeadlineWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611E8A457024A3266D1976D9 /* DeadlineWidget.swift */; };
 		8F7428AE32B6D2B9B94C07A2 /* WatchConnectivityBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EC2EF3B17D3D84D1DBF4E10 /* WatchConnectivityBridge.swift */; };
 		9533B1DC3170FC28FFA48AC1 /* EcardDnsPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4CE62D1C4D99E7AF9BB15F7 /* EcardDnsPacket.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
@@ -46,6 +48,8 @@
 		ECAD0000000000000000004C /* AppShortcuts.strings in Resources */ = {isa = PBXBuildFile; fileRef = ECAD00000000000000000048 /* AppShortcuts.strings */; };
 		ECAD00000000000000000054 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = ECAD00000000000000000050 /* InfoPlist.strings */; };
 		EEFBA20129D4C2B5677B93CD /* WatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0987CA72269BC175F4FC0A1A /* WatchStore.swift */; };
+		D12300000000000000000002 /* DeadlineSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12300000000000000000001 /* DeadlineSnapshot.swift */; };
+		D12300000000000000000003 /* DeadlineSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12300000000000000000001 /* DeadlineSnapshot.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -125,6 +129,7 @@
 		2EC2EF3B17D3D84D1DBF4E10 /* WatchConnectivityBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchConnectivityBridge.swift; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		38716F6453DEE11F5FB03567 /* DeadlineWidgetBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeadlineWidgetBridge.swift; path = DeadlineWidgetBridge.swift; sourceTree = "<group>"; };
 		3A18B1C545E34121D35EA8DC /* Watch.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = Watch.xcconfig; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		3B7035B6F9EF034B7C94942F /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -133,6 +138,7 @@
 		5A0010132F1A000100000001 /* NativeGlassPresenterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassPresenterPlugin.swift; sourceTree = "<group>"; };
 		5A0010162F1A000100000001 /* IcsFilePresenterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IcsFilePresenterPlugin.swift; sourceTree = "<group>"; };
 		5A0010172F1A000100000001 /* NativeNavigationBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNavigationBar.swift; sourceTree = "<group>"; };
+		611E8A457024A3266D1976D9 /* DeadlineWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeadlineWidget.swift; path = DeadlineWidget.swift; sourceTree = "<group>"; };
 		66FA21E796749A1D7DF0A728 /* widget-background.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; name = "widget-background.png"; path = "../assets/campus_card/images/widget-background.png"; sourceTree = SOURCE_ROOT; };
 		6B0AD00AB3D979A68E9ABE84 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		71A57A3E0C7844F433A2F16B /* EcardBindTunnelPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EcardBindTunnelPlugin.swift; sourceTree = "<group>"; };
@@ -180,6 +186,7 @@
 		EDBA650E1E348D1232D8FA94 /* Logo.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; name = Logo.png; path = ../assets/logo/Logo.png; sourceTree = SOURCE_ROOT; };
 		EDF612F5A0C8AF62A7546F7B /* EcardBindTunnel.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = EcardBindTunnel.entitlements; sourceTree = "<group>"; };
 		FD092160D46B5A93DA6BBB11 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		D12300000000000000000001 /* DeadlineSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeadlineSnapshot.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -258,6 +265,17 @@
 			path = RunnerTests;
 			sourceTree = "<group>";
 		};
+		393B1575DB43C81A10ABFC5F /* DeadlineWidgetShared */ = {
+			isa = PBXGroup;
+			children = (
+				38716F6453DEE11F5FB03567 /* DeadlineWidgetBridge.swift */,
+				D12300000000000000000001 /* DeadlineSnapshot.swift */,
+				611E8A457024A3266D1976D9 /* DeadlineWidget.swift */,
+			);
+			name = DeadlineWidgetShared;
+			path = ../apple/DeadlineWidgets;
+			sourceTree = "<group>";
+		};
 		46D609042B9BA1A3F0658A68 /* EcardBindTunnel */ = {
 			isa = PBXGroup;
 			children = (
@@ -323,6 +341,7 @@
 				199709143E3688A7CDC91428 /* Frameworks */,
 				99B11879EDB0416AA00498FB /* TechPieWatch */,
 				46D609042B9BA1A3F0658A68 /* EcardBindTunnel */,
+				393B1575DB43C81A10ABFC5F /* DeadlineWidgetShared */,
 			);
 			sourceTree = "<group>";
 		};
@@ -748,6 +767,8 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				8F7428AE32B6D2B9B94C07A2 /* WatchConnectivityBridge.swift in Sources */,
 				674C1E9FBF132F0F79A1B9EB /* EcardBindTunnelPlugin.swift in Sources */,
+				713F49B77717FAE6822B2F3C /* DeadlineWidgetBridge.swift in Sources */,
+				D12300000000000000000002 /* DeadlineSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -756,6 +777,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				ECAD00000000000000000004 /* EcardPayWidget.swift in Sources */,
+				854FCED35C013603DF29BFBD /* DeadlineWidget.swift in Sources */,
+				D12300000000000000000003 /* DeadlineSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -905,6 +928,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TECHPIE_DEADLINE_APP_GROUP = group.club.geekpie.techpie.deadlines;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Profile;
@@ -1116,6 +1140,7 @@
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TECHPIE_DEADLINE_APP_GROUP = group.club.geekpie.techpie.deadlines;
 			};
 			name = Debug;
 		};
@@ -1171,6 +1196,7 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TECHPIE_DEADLINE_APP_GROUP = group.club.geekpie.techpie.deadlines;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -1282,6 +1308,7 @@
 			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = EcardPayWidget/EcardPayWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				INFOPLIST_FILE = EcardPayWidget/Info.plist;
@@ -1310,6 +1337,7 @@
 			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = EcardPayWidget/EcardPayWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				INFOPLIST_FILE = EcardPayWidget/Info.plist;
@@ -1337,6 +1365,7 @@
 			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = EcardPayWidget/EcardPayWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				INFOPLIST_FILE = EcardPayWidget/Info.plist;

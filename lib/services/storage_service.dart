@@ -310,6 +310,8 @@ class StorageService {
   // Assignments cache (non-sensitive — stored as JSON in SharedPreferences)
   static const _assignmentsKey = 'cached_assignments';
 
+  bool get hasCachedAssignments => _prefs.containsKey(_assignmentsKey);
+
   Future<void> saveCachedAssignments(List<Map<String, dynamic>> items) =>
       _prefs.setString(_assignmentsKey, jsonEncode(items));
 
