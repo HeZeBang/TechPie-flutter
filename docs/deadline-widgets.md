@@ -20,14 +20,22 @@ current data and requests a normal deadline fetch if the last attempt was at
 least five minutes ago. New server data requires opening or refreshing TechPie.
 Account changes invalidate pending requests and clear the shared snapshot.
 
-Deadlines within 24 hours display full remaining hours. With less than one hour
-remaining they display a red "Due soon" label ("即将截止" in Chinese). Hours are
-rounded down, so 1 hour 30 minutes displays 1 hour. Minutes and seconds are never
-shown in the remaining-time label. Timelines precompute hourly transitions,
-the one-hour urgency threshold, local midnight, expiry and the 24-hour boundary,
+Every upcoming deadline displays full remaining days and hours, or just hours
+when less than one day remains. With less than one hour remaining they display a
+red "Due soon" label ("即将截止" in Chinese). Hours are rounded down, so 1 hour
+30 minutes displays 1 hour. Minutes and seconds are never shown in the
+remaining-time label. Timelines precompute hourly transitions for all upcoming
+deadlines, the one-hour urgency threshold, local midnight and expiry,
 so these labels update while the app is closed. The system may delay a timeline
 transition. Absolute due times remain visible in the device's local time zone.
 Widgets do not request per-second reloads or network data.
+
+Single deadlines use layouts adapted to each size: a compact vertical stack on
+small, a title/time split on medium, and larger title/remaining-time typography
+on large. Multiple deadlines use a compact list with subtle separators. Normal
+remaining time uses the primary text color, deadlines within one day use the
+accent color, and deadlines within one hour use red. System fonts and backgrounds
+adapt to light and dark appearance.
 
 ## Signing and installation
 
@@ -79,12 +87,17 @@ app navigation.
   cache publication, completion/hidden changes, account replacement, logout,
   stale requests and deduplication. `flutter analyze --no-pub` and
   `git diff --check` passed.
-- All seven Swift tests passed, covering schema validation, atomic storage,
-  local dates/year boundaries, hourly urgency transitions, expiry and 2/4/8 limits.
+- All eight Swift tests passed, covering schema validation, atomic storage, local dates/year
+  boundaries, hourly updates for distant deadlines, urgency transitions, expiry
+  and 2/4/8 limits.
 - A signed macOS source build was installed under a separate QA identity. All
   three native widget sizes displayed real deadlines, and widget navigation
   opened the QA app's Deadlines page. Synthetic long titles/course names and
-  2/4/8-item layouts were checked without overlap.
+  2/4/8-item layouts were checked without overlap. Full-hour labels and red
+  "Due soon" labels were also checked on all three sizes. Remaining days/hours
+  and the single-item layout were checked against real data. Synthetic SwiftUI
+  renders cover all sizes, light/dark appearance, single/empty/full lists and
+  long single-item titles. These renders do not replace WidgetKit runtime checks.
 - The iOS widget extension compiled unsigned for arm64 with the installed
   iPhoneOS 18.5 SDK. The native host bridge passed type checking. A full Runner
   build was blocked by the local Xcode installation reporting

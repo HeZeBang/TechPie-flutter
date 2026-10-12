@@ -6,5 +6,7 @@
 "deadline.widget.empty" = "No upcoming deadlines";
 "deadline.widget.notSynced" = "Open TechPie to sync";
 "deadline.widget.unavailable" = "Deadline data unavailable";
-"deadline.widget.hours" = "%ld hr left";
+"deadline.widget.hours" = "%ldh";
+"deadline.widget.daysHours" = "%ldd %ldh";
+"deadline.widget.remaining" = "Remaining";
 "deadline.widget.dueSoon" = "Due soon";

@@ -24,11 +24,12 @@ struct DeadlineWidgetView: View {
   }
 
   private var content: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      HStack(spacing: 5) {
-        Image(systemName: "checklist").foregroundColor(.accentColor).accessibilityHidden(true)
-        Text("deadline.widget.title").fontWeight(.semibold)
-      }.font(.system(size: 12)).frame(height: 16, alignment: .leading)
+    VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : family == .systemMedium ? 4 : 10) {
+      HStack {
+        Text("deadline.widget.title").font(.system(size: 12, weight: .semibold))
+        Spacer(minLength: 4)
+        Text("TechPie").font(.system(size: 10, weight: .medium)).foregroundColor(.secondary)
+      }.frame(height: 16, alignment: .leading)
       switch entry.state {
       case .notSynced: message("deadline.widget.notSynced", icon: "arrow.triangle.2.circlepath")
       case .unavailable: message("deadline.widget.unavailable", icon: "exclamationmark.circle")
@@ -36,12 +37,19 @@ struct DeadlineWidgetView: View {
         let items = snapshot.upcoming(at: entry.date, limit: limit)
         if items.isEmpty {
           message("deadline.widget.empty", icon: "checkmark.circle")
-        } else if family == .systemSmall && items.count == 1 {
+        } else if items.count == 1 {
           single(items[0])
         } else {
-          VStack(alignment: .leading, spacing: family == .systemSmall ? 8 : 5) {
-            ForEach(items) { item in
-              if family == .systemSmall { compactRow(item) } else { listRow(item) }
+          VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+              if index > 0 {
+                Divider().opacity(0.45).padding(.vertical, family == .systemSmall ? 5 : family == .systemMedium ? 0.5 : 3)
+              }
+              if family == .systemSmall {
+                compactRow(item)
+              } else {
+                listRow(item, spacious: family == .systemLarge && items.count <= 4)
+              }
             }
           }.frame(maxHeight: .infinity, alignment: .top)
         }
@@ -59,10 +67,10 @@ struct DeadlineWidgetView: View {
     }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
   }
 
-  private func icon(_ item: DeadlineItem) -> some View {
+  private func icon(_ item: DeadlineItem, size: CGFloat = 11) -> some View {
     Image(systemName: item.kind == .exam ? "calendar.badge.clock" : "doc.text")
-      .font(.system(size: 10)).foregroundColor(item.kind == .exam ? .orange : .accentColor)
-      .frame(width: 13).accessibilityHidden(true)
+      .font(.system(size: size)).foregroundColor(item.kind == .exam ? .orange : .accentColor)
+      .frame(width: size + 2).accessibilityHidden(true)
   }
 
   private func label(_ item: DeadlineItem, compact: Bool) -> String {
@@ -75,7 +83,10 @@ struct DeadlineWidgetView: View {
     formatter.timeZone = calendar.timeZone
     formatter.dateStyle = .long
     formatter.timeStyle = .short
-    return "\(item.title), \(item.course), \(item.kind.rawValue), \(formatter.string(from: item.due))"
+    let remaining = DeadlineSnapshot.remainingHours(item, at: entry.date).map {
+      "\(NSLocalizedString("deadline.widget.remaining", comment: "Remaining time")), \(remainingLabel($0))"
+    } ?? ""
+    return "\(item.title), \(item.course), \(item.kind.rawValue), \(formatter.string(from: item.due)), \(remaining)"
   }
 
   private func compactRow(_ item: DeadlineItem) -> some View {
@@ -95,45 +106,80 @@ struct DeadlineWidgetView: View {
     .accessibilityElement(children: .ignore).accessibilityLabel(accessibility(item))
   }
 
-  private func listRow(_ item: DeadlineItem) -> some View {
+  private func listRow(_ item: DeadlineItem, spacious: Bool) -> some View {
     HStack(alignment: .center, spacing: 6) {
       icon(item)
-      VStack(alignment: .leading, spacing: 1) {
-        Text(item.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+      VStack(alignment: .leading, spacing: spacious ? 4 : 1) {
+        Text(item.title).font(.system(size: spacious ? 15 : 12, weight: .semibold)).lineLimit(1)
         HStack(spacing: 6) {
           Text(item.course).lineLimit(1)
           Text(label(item, compact: false)).lineLimit(1).fixedSize()
-        }.font(.system(size: 10)).foregroundColor(.secondary)
+        }.font(.system(size: spacious ? 11 : 10)).foregroundColor(.secondary)
       }.frame(maxWidth: .infinity, alignment: .leading)
-      remainingTime(item, size: 11, width: 78)
+      remainingTime(item, size: spacious ? 13 : 11, width: spacious ? 88 : 78)
     }
-    .frame(height: 25)
+    .frame(height: spacious ? 48 : 25)
     .accessibilityElement(children: .ignore).accessibilityLabel(accessibility(item))
   }
 
+  @ViewBuilder
   private func single(_ item: DeadlineItem) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      HStack(alignment: .top, spacing: 4) {
-        icon(item).padding(.top, 4)
-        Text(item.title).font(.system(size: 16, weight: .semibold)).lineLimit(2)
+    if family == .systemMedium {
+      HStack(alignment: .center, spacing: 16) {
+        details(item, titleSize: 20, secondarySize: 12)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .trailing, spacing: 4) {
+          Text("deadline.widget.remaining").font(.system(size: 10)).foregroundColor(.secondary)
+          remainingTime(item, size: 30, width: 116)
+        }.frame(width: 116, alignment: .trailing)
       }
-      Text(item.course).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
-      Text(label(item, compact: false)).font(.system(size: 11)).lineLimit(1).minimumScaleFactor(0.8)
-      Spacer(minLength: 0)
-      remainingTime(item, size: 22, width: 130)
-    }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
       .accessibilityElement(children: .ignore).accessibilityLabel(accessibility(item))
+    } else {
+      VStack(alignment: .leading, spacing: family == .systemSmall ? 2 : 12) {
+        details(item, titleSize: family == .systemSmall ? 16 : 26,
+                secondarySize: family == .systemSmall ? 11 : 13)
+        Spacer(minLength: 0)
+        if family != .systemSmall {
+          Text("deadline.widget.remaining").font(.system(size: 12)).foregroundColor(.secondary)
+        }
+        remainingTime(item, size: family == .systemSmall ? 24 : 44, alignment: .leading)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+      .accessibilityElement(children: .ignore).accessibilityLabel(accessibility(item))
+    }
   }
 
-  @ViewBuilder private func remainingTime(_ item: DeadlineItem, size: CGFloat, width: CGFloat) -> some View {
-    if let hours = DeadlineSnapshot.remainingHours(item, at: entry.date) {
-      Text(hours == 0
-        ? NSLocalizedString("deadline.widget.dueSoon", comment: "Less than one hour remains")
-        : String.localizedStringWithFormat(NSLocalizedString("deadline.widget.hours", comment: "Full remaining hours"), hours))
-        .font(.system(size: size, weight: .medium, design: .monospaced))
-        .foregroundColor(hours == 0 ? .red : .orange).frame(width: width, alignment: .trailing)
-        .multilineTextAlignment(.trailing).lineLimit(1).minimumScaleFactor(0.9)
+  private func details(_ item: DeadlineItem, titleSize: CGFloat, secondarySize: CGFloat) -> some View {
+    VStack(alignment: .leading, spacing: family == .systemSmall ? 3 : 6) {
+      HStack(alignment: .firstTextBaseline, spacing: 5) {
+        icon(item, size: family == .systemSmall ? 11 : 14)
+        Text(item.title).font(.system(size: titleSize, weight: .semibold)).lineLimit(2)
+      }
+      Text(item.course).font(.system(size: secondarySize)).foregroundColor(.secondary).lineLimit(1)
+      Text(label(item, compact: false)).font(.system(size: secondarySize))
+        .foregroundColor(.secondary).lineLimit(1).minimumScaleFactor(0.8)
     }
+  }
+
+  @ViewBuilder private func remainingTime(_ item: DeadlineItem, size: CGFloat,
+                                         width: CGFloat? = nil, alignment: Alignment = .trailing) -> some View {
+    if let hours = DeadlineSnapshot.remainingHours(item, at: entry.date) {
+      Text(remainingLabel(hours))
+        .font(.system(size: size, weight: .semibold, design: .rounded))
+        .foregroundColor(hours == 0 ? .red : hours < 24 ? .accentColor : .primary)
+        .lineLimit(1).minimumScaleFactor(0.5)
+        .frame(width: width, alignment: alignment)
+        .frame(maxWidth: width == nil ? .infinity : nil, alignment: alignment)
+    }
+  }
+
+  private func remainingLabel(_ hours: Int) -> String {
+    if hours == 0 { return NSLocalizedString("deadline.widget.dueSoon", comment: "Less than one hour remains") }
+    if hours < 24 {
+      return String.localizedStringWithFormat(NSLocalizedString("deadline.widget.hours", comment: "Full remaining hours"), hours)
+    }
+    return String.localizedStringWithFormat(NSLocalizedString("deadline.widget.daysHours", comment: "Full remaining days and hours"), hours / 24, hours % 24)
   }
 }
 

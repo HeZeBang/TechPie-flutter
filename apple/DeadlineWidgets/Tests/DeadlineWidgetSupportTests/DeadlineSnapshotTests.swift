@@ -17,16 +17,13 @@ final class DeadlineSnapshotTests: XCTestCase {
     XCTAssertEqual(snapshot.upcoming(at: now.addingTimeInterval(3600), limit: 2).map(\.id), ["2", "3"])
   }
 
-  func testTimelineIncludesImminentAndExpiryBoundaries() {
+  func testTimelineIncludesHourlyAndExpiryBoundaries() {
     let snapshot = DeadlineSnapshot(writtenAt: now.timeIntervalSince1970, items: [item("soon", seconds: 60), item("later", seconds: 30 * 3600)])
     let dates = snapshot.timelineDates(after: now)
-    for date in [now, now.addingTimeInterval(60), now.addingTimeInterval(6 * 3600), now.addingTimeInterval(24 * 3600)] {
+    for date in [now, now.addingTimeInterval(60), now.addingTimeInterval(6 * 3600 + 1), now.addingTimeInterval(24 * 3600)] {
       XCTAssertTrue(dates.contains(date))
     }
     XCTAssertEqual(dates, dates.sorted())
-    XCTAssertTrue(DeadlineSnapshot.isImminent(item("24h", seconds: 24 * 3600), at: now))
-    XCTAssertFalse(DeadlineSnapshot.isImminent(item("24h+", seconds: 24 * 3600 + 1), at: now))
-    XCTAssertFalse(DeadlineSnapshot.isImminent(item("expired", seconds: 0), at: now))
   }
 
   func testDecodeRejectsUnknownSchemaDuplicateIDsAndInvalidDates() throws {
@@ -46,7 +43,7 @@ final class DeadlineSnapshotTests: XCTestCase {
   }
 
   func testRemainingTimeUsesFullHoursAndUrgencyBelowOneHour() {
-    XCTAssertNil(DeadlineSnapshot.remainingHours(item("later", seconds: 24 * 3600 + 1), at: now))
+    XCTAssertEqual(DeadlineSnapshot.remainingHours(item("later", seconds: 24 * 3600 + 1), at: now), 24)
     XCTAssertEqual(DeadlineSnapshot.remainingHours(item("24h", seconds: 24 * 3600), at: now), 24)
     XCTAssertEqual(DeadlineSnapshot.remainingHours(item("1h30m", seconds: 5400), at: now), 1)
     XCTAssertEqual(DeadlineSnapshot.remainingHours(item("1h", seconds: 3600), at: now), 1)
@@ -57,6 +54,21 @@ final class DeadlineSnapshotTests: XCTestCase {
     let urgentDate = now.addingTimeInterval(3601)
     XCTAssertTrue(snapshot.timelineDates(after: now).contains(urgentDate))
     XCTAssertEqual(DeadlineSnapshot.remainingHours(deadline, at: urgentDate), 0)
+  }
+
+  func testDistantDeadlinesUpdateHoursAndDaysWhileHostIsClosed() {
+    let deadline = item("distant", seconds: 49 * 3600 + 1800)
+    let snapshot = DeadlineSnapshot(writtenAt: now.timeIntervalSince1970, items: [deadline])
+    let dates = snapshot.timelineDates(after: now)
+    let firstTransition = now.addingTimeInterval(1801)
+    let dayTransition = now.addingTimeInterval(5401)
+    XCTAssertEqual(DeadlineSnapshot.remainingHours(deadline, at: now), 49)
+    XCTAssertTrue(dates.contains(firstTransition))
+    XCTAssertTrue(dates.contains(dayTransition))
+    XCTAssertEqual(DeadlineSnapshot.remainingHours(deadline, at: firstTransition), 48)
+    XCTAssertEqual(DeadlineSnapshot.remainingHours(deadline, at: dayTransition), 47)
+    XCTAssertTrue(dates.contains(now.addingTimeInterval(23 * 3600 + 1801)))
+    XCTAssertEqual(dates.last, now.addingTimeInterval(24 * 3600))
   }
 
   func testDateLabelsUseLocalCalendarAndIncludeYearAcrossYearBoundary() {

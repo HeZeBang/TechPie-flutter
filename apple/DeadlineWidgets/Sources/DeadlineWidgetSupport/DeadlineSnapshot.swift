@@ -56,22 +56,21 @@ public struct DeadlineSnapshot: Codable, Equatable {
       midnight > now && midnight < end { dates.insert(midnight) }
     for item in items {
       // Full-hour labels change just after a boundary; expiry remains exact.
-      let hourBoundaries = (1...24).map { item.due.addingTimeInterval(-Double($0) * 3600 + 1) }
-      for date in [item.due, item.due.addingTimeInterval(-24 * 3600)] + hourBoundaries {
-        if date > now && date < end { dates.insert(date) }
+      guard let hours = Self.remainingHours(item, at: now) else { continue }
+      let firstBoundary = item.due.addingTimeInterval(-Double(hours) * 3600 + 1)
+      for offset in 0..<24 {
+        let date = firstBoundary.addingTimeInterval(Double(offset) * 3600)
+        if date > now && date < end && date < item.due { dates.insert(date) }
       }
+      if item.due > now && item.due < end { dates.insert(item.due) }
     }
     return dates.sorted()
   }
 
-  public static func isImminent(_ item: DeadlineItem, at date: Date) -> Bool {
-    let remaining = item.due.timeIntervalSince(date)
-    return remaining > 0 && remaining <= 24 * 3600
-  }
-
   public static func remainingHours(_ item: DeadlineItem, at date: Date) -> Int? {
-    guard isImminent(item, at: date) else { return nil }
-    return Int(item.due.timeIntervalSince(date) / 3600)
+    let remaining = item.due.timeIntervalSince(date)
+    guard remaining > 0 else { return nil }
+    return Int(remaining / 3600)
   }
 
   public enum SnapshotError: Error { case invalidData }
