@@ -31,12 +31,13 @@ struct DeadlineProvider: TimelineProvider {
   }
 
   static func preview(at now: Date) -> DeadlineSnapshot {
-    DeadlineSnapshot(writtenAt: now.timeIntervalSince1970, items: (0..<8).map {
-      DeadlineItem(id: "preview-\($0)", kind: $0 == 2 ? .exam : .assignment,
-                   title: ["Problem Set 3", "Lab Report", "Midterm Exam", "Reading Response"][$0 % 4],
-                   course: ["Calculus", "Physics", "Computer Science", "Academic Writing"][$0 % 4],
-                   dueAt: now.addingTimeInterval(Double($0 + 1) * 6 * 3600).timeIntervalSince1970)
-    })
+    let items: [DeadlineItem] = (0..<8).map { (index: Int) -> DeadlineItem in
+      DeadlineItem(id: "preview-\(index)", kind: index == 2 ? .exam : .assignment,
+                   title: ["Problem Set 3", "Lab Report", "Midterm Exam", "Reading Response"][index % 4],
+                   course: ["Calculus", "Physics", "Computer Science", "Academic Writing"][index % 4],
+                   dueAt: now.addingTimeInterval(Double(index + 1) * 6 * 3600).timeIntervalSince1970)
+    }
+    return DeadlineSnapshot(writtenAt: now.timeIntervalSince1970, items: items)
   }
 }
 
