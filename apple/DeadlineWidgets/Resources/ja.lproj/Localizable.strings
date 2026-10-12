@@ -1,0 +1,9 @@
+"deadline.widget.title" = "Deadlines";
+"deadline.widget.description" = "今後の課題と試験";
+"deadline.widget.empty" = "予定されている締切はありません";
+"deadline.widget.notSynced" = "TechPie を開いて同期";
+"deadline.widget.unavailable" = "締切データを読み込めません";
+"deadline.widget.hours" = "%ld 時間";
+"deadline.widget.daysHours" = "%ld日 %ld時間";
+"deadline.widget.remaining" = "残り";
+"deadline.widget.dueSoon" = "まもなく締切";

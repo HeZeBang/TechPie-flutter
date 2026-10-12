@@ -1,0 +1,9 @@
+"deadline.widget.title" = "Deadlines";
+"deadline.widget.description" = "即将截止的作业和考试";
+"deadline.widget.empty" = "暂无待办 Deadline";
+"deadline.widget.notSynced" = "请打开 TechPie 同步";
+"deadline.widget.unavailable" = "暂时无法读取 Deadline";
+"deadline.widget.hours" = "%ld 小时";
+"deadline.widget.daysHours" = "%ld天 %ld小时";
+"deadline.widget.remaining" = "还剩";
+"deadline.widget.dueSoon" = "即将截止";

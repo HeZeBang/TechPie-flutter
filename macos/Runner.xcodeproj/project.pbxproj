@@ -22,13 +22,22 @@
 
 /* Begin PBXBuildFile section */
 		0D1C4419927CEF007240DDF7 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 25F61D2DE3C89FA23FBAF452 /* Pods_RunnerTests.framework */; };
+		1EC3AC2C169D95C186CA2EF7 /* DeadlineWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6ADA0E488021C2BD364CFC0 /* DeadlineWidgets.swift */; };
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
+		48ED735C9A08085011C315DC /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 49D9B073CC80F320BC796DAB /* Cocoa.framework */; };
+		58D1648CBE28C49F4066E59A /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C77EC04E640BA4A10EBE77DB /* Localizable.strings */; };
+		6B21A0E93BEBF45D6366636C /* DeadlineWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AD48055E9A7BAD61A99E6C /* DeadlineWidgetBridge.swift */; };
+		863151EA9960F4B362BE6576 /* DeadlineWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF1C5A3900238226A31054A6 /* DeadlineWidget.swift */; };
+		9890447B4E16EA81E26F77C8 /* DeadlineWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EAD23142838A8BD6B6D99DDA /* DeadlineWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9DEF51B6C29B097558BBF13B /* DeadlineWidgetSupport in Frameworks */ = {isa = PBXBuildFile; productRef = EA8AAD9E783AB728FB40AE35 /* DeadlineWidgetSupport */; };
+		A61691F543558F2A6CC70848 /* DeadlineWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87B968DA25A33B553B2B5106 /* DeadlineWidgetView.swift */; };
 		C3480A6C398AF0790CD7795C /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CDD25E925280FD6C56F1A4B4 /* Pods_Runner.framework */; };
+		FF696F3F2AD5224E662D285E /* DeadlineWidgetSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 8C6BA28CCD84D776008168D8 /* DeadlineWidgetSupport */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -46,6 +55,13 @@
 			remoteGlobalIDString = 33CC111A2044C6BA0003C045;
 			remoteInfo = FLX;
 		};
+		A41D36C8AC79CFB4E09CEEAE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 33CC10E52044A3C60003C045 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2815EB01291AE28B5EF0BBAB;
+			remoteInfo = DeadlineWidgets;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -59,10 +75,23 @@
 			name = "Bundle Framework";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1D44C004801B628F5B4FA47 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				9890447B4E16EA81E26F77C8 /* DeadlineWidgets.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		1E27E8B66D2D5F96CD6C528F /* ja */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = ja; path = Resources/ja.lproj/Localizable.strings; sourceTree = "<group>"; };
 		25F61D2DE3C89FA23FBAF452 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		26BE0995A4F78B080032F079 /* zh-Hans */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Resources/zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		2CDE6BDDC4A7D4E00CBFA217 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
@@ -80,14 +109,23 @@
 		33E51913231747F40026EE4D /* DebugProfile.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DebugProfile.entitlements; sourceTree = "<group>"; };
 		33E51914231749380026EE4D /* Release.entitlements */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; path = Release.entitlements; sourceTree = "<group>"; };
 		33E5194F232828860026EE4D /* AppInfo.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AppInfo.xcconfig; sourceTree = "<group>"; };
+		49D9B073CC80F320BC796DAB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		4BDFBC3AA3E36A069BAEFBF3 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
+		66AD48055E9A7BAD61A99E6C /* DeadlineWidgetBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeadlineWidgetBridge.swift; path = Bridge/DeadlineWidgetBridge.swift; sourceTree = "<group>"; };
 		753B8FACAE9206A8DB283EB9 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		87B968DA25A33B553B2B5106 /* DeadlineWidgetView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeadlineWidgetView.swift; path = UI/DeadlineWidgetView.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		A6ADA0E488021C2BD364CFC0 /* DeadlineWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeadlineWidgets.swift; sourceTree = "<group>"; };
+		B097C32648064C12632DBE9B /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B2B540E9BDB1CEE9EDA74DBC /* en */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = en; path = Resources/en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		CDD25E925280FD6C56F1A4B4 /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8CA49E318CA51553AE8ED53 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
+		EAD23142838A8BD6B6D99DDA /* DeadlineWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DeadlineWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EB6307CAB03488AA7DBDD7E1 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
+		F905C366880E6924E950D5D8 /* DeadlineWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = DeadlineWidgets.entitlements; sourceTree = "<group>"; };
 		FCA6136A7C86549074FDD668 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
+		FF1C5A3900238226A31054A6 /* DeadlineWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeadlineWidget.swift; path = UI/DeadlineWidget.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -104,12 +142,30 @@
 			buildActionMask = 2147483647;
 			files = (
 				C3480A6C398AF0790CD7795C /* Pods_Runner.framework in Frameworks */,
+				FF696F3F2AD5224E662D285E /* DeadlineWidgetSupport in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F013F2C353D0CC1C2BB26AFC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				48ED735C9A08085011C315DC /* Cocoa.framework in Frameworks */,
+				9DEF51B6C29B097558BBF13B /* DeadlineWidgetSupport in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0C62D2944E825390697CDCD8 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				49D9B073CC80F320BC796DAB /* Cocoa.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
 		331C80D6294CF71000263BE5 /* RunnerTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -138,6 +194,8 @@
 				33CC10EE2044A3C60003C045 /* Products */,
 				D73912EC22F37F3D000D13A0 /* Frameworks */,
 				D4D24F33E96659A2F23E6AF2 /* Pods */,
+				A64E52F225469EE8AA7CE16A /* DeadlineWidgetShared */,
+				A10631694B746B9DF42968DE /* DeadlineWidgets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -146,6 +204,7 @@
 			children = (
 				33CC10ED2044A3C60003C045 /* TechPie.app */,
 				331C80D5294CF71000263BE5 /* RunnerTests.xctest */,
+				EAD23142838A8BD6B6D99DDA /* DeadlineWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -185,6 +244,29 @@
 			path = Runner;
 			sourceTree = "<group>";
 		};
+		A10631694B746B9DF42968DE /* DeadlineWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				A6ADA0E488021C2BD364CFC0 /* DeadlineWidgets.swift */,
+				B097C32648064C12632DBE9B /* Info.plist */,
+				F905C366880E6924E950D5D8 /* DeadlineWidgets.entitlements */,
+			);
+			name = DeadlineWidgets;
+			path = DeadlineWidgets;
+			sourceTree = "<group>";
+		};
+		A64E52F225469EE8AA7CE16A /* DeadlineWidgetShared */ = {
+			isa = PBXGroup;
+			children = (
+				66AD48055E9A7BAD61A99E6C /* DeadlineWidgetBridge.swift */,
+				FF1C5A3900238226A31054A6 /* DeadlineWidget.swift */,
+				87B968DA25A33B553B2B5106 /* DeadlineWidgetView.swift */,
+				C77EC04E640BA4A10EBE77DB /* Localizable.strings */,
+			);
+			name = DeadlineWidgetShared;
+			path = ../apple/DeadlineWidgets;
+			sourceTree = "<group>";
+		};
 		D4D24F33E96659A2F23E6AF2 /* Pods */ = {
 			isa = PBXGroup;
 			children = (
@@ -203,6 +285,7 @@
 			children = (
 				CDD25E925280FD6C56F1A4B4 /* Pods_Runner.framework */,
 				25F61D2DE3C89FA23FBAF452 /* Pods_RunnerTests.framework */,
+				0C62D2944E825390697CDCD8 /* OS X */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -210,6 +293,26 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		2815EB01291AE28B5EF0BBAB /* DeadlineWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FC3DC32F84993E1E30DF2407 /* Build configuration list for PBXNativeTarget "DeadlineWidgets" */;
+			buildPhases = (
+				A7C05FAA367C75CBF9110F67 /* Sources */,
+				F013F2C353D0CC1C2BB26AFC /* Frameworks */,
+				BDB0CDB57444885BC6CBC55D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DeadlineWidgets;
+			packageProductDependencies = (
+				EA8AAD9E783AB728FB40AE35 /* DeadlineWidgetSupport */,
+			);
+			productName = DeadlineWidgets;
+			productReference = EAD23142838A8BD6B6D99DDA /* DeadlineWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		331C80D4294CF70F00263BE5 /* RunnerTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 331C80DE294CF71000263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */;
@@ -240,13 +343,18 @@
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				59A0D51B842009474411FA11 /* [CP] Embed Pods Frameworks */,
+				A1D44C004801B628F5B4FA47 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				33CC11202044C79F0003C045 /* PBXTargetDependency */,
+				D4E1DCD30906310C66D60D33 /* PBXTargetDependency */,
 			);
 			name = Runner;
+			packageProductDependencies = (
+				8C6BA28CCD84D776008168D8 /* DeadlineWidgetSupport */,
+			);
 			productName = Runner;
 			productReference = 33CC10ED2044A3C60003C045 /* TechPie.app */;
 			productType = "com.apple.product-type.application";
@@ -290,6 +398,9 @@
 				Base,
 			);
 			mainGroup = 33CC10E42044A3C60003C045;
+			packageReferences = (
+				CBD92186D01E584055E53730 /* XCLocalSwiftPackageReference "DeadlineWidgets" */,
+			);
 			productRefGroup = 33CC10EE2044A3C60003C045 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -297,6 +408,7 @@
 				33CC10EC2044A3C60003C045 /* Runner */,
 				331C80D4294CF70F00263BE5 /* RunnerTests */,
 				33CC111A2044C6BA0003C045 /* Flutter Assemble */,
+				2815EB01291AE28B5EF0BBAB /* DeadlineWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -315,6 +427,14 @@
 			files = (
 				33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */,
 				33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BDB0CDB57444885BC6CBC55D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				58D1648CBE28C49F4066E59A /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -438,6 +558,17 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
+				6B21A0E93BEBF45D6366636C /* DeadlineWidgetBridge.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7C05FAA367C75CBF9110F67 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1EC3AC2C169D95C186CA2EF7 /* DeadlineWidgets.swift in Sources */,
+				863151EA9960F4B362BE6576 /* DeadlineWidget.swift in Sources */,
+				A61691F543558F2A6CC70848 /* DeadlineWidgetView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -454,6 +585,12 @@
 			target = 33CC111A2044C6BA0003C045 /* Flutter Assemble */;
 			targetProxy = 33CC111F2044C79F0003C045 /* PBXContainerItemProxy */;
 		};
+		D4E1DCD30906310C66D60D33 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = DeadlineWidgets;
+			target = 2815EB01291AE28B5EF0BBAB /* DeadlineWidgets */;
+			targetProxy = A41D36C8AC79CFB4E09CEEAE /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
@@ -464,6 +601,16 @@
 			);
 			name = MainMenu.xib;
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		C77EC04E640BA4A10EBE77DB /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				B2B540E9BDB1CEE9EDA74DBC /* en */,
+				26BE0995A4F78B080032F079 /* zh-Hans */,
+				1E27E8B66D2D5F96CD6C528F /* ja */,
+			);
+			name = Localizable.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */
@@ -560,6 +707,9 @@
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				TECHPIE_DEADLINE_APP_GROUP = "$(TeamIdentifierPrefix)club.geekpie.techpie.deadlines";
+				TECHPIE_WIDGET_URL_SCHEME = techpie;
+				TECHPIE_HOST_BUNDLE_IDENTIFIER = club.geekpie.techpie;
 			};
 			name = Profile;
 		};
@@ -572,7 +722,6 @@
 				CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -644,6 +793,9 @@
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				TECHPIE_DEADLINE_APP_GROUP = "$(TeamIdentifierPrefix)club.geekpie.techpie.deadlines";
+				TECHPIE_WIDGET_URL_SCHEME = techpie;
+				TECHPIE_HOST_BUNDLE_IDENTIFIER = club.geekpie.techpie;
 			};
 			name = Debug;
 		};
@@ -693,6 +845,9 @@
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				TECHPIE_DEADLINE_APP_GROUP = "$(TeamIdentifierPrefix)club.geekpie.techpie.deadlines";
+				TECHPIE_WIDGET_URL_SCHEME = techpie;
+				TECHPIE_HOST_BUNDLE_IDENTIFIER = club.geekpie.techpie;
 			};
 			name = Release;
 		};
@@ -705,7 +860,6 @@
 				CODE_SIGN_ENTITLEMENTS = Runner/DebugProfile.entitlements;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -726,7 +880,6 @@
 				CODE_SIGN_ENTITLEMENTS = Runner/Release.entitlements;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -750,6 +903,78 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Manual;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		86787F107A25306D4C62637D /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 33E5194F232828860026EE4D /* AppInfo.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = DeadlineWidgets/DeadlineWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = DeadlineWidgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				OTHER_LDFLAGS = "";
+				FRAMEWORK_SEARCH_PATHS = "$(SDKROOT)/System/Library/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TECHPIE_HOST_BUNDLE_IDENTIFIER).DeadlineWidgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Profile;
+		};
+		A9A0630401EA3D8E49506ADB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 33E5194F232828860026EE4D /* AppInfo.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = DeadlineWidgets/DeadlineWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = DeadlineWidgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				OTHER_LDFLAGS = "";
+				FRAMEWORK_SEARCH_PATHS = "$(SDKROOT)/System/Library/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TECHPIE_HOST_BUNDLE_IDENTIFIER).DeadlineWidgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		B30F4AB225821271B903ACF8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 33E5194F232828860026EE4D /* AppInfo.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = DeadlineWidgets/DeadlineWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = DeadlineWidgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				OTHER_LDFLAGS = "";
+				FRAMEWORK_SEARCH_PATHS = "$(SDKROOT)/System/Library/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(TECHPIE_HOST_BUNDLE_IDENTIFIER).DeadlineWidgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -796,7 +1021,37 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		FC3DC32F84993E1E30DF2407 /* Build configuration list for PBXNativeTarget "DeadlineWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B30F4AB225821271B903ACF8 /* Release */,
+				A9A0630401EA3D8E49506ADB /* Debug */,
+				86787F107A25306D4C62637D /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		CBD92186D01E584055E53730 /* XCLocalSwiftPackageReference "DeadlineWidgets" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../apple/DeadlineWidgets;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8C6BA28CCD84D776008168D8 /* DeadlineWidgetSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CBD92186D01E584055E53730 /* XCLocalSwiftPackageReference "DeadlineWidgets" */;
+			productName = DeadlineWidgetSupport;
+		};
+		EA8AAD9E783AB728FB40AE35 /* DeadlineWidgetSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CBD92186D01E584055E53730 /* XCLocalSwiftPackageReference "DeadlineWidgets" */;
+			productName = DeadlineWidgetSupport;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 33CC10E52044A3C60003C045 /* Project object */;
 }
