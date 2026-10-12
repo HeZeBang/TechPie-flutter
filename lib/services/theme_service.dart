@@ -104,6 +104,23 @@ class ThemeService extends ChangeNotifier {
   bool get _usesIosTheme =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
+  // Keep Flutter's platform default as the primary font. Missing glyphs fall
+  // back to installed CJK fonts; unavailable families are skipped by the engine.
+  static const _fontFamilyFallback = [
+    'PingFang SC',
+    'PingFang TC',
+    'Microsoft YaHei UI',
+    'Microsoft YaHei',
+    'Microsoft JhengHei UI',
+    'Microsoft JhengHei',
+    'Noto Sans CJK SC',
+    'Noto Sans CJK TC',
+    'Noto Sans SC',
+    'Noto Sans TC',
+    'WenQuanYi Micro Hei',
+    'Arial Unicode MS',
+  ];
+
   bool get supportsColorSchemeSelection => !_usesIosTheme;
 
   ColorScheme _resolveScheme(Brightness brightness) {
@@ -121,6 +138,7 @@ class ThemeService extends ChangeNotifier {
   ThemeData get lightTheme {
     final base = ThemeData(
       useMaterial3: true,
+      fontFamilyFallback: _fontFamilyFallback,
       colorScheme: _resolveScheme(Brightness.light),
     );
 
@@ -137,7 +155,11 @@ class ThemeService extends ChangeNotifier {
     if (_mode == AppThemeMode.amoled) {
       if (_usesIosTheme) {
         return _buildIosTheme(
-          ThemeData(useMaterial3: true, colorScheme: base),
+          ThemeData(
+            useMaterial3: true,
+            fontFamilyFallback: _fontFamilyFallback,
+            colorScheme: base,
+          ),
           brightness: Brightness.dark,
           amoled: true,
         );
@@ -145,6 +167,7 @@ class ThemeService extends ChangeNotifier {
 
       return ThemeData(
         useMaterial3: true,
+        fontFamilyFallback: _fontFamilyFallback,
         colorScheme: base.copyWith(
           surface: Colors.black,
           onSurface: Colors.white,
@@ -169,7 +192,11 @@ class ThemeService extends ChangeNotifier {
       );
     }
 
-    final theme = ThemeData(useMaterial3: true, colorScheme: base);
+    final theme = ThemeData(
+      useMaterial3: true,
+      fontFamilyFallback: _fontFamilyFallback,
+      colorScheme: base,
+    );
 
     if (!_usesIosTheme) {
       return _buildDesktopTheme(theme);
