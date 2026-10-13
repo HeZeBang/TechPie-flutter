@@ -3,6 +3,7 @@
   <text class="clock">{{ clock }}</text>
   <text class="date">{{ date }}</text>
   <text class="message">{{ message }}</text>
+  <text class="detail">{{ user }}</text>
   <text class="detail">{{ detail }}</text>
   <input class="action" type="button" value="{{ buttonLabel }}" onclick="toggleStatus" />
 </div>

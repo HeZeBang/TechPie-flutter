@@ -27,6 +27,7 @@ import '../widgets/update_dialogs.dart';
 import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
+import 'huawei_watch_page.dart';
 import 'login_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
@@ -213,7 +214,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 onTap: () => unawaited(
                   launchUrl(
                     Uri.parse(
-                        'https://techpie.geekpie.club/privacy#account-deletion',),
+                      'https://techpie.geekpie.club/privacy#account-deletion',
+                    ),
                     mode: LaunchMode.externalApplication,
                   ),
                 ),
@@ -296,11 +298,27 @@ class _SettingsPageState extends State<SettingsPage> {
               leading: const Icon(Icons.watch_outlined),
               title: const Text('Huawei Watch'),
               subtitle: const Text('华为运动手表'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => unawaited(
+                pushAdaptivePage<void>(
+                  context,
+                  builder: (_) => const HuaweiWatchPage(),
+                ),
+              ),
             ),
             ListTile(
               leading: const Icon(Icons.watch_outlined),
               title: const Text('Apple Watch'),
               subtitle: const Text('苹果手表'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => unawaited(
+                showAdaptiveAlertDialog<void>(
+                  context: context,
+                  title: 'APPLE WATCH',
+                  message: '抱歉，APPLE WATCH控制端尚在开发中。敬请期待！',
+                  actions: const [AdaptiveAlertAction<void>(label: '好')],
+                ),
+              ),
             ),
             const Divider(),
 

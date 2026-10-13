@@ -12,6 +12,8 @@
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:usesCleartextTraffic="false">
+        <!-- Huawei HMS App ID -->
+        <meta-data android:name="com.huawei.hms.client.appid" android:value="appid=119331345" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -28,11 +30,6 @@
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
-              />
-            <!-- Huawei HMS App ID -->
-            <meta-data
-              android:name="com.huawei.hms.client.appid"
-              android:value="119331345"
               />
             <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
@@ -83,6 +80,7 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <package android:name="com.huawei.health" />
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

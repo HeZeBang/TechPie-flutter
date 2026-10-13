@@ -267,6 +267,116 @@ jobs:
               exit 1
             fi
 
+            # Prebuilt plugin JNI can remain 4 KB aligned even with a new NDK.
+            python3 - "$apk" --zipalign "$(dirname "$aapt")/zipalign" <<'PY_16KB'
+          #!/usr/bin/env python3
+          """Check 64-bit ELF LOAD alignment and uncompressed APK library offsets.
+
+          Read-only; uses Python's standard library. Optionally also run SDK zipalign.
+          This verifies packaging/linker alignment, not runtime page-size assumptions.
+          """
+
+          import argparse
+          import struct
+          import subprocess
+          import sys
+          import zipfile
+          from pathlib import Path
+
+          PAGE_SIZE = 16384
+          MACHINES = {"arm64-v8a": 183, "x86_64": 62}
+
+
+          def check_elf(stream, abi):
+              header = stream.read(64)
+              if (len(header) < 64 or header[:4] != b"\x7fELF" or
+                      header[4:6] != b"\x02\x01"):
+                  raise ValueError("expected little-endian ELF64")
+              if struct.unpack_from("<H", header, 18)[0] != MACHINES[abi]:
+                  raise ValueError("ELF machine does not match APK ABI")
+              offset = struct.unpack_from("<Q", header, 32)[0]
+              size, count = struct.unpack_from("<HH", header, 54)
+              if size < 56 or not 0 < count <= 4096:
+                  raise ValueError("invalid program header table")
+              stream.seek(offset)
+              loads = []
+              for _ in range(count):
+                  entry = stream.read(size)
+                  if len(entry) != size:
+                      raise ValueError("truncated program header table")
+                  if struct.unpack_from("<I", entry)[0] != 1:  # PT_LOAD
+                      continue
+                  file_offset, address = struct.unpack_from("<QQ", entry, 8)
+                  alignment = struct.unpack_from("<Q", entry, 48)[0]
+                  if alignment < PAGE_SIZE or alignment & (alignment - 1):
+                      raise ValueError(f"PT_LOAD alignment {alignment} is not 16 KB compatible")
+                  if file_offset % PAGE_SIZE != address % PAGE_SIZE:
+                      raise ValueError("PT_LOAD file offset and virtual address are not congruent")
+                  loads.append(alignment)
+              if not loads:
+                  raise ValueError("no PT_LOAD segments")
+              return min(loads)
+
+
+          def library_offset(apk, info):
+              with apk.open("rb") as stream:
+                  stream.seek(info.header_offset)
+                  header = stream.read(30)
+              if len(header) != 30 or header[:4] != b"PK\x03\x04":
+                  raise ValueError("invalid ZIP local header")
+              name_length, extra_length = struct.unpack_from("<HH", header, 26)
+              return info.header_offset + 30 + name_length + extra_length
+
+
+          def inspect(apk):
+              failures = []
+              checked = 0
+              with zipfile.ZipFile(apk) as archive:
+                  for info in archive.infolist():
+                      parts = info.filename.split("/")
+                      if (len(parts) != 3 or parts[0] != "lib" or
+                              parts[1] not in MACHINES or not parts[2].endswith(".so")):
+                          continue
+                      checked += 1
+                      try:
+                          with archive.open(info) as stream:
+                              alignment = check_elf(stream, parts[1])
+                          packaging = "compressed (extracted at install)"
+                          if info.compress_type == zipfile.ZIP_STORED:
+                              offset = library_offset(apk, info)
+                              if offset % PAGE_SIZE:
+                                  raise ValueError(f"uncompressed ZIP data offset {offset} is not 16 KB aligned")
+                              packaging = "ZIP aligned"
+                          print(f"PASS {info.filename}: ELF {alignment}, {packaging}")
+                      except (ValueError, OSError, struct.error) as error:
+                          failures.append(f"FAIL {info.filename}: {error}")
+              for failure in failures:
+                  print(failure, file=sys.stderr)
+              print(f"Checked {checked} 64-bit libraries; failures={len(failures)}")
+              # ARM32-only splits legitimately have no 64-bit libraries.
+              return not failures
+
+
+          def main():
+              parser = argparse.ArgumentParser(description=__doc__)
+              parser.add_argument("apk", type=Path)
+              parser.add_argument("--zipalign", type=Path, help="SDK Build-Tools 35+ zipalign executable")
+              args = parser.parse_args()
+              try:
+                  passed = inspect(args.apk)
+                  if args.zipalign:
+                      result = subprocess.run([str(args.zipalign), "-c", "-P", "16", "4", str(args.apk)], check=False)
+                      passed = passed and result.returncode == 0
+                  return 0 if passed else 1
+              except (OSError, ValueError, zipfile.BadZipFile) as error:
+                  print(f"Cannot check APK: {error}", file=sys.stderr)
+                  return 1
+
+
+          if __name__ == "__main__":
+              sys.exit(main())
+          PY_16KB
+
             cp "$apk" "dist/TechPie-${RELEASE_NAME}-android-${token}.apk"
           }
 
