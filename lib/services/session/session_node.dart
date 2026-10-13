@@ -188,7 +188,8 @@ enum RenewMode {
 /// ├── cpdaily     (top-level, account+password/SMS bind, /auth/renew)
 /// │   ├── eams        (child, /auth/third-party/eams, parent tgc)
 /// │   ├── elearning   (child, /auth/third-party/elearning, parent tgc)
-/// │   └── egateApp    (child, /auth/third-party/egate-app, parent tgc)
+/// │   ├── egateApp    (child, /auth/third-party/egate-app, parent tgc)
+/// │   └── elrc        (child, /auth/third-party/elrc, parent tgc)
 /// ├── gradescope  (top-level, account+password bind, bearer token)
 /// └── hydro       (top-level, account+password bind, sid cookie)
 /// ```
@@ -354,6 +355,7 @@ class SessionNode extends ChangeNotifier {
         'eams' => 'eams.shanghaitech.edu.cn',
         'elearning' => 'elearning.shanghaitech.edu.cn',
         'egateApp' => 'egate.shanghaitech.edu.cn',
+        'elrc' => 'elrc.shanghaitech.edu.cn',
         _ => '',
       };
 
@@ -369,7 +371,7 @@ class SessionNode extends ChangeNotifier {
   }
 
   bool get canRenew {
-    if (parent != null) return parent!.isAvailable;
+    if (parent != null) return parent!.isAvailable && renewMode != null;
     if (renewMode == RenewMode.cpdailySession) return _account != null;
     return _account?.autoRenew == true &&
         _account?.password?.isNotEmpty == true;

@@ -16,7 +16,8 @@ import 'session_node.dart';
 /// ├── cpdaily     (top-level, account+password/SMS bind, /auth/renew)
 /// │   ├── eams        (child, /auth/third-party/eams, parent tgc)
 /// │   ├── elearning   (child, /auth/third-party/elearning, parent tgc)
-/// │   └── egateApp    (child, /auth/third-party/egate-app, parent tgc)
+/// │   ├── egateApp    (child, /auth/third-party/egate-app, parent tgc)
+/// │   └── elrc        (child, /auth/third-party/elrc, parent tgc)
 /// ├── gradescope  (top-level, account+password bind, bearer token)
 /// └── hydro       (top-level, account+password bind, sid cookie)
 /// ```
@@ -146,9 +147,23 @@ class SessionTree extends ChangeNotifier {
         },
       ),
     );
+    elrc = SessionNode(
+      id: 'elrc',
+      persist: persist,
+      http: http,
+      baseUrl: baseUrl,
+      parent: cpdaily,
+      renewPath: '/auth/third-party/elrc',
+      renewMode: RenewMode.parentCookie,
+      renewSchedule: RenewSchedule.derivedCookie,
+      persistDerived: persistDerived,
+      recordRenewStatus: recordRenewStatus,
+      persistRenewTimestamp: persistRenewTimestamp,
+    );
     cpdaily.attachChild(eams);
     cpdaily.attachChild(elearning);
     cpdaily.attachChild(egateApp);
+    cpdaily.attachChild(elrc);
 
     // Only top-level node notifications propagate up to the tree (facade →
     // UI / sync / auto-refetch). Child nodes (eams/elearning) mint cookies
@@ -174,6 +189,7 @@ class SessionTree extends ChangeNotifier {
   late final SessionNode eams;
   late final SessionNode elearning;
   late final SessionNode egateApp;
+  late final SessionNode elrc;
 
   /// All top-level nodes in a stable order.
   List<SessionNode> get roots => [cpdaily, gradescope, hydro];
@@ -201,6 +217,7 @@ class SessionTree extends ChangeNotifier {
       'eams' => eams,
       'elearning' => elearning,
       'egateApp' => egateApp,
+      'elrc' => elrc,
       _ => null,
     };
     node?.setDerivedCookie(cookie);
@@ -315,7 +332,7 @@ class SessionTree extends ChangeNotifier {
     for (final n in [cpdaily, gradescope, hydro]) {
       n.removeListener(notifyListeners);
     }
-    for (final n in [cpdaily, gradescope, hydro, eams, elearning, egateApp]) {
+    for (final n in [cpdaily, gradescope, hydro, eams, elearning, egateApp, elrc]) {
       n.dispose();
     }
     super.dispose();

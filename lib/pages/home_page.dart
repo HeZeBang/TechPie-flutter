@@ -24,6 +24,7 @@ import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'generic_webview_page.dart';
+import 'live_player_page.dart';
 import 'login_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -215,6 +216,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
 
     return _CourseStatus.upcoming;
+  }
+
+  bool _canEnterLive(Course course) {
+    if (course.isCustom) return false;
+    final start = _parseMinutes(course.startTime);
+    final end = _parseMinutes(course.endTime);
+    if (start == null || end == null) return false;
+    final nowMinutes = _now.hour * 60 + _now.minute;
+    return nowMinutes >= start - 10 && nowMinutes <= end;
   }
 
   static int? _parseMinutes(String time) {
@@ -822,7 +832,38 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        trailing: _CourseBadge(status: status, theme: theme),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _CourseBadge(status: status, theme: theme),
+            if (_canEnterLive(course) && course.location.trim().isNotEmpty) ...[
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () {
+                  if (!_canEnterLive(course)) return;
+                  final end = _parseMinutes(course.endTime)!;
+                  final day = course.date ?? _now;
+                  final endsAt = DateTime(
+                    day.year,
+                    day.month,
+                    day.day,
+                    end ~/ 60,
+                    end % 60,
+                  );
+                  unawaited(
+                    enterCourseLive(
+                      context,
+                      course.name,
+                      course.location,
+                      endsAt: endsAt,
+                    ),
+                  );
+                },
+                child: const Text('进入直播'),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

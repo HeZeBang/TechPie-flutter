@@ -42,6 +42,7 @@ dependencies:
   dynamic_color: ">=1.7.0 <1.8.0"
   flutter:
     sdk: flutter
+  flutter_inappwebview: 6.1.5
   flutter_riverpod: 2.6.1
   flutter_secure_storage: ^9.2.4
   flutter_secure_storage_ohos: # HarmonyOS 安全存储
@@ -56,6 +57,12 @@ dependencies:
       path: packages/image_picker/image_picker
       ref: br_image_picker-v1.1.2_ohos
   intl: ^0.20.2
+  media_kit: 1.2.6
+  media_kit_libs_android_video: 1.3.8
+  media_kit_libs_ios_video: 1.1.4
+  media_kit_libs_macos_video: 1.1.4
+  media_kit_libs_windows_video: 1.0.11
+  media_kit_video: 1.3.1
   mobile_scanner: ^6.0.10
   open_filex: ^4.5.0
   package_info_plus: ^8.0.2
