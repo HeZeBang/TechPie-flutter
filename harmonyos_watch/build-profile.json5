@@ -1,0 +1,51 @@
+{
+  "app": {
+    "products": [
+      {
+        "name": "default",
+        "compileSdkVersion": "26.0.0",
+        "compatibleSdkVersion": "4.0.0(10)",
+        "targetSdkVersion": "4.0.0(10)",
+        "runtimeOS": "HarmonyOS",
+        "signingConfig": "default"
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\jdz\\.ohos\\config\\default_harmonyos_watch_JdL6e9Vko4DmTAdJYtVp3JZLmi5SbV4-dNI6p9fPahI=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001AA02203F2783B055F49829C7E836A4A8C41A0A2CE4ACC7CA0953C921362F47710821D92041542",
+          "profile": "C:\\Users\\jdz\\.ohos\\config\\default_harmonyos_watch_JdL6e9Vko4DmTAdJYtVp3JZLmi5SbV4-dNI6p9fPahI=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\jdz\\.ohos\\config\\default_harmonyos_watch_JdL6e9Vko4DmTAdJYtVp3JZLmi5SbV4-dNI6p9fPahI=.p12",
+          "storePassword": "0000001AF02F7EFFF5AAFCDA257186F60F5B252E9788593EB367A5E32D2E8B13F100CC4CAE26C630D116"
+        }
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

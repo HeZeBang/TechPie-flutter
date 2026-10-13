@@ -96,3 +96,6 @@ dist/
 
 # Local agent/editor state (omp)
 .omp/
+
+# Generated README files for HarmonyOS Watch
+harmonyos_watch\README.md

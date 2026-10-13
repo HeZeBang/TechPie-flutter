@@ -29,6 +29,11 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- Huawei HMS App ID -->
+            <meta-data
+              android:name="com.huawei.hms.client.appid"
+              android:value="119331345"
+              />
             <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
             <intent-filter>

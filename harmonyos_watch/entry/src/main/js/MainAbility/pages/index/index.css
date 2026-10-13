@@ -1,0 +1,48 @@
+.container {
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background-color: #101318;
+}
+.title {
+  width: 280px;
+  text-align: center;
+  font-size: 28px;
+  color: #73d5ba;
+}
+.clock {
+  width: 280px;
+  text-align: center;
+  font-size: 56px;
+  color: #ffffff;
+}
+.date {
+  width: 280px;
+  text-align: center;
+  font-size: 22px;
+  color: #abb4c0;
+}
+.message {
+  width: 300px;
+  text-align: center;
+  margin-top: 16px;
+  font-size: 26px;
+  color: #ffffff;
+}
+.detail {
+  width: 300px;
+  text-align: center;
+  font-size: 18px;
+  color: #abb4c0;
+}
+.action {
+  width: 260px;
+  height: 56px;
+  margin-top: 20px;
+  border-radius: 28px;
+  background-color: #254a40;
+  color: #ffffff;
+  font-size: 22px;
+}

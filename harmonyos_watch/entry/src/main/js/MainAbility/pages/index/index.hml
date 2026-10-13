@@ -1,0 +1,8 @@
+<div class="container">
+  <text class="title">{{ title }}</text>
+  <text class="clock">{{ clock }}</text>
+  <text class="date">{{ date }}</text>
+  <text class="message">{{ message }}</text>
+  <text class="detail">{{ detail }}</text>
+  <input class="action" type="button" value="{{ buttonLabel }}" onclick="toggleStatus" />
+</div>

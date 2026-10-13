@@ -30,7 +30,6 @@ import 'developer_lab_page.dart';
 import 'login_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
-import 'watch_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -290,16 +289,20 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const Divider(),
-            if (isIos())
-              ListTile(
-                leading: const Icon(Icons.watch_outlined),
-                title: const Text('Apple Watch'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => unawaited(
-                  pushAdaptivePage<void>(context,
-                      builder: (_) => const WatchSettingsPage(),),
-                ),
-              ),
+
+            // Watch section
+            _sectionHeader(theme, 'Watch'),
+            ListTile(
+              leading: const Icon(Icons.watch_outlined),
+              title: const Text('Huawei Watch'),
+              subtitle: const Text('华为运动手表'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.watch_outlined),
+              title: const Text('Apple Watch'),
+              subtitle: const Text('苹果手表'),
+            ),
+            const Divider(),
 
             // Appearance section
             _sectionHeader(theme, 'Appearance'),
