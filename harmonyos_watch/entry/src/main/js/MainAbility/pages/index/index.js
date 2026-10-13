@@ -7,7 +7,7 @@ export default {
     clock: '--:--',
     date: '',
     message: '未连接',
-    detail: '请在手机 Settings 中连接 HUAWEI WATCH',
+    detail: '请在手机TechPie → Settings 中连接此 HUAWEI WATCH',
     user: '',
     buttonLabel: '连接说明',
     showingStatus: false
@@ -44,7 +44,7 @@ export default {
   toggleStatus() {
     this.refreshClock();
     this.showingStatus = !this.showingStatus;
-    this.detail = this.showingStatus ? '先在运动健康配对，再在手机 TechPie 中授权连接' :
+    this.detail = this.showingStatus ? '确认华为运动健康已连接手表后，在TechPie手机端应用的Settings/HUAWEI WATCH中绑定手表' :
       (link && link.connection.ready ? '已连接手机 TechPie' : '请在手机 Settings 中连接 HUAWEI WATCH');
     this.buttonLabel = this.showingStatus ? '返回首页' : '连接说明';
     if (link && !link.client) link.start();

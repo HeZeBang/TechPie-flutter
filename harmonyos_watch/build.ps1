@@ -4,6 +4,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($BuildMode -eq 'release') {
+    throw 'Lite watch installation requires the debug BIN packaging path. Use -BuildMode debug; its JS is minified before signing.'
+}
 $taskNode = Join-Path $DevEcoHome 'tools\node\node.exe'
 $taskHvigor = Join-Path $DevEcoHome 'tools\hvigor\bin\hvigorw.js'
 if (!(Test-Path -LiteralPath $taskNode) -or !(Test-Path -LiteralPath $taskHvigor)) {
@@ -23,6 +26,16 @@ try {
     $taskSuffix = if ($taskSigned) { 'signed' } else { 'unsigned' }
     $taskHap = Join-Path $PSScriptRoot "entry\build\default\outputs\default\entry-default-$taskSuffix.hap"
     if (!(Test-Path -LiteralPath $taskHap)) { throw "$taskSuffix HAP was not generated." }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $taskArchive = [IO.Compression.ZipFile]::OpenRead($taskHap)
+    try {
+        $taskExpectedBin = "entry-default-$taskSuffix.bin"
+        if ($taskArchive.Entries.Count -ne 1 -or $taskArchive.Entries[0].FullName -ne $taskExpectedBin) {
+            throw 'Invalid Lite installation HAP: expected a single application BIN.'
+        }
+    } finally {
+        $taskArchive.Dispose()
+    }
     Write-Output "$taskSuffix $BuildMode HAP: $taskHap"
 } finally {
     Pop-Location

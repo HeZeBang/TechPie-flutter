@@ -109,3 +109,6 @@ dist/
 
 # Local Huawei service credentials
 /android/app/agconnect-services.json
+
+# Local platform operation audit logs
+/.local/

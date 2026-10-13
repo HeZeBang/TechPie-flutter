@@ -33,6 +33,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
   bool _busy = false;
   String? _error;
   List<Map<String, dynamic>> _devices = [];
+  bool _queried = false;
   // The peer identity depends on the signed watch package, not on the watch model.
   final _fingerprint = TextEditingController(
     text: const String.fromEnvironment(
@@ -77,6 +78,23 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
   }
 
   String _failure(Object error) {
+    if (error is WearFailure && error.nativeCode != null) {
+      final message = switch (error.nativeCode) {
+        2 => '请安装华为运动健康。',
+        3 => '请先在华为运动健康中登录华为账号。',
+        4 => '运动健康未向 Wear Engine 提供配对设备，请打开运动健康确认手表配对。',
+        7 => '请先在运动健康中完成用户协议及隐私授权。',
+        8 => 'Wear Engine 应用权限校验失败。请核对开发者后台的服务审批、App ID、包名及当前 APK 的签名 SHA256。',
+        9 => '未获得 Wear Engine 设备访问权限，请重新授权。',
+        13 || 18 => '当前设备或系统版本不支持此 Wear Engine 接口。',
+        14 => '请更新华为运动健康。',
+        15 => '运动健康无法在后台启动，请允许自启动及后台弹出界面，再打开运动健康重试。',
+        16 => '运动健康中的手表未连接。',
+        19 => 'Wear Engine 服务超时，请打开运动健康后重试。',
+        _ => 'Wear Engine 调用失败，请检查运动健康和应用授权。',
+      };
+      return '$message（SDK 错误码：${error.nativeCode}）';
+    }
     final code = error is WearFailure ? error.code : '';
     return switch (code) {
       'PERMISSION_DENIED' => '未获得设备访问授权，请重新授权。',
@@ -89,13 +107,22 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
   }
 
   Future<void> _findDevices() => _run(() async {
+        setState(() {
+          _queried = false;
+          _devices = [];
+        });
         final service = widget.service!;
         final permissions = await service.requestPermissions();
         if (permissions['p2p'] != true) {
           throw const WearFailure('PERMISSION_DENIED');
         }
         final devices = await service.devices();
-        if (mounted) setState(() => _devices = devices);
+        if (mounted) {
+          setState(() {
+            _devices = devices;
+            _queried = true;
+          });
+        }
       });
 
   @override
@@ -179,7 +206,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                   ),
                 ),
               ),
-            if (_devices.isEmpty)
+            if (_queried && _devices.isEmpty && _error == null)
               const Padding(
                 padding: EdgeInsets.only(top: 12),
                 child: Text('尚未发现手表，请完成配对后重新查找。'),

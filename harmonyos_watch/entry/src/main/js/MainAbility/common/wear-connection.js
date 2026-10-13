@@ -28,9 +28,17 @@ function base64(bytes) {
   return result;
 }
 function unbase64(value) {
-  if (typeof value !== 'string' || value.length % 4 !== 0 ||
-      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+  if (typeof value !== 'string' || value.length % 4 !== 0) {
     throw new Error('INVALID_PAYLOAD');
+  }
+  var padding = 0;
+  for (var k = 0; k < value.length; k++) {
+    if (value.charAt(k) === '=') {
+      padding++;
+      if (k < value.length - 2 || padding > 2) throw new Error('INVALID_PAYLOAD');
+    } else if (padding || alphabet.indexOf(value.charAt(k)) < 0) {
+      throw new Error('INVALID_PAYLOAD');
+    }
   }
   var bytes = [];
   for (var i = 0; i < value.length; i += 4) {
@@ -44,8 +52,26 @@ function unbase64(value) {
   return bytes;
 }
 function integer(value) { return typeof value === 'number' && isFinite(value) && Math.floor(value) === value; }
-function token(value) { return typeof value === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(value); }
-function characters(value) { return value.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '_').length; }
+function token(value) {
+  if (typeof value !== 'string' || !value.length || value.length > 32) return false;
+  var allowed = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
+  for (var i = 0; i < value.length; i++) {
+    if (allowed.indexOf(value.charAt(i)) < 0) return false;
+  }
+  return true;
+}
+function characters(value) {
+  var count = 0;
+  for (var i = 0; i < value.length; i++) {
+    var code = value.charCodeAt(i);
+    if (code >= 0xD800 && code <= 0xDBFF && i + 1 < value.length) {
+      var next = value.charCodeAt(i + 1);
+      if (next >= 0xDC00 && next <= 0xDFFF) i++;
+    }
+    count++;
+  }
+  return count;
+}
 
 export function WatchConnection(send, changed, now) {
   this.send = send;

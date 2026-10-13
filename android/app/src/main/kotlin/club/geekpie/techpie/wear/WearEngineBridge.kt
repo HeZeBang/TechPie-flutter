@@ -3,6 +3,7 @@ package club.geekpie.techpie.wear
 import android.app.Activity
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.huawei.wearengine.HiWear
 import com.huawei.wearengine.WearEngineException
 import com.huawei.wearengine.auth.AuthCallback
@@ -68,6 +69,7 @@ class WearEngineBridge(private val activity: Activity, messenger: BinaryMessenge
     private fun emitState(state: String) = event("state", mapOf("service" to state))
     private fun fail(result: MethodChannel.Result, error: Exception) {
         val code = (error as? WearEngineException)?.errorCode
+        Log.w("TechPieWear", "SDK failure: code=$code, type=${error.javaClass.simpleName}")
         handler.post { result.error("SERVICE_UNAVAILABLE", "Wear Engine operation failed", code) }
     }
     private fun handle(call: MethodCall, result: MethodChannel.Result) {
@@ -84,12 +86,14 @@ class WearEngineBridge(private val activity: Activity, messenger: BinaryMessenge
                         }.addOnFailureListener { fail(result, it) }
                 }
                 "authorize" -> {
+                    Log.i("TechPieWear", "Requesting device authorization")
                     val includeNotify = call.argument<Boolean>("notify") == true
                     val permissions = if (includeNotify) arrayOf(Permission.DEVICE_MANAGER, Permission.NOTIFY)
                         else arrayOf(Permission.DEVICE_MANAGER)
                     val answered = AtomicBoolean(false)
                     auth.requestPermission(object : AuthCallback {
                         override fun onOk(grants: Array<Permission>) {
+                            Log.i("TechPieWear", "Device authorization granted=${grants.contains(Permission.DEVICE_MANAGER)}")
                             if (answered.compareAndSet(false, true)) handler.post {
                                 result.success(mapOf("p2p" to grants.contains(Permission.DEVICE_MANAGER),
                                     "notify" to grants.contains(Permission.NOTIFY)))
@@ -106,6 +110,7 @@ class WearEngineBridge(private val activity: Activity, messenger: BinaryMessenge
                 }
                 "devices" -> HiWear.getDeviceClient(activity).bondedDevices
                     .addOnSuccessListener { devices -> handler.post {
+                        Log.i("TechPieWear", "Device query count=${devices.size}")
                         result.success(devices.map { mapOf("id" to it.uuid, "name" to it.name,
                             "model" to it.model, "connected" to it.isConnected) })
                     } }.addOnFailureListener { fail(result, it) }
