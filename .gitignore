@@ -112,3 +112,9 @@ dist/
 
 # Local platform operation audit logs
 /.local/
+
+# Local HarmonyOS watch development artifacts
+/harmonyos_watch/README.md
+/harmonyos_watch/docs/
+/harmonyos_watch/scripts/
+/harmonyos_watch/.gitignore
