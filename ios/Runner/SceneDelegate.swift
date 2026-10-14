@@ -1,28 +1,18 @@
+import Flutter
 import UIKit
 
-class SceneDelegate: UIResponder, UIWindowSceneDelegate {
-  var window: UIWindow?
-
+class SceneDelegate: FlutterSceneDelegate {
   private var appDelegate: AppDelegate? {
     UIApplication.shared.delegate as? AppDelegate
   }
 
-  private var applicationDelegate: UIApplicationDelegate? {
-    UIApplication.shared.delegate
-  }
-
-  func scene(
+  override func scene(
     _ scene: UIScene,
     willConnectTo session: UISceneSession,
     options connectionOptions: UIScene.ConnectionOptions
   ) {
-    guard let windowScene = scene as? UIWindowScene,
-      let sceneWindow = window ?? windowScene.windows.first,
-      appDelegate?.configureFlutter(with: sceneWindow) == true
-    else {
-      return
-    }
-    window = sceneWindow
+    super.scene(scene, willConnectTo: session, options: connectionOptions)
+    appDelegate?.window = window
 
     for context in connectionOptions.urlContexts {
       if forward(context) {
@@ -39,45 +29,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
   }
 
-  func sceneDidBecomeActive(_ scene: UIScene) {
-    applicationDelegate?.applicationDidBecomeActive?(UIApplication.shared)
-  }
-
-  func sceneWillResignActive(_ scene: UIScene) {
-    applicationDelegate?.applicationWillResignActive?(UIApplication.shared)
-  }
-
-  func sceneDidEnterBackground(_ scene: UIScene) {
-    applicationDelegate?.applicationDidEnterBackground?(UIApplication.shared)
-  }
-
-  func sceneWillEnterForeground(_ scene: UIScene) {
-    applicationDelegate?.applicationWillEnterForeground?(UIApplication.shared)
-  }
-
-  func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+  override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
     for context in URLContexts {
       if forward(context) {
-        break
+        return
       }
     }
+    super.scene(scene, openURLContexts: URLContexts)
   }
 
-  func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
-    _ = applicationDelegate?.application?(
-      UIApplication.shared,
-      continue: userActivity,
-      restorationHandler: { _ in }
-    )
-  }
-
-  func windowScene(
+  override func windowScene(
     _ windowScene: UIWindowScene,
     performActionFor shortcutItem: UIApplicationShortcutItem,
     completionHandler: @escaping (Bool) -> Void
   ) {
-    guard let appDelegate else {
-      completionHandler(false)
+    guard shortcutItem.type == "techpie.ecard.pay", let appDelegate else {
+      super.windowScene(windowScene, performActionFor: shortcutItem, completionHandler: completionHandler)
       return
     }
     appDelegate.application(
@@ -88,6 +55,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   }
 
   private func forward(_ context: UIOpenURLContext) -> Bool {
+    guard context.url.scheme?.lowercased() == "techpie",
+      context.url.host?.lowercased() == "ecard",
+      context.url.path.lowercased() == "/pay"
+    else {
+      return false
+    }
     var options: [UIApplication.OpenURLOptionsKey: Any] = [
       .openInPlace: context.options.openInPlace
     ]

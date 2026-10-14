@@ -140,6 +140,8 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
     super.didChangeDependencies();
     // Navigator's Overlay disables this mode below opaque routes, including
     // routes in the host navigator. Non-opaque status sheets stay visible.
+    // OHOS Flutter 3.27 does not provide TickerMode.valuesOf.
+    // ignore: deprecated_member_use
     _visible = TickerMode.of(context);
     _updateActivity(defer: true);
   }

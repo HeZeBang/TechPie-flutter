@@ -101,6 +101,10 @@ jobs:
           # don't hunt for more space here.
           df -h /workspace | tail -1
 
+      - name: Select OHOS dependencies
+        if: hashFiles('pubspec.ohos.lock') != ''
+        run: cp pubspec.ohos.lock pubspec.lock
+
       # The mirrors (PUB_HOSTED_URL and both FLUTTER_*_STORAGE_BASE_URL) come from
       # the image's environment, matching .envrc on the developer machine.
       # The pub cache, defined once in .github/actions/pub-cache. Read-only here.

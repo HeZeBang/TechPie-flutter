@@ -12,7 +12,7 @@
 
 > [!WARNING]
 >
-> 注意，由于 HarmonyOS 支持的破坏性加入，上游 Dart/flutter 版本需要回退，部分特性无法使用。相关 SDK 需要降级。
+> 除 HarmonyOS 外，各平台统一使用 Flutter 3.47.5；HarmonyOS 使用下列 OHOS SDK。
 
 ## Support Platform
 
@@ -72,19 +72,24 @@ export HOS_SDK_HOME="$HOME/dev/command-line-tools/sdk"
 - Aliyun mirror
 - JDK 17
 - Android NDK 28
-- Android SDK 35
+- Android SDK 36
+- Flutter 3.47.5
+- Android 7.0 (API 24) or later
 
 ### iOS
 
 - macOS
 - Xcode
 - CocoaPods
-- iOS Deployment Target 13.0
+- Flutter 3.47.5
+- iOS Deployment Target 15.5
 
 ### HarmonyOS
 
 - Flutter (OHOS patch) 3.27.5-ohos-1.0.5
 - [Huawei Command Tools  6.1.1 Beta1](https://developer.huawei.com/consumer/cn/download/command-line-tools-for-hmos)
+
+OHOS CI 使用 `pubspec.ohos.lock`；本地切换 SDK 后运行 `flutter pub get`。macOS 最低支持 12.0。
 
 ## Release & Versioning
 
