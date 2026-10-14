@@ -149,7 +149,7 @@ class UniAuthService extends ChangeNotifier {
       if (code.isEmpty) {
         throw Exception('Login cancelled or failed');
       }
-      return _exchangeCode(casdoor, code);
+      return await _exchangeCode(casdoor, code);
     } finally {
       _loading = false;
       notifyListeners();
@@ -168,7 +168,7 @@ class UniAuthService extends ChangeNotifier {
       if (code.isEmpty) {
         throw Exception('Login cancelled or failed');
       }
-      return _exchangeCode(casdoor, code);
+      return await _exchangeCode(casdoor, code);
     } finally {
       _loading = false;
       notifyListeners();
