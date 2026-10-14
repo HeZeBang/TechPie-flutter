@@ -311,10 +311,21 @@ class _SettingsPageState extends State<SettingsPage> {
                 trailing: AdaptiveSelect(
                   value: themeService.mode.name,
                   placeholder: 'Choose theme',
+                  accessibilityLabel: 'Theme',
+                  useIosNativeMenu: true,
                   width: 156,
                   options: [
                     for (final mode in AppThemeMode.values)
-                      AdaptiveSelectOption(value: mode.name, label: mode.label),
+                      AdaptiveSelectOption(
+                        value: mode.name,
+                        label: mode.label,
+                        sfSymbol: switch (mode) {
+                          AppThemeMode.system => 'circle.lefthalf.filled',
+                          AppThemeMode.light => 'sun.max',
+                          AppThemeMode.dark => 'moon',
+                          AppThemeMode.amoled => 'moon.fill',
+                        },
+                      ),
                   ],
                   onChanged: (value) {
                     final mode = AppThemeMode.values.firstWhere(
