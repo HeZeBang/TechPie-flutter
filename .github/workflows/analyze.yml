@@ -61,3 +61,13 @@ jobs:
 
       - name: Test
         run: flutter test
+
+  watch-tests:
+    name: Watch tests
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: swift test --package-path ios/WatchSupport
