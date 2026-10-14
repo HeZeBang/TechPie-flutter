@@ -58,19 +58,20 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
 
   AppRuntime _startRuntime() {
     final watch = Stopwatch()..start();
+    Uri sessionEndpoint() => Uri.parse(
+      '${_storage == null ? prodApiBaseUrl : apiBaseUrl(_storage)}/auth/third-party/ecard',
+    );
     final runtime = _runtimeFactory?.call() ??
         buildRealRuntime(
           AppEnvironment.production,
           secureCredentialStore: _secureStore,
-          sessionIssuer: GeekPieEcardSessionIssuer(endpoint: () => Uri.parse(
-            '${_storage == null ? prodApiBaseUrl : apiBaseUrl(_storage)}/auth/third-party/ecard',
-          ),),
+          sessionIssuer: GeekPieEcardSessionIssuer(endpoint: sessionEndpoint),
           httpTrace: _debugLogger == null
               ? null
               : campusCardHttpTrace(_debugLogger),
         );
     unawaited(CoreErrorCatalog.initialize());
-    watchSync = WatchSyncService(runtime, _sessionStore)..initialize();
+    watchSync = WatchSyncService(runtime, _sessionStore, sessionEndpoint: sessionEndpoint)..initialize();
     _authSubscription = runtime.auth.changes.listen((_) {
       unawaited(refreshAccount());
     });

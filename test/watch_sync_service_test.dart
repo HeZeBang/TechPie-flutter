@@ -33,12 +33,14 @@ void main() {
   late bool enabled;
   late bool ready;
   String? boundSubject;
+  late Uri sessionEndpoint;
 
   setUp(() async {
     calls = [];
     enabled = false;
     ready = true;
     boundSubject = null;
+    sessionEndpoint = Uri.parse('https://example.invalid/api/auth/third-party/ecard');
     secure = InMemorySecureCredentialStore();
     session = SecureSessionCredentialStore(secure);
     eventsAuth = _EventsAuth();
@@ -82,7 +84,7 @@ void main() {
         'subject': boundSubject,
       };
     });
-    sync = WatchSyncService(runtime, session, channel: channel);
+    sync = WatchSyncService(runtime, session, channel: channel, sessionEndpoint: () => sessionEndpoint);
   });
   tearDown(() async {
     sync.dispose();
@@ -138,6 +140,60 @@ void main() {
     ready = false;
     await sync.enable();
     expect(calls.where((c) => c.method == 'publish'), isEmpty);
+  });
+
+  test('exports login parameters and identity pins, never the phone session cookie', () async {
+    await sync.enable();
+    final body = calls.singleWhere((call) => call.method == 'publish').arguments as Map;
+    expect(body['onlineAccount'], {
+      'openID': 'SYNTHETIC_OPENID_0123456789',
+      'method': 'wechat_openid',
+      'idSerial': 'DEMO-CARD-0001',
+      'cardID': 'TEST-CARD',
+      'sessionEndpoint': sessionEndpoint.toString(),
+    });
+    expect((body['onlineAccount'] as Map).keys, isNot(contains('cookie')));
+    expect((body['onlineAccount'] as Map).keys, isNot(contains('token')));
+    expect(sync.events.map((event) => event.text).join(), isNot(contains('SYNTHETIC_OPENID')));
+  });
+
+  test('Alipay login parameters keep their channel and subject', () async {
+    await session.writeSession(sessionCookie: 'synthetic', openId: 'SYNTHETIC_OPENID_0123456789',
+      orgId: '2', verifiedIdSerial: 'DEMO-CARD-0001', verifiedCardId: 'TEST-CARD', channel: EcardOpenIdChannel.alipay,);
+    await sync.enable();
+    final body = calls.singleWhere((call) => call.method == 'publish').arguments as Map;
+    expect((body['onlineAccount'] as Map)['method'], 'alipay_openid');
+    expect(body['subject'], EcardOpenIdChannel.alipay.subjectId('SYNTHETIC_OPENID_0123456789'));
+  });
+
+  test('an insecure development endpoint does not export online credentials', () async {
+    sessionEndpoint = Uri.parse('http://localhost:3000/api/auth/third-party/ecard');
+    await sync.enable();
+    final body = calls.singleWhere((call) => call.method == 'publish').arguments as Map;
+    expect(body['onlineAccount'], isNull);
+  });
+
+  test('a blocked card does not claim to have exported online authorization', () async {
+    cards.card = const CampusCard(
+      id: 'DEMO-CARD-0001', maskedNumber: '****0001', ownerName: '示例',
+      balance: MoneyFen(12860), status: CampusCardStatus.frozen,
+      positionName: '学生', offlineCodeAllowed: false,
+    );
+    await sync.enable();
+    final body = calls.singleWhere((call) => call.method == 'publish').arguments as Map;
+    expect(body['onlineAccount'], isNull);
+    expect(sync.message, contains('卡片信息已发送'));
+  });
+
+  test('an endpoint change during card refresh prevents stale credential export', () async {
+    cards.cachePresent = false;
+    cards.pending = Completer<CampusCard?>();
+    final pending = sync.enable();
+    await pumpEventQueue();
+    sessionEndpoint = Uri.parse('https://changed.invalid/api/auth/third-party/ecard');
+    cards.pending!.complete(cards.card);
+    await pending;
+    expect(calls.where((call) => call.method == 'publish'), isEmpty);
   });
 
   test('an existing grant exports even when the API opening flag is false',
@@ -271,7 +327,7 @@ void main() {
 final class _Cards implements CacheFirstCardRepository {
   bool cachePresent = true;
   Completer<CampusCard?>? pending;
-  final card = CampusCard(
+  var card = CampusCard(
     id: 'DEMO-CARD-0001',
     maskedNumber: '****0001',
     ownerName: '示例',

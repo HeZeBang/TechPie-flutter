@@ -51,6 +51,8 @@ class AdaptiveSelect extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         child: CupertinoButton(
+          // OHOS Flutter 3.27 does not provide minimumSize.
+          // ignore: deprecated_member_use
           minSize: iosMinimumInteractiveDimension,
           padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 10, 0),
           borderRadius: BorderRadius.circular(10),

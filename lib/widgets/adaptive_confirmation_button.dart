@@ -69,6 +69,8 @@ class AdaptiveConfirmationButton extends StatelessWidget {
       width: constrainedWidth,
       height: constrainedHeight,
       child: CupertinoButton(
+        // OHOS Flutter 3.27 does not provide minimumSize.
+        // ignore: deprecated_member_use
         minSize: iosMinimumInteractiveDimension,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         onPressed: callback,
