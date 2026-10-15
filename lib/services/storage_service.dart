@@ -32,6 +32,7 @@ class StorageService {
   static const _syncLastAtKey = 'sync_last_at';
   static const _syncMasterKeyKey = 'sync_master_key'; // secure storage
   static const _deviceIdKey = 'device_id';
+  static const _maskPersonalInfoKey = 'mask_personal_info';
 
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
@@ -197,6 +198,10 @@ class StorageService {
 
   String get colorScheme => _prefs.getString(_colorSchemeKey) ?? 'system';
   Future<void> setColorScheme(String scheme) => _prefs.setString(_colorSchemeKey, scheme);
+
+  bool get maskPersonalInfo => _prefs.getBool(_maskPersonalInfoKey) ?? true;
+  Future<void> setMaskPersonalInfo(bool value) =>
+      _prefs.setBool(_maskPersonalInfoKey, value);
 
   bool get useLocalhost =>
       !kReleaseMode && (_prefs.getBool(_useLocalhostKey) ?? false);
