@@ -1,7 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:http/http.dart' as http;
+
+import 'debug_logger.dart';
+import 'http_client.dart';
+import 'session/cookie_provider.dart';
+import 'session/session_tree.dart';
+import 'third_party_auth_service.dart';
 
 const _origin = 'https://elrc.shanghaitech.edu.cn';
 const _courseList = '/learn/v1/course/video/review/1';
@@ -90,39 +96,22 @@ class ElrcException implements Exception {
 enum _EnvelopeKind { status, success }
 
 class ElrcClient {
-  ElrcClient(this.webView);
+  ElrcClient({
+    required ThirdPartyAuthService auth,
+    required DebugLogger logger,
+    http.Client? client,
+  })
+      : _auth = auth,
+        _client = LoggingHttpClient(
+          _ElrcSafeLogger(logger),
+          inner: _NoRedirectClient(client ?? http.Client()),
+        );
 
-  final WebViewController webView;
-  Completer<_Response>? _pending;
-  var _requestId = 0;
+  final ThirdPartyAuthService _auth;
+  final LoggingHttpClient _client;
   var _disposed = false;
 
-  Future<void> initialize() => webView.addJavaScriptChannel(
-        'TechPieElrc',
-        onMessageReceived: (message) {
-          if (_disposed || message.message.length > 5 * 1024 * 1024) return;
-          try {
-            final Object? value = jsonDecode(message.message);
-            final pending = _pending;
-            if (value is! Map<String, dynamic> ||
-                value['id'] != _requestId ||
-                value['status'] is! num ||
-                value['body'] is! String ||
-                pending == null ||
-                pending.isCompleted) {
-              return;
-            }
-            pending.complete(
-              _Response(
-                (value['status'] as num).toInt(),
-                value['body'] as String,
-              ),
-            );
-          } on FormatException {
-            return;
-          }
-        },
-      );
+  String? get mediaCookie => _auth.elrcNode.cookieProvider?.cookies;
 
   Future<List<ElrcCourse>> courses() async {
     final result = <String, ElrcCourse>{};
@@ -326,8 +315,20 @@ class ElrcClient {
       );
       index++;
     }
-    return List.unmodifiable(result);
+    final ordered = result.indexed.toList()
+      ..sort((a, b) {
+        final order = _sourceOrder(a.$2.label).compareTo(_sourceOrder(b.$2.label));
+        return order == 0 ? a.$1.compareTo(b.$1) : order;
+      });
+    return List.unmodifiable(ordered.map((entry) => entry.$2));
   }
+
+  int _sourceOrder(String label) => switch (label) {
+        '全景画面' => 0,
+        '屏幕画面' => 1,
+        '教师画面' => 2,
+        _ => 3,
+      };
 
   String _sourceLabel(String name, int index) {
     final normalized = name.toLowerCase();
@@ -353,13 +354,48 @@ class ElrcClient {
     Object? body,
     Uri? referer,
   }) async {
-    final response = await _send(
-      Uri.https('elrc.shanghaitech.edu.cn', path, query),
-      body,
-      referer ?? Uri.parse('$_origin/learn/videoreview?type=1'),
-    );
+    final result = await _auth.sessionTree.withCookie<Object?>(
+          _auth.elrcNode,
+          (provider) async {
+            if (_disposed) throw const ElrcException('ELRC 页面已关闭');
+            try {
+              final data = await _requestOnce(
+                path,
+                kind: kind,
+                query: query,
+                body: body,
+                referer: referer,
+                provider: provider,
+              );
+              return CookieAction(data, expired: false);
+            } on ElrcException catch (error) {
+              if (!error.needsLogin) rethrow;
+              return CookieAction(error, expired: true);
+            }
+          },
+        );
+    if (_disposed) throw const ElrcException('ELRC 页面已关闭');
+    if (result == null || result is ElrcException) {
+      throw const ElrcException('ELRC 登录续期失败，请重试', needsLogin: true);
+    }
+    return result;
+  }
+
+  Future<Object?> _requestOnce(
+    String path, {
+    required _EnvelopeKind kind,
+    Map<String, String>? query,
+    Object? body,
+    Uri? referer,
+    required CookieProvider provider,
+  }) async {
+    final uri = Uri.https('elrc.shanghaitech.edu.cn', path, query);
+    final pageReferer = referer ?? Uri.parse('$_origin/learn/videoreview?type=1');
+    final response = await _send(uri, body, pageReferer, provider);
     final responseBody = response.body.replaceFirst('\uFEFF', '');
-    if (response.status == 401 || responseBody.trimLeft().startsWith('<')) {
+    if (response.status == 401 ||
+        (response.status >= 300 && response.status < 400) ||
+        responseBody.trimLeft().startsWith('<')) {
       throw const ElrcException('ELRC 登录已失效', needsLogin: true);
     }
     if (response.status == 403) throw const ElrcException('没有访问权限');
@@ -415,64 +451,95 @@ class ElrcClient {
     return envelope['data'];
   }
 
-  Future<_Response> _send(Uri uri, Object? body, Uri referer) async {
+  Future<_Response> _send(
+    Uri uri,
+    Object? body,
+    Uri referer,
+    CookieProvider provider,
+  ) async {
     if (_disposed) throw const ElrcException('ELRC 页面已关闭');
-    if (_pending != null) throw const ElrcException('上一个请求尚未完成');
-    final id = ++_requestId;
-    final pending = _pending = Completer<_Response>();
-    final encodedBody = body == null ? null : jsonEncode(body);
     try {
-      await webView.runJavaScript('''
-(async () => {
-  const id = $id;
-  if (location.origin !== ${jsonEncode(_origin)}) {
-    TechPieElrc.postMessage(JSON.stringify({id, status: 0, body: ''}));
-    return;
-  }
-  try {
-    const response = await fetch(${jsonEncode(uri.toString())}, {
-      method: ${jsonEncode(body == null ? 'GET' : 'POST')},
-      credentials: 'same-origin',
-      redirect: 'error',
-      cache: 'no-store',
-      referrer: ${jsonEncode(referer.toString())},
-      headers: {
+      final headers = {
+        'Cookie': provider.cookies,
+        'Referer': referer.toString(),
         'Accept': '*/*',
         'Accept-Language': 'zh-CN,zh;q=0.8,en-US;q=0.7',
-        ${encodedBody == null ? '' : "'Content-Type': 'application/json; charset=utf-8',"}
-      },
-      ${encodedBody == null ? '' : 'body: ${jsonEncode(encodedBody)},'}
-    });
-    const text = await response.text();
-    TechPieElrc.postMessage(JSON.stringify({
-      id,
-      status: response.status,
-      body: text.length <= 4 * 1024 * 1024 ? text : ''
-    }));
-  } catch (_) {
-    TechPieElrc.postMessage(JSON.stringify({id, status: 0, body: ''}));
-  }
-})();
-''');
-      return await pending.future.timeout(const Duration(seconds: 25));
+        if (body != null) 'Origin': _origin,
+        if (body != null) 'Content-Type': 'application/json; charset=utf-8',
+      };
+      final request = body == null
+          ? _client.get(uri, headers: headers, tag: 'elrc')
+          : _client.post(
+              uri,
+              headers: headers,
+              body: jsonEncode(body),
+              tag: 'elrc',
+            );
+      final response = await request.timeout(const Duration(seconds: 25));
+      if (response.bodyBytes.length > 4 * 1024 * 1024) {
+        throw const ElrcException('ELRC 返回内容过大');
+      }
+      return _Response(response.statusCode, response.body);
     } on TimeoutException {
       throw const ElrcException('ELRC 请求超时');
     } on ElrcException {
       rethrow;
     } catch (_) {
       throw const ElrcException('ELRC 网络连接失败');
-    } finally {
-      if (identical(_pending, pending)) _pending = null;
     }
   }
 
   void dispose() {
     _disposed = true;
-    final pending = _pending;
-    if (pending != null && !pending.isCompleted) {
-      pending.completeError(const ElrcException('ELRC 页面已关闭'));
-    }
-    _pending = null;
+    _client.close();
+  }
+}
+
+// Preserve the ELRC client's redirect-as-login behavior with the existing
+// LoggingHttpClient.get/post API (which otherwise follows redirects).
+class _NoRedirectClient extends http.BaseClient {
+  _NoRedirectClient(this._inner);
+
+  final http.Client _inner;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.followRedirects = false;
+    return _inner.send(request);
+  }
+
+  @override
+  void close() => _inner.close();
+}
+
+// LoggingHttpClient normally records response bodies and full URLs. ELRC
+// responses may contain media URLs, and request queries identify courses.
+class _ElrcSafeLogger extends DebugLogger {
+  _ElrcSafeLogger(this._target);
+
+  final DebugLogger _target;
+
+  @override
+  void log({
+    required String method,
+    required String url,
+    int? statusCode,
+    String? requestBody,
+    String? responseBody,
+    String? error,
+    String? tag,
+    int? durationMicros,
+    int? prepMicros,
+  }) {
+    _target.log(
+      method: method,
+      url: Uri.parse(url).replace(query: '', fragment: '').toString(),
+      statusCode: statusCode,
+      error: error?.split(':').first,
+      tag: tag,
+      durationMicros: durationMicros,
+      prepMicros: prepMicros,
+    );
   }
 }
 
