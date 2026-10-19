@@ -24,6 +24,7 @@ class Assignment {
   final String course;
   final DateTime due;
   final DateTime? lateDue;
+  final DateTime? releaseDate;
   final String? status;
   final String? url;
 
@@ -35,6 +36,7 @@ class Assignment {
     required this.course,
     required this.due,
     this.lateDue,
+    this.releaseDate,
     this.status,
     this.url,
   });
@@ -60,6 +62,15 @@ class Assignment {
     final kind = DeadlineKind.fromJson(json['kind']);
     final due = json['due'] != null ? parseDate(json['due']) : DateTime.now();
     final lateDue = json['lateDue'] != null ? parseDate(json['lateDue']) : null;
+    final releaseDate = json['releaseDate'] != null
+        ? parseDate(json['releaseDate'])
+        : (json['released'] != null
+            ? parseDate(json['released'])
+            : (json['release_date'] != null
+                ? parseDate(json['release_date'])
+                : (json['startDate'] != null
+                    ? parseDate(json['startDate'])
+                    : null)));
     if (kind == DeadlineKind.exam) {
       final rawExam = json['exam'];
       final exam = rawExam is Map ? rawExam.cast<String, dynamic>() : const <String, dynamic>{};
@@ -70,6 +81,7 @@ class Assignment {
         course: json['course'] as String? ?? '',
         due: due,
         lateDue: lateDue,
+        releaseDate: releaseDate,
         status: json['status'] as String?,
         url: json['url'] as String?,
         semesterId: exam['semesterId'] as String? ?? _semesterIdFromExamId(id),
@@ -86,6 +98,7 @@ class Assignment {
       course: json['course'] as String? ?? '',
       due: due,
       lateDue: lateDue,
+      releaseDate: releaseDate,
       status: json['status'] as String?,
       url: json['url'] as String?,
     );
@@ -99,6 +112,8 @@ class Assignment {
         'course': course,
         'due': due.millisecondsSinceEpoch ~/ 1000,
         if (lateDue != null) 'lateDue': lateDue!.millisecondsSinceEpoch ~/ 1000,
+        if (releaseDate != null)
+          'releaseDate': releaseDate!.millisecondsSinceEpoch ~/ 1000,
         'status': status,
         'url': url,
       };
@@ -115,6 +130,7 @@ class ExamAssignment extends Assignment {
     required super.course,
     required super.due,
     super.lateDue,
+    super.releaseDate,
     super.status,
     super.url,
     required this.semesterId,

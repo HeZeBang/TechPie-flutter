@@ -28,10 +28,48 @@ class AssignmentsPage extends StatefulWidget {
 
 class _AssignmentsPageState extends State<AssignmentsPage> {
   bool _pastCollapsed = true;
+  bool _completedCollapsed = true;
   bool _selectionMode = false;
   bool _showAssignments = true;
   bool _showExams = true;
   final Set<String> _selected = {};
+  Timer? _countdownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCountdownTimer();
+  }
+
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ignore: deprecated_member_use
+    final isVisible = TickerMode.of(context);
+    if (isVisible) {
+      if (_countdownTimer == null || !_countdownTimer!.isActive) {
+        _startCountdownTimer();
+      }
+    } else {
+      _countdownTimer?.cancel();
+      _countdownTimer = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
 
   void _exitSelection() {
     setState(() {
@@ -451,8 +489,16 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   ) {
     final theme = Theme.of(context);
     final now = DateTime.now();
-    final past = sorted.where((a) => a.due.isBefore(now)).toList();
-    final upcoming = sorted.where((a) => !a.due.isBefore(now)).toList();
+
+    final uncompleted = sorted.where((a) => !service.isCompleted(a)).toList();
+    final completed = sorted.where((a) => service.isCompleted(a)).toList()
+      ..sort((a, b) => b.due.compareTo(a.due));
+
+    final overdue = uncompleted.where((a) => a.due.isBefore(now)).toList()
+      ..sort((a, b) => a.due.compareTo(b.due));
+    final upcoming = uncompleted.where((a) => !a.due.isBefore(now)).toList()
+      ..sort((a, b) => a.due.compareTo(b.due));
+
     final todayLabel = DateFormat('yyyy-MM-dd EEE').format(now);
     final itemLabel = _filteredItemLabel;
 
@@ -466,53 +512,46 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
           AppShellMetrics.bottomContentPaddingOf(context),
         ),
         children: [
-          InkWell(
-            onTap: () => setState(() => _pastCollapsed = !_pastCollapsed),
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    _pastCollapsed ? Icons.chevron_right : Icons.expand_more,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '已过期 (${past.length})',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+          if (overdue.isNotEmpty) ...[
+            InkWell(
+              onTap: () => setState(() => _pastCollapsed = !_pastCollapsed),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      _pastCollapsed ? Icons.chevron_right : Icons.expand_more,
+                      size: 20,
+                      color: Colors.red,
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    _pastCollapsed ? '展开' : '折叠',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (!_pastCollapsed)
-            past.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(32, 8, 16, 16),
-                    child: Text(
-                      '没有已过期的 $itemLabel',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                    const SizedBox(width: 4),
+                    Text(
+                      '已逾期 (${overdue.length})',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  )
-                : Column(
-                    children: past
-                        .map((a) => _buildItem(context, service, a))
-                        .toList(),
-                  ),
-          const SizedBox(height: 4),
+                    const Spacer(),
+                    Text(
+                      _pastCollapsed ? '展开' : '折叠',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: Colors.red,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (!_pastCollapsed)
+              Column(
+                children: overdue
+                    .map((a) => _buildItem(context, service, a))
+                    .toList(),
+              ),
+            const SizedBox(height: 4),
+          ],
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
@@ -537,7 +576,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
                 child: Text(
-                  '没有未来的 $itemLabel',
+                  '没有未完成的 $itemLabel',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -546,6 +585,52 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             )
           else
             ...upcoming.map((a) => _buildItem(context, service, a)),
+          if (completed.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: () =>
+                  setState(() => _completedCollapsed = !_completedCollapsed),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      _completedCollapsed
+                          ? Icons.chevron_right
+                          : Icons.expand_more,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(
+                      Icons.check_circle_outline,
+                      size: 16,
+                      color: Colors.green,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '已完成 (${completed.length})',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _completedCollapsed ? '展开' : '折叠',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (!_completedCollapsed) ...[
+              const SizedBox(height: 8),
+              ...completed.map((a) => _buildItem(context, service, a)),
+            ],
+          ],
         ],
       ),
     );
@@ -774,6 +859,21 @@ class _DeadlineKindChip extends StatelessWidget {
   }
 }
 
+String _formatRemainingTime(DateTime due, DateTime now) {
+  final diff = due.difference(now);
+  if (diff.isNegative || diff.inSeconds <= 0) {
+    return 'Overdue';
+  }
+  final days = diff.inDays;
+  final hours = (diff.inHours % 24).toString().padLeft(2, '0');
+  final minutes = (diff.inMinutes % 60).toString().padLeft(2, '0');
+  final seconds = (diff.inSeconds % 60).toString().padLeft(2, '0');
+  if (days > 0) {
+    return 'Remain: ${days}d $hours:$minutes:$seconds';
+  }
+  return 'Remain: $hours:$minutes:$seconds';
+}
+
 class _AssignmentCard extends StatelessWidget {
   final Assignment assignment;
   final bool completed;
@@ -924,7 +1024,7 @@ class _AssignmentCard extends StatelessWidget {
                 children: [
                   Icon(
                     Icons.access_time,
-                    size: 16,
+                    size: 18,
                     color: isPast && !completed
                         ? Colors.red
                         : theme.colorScheme.onSurfaceVariant,
@@ -932,7 +1032,7 @@ class _AssignmentCard extends StatelessWidget {
                   const SizedBox(width: 6),
                   Text(
                     'Due: $dueString',
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       color: isPast && !completed
                           ? Colors.red
                           : theme.colorScheme.onSurfaceVariant,
@@ -962,26 +1062,129 @@ class _AssignmentCard extends StatelessWidget {
                             children: [
                               const Icon(
                                 Icons.check_circle,
-                                size: 16,
+                                size: 18,
                                 color: Colors.green,
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 '已完成',
-                                style: theme.textTheme.bodySmall?.copyWith(
+                                style: theme.textTheme.bodyMedium?.copyWith(
                                   color: Colors.green,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ],
                           )
-                        : const SizedBox.shrink(key: ValueKey('not')),
+                        : (isPast
+                            ? Text(
+                                'Overdue',
+                                key: const ValueKey('overdue'),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : Text(
+                                _formatRemainingTime(assignment.due, now),
+                                key: const ValueKey('remain'),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                              )),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              _DeadlineProgressBar(
+                due: assignment.due,
+                releaseDate: assignment.releaseDate,
+                completed: completed,
+                now: now,
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+double _calculateRemainingFraction(
+  DateTime due,
+  DateTime? releaseDate,
+  DateTime now,
+) {
+  if (now.isAfter(due)) return 0.0;
+  final start = releaseDate ?? due.subtract(const Duration(days: 7));
+  final totalMillis = due.difference(start).inMilliseconds;
+  if (totalMillis <= 0) return 0.0;
+  final remainMillis = due.difference(now).inMilliseconds;
+  return (remainMillis / totalMillis).clamp(0.0, 1.0);
+}
+
+class _DeadlineProgressBar extends StatelessWidget {
+  final DateTime due;
+  final DateTime? releaseDate;
+  final bool completed;
+  final DateTime now;
+
+  const _DeadlineProgressBar({
+    required this.due,
+    required this.releaseDate,
+    required this.completed,
+    required this.now,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isPast = now.isAfter(due);
+    final hoursLeft = due.difference(now).inHours;
+
+    final Color barColor;
+    if (completed) {
+      barColor = Colors.green;
+    } else if (isPast) {
+      barColor = Colors.red;
+    } else if (hoursLeft < 24) {
+      barColor = Colors.orange;
+    } else {
+      barColor = theme.colorScheme.primary;
+    }
+
+    final fraction = _calculateRemainingFraction(due, releaseDate, now);
+
+    return Container(
+      height: 6,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+          width: 0.8,
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(2.5),
+        child: isPast && !completed
+            ? Container(
+                color: Colors.red.withValues(alpha: 0.85),
+              )
+            : Align(
+                alignment: Alignment.centerRight,
+                child: FractionallySizedBox(
+                  widthFactor: completed && isPast ? 1.0 : fraction,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: barColor,
+                      borderRadius: BorderRadius.circular(2.5),
+                    ),
+                  ),
+                ),
+              ),
       ),
     );
   }
