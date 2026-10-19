@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/campus_card/app/app_providers.dart';
 import 'package:techpie/features/campus_card/app/demo_runtime_factory.dart';
 import 'package:techpie/features/campus_card/core/errors/app_failure.dart';
 import 'package:techpie/features/campus_card/domain/models/bill_models.dart';
+import 'package:techpie/features/campus_card/domain/models/merchant_alias_models.dart';
 import 'package:techpie/features/campus_card/domain/money_fen.dart';
 import 'package:techpie/features/campus_card/presentation/screens/bill_transaction_screen.dart';
 import 'package:techpie/features/campus_card/presentation/widgets/gp_state.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   group('BillTransactionScreen', () {
     testWidgets('demo: renders the recorded amount, title and identifier', (
       tester,
@@ -69,6 +72,8 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            merchantAliasConfigProvider
+                .overrideWithValue(const MerchantAliasConfig.empty()),
             transactionDetailProvider(
               'DETAIL-001',
             ).overrideWith((ref) async => record),
