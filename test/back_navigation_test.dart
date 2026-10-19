@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/main.dart';
@@ -26,9 +27,7 @@ void main() {
   testWidgets('the system back leaves a settings subpage rather than the app', (
     WidgetTester tester,
   ) async {
-    // Wide enough for the non-compact layout, and tall enough that the debug
-    // tiles at the bottom of the settings list are not under the navigation bar —
-    // a tap on an obscured tile does nothing, silently.
+    // Keep the wide layout so the settings subpage uses its nested navigator.
     tester.view.physicalSize = const Size(1200, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -90,8 +89,19 @@ void main() {
     await tester.tap(find.text('Settings').first);
     await tester.pumpAndSettle();
 
-    // Only the debug section is reachable without an account; the window above is
-    // tall enough for it to be on screen.
+    // Settings can grow as options are added. Scroll the actual settings list
+    // until the entry can receive taps, including above the bottom navigation.
+    await tester.scrollUntilVisible(
+      find.text('View Logs').hitTestable(),
+      200,
+      scrollable: find
+          .ancestor(
+            of: find.text('View Logs'),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('View Logs'));
     await tester.pumpAndSettle();
     expect(find.byType(DebugLogPage), findsOneWidget);
@@ -102,7 +112,8 @@ void main() {
     expect(
       platformCalls,
       isNot(contains('SystemNavigator.pop')),
-      reason: 'the back gesture left the subpage, so the app must not be asked to close',
+      reason:
+          'the back gesture left the subpage, so the app must not be asked to close',
     );
     expect(find.byType(DebugLogPage), findsNothing);
   });

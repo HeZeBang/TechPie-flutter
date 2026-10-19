@@ -23,15 +23,16 @@ import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
+import '../widgets/feedback_entry.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/update_dialogs.dart';
 import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
+import 'huawei_watch_page.dart';
 import 'login_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
-import 'watch_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -265,7 +266,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 onTap: () => unawaited(
                   launchUrl(
                     Uri.parse(
-                        'https://techpie.geekpie.club/privacy#account-deletion',),
+                      'https://techpie.geekpie.club/privacy#account-deletion',
+                    ),
                     mode: LaunchMode.externalApplication,
                   ),
                 ),
@@ -329,6 +331,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const Divider(),
 
+            const FeedbackEntry(),
             ListTile(
               leading: const Icon(Icons.privacy_tip_outlined),
               title: const Text('隐私政策与使用支持'),
@@ -341,16 +344,36 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const Divider(),
-            if (isIos())
-              ListTile(
-                leading: const Icon(Icons.watch_outlined),
-                title: const Text('Apple Watch'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => unawaited(
-                  pushAdaptivePage<void>(context,
-                      builder: (_) => const WatchSettingsPage(),),
+
+            // Watch section
+            _sectionHeader(theme, 'Watch'),
+            ListTile(
+              leading: const Icon(Icons.watch_outlined),
+              title: const Text('Huawei Watch'),
+              subtitle: const Text('华为运动手表'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => unawaited(
+                pushAdaptivePage<void>(
+                  context,
+                  builder: (_) => const HuaweiWatchPage(),
                 ),
               ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.watch_outlined),
+              title: const Text('Apple Watch'),
+              subtitle: const Text('苹果手表'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => unawaited(
+                showAdaptiveAlertDialog<void>(
+                  context: context,
+                  title: 'APPLE WATCH',
+                  message: '抱歉，APPLE WATCH控制端尚在开发中。敬请期待！',
+                  actions: const [AdaptiveAlertAction<void>(label: '好')],
+                ),
+              ),
+            ),
+            const Divider(),
 
             // Appearance section
             _sectionHeader(theme, 'Appearance'),

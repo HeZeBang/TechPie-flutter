@@ -98,8 +98,8 @@ function generateBuildProfile() {
     // Drop the signing block and the product's reference to it: hvigor then has
     // nothing to sign with and writes `entry-default-unsigned.hap`.
     content = content
-      .replace(/"signingConfigs":\s*\[[\s\S]*?\n    \],\n/, '')
-      .replace(/"signingConfig": "default",\n/, '');
+      .replace(/"signingConfigs":\s*\[[\s\S]*?\r?\n    \],\r?\n/, '')
+      .replace(/"signingConfig": "default",\r?\n/, '');
     if (content.includes('signingConfig')) {
       throw new Error('Could not strip the signing block from the template');
     }

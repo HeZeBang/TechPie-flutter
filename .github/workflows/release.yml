@@ -122,6 +122,16 @@ jobs:
           flutter analyze --no-pub
           flutter test
 
+      - name: Set up Node for product checks
+        if: steps.plan.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify watch and feedback behavior before release
+        if: steps.plan.outputs.skip == 'false'
+        run: node --test harmonyos_watch/scripts/*.test.cjs harmonyos_watch/scripts/*.test.mjs web/feedback/test/*.test.mjs
+
   tag:
     name: Tag the release
     needs: plan
