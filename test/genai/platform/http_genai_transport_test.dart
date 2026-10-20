@@ -105,6 +105,45 @@ void main() {
     client.gate.completeError(http.ClientException('secret'));
   });
 
+  test(
+      'image generation requests receive dedicated image timeout and ignore short header timeout',
+      () async {
+    final client = _PendingClient();
+    final transport = HttpGenAiTransport(
+      createClient: () => client,
+      headerTimeout: const Duration(milliseconds: 20),
+      imageTimeout: const Duration(milliseconds: 150),
+    );
+    addTearDown(transport.dispose);
+
+    // Chat SSE uses headerTimeout
+    final chatStopwatch = Stopwatch()..start();
+    await expectLater(
+      transport.send(
+        method: 'POST',
+        uri: Uri.parse('http://127.0.0.1/htk/chat/start/chat'),
+        cancellation: GenAiCancellation(),
+        headers: {'Accept': 'text/event-stream'},
+      ),
+      throwsA(failure(GenAiFailureKind.timeout)),
+    );
+    expect(chatStopwatch.elapsedMilliseconds, lessThan(100));
+
+    // Image generation uses imageTimeout even with browser Accept header
+    final imageStopwatch = Stopwatch()..start();
+    await expectLater(
+      transport.send(
+        method: 'POST',
+        uri: Uri.parse('http://127.0.0.1/htk/chat/start/chat'),
+        cancellation: GenAiCancellation(),
+        headers: {'Accept': 'application/json, text/plain, */*'},
+      ),
+      throwsA(failure(GenAiFailureKind.timeout)),
+    );
+    expect(imageStopwatch.elapsedMilliseconds, greaterThanOrEqualTo(120));
+    client.gate.completeError(http.ClientException('done'));
+  });
+
   test('redirects cannot forward GenAI credentials to another origin',
       () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

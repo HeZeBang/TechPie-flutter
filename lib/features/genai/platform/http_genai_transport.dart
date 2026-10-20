@@ -13,11 +13,13 @@ final class HttpGenAiTransport implements GenAiTransport {
     http.Client Function()? createClient,
     this.headerTimeout = const Duration(seconds: 20),
     this.idleTimeout = const Duration(seconds: 60),
+    this.imageTimeout = const Duration(minutes: 5),
   }) : _createClient = createClient ?? http.Client.new;
 
   final http.Client Function() _createClient;
   final Duration headerTimeout;
   final Duration idleTimeout;
+  final Duration imageTimeout;
   final _active = <void Function()>{};
   bool _disposed = false;
 
@@ -60,13 +62,13 @@ final class HttpGenAiTransport implements GenAiTransport {
       } else if (body != null) {
         request.body = body;
       }
+      final accept =
+          headers['Accept'] ?? headers['accept'] ?? headers['ACCEPT'] ?? '';
+      final isImageGeneration = uri.path.endsWith('/chat/start/chat') &&
+          !accept.contains('text/event-stream');
+      final timeoutDuration = isImageGeneration ? imageTimeout : headerTimeout;
       final response = await cancellation.race(
-        client.send(request).timeout(
-              uri.path.endsWith('/chat/start/chat') &&
-                      headers['Accept'] == 'application/json'
-                  ? const Duration(minutes: 3)
-                  : headerTimeout,
-            ),
+        client.send(request).timeout(timeoutDuration),
       );
       cancellation.throwIfCancelled();
       return GenAiResponse(

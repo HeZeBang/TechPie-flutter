@@ -109,6 +109,15 @@ class ProxyTest(unittest.TestCase):
             self.assertEqual(connection.request_args[1]['headers']['tenant-id'], '0')
             self.assertEqual(response.read(), b'{"data": [{"url": "images/test.png"}]}')
 
+    def test_image_request_with_browser_accept_header_is_handled(self):
+        connection = Upstream(Response([b'{"success":true,"data":[{"url":"images/test2.png"}]}'], content_type='application/json'))
+        with patch.object(proxy.http.client, 'HTTPSConnection', return_value=connection):
+            response = self.request('POST', '/htk/chat/start/chat', {
+                'Origin': ORIGIN, 'X-Access-Token': 'real-token', 'Accept': 'application/json, text/plain, */*', 'tenant-id': '0'}, '{"aiSecType":"1"}')
+            self.assertEqual(response.status, 200)
+            self.assertEqual(connection.request_args[1]['headers']['Accept'], 'application/json, text/plain, */*')
+            self.assertEqual(response.read(), b'{"data": [{"url": "images/test2.png"}]}')
+
     def test_unknown_routes_do_not_reach_upstream(self):
         with patch.object(proxy.http.client, 'HTTPSConnection') as upstream:
             response = self.request('POST', '/htk/chat/unknown/route', {'X-Access-Token': 'real-token'}, '{}')

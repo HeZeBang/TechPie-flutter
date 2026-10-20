@@ -219,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
         self._forward()
 
     def _forward(self):
-        self.connection.settimeout(180)
+        self.connection.settimeout(360)
         if not self._valid_origin() or not allowed_route(self.command, self.path):
             self._error(403)
             return
@@ -270,7 +270,7 @@ class Handler(BaseHTTPRequestHandler):
             is_pic_upload = urlsplit(self.path).path == '/sys/common/upload'
             host = IMAGE_CDN_UPSTREAM if (is_static or is_pic_upload) else ('techpie.geekpie.club' if urlsplit(self.path).path in AUTH_PATHS else UPSTREAM)
             connection = http.client.HTTPSConnection(
-                host, timeout=180, context=ssl.create_default_context())
+                host, timeout=360, context=ssl.create_default_context())
             accept = self.headers.get('Accept', '')
             if is_static:
                 out_accept = 'image/*,*/*'
@@ -326,7 +326,7 @@ class Handler(BaseHTTPRequestHandler):
             if not content_type.startswith(('application/json', 'text/event-stream')):
                 self._error(502)
                 return
-            if self.path == '/htk/chat/start/chat' and accept == 'application/json' and content_type.startswith('application/json'):
+            if self.path == '/htk/chat/start/chat' and 'text/event-stream' not in accept and content_type.startswith('application/json'):
                 image_bytes = bytearray()
                 while True:
                     chunk = response.read1(4096)
