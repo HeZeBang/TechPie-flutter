@@ -107,7 +107,8 @@ class GenAiLatexInlineBuilder extends MarkdownElementBuilder {
             onErrorFallback: (_) => Text(
               formula,
               style: (textStyle ?? const TextStyle()).copyWith(
-                fontFamily: 'monospace',
+                fontFamily: 'RobotoMono',
+                fontFamilyFallback: const ['monospace', 'Menlo'],
                 color: Theme.of(context).colorScheme.error,
               ),
             ),
@@ -170,7 +171,8 @@ class GenAiLatexBlockView extends StatelessWidget {
                   onErrorFallback: (error) => SelectableText(
                     cleanFormula,
                     style: TextStyle(
-                      fontFamily: 'monospace',
+                      fontFamily: 'RobotoMono',
+                      fontFamilyFallback: const ['monospace', 'Menlo'],
                       fontSize: 13,
                       color: theme.colorScheme.error,
                     ),

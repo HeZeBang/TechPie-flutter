@@ -167,7 +167,16 @@ class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
                   child: Text(
                     displayLang,
                     style: TextStyle(
-                      fontFamily: 'monospace',
+                      fontFamily: 'RobotoMono',
+                      fontFamilyFallback: const [
+                        'RobotoMono',
+                        'monospace',
+                        'SF Mono',
+                        'Menlo',
+                        'Monaco',
+                        'Consolas',
+                        'Courier New',
+                      ],
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
                       color: theme.colorScheme.primary,
@@ -222,17 +231,18 @@ class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
               final highlighter =
                   GenAiSyntaxHighlighter(brightness: theme.brightness);
               const monospaceFallback = [
-                'JetBrains Mono',
-                'Fira Code',
-                'Cascadia Code',
+                'RobotoMono',
+                'monospace',
+                'SF Mono',
                 'Menlo',
                 'Monaco',
                 'Consolas',
+                'Fira Code',
+                'JetBrains Mono',
                 'Courier New',
-                'monospace',
               ];
               final baseCodeStyle = TextStyle(
-                fontFamily: 'monospace',
+                fontFamily: 'RobotoMono',
                 fontFamilyFallback: monospaceFallback,
                 fontSize: 12.5,
                 height: 1.6,
@@ -262,7 +272,7 @@ class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
                                   .join('\n'),
                               textAlign: TextAlign.right,
                               style: TextStyle(
-                                fontFamily: 'monospace',
+                                fontFamily: 'RobotoMono',
                                 fontFamilyFallback: monospaceFallback,
                                 fontSize: 12.5,
                                 height: 1.6,

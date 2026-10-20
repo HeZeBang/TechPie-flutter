@@ -127,14 +127,15 @@ class GenAiSyntaxHighlighter {
       (brightness == Brightness.dark ? SyntaxTheme.dark : SyntaxTheme.light);
 
   static const _commonMonospaceFallback = [
-    'JetBrains Mono',
-    'Fira Code',
-    'Cascadia Code',
+    'RobotoMono',
+    'monospace',
+    'SF Mono',
     'Menlo',
     'Monaco',
     'Consolas',
+    'Fira Code',
+    'JetBrains Mono',
     'Courier New',
-    'monospace',
   ];
 
   static const Set<String> _dartKeywords = {
@@ -614,7 +615,7 @@ class GenAiSyntaxHighlighter {
 
     final lang = language?.toLowerCase().trim() ?? '';
     final defaultStyle = (baseStyle ?? const TextStyle()).copyWith(
-      fontFamily: 'monospace',
+      fontFamily: 'RobotoMono',
       fontFamilyFallback: _commonMonospaceFallback,
       color: theme.plain,
     );

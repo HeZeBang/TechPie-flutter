@@ -279,7 +279,11 @@ class _GenAiChartViewState extends State<GenAiChartView> {
               padding: const EdgeInsets.all(12),
               child: SelectableText(
                 widget.code,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                style: const TextStyle(
+                  fontFamily: 'RobotoMono',
+                  fontFamilyFallback: ['monospace', 'Menlo'],
+                  fontSize: 12,
+                ),
               ),
             ),
           ],
@@ -316,7 +320,11 @@ class _GenAiChartViewState extends State<GenAiChartView> {
               padding: const EdgeInsets.all(12),
               child: SelectableText(
                 widget.code,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                style: const TextStyle(
+                  fontFamily: 'RobotoMono',
+                  fontFamilyFallback: ['monospace', 'Menlo'],
+                  fontSize: 12,
+                ),
               ),
             )
           else ...[

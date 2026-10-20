@@ -285,8 +285,11 @@ def add(a, b):
 
     expect(find.byType(GenAiStandardCodeBlock), findsOneWidget);
     expect(find.text('PYTHON'), findsOneWidget);
-    // Line numbers 1, 2, 3 should be displayed in the gutter
+    // Line numbers 1, 2, 3 should be displayed in the gutter with monospace font
     expect(find.text('1\n2\n3'), findsOneWidget);
+    final lineNumbersText = tester.widget<Text>(find.text('1\n2\n3'));
+    expect(lineNumbersText.style?.fontFamily, 'RobotoMono');
+    expect(lineNumbersText.style?.fontFamilyFallback, contains('monospace'));
     expect(find.textContaining('return a + b'), findsOneWidget);
   });
 
@@ -300,6 +303,8 @@ def add(a, b):
       code: 'def add(x: int) -> str:\n    # comment\n    return "hi" + str(x)',
       language: 'python',
     );
+    expect(pySpans.first.style?.fontFamily, 'RobotoMono');
+    expect(pySpans.first.style?.fontFamilyFallback, contains('monospace'));
     expect(
       pySpans.any((s) => s.text == 'def' && s.style?.color == theme.keyword),
       isTrue,

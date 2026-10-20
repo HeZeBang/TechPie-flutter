@@ -256,7 +256,8 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
               child: SelectableText(
                 widget.code,
                 style: const TextStyle(
-                  fontFamily: 'monospace',
+                  fontFamily: 'RobotoMono',
+                  fontFamilyFallback: ['monospace', 'Menlo'],
                   fontSize: 12,
                   height: 1.5,
                 ),

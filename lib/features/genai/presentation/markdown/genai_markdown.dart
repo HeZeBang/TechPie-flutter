@@ -11,15 +11,18 @@ export 'genai_latex.dart';
 export 'genai_mermaid_view.dart';
 export 'genai_syntax_highlighter.dart';
 
+const String kGenAiMonospaceFamily = 'RobotoMono';
+
 const List<String> kGenAiMonospaceFallback = [
-  'JetBrains Mono',
-  'Fira Code',
-  'Cascadia Code',
+  'RobotoMono',
+  'monospace',
+  'SF Mono',
   'Menlo',
   'Monaco',
   'Consolas',
+  'Fira Code',
+  'JetBrains Mono',
   'Courier New',
-  'monospace',
 ];
 
 /// An advanced Markdown renderer with LaTeX math, interactive Charts, Mermaid diagrams,
@@ -116,7 +119,7 @@ class GenAiMarkdown extends StatelessWidget {
           const EdgeInsets.fromLTRB(14, 8, 12, 8),
       code: baseStyle.code ??
           TextStyle(
-            fontFamily: 'monospace',
+            fontFamily: kGenAiMonospaceFamily,
             fontFamilyFallback: kGenAiMonospaceFallback,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
