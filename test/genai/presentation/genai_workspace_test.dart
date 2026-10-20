@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
+import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder.dart';
 import 'package:techpie/features/genai/presentation/genai_thinking_view.dart';
 import 'package:techpie/features/genai/presentation/genai_web_search_view.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
@@ -18,6 +19,7 @@ void main() {
     double scale = 1,
     double keyboard = 0,
     Duration delay = const Duration(milliseconds: 1),
+    GenAiAudioRecorder? audioRecorder,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -38,6 +40,7 @@ void main() {
         home: GenAiWorkspace(
           controller: demo.workspace,
           demo: true,
+          audioRecorder: audioRecorder,
           login: (_) async =>
               const GenAiCredential(token: DemoGenAiBackend.token),
         ),
@@ -270,5 +273,78 @@ void main() {
     await tester.tap(ttsButton);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'microphone recording shows timer and waveform and can be cancelled',
+      (tester) async {
+    final recorder = FakeGenAiAudioRecorder();
+    await show(tester, audioRecorder: recorder);
+
+    final micButton = find.byKey(const ValueKey('genai-audio-stt'));
+    expect(micButton, findsOneWidget);
+
+    await tester.tap(micButton);
+    await tester.pump();
+    expect(recorder.startCalls, 1);
+    expect(recorder.isRecording, isTrue);
+
+    expect(
+      find.byKey(const ValueKey('genai-recording-duration')),
+      findsOneWidget,
+    );
+    expect(find.text('正在录音 00:00'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('正在录音 00:02'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('genai-cancel-recording')));
+    await tester.pumpAndSettle();
+
+    expect(recorder.cancelCalls, 1);
+    expect(recorder.isRecording, isFalse);
+    expect(
+      find.byKey(const ValueKey('genai-recording-duration')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+      'finishing microphone recording stops recorder and transcribes audio to draft',
+      (tester) async {
+    final recorder = FakeGenAiAudioRecorder(
+      recordedBytes: Uint8List.fromList([1, 2, 3, 4]),
+    );
+    await show(tester, audioRecorder: recorder);
+
+    await tester.tap(find.byKey(const ValueKey('genai-audio-stt')));
+    await tester.pump();
+    expect(recorder.isRecording, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('genai-finish-recording')));
+    await tester.pumpAndSettle();
+
+    expect(recorder.stopCalls, 1);
+    expect(recorder.isRecording, isFalse);
+    expect(
+      find.byKey(const ValueKey('genai-recording-duration')),
+      findsNothing,
+    );
+
+    final promptFinder = find.byKey(const ValueKey('genai-prompt'));
+    final textField = tester.widget<TextField>(promptFinder);
+    expect(textField.controller!.text, '你好，这是通过语音识别转换的文字内容。');
+  });
+
+  testWidgets('microphone recording handles permission denial gracefully',
+      (tester) async {
+    final recorder = FakeGenAiAudioRecorder(permission: false);
+    await show(tester, audioRecorder: recorder);
+
+    await tester.tap(find.byKey(const ValueKey('genai-audio-stt')));
+    await tester.pumpAndSettle();
+
+    expect(recorder.startCalls, 0);
+    expect(find.text('无法访问麦克风，请检查权限设置'), findsOneWidget);
   });
 }

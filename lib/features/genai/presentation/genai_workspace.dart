@@ -11,6 +11,7 @@ import '../domain/genai_contract.dart';
 import '../domain/genai_platform_contract.dart';
 import '../domain/genai_session.dart';
 import 'audio/genai_audio_player.dart';
+import 'audio/genai_audio_recorder.dart';
 import 'genai_copy.dart';
 import 'genai_thinking_view.dart';
 import 'genai_tools_page.dart';
@@ -33,6 +34,9 @@ class GenAiWorkspace extends StatefulWidget {
     this.onSignIn,
     this.onBindCampus,
     this.onPreviewLiveLogin,
+    this.picker,
+    this.audioPlayer,
+    this.audioRecorder,
   });
 
   final GenAiWorkspaceController controller;
@@ -43,6 +47,9 @@ class GenAiWorkspace extends StatefulWidget {
   final VoidCallback? onSignIn;
   final VoidCallback? onBindCampus;
   final VoidCallback? onPreviewLiveLogin;
+  final GenAiPicker? picker;
+  final GenAiAudioPlayer? audioPlayer;
+  final GenAiAudioRecorder? audioRecorder;
 
   @override
   State<GenAiWorkspace> createState() => _GenAiWorkspaceState();
@@ -54,8 +61,12 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   final _scroll = ScrollController();
   final _conversations = <GenAiConversationSummary>[];
   final _sidebarImages = <GenAiImageRecord>[];
-  final _picker = GenAiPicker();
-  final _audioPlayer = GenAiAudioPlayer();
+  late final GenAiPicker _picker;
+  late final GenAiAudioPlayer _audioPlayer;
+  late final GenAiAudioRecorder _audioRecorder;
+  bool _recordingAudio = false;
+  int _recordingSeconds = 0;
+  Timer? _recordingTimer;
   int? _playingTtsTurnIndex;
   bool _loadingTts = false;
   Timer? _refresh;
@@ -87,6 +98,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   @override
   void initState() {
     super.initState();
+    _picker = widget.picker ?? GenAiPicker();
+    _audioPlayer = widget.audioPlayer ?? GenAiAudioPlayer();
+    _audioRecorder = widget.audioRecorder ?? GenAiAudioRecorder();
     _draftOwner = _state.sessions.owner;
     _state.addListener(_changed);
     _draft.addListener(_draftChanged);
@@ -475,7 +489,77 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     }
   }
 
-  Future<void> _pickAudio() async {
+  Future<void> _startAudioRecording() async {
+    if (_recordingAudio || _state.sending || _state.recognizingAudio) return;
+    try {
+      final hasPerm = await _audioRecorder.hasPermission();
+      if (!hasPerm) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('无法访问麦克风，请检查权限设置')),
+          );
+        }
+        return;
+      }
+      await _audioRecorder.start();
+      if (!mounted) return;
+      setState(() {
+        _recordingAudio = true;
+        _recordingSeconds = 0;
+      });
+      _recordingTimer?.cancel();
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        setState(() {
+          _recordingSeconds++;
+        });
+        if (_recordingSeconds >= 120) {
+          unawaited(_stopAudioRecording());
+        }
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('无法启动麦克风录音，请检查权限设置')),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopAudioRecording() async {
+    if (!_recordingAudio) return;
+    _recordingTimer?.cancel();
+    setState(() => _recordingAudio = false);
+    try {
+      final wavBytes = await _audioRecorder.stop();
+      if (wavBytes == null || wavBytes.isEmpty || !mounted) return;
+      final text = await _state.transcribeAudio('recording.wav', wavBytes);
+      if (text != null && text.isNotEmpty && mounted) {
+        final current = _draft.text;
+        _draft.text = current.isEmpty ? text : '$current $text';
+        _draft.selection = TextSelection.collapsed(offset: _draft.text.length);
+        _inputFocus.requestFocus();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('语音识别失败，请稍后重试')),
+        );
+      }
+    }
+  }
+
+  Future<void> _cancelAudioRecording() async {
+    if (!_recordingAudio) return;
+    _recordingTimer?.cancel();
+    setState(() => _recordingAudio = false);
+    await _audioRecorder.cancel();
+  }
+
+  Future<void> _pickAudioFile() async {
     try {
       final file = await _picker.pickAudio();
       if (file == null || !mounted) return;
@@ -496,6 +580,8 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
 
   @override
   void dispose() {
+    _recordingTimer?.cancel();
+    _audioRecorder.dispose();
     _audioPlayer.dispose();
     _historyCancellation?.cancel();
     _imageCancellation?.cancel();
@@ -1807,6 +1893,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_recordingAudio) _buildRecordingBar(),
                     if (_state.attachments.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
@@ -2015,28 +2102,45 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   onPressed: _state.sending ? null : _pickImage,
                                   visualDensity: VisualDensity.compact,
                                 ),
-                                IconButton(
-                                  key: const ValueKey('genai-audio-stt'),
-                                  tooltip: '语音输入',
-                                  icon: _state.recognizingAudio
-                                      ? SizedBox(
-                                          width: 14,
-                                          height: 14,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 1.5,
-                                            color: _accent,
-                                          ),
-                                        )
-                                      : Icon(
-                                          Icons.mic_none,
-                                          size: 17,
-                                          color: _muted,
-                                        ),
-                                  onPressed:
-                                      _state.sending || _state.recognizingAudio
-                                          ? null
-                                          : _pickAudio,
-                                  visualDensity: VisualDensity.compact,
+                                GestureDetector(
+                                  onLongPress: _state.sending ||
+                                          _state.recognizingAudio ||
+                                          _recordingAudio
+                                      ? null
+                                      : _pickAudioFile,
+                                  child: IconButton(
+                                    key: const ValueKey('genai-audio-stt'),
+                                    tooltip: _recordingAudio
+                                        ? '完成录音并识别'
+                                        : '麦克风录音（长按选择音频文件）',
+                                    icon: _state.recognizingAudio
+                                        ? SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 1.5,
+                                              color: _accent,
+                                            ),
+                                          )
+                                        : _recordingAudio
+                                            ? const Icon(
+                                                Icons.stop_circle_outlined,
+                                                size: 19,
+                                                color: Colors.redAccent,
+                                              )
+                                            : Icon(
+                                                Icons.mic_none,
+                                                size: 17,
+                                                color: _muted,
+                                              ),
+                                    onPressed: _state.sending ||
+                                            _state.recognizingAudio
+                                        ? null
+                                        : _recordingAudio
+                                            ? _stopAudioRecording
+                                            : _startAudioRecording,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
                                 ),
                               ],
                             ),
@@ -2117,4 +2221,128 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
           ],
         ),
       );
+
+  Widget _buildRecordingBar() {
+    final m = (_recordingSeconds ~/ 60).toString().padLeft(2, '0');
+    final s = (_recordingSeconds % 60).toString().padLeft(2, '0');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: .06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.red.withValues(alpha: .25)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              color: Colors.redAccent,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '正在录音 $m:$s',
+            key: const ValueKey('genai-recording-duration'),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.redAccent,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: _AudioWaveformVisualizer(),
+          ),
+          TextButton(
+            key: const ValueKey('genai-cancel-recording'),
+            onPressed: _cancelAudioRecording,
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: const Text('取消', style: TextStyle(fontSize: 12)),
+          ),
+          const SizedBox(width: 4),
+          FilledButton.tonal(
+            key: const ValueKey('genai-finish-recording'),
+            onPressed: _stopAudioRecording,
+            style: FilledButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check, size: 14),
+                SizedBox(width: 4),
+                Text('完成', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AudioWaveformVisualizer extends StatefulWidget {
+  const _AudioWaveformVisualizer();
+
+  @override
+  State<_AudioWaveformVisualizer> createState() =>
+      _AudioWaveformVisualizerState();
+}
+
+class _AudioWaveformVisualizerState extends State<_AudioWaveformVisualizer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final t = _controller.value;
+        const heights = [0.4, 0.8, 1.0, 0.6, 0.9, 0.5, 0.7];
+        return SizedBox(
+          height: 16,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(heights.length, (i) {
+              final wave = ((heights[i] + (i.isEven ? t : 1 - t) * 0.5) % 1.0)
+                  .clamp(0.2, 1.0);
+              return Container(
+                width: 2.5,
+                height: 16 * wave,
+                margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: .7),
+                  borderRadius: BorderRadius.circular(1.5),
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
 }

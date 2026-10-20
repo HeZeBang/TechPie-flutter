@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
@@ -6,6 +7,7 @@ import 'package:techpie/features/genai/domain/genai_contract.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/platform/genai_transport.dart';
+import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder.dart';
 
 const ownerA = GenAiOwner(
   primaryUserId: 'primary-a',
@@ -154,5 +156,51 @@ final class CallbackIssuer implements GenAiSessionIssuer {
   ) {
     calls++;
     return callback(owner, cancellation);
+  }
+}
+
+final class FakeGenAiAudioRecorder implements GenAiAudioRecorder {
+  FakeGenAiAudioRecorder({
+    this.permission = true,
+    this.recordedBytes,
+  });
+
+  bool permission;
+  Uint8List? recordedBytes;
+  bool recording = false;
+  int startCalls = 0;
+  int stopCalls = 0;
+  int cancelCalls = 0;
+  int disposeCalls = 0;
+
+  @override
+  bool get isRecording => recording;
+
+  @override
+  Future<bool> hasPermission() async => permission;
+
+  @override
+  Future<void> start() async {
+    startCalls++;
+    recording = true;
+  }
+
+  @override
+  Future<Uint8List?> stop() async {
+    stopCalls++;
+    recording = false;
+    return recordedBytes;
+  }
+
+  @override
+  Future<void> cancel() async {
+    cancelCalls++;
+    recording = false;
+  }
+
+  @override
+  void dispose() {
+    disposeCalls++;
+    recording = false;
   }
 }
