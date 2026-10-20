@@ -94,6 +94,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       _state.selectedModel != null &&
       !_state.sending &&
       !_state.hasPendingUploads &&
+      !_state.hasFailedUploads &&
       (_draft.text.trim().isNotEmpty || _state.attachments.isNotEmpty);
 
   @override
@@ -383,7 +384,10 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
 
   Future<void> _send([String? retry]) async {
     if (retry == null && !_canSend) return;
-    if (!_state.connected || _state.selectedModel == null || _state.sending) {
+    if (!_state.connected ||
+        _state.selectedModel == null ||
+        _state.sending ||
+        _state.hasFailedUploads) {
       return;
     }
     final raw = retry ?? _draft.text;
@@ -1949,101 +1953,204 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                     if (_state.attachments.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: SizedBox(
-                          height: 36,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _state.attachments.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 8),
-                            itemBuilder: (context, i) {
-                              final att = _state.attachments[i];
-                              return Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: att.error != null
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .errorContainer
-                                          .withValues(alpha: .3)
-                                      : _accent.withValues(alpha: .08),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: att.error != null
-                                        ? Theme.of(context)
-                                            .colorScheme
-                                            .error
-                                            .withValues(alpha: .4)
-                                        : _accent.withValues(alpha: .2),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (att.uploading)
-                                      SizedBox(
-                                        width: 12,
-                                        height: 12,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 1.5,
-                                          color: _accent,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              height: 36,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _state.attachments.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 8),
+                                itemBuilder: (context, i) {
+                                  final att = _state.attachments[i];
+                                  final isError = att.error != null;
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isError
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .errorContainer
+                                              .withValues(alpha: .35)
+                                          : _accent.withValues(alpha: .08),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: isError
+                                            ? Theme.of(context)
+                                                .colorScheme
+                                                .error
+                                                .withValues(alpha: .5)
+                                            : _accent.withValues(alpha: .2),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (att.uploading)
+                                          SizedBox(
+                                            width: 12,
+                                            height: 12,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 1.5,
+                                              color: _accent,
+                                            ),
+                                          )
+                                        else if (isError)
+                                          Icon(
+                                            Icons.error_outline,
+                                            size: 14,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .error,
+                                          )
+                                        else
+                                          Icon(
+                                            att.isImage
+                                                ? Icons.image_outlined
+                                                : Icons.description_outlined,
+                                            size: 14,
+                                            color: _accent,
+                                          ),
+                                        const SizedBox(width: 6),
+                                        ConstrainedBox(
+                                          constraints: BoxConstraints(
+                                            maxWidth: isError ? 180 : 140,
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  att.name,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: isError
+                                                        ? Theme.of(context)
+                                                            .colorScheme
+                                                            .error
+                                                        : _accent,
+                                                  ),
+                                                ),
+                                              ),
+                                              if (isError) ...[
+                                                const SizedBox(width: 4),
+                                                Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 4,
+                                                    vertical: 1,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .error
+                                                        .withValues(alpha: .15),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                      4,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    att.error ?? '上传失败',
+                                                    style: TextStyle(
+                                                      fontSize: 9,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .error,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
                                         ),
-                                      )
-                                    else if (att.error != null)
-                                      Icon(
-                                        Icons.error_outline,
-                                        size: 14,
+                                        if (isError) ...[
+                                          const SizedBox(width: 4),
+                                          InkWell(
+                                            key: ValueKey(
+                                              'genai-retry-attachment-${att.id}',
+                                            ),
+                                            onTap: () => unawaited(
+                                              _state.retryAttachment(att.id),
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                            child: Tooltip(
+                                              message: '重新上传',
+                                              child: Icon(
+                                                Icons.refresh_rounded,
+                                                size: 14,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .error,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                        const SizedBox(width: 4),
+                                        InkWell(
+                                          key: ValueKey(
+                                            'genai-remove-attachment-${att.id}',
+                                          ),
+                                          onTap: () =>
+                                              _state.removeAttachment(att.id),
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          child: Tooltip(
+                                            message: '移除附件',
+                                            child: Icon(
+                                              Icons.close,
+                                              size: 13,
+                                              color: isError
+                                                  ? Theme.of(context)
+                                                      .colorScheme
+                                                      .error
+                                                  : _muted,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            if (_state.hasFailedUploads) ...[
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    size: 13,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      '附件上传失败，已阻止发送。请点击重试或删除失败的附件。',
+                                      style: TextStyle(
+                                        fontSize: 11,
                                         color:
                                             Theme.of(context).colorScheme.error,
-                                      )
-                                    else
-                                      Icon(
-                                        att.isImage
-                                            ? Icons.image_outlined
-                                            : Icons.description_outlined,
-                                        size: 14,
-                                        color: _accent,
-                                      ),
-                                    const SizedBox(width: 6),
-                                    ConstrainedBox(
-                                      constraints:
-                                          const BoxConstraints(maxWidth: 140),
-                                      child: Text(
-                                        att.error != null
-                                            ? '${att.name} (${att.error})'
-                                            : att.name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
-                                          color: att.error != null
-                                              ? Theme.of(context)
-                                                  .colorScheme
-                                                  .error
-                                              : _accent,
-                                        ),
                                       ),
                                     ),
-                                    const SizedBox(width: 4),
-                                    InkWell(
-                                      onTap: () =>
-                                          _state.removeAttachment(att.id),
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: Icon(
-                                        Icons.close,
-                                        size: 13,
-                                        color: _muted,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     Focus(
@@ -2236,7 +2343,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                               ? '停止生成'
                               : _state.hasPendingUploads
                                   ? '正在上传附件...'
-                                  : '发送消息',
+                                  : _state.hasFailedUploads
+                                      ? '附件上传失败，请重试或删除后发送'
+                                      : '发送消息',
                           onPressed: _state.sending
                               ? _state.stop
                               : _canSend

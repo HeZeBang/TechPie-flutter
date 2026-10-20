@@ -21,6 +21,7 @@ final class DemoGenAiBackend implements GenAiTransport {
   }
 
   final Duration chunkDelay;
+  bool failUpload = false;
   static const token = 'synthetic-preview-token';
   static const studentId = '20240001';
   final _operations = <GenAiCancellation>{};
@@ -121,6 +122,13 @@ final class DemoGenAiBackend implements GenAiTransport {
       });
     }
     if (uri.path == '/sys/common/upload') {
+      if (failUpload) {
+        return _json({
+          'success': false,
+          'code': 500,
+          'message': 'Upload failed',
+        });
+      }
       return _ok({
         'url': 'temp/demo-upload-${DateTime.now().millisecondsSinceEpoch}.png',
         'width': 1024,

@@ -306,12 +306,21 @@ final class GenAiApiClient {
     required GenAiCancellation cancellation,
   }) async {
     _validateToken(token);
+    final lower = fileName.toLowerCase();
+    final contentType = lower.endsWith('.png')
+        ? 'image/png'
+        : (lower.endsWith('.gif')
+            ? 'image/gif'
+            : (lower.endsWith('.webp') ? 'image/webp' : 'image/jpeg'));
     final multipart = GenAiMultipartData.create(
+      fields: const {
+        'biz': 'temp',
+        'uploadType': 'local',
+      },
       fileFieldName: 'file',
       fileName: fileName,
       fileBytes: bytes,
-      fileContentType:
-          fileName.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg',
+      fileContentType: contentType,
     );
     final host = _base.host == 'genai.shanghaitech.edu.cn'
         ? 'genaipic.shanghaitech.edu.cn'

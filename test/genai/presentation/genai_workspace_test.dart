@@ -491,4 +491,62 @@ void main() {
     expect(find.byType(Image), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+      'failed upload blocks send, shows failure badge and warning, and allows retry',
+      (tester) async {
+    final sampleBytes = Uint8List.fromList([1, 2, 3, 4]);
+    final picker = FakeGenAiPicker(
+      nextImage: GenAiPickedFile(
+        name: 'failed_image.png',
+        bytes: sampleBytes,
+      ),
+    );
+    final demo = await show(tester, picker: picker);
+
+    demo.backend.failUpload = true;
+
+    final imageBtn = find.byKey(const ValueKey('genai-upload-image'));
+    await tester.tap(imageBtn);
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.attachments.length, 1);
+    expect(demo.workspace.hasFailedUploads, isTrue);
+
+    expect(find.text('上传失败'), findsOneWidget);
+    expect(
+      find.text('附件上传失败，已阻止发送。请点击重试或删除失败的附件。'),
+      findsOneWidget,
+    );
+
+    final sendBtn = find.byKey(const ValueKey('genai-send'));
+    expect(tester.widget<IconButton>(sendBtn).onPressed, isNull);
+
+    final retryBtn = find.byKey(
+      ValueKey(
+        'genai-retry-attachment-${demo.workspace.attachments.first.id}',
+      ),
+    );
+    expect(retryBtn, findsOneWidget);
+
+    demo.backend.failUpload = false;
+
+    await tester.tap(retryBtn);
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.hasFailedUploads, isFalse);
+    expect(
+      demo.workspace.attachments.first.imageUrl,
+      contains('temp/demo-upload-'),
+    );
+    expect(find.text('上传失败'), findsNothing);
+    expect(tester.widget<IconButton>(sendBtn).onPressed, isNotNull);
+
+    await tester.tap(sendBtn);
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.attachments, isEmpty);
+    expect(demo.workspace.turns.length, 1);
+    expect(tester.takeException(), isNull);
+  });
 }

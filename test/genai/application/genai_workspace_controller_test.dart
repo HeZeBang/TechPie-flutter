@@ -282,14 +282,25 @@ void main() {
     expect(json['imageUrls'], isNotEmpty);
   });
 
-  test('send preserves attachedImageBytes even if upload returned an error',
+  test(
+      'send rejects sending when an attachment upload failed and retry recovers',
       () async {
+    var failUpload = true;
     final original = transport.handle;
     transport.handle = (r) async {
       if (r.uri.path == '/sys/common/upload') {
+        if (failUpload) {
+          return response(
+            status: 500,
+            json: {'success': false, 'code': 500, 'message': 'Upload error'},
+          );
+        }
         return response(
-          status: 500,
-          json: {'success': false, 'code': 500, 'message': 'Upload error'},
+          json: {
+            'success': true,
+            'code': 200,
+            'result': {'url': 'temp/recovered.png'},
+          },
         );
       }
       return original(r);
@@ -300,12 +311,28 @@ void main() {
     expect(workspace.attachments.length, 1);
     expect(workspace.attachments.first.error, isNotNull);
     expect(workspace.attachments.first.imageUrl, isNull);
+    expect(workspace.hasFailedUploads, isTrue);
 
+    // Attempting to send while an upload has failed must be rejected
     await workspace.send('图片上传虽然网络失败但本地图片必须保留');
+    expect(workspace.turns, isEmpty);
+    expect(workspace.attachments.length, 1);
+    expect(workspace.hasFailedUploads, isTrue);
+
+    // Retrying with recovering backend resolves the error and allows sending
+    failUpload = false;
+    await workspace.retryAttachment(workspace.attachments.first.id);
+    expect(workspace.hasFailedUploads, isFalse);
+    expect(
+      workspace.attachments.first.imageUrl,
+      contains('temp/recovered.png'),
+    );
+
+    await workspace.send('重试成功后可以正常发送');
     expect(workspace.attachments, isEmpty);
     expect(workspace.turns.length, 1);
     final turn = workspace.turns.first;
     expect(turn.attachedImageBytes, equals(imageBytes));
-    expect(turn.attachedImageBytesList, equals([imageBytes]));
+    expect(turn.attachedImageUrl, contains('temp/recovered.png'));
   });
 }

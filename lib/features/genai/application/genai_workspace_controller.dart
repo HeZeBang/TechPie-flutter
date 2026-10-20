@@ -58,6 +58,7 @@ final class GenAiAttachment {
     String? imageUrl,
     bool? uploading,
     String? error,
+    bool clearError = false,
   }) =>
       GenAiAttachment(
         id: id,
@@ -67,7 +68,7 @@ final class GenAiAttachment {
         isImage: isImage,
         imageUrl: imageUrl ?? this.imageUrl,
         uploading: uploading ?? this.uploading,
-        error: error ?? this.error,
+        error: clearError ? null : (error ?? this.error),
       );
 }
 
@@ -128,6 +129,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   List<GenAiAttachment> get attachments => List.unmodifiable(_attachments);
   bool get hasPendingUploads =>
       _attachments.any((a) => a.uploading) || _pendingUploads.isNotEmpty;
+  bool get hasFailedUploads => _attachments.any((a) => a.error != null);
   String get groupId => _groupId;
   String get title => _turns.isEmpty ? '新的对话' : _turns.first.prompt;
 
@@ -156,6 +158,42 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   Future<void> waitForPendingUploads() async {
     while (_pendingUploads.isNotEmpty) {
       await Future.wait(List.of(_pendingUploads));
+    }
+  }
+
+  Future<void> retryAttachment(String id) async {
+    final model = _selectedModel;
+    if (_disposed || !connected || model == null) return;
+    final index = _attachments.indexWhere((a) => a.id == id);
+    if (index == -1) return;
+    final attachment = _attachments[index];
+    if (attachment.uploading) return;
+
+    _attachments[index] = attachment.copyWith(
+      uploading: true,
+      clearError: true,
+    );
+    _notify();
+
+    final uploadFuture = attachment.isImage
+        ? _uploadImage(
+            id,
+            _attachments[index],
+            attachment.name,
+            attachment.bytes,
+          )
+        : _uploadDocument(
+            id,
+            _attachments[index],
+            model.aiType,
+            attachment.name,
+            attachment.bytes,
+          );
+    _pendingUploads.add(uploadFuture);
+    try {
+      await uploadFuture;
+    } finally {
+      _pendingUploads.remove(uploadFuture);
     }
   }
 
@@ -198,15 +236,16 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       );
       final index = _attachments.indexWhere((a) => a.id == id);
       if (index != -1) {
-        _attachments[index] = attachment.copyWith(
+        _attachments[index] = _attachments[index].copyWith(
           fileId: uploaded.fileId,
           uploading: false,
+          clearError: true,
         );
       }
     } catch (e) {
       final index = _attachments.indexWhere((a) => a.id == id);
       if (index != -1) {
-        _attachments[index] = attachment.copyWith(
+        _attachments[index] = _attachments[index].copyWith(
           uploading: false,
           error: '上传失败',
         );
@@ -252,15 +291,16 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       final fullUrl = genAiImageUri(uploaded.url).toString();
       final index = _attachments.indexWhere((a) => a.id == id);
       if (index != -1) {
-        _attachments[index] = attachment.copyWith(
+        _attachments[index] = _attachments[index].copyWith(
           imageUrl: fullUrl,
           uploading: false,
+          clearError: true,
         );
       }
     } catch (e) {
       final index = _attachments.indexWhere((a) => a.id == id);
       if (index != -1) {
-        _attachments[index] = attachment.copyWith(
+        _attachments[index] = _attachments[index].copyWith(
           uploading: false,
           error: '上传失败',
         );
@@ -452,6 +492,9 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     }
     if (_attachments.any((a) => a.uploading) || _pendingUploads.isNotEmpty) {
       await waitForPendingUploads();
+    }
+    if (hasFailedUploads) {
+      return;
     }
     if (prompt.trim().isEmpty && _attachments.isEmpty) {
       return;

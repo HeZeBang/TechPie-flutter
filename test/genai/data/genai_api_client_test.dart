@@ -416,6 +416,11 @@ void main() {
     expect(req.uri.host, 'genaipic.shanghaitech.edu.cn');
     expect(req.uri.path, '/sys/common/upload');
     expect(req.headers['token'], '2ea38f293adb4abca21132feba61eaa3');
+    final body = utf8.decode(req.bodyBytes!);
+    expect(body, contains('name="biz"'));
+    expect(body, contains('temp'));
+    expect(body, contains('name="uploadType"'));
+    expect(body, contains('local'));
   });
 
   test('convertTextToSpeech sends json and streams audio bytes', () async {
