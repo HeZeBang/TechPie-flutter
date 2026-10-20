@@ -549,4 +549,113 @@ void main() {
     expect(demo.workspace.turns.length, 1);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+      'uploading image displays thumbnail in composer and tapping opens image dialog',
+      (tester) async {
+    final sampleBytes = Uint8List.fromList([
+      137,
+      80,
+      78,
+      71,
+      13,
+      10,
+      26,
+      10,
+      0,
+      0,
+      0,
+      13,
+      73,
+      72,
+      68,
+      82,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      8,
+      6,
+      0,
+      0,
+      0,
+      31,
+      21,
+      196,
+      137,
+      0,
+      0,
+      0,
+      11,
+      73,
+      68,
+      65,
+      84,
+      120,
+      156,
+      99,
+      96,
+      0,
+      0,
+      0,
+      2,
+      0,
+      1,
+      226,
+      33,
+      188,
+      51,
+      0,
+      0,
+      0,
+      0,
+      73,
+      69,
+      78,
+      68,
+      174,
+      66,
+      96,
+      130,
+    ]);
+    final picker = FakeGenAiPicker(
+      nextImage: GenAiPickedFile(
+        name: 'thumbnail_test.png',
+        bytes: sampleBytes,
+      ),
+    );
+    final demo = await show(tester, picker: picker);
+
+    final imageBtn = find.byKey(const ValueKey('genai-upload-image'));
+    await tester.tap(imageBtn);
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.attachments.length, 1);
+    final attId = demo.workspace.attachments.first.id;
+
+    final thumbFinder =
+        find.byKey(ValueKey('genai-attachment-thumbnail-$attId'));
+    expect(thumbFinder, findsOneWidget);
+
+    await tester.tap(thumbFinder);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(find.byType(Dialog), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Dialog),
+        matching: find.byIcon(Icons.close),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Dialog), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

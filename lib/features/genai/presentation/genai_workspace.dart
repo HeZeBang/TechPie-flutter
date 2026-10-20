@@ -1635,23 +1635,32 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                         ClipRRect(
                                           borderRadius:
                                               BorderRadius.circular(8),
-                                          child: Image.memory(
-                                            bytes,
-                                            height: 180,
-                                            fit: BoxFit.contain,
-                                            errorBuilder: (_, __, ___) =>
-                                                _buildImageErrorPlaceholder(),
+                                          child: GestureDetector(
+                                            onTap: () =>
+                                                _showImageDialog(bytes: bytes),
+                                            child: Image.memory(
+                                              bytes,
+                                              height: 180,
+                                              fit: BoxFit.contain,
+                                              errorBuilder: (_, __, ___) =>
+                                                  _buildImageErrorPlaceholder(),
+                                            ),
                                           ),
                                         )
                                     else if (turn.attachedImageBytes != null)
                                       ClipRRect(
                                         borderRadius: BorderRadius.circular(8),
-                                        child: Image.memory(
-                                          turn.attachedImageBytes!,
-                                          height: 180,
-                                          fit: BoxFit.contain,
-                                          errorBuilder: (_, __, ___) =>
-                                              _buildImageErrorPlaceholder(),
+                                        child: GestureDetector(
+                                          onTap: () => _showImageDialog(
+                                            bytes: turn.attachedImageBytes,
+                                          ),
+                                          child: Image.memory(
+                                            turn.attachedImageBytes!,
+                                            height: 180,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) =>
+                                                _buildImageErrorPlaceholder(),
+                                          ),
                                         ),
                                       )
                                     else if (turn.attachedImageUrls.isNotEmpty)
@@ -1659,23 +1668,32 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                         ClipRRect(
                                           borderRadius:
                                               BorderRadius.circular(8),
-                                          child: Image.network(
-                                            url,
-                                            height: 180,
-                                            fit: BoxFit.contain,
-                                            errorBuilder: (_, __, ___) =>
-                                                _buildImageErrorPlaceholder(),
+                                          child: GestureDetector(
+                                            onTap: () =>
+                                                _showImageDialog(url: url),
+                                            child: Image.network(
+                                              url,
+                                              height: 180,
+                                              fit: BoxFit.contain,
+                                              errorBuilder: (_, __, ___) =>
+                                                  _buildImageErrorPlaceholder(),
+                                            ),
                                           ),
                                         )
                                     else if (turn.attachedImageUrl != null)
                                       ClipRRect(
                                         borderRadius: BorderRadius.circular(8),
-                                        child: Image.network(
-                                          turn.attachedImageUrl!,
-                                          height: 180,
-                                          fit: BoxFit.contain,
-                                          errorBuilder: (_, __, ___) =>
-                                              _buildImageErrorPlaceholder(),
+                                        child: GestureDetector(
+                                          onTap: () => _showImageDialog(
+                                            url: turn.attachedImageUrl,
+                                          ),
+                                          child: Image.network(
+                                            turn.attachedImageUrl!,
+                                            height: 180,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) =>
+                                                _buildImageErrorPlaceholder(),
+                                          ),
                                         ),
                                       ),
                                   ],
@@ -1958,7 +1976,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             SizedBox(
-                              height: 36,
+                              height: 44,
                               child: ListView.separated(
                                 scrollDirection: Axis.horizontal,
                                 itemCount: _state.attachments.length,
@@ -1968,9 +1986,11 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   final att = _state.attachments[i];
                                   final isError = att.error != null;
                                   return Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
+                                    padding: EdgeInsets.fromLTRB(
+                                      att.isImage ? 5 : 8,
+                                      4,
+                                      8,
+                                      4,
                                     ),
                                     decoration: BoxDecoration(
                                       color: isError
@@ -1992,32 +2012,8 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        if (att.uploading)
-                                          SizedBox(
-                                            width: 12,
-                                            height: 12,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 1.5,
-                                              color: _accent,
-                                            ),
-                                          )
-                                        else if (isError)
-                                          Icon(
-                                            Icons.error_outline,
-                                            size: 14,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .error,
-                                          )
-                                        else
-                                          Icon(
-                                            att.isImage
-                                                ? Icons.image_outlined
-                                                : Icons.description_outlined,
-                                            size: 14,
-                                            color: _accent,
-                                          ),
-                                        const SizedBox(width: 6),
+                                        _buildAttachmentThumbnail(att, context),
+                                        const SizedBox(width: 8),
                                         ConstrainedBox(
                                           constraints: BoxConstraints(
                                             maxWidth: isError ? 180 : 140,
@@ -2425,6 +2421,164 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
           ],
         ),
       );
+
+  Widget _buildAttachmentThumbnail(
+    GenAiAttachment att,
+    BuildContext context,
+  ) {
+    if (!att.isImage) {
+      if (att.uploading) {
+        return SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(
+            strokeWidth: 1.5,
+            color: _accent,
+          ),
+        );
+      }
+      if (att.error != null) {
+        return Icon(
+          Icons.error_outline,
+          size: 16,
+          color: Theme.of(context).colorScheme.error,
+        );
+      }
+      return Icon(
+        Icons.description_outlined,
+        size: 16,
+        color: _accent,
+      );
+    }
+
+    final bytes = att.bytes.isNotEmpty ? Uint8List.fromList(att.bytes) : null;
+    final url = att.imageUrl;
+
+    Widget imageContent;
+    if (bytes != null) {
+      imageContent = Image.memory(
+        bytes,
+        width: 32,
+        height: 32,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildThumbnailFallback(context),
+      );
+    } else if (url != null && url.isNotEmpty) {
+      imageContent = Image.network(
+        url,
+        width: 32,
+        height: 32,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildThumbnailFallback(context),
+      );
+    } else {
+      imageContent = _buildThumbnailFallback(context);
+    }
+
+    return KeyedSubtree(
+      key: ValueKey('genai-attachment-thumbnail-${att.id}'),
+      child: GestureDetector(
+        onTap: () => _showImageDialog(bytes: bytes, url: url),
+        child: Tooltip(
+          message: '点击查看大图',
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              width: 32,
+              height: 32,
+              child: Stack(
+                fit: StackFit.expand,
+                alignment: Alignment.center,
+                children: [
+                  imageContent,
+                  if (att.uploading)
+                    Container(
+                      color: Colors.black.withValues(alpha: .45),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    )
+                  else if (att.error != null)
+                    Container(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .error
+                          .withValues(alpha: .4),
+                      child: const Center(
+                        child: Icon(
+                          Icons.warning_amber_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThumbnailFallback(BuildContext context) => Container(
+        width: 32,
+        height: 32,
+        color: _accent.withValues(alpha: .12),
+        child: Icon(Icons.image_outlined, size: 16, color: _accent),
+      );
+
+  void _showImageDialog({Uint8List? bytes, String? url}) {
+    if (bytes == null && (url == null || url.isEmpty)) return;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        builder: (context) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(16),
+          child: Stack(
+            alignment: Alignment.topRight,
+            children: [
+              Center(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: .85),
+                    padding: const EdgeInsets.all(8),
+                    child: InteractiveViewer(
+                      maxScale: 4.0,
+                      child: bytes != null
+                          ? Image.memory(bytes, fit: BoxFit.contain)
+                          : Image.network(url!, fit: BoxFit.contain),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: IconButton.filled(
+                  icon: const Icon(Icons.close, size: 20),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black54,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildRecordingBar() {
     final m = (_recordingSeconds ~/ 60).toString().padLeft(2, '0');
