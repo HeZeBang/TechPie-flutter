@@ -265,4 +265,186 @@ void main() {
     await tester.pump();
     expect(find.text('已复制'), findsOneWidget);
   });
+
+  testWidgets('renders multi-line code block with line numbers gutter',
+      (tester) async {
+    const multiLineCode = '''
+```python
+def add(a, b):
+    # Calculate sum
+    return a + b
+```
+''';
+
+    await tester.pumpWidget(
+      buildApp(
+        const GenAiMarkdown(data: multiLineCode),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GenAiStandardCodeBlock), findsOneWidget);
+    expect(find.text('PYTHON'), findsOneWidget);
+    // Line numbers 1, 2, 3 should be displayed in the gutter
+    expect(find.text('1\n2\n3'), findsOneWidget);
+    expect(find.textContaining('return a + b'), findsOneWidget);
+  });
+
+  test('GenAiSyntaxHighlighter tokenizes Python, Dart, JS, JSON, SQL, Bash',
+      () {
+    const highlighter = GenAiSyntaxHighlighter(brightness: Brightness.dark);
+    final theme = SyntaxTheme.dark;
+
+    // Python
+    final pySpans = highlighter.highlight(
+      code: 'def add(x: int) -> str:\n    # comment\n    return "hi" + str(x)',
+      language: 'python',
+    );
+    expect(
+      pySpans.any((s) => s.text == 'def' && s.style?.color == theme.keyword),
+      isTrue,
+    );
+    expect(
+      pySpans.any(
+        (s) => s.text == 'return' && s.style?.color == theme.keyword,
+      ),
+      isTrue,
+    );
+    expect(
+      pySpans.any(
+        (s) => s.text == '# comment' && s.style?.color == theme.comment,
+      ),
+      isTrue,
+    );
+    expect(
+      pySpans.any((s) => s.text == '"hi"' && s.style?.color == theme.string),
+      isTrue,
+    );
+
+    // Dart
+    final dartSpans = highlighter.highlight(
+      code:
+          'class MyWidget extends StatelessWidget {\n  final int count = 42;\n}',
+      language: 'dart',
+    );
+    expect(
+      dartSpans.any(
+        (s) => s.text == 'class' && s.style?.color == theme.keyword,
+      ),
+      isTrue,
+    );
+    expect(
+      dartSpans.any(
+        (s) => s.text == 'final' && s.style?.color == theme.keyword,
+      ),
+      isTrue,
+    );
+    expect(
+      dartSpans.any((s) => s.text == 'int' && s.style?.color == theme.type),
+      isTrue,
+    );
+    expect(
+      dartSpans.any((s) => s.text == '42' && s.style?.color == theme.number),
+      isTrue,
+    );
+
+    // JSON
+    final jsonSpans = highlighter.highlight(
+      code: '{\n  "name": "TechPie",\n  "count": 100\n}',
+      language: 'json',
+    );
+    expect(
+      jsonSpans.any(
+        (s) => s.text == '"name"' && s.style?.color == theme.property,
+      ),
+      isTrue,
+    );
+    expect(
+      jsonSpans.any(
+        (s) => s.text == '"TechPie"' && s.style?.color == theme.string,
+      ),
+      isTrue,
+    );
+    expect(
+      jsonSpans.any(
+        (s) => s.text == '100' && s.style?.color == theme.number,
+      ),
+      isTrue,
+    );
+
+    // SQL
+    final sqlSpans = highlighter.highlight(
+      code: 'SELECT id, username FROM users WHERE age >= 18;',
+      language: 'sql',
+    );
+    expect(
+      sqlSpans.any(
+        (s) => s.text == 'SELECT' && s.style?.color == theme.keyword,
+      ),
+      isTrue,
+    );
+    expect(
+      sqlSpans.any((s) => s.text == 'FROM' && s.style?.color == theme.keyword),
+      isTrue,
+    );
+    expect(
+      sqlSpans.any(
+        (s) => s.text == 'WHERE' && s.style?.color == theme.keyword,
+      ),
+      isTrue,
+    );
+
+    // Bash
+    final bashSpans = highlighter.highlight(
+      code: 'echo "Hello \$USER"\n# deploy script',
+      language: 'bash',
+    );
+    expect(
+      bashSpans.any(
+        (s) => s.text == 'echo' && s.style?.color == theme.keyword,
+      ),
+      isTrue,
+    );
+    expect(
+      bashSpans.any(
+        (s) => s.text == '# deploy script' && s.style?.color == theme.comment,
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets(
+      'renders Markdown typography with headings, blockquotes, and tables',
+      (tester) async {
+    const typographyMarkdown = '''
+# 一级标题
+## 二级标题
+### 三级标题
+
+> 这是一段引用文本，测试样式。
+
+这是一段正文，包含 `inline_code()` 行内代码。
+
+| 模块 | 功能 | 状态 |
+| :--- | :--- | :--- |
+| STT | 语音识别 | 正常 |
+| TTS | 语音合成 | 正常 |
+''';
+
+    await tester.pumpWidget(
+      buildApp(
+        const GenAiMarkdown(data: typographyMarkdown),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('一级标题'), findsOneWidget);
+    expect(find.text('二级标题'), findsOneWidget);
+    expect(find.text('三级标题'), findsOneWidget);
+    expect(find.textContaining('这是一段引用文本'), findsOneWidget);
+    expect(find.textContaining('inline_code()'), findsOneWidget);
+    expect(find.text('语音识别'), findsOneWidget);
+    expect(find.text('语音合成'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -6,6 +6,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'genai_chart_view.dart';
 import 'genai_latex.dart';
 import 'genai_mermaid_view.dart';
+import 'genai_syntax_highlighter.dart';
 
 /// Pre builder that routes code blocks to Mermaid, Chart, LaTeX, or standard code block.
 class GenAiPreBuilder extends MarkdownElementBuilder {
@@ -216,21 +217,87 @@ class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
           ),
 
           // Code Body
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SelectableText(
-                widget.code,
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12.5,
-                  height: 1.6,
-                  color:
-                      theme.textTheme.bodyMedium?.color?.withValues(alpha: .9),
+          Builder(
+            builder: (context) {
+              final highlighter =
+                  GenAiSyntaxHighlighter(brightness: theme.brightness);
+              const monospaceFallback = [
+                'JetBrains Mono',
+                'Fira Code',
+                'Cascadia Code',
+                'Menlo',
+                'Monaco',
+                'Consolas',
+                'Courier New',
+                'monospace',
+              ];
+              final baseCodeStyle = TextStyle(
+                fontFamily: 'monospace',
+                fontFamilyFallback: monospaceFallback,
+                fontSize: 12.5,
+                height: 1.6,
+                color: theme.textTheme.bodyMedium?.color?.withValues(alpha: .9),
+              );
+              final spans = highlighter.highlight(
+                code: widget.code,
+                language: widget.language,
+                baseStyle: baseCodeStyle,
+              );
+              final lineCount = '\n'.allMatches(widget.code).length + 1;
+              final showLineNumbers = lineCount > 1;
+
+              return Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: showLineNumbers ? 0 : 14,
                 ),
-              ),
-            ),
+                child: showLineNumbers
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 14, right: 10),
+                            child: Text(
+                              List.generate(lineCount, (i) => '${i + 1}')
+                                  .join('\n'),
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontFamilyFallback: monospaceFallback,
+                                fontSize: 12.5,
+                                height: 1.6,
+                                color: theme.hintColor.withValues(alpha: .35),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            color: isDark
+                                ? Colors.white.withValues(alpha: .06)
+                                : Colors.black.withValues(alpha: .04),
+                          ),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              child: SelectableText.rich(
+                                TextSpan(children: spans),
+                                style: baseCodeStyle,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: SelectableText.rich(
+                          TextSpan(children: spans),
+                          style: baseCodeStyle,
+                        ),
+                      ),
+              );
+            },
           ),
         ],
       ),

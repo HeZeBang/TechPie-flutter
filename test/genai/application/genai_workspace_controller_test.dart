@@ -335,4 +335,73 @@ void main() {
     expect(turn.attachedImageBytes, equals(imageBytes));
     expect(turn.attachedImageUrl, contains('temp/recovered.png'));
   });
+
+  test('retryTurn and retryLastTurn regenerate response and truncate history',
+      () async {
+    await workspace.send('turn 1');
+    await workspace.send('turn 2');
+    await workspace.send('turn 3');
+    expect(workspace.turns.length, 3);
+
+    // Retrying turn 1 (index 1) should truncate turn 2 and turn 3, and resend turn 2
+    await workspace.retryTurn(1);
+    expect(workspace.turns.length, 2);
+    expect(workspace.turns[0].prompt, 'turn 1');
+    expect(workspace.turns[1].prompt, 'turn 2');
+    final lastReq =
+        jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
+    expect(lastReq['chatInfo'], 'turn 2');
+    expect(lastReq['messages'], [
+      {'role': 'user', 'content': 'turn 1'},
+      {'role': 'assistant', 'content': 'answer'},
+    ]);
+
+    // Retrying last turn resends turn 2
+    await workspace.retryLastTurn();
+    expect(workspace.turns.length, 2);
+    expect(workspace.turns[1].prompt, 'turn 2');
+  });
+
+  test('editAndResend updates user prompt and resends truncated conversation',
+      () async {
+    await workspace.send('original prompt 1');
+    await workspace.send('original prompt 2');
+    expect(workspace.turns.length, 2);
+
+    await workspace.editAndResend(1, 'edited prompt 2');
+    expect(workspace.turns.length, 2);
+    expect(workspace.turns[0].prompt, 'original prompt 1');
+    expect(workspace.turns[1].prompt, 'edited prompt 2');
+
+    final lastReq =
+        jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
+    expect(lastReq['chatInfo'], 'edited prompt 2');
+    expect(lastReq['messages'], [
+      {'role': 'user', 'content': 'original prompt 1'},
+      {'role': 'assistant', 'content': 'answer'},
+    ]);
+  });
+
+  test('deleteTurn and revertLastTurn remove messages from active conversation',
+      () async {
+    await workspace.send('message 1');
+    await workspace.send('message 2');
+    await workspace.send('message 3');
+    expect(workspace.turns.length, 3);
+
+    // Delete message at index 1
+    workspace.deleteTurn(1);
+    expect(workspace.turns.length, 2);
+    expect(workspace.turns[0].prompt, 'message 1');
+    expect(workspace.turns[1].prompt, 'message 3');
+
+    // Revert last turn removes message 3
+    workspace.revertLastTurn();
+    expect(workspace.turns.length, 1);
+    expect(workspace.turns[0].prompt, 'message 1');
+
+    // Revert last turn on remaining turn removes it
+    workspace.revertLastTurn();
+    expect(workspace.turns, isEmpty);
+  });
 }

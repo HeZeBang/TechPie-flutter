@@ -23,6 +23,7 @@ final class GenAiConversationTurn {
   bool isSearching = false;
   List<GenAiWebSearchCitation> citations = const [];
   List<String> attachedFileNames = const [];
+  List<String> attachedFileIds = const [];
   String? attachedImageUrl;
   List<String> attachedImageUrls = const [];
   Uint8List? attachedImageBytes;
@@ -499,13 +500,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     if (prompt.trim().isEmpty && _attachments.isEmpty) {
       return;
     }
-    final history = <GenAiMessage>[
-      for (final turn
-          in _turns.where((t) => t.phase == GenAiChatPhase.completed)) ...[
-        GenAiMessage(role: GenAiRole.user, content: turn.prompt),
-        GenAiMessage(role: GenAiRole.assistant, content: turn.answer),
-      ],
-    ];
     final fileIds = _attachments
         .where((a) => a.fileId != null)
         .map((a) => a.fileId!)
@@ -531,11 +525,107 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       ..thinkingStartTime = DateTime.now()
       ..isSearching = _netSearchEnabled
       ..attachedFileNames = attachedFileNames
+      ..attachedFileIds = fileIds
       ..attachedImageUrl = imageUrl
       ..attachedImageUrls = imageUrls
       ..attachedImageBytes = attachedImageBytes
       ..attachedImageBytesList = attachedImageBytesList;
     _attachments.clear();
+    await _executeSendTurn(turn, model);
+  }
+
+  Future<void> retryTurn(int index) async {
+    final model = _selectedModel;
+    if (_disposed || sending || !connected || model == null) return;
+    if (index < 0 || index >= _turns.length) return;
+
+    final target = _turns[index];
+    final prompt = target.prompt;
+    final fileNames = target.attachedFileNames;
+    final fileIds = target.attachedFileIds;
+    final imageUrl = target.attachedImageUrl;
+    final imageUrls = target.attachedImageUrls;
+    final imageBytes = target.attachedImageBytes;
+    final imageBytesList = target.attachedImageBytesList;
+
+    // Discard index and all subsequent turns
+    _turns.removeRange(index, _turns.length);
+
+    final turn = GenAiConversationTurn(prompt)
+      ..thinkingStartTime = DateTime.now()
+      ..isSearching = _netSearchEnabled
+      ..attachedFileNames = fileNames
+      ..attachedFileIds = fileIds
+      ..attachedImageUrl = imageUrl
+      ..attachedImageUrls = imageUrls
+      ..attachedImageBytes = imageBytes
+      ..attachedImageBytesList = imageBytesList;
+
+    await _executeSendTurn(turn, model);
+  }
+
+  Future<void> retryLastTurn() async {
+    if (_turns.isEmpty) return;
+    await retryTurn(_turns.length - 1);
+  }
+
+  Future<void> editAndResend(int turnIndex, String newPrompt) async {
+    final model = _selectedModel;
+    if (_disposed || sending || !connected || model == null) return;
+    if (turnIndex < 0 || turnIndex >= _turns.length) return;
+    final trimmed = newPrompt.trim();
+    if (trimmed.isEmpty) return;
+
+    final target = _turns[turnIndex];
+    final fileNames = target.attachedFileNames;
+    final fileIds = target.attachedFileIds;
+    final imageUrl = target.attachedImageUrl;
+    final imageUrls = target.attachedImageUrls;
+    final imageBytes = target.attachedImageBytes;
+    final imageBytesList = target.attachedImageBytesList;
+
+    // Discard turnIndex and all subsequent turns
+    _turns.removeRange(turnIndex, _turns.length);
+
+    final turn = GenAiConversationTurn(trimmed)
+      ..thinkingStartTime = DateTime.now()
+      ..isSearching = _netSearchEnabled
+      ..attachedFileNames = fileNames
+      ..attachedFileIds = fileIds
+      ..attachedImageUrl = imageUrl
+      ..attachedImageUrls = imageUrls
+      ..attachedImageBytes = imageBytes
+      ..attachedImageBytesList = imageBytesList;
+
+    await _executeSendTurn(turn, model);
+  }
+
+  void deleteTurn(int turnIndex) {
+    if (turnIndex < 0 || turnIndex >= _turns.length) return;
+    if (identical(_active, _turns[turnIndex])) {
+      stop();
+    }
+    _turns.removeAt(turnIndex);
+    _notify();
+  }
+
+  void revertLastTurn() {
+    if (_turns.isNotEmpty) {
+      deleteTurn(_turns.length - 1);
+    }
+  }
+
+  Future<void> _executeSendTurn(
+    GenAiConversationTurn turn,
+    GenAiModel model,
+  ) async {
+    final history = <GenAiMessage>[
+      for (final t
+          in _turns.where((t) => t.phase == GenAiChatPhase.completed)) ...[
+        GenAiMessage(role: GenAiRole.user, content: t.prompt),
+        GenAiMessage(role: GenAiRole.assistant, content: t.answer),
+      ],
+    ];
     final generation = _generation;
     _turns.add(turn);
     _active = turn;
@@ -570,11 +660,15 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           history: history,
           thinking: _thinkingEnabled,
           netGo: _netSearchEnabled,
-          fileIds: fileIds,
-          imageUrl: imageUrl,
-          imageUrls: imageUrls.isNotEmpty
-              ? imageUrls
-              : [if (imageUrl != null && imageUrl.isNotEmpty) imageUrl],
+          fileIds: turn.attachedFileIds,
+          imageUrl: turn.attachedImageUrl,
+          imageUrls: turn.attachedImageUrls.isNotEmpty
+              ? turn.attachedImageUrls
+              : [
+                  if (turn.attachedImageUrl != null &&
+                      turn.attachedImageUrl!.isNotEmpty)
+                    turn.attachedImageUrl!,
+                ],
         ),
       );
     } finally {

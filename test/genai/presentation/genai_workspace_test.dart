@@ -658,4 +658,116 @@ void main() {
     expect(find.byType(Dialog), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+      'user message bubble edit button opens editor and submits edited prompt',
+      (tester) async {
+    final demo = await show(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('genai-prompt')),
+      '最初的问题',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('genai-send')));
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.turns.length, 1);
+    expect(demo.workspace.turns.first.prompt, '最初的问题');
+
+    // Scroll up so user bubble and its action bar are fully visible
+    await tester.drag(
+      find.byKey(const ValueKey('genai-thread')),
+      const Offset(0, 1000),
+    );
+    await tester.pumpAndSettle();
+
+    // Tap edit button on the user bubble
+    final editBtn = find.byKey(const ValueKey('genai-user-edit-0'));
+    expect(editBtn, findsOneWidget);
+    await tester.tap(editBtn);
+    await tester.pumpAndSettle();
+
+    final editField = find.byKey(const ValueKey('genai-edit-prompt-0'));
+    expect(editField, findsOneWidget);
+    expect(find.byKey(const ValueKey('genai-edit-cancel-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('genai-edit-submit-0')), findsOneWidget);
+
+    // Cancel edit
+    await tester.tap(find.byKey(const ValueKey('genai-edit-cancel-0')));
+    await tester.pumpAndSettle();
+    expect(editField, findsNothing);
+    expect(demo.workspace.turns.first.prompt, '最初的问题');
+
+    // Open edit again and submit new text
+    await tester.tap(editBtn);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('genai-edit-prompt-0')),
+      '修改后的问题',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('genai-edit-submit-0')));
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.turns.length, 1);
+    expect(demo.workspace.turns.first.prompt, '修改后的问题');
+    expect(demo.workspace.turns.first.phase, GenAiChatPhase.completed);
+  });
+
+  testWidgets(
+      'delete and revert on message bubbles removes turns from workspace',
+      (tester) async {
+    final demo = await show(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('genai-prompt')),
+      '第一条消息',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('genai-send')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('genai-prompt')),
+      '第二条消息',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('genai-send')));
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.turns.length, 2);
+
+    // Revert/delete the second turn via user bubble delete button
+    final userDelete1 = find.byKey(const ValueKey('genai-user-delete-1'));
+    await tester.ensureVisible(userDelete1);
+    await tester.pumpAndSettle();
+    expect(userDelete1, findsOneWidget);
+    await tester.tap(userDelete1);
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.turns.length, 1);
+    expect(demo.workspace.turns.first.prompt, '第一条消息');
+
+    // Regenerate the remaining turn via assistant bubble
+    final regenerateBtn = find.byKey(const ValueKey('genai-regenerate-0'));
+    await tester.ensureVisible(regenerateBtn);
+    await tester.pumpAndSettle();
+    expect(regenerateBtn, findsOneWidget);
+    await tester.tap(regenerateBtn);
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.turns.length, 1);
+    expect(demo.workspace.turns.first.prompt, '第一条消息');
+
+    // Delete turn via assistant bubble delete button
+    final assistantDelete0 = find.byKey(const ValueKey('genai-delete-0'));
+    await tester.ensureVisible(assistantDelete0);
+    await tester.pumpAndSettle();
+    expect(assistantDelete0, findsOneWidget);
+    await tester.tap(assistantDelete0);
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.turns, isEmpty);
+  });
 }
