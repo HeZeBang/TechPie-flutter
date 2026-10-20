@@ -24,6 +24,9 @@ final class GenAiConversationTurn {
   List<GenAiWebSearchCitation> citations = const [];
   List<String> attachedFileNames = const [];
   String? attachedImageUrl;
+  List<String> attachedImageUrls = const [];
+  Uint8List? attachedImageBytes;
+  List<Uint8List> attachedImageBytesList = const [];
   GenAiChatPhase phase = GenAiChatPhase.preparing;
   GenAiFailure? failure;
   GenAiFinishReason? finishReason;
@@ -102,6 +105,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   bool _netSearchEnabled = false;
   bool _recognizingAudio = false;
   final _attachments = <GenAiAttachment>[];
+  final _pendingUploads = <Future<void>>{};
   int _generation = 0;
   String _groupId = createGroupId();
 
@@ -122,6 +126,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   bool get netSearchEnabled => _netSearchEnabled;
   bool get recognizingAudio => _recognizingAudio;
   List<GenAiAttachment> get attachments => List.unmodifiable(_attachments);
+  bool get hasPendingUploads =>
+      _attachments.any((a) => a.uploading) || _pendingUploads.isNotEmpty;
   String get groupId => _groupId;
   String get title => _turns.isEmpty ? '新的对话' : _turns.first.prompt;
 
@@ -147,6 +153,12 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> waitForPendingUploads() async {
+    while (_pendingUploads.isNotEmpty) {
+      await Future.wait(List.of(_pendingUploads));
+    }
+  }
+
   Future<void> addDocumentAttachment(String fileName, List<int> bytes) async {
     final model = _selectedModel;
     if (_disposed || !connected || model == null) return;
@@ -159,10 +171,27 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     );
     _attachments.add(attachment);
     _notify();
+    final uploadFuture =
+        _uploadDocument(id, attachment, model.aiType, fileName, bytes);
+    _pendingUploads.add(uploadFuture);
+    try {
+      await uploadFuture;
+    } finally {
+      _pendingUploads.remove(uploadFuture);
+    }
+  }
+
+  Future<void> _uploadDocument(
+    String id,
+    GenAiAttachment attachment,
+    String aiType,
+    String fileName,
+    List<int> bytes,
+  ) async {
     try {
       final uploaded = await _repository.uploadDocument(
         groupId: _groupId,
-        aiType: model.aiType,
+        aiType: aiType,
         fileName: fileName,
         bytes: bytes,
         c: GenAiCancellation(),
@@ -199,6 +228,21 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     );
     _attachments.add(attachment);
     _notify();
+    final uploadFuture = _uploadImage(id, attachment, fileName, bytes);
+    _pendingUploads.add(uploadFuture);
+    try {
+      await uploadFuture;
+    } finally {
+      _pendingUploads.remove(uploadFuture);
+    }
+  }
+
+  Future<void> _uploadImage(
+    String id,
+    GenAiAttachment attachment,
+    String fileName,
+    List<int> bytes,
+  ) async {
     try {
       final uploaded = await _repository.uploadVisionImage(
         fileName: fileName,
@@ -403,11 +447,13 @@ final class GenAiWorkspaceController extends ChangeNotifier {
 
   Future<void> send(String prompt) async {
     final model = _selectedModel;
-    if (_disposed ||
-        sending ||
-        !connected ||
-        model == null ||
-        prompt.trim().isEmpty) {
+    if (_disposed || sending || !connected || model == null) {
+      return;
+    }
+    if (_attachments.any((a) => a.uploading) || _pendingUploads.isNotEmpty) {
+      await waitForPendingUploads();
+    }
+    if (prompt.trim().isEmpty && _attachments.isEmpty) {
       return;
     }
     final history = <GenAiMessage>[
@@ -421,17 +467,31 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         .where((a) => a.fileId != null)
         .map((a) => a.fileId!)
         .toList();
-    final imageUrl = _attachments
-        .where((a) => a.isImage && a.imageUrl != null)
-        .firstOrNull
-        ?.imageUrl;
+    final imageAttachments = _attachments.where((a) => a.isImage).toList();
+    final imageUrl =
+        imageAttachments.where((a) => a.imageUrl != null).firstOrNull?.imageUrl;
+    final imageUrls =
+        imageAttachments.map((a) => a.imageUrl).whereType<String>().toList();
     final attachedFileNames =
         _attachments.where((a) => !a.isImage).map((a) => a.name).toList();
+    final attachedImageBytes =
+        imageAttachments.where((a) => a.bytes.isNotEmpty).firstOrNull != null
+            ? Uint8List.fromList(
+                imageAttachments.firstWhere((a) => a.bytes.isNotEmpty).bytes,
+              )
+            : null;
+    final attachedImageBytesList = [
+      for (final a in imageAttachments)
+        if (a.bytes.isNotEmpty) Uint8List.fromList(a.bytes),
+    ];
     final turn = GenAiConversationTurn(prompt.trim())
       ..thinkingStartTime = DateTime.now()
       ..isSearching = _netSearchEnabled
       ..attachedFileNames = attachedFileNames
-      ..attachedImageUrl = imageUrl;
+      ..attachedImageUrl = imageUrl
+      ..attachedImageUrls = imageUrls
+      ..attachedImageBytes = attachedImageBytes
+      ..attachedImageBytesList = attachedImageBytesList;
     _attachments.clear();
     final generation = _generation;
     _turns.add(turn);
@@ -469,6 +529,9 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           netGo: _netSearchEnabled,
           fileIds: fileIds,
           imageUrl: imageUrl,
+          imageUrls: imageUrls.isNotEmpty
+              ? imageUrls
+              : [if (imageUrl != null && imageUrl.isNotEmpty) imageUrl],
         ),
       );
     } finally {

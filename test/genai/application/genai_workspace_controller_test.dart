@@ -203,4 +203,109 @@ void main() {
     await workspace.send('explicit selection');
     expect(jsonDecode(transport.requests.last.body!)['aiType'], 'paid');
   });
+
+  test(
+      'attaching image and sending populates turn bytes and sends imageUrl and imageUrls',
+      () async {
+    final original = transport.handle;
+    transport.handle = (r) async {
+      if (r.uri.path == '/sys/common/upload') {
+        return response(
+          json: {
+            'success': true,
+            'code': 200,
+            'result': {'url': 'temp/test_image.png'},
+          },
+        );
+      }
+      return original(r);
+    };
+
+    final imageBytes = [137, 80, 78, 71, 13, 10, 26, 10];
+    await workspace.addImageAttachment('photo.png', imageBytes);
+    expect(workspace.attachments.length, 1);
+    expect(
+      workspace.attachments.first.imageUrl,
+      contains('temp/test_image.png'),
+    );
+    expect(workspace.hasPendingUploads, isFalse);
+
+    await workspace.send('请分析');
+    expect(workspace.attachments, isEmpty);
+    expect(workspace.turns.length, 1);
+    final turn = workspace.turns.first;
+    expect(turn.attachedImageBytes, equals(imageBytes));
+    expect(turn.attachedImageUrl, contains('temp/test_image.png'));
+
+    final post = transport.requests.last;
+    final json = jsonDecode(post.body!) as Map<String, dynamic>;
+    expect(json['imageUrl'], contains('temp/test_image.png'));
+    expect(json['imageUrls'], equals([turn.attachedImageUrl]));
+  });
+
+  test('send awaits in-flight image upload and does not drop attachment',
+      () async {
+    final uploadCompleter = Completer<GenAiResponse>();
+    final original = transport.handle;
+    transport.handle = (r) async {
+      if (r.uri.path == '/sys/common/upload') {
+        return uploadCompleter.future;
+      }
+      return original(r);
+    };
+
+    final imageBytes = [1, 2, 3, 4];
+    unawaited(workspace.addImageAttachment('pending.png', imageBytes));
+    await Future<void>.delayed(Duration.zero);
+    expect(workspace.hasPendingUploads, isTrue);
+
+    final sendFuture = workspace.send('分析此图');
+
+    uploadCompleter.complete(
+      response(
+        json: {
+          'success': true,
+          'code': 200,
+          'result': {'url': 'temp/pending.png'},
+        },
+      ),
+    );
+    await sendFuture;
+
+    expect(workspace.turns.length, 1);
+    final turn = workspace.turns.first;
+    expect(turn.attachedImageBytes, equals(imageBytes));
+    expect(turn.attachedImageUrl, contains('temp/pending.png'));
+    final json =
+        jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
+    expect(json['imageUrl'], contains('temp/pending.png'));
+    expect(json['imageUrls'], isNotEmpty);
+  });
+
+  test('send preserves attachedImageBytes even if upload returned an error',
+      () async {
+    final original = transport.handle;
+    transport.handle = (r) async {
+      if (r.uri.path == '/sys/common/upload') {
+        return response(
+          status: 500,
+          json: {'success': false, 'code': 500, 'message': 'Upload error'},
+        );
+      }
+      return original(r);
+    };
+
+    final imageBytes = [10, 20, 30, 40];
+    await workspace.addImageAttachment('failed.png', imageBytes);
+    expect(workspace.attachments.length, 1);
+    expect(workspace.attachments.first.error, isNotNull);
+    expect(workspace.attachments.first.imageUrl, isNull);
+
+    await workspace.send('图片上传虽然网络失败但本地图片必须保留');
+    expect(workspace.attachments, isEmpty);
+    expect(workspace.turns.length, 1);
+    final turn = workspace.turns.first;
+    expect(turn.attachedImageBytes, equals(imageBytes));
+    expect(turn.attachedImageBytesList, equals([imageBytes]));
+  });
 }

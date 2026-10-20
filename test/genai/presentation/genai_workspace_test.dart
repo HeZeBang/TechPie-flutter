@@ -389,4 +389,106 @@ void main() {
     expect(demo.workspace.connected, isTrue);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+      'uploading image and pressing send displays image in user bubble and preserves image bytes',
+      (tester) async {
+    final sampleBytes = Uint8List.fromList([
+      137,
+      80,
+      78,
+      71,
+      13,
+      10,
+      26,
+      10,
+      0,
+      0,
+      0,
+      13,
+      73,
+      72,
+      68,
+      82,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      8,
+      6,
+      0,
+      0,
+      0,
+      31,
+      21,
+      196,
+      137,
+      0,
+      0,
+      0,
+      11,
+      73,
+      68,
+      65,
+      84,
+      120,
+      156,
+      99,
+      96,
+      0,
+      0,
+      0,
+      2,
+      0,
+      1,
+      226,
+      33,
+      188,
+      51,
+      0,
+      0,
+      0,
+      0,
+      73,
+      69,
+      78,
+      68,
+      174,
+      66,
+      96,
+      130,
+    ]);
+    final picker = FakeGenAiPicker(
+      nextImage: GenAiPickedFile(
+        name: 'sample_photo.png',
+        bytes: sampleBytes,
+      ),
+    );
+    final demo = await show(tester, picker: picker);
+
+    final imageBtn = find.byKey(const ValueKey('genai-upload-image'));
+    await tester.tap(imageBtn);
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.attachments.length, 1);
+    expect(demo.workspace.hasPendingUploads, isFalse);
+
+    final sendBtn = find.byKey(const ValueKey('genai-send'));
+    await tester.tap(sendBtn);
+    await tester.pumpAndSettle();
+
+    expect(demo.workspace.attachments, isEmpty);
+    expect(demo.workspace.turns.length, 1);
+    final turn = demo.workspace.turns.first;
+    expect(turn.prompt, '请分析这张图片');
+    expect(turn.attachedImageBytes, equals(sampleBytes));
+    expect(turn.attachedImageUrl, isNotNull);
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

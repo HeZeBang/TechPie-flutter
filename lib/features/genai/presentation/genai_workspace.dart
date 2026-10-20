@@ -92,8 +92,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   bool get _canSend =>
       _state.connected &&
       _state.selectedModel != null &&
-      (_draft.text.trim().isNotEmpty || _state.attachments.isNotEmpty) &&
-      !_state.sending;
+      !_state.sending &&
+      !_state.hasPendingUploads &&
+      (_draft.text.trim().isNotEmpty || _state.attachments.isNotEmpty);
 
   @override
   void initState() {
@@ -1613,16 +1614,67 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            if (turn.attachedImageUrl != null)
+                            if (turn.attachedImageBytesList.isNotEmpty ||
+                                turn.attachedImageBytes != null ||
+                                turn.attachedImageUrl != null ||
+                                turn.attachedImageUrls.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    turn.attachedImageUrl!,
-                                    height: 180,
-                                    fit: BoxFit.contain,
-                                  ),
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  alignment: WrapAlignment.end,
+                                  children: [
+                                    if (turn.attachedImageBytesList.isNotEmpty)
+                                      for (final bytes
+                                          in turn.attachedImageBytesList)
+                                        ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          child: Image.memory(
+                                            bytes,
+                                            height: 180,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) =>
+                                                _buildImageErrorPlaceholder(),
+                                          ),
+                                        )
+                                    else if (turn.attachedImageBytes != null)
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.memory(
+                                          turn.attachedImageBytes!,
+                                          height: 180,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, __, ___) =>
+                                              _buildImageErrorPlaceholder(),
+                                        ),
+                                      )
+                                    else if (turn.attachedImageUrls.isNotEmpty)
+                                      for (final url in turn.attachedImageUrls)
+                                        ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          child: Image.network(
+                                            url,
+                                            height: 180,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) =>
+                                                _buildImageErrorPlaceholder(),
+                                          ),
+                                        )
+                                    else if (turn.attachedImageUrl != null)
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          turn.attachedImageUrl!,
+                                          height: 180,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, __, ___) =>
+                                              _buildImageErrorPlaceholder(),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
                             if (turn.attachedFileNames.isNotEmpty)
@@ -2180,7 +2232,11 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                         const SizedBox(width: 6),
                         IconButton.filled(
                           key: const ValueKey('genai-send'),
-                          tooltip: _state.sending ? '停止生成' : '发送消息',
+                          tooltip: _state.sending
+                              ? '停止生成'
+                              : _state.hasPendingUploads
+                                  ? '正在上传附件...'
+                                  : '发送消息',
                           onPressed: _state.sending
                               ? _state.stop
                               : _canSend
@@ -2241,6 +2297,22 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
               ),
             ),
             if (action != null) action,
+          ],
+        ),
+      );
+
+  Widget _buildImageErrorPlaceholder() => Container(
+        padding: const EdgeInsets.all(8),
+        color: Colors.black12,
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.broken_image_outlined, size: 16),
+            SizedBox(width: 4),
+            Text(
+              '图片无法加载',
+              style: TextStyle(fontSize: 11),
+            ),
           ],
         ),
       );
