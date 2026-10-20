@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
@@ -51,112 +54,145 @@ class GenAiMarkdown extends StatelessWidget {
 
     final baseStyle = styleSheet ?? MarkdownStyleSheet.fromTheme(theme);
     final effectiveStyleSheet = baseStyle.copyWith(
-      p: baseStyle.p ??
+      p: styleSheet?.p ??
           const TextStyle(
             fontSize: 14,
             height: 1.75,
           ),
-      h1: baseStyle.h1 ??
-          const TextStyle(
+      h1: styleSheet?.h1 ??
+          TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w700,
             height: 1.4,
             letterSpacing: -0.3,
+            color: theme.colorScheme.onSurface,
           ),
-      h2: baseStyle.h2 ??
-          const TextStyle(
+      h2: styleSheet?.h2 ??
+          TextStyle(
             fontSize: 17,
             fontWeight: FontWeight.w700,
             height: 1.4,
             letterSpacing: -0.2,
+            color: theme.colorScheme.onSurface,
           ),
-      h3: baseStyle.h3 ??
-          const TextStyle(
+      h3: styleSheet?.h3 ??
+          TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w600,
             height: 1.4,
+            color: theme.colorScheme.onSurface,
           ),
-      h4: baseStyle.h4 ??
-          const TextStyle(
+      h4: styleSheet?.h4 ??
+          TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             height: 1.4,
+            color: theme.colorScheme.onSurface,
           ),
-      h5: baseStyle.h5 ??
-          const TextStyle(
+      h5: styleSheet?.h5 ??
+          TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
             height: 1.4,
+            color: theme.colorScheme.onSurface,
           ),
-      h6: baseStyle.h6 ??
-          const TextStyle(
+      h6: styleSheet?.h6 ??
+          TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
             height: 1.4,
+            color: theme.colorScheme.onSurfaceVariant,
           ),
-      blockquote: baseStyle.blockquote ??
+      blockquote: styleSheet?.blockquote ??
           TextStyle(
             fontSize: 13.5,
             height: 1.65,
-            color: theme.textTheme.bodyMedium?.color?.withValues(alpha: .85),
-            fontStyle: FontStyle.italic,
+            color: theme.colorScheme.onSurfaceVariant,
           ),
-      blockquoteDecoration: baseStyle.blockquoteDecoration ??
+      blockquoteDecoration: styleSheet?.blockquoteDecoration ??
           BoxDecoration(
             border: Border(
               left: BorderSide(
-                color: accent.withValues(alpha: .6),
+                color: isDark
+                    ? theme.colorScheme.outline.withValues(alpha: .5)
+                    : theme.colorScheme.outlineVariant,
                 width: 3.5,
               ),
             ),
-            color: accent.withValues(alpha: .04),
+            color: isDark
+                ? theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: .28)
+                : theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: .38),
             borderRadius: const BorderRadius.only(
               topRight: Radius.circular(8),
               bottomRight: Radius.circular(8),
             ),
           ),
-      blockquotePadding: baseStyle.blockquotePadding ??
-          const EdgeInsets.fromLTRB(14, 8, 12, 8),
-      code: baseStyle.code ??
+      blockquotePadding: styleSheet?.blockquotePadding ??
+          const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      code: styleSheet?.code ??
           TextStyle(
             fontFamily: kGenAiMonospaceFamily,
             fontFamilyFallback: kGenAiMonospaceFallback,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
-            color: accent,
-            backgroundColor: accent.withValues(alpha: .08),
+            color: isDark ? const Color(0xFFFFB4AB) : accent,
+            backgroundColor: isDark
+                ? Colors.white.withValues(alpha: .08)
+                : accent.withValues(alpha: .08),
           ),
-      tableHead: baseStyle.tableHead ??
-          const TextStyle(
+      tableHead: styleSheet?.tableHead ??
+          TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 13,
+            color: theme.colorScheme.onSurface,
           ),
-      tableBody: baseStyle.tableBody ??
-          const TextStyle(
+      tableBody: styleSheet?.tableBody ??
+          TextStyle(
             fontSize: 13,
             height: 1.5,
+            color: theme.colorScheme.onSurface,
           ),
-      tableBorder: baseStyle.tableBorder ??
+      tableBorder: styleSheet?.tableBorder ??
           TableBorder.all(
             color: isDark
-                ? Colors.white.withValues(alpha: .12)
-                : Colors.black.withValues(alpha: .1),
+                ? Colors.white.withValues(alpha: .14)
+                : Colors.black.withValues(alpha: .12),
             width: 1,
             borderRadius: BorderRadius.circular(6),
           ),
-      tableCellsPadding: baseStyle.tableCellsPadding ??
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      listBullet: baseStyle.listBullet ??
+      tableCellsPadding: styleSheet?.tableCellsPadding ??
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      listBullet: styleSheet?.listBullet ??
           TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: accent,
           ),
+      horizontalRuleDecoration: styleSheet?.horizontalRuleDecoration ??
+          BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                width: 1.5,
+                color: isDark
+                    ? Colors.white.withValues(alpha: .12)
+                    : Colors.black.withValues(alpha: .1),
+              ),
+            ),
+          ),
+      checkbox: styleSheet?.checkbox ?? TextStyle(color: accent),
+      a: styleSheet?.a ??
+          TextStyle(
+            color: accent,
+            decoration: TextDecoration.underline,
+            decorationColor: accent.withValues(alpha: .5),
+          ),
       codeblockDecoration: const BoxDecoration(),
       codeblockPadding: EdgeInsets.zero,
     );
 
-    return MarkdownBody(
+    return _GenAiMarkdownBody(
       data: preprocessLatexBlocks(data),
       selectable: selectable,
       extensionSet: md.ExtensionSet.gitHubWeb,
@@ -168,6 +204,133 @@ class GenAiMarkdown extends StatelessWidget {
       styleSheet: effectiveStyleSheet,
       imageBuilder: imageBuilder,
       onTapLink: onTapLink,
+    );
+  }
+}
+
+class _GenAiMarkdownBody extends StatefulWidget {
+  const _GenAiMarkdownBody({
+    required this.data,
+    required this.selectable,
+    required this.styleSheet,
+    this.imageBuilder,
+    this.onTapLink,
+    this.builders = const <String, MarkdownElementBuilder>{},
+    this.inlineSyntaxes = const <md.InlineSyntax>[],
+    this.extensionSet,
+  });
+
+  final String data;
+  final bool selectable;
+  final MarkdownStyleSheet styleSheet;
+  final MarkdownImageBuilder? imageBuilder;
+  final MarkdownTapLinkCallback? onTapLink;
+  final Map<String, MarkdownElementBuilder> builders;
+  final List<md.InlineSyntax> inlineSyntaxes;
+  final md.ExtensionSet? extensionSet;
+
+  @override
+  State<_GenAiMarkdownBody> createState() => _GenAiMarkdownBodyState();
+}
+
+class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody>
+    implements MarkdownBuilderDelegate {
+  List<Widget>? _children;
+  final List<GestureRecognizer> _recognizers = <GestureRecognizer>[];
+
+  @override
+  void didChangeDependencies() {
+    _parseMarkdown();
+    super.didChangeDependencies();
+  }
+
+  @override
+  void didUpdateWidget(_GenAiMarkdownBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.data != oldWidget.data ||
+        widget.styleSheet != oldWidget.styleSheet ||
+        widget.selectable != oldWidget.selectable) {
+      _parseMarkdown();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposeRecognizers();
+    super.dispose();
+  }
+
+  void _disposeRecognizers() {
+    if (_recognizers.isEmpty) {
+      return;
+    }
+    final local = List<GestureRecognizer>.from(_recognizers);
+    _recognizers.clear();
+    for (final r in local) {
+      r.dispose();
+    }
+  }
+
+  void _parseMarkdown() {
+    _disposeRecognizers();
+
+    final document = md.Document(
+      inlineSyntaxes: widget.inlineSyntaxes,
+      extensionSet: widget.extensionSet ?? md.ExtensionSet.gitHubWeb,
+      encodeHtml: false,
+    );
+
+    final lines = const LineSplitter().convert(widget.data);
+    final astNodes = document.parseLines(lines);
+
+    final builder = MarkdownBuilder(
+      delegate: this,
+      selectable: widget.selectable,
+      styleSheet: widget.styleSheet,
+      imageDirectory: null,
+      imageBuilder: widget.imageBuilder,
+      checkboxBuilder: null,
+      bulletBuilder: null,
+      builders: widget.builders,
+      paddingBuilders: const <String, MarkdownPaddingBuilder>{},
+      fitContent: true,
+      listItemCrossAxisAlignment: MarkdownListItemCrossAxisAlignment.baseline,
+    );
+
+    _children = builder.build(astNodes);
+  }
+
+  @override
+  GestureRecognizer createLink(String text, String? href, String title) {
+    final recognizer = TapGestureRecognizer()
+      ..onTap = () {
+        if (widget.onTapLink != null) {
+          widget.onTapLink!(text, href, title);
+        }
+      };
+    _recognizers.add(recognizer);
+    return recognizer;
+  }
+
+  @override
+  TextSpan formatText(MarkdownStyleSheet styleSheet, String code) {
+    code = code.replaceAll(RegExp(r'\n$'), '');
+    return TextSpan(style: styleSheet.code, text: code);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final children = _children;
+    if (children == null || children.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    if (children.length == 1) {
+      return children.single;
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
     );
   }
 }

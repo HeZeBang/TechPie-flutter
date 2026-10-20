@@ -6,8 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/presentation/markdown/genai_markdown.dart';
 
 void main() {
-  Widget buildApp(Widget child) {
+  Widget buildApp(Widget child, {ThemeData? theme}) {
     return MaterialApp(
+      theme: theme,
       home: Scaffold(
         body: SingleChildScrollView(
           child: child,
@@ -450,6 +451,147 @@ def add(a, b):
     expect(find.textContaining('inline_code()'), findsOneWidget);
     expect(find.text('语音识别'), findsOneWidget);
     expect(find.text('语音合成'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'theme-adaptive blockquotes eliminate light blue background in dark mode and use onSurfaceVariant text',
+      (tester) async {
+    final darkTheme = ThemeData(
+      brightness: Brightness.dark,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: Colors.deepPurple,
+        brightness: Brightness.dark,
+      ),
+    );
+
+    const quoteMarkdown = '> 黑暗模式下的引用块内容，具有高辨识度与舒适对比度。';
+
+    await tester.pumpWidget(
+      buildApp(
+        const GenAiMarkdown(data: quoteMarkdown),
+        theme: darkTheme,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('黑暗模式下的引用块内容'), findsOneWidget);
+
+    final selectableFinder = find.byType(SelectableText);
+    expect(selectableFinder, findsWidgets);
+    final selectable =
+        tester.widgetList<SelectableText>(selectableFinder).firstWhere(
+              (w) => w.textSpan?.toPlainText().contains('黑暗模式下的引用块内容') ?? false,
+            );
+    final resolvedStyle = selectable.textSpan?.style ??
+        ((selectable.textSpan?.children?.isNotEmpty ?? false)
+            ? (selectable.textSpan!.children!.first as TextSpan).style
+            : null);
+    expect(resolvedStyle?.color, darkTheme.colorScheme.onSurfaceVariant);
+
+    final decoratedBoxes =
+        tester.widgetList<DecoratedBox>(find.byType(DecoratedBox));
+    final quoteBox = decoratedBoxes.firstWhere((w) {
+      final dec = w.decoration;
+      if (dec is BoxDecoration && dec.border is Border) {
+        return (dec.border as Border).left.width == 3.5;
+      }
+      return false;
+    });
+    final boxDec = quoteBox.decoration as BoxDecoration;
+    // Must NOT be the hardcoded flutter_markdown blue
+    expect(boxDec.color, isNot(Colors.blue.shade100));
+    expect(
+      boxDec.color,
+      darkTheme.colorScheme.surfaceContainerHighest.withValues(alpha: .28),
+    );
+  });
+
+  testWidgets(
+      'renders multi-level nested blockquotes and rich contents within blockquotes',
+      (tester) async {
+    const nestedMarkdown = '''
+> 第一层引用：基础背景信息
+>
+> 包含 **粗体**、*斜体* 以及 `inline_code`
+>
+> > 第二层嵌套引用：深入探讨
+> >
+> > > 第三层极深嵌套引用：极限边界测试
+''';
+
+    await tester.pumpWidget(
+      buildApp(
+        const GenAiMarkdown(data: nestedMarkdown),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('第一层引用'), findsOneWidget);
+    expect(find.textContaining('第二层嵌套引用'), findsOneWidget);
+    expect(find.textContaining('第三层极深嵌套引用'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('renders task list checkboxes and tables with various alignments',
+      (tester) async {
+    const listAndTableMarkdown = '''
+- [x] 已完成项测试
+- [ ] 未完成项测试
+
+| 姓名 | 年龄 | 角色 | 状态 |
+| :--- | :---: | ---: | :--- |
+| 张三 | 20 | 开发者 | 正常 |
+| 李四 | 22 | 测试者 | 活跃 |
+''';
+
+    await tester.pumpWidget(
+      buildApp(
+        const GenAiMarkdown(data: listAndTableMarkdown),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('已完成项测试'), findsOneWidget);
+    expect(find.textContaining('未完成项测试'), findsOneWidget);
+    expect(find.text('张三'), findsOneWidget);
+    expect(find.text('李四'), findsOneWidget);
+    expect(find.text('开发者'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('handles edge-case markdown inputs gracefully without crashing',
+      (tester) async {
+    const edgeCases = '''
+# 
+>
+> >
+> > >
+
+```
+```
+
+```unknown_lang_xyz
+foo bar
+```
+
+---
+
+***
+
+| Col1 | Col2 |
+| --- | --- |
+
+[未闭合链接](
+''';
+
+    await tester.pumpWidget(
+      buildApp(
+        const GenAiMarkdown(data: edgeCases),
+      ),
+    );
+    await tester.pumpAndSettle();
+
     expect(tester.takeException(), isNull);
   });
 }

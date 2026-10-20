@@ -275,9 +275,93 @@ final class DemoGenAiBackend implements GenAiTransport {
         });
       }
     }
-    final answer = prompt.contains('代码') || request['aiType'] == 'demo-code'
-        ? '当然。下面是一个把想法拆成小步骤的 Python 示例：\n\n```python\ndef make_plan(goal):\n    return [f"理解 {goal}", "尝试一个小例子", "验证结果"]\n\nfor step in make_plan("今天的学习目标"):\n    print(step)\n```\n\n先运行最小的例子，再逐步完善。你也可以继续告诉我输入、输出和限制，我们一起细化。\n\n*这是本地演示回复，未调用校园模型。*'
-        : '当然，我们可以从一个清晰的小目标开始。\n\n### 给你一个可以马上开始的思路\n\n1. **明确目标**：把「${prompt.length > 48 ? '${prompt.substring(0, 48)}…' : prompt}」拆成一个具体问题。\n2. **列出已知条件**：整理材料、时间和你最关心的部分。\n3. **做一次小尝试**：先完成最小的一步，再根据结果调整。\n\n| 阶段 | 建议安排 |\n| --- | --- |\n| 梳理问题 | 10 分钟 |\n| 专注尝试 | 25 分钟 |\n| 回顾与调整 | 5 分钟 |\n\n这是我们当前对话的第 **$turn** 轮。你可以继续补充细节，我会把前面的上下文一起考虑。\n\n*这是本地演示回复，未调用校园模型。*';
+    final String answer;
+    if (prompt.contains('样式') ||
+        prompt.contains('排版') ||
+        prompt.contains('markdown') ||
+        prompt.contains('Markdown') ||
+        prompt.contains('引用') ||
+        prompt.contains('blockquote') ||
+        prompt.contains('示例') ||
+        prompt.contains('example') ||
+        prompt.contains('测试')) {
+      answer = '''
+# Markdown 排版与样式综合示例
+
+这是一段正文导语，展示各种基础与进阶排版元素的暗色模式自适应效果。
+
+## 1. 引用块 (Blockquotes) 与边界情况
+
+> 单行常规引用：上海科技大学致力于建设一所小规模、高水平、国际化的研究型大学。
+
+> **多段落与富文本引用**：
+>
+> 引用内的第二段，包含 **粗体**、*斜体* 以及行内代码 `kGenAiMonospaceFamily`。
+>
+> 引用内也支持数学公式：质能等价方程为 \$E = mc^2\$。
+>
+> > 这是二级嵌套引用：验证多层嵌套下的内边距与左侧指示条。
+> >
+> > > 这是三级极深嵌套引用：验证层级递进下的阅读舒适度与容器边界。
+
+## 2. 列表与任务清单
+
+- 无序层级 1：计算机科学与技术
+  - 无序层级 2：人工智能与机器学习
+    - 无序层级 3：大语言模型推理优化
+- 无序层级 1：信息工程与自动化
+
+1. 第一阶段：问题梳理与约束分析
+2. 第二阶段：最小可执行原型验证
+   1. 编写单测覆盖边界情况
+   2. 检查多平台渲染一致性
+3. 第三阶段：全量构建与部署
+
+- [x] 暗黑模式下引用块去高亮刺眼背景（无 `Colors.blue.shade100` 溢出）
+- [x] 引用块内文本使用舒适变体灰阶，避免纯白光晕
+- [ ] 后续多主题调优
+
+## 3. 表格与对齐 (Tables)
+
+| 模块名称 | 类型 | 默认字体族 | 对齐方式 | 状态 |
+| :--- | :---: | :--- | ---: | :---: |
+| `GenAiStandardCodeBlock` | 代码块 | `RobotoMono` | 左对齐 | 稳定 |
+| `GenAiLatexBlockView` | 公式块 | KaTeX-HTML | 居中 | 稳定 |
+| `GenAiChartView` | 图表组件 | 系统动态配色 | 自适应 | 交互可用 |
+
+## 4. 行内与代码块 (Code)
+
+行内代码示例：在入口配置中调用 `runApp(const TechPieApp())`。
+
+```python
+def solve_system(equations: list[str]) -> dict[str, float]:
+    """求解多元一次方程组并返回解集字典。"""
+    # 模拟高斯消元法流程
+    print("正在构建增广矩阵...")
+    return {"x": 1.0, "y": -2.5, "z": 4.0}
+
+result = solve_system(["2x + y = -0.5", "y + z = 1.5"])
+for var, val in result.items():
+    print(f"{var} = {val}")
+```
+
+## 5. 数学公式 (LaTeX)
+
+行内公式示例：对于任意实数 \$x\$，高斯积分满足 \$\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}\$。
+
+独立展示公式：
+
+\$\$\\oint_C \\mathbf{B} \\cdot d\\boldsymbol{\\ell} = \\mu_0 \\left( I_{\\text{enc}} + \\varepsilon_0 \\frac{d\\Phi_E}{dt} \\right)\$\$
+
+*这是本地演示排版示例，未调用校园模型。*
+''';
+    } else if (prompt.contains('代码') || request['aiType'] == 'demo-code') {
+      answer =
+          '当然。下面是一个把想法拆成小步骤的 Python 示例：\n\n```python\ndef make_plan(goal):\n    return [f"理解 {goal}", "尝试一个小例子", "验证结果"]\n\nfor step in make_plan("今天的学习目标"):\n    print(step)\n```\n\n先运行最小的例子，再逐步完善。你也可以继续告诉我输入、输出和限制，我们一起细化。\n\n*这是本地演示回复，未调用校园模型。*';
+    } else {
+      answer =
+          '当然，我们可以从一个清晰的小目标开始。\n\n### 给你一个可以马上开始的思路\n\n1. **明确目标**：把「${prompt.length > 48 ? '${prompt.substring(0, 48)}…' : prompt}」拆成一个具体问题。\n2. **列出已知条件**：整理材料、时间和你最关心的部分。\n3. **做一次小尝试**：先完成最小的一步，再根据结果调整。\n\n| 阶段 | 建议安排 |\n| --- | --- |\n| 梳理问题 | 10 分钟 |\n| 专注尝试 | 25 分钟 |\n| 回顾与调整 | 5 分钟 |\n\n这是我们当前对话的第 **$turn** 轮。你可以继续补充细节，我会把前面的上下文一起考虑。\n\n*这是本地演示回复，未调用校园模型。*';
+    }
     for (var index = 0; index < answer.length; index += 5) {
       await cancellation.race(Future<void>.delayed(chunkDelay));
       cancellation.throwIfCancelled();

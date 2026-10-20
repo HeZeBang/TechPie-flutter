@@ -91,8 +91,13 @@ class GenAiLatexInlineBuilder extends MarkdownElementBuilder {
       return const SizedBox.shrink();
     }
 
-    final textStyle =
+    final baseStyle =
         preferredStyle ?? parentStyle ?? Theme.of(context).textTheme.bodyMedium;
+    final resolvedColor = baseStyle?.color ??
+        Theme.of(context).textTheme.bodyMedium?.color ??
+        Theme.of(context).colorScheme.onSurface;
+    final textStyle =
+        (baseStyle ?? const TextStyle()).copyWith(color: resolvedColor);
 
     return Text.rich(
       WidgetSpan(
@@ -106,7 +111,7 @@ class GenAiLatexInlineBuilder extends MarkdownElementBuilder {
             textStyle: textStyle,
             onErrorFallback: (_) => Text(
               formula,
-              style: (textStyle ?? const TextStyle()).copyWith(
+              style: textStyle.copyWith(
                 fontFamily: 'RobotoMono',
                 fontFamilyFallback: const ['monospace', 'Menlo'],
                 color: Theme.of(context).colorScheme.error,
