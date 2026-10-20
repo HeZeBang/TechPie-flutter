@@ -30,8 +30,16 @@ GenAiPageResult<T> genAiPage<T>(
     total = json['total'] is num ? json['total'] as num : null;
   }
   if (records is! List) throw const GenAiFailure(GenAiFailureKind.protocol);
+  final items = <T>[];
+  for (final Object? row in records) {
+    try {
+      items.add(decode(genAiObject(row)));
+    } catch (_) {
+      // Gracefully ignore corrupt records so one bad record does not break the entire list.
+    }
+  }
   return GenAiPageResult(
-    List.unmodifiable(records.map((Object? row) => decode(genAiObject(row)))),
+    List.unmodifiable(items),
     page: page,
     hasMore:
         total == null ? records.length >= pageSize : page * pageSize < total,
@@ -47,12 +55,17 @@ final class GenAiConversationSummary {
     required this.title,
     this.time = '',
   });
-  factory GenAiConversationSummary.fromJson(Map<String, dynamic> json) =>
-      GenAiConversationSummary(
-        id: genAiRequiredString(json, 'chatGroupId'),
-        title: genAiOptionalText(json, 'question'),
-        time: genAiOptionalText(json, 'createTime'),
-      );
+  factory GenAiConversationSummary.fromJson(Map<String, dynamic> json) {
+    final id = genAiOptionalText(json, 'chatGroupId').trim();
+    if (id.isEmpty) {
+      throw const GenAiFailure(GenAiFailureKind.protocol);
+    }
+    return GenAiConversationSummary(
+      id: id,
+      title: genAiOptionalText(json, 'question'),
+      time: genAiOptionalText(json, 'createTime'),
+    );
+  }
   final String id;
   final String title;
   final String time;
@@ -69,7 +82,7 @@ final class GenAiSavedTurn {
     final raw = genAiOptionalText(json, 'answer');
     final thoughts = RegExp(r'<think>([\s\S]*?)</think>');
     return GenAiSavedTurn(
-      prompt: genAiRequiredString(json, 'question'),
+      prompt: genAiOptionalText(json, 'question'),
       answer: raw.replaceAll(thoughts, '').trim(),
       reasoning:
           thoughts.allMatches(raw).map((m) => m.group(1)!.trim()).join('\n'),

@@ -426,8 +426,15 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   }
 
   void _deleteTurn(int index) {
+    if (_editingTurnIndex == index ||
+        (_editingTurnIndex != null &&
+            _editingTurnIndex! >= _state.turns.length - 1)) {
+      _editingTurnIndex = null;
+      _editPromptController.clear();
+    }
     _state.deleteTurn(index);
     if (mounted) {
+      if (_state.turns.isEmpty) _draft.clear();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('已删除该轮对话'),
@@ -438,8 +445,14 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   }
 
   void _revertLastTurn() {
+    if (_editingTurnIndex != null &&
+        _editingTurnIndex! >= _state.turns.length - 1) {
+      _editingTurnIndex = null;
+      _editPromptController.clear();
+    }
     _state.revertLastTurn();
     if (mounted) {
+      if (_state.turns.isEmpty) _draft.clear();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('已撤回上一条对话'),

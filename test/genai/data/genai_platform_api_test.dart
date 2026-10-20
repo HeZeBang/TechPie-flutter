@@ -79,6 +79,37 @@ void main() {
   });
 
   test(
+      'listConversations skips corrupt records with empty or missing chatGroupId without failing entire page',
+      () async {
+    final transport = ScriptedTransport(
+      (r) async => response(
+        json: {
+          'success': true,
+          'code': 200,
+          'result': {
+            'records': [
+              {'chatGroupId': 'valid-1', 'question': 'Question 1'},
+              {'chatGroupId': '', 'question': 'Corrupt with empty id'},
+              {'question': 'Corrupt without id'},
+              {'chatGroupId': 'valid-2', 'question': 'Question 2'},
+            ],
+            'total': 4,
+          },
+        },
+      ),
+    );
+    final api = GenAiApiClient(transport: transport);
+    final result = await api.listConversations(
+      'token',
+      'user-1',
+      GenAiCancellation(),
+    );
+    expect(result.records.length, 2);
+    expect(result.records[0].id, 'valid-1');
+    expect(result.records[1].id, 'valid-2');
+  });
+
+  test(
       'image generation is a single synchronous JSON request and checks CDN URLs',
       () async {
     final transport = ScriptedTransport((r) async {

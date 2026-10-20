@@ -473,10 +473,12 @@ final class GenAiWorkspaceController extends ChangeNotifier {
             : GenAiChatPhase.completed;
       _turns.add(turn);
     }
+    if (_turns.isEmpty) {
+      _groupId = createGroupId();
+    }
     final aiType = turns.firstOrNull?.aiType;
     final model = models.where((m) => m.aiType == aiType).firstOrNull;
-    // An unavailable historical model requires an explicit new choice.
-    _selectedModel = model;
+    _selectedModel = model ?? _selectedModel ?? models.firstOrNull;
     _notify();
   }
 
@@ -606,6 +608,11 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       stop();
     }
     _turns.removeAt(turnIndex);
+    if (_turns.isEmpty) {
+      stop();
+      _chat.clear();
+      _groupId = createGroupId();
+    }
     _notify();
   }
 

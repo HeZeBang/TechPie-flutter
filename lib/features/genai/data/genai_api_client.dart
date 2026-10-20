@@ -136,9 +136,15 @@ final class GenAiApiClient {
       cancellation,
     );
     if (result is! List) throw const GenAiFailure(GenAiFailureKind.protocol);
-    return List.unmodifiable(
-      result.map((Object? row) => GenAiSavedTurn.fromJson(genAiObject(row))),
-    );
+    final turns = <GenAiSavedTurn>[];
+    for (final Object? row in result) {
+      try {
+        turns.add(GenAiSavedTurn.fromJson(genAiObject(row)));
+      } catch (_) {
+        // Skip corrupt rows so one bad turn does not fail the entire conversation.
+      }
+    }
+    return List.unmodifiable(turns);
   }
 
   Future<void> deleteConversation(
