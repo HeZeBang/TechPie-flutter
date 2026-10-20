@@ -8,6 +8,7 @@ import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/platform/genai_transport.dart';
 import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder.dart';
+import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
 
 const ownerA = GenAiOwner(
   primaryUserId: 'primary-a',
@@ -202,5 +203,38 @@ final class FakeGenAiAudioRecorder implements GenAiAudioRecorder {
   void dispose() {
     disposeCalls++;
     recording = false;
+  }
+}
+
+final class FakeGenAiPicker implements GenAiPicker {
+  FakeGenAiPicker({
+    this.nextDocument,
+    this.nextImage,
+    this.nextAudio,
+  });
+
+  GenAiPickedFile? nextDocument;
+  GenAiPickedFile? nextImage;
+  GenAiPickedFile? nextAudio;
+  int pickImageCalls = 0;
+  int pickDocumentCalls = 0;
+  int pickAudioCalls = 0;
+
+  @override
+  Future<GenAiPickedFile?> pickDocument() async {
+    pickDocumentCalls++;
+    return nextDocument;
+  }
+
+  @override
+  Future<GenAiPickedFile?> pickImage() async {
+    pickImageCalls++;
+    return nextImage;
+  }
+
+  @override
+  Future<GenAiPickedFile?> pickAudio() async {
+    pickAudioCalls++;
+    return nextAudio;
   }
 }

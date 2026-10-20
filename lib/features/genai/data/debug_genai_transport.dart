@@ -40,7 +40,8 @@ final class DebugGenAiTransport implements GenAiTransport {
     String? body,
     List<int>? bodyBytes,
   }) {
-    final synthetic = headers['X-Access-Token'] == DemoGenAiBackend.token;
+    final synthetic = headers['X-Access-Token'] == DemoGenAiBackend.token ||
+        headers['x-access-token'] == DemoGenAiBackend.token;
     final proxy = _proxy;
     if (!synthetic &&
         (uri.scheme != 'https' ||

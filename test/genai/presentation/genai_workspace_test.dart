@@ -8,6 +8,7 @@ import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder.d
 import 'package:techpie/features/genai/presentation/genai_thinking_view.dart';
 import 'package:techpie/features/genai/presentation/genai_web_search_view.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
+import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
 
 import '../support/fakes.dart';
 
@@ -20,6 +21,7 @@ void main() {
     double keyboard = 0,
     Duration delay = const Duration(milliseconds: 1),
     GenAiAudioRecorder? audioRecorder,
+    GenAiPicker? picker,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -41,6 +43,7 @@ void main() {
           controller: demo.workspace,
           demo: true,
           audioRecorder: audioRecorder,
+          picker: picker,
           login: (_) async =>
               const GenAiCredential(token: DemoGenAiBackend.token),
         ),
@@ -346,5 +349,44 @@ void main() {
 
     expect(recorder.startCalls, 0);
     expect(find.text('无法访问麦克风，请检查权限设置'), findsOneWidget);
+  });
+
+  testWidgets(
+      'uploading image adds attachment chip without refreshing or resetting conversation',
+      (tester) async {
+    final picker = FakeGenAiPicker(
+      nextImage: GenAiPickedFile(
+        name: 'sample_photo.png',
+        bytes: Uint8List.fromList([137, 80, 78, 71]),
+      ),
+    );
+    final demo = await show(tester, picker: picker);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('genai-prompt')),
+      '分析这幅图片',
+    );
+    await tester.pump();
+
+    final imageBtn = find.byKey(const ValueKey('genai-upload-image'));
+    expect(imageBtn, findsOneWidget);
+
+    await tester.tap(imageBtn);
+    await tester.pumpAndSettle();
+
+    expect(picker.pickImageCalls, 1);
+    expect(demo.workspace.connected, isTrue);
+    expect(demo.workspace.attachments.length, 1);
+    expect(demo.workspace.attachments.first.name, 'sample_photo.png');
+    expect(find.text('sample_photo.png'), findsOneWidget);
+
+    expect(find.text('分析这幅图片'), findsOneWidget);
+
+    // Removing the attachment chip works and retains connected state
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(demo.workspace.attachments, isEmpty);
+    expect(demo.workspace.connected, isTrue);
+    expect(tester.takeException(), isNull);
   });
 }

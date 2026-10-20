@@ -1912,10 +1912,20 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: _accent.withValues(alpha: .08),
+                                  color: att.error != null
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .errorContainer
+                                          .withValues(alpha: .3)
+                                      : _accent.withValues(alpha: .08),
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: _accent.withValues(alpha: .2),
+                                    color: att.error != null
+                                        ? Theme.of(context)
+                                            .colorScheme
+                                            .error
+                                            .withValues(alpha: .4)
+                                        : _accent.withValues(alpha: .2),
                                   ),
                                 ),
                                 child: Row(
@@ -1930,6 +1940,13 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                           color: _accent,
                                         ),
                                       )
+                                    else if (att.error != null)
+                                      Icon(
+                                        Icons.error_outline,
+                                        size: 14,
+                                        color:
+                                            Theme.of(context).colorScheme.error,
+                                      )
                                     else
                                       Icon(
                                         att.isImage
@@ -1943,13 +1960,19 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                       constraints:
                                           const BoxConstraints(maxWidth: 140),
                                       child: Text(
-                                        att.name,
+                                        att.error != null
+                                            ? '${att.name} (${att.error})'
+                                            : att.name,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w500,
-                                          color: _accent,
+                                          color: att.error != null
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .error
+                                              : _accent,
                                         ),
                                       ),
                                     ),

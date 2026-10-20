@@ -29,10 +29,20 @@ final class GenAiPickerWeb implements GenAiPicker {
 
     web.document.body?.append(input);
 
+    JSFunction? focusListener;
+
+    void cleanup() {
+      input.remove();
+      if (focusListener != null) {
+        web.window.removeEventListener('focus', focusListener);
+        focusListener = null;
+      }
+    }
+
     input.onchange = ((web.Event _) {
       final files = input.files;
       if (files == null || files.length == 0) {
-        input.remove();
+        cleanup();
         if (!completer.isCompleted) completer.complete(null);
         return;
       }
@@ -40,7 +50,7 @@ final class GenAiPickerWeb implements GenAiPicker {
       final reader = web.FileReader();
       reader.onload = ((web.Event _) {
         final result = reader.result;
-        input.remove();
+        cleanup();
         if (result != null && result.isA<JSArrayBuffer>()) {
           final buffer = (result as JSArrayBuffer).toDart;
           completer.complete(
@@ -54,11 +64,30 @@ final class GenAiPickerWeb implements GenAiPicker {
         }
       }).toJS;
       reader.onerror = ((web.Event _) {
-        input.remove();
+        cleanup();
         if (!completer.isCompleted) completer.complete(null);
       }).toJS;
       reader.readAsArrayBuffer(file);
     }).toJS;
+
+    input.addEventListener(
+      'cancel',
+      ((web.Event _) {
+        cleanup();
+        if (!completer.isCompleted) completer.complete(null);
+      }).toJS,
+    );
+
+    focusListener = ((web.Event _) {
+      Timer(const Duration(milliseconds: 500), () {
+        if (!completer.isCompleted &&
+            (input.files == null || input.files!.length == 0)) {
+          cleanup();
+          completer.complete(null);
+        }
+      });
+    }).toJS;
+    web.window.addEventListener('focus', focusListener);
 
     input.click();
     return completer.future;

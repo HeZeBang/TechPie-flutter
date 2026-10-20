@@ -223,8 +223,11 @@ class Handler(BaseHTTPRequestHandler):
         if not self._valid_origin() or not allowed_route(self.command, self.path):
             self._error(403)
             return
+        is_pic_upload = urlsplit(self.path).path == '/sys/common/upload'
         is_static = urlsplit(self.path).path.startswith('/sys/common/static/')
-        special = urlsplit(self.path).path in AUTH_PATHS or self.path == '/preview/ids-exchange' or is_static
+        special = (urlsplit(self.path).path in AUTH_PATHS or
+                   self.path == '/preview/ids-exchange' or
+                   is_static or is_pic_upload)
         token = self.headers.get('X-Access-Token', '')
         if not special and (not TOKEN.fullmatch(token) or token.startswith('synthetic-')):
             self._error(401)

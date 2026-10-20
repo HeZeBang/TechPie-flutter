@@ -326,6 +326,8 @@ final class GenAiApiClient {
       uri: uri,
       cancellation: cancellation,
       headers: {
+        'x-access-token': token,
+        'X-Access-Token': token,
         'token': '2ea38f293adb4abca21132feba61eaa3',
         'tenant-id': '0',
         'Accept': 'application/json, text/plain, */*',
@@ -334,7 +336,12 @@ final class GenAiApiClient {
       bodyBytes: multipart.bytes,
     );
     try {
-      _checkStatus(response.statusCode);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw GenAiFailure(
+          GenAiFailureKind.rejected,
+          statusCode: response.statusCode,
+        );
+      }
       final value = await _readJson(response);
       cancellation.throwIfCancelled();
       return GenAiUploadedImage.fromJson(genAiObject(genAiEnvelope(value)));
