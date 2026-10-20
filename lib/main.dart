@@ -9,10 +9,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/utils/platform.dart';
 
 import 'features/campus_card/app/app_providers.dart';
+import 'features/genai/app/genai_runtime.dart';
+import 'features/genai/application/campus_genai_session_issuer.dart';
+import 'features/genai/data/debug_genai_transport.dart';
+import 'features/genai/data/demo_genai_backend.dart';
+import 'features/genai/data/loopback_genai_ids_exchange.dart';
 import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
 import 'services/campus_card_service.dart';
+import 'services/debug_fixture.dart';
 import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
@@ -30,6 +36,7 @@ import 'services/update_service.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
 import 'widgets/update_dialogs.dart';
+
 void main(List<String> args) async {
   // If this Flutter engine is a desktop_webview_window title bar (secondary
   // engine inside the webview popup), render the navigation controls and
@@ -54,25 +61,37 @@ void main(List<String> args) async {
   //   runApp(_BootProbe(message: '初始化失败:\n$e\n\n$st'));
   // }
 
+  final preview = kDebugMode && debugFixtureEnabled;
+  if (preview) await initializeDebugFixture();
   final prefs = await SharedPreferences.getInstance();
-  await _realMain(prefs);
+  await _realMain(prefs, preview: preview);
 }
 
-Future<void> _realMain(SharedPreferences prefs) async {
+Future<void> _realMain(SharedPreferences prefs, {bool preview = false}) async {
   final storageService = StorageService(prefs);
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
-  final httpClient = LoggingHttpClient(debugLogger);
+  final httpClient = LoggingHttpClient(
+    debugLogger,
+    inner: preview ? debugFixtureHttpClient() : null,
+  );
   final uniAuthService = UniAuthService(logger: debugLogger);
-  final authService =
-      AuthService(storageService, httpClient, uniAuthService, logger: debugLogger);
+  final authService = AuthService(
+    storageService,
+    httpClient,
+    uniAuthService,
+    logger: debugLogger,
+  );
   final themeService = ThemeService(storageService);
-  final campusCardService = CampusCardService(debugLogger: debugLogger, storage: storageService);
+  final campusCardService =
+      CampusCardService(debugLogger: debugLogger, storage: storageService);
   final ecardBindService = EcardBindService();
   final ecardWidgetService = EcardWidgetService();
   final thirdPartyAuthService = ThirdPartyAuthService(
     storageService,
     httpClient,
   );
+  // Hydrate the local binding before installing automatic fetch listeners.
+  if (preview) await thirdPartyAuthService.initialize();
   final scheduleService = ScheduleService(
     storageService,
     httpClient,
@@ -121,6 +140,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // state (throttled). Wired via post-construction setter to avoid a circular
   // dependency between ThirdPartyAuthService and SyncService.
   thirdPartyAuthService.onBindingsChanged = ({force = false}) {
+    if (preview) return Future<void>.value();
     // The timetable is drawn from the eGate binding, and `fetchAll` does nothing
     // at all while there is none — silently, which is how a freshly bound account
     // used to sit on an empty table with nothing to suggest it should reload. This
@@ -159,13 +179,16 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // -- Boot critical path: local I/O only --
   // Hydrate everything from caches so the first frame paints with data.
   await authService.loadSession();
-  await thirdPartyAuthService.initialize();
-  thirdPartyAuthService.campusWebSession.attachAuth(authService);
+  if (!preview) {
+    await thirdPartyAuthService.initialize();
+    thirdPartyAuthService.campusWebSession.attachAuth(authService);
+  }
   assignmentService.loadCached();
   await scheduleService.loadCachedData();
 
   runApp(
     TechPieApp(
+      preview: preview,
       authService: authService,
       debugLogger: debugLogger,
       storageService: storageService,
@@ -185,6 +208,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   );
 
   bootMark('cached data ready');
+  if (preview) return;
 
   oaGymService.startProfileSync();
   unawaited(campusCardService.refreshAccount());
@@ -309,6 +333,7 @@ class TechPieApp extends StatefulWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final bool preview;
 
   const TechPieApp({
     super.key,
@@ -327,7 +352,8 @@ class TechPieApp extends StatefulWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
-  });
+    this.preview = false,
+  }) : assert(!preview || kDebugMode);
 
   @override
   State<TechPieApp> createState() => _TechPieAppState();
@@ -335,6 +361,28 @@ class TechPieApp extends StatefulWidget {
 
 class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
+  late GenAiRuntime _genAiRuntime;
+
+  GenAiRuntime _createGenAiRuntime() => GenAiRuntime(
+        auth: widget.authService,
+        thirdPartyAuth: widget.thirdPartyAuthService,
+        isDemo: widget.preview,
+        issuer: widget.preview &&
+                kIsWeb &&
+                const String.fromEnvironment('TECHPI_GENAI_PROXY_ORIGIN')
+                    .isNotEmpty
+            ? CampusGenAiSessionIssuer(
+                thirdPartyAuth: widget.thirdPartyAuthService,
+                exchange: LoopbackGenAiIdsExchange(
+                  const String.fromEnvironment(
+                    'TECHPI_GENAI_PROXY_ORIGIN',
+                  ),
+                ).exchange,
+              )
+            : null,
+        transport: widget.preview ? DebugGenAiTransport() : null,
+        store: widget.preview ? DemoGenAiSessionStore() : null,
+      );
 
   /// The silent check runs at launch and whenever the app comes back to the
   /// foreground, but not more often than this: a resume is not a reason to hit
@@ -347,14 +395,21 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _genAiRuntime = _createGenAiRuntime();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_checkForUpdatesQuietly());
+    if (!widget.preview) unawaited(_checkForUpdatesQuietly());
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
   }
 
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.authService != widget.authService ||
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+        oldWidget.preview != widget.preview) {
+      _genAiRuntime.dispose();
+      _genAiRuntime = _createGenAiRuntime();
+    }
     if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
     oldWidget.ecardWidgetService?.clearOpenPayHandler();
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
@@ -363,6 +418,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _genAiRuntime.dispose();
     widget.ecardWidgetService?.clearOpenPayHandler();
     widget.campusCardService.dispose();
     super.dispose();
@@ -370,7 +426,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (!widget.preview && state == AppLifecycleState.resumed) {
       // Coming back is a cheap moment to top the SSO token up, and it is
       // guarded: a token with time left is left alone.
       unawaited(widget.authService.tryRenewSession());
@@ -448,13 +504,20 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        genAiRuntime: _genAiRuntime,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
           navigatorObservers: [FeedbackRouteObserver()],
           builder: (context, child) => AdaptiveFeedbackHost(
             key: adaptiveFeedbackHostKey,
-            child: child ?? const SizedBox.shrink(),
+            child: widget.preview
+                ? Banner(
+                    message: '本地预览',
+                    location: BannerLocation.topEnd,
+                    child: child ?? const SizedBox.shrink(),
+                  )
+                : child ?? const SizedBox.shrink(),
           ),
           title: 'TechPie',
           theme: widget.themeService.lightTheme,
