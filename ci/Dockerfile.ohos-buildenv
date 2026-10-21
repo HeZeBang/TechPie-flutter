@@ -21,10 +21,11 @@
 #   command-line-tools/   <- DevEco Command Line Tools ($CLD_DIR)
 #   flutter_flutter/      <- the OHOS Flutter fork      ($FLUTTER_DIR)
 #
-# Trimmed below, because the image has to fit a hosted runner's disk: 9.7 GB of
-# local payload becomes 3.3 GB to download and 5.5 GB extracted (the 1.9 GB of
-# Flutter git history has to stay — see the note in the trim step). What is
-# dropped is listed with the reason, and every drop is validated by a real
+# Trimmed below, because the image has to fit a hosted runner's disk: 10.4 GB of
+# local payload (DevEco command-line tools 26.0.0.851 + Flutter 3.27.5-ohos) becomes
+# 3.3 GB to download and 5.6 GB extracted — most of what is left is the Flutter
+# fork, including the 1.9 GB of git history that has to stay (see the trim step).
+# What is dropped is listed with the reason, and every drop is validated by a real
 # `flutter build hap` run, not by inspection.
 
 # ============================================================================
@@ -50,16 +51,17 @@ COPY flutter_flutter/ /opt/ohos/flutter_flutter/
 # edit that was never compiled cannot pass unnoticed. `libs/` is packaged as it
 # is, which means a hap still needs no compiler here.
 #
-# That is worth 4.5 GB: `openharmony/native/llvm` (2.3 GB of clang), its sysroot,
-# the bundled cmake/ninja, `hms/native/BiSheng` (1.7 GB, a compiler this build
-# never selects — it resolves native/llvm/bin/clang through
+# That is worth 4.7 GB: `openharmony/native/llvm` (2.3 GB of clang), its two
+# sysroots, the bundled cmake/ninja, `hms/native/BiSheng` (1.9 GB, a compiler this
+# build never selects — it resolves native/llvm/bin/clang through
 # hms/native/build/cmake/hmos.toolchain.cmake) and the second sysroot.
 #
 # Native code that has to be compiled *at build time* is the one thing that
-# would take this back: delete this block then, and the image grows by 4.5 GB.
+# would take this back: delete this block then, and the image grows by 4.7 GB.
 RUN rm -rf \
         /opt/ohos/command-line-tools/sdk/default/openharmony/native/llvm \
         /opt/ohos/command-line-tools/sdk/default/openharmony/native/sysroot \
+        /opt/ohos/command-line-tools/sdk/default/openharmony/native/sysroot_lite \
         /opt/ohos/command-line-tools/sdk/default/openharmony/native/build-tools \
         /opt/ohos/command-line-tools/sdk/default/openharmony/native/docs \
         /opt/ohos/command-line-tools/sdk/default/hms/native/BiSheng \
@@ -86,10 +88,14 @@ RUN rm -rf \
         /opt/ohos/command-line-tools/sdk/default/openharmony/previewer/liteWearable \
         /opt/ohos/command-line-tools/sdk/default/hms/previewer/resources
 
-# --- code linter ------------------------------------------------------------
-# Standalone linter CLI. hvigor does not call it during a build (the module has
-# no code-linter.json5), and it is dead weight in a release image.
-RUN rm -rf /opt/ohos/command-line-tools/codelinter
+# --- standalone CLIs and docs nothing in a build calls ----------------------
+# codelinter (linter; the module has no code-linter.json5), emulator (the device
+# emulator) and arktsdoc (API documentation). hvigor reaches none of them during
+# `assembleHap`; together they are 474 MB of the 7.1 GB toolchain.
+RUN rm -rf \
+        /opt/ohos/command-line-tools/codelinter \
+        /opt/ohos/command-line-tools/emulator \
+        /opt/ohos/command-line-tools/arktsdoc
 
 # --- OHOS Flutter fork ------------------------------------------------------
 # bin/cache/flutter_web_sdk is the web (dart2js) compiler, 274 MB. Only
@@ -106,7 +112,8 @@ RUN rm -rf /opt/ohos/command-line-tools/codelinter
 # A sparse checkout or a stub repository was considered and rejected: the fork's
 # version comes from a tag, so shrinking the history means either fetching it
 # again on the runner or inventing a revision — a fragility not worth 1.3 GB when
-# the finished image measures 3.3 GB against a runner's 14 GB.
+# the finished image measures 3.3 GB to download (5.6 GB extracted)
+# against a runner's 14 GB.
 RUN rm -rf /opt/ohos/flutter_flutter/bin/cache/flutter_web_sdk
 
 # ============================================================================
