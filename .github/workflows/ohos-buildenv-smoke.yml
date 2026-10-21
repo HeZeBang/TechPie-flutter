@@ -82,5 +82,17 @@ jobs:
       - name: Report the artifact
         run: |
           set -euo pipefail
+
           ls -l dist/
-          unzip -l dist/*.hap | head -10
+          hap="$(ls dist/*.hap)"
+          # sed, not head: `head` closes the pipe, unzip dies of SIGPIPE, and
+          # `pipefail` turns that into a failed step (exit 141 — the first run of
+          # this workflow failed exactly there, after the hap had been built).
+          unzip -l "$hap" | sed -n '1,12p'
+          unzip -p "$hap" module.json > /tmp/module.json
+          python3 - <<'PY'
+          import json
+          app = json.load(open("/tmp/module.json"))["app"]
+          print("bundle=%s versionName=%s versionCode=%s"
+                % (app["bundleName"], app["versionName"], app["versionCode"]))
+          PY
