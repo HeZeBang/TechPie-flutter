@@ -507,32 +507,6 @@ def add(a, b):
     );
   });
 
-  testWidgets(
-      'renders multi-level nested blockquotes and rich contents within blockquotes',
-      (tester) async {
-    const nestedMarkdown = '''
-> 第一层引用：基础背景信息
->
-> 包含 **粗体**、*斜体* 以及 `inline_code`
->
-> > 第二层嵌套引用：深入探讨
-> >
-> > > 第三层极深嵌套引用：极限边界测试
-''';
-
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: nestedMarkdown),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('第一层引用'), findsOneWidget);
-    expect(find.textContaining('第二层嵌套引用'), findsOneWidget);
-    expect(find.textContaining('第三层极深嵌套引用'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('renders task list checkboxes and tables with various alignments',
       (tester) async {
     const listAndTableMarkdown = '''

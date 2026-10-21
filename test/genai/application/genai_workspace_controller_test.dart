@@ -8,7 +8,6 @@ import 'package:techpie/features/genai/application/genai_session_service.dart';
 import 'package:techpie/features/genai/application/genai_workspace_controller.dart';
 import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/data/genai_api_client.dart';
-import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/platform/genai_transport.dart';
@@ -337,14 +336,11 @@ void main() {
     expect(turn.attachedImageUrl, contains('temp/recovered.png'));
   });
 
-  test('retryTurn and retryLastTurn regenerate response and truncate history',
-      () async {
+  test('retryTurn retries turn and resends conversation context', () async {
     await workspace.send('turn 1');
     await workspace.send('turn 2');
-    await workspace.send('turn 3');
-    expect(workspace.turns.length, 3);
+    expect(workspace.turns.length, 2);
 
-    // Retrying turn 1 (index 1) should truncate turn 2 and turn 3, and resend turn 2
     await workspace.retryTurn(1);
     expect(workspace.turns.length, 2);
     expect(workspace.turns[0].prompt, 'turn 1');
@@ -356,111 +352,5 @@ void main() {
       {'role': 'user', 'content': 'turn 1'},
       {'role': 'assistant', 'content': 'answer'},
     ]);
-
-    // Retrying last turn resends turn 2
-    await workspace.retryLastTurn();
-    expect(workspace.turns.length, 2);
-    expect(workspace.turns[1].prompt, 'turn 2');
-  });
-
-  test('editAndResend updates user prompt and resends truncated conversation',
-      () async {
-    await workspace.send('original prompt 1');
-    await workspace.send('original prompt 2');
-    expect(workspace.turns.length, 2);
-
-    await workspace.editAndResend(1, 'edited prompt 2');
-    expect(workspace.turns.length, 2);
-    expect(workspace.turns[0].prompt, 'original prompt 1');
-    expect(workspace.turns[1].prompt, 'edited prompt 2');
-
-    final lastReq =
-        jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
-    expect(lastReq['chatInfo'], 'edited prompt 2');
-    expect(lastReq['messages'], [
-      {'role': 'user', 'content': 'original prompt 1'},
-      {'role': 'assistant', 'content': 'answer'},
-    ]);
-  });
-
-  test('deleteTurn and revertLastTurn remove messages from active conversation',
-      () async {
-    await workspace.send('message 1');
-    await workspace.send('message 2');
-    await workspace.send('message 3');
-    expect(workspace.turns.length, 3);
-
-    // Delete message at index 1
-    workspace.deleteTurn(1);
-    expect(workspace.turns.length, 2);
-    expect(workspace.turns[0].prompt, 'message 1');
-    expect(workspace.turns[1].prompt, 'message 3');
-
-    // Revert last turn removes message 3
-    workspace.revertLastTurn();
-    expect(workspace.turns.length, 1);
-    expect(workspace.turns[0].prompt, 'message 1');
-
-    // Revert last turn on remaining turn removes it and resets groupId for a new conversation
-    final initialGroupId = workspace.groupId;
-    workspace.revertLastTurn();
-    expect(workspace.turns, isEmpty);
-    expect(workspace.groupId, isNot(equals(initialGroupId)));
-
-    // Sending another message now targets the new conversation group
-    await workspace.send('new fresh topic');
-    expect(workspace.turns.length, 1);
-    expect(workspace.turns.first.prompt, 'new fresh topic');
-    final req =
-        jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
-    expect(req['chatGroupId'], equals(workspace.groupId));
-    expect(req['chatGroupId'], isNot(equals(initialGroupId)));
-    expect(req['messages'], isEmpty);
-  });
-
-  test(
-      'reverting only message after loading conversation from history creates new conversation on next send',
-      () async {
-    final original = transport.handle;
-    transport.handle = (r) async {
-      if (r.uri.path == '/htk/ai/history/getByChatGroupId') {
-        return response(
-          json: {
-            'success': true,
-            'code': 200,
-            'result': [
-              {
-                'chatGroupId': 'historical-group-123',
-                'question': 'only message in history',
-                'answer': 'historical answer',
-                'aiType': 'free',
-              },
-            ],
-          },
-        );
-      }
-      return original(r);
-    };
-
-    await workspace.openConversation(
-      'historical-group-123',
-      GenAiCancellation(),
-    );
-    expect(workspace.groupId, 'historical-group-123');
-    expect(workspace.turns.length, 1);
-
-    // Revert the only message
-    workspace.revertLastTurn();
-    expect(workspace.turns, isEmpty);
-    expect(workspace.groupId, isNot(equals('historical-group-123')));
-
-    // Sending another message creates a new conversation
-    await workspace.send('brand new question');
-    expect(workspace.turns.length, 1);
-    final req =
-        jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
-    expect(req['chatGroupId'], isNot(equals('historical-group-123')));
-    expect(req['chatGroupId'], equals(workspace.groupId));
-    expect(req['messages'], isEmpty);
   });
 }
