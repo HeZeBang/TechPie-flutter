@@ -73,7 +73,7 @@ class AdaptiveButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
           child: CupertinoButton(
-            minimumSize: const Size.square(iosMinimumInteractiveDimension),
+            minSize: iosMinimumInteractiveDimension,
             padding: EdgeInsets.symmetric(horizontal: hasLabel ? 16 : 0),
             borderRadius: BorderRadius.circular(10),
             onPressed: enabled ? onPressed : null,
