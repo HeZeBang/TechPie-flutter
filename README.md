@@ -87,7 +87,7 @@ export HOS_SDK_HOME="$HOME/dev/command-line-tools/sdk"
 ### HarmonyOS
 
 - Flutter (OHOS patch) 3.35.8-ohos-1.0.4
-- [Huawei Command Tools  6.1.1 Beta1](https://developer.huawei.com/consumer/cn/download/command-line-tools-for-hmos)
+- [Huawei Command Line Tools 26.0.0.851](https://developer.huawei.com/consumer/cn/download/command-line-tools-for-hmos) — HarmonyOS SDK 26.0.0 Release (API 26)
 
 OHOS CI 使用 `pubspec.ohos.lock`；本地切换 SDK 后运行 `flutter pub get`。macOS 最低支持 12.0。
 
