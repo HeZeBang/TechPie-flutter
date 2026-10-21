@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,8 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   String _appVersion = '';
   bool _checkingUpdate = false;
+  bool? _isPersonalInfoBlurred;
+  bool _wasVisible = false;
 
   /// The stack a settings subpage is pushed onto in a wide window. A field, not
   /// a local: a GlobalKey rebuilt every frame would drop the stack with it.
@@ -51,6 +54,24 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     unawaited(_loadAppVersion());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ignore: deprecated_member_use
+    final isVisible = TickerMode.of(context);
+    if (isVisible && !_wasVisible) {
+      _isPersonalInfoBlurred =
+          ServiceProvider.of(context).storageService.maskPersonalInfo;
+    }
+    _wasVisible = isVisible;
+  }
+
+  void _togglePersonalInfoBlur() {
+    setState(() {
+      _isPersonalInfoBlurred = !(_isPersonalInfoBlurred ?? true);
+    });
   }
 
   Future<void> _loadAppVersion() async {
@@ -172,29 +193,59 @@ class _SettingsPageState extends State<SettingsPage> {
           campusCard,
           sp.syncService,
         ]),
-        builder: (context, _) => ListView(
-          padding: EdgeInsets.only(
-            top: topInset,
-            bottom: AppShellMetrics.bottomContentPaddingOf(context),
-          ),
-          children: [
-            // Account section
-            _sectionHeader(theme, 'Account'),
+        builder: (context, _) {
+          final session = auth.session;
+          return ListView(
+            padding: EdgeInsets.only(
+              top: topInset,
+              bottom: AppShellMetrics.bottomContentPaddingOf(context),
+            ),
+            children: [
+              // Account section
+              _sectionHeader(theme, 'Account'),
+              if (session != null) ...[
+                Semantics(
+                  button: true,
+                  label: (_isPersonalInfoBlurred ?? true)
+                      ? 'Personal info hidden, tap to show'
+                      : 'Personal info shown, tap to hide',
+                  child: ListTile(
+                    leading: const Icon(Icons.person),
+                    title: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      enabled: _isPersonalInfoBlurred ?? true,
+                      child: Text(
+                        session.userName.isNotEmpty
+                            ? session.userName
+                            : session.userId,
+                      ),
+                    ),
+                    subtitle: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      enabled: _isPersonalInfoBlurred ?? true,
+                      child: Text(
+                        [
+                          'GeekPie Uni-Auth',
+                          if (session.userId.isNotEmpty) session.userId,
+                        ].join(' · '),
+                      ),
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(
+                        (_isPersonalInfoBlurred ?? true)
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                      ),
+                      tooltip: (_isPersonalInfoBlurred ?? true)
+                          ? 'Show personal info'
+                          : 'Hide personal info',
+                      onPressed: _togglePersonalInfoBlur,
+                    ),
+                    onTap: _togglePersonalInfoBlur,
+                  ),
+                ),
+              ],
             if (auth.isLoggedIn) ...[
-              ListTile(
-                leading: const Icon(Icons.person),
-                title: Text(
-                  auth.session!.userName.isNotEmpty
-                      ? auth.session!.userName
-                      : auth.session!.userId,
-                ),
-                subtitle: Text(
-                  [
-                    'GeekPie Uni-Auth',
-                    if (auth.session!.userId.isNotEmpty) auth.session!.userId,
-                  ].join(' · '),
-                ),
-              ),
               ListTile(
                 leading: const Icon(Icons.cloud_sync_outlined),
                 title: const Text('Cloud sync'),
@@ -311,10 +362,21 @@ class _SettingsPageState extends State<SettingsPage> {
                 trailing: AdaptiveSelect(
                   value: themeService.mode.name,
                   placeholder: 'Choose theme',
+                  accessibilityLabel: 'Theme',
+                  useIosNativeMenu: true,
                   width: 156,
                   options: [
                     for (final mode in AppThemeMode.values)
-                      AdaptiveSelectOption(value: mode.name, label: mode.label),
+                      AdaptiveSelectOption(
+                        value: mode.name,
+                        label: mode.label,
+                        sfSymbol: switch (mode) {
+                          AppThemeMode.system => 'circle.lefthalf.filled',
+                          AppThemeMode.light => 'sun.max',
+                          AppThemeMode.dark => 'moon',
+                          AppThemeMode.amoled => 'moon.fill',
+                        },
+                      ),
                   ],
                   onChanged: (value) {
                     final mode = AppThemeMode.values.firstWhere(
@@ -347,6 +409,19 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // General section
             _sectionHeader(theme, 'General'),
+            _AdaptiveSwitchTile(
+              usesIosLiquidGlass: useIosChrome,
+              secondary: const Icon(Icons.visibility_off_outlined),
+              title: 'Mask personal info',
+              subtitle: 'Blur sensitive profile details by default',
+              value: storage.maskPersonalInfo,
+              onChanged: (value) {
+                unawaited(storage.setMaskPersonalInfo(value));
+                setState(() {
+                  _isPersonalInfoBlurred = value;
+                });
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('About'),
@@ -437,9 +512,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
           ],
-        ),
-      ),
-    );
+        );
+      },
+    ),
+  );
   }
 
   Future<void> _confirmLogout(AuthService auth) async {

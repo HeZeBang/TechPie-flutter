@@ -50,9 +50,15 @@ class AdaptiveTextFieldGroup extends StatelessWidget {
             for (var index = 0; index < items.length; index++) ...[
               _buildCupertinoField(context, items[index]),
               if (index < items.length - 1)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 16),
-                  child: Container(height: 0.5, color: separator),
+                SizedBox(
+                  height: 1,
+                  child: Divider(
+                    height: 1,
+                    thickness: 0.5,
+                    indent: 16,
+                    endIndent: 16,
+                    color: separator,
+                  ),
                 ),
             ],
           ],
