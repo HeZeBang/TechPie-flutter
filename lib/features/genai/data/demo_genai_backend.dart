@@ -159,17 +159,24 @@ final class DemoGenAiBackend implements GenAiTransport {
             : <String, dynamic>{});
     switch (uri.path) {
       case '/htk/ai/history/listByContentGroup':
-        final query = uri.queryParameters['question'] ?? '';
+        final rawQuery = uri.queryParameters['question'] ?? '';
+        final query = rawQuery.trim().toLowerCase();
         return _ok(
           _page(
             [
               for (final entry in _history.entries.toList().reversed)
-                if ((entry.value.first['question']! as String).contains(query))
-                  {
-                    'chatGroupId': entry.key,
-                    'question': entry.value.first['question'],
-                    'createTime': '2026-10-19 12:00:00',
-                  },
+                if (entry.value.isNotEmpty)
+                  if (query.isEmpty ||
+                      entry.value.any(
+                        (turn) => (turn['question'] as String? ?? '')
+                            .toLowerCase()
+                            .contains(query),
+                      ))
+                    {
+                      'chatGroupId': entry.key,
+                      'question': entry.value.first['question'],
+                      'createTime': '2026-10-19 12:00:00',
+                    },
             ],
             uri,
           ),

@@ -35,10 +35,13 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
   GenAiUsageSummary? _usage;
   GenAiModel? _imageModel;
   GenAiCancellation? _operation;
+  GenAiCancellation? _searchCancellation;
+  Timer? _searchDebounceTimer;
   GenAiFailure? _failure;
   late final int _tab;
   late final int _revision;
   bool _busy = false;
+  bool _searching = false;
   bool _scopeValid = true;
   bool _more = false;
   int _page = 1;
@@ -78,10 +81,13 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
 
   void _sessionChanged() {
     if (_workspace.sessions.revision == _revision || !mounted) return;
+    _searchDebounceTimer?.cancel();
+    _searchCancellation?.cancel();
     _operation?.cancel(GenAiFailureKind.accountChanged);
     setState(() {
       _scopeValid = false;
       _busy = false;
+      _searching = false;
       _conversations.clear();
       _images.clear();
       _orders.clear();
@@ -117,33 +123,90 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     }
   }
 
-  Future<void> _load({bool more = false}) => _run((c) async {
-        final page = more ? _page + 1 : 1;
-        final repository = _workspace.repository;
-        if (_tab == 0) {
-          if (!more) _query = _search.text.trim();
-          final data =
-              await repository.listConversations(c, page: page, query: _query);
-          c.throwIfCancelled();
-          if (!more) _conversations.clear();
-          _conversations.addAll(data.records);
-          _more = data.hasMore;
-        } else if (_tab == 1) {
-          final data = await repository.listImages(c, page: page);
-          c.throwIfCancelled();
-          if (!more) _images.clear();
-          _images.addAll(data.records);
-          _more = data.hasMore;
-        } else {
-          if (!more) _usage = await repository.usageSummary(c);
-          final data = await repository.usageOrders(c, page: page);
-          c.throwIfCancelled();
-          if (!more) _orders.clear();
-          _orders.addAll(data.records);
-          _more = data.hasMore;
-        }
+  Future<void> _performSearch({bool more = false}) async {
+    if (!_scopeValid || !mounted) return;
+    _searchDebounceTimer?.cancel();
+    _searchCancellation?.cancel();
+    final cancellation = GenAiCancellation();
+    _searchCancellation = cancellation;
+    final page = more ? _page + 1 : 1;
+    final query = _search.text.trim();
+    setState(() {
+      _searching = true;
+      if (!more) _query = query;
+    });
+    try {
+      final data = await _workspace.repository.listConversations(
+        cancellation,
+        page: page,
+        query: query,
+      );
+      if (!mounted || cancellation.isCancelled) return;
+      setState(() {
+        if (!more) _conversations.clear();
+        _conversations.addAll(data.records);
+        _more = data.hasMore;
         _page = page;
+        _failure = null;
       });
+    } on GenAiFailure catch (error) {
+      if (mounted && !cancellation.isCancelled) {
+        setState(() => _failure = error);
+      }
+    } catch (_) {
+      if (mounted && !cancellation.isCancelled) {
+        setState(
+          () => _failure = const GenAiFailure(GenAiFailureKind.transport),
+        );
+      }
+    } finally {
+      if (identical(_searchCancellation, cancellation)) {
+        _searchCancellation = null;
+      }
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  void _onSearchChanged(String text) {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) unawaited(_performSearch());
+    });
+    setState(() {});
+  }
+
+  void _clearSearch() {
+    _searchDebounceTimer?.cancel();
+    _search.clear();
+    setState(() {});
+    unawaited(_performSearch());
+  }
+
+  Future<void> _load({bool more = false}) async {
+    if (_tab == 0) {
+      await _performSearch(more: more);
+      return;
+    }
+    await _run((c) async {
+      final page = more ? _page + 1 : 1;
+      final repository = _workspace.repository;
+      if (_tab == 1) {
+        final data = await repository.listImages(c, page: page);
+        c.throwIfCancelled();
+        if (!more) _images.clear();
+        _images.addAll(data.records);
+        _more = data.hasMore;
+      } else {
+        if (!more) _usage = await repository.usageSummary(c);
+        final data = await repository.usageOrders(c, page: page);
+        c.throwIfCancelled();
+        if (!more) _orders.clear();
+        _orders.addAll(data.records);
+        _more = data.hasMore;
+      }
+      _page = page;
+    });
+  }
 
   Future<void> _openConversation(GenAiConversationSummary item) =>
       _run((c) async {
@@ -234,6 +297,8 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
+    _searchCancellation?.cancel();
     _operation?.cancel();
     _workspace.sessions.removeListener(_sessionChanged);
     _workspace.removeListener(_workspaceChanged);
@@ -248,8 +313,9 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
           title: Text(const ['会话记录', '图片创作', '用量统计'][_tab]),
           actions: [
             IconButton(
-              onPressed:
-                  _busy || !_scopeValid ? null : () => unawaited(_load()),
+              onPressed: _busy || _searching || !_scopeValid
+                  ? null
+                  : () => unawaited(_load()),
               icon: const Icon(Icons.refresh),
               tooltip: '刷新',
             ),
@@ -289,63 +355,106 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       ? Padding(
           padding: const EdgeInsets.all(16),
           child: OutlinedButton(
-            onPressed: _busy ? null : () => unawaited(_load(more: true)),
+            onPressed:
+                _busy || _searching ? null : () => unawaited(_load(more: true)),
             child: const Text('加载更多'),
           ),
         )
       : const SizedBox.shrink();
 
-  Widget _history() => Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _search,
-              enabled: !_busy,
-              onSubmitted: (_) => unawaited(_load()),
-              decoration: InputDecoration(
-                labelText: '搜索对话',
-                suffixIcon: IconButton(
-                  onPressed: _busy ? null : () => unawaited(_load()),
-                  icon: const Icon(Icons.search),
-                  tooltip: '搜索',
-                ),
+  Widget _history() {
+    final hasSearchText = _search.text.isNotEmpty;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _search,
+            enabled: _scopeValid && !_busy,
+            onChanged: _onSearchChanged,
+            onSubmitted: (_) {
+              _searchDebounceTimer?.cancel();
+              unawaited(_performSearch());
+            },
+            decoration: InputDecoration(
+              labelText: '搜索对话',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_searching)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  if (hasSearchText)
+                    IconButton(
+                      icon: const Icon(Icons.clear, size: 20),
+                      tooltip: '清除',
+                      onPressed: _clearSearch,
+                    ),
+                ],
               ),
             ),
           ),
-          Expanded(
-            child: ListView(
-              children: [
-                if (_conversations.isEmpty && !_busy)
-                  const Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Text('没有会话记录'),
+        ),
+        Expanded(
+          child: ListView(
+            children: [
+              if (_conversations.isEmpty && !_busy && !_searching)
+                Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Center(
+                    child: _query.isNotEmpty
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.search_off_rounded,
+                                size: 48,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                '未找到与「$_query」相关的会话',
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          )
+                        : const Text('没有会话记录'),
                   ),
-                for (final item in _conversations)
-                  ListTile(
-                    leading: const Icon(Icons.chat_bubble_outline),
-                    title: Text(
-                      item.title.isEmpty ? '未命名对话' : item.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: item.time.isEmpty ? null : Text(item.time),
-                    onTap:
-                        _busy ? null : () => unawaited(_openConversation(item)),
-                    trailing: IconButton(
-                      tooltip: '删除对话',
-                      onPressed: _busy
-                          ? null
-                          : () => unawaited(_delete(item.id, image: false)),
-                      icon: const Icon(Icons.delete_outline),
-                    ),
+                ),
+              for (final item in _conversations)
+                ListTile(
+                  leading: const Icon(Icons.chat_bubble_outline),
+                  title: Text(
+                    item.title.isEmpty ? '未命名对话' : item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                _loadMore(),
-              ],
-            ),
+                  subtitle: item.time.isEmpty ? null : Text(item.time),
+                  onTap: _busy || _searching
+                      ? null
+                      : () => unawaited(_openConversation(item)),
+                  trailing: IconButton(
+                    tooltip: '删除对话',
+                    onPressed: _busy || _searching
+                        ? null
+                        : () => unawaited(_delete(item.id, image: false)),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ),
+              _loadMore(),
+            ],
           ),
-        ],
-      );
+        ),
+      ],
+    );
+  }
 
   Widget _imageStudio() {
     final models = _workspace.imageModels;

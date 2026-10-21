@@ -85,4 +85,76 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('session search filters in real time with debounce and clear',
+      (tester) async {
+    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    addTearDown(demo.dispose);
+    await demo.workspace.reloadModels();
+
+    // Create conversation 1
+    final sending1 = demo.workspace.send('quantum algorithms intro');
+    for (var i = 0; i < 300 && demo.workspace.sending; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    await sending1;
+
+    // Start a new conversation and send conversation 2
+    demo.workspace.newConversation();
+    final sending2 = demo.workspace.send('lunch menu recommendation');
+    for (var i = 0; i < 300 && demo.workspace.sending; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    await sending2;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GenAiToolsPage(workspace: demo.workspace, demo: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Both should be visible initially
+    expect(find.text('quantum algorithms intro'), findsOneWidget);
+    expect(find.text('lunch menu recommendation'), findsOneWidget);
+
+    // Type query without pressing Enter (realtime search)
+    final searchField = find.widgetWithText(TextField, '搜索对话');
+    expect(searchField, findsOneWidget);
+    await tester.enterText(searchField, 'quantum');
+    await tester.pump();
+
+    // Clear icon should be visible immediately since text is non-empty
+    expect(find.byTooltip('清除'), findsOneWidget);
+
+    // Wait for debounce (250ms) to trigger and settle
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    // Now filtered in real time
+    expect(find.text('quantum algorithms intro'), findsOneWidget);
+    expect(find.text('lunch menu recommendation'), findsNothing);
+
+    // Enter a query with no matches
+    await tester.enterText(searchField, 'nonexistent query 12345');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('quantum algorithms intro'), findsNothing);
+    expect(find.text('lunch menu recommendation'), findsNothing);
+    expect(find.text('未找到与「nonexistent query 12345」相关的会话'), findsOneWidget);
+    expect(find.byIcon(Icons.search_off_rounded), findsOneWidget);
+
+    // Tap clear button
+    await tester.tap(find.byTooltip('清除'));
+    await tester.pumpAndSettle();
+
+    // Search reset: both conversations restored
+    expect(find.text('quantum algorithms intro'), findsOneWidget);
+    expect(find.text('lunch menu recommendation'), findsOneWidget);
+    expect(find.byTooltip('清除'), findsNothing);
+
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

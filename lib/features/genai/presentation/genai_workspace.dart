@@ -63,6 +63,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   final _scroll = ScrollController();
   final _conversations = <GenAiConversationSummary>[];
   final _sidebarImages = <GenAiImageRecord>[];
+  final _sidebarSearch = TextEditingController();
+  Timer? _sidebarSearchTimer;
+  String _sidebarQuery = '';
   late final GenAiPicker _picker;
   late final GenAiAudioPlayer _audioPlayer;
   late final GenAiAudioRecorder _audioRecorder;
@@ -137,6 +140,8 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     if (_draftOwner != _state.sessions.owner) {
       _draftOwner = _state.sessions.owner;
       _draft.clear();
+      _sidebarSearch.clear();
+      _sidebarQuery = '';
       _conversations.clear();
       _sidebarImages.clear();
       _selectedImage = null;
@@ -210,17 +215,22 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     }
   }
 
-  Future<void> _loadHistory({bool more = false}) async {
+  Future<void> _loadHistory({bool more = false, String? query}) async {
     if (!_state.connected || _loadingHistory) return;
     _historyCancellation?.cancel();
     final cancellation = GenAiCancellation();
     _historyCancellation = cancellation;
     final page = more ? _historyPage + 1 : 1;
-    setState(() => _loadingHistory = true);
+    final targetQuery = query ?? _sidebarQuery;
+    setState(() {
+      _loadingHistory = true;
+      if (!more) _sidebarQuery = targetQuery;
+    });
     try {
       final result = await _state.repository.listConversations(
         cancellation,
         page: page,
+        query: targetQuery,
       );
       if (!mounted || cancellation.isCancelled) return;
       setState(() {
@@ -237,6 +247,14 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       }
       if (mounted) setState(() => _loadingHistory = false);
     }
+  }
+
+  void _onSidebarSearchChanged(String text) {
+    _sidebarSearchTimer?.cancel();
+    _sidebarSearchTimer = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) unawaited(_loadHistory(query: text.trim()));
+    });
+    setState(() {});
   }
 
   Future<void> _openConversation(GenAiConversationSummary item) async {
@@ -644,6 +662,8 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
 
   @override
   void dispose() {
+    _sidebarSearchTimer?.cancel();
+    _sidebarSearch.dispose();
     _recordingTimer?.cancel();
     _audioRecorder.dispose();
     _audioPlayer.dispose();
@@ -834,107 +854,169 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
         child: Text('未连接 GenAI', style: TextStyle(fontSize: 12, color: _muted)),
       );
     }
-    if (_loadingHistory && _conversations.isEmpty) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-    }
-    if (_conversations.isEmpty) {
-      return Center(
-        child: Text('暂无历史对话', style: TextStyle(fontSize: 12, color: _muted)),
-      );
-    }
-    return ListView.builder(
-      itemCount: _conversations.length + (_hasMoreHistory ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index >= _conversations.length) {
-          return Center(
-            child: TextButton(
-              onPressed: _loadingHistory
-                  ? null
-                  : () => unawaited(_loadHistory(more: true)),
-              child: const Text('加载更多', style: TextStyle(fontSize: 12)),
-            ),
-          );
-        }
-        final item = _conversations[index];
-        final isActive = item.id == _state.groupId;
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Material(
-            color:
-                isActive ? _accent.withValues(alpha: .12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: _state.sending || isActive
-                  ? null
-                  : () => unawaited(_openConversation(item)),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: isActive
-                      ? Border.all(color: _accent.withValues(alpha: .3))
-                      : null,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      isActive
-                          ? Icons.chat_bubble_rounded
-                          : Icons.chat_bubble_outline_rounded,
-                      size: 16,
-                      color: isActive ? _accent : _muted,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            item.title.isEmpty ? '未命名对话' : item.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: isActive
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
-                              color: isActive
-                                  ? _accent
-                                  : theme.colorScheme.onSurface,
-                            ),
-                          ),
-                          if (item.time.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              item.time.split(' ').first,
-                              style: TextStyle(fontSize: 10, color: _muted),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 15),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 22,
-                        minHeight: 22,
-                      ),
-                      tooltip: '删除对话',
-                      onPressed: _state.sending
-                          ? null
-                          : () => unawaited(_deleteConversation(item.id)),
-                    ),
-                  ],
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: SizedBox(
+            height: 34,
+            child: TextField(
+              controller: _sidebarSearch,
+              style: const TextStyle(fontSize: 12),
+              onChanged: _onSidebarSearchChanged,
+              decoration: InputDecoration(
+                hintText: '搜索历史对话',
+                hintStyle: TextStyle(fontSize: 12, color: _muted),
+                prefixIcon: Icon(Icons.search, size: 16, color: _muted),
+                prefixIconConstraints: const BoxConstraints(minWidth: 32),
+                suffixIcon: _sidebarSearch.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 14),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 28),
+                        onPressed: () {
+                          _sidebarSearch.clear();
+                          _onSidebarSearchChanged('');
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                isDense: true,
+                filled: true,
+                fillColor: theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: .5),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
                 ),
               ),
             ),
           ),
-        );
-      },
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: _loadingHistory && _conversations.isEmpty
+              ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+              : _conversations.isEmpty
+                  ? Center(
+                      child: Text(
+                        _sidebarQuery.isNotEmpty ? '未找到相关对话' : '暂无历史对话',
+                        style: TextStyle(fontSize: 12, color: _muted),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount:
+                          _conversations.length + (_hasMoreHistory ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index >= _conversations.length) {
+                          return Center(
+                            child: TextButton(
+                              onPressed: _loadingHistory
+                                  ? null
+                                  : () => unawaited(_loadHistory(more: true)),
+                              child: const Text(
+                                '加载更多',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          );
+                        }
+                        final item = _conversations[index];
+                        final isActive = item.id == _state.groupId;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Material(
+                            color: isActive
+                                ? _accent.withValues(alpha: .12)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(10),
+                              onTap: _state.sending || isActive
+                                  ? null
+                                  : () => unawaited(_openConversation(item)),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: isActive
+                                      ? Border.all(
+                                          color: _accent.withValues(alpha: .3),
+                                        )
+                                      : null,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      isActive
+                                          ? Icons.chat_bubble_rounded
+                                          : Icons.chat_bubble_outline_rounded,
+                                      size: 16,
+                                      color: isActive ? _accent : _muted,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            item.title.isEmpty
+                                                ? '未命名对话'
+                                                : item.title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: isActive
+                                                  ? FontWeight.w600
+                                                  : FontWeight.normal,
+                                              color: isActive
+                                                  ? _accent
+                                                  : theme.colorScheme.onSurface,
+                                            ),
+                                          ),
+                                          if (item.time.isNotEmpty) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              item.time.split(' ').first,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: _muted,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close, size: 15),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 22,
+                                        minHeight: 22,
+                                      ),
+                                      tooltip: '删除对话',
+                                      onPressed: _state.sending
+                                          ? null
+                                          : () => unawaited(
+                                                _deleteConversation(item.id),
+                                              ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
     );
   }
 

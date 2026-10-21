@@ -770,4 +770,63 @@ void main() {
 
     expect(demo.workspace.turns, isEmpty);
   });
+
+  testWidgets('sidebar session search filters in real time with debounce',
+      (tester) async {
+    final demo = await show(
+      tester,
+      size: const Size(1200, 900),
+      delay: Duration.zero,
+    );
+    await demo.workspace.reloadModels();
+    await tester.pumpAndSettle();
+
+    // Send first conversation
+    final send1 = demo.workspace.send('alpha physics research');
+    for (var i = 0; i < 300 && demo.workspace.sending; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    await send1;
+    await tester.pumpAndSettle();
+
+    // Start new conversation and send second
+    demo.workspace.newConversation();
+    final send2 = demo.workspace.send('beta chemistry notes');
+    for (var i = 0; i < 300 && demo.workspace.sending; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    await send2;
+    await tester.pumpAndSettle();
+
+    // Refresh history in sidebar
+    await tester.tap(find.byTooltip('刷新历史'));
+    await tester.pumpAndSettle();
+
+    Finder historyItem(String text) =>
+        find.byWidgetPredicate((w) => w is Text && w.data == text);
+
+    expect(historyItem('alpha physics research'), findsOneWidget);
+    expect(historyItem('beta chemistry notes'), findsOneWidget);
+
+    final sidebarSearch = find.widgetWithText(TextField, '搜索历史对话');
+    expect(sidebarSearch, findsOneWidget);
+
+    // Type 'alpha' in sidebar search
+    await tester.enterText(sidebarSearch, 'alpha');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    expect(historyItem('alpha physics research'), findsOneWidget);
+    expect(historyItem('beta chemistry notes'), findsNothing);
+
+    // Clear search
+    await tester.enterText(sidebarSearch, '');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    expect(historyItem('alpha physics research'), findsOneWidget);
+    expect(historyItem('beta chemistry notes'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
