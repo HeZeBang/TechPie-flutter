@@ -3,9 +3,15 @@ name: OHOS buildenv smoke
 # Builds this commit's unsigned hap in the same container image the release job
 # uses, then stops: no release is created, touched or uploaded. It exists so a
 # republished image (`ci/publish-buildenv.sh`) can be proven on a real runner
-# against a real checkout before a release depends on it:
+# against a real checkout before a release depends on it.
+#
+# It fires on a pull request that touches the image or the release wiring, and
+# can be asked for by hand on any branch:
 #
 #   gh workflow run ohos-buildenv-smoke.yml --ref <branch>
+#
+# (By hand means the default branch has to carry this file — GitHub only indexes
+# dispatchable workflows from there.)
 #
 # The tag below and `container.image` in ohos-release.yml must name the same
 # image; bump both when the toolchain changes. `container.image` cannot read a
@@ -14,6 +20,11 @@ name: OHOS buildenv smoke
 # second copy of it on purpose rather than a release-only gamble.
 
 on:
+  pull_request:
+    paths:
+      - 'ci/**'
+      - '.github/workflows/ohos-release.yml'
+      - '.github/workflows/ohos-buildenv-smoke.yml'
   workflow_dispatch:
 
 permissions:
