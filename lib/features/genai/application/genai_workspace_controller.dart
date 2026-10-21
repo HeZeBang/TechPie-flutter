@@ -571,6 +571,11 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     await retryTurn(_turns.length - 1);
   }
 
+  /// Discards [turnIndex] and subsequent turns, replacing the prompt and
+  /// re-sending the message in-memory.
+  ///
+  /// Note: Not exposed in the UI for now as individual message edits are
+  /// not supported by the server's chat session protocol.
   Future<void> editAndResend(int turnIndex, String newPrompt) async {
     final model = _selectedModel;
     if (_disposed || sending || !connected || model == null) return;
@@ -602,6 +607,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     await _executeSendTurn(turn, model);
   }
 
+  /// Removes a single turn from the active conversation in-memory.
+  ///
+  /// Note: Not exposed in the UI for now as individual message deletions are
+  /// not supported by the server's chat session protocol.
   void deleteTurn(int turnIndex) {
     if (turnIndex < 0 || turnIndex >= _turns.length) return;
     if (identical(_active, _turns[turnIndex])) {
@@ -616,6 +625,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _notify();
   }
 
+  /// Reverts the last conversation turn in-memory.
+  ///
+  /// Note: Not exposed in the UI for now as message reversions are
+  /// not supported by the server's chat session protocol.
   void revertLastTurn() {
     if (_turns.isNotEmpty) {
       deleteTurn(_turns.length - 1);

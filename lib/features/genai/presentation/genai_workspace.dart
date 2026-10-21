@@ -57,8 +57,6 @@ class GenAiWorkspace extends StatefulWidget {
 
 class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   final _draft = TextEditingController();
-  final _editPromptController = TextEditingController();
-  int? _editingTurnIndex;
   final _inputFocus = FocusNode();
   final _scroll = ScrollController();
   final _conversations = <GenAiConversationSummary>[];
@@ -433,53 +431,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     if (mounted) unawaited(_loadHistory());
   }
 
-  Future<void> _editAndResend(int index, String newPrompt) async {
-    if (_state.sending || !_state.connected || _state.selectedModel == null) {
-      return;
-    }
-    final sending = _state.editAndResend(index, newPrompt);
-    _scrollToEnd();
-    await sending;
-    if (mounted) unawaited(_loadHistory());
-  }
-
-  void _deleteTurn(int index) {
-    if (_editingTurnIndex == index ||
-        (_editingTurnIndex != null &&
-            _editingTurnIndex! >= _state.turns.length - 1)) {
-      _editingTurnIndex = null;
-      _editPromptController.clear();
-    }
-    _state.deleteTurn(index);
-    if (mounted) {
-      if (_state.turns.isEmpty) _draft.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('已删除该轮对话'),
-          duration: Duration(seconds: 1),
-        ),
-      );
-    }
-  }
-
-  void _revertLastTurn() {
-    if (_editingTurnIndex != null &&
-        _editingTurnIndex! >= _state.turns.length - 1) {
-      _editingTurnIndex = null;
-      _editPromptController.clear();
-    }
-    _state.revertLastTurn();
-    if (mounted) {
-      if (_state.turns.isEmpty) _draft.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('已撤回上一条对话'),
-          duration: Duration(seconds: 1),
-        ),
-      );
-    }
-  }
-
   Future<void> _copy(String text, [String message = '已复制回复']) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
@@ -672,7 +623,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     _state.removeListener(_changed);
     _refresh?.cancel();
     _draft.dispose();
-    _editPromptController.dispose();
     _inputFocus.dispose();
     _scroll.dispose();
     super.dispose();
@@ -1744,359 +1694,207 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (_editingTurnIndex == index)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Container(
-                          constraints: const BoxConstraints(maxWidth: 680),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          margin: const EdgeInsets.only(left: 36, bottom: 26),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: _accent.withValues(alpha: .5),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            constraints: const BoxConstraints(maxWidth: 680),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 13,
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _accent.withValues(alpha: .08),
-                                blurRadius: 16,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              TextField(
-                                key: ValueKey('genai-edit-prompt-$index'),
-                                controller: _editPromptController,
-                                autofocus: true,
-                                minLines: 1,
-                                maxLines: 8,
-                                style:
-                                    const TextStyle(fontSize: 14, height: 1.6),
-                                decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  hintText: '修改你的消息...',
-                                  contentPadding:
-                                      EdgeInsets.symmetric(vertical: 4),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  TextButton(
-                                    key: ValueKey('genai-edit-cancel-$index'),
-                                    onPressed: () => setState(
-                                      () => _editingTurnIndex = null,
-                                    ),
-                                    style: TextButton.styleFrom(
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 4,
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      '取消',
-                                      style: TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  FilledButton(
-                                    key: ValueKey('genai-edit-submit-$index'),
-                                    onPressed: () {
-                                      final newPrompt =
-                                          _editPromptController.text.trim();
-                                      if (newPrompt.isNotEmpty) {
-                                        setState(
-                                          () => _editingTurnIndex = null,
-                                        );
-                                        unawaited(
-                                          _editAndResend(index, newPrompt),
-                                        );
-                                      }
-                                    },
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: _accent,
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 4,
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      '保存并重新生成',
-                                      style: TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    else
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              constraints: const BoxConstraints(maxWidth: 680),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 18,
-                                vertical: 13,
-                              ),
-                              margin:
-                                  const EdgeInsets.only(left: 36, bottom: 4),
-                              decoration: BoxDecoration(
-                                color: _accent.withValues(alpha: .09),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  if (turn.attachedImageBytesList.isNotEmpty ||
-                                      turn.attachedImageBytes != null ||
-                                      turn.attachedImageUrl != null ||
-                                      turn.attachedImageUrls.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        alignment: WrapAlignment.end,
-                                        children: [
-                                          if (turn.attachedImageBytesList
-                                              .isNotEmpty)
-                                            for (final bytes
-                                                in turn.attachedImageBytesList)
-                                              ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                child: GestureDetector(
-                                                  onTap: () => _showImageDialog(
-                                                    bytes: bytes,
-                                                  ),
-                                                  child: Image.memory(
-                                                    bytes,
-                                                    height: 180,
-                                                    fit: BoxFit.contain,
-                                                    errorBuilder: (
-                                                      _,
-                                                      __,
-                                                      ___,
-                                                    ) =>
-                                                        _buildImageErrorPlaceholder(),
-                                                  ),
-                                                ),
-                                              )
-                                          else if (turn.attachedImageBytes !=
-                                              null)
+                            margin: const EdgeInsets.only(left: 36, bottom: 4),
+                            decoration: BoxDecoration(
+                              color: _accent.withValues(alpha: .09),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if (turn.attachedImageBytesList.isNotEmpty ||
+                                    turn.attachedImageBytes != null ||
+                                    turn.attachedImageUrl != null ||
+                                    turn.attachedImageUrls.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      alignment: WrapAlignment.end,
+                                      children: [
+                                        if (turn
+                                            .attachedImageBytesList.isNotEmpty)
+                                          for (final bytes
+                                              in turn.attachedImageBytesList)
                                             ClipRRect(
                                               borderRadius:
                                                   BorderRadius.circular(8),
                                               child: GestureDetector(
                                                 onTap: () => _showImageDialog(
-                                                  bytes:
-                                                      turn.attachedImageBytes,
+                                                  bytes: bytes,
                                                 ),
                                                 child: Image.memory(
-                                                  turn.attachedImageBytes!,
+                                                  bytes,
                                                   height: 180,
                                                   fit: BoxFit.contain,
-                                                  errorBuilder: (_, __, ___) =>
+                                                  errorBuilder: (
+                                                    _,
+                                                    __,
+                                                    ___,
+                                                  ) =>
                                                       _buildImageErrorPlaceholder(),
                                                 ),
                                               ),
                                             )
-                                          else if (turn
-                                              .attachedImageUrls.isNotEmpty)
-                                            for (final url
-                                                in turn.attachedImageUrls)
-                                              ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                child: GestureDetector(
-                                                  onTap: () => _showImageDialog(
-                                                    url: url,
-                                                  ),
-                                                  child: Image.network(
-                                                    url,
-                                                    height: 180,
-                                                    fit: BoxFit.contain,
-                                                    errorBuilder: (
-                                                      _,
-                                                      __,
-                                                      ___,
-                                                    ) =>
-                                                        _buildImageErrorPlaceholder(),
-                                                  ),
-                                                ),
-                                              )
-                                          else if (turn.attachedImageUrl !=
-                                              null)
+                                        else if (turn.attachedImageBytes !=
+                                            null)
+                                          ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            child: GestureDetector(
+                                              onTap: () => _showImageDialog(
+                                                bytes: turn.attachedImageBytes,
+                                              ),
+                                              child: Image.memory(
+                                                turn.attachedImageBytes!,
+                                                height: 180,
+                                                fit: BoxFit.contain,
+                                                errorBuilder: (_, __, ___) =>
+                                                    _buildImageErrorPlaceholder(),
+                                              ),
+                                            ),
+                                          )
+                                        else if (turn
+                                            .attachedImageUrls.isNotEmpty)
+                                          for (final url
+                                              in turn.attachedImageUrls)
                                             ClipRRect(
                                               borderRadius:
                                                   BorderRadius.circular(8),
                                               child: GestureDetector(
                                                 onTap: () => _showImageDialog(
-                                                  url: turn.attachedImageUrl,
+                                                  url: url,
                                                 ),
                                                 child: Image.network(
-                                                  turn.attachedImageUrl!,
+                                                  url,
                                                   height: 180,
                                                   fit: BoxFit.contain,
-                                                  errorBuilder: (_, __, ___) =>
+                                                  errorBuilder: (
+                                                    _,
+                                                    __,
+                                                    ___,
+                                                  ) =>
                                                       _buildImageErrorPlaceholder(),
                                                 ),
                                               ),
+                                            )
+                                        else if (turn.attachedImageUrl != null)
+                                          ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            child: GestureDetector(
+                                              onTap: () => _showImageDialog(
+                                                url: turn.attachedImageUrl,
+                                              ),
+                                              child: Image.network(
+                                                turn.attachedImageUrl!,
+                                                height: 180,
+                                                fit: BoxFit.contain,
+                                                errorBuilder: (_, __, ___) =>
+                                                    _buildImageErrorPlaceholder(),
+                                              ),
                                             ),
-                                        ],
-                                      ),
+                                          ),
+                                      ],
                                     ),
-                                  if (turn.attachedFileNames.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: Wrap(
-                                        spacing: 6,
-                                        runSpacing: 4,
-                                        children: [
-                                          for (final fileName
-                                              in turn.attachedFileNames)
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 3,
+                                  ),
+                                if (turn.attachedFileNames.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        for (final fileName
+                                            in turn.attachedFileNames)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: _accent.withValues(
+                                                alpha: .15,
                                               ),
-                                              decoration: BoxDecoration(
-                                                color: _accent.withValues(
-                                                  alpha: .15,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.description,
+                                                  size: 12,
+                                                  color: _accent,
                                                 ),
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                    Icons.description,
-                                                    size: 12,
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  fileName,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w500,
                                                     color: _accent,
                                                   ),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    fileName,
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                      color: _accent,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
+                                                ),
+                                              ],
                                             ),
-                                        ],
-                                      ),
-                                    ),
-                                  SelectableText(
-                                    turn.prompt,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      height: 1.7,
+                                          ),
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding:
-                                  const EdgeInsets.only(bottom: 20, right: 4),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    key: ValueKey('genai-user-copy-$index'),
-                                    tooltip: '复制内容',
-                                    icon: Icon(
-                                      Icons.copy_outlined,
-                                      size: 14,
-                                      color: _muted,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    padding: const EdgeInsets.all(4),
-                                    constraints: const BoxConstraints(
-                                      minWidth: 26,
-                                      minHeight: 26,
-                                    ),
-                                    onPressed: () => unawaited(
-                                      _copy(turn.prompt, '已复制内容'),
-                                    ),
+                                SelectableText(
+                                  turn.prompt,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    height: 1.7,
                                   ),
-                                  if (!_state.sending) ...[
-                                    IconButton(
-                                      key: ValueKey('genai-user-edit-$index'),
-                                      tooltip: '编辑消息',
-                                      icon: Icon(
-                                        Icons.edit_outlined,
-                                        size: 14,
-                                        color: _muted,
-                                      ),
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(
-                                        minWidth: 26,
-                                        minHeight: 26,
-                                      ),
-                                      onPressed: () {
-                                        setState(() {
-                                          _editingTurnIndex = index;
-                                          _editPromptController.text =
-                                              turn.prompt;
-                                        });
-                                      },
-                                    ),
-                                    IconButton(
-                                      key: ValueKey('genai-user-delete-$index'),
-                                      tooltip: index == _state.turns.length - 1
-                                          ? '撤回上一条消息'
-                                          : '删除此消息',
-                                      icon: Icon(
-                                        index == _state.turns.length - 1
-                                            ? Icons.undo_rounded
-                                            : Icons.delete_outline_rounded,
-                                        size: 14,
-                                        color: _muted,
-                                      ),
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(
-                                        minWidth: 26,
-                                        minHeight: 26,
-                                      ),
-                                      onPressed: () =>
-                                          index == _state.turns.length - 1
-                                              ? _revertLastTurn()
-                                              : _deleteTurn(index),
-                                    ),
-                                  ],
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                          Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: 20, right: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  key: ValueKey('genai-user-copy-$index'),
+                                  tooltip: '复制内容',
+                                  icon: Icon(
+                                    Icons.copy_outlined,
+                                    size: 14,
+                                    color: _muted,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.all(4),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 26,
+                                    minHeight: 26,
+                                  ),
+                                  onPressed: () => unawaited(
+                                    _copy(turn.prompt, '已复制内容'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
                     Row(
                       children: [
                         Container(
@@ -2262,7 +2060,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   onPressed: () =>
                                       unawaited(_toggleTts(index, turn.answer)),
                                 ),
-                                if (!_state.sending && _state.connected) ...[
+                                if (!_state.sending && _state.connected)
                                   IconButton(
                                     tooltip: '重新生成',
                                     key: ValueKey('genai-regenerate-$index'),
@@ -2274,24 +2072,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                     onPressed: () =>
                                         unawaited(_retryTurn(index)),
                                   ),
-                                  IconButton(
-                                    tooltip: index == _state.turns.length - 1
-                                        ? '撤回此轮'
-                                        : '删除此轮',
-                                    key: ValueKey('genai-delete-$index'),
-                                    icon: Icon(
-                                      index == _state.turns.length - 1
-                                          ? Icons.undo_rounded
-                                          : Icons.delete_outline_rounded,
-                                      size: 16,
-                                      color: _muted,
-                                    ),
-                                    onPressed: () =>
-                                        index == _state.turns.length - 1
-                                            ? _revertLastTurn()
-                                            : _deleteTurn(index),
-                                  ),
-                                ],
                               ],
                               if (incomplete && _state.connected)
                                 TextButton.icon(
