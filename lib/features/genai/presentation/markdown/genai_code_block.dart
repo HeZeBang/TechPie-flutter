@@ -244,7 +244,7 @@ class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
               final baseCodeStyle = TextStyle(
                 fontFamily: 'RobotoMono',
                 fontFamilyFallback: monospaceFallback,
-                fontSize: 12.5,
+                fontSize: 13.5,
                 height: 1.6,
                 color: theme.textTheme.bodyMedium?.color?.withValues(alpha: .9),
               );
@@ -274,7 +274,7 @@ class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
                               style: TextStyle(
                                 fontFamily: 'RobotoMono',
                                 fontFamilyFallback: monospaceFallback,
-                                fontSize: 12.5,
+                                fontSize: 13.5,
                                 height: 1.6,
                                 color: theme.hintColor.withValues(alpha: .35),
                               ),

@@ -140,7 +140,7 @@ class GenAiLatexBlockView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textStyle = theme.textTheme.bodyLarge?.copyWith(
-      fontSize: 16.5,
+      fontSize: 18,
       color: theme.textTheme.bodyMedium?.color,
     );
 

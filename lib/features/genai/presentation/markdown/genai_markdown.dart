@@ -56,12 +56,12 @@ class GenAiMarkdown extends StatelessWidget {
     final effectiveStyleSheet = baseStyle.copyWith(
       p: styleSheet?.p ??
           const TextStyle(
-            fontSize: 14,
+            fontSize: 15.5,
             height: 1.75,
           ),
       h1: styleSheet?.h1 ??
           TextStyle(
-            fontSize: 20,
+            fontSize: 22,
             fontWeight: FontWeight.w700,
             height: 1.4,
             letterSpacing: -0.3,
@@ -69,7 +69,7 @@ class GenAiMarkdown extends StatelessWidget {
           ),
       h2: styleSheet?.h2 ??
           TextStyle(
-            fontSize: 17,
+            fontSize: 19,
             fontWeight: FontWeight.w700,
             height: 1.4,
             letterSpacing: -0.2,
@@ -77,35 +77,35 @@ class GenAiMarkdown extends StatelessWidget {
           ),
       h3: styleSheet?.h3 ??
           TextStyle(
-            fontSize: 15,
+            fontSize: 17,
             fontWeight: FontWeight.w600,
             height: 1.4,
             color: theme.colorScheme.onSurface,
           ),
       h4: styleSheet?.h4 ??
           TextStyle(
-            fontSize: 14,
+            fontSize: 15.5,
             fontWeight: FontWeight.w600,
             height: 1.4,
             color: theme.colorScheme.onSurface,
           ),
       h5: styleSheet?.h5 ??
           TextStyle(
-            fontSize: 13,
+            fontSize: 14.5,
             fontWeight: FontWeight.w600,
             height: 1.4,
             color: theme.colorScheme.onSurface,
           ),
       h6: styleSheet?.h6 ??
           TextStyle(
-            fontSize: 12,
+            fontSize: 13.5,
             fontWeight: FontWeight.w600,
             height: 1.4,
             color: theme.colorScheme.onSurfaceVariant,
           ),
       blockquote: styleSheet?.blockquote ??
           TextStyle(
-            fontSize: 13.5,
+            fontSize: 15,
             height: 1.65,
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -135,7 +135,7 @@ class GenAiMarkdown extends StatelessWidget {
           TextStyle(
             fontFamily: kGenAiMonospaceFamily,
             fontFamilyFallback: kGenAiMonospaceFallback,
-            fontSize: 12.5,
+            fontSize: 13.5,
             fontWeight: FontWeight.w500,
             color: isDark ? const Color(0xFFFFB4AB) : accent,
             backgroundColor: isDark
@@ -145,12 +145,12 @@ class GenAiMarkdown extends StatelessWidget {
       tableHead: styleSheet?.tableHead ??
           TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 13,
+            fontSize: 14.5,
             color: theme.colorScheme.onSurface,
           ),
       tableBody: styleSheet?.tableBody ??
           TextStyle(
-            fontSize: 13,
+            fontSize: 14.5,
             height: 1.5,
             color: theme.colorScheme.onSurface,
           ),
@@ -166,7 +166,7 @@ class GenAiMarkdown extends StatelessWidget {
           const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       listBullet: styleSheet?.listBullet ??
           TextStyle(
-            fontSize: 14,
+            fontSize: 15.5,
             fontWeight: FontWeight.w600,
             color: accent,
           ),

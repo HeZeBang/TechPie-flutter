@@ -96,7 +96,7 @@ class _GenAiThinkingViewState extends State<GenAiThinkingView> {
                       child: Text(
                         title,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight: FontWeight.w500,
                           color: widget.isThinking ? accent : muted,
                         ),
@@ -125,7 +125,7 @@ class _GenAiThinkingViewState extends State<GenAiThinkingView> {
                   padding: const EdgeInsets.only(top: 8),
                   child: DefaultTextStyle(
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 13,
                       color: muted.withValues(alpha: .85),
                       height: 1.6,
                       fontStyle: FontStyle.italic,

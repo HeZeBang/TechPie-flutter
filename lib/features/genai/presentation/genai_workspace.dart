@@ -60,7 +60,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   final _inputFocus = FocusNode();
   final _scroll = ScrollController();
   final _conversations = <GenAiConversationSummary>[];
-  final _sidebarImages = <GenAiImageRecord>[];
   final _sidebarSearch = TextEditingController();
   Timer? _sidebarSearchTimer;
   String _sidebarQuery = '';
@@ -78,12 +77,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   bool _hasMoreHistory = false;
   int _historyPage = 1;
   GenAiCancellation? _historyCancellation;
-  bool _loadingImages = false;
-  bool _hasMoreImages = false;
-  int _imagePage = 1;
-  GenAiCancellation? _imageCancellation;
-  int _sidebarTab = 0;
-  GenAiImageRecord? _selectedImage;
   GenAiOwner? _draftOwner;
   GenAiWorkspaceController get _state => widget.controller;
   Color get _accent => Theme.of(context).brightness == Brightness.dark
@@ -115,7 +108,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     unawaited(_state.restore());
     if (_state.connected) {
       unawaited(_loadHistory());
-      unawaited(_loadImageHistory());
     }
   }
 
@@ -141,24 +133,15 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       _sidebarSearch.clear();
       _sidebarQuery = '';
       _conversations.clear();
-      _sidebarImages.clear();
-      _selectedImage = null;
       _historyPage = 1;
       _hasMoreHistory = false;
-      _imagePage = 1;
-      _hasMoreImages = false;
     }
     if (_state.connected) {
       if (_conversations.isEmpty && !_loadingHistory) {
         unawaited(_loadHistory());
       }
-      if (_sidebarImages.isEmpty && !_loadingImages) {
-        unawaited(_loadImageHistory());
-      }
     } else if (!_state.connected && _conversations.isNotEmpty) {
       _conversations.clear();
-      _sidebarImages.clear();
-      _selectedImage = null;
     }
     if (!_state.sending) {
       _refresh?.cancel();
@@ -257,7 +240,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
 
   Future<void> _openConversation(GenAiConversationSummary item) async {
     if (_state.sending || item.id == _state.groupId) return;
-    _selectedImage = null;
     final cancellation = GenAiCancellation();
     try {
       await _state.openConversation(item.id, cancellation);
@@ -311,70 +293,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     }
   }
 
-  Future<void> _loadImageHistory({bool more = false}) async {
-    if (!_state.connected || _loadingImages) return;
-    _imageCancellation?.cancel();
-    final cancellation = GenAiCancellation();
-    _imageCancellation = cancellation;
-    final page = more ? _imagePage + 1 : 1;
-    setState(() => _loadingImages = true);
-    try {
-      final data = await _state.repository.listImages(cancellation, page: page);
-      if (!mounted || cancellation.isCancelled) return;
-      setState(() {
-        if (!more) _sidebarImages.clear();
-        _sidebarImages.addAll(data.records);
-        _hasMoreImages = data.hasMore;
-        _imagePage = page;
-      });
-    } catch (_) {
-      // Best-effort image history load
-    } finally {
-      if (mounted && identical(_imageCancellation, cancellation)) {
-        setState(() => _loadingImages = false);
-      }
-    }
-  }
-
-  Future<void> _deleteImageRecord(String id) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除图片记录？'),
-        content: const Text('这将删除学校平台上的记录，无法撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    final cancellation = GenAiCancellation();
-    try {
-      await _state.repository.deleteImage(id, cancellation);
-      if (mounted) {
-        setState(() {
-          _sidebarImages.removeWhere((img) => img.id == id);
-          if (_selectedImage?.id == id) {
-            _selectedImage = null;
-          }
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('删除图片记录失败')),
-        );
-      }
-    }
-  }
-
   Future<void> _openTools(int tab) async {
     if (!_state.connected || _state.sending) return;
     final opened = await Navigator.of(context).push<bool>(
@@ -389,13 +307,11 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     if (mounted) {
       if (opened == true) _draft.clear();
       unawaited(_loadHistory());
-      unawaited(_loadImageHistory());
     }
   }
 
   void _newConversation() {
     _draft.clear();
-    _selectedImage = null;
     _state.newConversation();
     _inputFocus.requestFocus();
   }
@@ -619,7 +535,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     _historyCancellation?.cancel();
-    _imageCancellation?.cancel();
     _state.removeListener(_changed);
     _refresh?.cancel();
     _draft.dispose();
@@ -663,11 +578,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                       Expanded(
                         child: !_state.connected
                             ? _loginPanel()
-                            : _selectedImage != null
-                                ? _imageDetailView(_selectedImage!)
-                                : _state.turns.isEmpty
-                                    ? _welcome(size.maxWidth)
-                                    : _thread(),
+                            : _state.turns.isEmpty
+                                ? _welcome(size.maxWidth)
+                                : _thread(),
                       ),
                       if (_state.connected)
                         ConstrainedBox(
@@ -732,29 +645,16 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Row(
                   children: [
-                    _sidebarTabButton(
-                      label: '对话',
-                      selected: _sidebarTab == 0,
-                      onTap: () {
-                        setState(() => _sidebarTab = 0);
-                        if (_conversations.isEmpty && !_loadingHistory) {
-                          unawaited(_loadHistory());
-                        }
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                    _sidebarTabButton(
-                      label: '生图',
-                      selected: _sidebarTab == 1,
-                      onTap: () {
-                        setState(() => _sidebarTab = 1);
-                        if (_sidebarImages.isEmpty && !_loadingImages) {
-                          unawaited(_loadImageHistory());
-                        }
-                      },
+                    Text(
+                      '历史对话',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _muted,
+                      ),
                     ),
                     const Spacer(),
-                    if (_sidebarTab == 0 ? _loadingHistory : _loadingImages)
+                    if (_loadingHistory)
                       const SizedBox(
                         width: 14,
                         height: 14,
@@ -768,16 +668,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                           minWidth: 24,
                           minHeight: 24,
                         ),
-                        tooltip: _sidebarTab == 0 ? '刷新历史' : '刷新生图',
-                        onPressed: _state.connected &&
-                                !(_sidebarTab == 0
-                                    ? _loadingHistory
-                                    : _loadingImages)
-                            ? () => unawaited(
-                                  _sidebarTab == 0
-                                      ? _loadHistory()
-                                      : _loadImageHistory(),
-                                )
+                        tooltip: '刷新历史',
+                        onPressed: _state.connected && !_loadingHistory
+                            ? () => unawaited(_loadHistory())
                             : null,
                       ),
                   ],
@@ -785,9 +678,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
               ),
               const SizedBox(height: 8),
               Expanded(
-                child: _sidebarTab == 0
-                    ? _sidebarHistoryList(theme)
-                    : _sidebarImageList(theme),
+                child: _sidebarHistoryList(theme),
               ),
               const SizedBox(height: 12),
               Divider(height: 1, color: _border),
@@ -967,264 +858,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                     ),
         ),
       ],
-    );
-  }
-
-  Widget _sidebarTabButton({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) =>
-      InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color:
-                selected ? _accent.withValues(alpha: .12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-              color: selected ? _accent : _muted,
-            ),
-          ),
-        ),
-      );
-
-  Widget _sidebarImageList(ThemeData theme) {
-    if (!_state.connected) {
-      return Center(
-        child: Text('未连接 GenAI', style: TextStyle(fontSize: 12, color: _muted)),
-      );
-    }
-    if (_loadingImages && _sidebarImages.isEmpty) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-    }
-    if (_sidebarImages.isEmpty) {
-      return Center(
-        child: Text('暂无历史生图', style: TextStyle(fontSize: 12, color: _muted)),
-      );
-    }
-    return ListView.builder(
-      itemCount: _sidebarImages.length + (_hasMoreImages ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index >= _sidebarImages.length) {
-          return Center(
-            child: TextButton(
-              onPressed: _loadingImages
-                  ? null
-                  : () => unawaited(_loadImageHistory(more: true)),
-              child: const Text('加载更多', style: TextStyle(fontSize: 12)),
-            ),
-          );
-        }
-        final item = _sidebarImages[index];
-        final isActive = _selectedImage?.id == item.id;
-        final previewUri = item.images.firstOrNull;
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Material(
-            color:
-                isActive ? _accent.withValues(alpha: .12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () {
-                setState(() => _selectedImage = item);
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: isActive
-                      ? Border.all(color: _accent.withValues(alpha: .3))
-                      : null,
-                ),
-                child: Row(
-                  children: [
-                    if (previewUri != null)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: Image.network(
-                            previewUri.toString(),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Icon(
-                              Icons.image_outlined,
-                              size: 18,
-                              color: isActive ? _accent : _muted,
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      Icon(
-                        Icons.image_outlined,
-                        size: 18,
-                        color: isActive ? _accent : _muted,
-                      ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        item.prompt.isEmpty ? '图片创作' : item.prompt,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight:
-                              isActive ? FontWeight.w600 : FontWeight.normal,
-                          color:
-                              isActive ? _accent : theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 15),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 22,
-                        minHeight: 22,
-                      ),
-                      tooltip: '删除图片记录',
-                      onPressed: () => unawaited(_deleteImageRecord(item.id)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _imageDetailView(GenAiImageRecord record) {
-    final theme = Theme.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 868),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      tooltip: '返回对话',
-                      onPressed: () => setState(() => _selectedImage = null),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '图片详情',
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      tooltip: '删除图片记录',
-                      onPressed: () => unawaited(_deleteImageRecord(record.id)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Card(
-                  elevation: 0,
-                  color: theme.colorScheme.surfaceContainerHighest
-                      .withValues(alpha: .5),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: _border),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '提示词 / Prompt',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _muted,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        SelectableText(
-                          record.prompt.isEmpty ? '（无描述）' : record.prompt,
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                for (final uri in record.images) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      constraints: BoxConstraints(
-                        maxHeight: constraints.maxHeight > 0
-                            ? constraints.maxHeight * 0.65
-                            : 500,
-                      ),
-                      color: theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: .3),
-                      child: Image.network(
-                        uri.toString(),
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          height: 240,
-                          alignment: Alignment.center,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.broken_image_outlined,
-                                size: 40,
-                                color: _muted,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                '图片加载失败，可在浏览器中打开',
-                                style: TextStyle(color: _muted),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.open_in_new, size: 16),
-                        label: const Text('在新标签页打开原图'),
-                        onPressed: () => unawaited(_openLink(uri.toString())),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -1858,7 +1491,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                 SelectableText(
                                   turn.prompt,
                                   style: const TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 15.5,
                                     height: 1.7,
                                   ),
                                 ),
@@ -2060,18 +1693,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   onPressed: () =>
                                       unawaited(_toggleTts(index, turn.answer)),
                                 ),
-                                if (!_state.sending && _state.connected)
-                                  IconButton(
-                                    tooltip: '重新生成',
-                                    key: ValueKey('genai-regenerate-$index'),
-                                    icon: Icon(
-                                      Icons.refresh_rounded,
-                                      size: 16,
-                                      color: _muted,
-                                    ),
-                                    onPressed: () =>
-                                        unawaited(_retryTurn(index)),
-                                  ),
                               ],
                               if (incomplete && _state.connected)
                                 TextButton.icon(
@@ -2327,14 +1948,14 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                         textInputAction: TextInputAction.newline,
                         decoration: const InputDecoration(
                           hintText: '有什么想一起探索的？',
-                          hintStyle: TextStyle(fontSize: 13),
+                          hintStyle: TextStyle(fontSize: 14.5),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
                           filled: false,
                           contentPadding: EdgeInsets.symmetric(vertical: 12),
                         ),
-                        style: const TextStyle(fontSize: 14, height: 1.6),
+                        style: const TextStyle(fontSize: 15.5, height: 1.6),
                       ),
                     ),
                     Row(
@@ -2525,7 +2146,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
               ),
               const SizedBox(height: 10),
               Text(
-                'AI 生成内容可能不准确，请核实重要信息。',
+                'AI的输出可能包含不准确、误导性或完全捏造的信息，用户有责任对其生成的内容进行核查',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 10, color: _muted),
               ),

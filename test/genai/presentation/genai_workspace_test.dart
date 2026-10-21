@@ -686,23 +686,11 @@ void main() {
     expect(find.byKey(const ValueKey('genai-user-edit-0')), findsNothing);
     expect(find.byKey(const ValueKey('genai-user-delete-0')), findsNothing);
 
-    // Assistant bubble has copy, tts, and regenerate buttons, but NO delete or revert buttons
+    // Assistant bubble has copy and tts buttons, but NO regenerate, delete or revert buttons
     expect(find.byKey(const ValueKey('genai-copy-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('genai-tts-0')), findsOneWidget);
-    expect(find.byKey(const ValueKey('genai-regenerate-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('genai-regenerate-0')), findsNothing);
     expect(find.byKey(const ValueKey('genai-delete-0')), findsNothing);
-
-    // Regenerate still works properly
-    final regenerateBtn = find.byKey(const ValueKey('genai-regenerate-0'));
-    await tester.ensureVisible(regenerateBtn);
-    await tester.pumpAndSettle();
-    await tester.tap(regenerateBtn);
-    await tester.pumpAndSettle();
-
-    expect(demo.workspace.turns.length, 1);
-    expect(demo.workspace.turns.first.prompt, '测试消息');
-    expect(demo.workspace.turns.first.phase, GenAiChatPhase.completed);
-    expect(tester.takeException(), isNull);
   });
 
   testWidgets('sidebar session search filters in real time with debounce',
