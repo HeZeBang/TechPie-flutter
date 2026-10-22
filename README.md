@@ -12,7 +12,7 @@
 
 > [!WARNING]
 >
-> Android、iOS、macOS、Linux、Windows 统一使用 Flutter 3.35.7；HarmonyOS 使用下列 OHOS SDK。
+> Android、iOS、macOS、Linux、Windows 统一使用 Flutter 3.35.7；HarmonyOS 使用专门适配 HarmonyOS 的 Flutter SDK。
 
 ## Support Platform
 
@@ -58,7 +58,7 @@
 
 ## Development
 
-Android、iOS、macOS、Linux、Windows 使用根目录 `.flutter-version` 指定的 Flutter 3.35.7，可通过 `scripts/flutter-upstream.sh` 执行 Flutter 命令。脚本优先使用本地 `.cache/flutter-3.35.7/flutter`，也支持 `TECHPIE_FLUTTER_ROOT`，并校验 SDK 版本。HarmonyOS 使用独立的 OHOS fork。
+参考 HarmonyOS / 仓库配置
 
 ```bash
 export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn
@@ -88,8 +88,6 @@ export HOS_SDK_HOME="$HOME/dev/command-line-tools/sdk"
 
 - Flutter (OHOS patch) 3.35.8-ohos-1.0.4
 - [Huawei Command Line Tools 26.0.0.851](https://developer.huawei.com/consumer/cn/download/command-line-tools-for-hmos) — HarmonyOS SDK 26.0.0 Release (API 26)
-
-所有平台共用 `pubspec.lock`；切换 SDK 后运行 `flutter pub get --enforce-lockfile`。macOS 最低支持 12.0。
 
 ## Release & Versioning
 
