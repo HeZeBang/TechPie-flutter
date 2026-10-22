@@ -4,7 +4,7 @@ import UIKit
 import WidgetKit
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+@objc class AppDelegate: FlutterAppDelegate {
   private var ecardDeepLinkChannel: FlutterMethodChannel?
   private var pendingEcardRoute: String?
   private var ecardFeedback: EcardFeedback?
@@ -30,21 +30,28 @@ import WidgetKit
     return launched
   }
 
-  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+  func configureFlutter(with window: UIWindow?) -> Bool {
     if flutterConfigured {
-      return
+      return true
     }
 
-    let pluginRegistry = engineBridge.pluginRegistry
-    GeneratedPluginRegistrant.register(with: pluginRegistry)
+    guard let window,
+      let flutterViewController = window.rootViewController as? FlutterViewController
+    else {
+      assertionFailure("Failed to find the scene's FlutterViewController")
+      return false
+    }
+
+    self.window = window
+    GeneratedPluginRegistrant.register(with: flutterViewController)
 
     guard
-      let registrar = pluginRegistry.registrar(
+      let registrar = flutterViewController.registrar(
         forPlugin: "TechPieNativeGlassRegistry"
       )
     else {
       assertionFailure("Failed to create registrar for TechPieNativeGlassRegistry")
-      return
+      return false
     }
 
     NativeGlassRegistry.registerAll(with: registrar)
@@ -87,6 +94,7 @@ import WidgetKit
     }
 
     flutterConfigured = true
+    return true
   }
 
   override func application(
