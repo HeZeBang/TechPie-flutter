@@ -492,12 +492,22 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
 
     final uncompleted = sorted.where((a) => !service.isCompleted(a)).toList();
     final completed = sorted.where((a) => service.isCompleted(a)).toList()
-      ..sort((a, b) => b.due.compareTo(a.due));
+      ..sort((a, b) => (b.lateDue ?? b.due).compareTo(a.lateDue ?? a.due));
 
-    final overdue = uncompleted.where((a) => a.due.isBefore(now)).toList()
-      ..sort((a, b) => a.due.compareTo(b.due));
-    final upcoming = uncompleted.where((a) => !a.due.isBefore(now)).toList()
-      ..sort((a, b) => a.due.compareTo(b.due));
+    final overdue = uncompleted
+        .where((a) => (a.lateDue ?? a.due).isBefore(now))
+        .toList()
+      ..sort((a, b) => (a.lateDue ?? a.due).compareTo(b.lateDue ?? b.due));
+    final upcoming = uncompleted
+        .where((a) => !(a.lateDue ?? a.due).isBefore(now))
+        .toList()
+      ..sort((a, b) {
+        final targetA =
+            (a.lateDue != null && a.due.isBefore(now)) ? a.lateDue! : a.due;
+        final targetB =
+            (b.lateDue != null && b.due.isBefore(now)) ? b.lateDue! : b.due;
+        return targetA.compareTo(targetB);
+      });
 
     final todayLabel = DateFormat('yyyy-MM-dd EEE').format(now);
     final itemLabel = _filteredItemLabel;
@@ -859,7 +869,11 @@ class _DeadlineKindChip extends StatelessWidget {
   }
 }
 
-String _formatRemainingTime(DateTime due, DateTime now) {
+String _formatRemainingTime(
+  DateTime due,
+  DateTime now, {
+  String prefix = 'Remain',
+}) {
   final diff = due.difference(now);
   if (diff.isNegative || diff.inSeconds <= 0) {
     return 'Overdue';
@@ -869,10 +883,11 @@ String _formatRemainingTime(DateTime due, DateTime now) {
   final minutes = (diff.inMinutes % 60).toString().padLeft(2, '0');
   final seconds = (diff.inSeconds % 60).toString().padLeft(2, '0');
   if (days > 0) {
-    return 'Remain: ${days}d $hours:$minutes:$seconds';
+    return '$prefix: ${days}d $hours:$minutes:$seconds';
   }
-  return 'Remain: $hours:$minutes:$seconds';
+  return '$prefix: $hours:$minutes:$seconds';
 }
+
 
 class _AssignmentCard extends StatelessWidget {
   final Assignment assignment;
@@ -897,15 +912,22 @@ class _AssignmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final now = DateTime.now();
-    final isPast = assignment.due.isBefore(now);
+    final finalDue = assignment.lateDue ?? assignment.due;
+    final isPast = finalDue.isBefore(now);
+    final isLateWindow = !completed &&
+        assignment.lateDue != null &&
+        assignment.due.isBefore(now) &&
+        !isPast;
 
     final formatter = DateFormat('MM/dd HH:mm');
-    final dueString = formatter.format(assignment.due);
+    final displayDue = isLateWindow ? assignment.lateDue! : assignment.due;
+    final dueLabel = isLateWindow ? 'Late Due: ' : 'Due: ';
+    final dueString = formatter.format(displayDue);
 
     Color statusColor() {
       if (completed) return Colors.green;
-      if (isPast) return Colors.red;
-      final hoursLeft = assignment.due.difference(now).inHours;
+      if (isPast || isLateWindow) return Colors.red;
+      final hoursLeft = displayDue.difference(now).inHours;
       if (hoursLeft < 24) return Colors.orange;
       return theme.colorScheme.primary;
     }
@@ -1025,18 +1047,22 @@ class _AssignmentCard extends StatelessWidget {
                   Icon(
                     Icons.access_time,
                     size: 18,
-                    color: isPast && !completed
-                        ? Colors.red
-                        : theme.colorScheme.onSurfaceVariant,
+                    color: completed
+                        ? theme.colorScheme.onSurfaceVariant
+                        : (isPast || isLateWindow
+                            ? Colors.red
+                            : theme.colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    'Due: $dueString',
+                    '$dueLabel$dueString',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: isPast && !completed
-                          ? Colors.red
-                          : theme.colorScheme.onSurfaceVariant,
-                      fontWeight: isPast && !completed
+                      color: completed
+                          ? theme.colorScheme.onSurfaceVariant
+                          : (isPast || isLateWindow
+                              ? Colors.red
+                              : theme.colorScheme.onSurfaceVariant),
+                      fontWeight: (isPast || isLateWindow) && !completed
                           ? FontWeight.bold
                           : FontWeight.normal,
                     ),
@@ -1084,22 +1110,39 @@ class _AssignmentCard extends StatelessWidget {
                                   fontWeight: FontWeight.bold,
                                 ),
                               )
-                            : Text(
-                                _formatRemainingTime(assignment.due, now),
-                                key: const ValueKey('remain'),
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                              )),
+                            : (isLateWindow
+                                ? Text(
+                                    _formatRemainingTime(
+                                      assignment.lateDue!,
+                                      now,
+                                      prefix: 'Late',
+                                    ),
+                                    key: const ValueKey('late_remain'),
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  )
+                                : Text(
+                                    _formatRemainingTime(assignment.due, now),
+                                    key: const ValueKey('remain'),
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ))),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
               _DeadlineProgressBar(
                 due: assignment.due,
+                lateDue: assignment.lateDue,
                 releaseDate: assignment.releaseDate,
                 completed: completed,
                 now: now,
@@ -1113,26 +1156,28 @@ class _AssignmentCard extends StatelessWidget {
 }
 
 double _calculateRemainingFraction(
-  DateTime due,
+  DateTime targetDue,
   DateTime? releaseDate,
   DateTime now,
 ) {
-  if (now.isAfter(due)) return 0.0;
-  final start = releaseDate ?? due.subtract(const Duration(days: 7));
-  final totalMillis = due.difference(start).inMilliseconds;
+  if (now.isAfter(targetDue)) return 0.0;
+  final start = releaseDate ?? targetDue.subtract(const Duration(days: 7));
+  final totalMillis = targetDue.difference(start).inMilliseconds;
   if (totalMillis <= 0) return 0.0;
-  final remainMillis = due.difference(now).inMilliseconds;
+  final remainMillis = targetDue.difference(now).inMilliseconds;
   return (remainMillis / totalMillis).clamp(0.0, 1.0);
 }
 
 class _DeadlineProgressBar extends StatelessWidget {
   final DateTime due;
+  final DateTime? lateDue;
   final DateTime? releaseDate;
   final bool completed;
   final DateTime now;
 
   const _DeadlineProgressBar({
     required this.due,
+    this.lateDue,
     required this.releaseDate,
     required this.completed,
     required this.now,
@@ -1141,13 +1186,19 @@ class _DeadlineProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isPast = now.isAfter(due);
-    final hoursLeft = due.difference(now).inHours;
+    final finalDue = lateDue ?? due;
+    final isPast = now.isAfter(finalDue);
+    final isLateWindow = !completed &&
+        lateDue != null &&
+        now.isAfter(due) &&
+        !isPast;
+    final activeDue = isLateWindow ? lateDue! : due;
+    final hoursLeft = activeDue.difference(now).inHours;
 
     final Color barColor;
     if (completed) {
       barColor = Colors.green;
-    } else if (isPast) {
+    } else if (isPast || isLateWindow) {
       barColor = Colors.red;
     } else if (hoursLeft < 24) {
       barColor = Colors.orange;
@@ -1155,7 +1206,7 @@ class _DeadlineProgressBar extends StatelessWidget {
       barColor = theme.colorScheme.primary;
     }
 
-    final fraction = _calculateRemainingFraction(due, releaseDate, now);
+    final fraction = _calculateRemainingFraction(activeDue, releaseDate, now);
 
     return Container(
       height: 6,
