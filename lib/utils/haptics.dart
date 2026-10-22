@@ -134,10 +134,8 @@ abstract final class AppHaptics {
     ],
   );
 
-  /// The two designed patterns: a card payment landing, and the app noticing it
-  /// went offline. Both stay inside the scale the client we follow uses for its
-  /// own patterns (single pulses of a few milliseconds, a whole pattern well
-  /// under a quarter second) — a long buzz reads as an alarm, not as feedback.
+  /// The two designed patterns pair short pulses with a sound: a card payment
+  /// landing, and the app noticing it went offline.
   static const paymentSuccess = AppHapticWaveform(
     id: 'paymentSuccess',
     pulses: [
@@ -148,13 +146,14 @@ abstract final class AppHaptics {
     soundDurationMs: 1397,
   );
 
+  /// Four short ticks spread across the opening of the disconnect sound.
   static const networkDisconnected = AppHapticWaveform(
     id: 'networkDisconnected',
     pulses: [
       AppHapticPulse(atMs: 0, durationMs: 16, intensity: 0.45, sharpness: 0.6),
-      AppHapticPulse(atMs: 70, durationMs: 16, intensity: 0.40, sharpness: 0.6),
-      AppHapticPulse(atMs: 130, durationMs: 18, intensity: 0.50, sharpness: 0.7),
-      AppHapticPulse(atMs: 186, durationMs: 20, intensity: 0.65, sharpness: 0.7),
+      AppHapticPulse(atMs: 110, durationMs: 16, intensity: 0.40, sharpness: 0.6),
+      AppHapticPulse(atMs: 225, durationMs: 18, intensity: 0.50, sharpness: 0.7),
+      AppHapticPulse(atMs: 340, durationMs: 20, intensity: 0.65, sharpness: 0.7),
     ],
     soundAsset: 'assets/campus_card/audio/network-disconnected.wav',
     soundDurationMs: 1104,

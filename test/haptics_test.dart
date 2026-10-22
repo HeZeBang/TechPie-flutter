@@ -11,13 +11,13 @@ import 'package:techpie/utils/haptics.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('every waveform is a short, ordered, in-range pattern', () {
+  test('every waveform uses short, ordered, in-range pulses', () {
     for (final waveform in AppHaptics.all.values) {
       expect(AppHaptics.all[waveform.id], same(waveform));
       expect(waveform.pulses, isNotEmpty);
       var cursor = 0;
       for (final pulse in waveform.pulses) {
-        expect(pulse.durationMs, greaterThanOrEqualTo(3));
+        expect(pulse.durationMs, inInclusiveRange(3, 30));
         expect(
           pulse.atMs,
           greaterThanOrEqualTo(cursor),
@@ -27,13 +27,15 @@ void main() {
         expect(pulse.sharpness, inInclusiveRange(0, 1));
         cursor = pulse.endMs;
       }
-      // The whole point of the dictionary: a platform default can hold a motor
-      // on for a quarter of a second, which reads as an alarm, not as feedback.
-      expect(
-        waveform.durationMs,
-        lessThanOrEqualTo(250),
-        reason: '${waveform.id} has to stay a tick',
-      );
+      // UI-only feedback stays brief. Sound-paired ticks may span a longer
+      // sequence; feedback_assets_test checks that they stay inside the sound.
+      if (waveform.soundAsset == null) {
+        expect(
+          waveform.durationMs,
+          lessThanOrEqualTo(250),
+          reason: '${waveform.id} has to stay brief without a sound',
+        );
+      }
     }
   });
 
