@@ -14,7 +14,7 @@ public struct WatchPaymentPreferences {
   public func setOnlinePreferred(_ value: Bool) { defaults.set(value, forKey: Self.onlineKey) }
   public func setAutomaticPaymentChecking(_ value: Bool) { defaults.set(value, forKey: Self.checkingKey) }
 
-  public func resolvedKind(networkAvailable: Bool, hasOnlineAccount: Bool) -> WatchCodeKind {
-    prefersOnline && networkAvailable && hasOnlineAccount ? .online : .offline
+  public func resolvedKind(hasOnlineAccount: Bool) -> WatchCodeKind {
+    prefersOnline && hasOnlineAccount ? .online : .offline
   }
 }

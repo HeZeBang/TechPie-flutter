@@ -2,7 +2,6 @@ import Foundation
 import SwiftUI
 import WatchConnectivity
 import WatchSupport
-import Network
 
 struct WatchPaymentConfirmation: Identifiable, Equatable {
   let id: UUID
@@ -42,9 +41,6 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   @Published private var finishingCheck = false
   private var nextManualRefreshAt = Date.distantPast
   private let paymentPreferences = WatchPaymentPreferences()
-  private let pathMonitor = NWPathMonitor()
-  private let pathQueue = DispatchQueue(label: "techpie.watch.network")
-  private var networkAvailable = false
   private var targetID = ""
   private var storageReady = false
   private let nonce = UUID().uuidString
@@ -56,43 +52,13 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     prefersOnline = paymentPreferences.prefersOnline
     automaticallyChecksPayments = paymentPreferences.automaticallyChecksPayments
     restoreStorage()
-    startNetworkMonitoring()
     if WCSession.isSupported() { session.delegate = self; session.activate() }
     #if DEBUG && targetEnvironment(simulator)
     if ProcessInfo.processInfo.arguments.contains("--watch-preview") { installPreview() }
     #endif
   }
 
-  deinit { pathMonitor.cancel(); codeTask?.cancel(); cycleTask?.cancel(); codeExpiryTask?.cancel() }
-
-  private func startNetworkMonitoring() {
-    pathMonitor.pathUpdateHandler = { [weak self] path in
-      guard let self else { return }
-      // An on-demand path can be established by URLSession; only an
-      // unsatisfied path is known to have no available network.
-      let available = path.status != .unsatisfied
-      DispatchQueue.main.async { self.updateNetworkAvailability(available) }
-    }
-    pathMonitor.start(queue: pathQueue)
-  }
-
-  private func updateNetworkAvailability(_ available: Bool) {
-    guard available != networkAvailable else { return }
-    networkAvailable = available
-    guard prefersOnline, snapshot?.onlineAccount != nil else { return }
-    if !codeVisible {
-      codeTask?.cancel()
-      stopCodeCycle(keepingFrame: true)
-      display.pauseOnlineCode()
-      scheduleDisplayedCodeExpiry()
-      return
-    }
-    stopCodeCycle()
-    codeTask?.cancel()
-    if !available && display.kind == .online { display.clearCode() }
-    else { display.cancelGeneration() }
-    refreshCode()
-  }
+  deinit { codeTask?.cancel(); cycleTask?.cancel(); codeExpiryTask?.cancel() }
 
   @discardableResult
   private func restoreStorage() -> Bool {
@@ -162,8 +128,7 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     if let snapshot { display.reconcile(previous: snapshot, incoming: snapshot) }
     codeExpiryTask?.cancel()
     codeExpiryTask = nil
-    let preferred = paymentPreferences.resolvedKind(networkAvailable: networkAvailable,
-      hasOnlineAccount: snapshot?.onlineAccount != nil)
+    let preferred = paymentPreferences.resolvedKind(hasOnlineAccount: snapshot?.onlineAccount != nil)
     if preferred == .online, display.kind == .online, display.matrix != nil,
       let frame = onlineFrame, frame.expiresAt > Date() {
       startCodeCycle(frame: frame)
@@ -199,7 +164,7 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     let now = Date()
     guard codeVisible, !generating, now >= nextManualRefreshAt else { return }
     nextManualRefreshAt = now.addingTimeInterval(2)
-    if display.kind == .online, let frame = onlineFrame, let client = onlineClient, networkAvailable {
+    if display.kind == .online, let frame = onlineFrame, let client = onlineClient {
       refreshAfterChecking(frame, client: client)
     } else { refreshCode(preservingCurrentCode: true) }
   }
@@ -217,8 +182,7 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
       do { result = try await client.finishChecking(frame) }
       catch is CancellationError { return }
       catch { failure = error as? WatchOnlineFailure }
-      guard !Task.isCancelled, let self, self.codeVisible, self.cycleID == id,
-        self.networkAvailable else { return }
+      guard !Task.isCancelled, let self, self.codeVisible, self.cycleID == id else { return }
       self.finishingCheck = false
       if failure == .identityMismatch || failure == .invalidAccount {
         if let generation = self.display.beginGeneration(), let failure {
@@ -268,12 +232,12 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
         case .wait(let delay):
           do { try await Task.sleep(for: .seconds(delay)) } catch { return }
         case .refresh:
-          if let frame, let client, self.automaticallyChecksPayments, self.networkAvailable {
+          if let frame, let client, self.automaticallyChecksPayments {
             self.refreshAfterChecking(frame, client: client)
           } else { self.refreshCode() }
           return
         case .poll:
-          guard let frame, let client, self.networkAvailable else { return }
+          guard let frame, let client else { return }
           do {
             let result = try await client.poll(frame)
             guard !Task.isCancelled, self.codeVisible, self.cycleID == id else { return }
@@ -334,8 +298,7 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     guard let currentGeneration = display.beginGeneration() else { return }
     stopCodeCycle(keepingConfirmation: keepingConfirmation)
     scheduleDisplayedCodeExpiry()
-    let useOnline = !forceOffline && paymentPreferences.resolvedKind(networkAvailable: networkAvailable,
-      hasOnlineAccount: snapshot.onlineAccount != nil) == .online
+    let useOnline = !forceOffline && paymentPreferences.resolvedKind(hasOnlineAccount: snapshot.onlineAccount != nil) == .online
     if useOnline, clientAccount != snapshot.onlineAccount {
       clientAccount = snapshot.onlineAccount
       onlineClient = snapshot.onlineAccount.map { WatchOnlineCodeClient(account: $0) }
