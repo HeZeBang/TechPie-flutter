@@ -142,29 +142,26 @@ void main() {
     expect(calls.where((c) => c.method == 'publish'), isEmpty);
   });
 
-  test('exports login parameters and identity pins, never the phone session cookie', () async {
-    await sync.enable();
-    final body = calls.singleWhere((call) => call.method == 'publish').arguments as Map;
-    expect(body['onlineAccount'], {
-      'openID': 'SYNTHETIC_OPENID_0123456789',
-      'method': 'wechat_openid',
-      'idSerial': 'DEMO-CARD-0001',
-      'cardID': 'TEST-CARD',
-      'sessionEndpoint': sessionEndpoint.toString(),
+  for (final (channel, method, subject) in [
+    (EcardOpenIdChannel.wechat, 'wechat_openid', 'cc64076d7631233ac425307f95e1fa9752723c78efdc9632e2adf7465b229d96'),
+    (EcardOpenIdChannel.alipay, 'alipay_openid', '4bd16fe8924f3ef8971b92b18e7286541b10b33b3e61947178b5066a300d1bc2'),
+  ]) {
+    test('exports $method login parameters and identity pins without the phone cookie', () async {
+      await session.writeSession(sessionCookie: 'synthetic', openId: 'SYNTHETIC_OPENID_0123456789',
+        orgId: '2', verifiedIdSerial: 'DEMO-CARD-0001', verifiedCardId: 'TEST-CARD', channel: channel,);
+      await sync.enable();
+      final body = calls.singleWhere((call) => call.method == 'publish').arguments as Map;
+      expect(body['onlineAccount'], {
+        'openID': 'SYNTHETIC_OPENID_0123456789',
+        'method': method,
+        'idSerial': 'DEMO-CARD-0001',
+        'cardID': 'TEST-CARD',
+        'sessionEndpoint': sessionEndpoint.toString(),
+      });
+      expect(body['subject'], subject);
+      expect(sync.events.map((event) => event.text).join(), isNot(contains('SYNTHETIC_OPENID')));
     });
-    expect((body['onlineAccount'] as Map).keys, isNot(contains('cookie')));
-    expect((body['onlineAccount'] as Map).keys, isNot(contains('token')));
-    expect(sync.events.map((event) => event.text).join(), isNot(contains('SYNTHETIC_OPENID')));
-  });
-
-  test('Alipay login parameters keep their channel and subject', () async {
-    await session.writeSession(sessionCookie: 'synthetic', openId: 'SYNTHETIC_OPENID_0123456789',
-      orgId: '2', verifiedIdSerial: 'DEMO-CARD-0001', verifiedCardId: 'TEST-CARD', channel: EcardOpenIdChannel.alipay,);
-    await sync.enable();
-    final body = calls.singleWhere((call) => call.method == 'publish').arguments as Map;
-    expect((body['onlineAccount'] as Map)['method'], 'alipay_openid');
-    expect(body['subject'], EcardOpenIdChannel.alipay.subjectId('SYNTHETIC_OPENID_0123456789'));
-  });
+  }
 
   test('an insecure development endpoint does not export online credentials', () async {
     sessionEndpoint = Uri.parse('http://localhost:3000/api/auth/third-party/ecard');

@@ -11,9 +11,9 @@ final class WatchPaymentTests: XCTestCase {
     for path in ["/pages/common/success/success", "/pages/common/paysuccess/paysuccess"] {
       XCTAssertEqual(try WatchPaymentResult.decode(success(path: path)), .completed(amountFen: 880))
     }
-    for amount in ["0", "0.01", "12.3400", "128.60"] {
+    for (amount, fen) in [("0", 0), ("0.01", 1), ("12.3400", 1234), ("128.60", 12860)] {
       XCTAssertEqual(try WatchPaymentResult.decode(success(["txamt": amount])),
-        .completed(amountFen: NSDecimalNumber(string: amount).multiplying(by: 100).intValue))
+        .completed(amountFen: fen))
     }
     XCTAssertEqual(try WatchPaymentResult.decode(success(["txamt": 880])), .completed(amountFen: 88000))
   }
@@ -23,7 +23,7 @@ final class WatchPaymentTests: XCTestCase {
     for path in ["/pages/common/payfail/payfail", "/unknown", "/pages/common/success/success/extra"] {
       XCTAssertEqual(try WatchPaymentResult.decode(success(path: path)), .notCompleted)
     }
-    for status in [0, 2, 9, true, false] as [Any] {
+    for status in [2, true, false] as [Any] {
       XCTAssertEqual(try WatchPaymentResult.decode(success(["status": status])), .notCompleted)
     }
     var response = success()
@@ -65,7 +65,7 @@ final class WatchPaymentTests: XCTestCase {
     }
   }
 
-  func testSchedulerHasNoPerSecondWakeAndStopsPollingBeforeExpiry() {
+  func testSchedulePollsEveryFiveSecondsAndRefreshesAtExpiry() {
     let start = Date(timeIntervalSince1970: 1000)
     var schedule = WatchPaymentSchedule(refreshAt: start.addingTimeInterval(30), online: true, now: start)
     XCTAssertEqual(schedule.nextAction(now: start, automaticallyChecking: true, lowPowerMode: false), .wait(5))

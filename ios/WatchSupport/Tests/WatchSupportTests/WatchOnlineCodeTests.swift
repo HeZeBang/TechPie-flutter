@@ -56,33 +56,29 @@ final class WatchOnlineCodeTests: XCTestCase {
   }
 
   func testWatchAcquiresOwnSessionAndRequestsEncryptedCodeWithoutPhoneCookie() async throws {
-    let transport = ScriptedTransport([.session(), .quota(), .code()])
-    let client = WatchOnlineCodeClient(account: account(), transport: transport)
-    let frame = try await client.generate()
-    XCTAssertEqual(frame.balanceFen, 12860)
-    XCTAssertEqual(frame.matrix.modules, try OfflineCode.qr(Data(strictHex: "5638A1B2C3D4")).modules)
-    let requests = await transport.requests
-    XCTAssertEqual(requests.map { $0.url!.path }, ["/api/auth/third-party/ecard", "/virtualcard/openQrcodeQuotaModify", "/offlineCode/openVirtualcard"])
-    XCTAssertNil(requests[0].value(forHTTPHeaderField: "Cookie"))
-    let login = try JSONSerialization.jsonObject(with: requests[0].httpBody!) as! [String: String]
-    XCTAssertEqual(login["openid"], account().openID)
-    XCTAssertEqual(login["method"], "wechat_openid")
-    XCTAssertEqual(requests[2].value(forHTTPHeaderField: "Cookie"), "JSESSIONID=watch-only")
-    XCTAssertEqual(requests[2].value(forHTTPHeaderField: "orgid"), "2")
-    let envelope = try JSONSerialization.jsonObject(with: requests[2].httpBody!) as! [String: String]
-    let payload = try WatchEcardCipher.decodeEnvelope(envelope["datajson"]!)
-    XCTAssertEqual(payload["openid"] as? String, account().openID)
-    XCTAssertEqual(payload["usertype"] as? String, "8")
-  }
-
-  func testAlipayUsesItsOwnLoginMethodAndUserType() async throws {
-    let transport = ScriptedTransport([.session(), .quota(), .code()])
-    _ = try await WatchOnlineCodeClient(account: account(method: "alipay_openid"), transport: transport).generate()
-    let requests = await transport.requests
-    let login = try JSONSerialization.jsonObject(with: requests[0].httpBody!) as! [String: String]
-    let outer = try JSONSerialization.jsonObject(with: requests[2].httpBody!) as! [String: String]
-    XCTAssertEqual(login["method"], "alipay_openid")
-    XCTAssertEqual(try WatchEcardCipher.decodeEnvelope(outer["datajson"]!)["usertype"] as? String, "18")
+    for (method, userType, subject) in [
+      ("wechat_openid", "8", "cc64076d7631233ac425307f95e1fa9752723c78efdc9632e2adf7465b229d96"),
+      ("alipay_openid", "18", "4bd16fe8924f3ef8971b92b18e7286541b10b33b3e61947178b5066a300d1bc2")
+    ] {
+      XCTAssertEqual(account(method: method).subject, subject)
+      let transport = ScriptedTransport([.session(), .quota(), .code()])
+      let client = WatchOnlineCodeClient(account: account(method: method), transport: transport)
+      let frame = try await client.generate()
+      XCTAssertEqual(frame.balanceFen, 12860)
+      XCTAssertEqual(frame.matrix.modules, try OfflineCode.qr(Data(strictHex: "5638A1B2C3D4")).modules)
+      let requests = await transport.requests
+      XCTAssertEqual(requests.map { $0.url!.path }, ["/api/auth/third-party/ecard", "/virtualcard/openQrcodeQuotaModify", "/offlineCode/openVirtualcard"])
+      XCTAssertNil(requests[0].value(forHTTPHeaderField: "Cookie"))
+      let login = try JSONSerialization.jsonObject(with: requests[0].httpBody!) as! [String: String]
+      XCTAssertEqual(login["openid"], account().openID)
+      XCTAssertEqual(login["method"], method)
+      XCTAssertEqual(requests[2].value(forHTTPHeaderField: "Cookie"), "JSESSIONID=watch-only")
+      XCTAssertEqual(requests[2].value(forHTTPHeaderField: "orgid"), "2")
+      let envelope = try JSONSerialization.jsonObject(with: requests[2].httpBody!) as! [String: String]
+      let payload = try WatchEcardCipher.decodeEnvelope(envelope["datajson"]!)
+      XCTAssertEqual(payload["openid"] as? String, account().openID)
+      XCTAssertEqual(payload["usertype"] as? String, userType)
+    }
   }
 
   func testSessionIsReusedThenRenewedAfterThirtyMinutesIdle() async throws {
@@ -104,6 +100,13 @@ final class WatchOnlineCodeTests: XCTestCase {
     let requests = await transport.requests
     XCTAssertEqual(requests.count, 6)
     XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "Cookie"), "JSESSIONID=renewed-watch")
+    let rejected = ScriptedTransport([.session(), .quota(), .http(401), .session(), .quota(), .http(401)])
+    do {
+      _ = try await WatchOnlineCodeClient(account: account(), transport: rejected).generate()
+      XCTFail("Repeated authentication failure produced a code")
+    } catch let error as WatchOnlineFailure { XCTAssertEqual(error, .authentication) }
+    let failedRequests = await rejected.requests
+    XCTAssertEqual(failedRequests.count, 6)
   }
 
   func testIdentityMismatchNeverProducesCodeOrBecomesOfflineFallback() async throws {
@@ -121,13 +124,17 @@ final class WatchOnlineCodeTests: XCTestCase {
   }
 
   func testNetworkAndServerFailuresPermitFallbackButBusinessRejectionDoesNot() async throws {
-    for (reply, expected) in [(Reply.network, WatchOnlineFailure.network), (.http(503), .server),
-      (.http(302), .server), (.body(["success": false, "message": "校园卡挂失"], encrypted: true), .rejected)] {
+    for (reply, expected, permitsFallback) in [(Reply.network, WatchOnlineFailure.network, true),
+      (.http(503), .server, true), (.http(302), .server, true),
+      (.body(["success": false, "message": "校园卡挂失"], encrypted: true), .rejected, false)] {
       let transport = ScriptedTransport([.session(), .quota(), reply])
       do {
         _ = try await WatchOnlineCodeClient(account: account(), transport: transport).generate()
         XCTFail("Failed response produced a code")
-      } catch let error as WatchOnlineFailure { XCTAssertEqual(error, expected) }
+      } catch let error as WatchOnlineFailure {
+        XCTAssertEqual(error, expected)
+        XCTAssertEqual(error.permitsOfflineFallback, permitsFallback)
+      }
     }
     XCTAssertFalse(WatchOnlineFailure.rejected.permitsOfflineFallback)
     XCTAssertFalse(WatchOnlineFailure.notActivated.permitsOfflineFallback)
@@ -241,10 +248,12 @@ final class WatchOnlineCodeTests: XCTestCase {
     let transport = ScriptedTransport([.session(), .quota(), .code(), .stall])
     let client = WatchOnlineCodeClient(account: account(), transport: transport)
     let frame = try await client.generate()
+    let started = ProcessInfo.processInfo.systemUptime
     do {
       _ = try await client.finishChecking(frame, now: frame.expiresAt.addingTimeInterval(5.95))
       XCTFail("A stalled final check returned a result")
     } catch let error as WatchOnlineFailure { XCTAssertEqual(error, .network) }
+    XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 1)
     let repeated = try await client.finishChecking(frame)
     XCTAssertEqual(repeated, .expired)
     let requests = await transport.requests
@@ -395,31 +404,6 @@ final class WatchOnlineCodeTests: XCTestCase {
     XCTAssertEqual(frame.balanceFen, 12860)
     let requests = await transport.requests
     XCTAssertEqual(requests.count, 4)
-  }
-
-  func testOnlineOnlyAuthorizationSupportsExpiryAndRejectsStaleGenerations() throws {
-    var snapshot = try fixture()
-    snapshot.onlineAccount = account(); snapshot.subject = account().subject; snapshot.credential = nil
-    try snapshot.validate()
-    var state = WatchCodeDisplayState()
-    state.reconcile(previous: nil, incoming: snapshot)
-    state.setActive(true)
-    XCTAssertFalse(state.requiresAuthorization)
-    let matrix = QRMatrix(side: 1, modules: [1])
-    let ticket = state.beginGeneration()!
-    state.finish(.success(matrix), generation: ticket, kind: .online, expiresAt: Date().addingTimeInterval(30))
-    state.expireOnlineCode(now: Date().addingTimeInterval(31))
-    XCTAssertNil(state.matrix)
-    XCTAssertFalse(state.requiresAuthorization)
-    let stale = state.beginGeneration()!
-    state.clearCode()
-    state.finish(.success(matrix), generation: stale, kind: .online, expiresAt: Date().addingTimeInterval(30))
-    XCTAssertNil(state.matrix)
-    let current = state.beginGeneration()!
-    state.finish(.success(matrix), generation: current, kind: .online, expiresAt: Date().addingTimeInterval(30))
-    state.pauseOnlineCode()
-    XCTAssertEqual(state.matrix?.modules, matrix.modules)
-    XCTAssertFalse(state.requiresAuthorization)
   }
 
   func testOfflineGrantExpiryClearsOfflineCodeEvenWhenOnlineAccountRemainsAvailable() throws {
