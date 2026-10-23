@@ -1,0 +1,6 @@
+{
+  "string": [
+    { "name": "app_name", "value": "TechPie Watch" },
+    { "name": "app_description", "value": "TechPie 校园服务手表端" }
+  ]
+}

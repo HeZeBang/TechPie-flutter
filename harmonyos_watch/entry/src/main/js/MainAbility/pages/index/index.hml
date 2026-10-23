@@ -1,0 +1,75 @@
+<div class="screen">
+  <list class="content" if="{{ view !== 'code' }}">
+    <list-item class="spacer"></list-item>
+    <list-item class="section">
+      <text class="brand">{{ view === 'home' ? 'TechPie' : (view === 'ddl' ? '待办 DDL' : (view === 'account' ? '我的账号' : '连接帮助')) }}</text>
+      <text class="status">{{ status }}</text>
+    </list-item>
+    <list-item class="section" if="{{ view === 'home' }}">
+      <div class="card">
+        <text class="caption">即将截止</text>
+        <text class="headline">{{ nextTitle }}</text>
+        <text class="support">{{ nextDue }}</text>
+      </div>
+      <input class="primary" type="button" value="待办 DDL" onclick="showDdl" />
+      <input class="secondary" type="button" value="校园码" onclick="showCode" />
+      <input class="secondary" type="button" value="我的账号" onclick="showAccount" />
+      <input class="text-action" type="button" value="连接帮助" onclick="showGuide" />
+    </list-item>
+    <list-item class="section" if="{{ view === 'ddl' }}">
+      <text class="support">{{ updated }}</text>
+      <text class="support" if="{{ deadlines.length === 0 }}">{{ ddlEmpty }}</text>
+      <input class="primary" type="button" value="{{ syncLabel }}" onclick="refreshDdl" />
+    </list-item>
+    <list-item class="section" for="{{ view === 'ddl' ? deadlines : [] }}">
+      <div class="card">
+        <text class="caption">{{ $item.hint }}</text>
+        <text class="headline">{{ $item.title }}</text>
+        <text class="support">{{ $item.course }}</text>
+        <text class="due">{{ $item.due }}</text>
+      </div>
+    </list-item>
+    <list-item class="section" if="{{ view === 'ddl' }}">
+      <text class="support">{{ pageLabel }}</text>
+      <input class="secondary" if="{{ hasPrevious }}" type="button" value="上一页" onclick="previousPage" />
+      <input class="secondary" if="{{ hasNext }}" type="button" value="下一页" onclick="nextPage" />
+      <text class="support" if="{{ truncated }}">更多待办请在手机查看</text>
+      <text class="support">在手机连接页开启 DDL 提醒</text>
+    </list-item>
+    <list-item class="section" if="{{ view === 'account' }}">
+      <div class="card">
+        <text class="caption">姓名</text>
+        <text class="headline">{{ name || '待同步' }}</text>
+        <text class="caption">学号</text>
+        <text class="headline">{{ studentId || '待同步' }}</text>
+      </div>
+      <text class="support">{{ detail }}</text>
+      <input class="primary" type="button" value="{{ syncLabel }}" onclick="refreshDdl" />
+    </list-item>
+    <list-item class="section" if="{{ view === 'guide' }}">
+      <div class="card">
+        <text class="headline">1. 配对手表</text>
+        <text class="support">在华为运动健康中确认手表已连接。</text>
+      </div>
+      <div class="card">
+        <text class="headline">2. 手机授权</text>
+        <text class="support">打开 TechPie 的 Settings → HUAWEI WATCH，查找并连接手表。</text>
+      </div>
+      <text class="support">连接时保持此应用打开。离开应用会隐藏账号与校园码。</text>
+      <input class="secondary" type="button" value="重新连接服务" onclick="retryConnection" />
+    </list-item>
+    <list-item class="section">
+      <text class="error" if="{{ error !== '' }}">{{ error }}</text>
+      <input class="text-action" if="{{ view !== 'home' }}" type="button" value="返回首页" onclick="goHome" />
+    </list-item>
+    <list-item class="spacer"></list-item>
+  </list>
+  <div class="code-page" if="{{ view === 'code' }}">
+    <text class="code-title">校园码</text>
+    <canvas class="qr" ref="qr" show="{{ codeVisible }}"></canvas>
+    <text class="code-empty" if="{{ !codeVisible }}">{{ error || codeMessage }}</text>
+    <text class="code-countdown" if="{{ codeVisible }}">{{ codeMessage }}</text>
+    <input class="code-refresh" type="button" value="{{ codeLabel }}" onclick="refreshCode" />
+    <input class="code-back" type="button" value="返回" onclick="goHome" />
+  </div>
+</div>

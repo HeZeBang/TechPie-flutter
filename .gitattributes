@@ -1,0 +1,3 @@
+# CMake embeds a digest of these exact source bytes into the prebuilt reader.
+# Keep checkouts identical on Windows and Linux so the artifact check is stable.
+ohos/entry/src/main/cpp/** text eol=lf

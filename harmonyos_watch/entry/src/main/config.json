@@ -1,0 +1,26 @@
+{
+  "app": {
+    "bundleName": "com.geekpie.techpie.watch",
+    "vendor": "geekpie",
+    "version": { "code": 1, "name": "0.1.0" }
+  },
+  "deviceConfig": {},
+  "module": {
+    "deviceType": ["liteWearable"],
+    "distro": {
+      "deliveryWithInstall": true,
+      "moduleName": "entry",
+      "moduleType": "entry"
+    },
+    "abilities": [{
+      "name": ".MainAbility",
+      "srcLanguage": "js",
+      "srcPath": "MainAbility",
+      "icon": "$media:icon",
+      "description": "$string:app_description",
+      "label": "$string:app_name",
+      "type": "page"
+    }],
+    "js": [{ "name": ".MainAbility", "pages": ["pages/index/index"] }]
+  }
+}

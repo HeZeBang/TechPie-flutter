@@ -1,0 +1,14 @@
+
+{
+  "name": "entry",
+  // hvigor module version — NOT the app version. The app version lives in
+  // pubspec.yaml alone; ohos/AppScope/app.json5 is generated from it.
+  "version": "1.0.0",
+  "description": "Please describe the basic information.",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "libecardbind_reader.so": "file:./src/main/cpp/types/libecardbind_reader"
+  },
+}

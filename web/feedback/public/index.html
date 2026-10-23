@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#087ff5" />
+    <meta name="description" content="TechPie 用户反馈与工单查询" />
+    <title>用户反馈 · TechPie</title>
+    <link rel="icon" href="./icon.png" />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="nav">
+        <a class="brand" href="https://techpie.geekpie.club"
+          ><img src="./icon.png" alt="" width="48" height="48" />TechPie</a
+        >
+        <nav class="navlinks" aria-label="主导航">
+          <a href="https://techpie.geekpie.club">首页</a
+          ><a href="https://techpie.geekpie.club/privacy">支持与隐私</a
+          ><a href="/" aria-current="page">用户反馈</a>
+        </nav>
+      </header>
+    </div>
+    <main class="feedback-page">
+      <div class="page-heading">
+        <h1>用户反馈</h1>
+        <p>提交使用问题或功能建议，或通过工单 ID 查询处理结果。用户群：1130168501</p>
+      </div>
+      <div>
+        <nav class="tabs" role="tablist" aria-label="反馈功能">
+          <button
+            role="tab"
+            aria-selected="true"
+            aria-controls="new-panel"
+            id="new-tab"
+          >
+            提交反馈</button
+          ><button
+            role="tab"
+            aria-selected="false"
+            aria-controls="lookup-panel"
+            id="lookup-tab"
+          >
+            查看工单
+          </button>
+        </nav>
+        <section
+          class="card"
+          id="new-panel"
+          role="tabpanel"
+          aria-labelledby="new-tab"
+        >
+          <h2>提交反馈</h2>
+          <p class="muted">带 * 的项目为必填项。提交成功后将生成工单 ID。</p>
+          <form id="feedback-form">
+            <div class="section">
+              <h3>用户与使用环境</h3>
+              <div class="fields">
+                <label
+                  >用户 ID <span class="required">*</span
+                  ><input
+                    name="userId"
+                    required
+                    maxlength="100"
+                    autocomplete="username"
+                    placeholder="GeekPie-UniAuth 用户名"
+                  /><small class="hint"
+                    >填写 GeekPie-UniAuth 用户名，不是学号。</small
+                  ></label
+                >
+                <label
+                  >反馈类型 <span class="required">*</span
+                  ><select name="category">
+                    <option>问题反馈</option>
+                    <option>功能建议</option>
+                    <option>体验建议</option>
+                    <option>其他</option>
+                  </select></label
+                >
+                <label
+                  >使用平台 <span class="required">*</span
+                  ><select name="platform">
+                    <option>Web</option>
+                    <option>Android</option>
+                    <option>iOS</option>
+                    <option>Windows</option>
+                    <option>macOS</option>
+                    <option>Linux</option>
+                    <option>HarmonyOS</option>
+                    <option>其他</option>
+                  </select></label
+                >
+                <label
+                  >应用版本 / 浏览器<input
+                    name="version"
+                    maxlength="80"
+                    placeholder="例如 1.0.1+12 / Chrome 版本"
+                /></label>
+                <label class="full"
+                  >使用场景 <span class="required">*</span
+                  ><input
+                    name="scenario"
+                    required
+                    minlength="2"
+                    maxlength="500"
+                    placeholder="例如：在课表页切换学期，或用校园卡付款"
+                /></label>
+              </div>
+            </div>
+            <div class="section">
+              <h3>反馈内容</h3>
+              <div class="fields">
+                <label class="full"
+                  >问题标题 <span class="required">*</span
+                  ><input
+                    name="title"
+                    required
+                    minlength="2"
+                    maxlength="120"
+                    placeholder="简要描述问题或建议"
+                /></label>
+                <label class="full"
+                  >具体问题 <span class="required">*</span
+                  ><textarea
+                    name="problem"
+                    required
+                    minlength="10"
+                    maxlength="5000"
+                    placeholder="描述问题表现、错误提示或建议内容（至少 10 字）"
+                  ></textarea>
+                </label>
+                <label class="full"
+                  >复现步骤<textarea
+                    name="steps"
+                    maxlength="3000"
+                    placeholder="1. 打开…&#10;2. 点击…&#10;3. 出现…"
+                  ></textarea>
+                </label>
+                <label class="full"
+                  >期望结果<textarea
+                    name="expected"
+                    maxlength="2000"
+                    placeholder="描述预期结果"
+                  ></textarea>
+                </label>
+              </div>
+            </div>
+            <div class="section">
+              <h3>联系方式</h3>
+              <div class="fields">
+                <label
+                  >联系方式类型 <span class="required">*</span
+                  ><select name="contactType">
+                    <option>邮箱</option>
+                    <option>QQ</option>
+                    <option>微信</option>
+                    <option>电话</option>
+                  </select></label
+                ><label
+                  >联系方式 <span class="required">*</span
+                  ><input
+                    name="contact"
+                    type="email"
+                    required
+                    minlength="3"
+                    maxlength="200"
+                    placeholder="name@example.com"
+                    autocomplete="email"
+                /></label>
+              </div>
+            </div>
+            <label class="trap" aria-hidden="true"
+              >Website<input
+                name="website"
+                tabindex="-1"
+                autocomplete="off" /></label
+            ><label class="check"
+              ><input name="consent" type="checkbox" required /><span
+                >我同意 TechPie
+                团队仅为处理此反馈使用上述信息。联系方式仅供处理人员查看；持有工单
+                ID 的人可查看反馈内容、处理进度及公开回复。</span
+              ></label
+            >
+            <div class="message" id="form-message" role="alert"></div>
+            <div class="actions">
+              <button class="primary" type="submit">提交反馈</button>
+            </div>
+          </form>
+          <div id="receipt" class="success" hidden tabindex="-1">
+            <h2>提交成功</h2>
+            <p class="muted">请保存工单 ID，用于查询处理进度和回复。</p>
+            <label
+              >工单 ID<code class="credential" id="receipt-id"></code
+            ></label>
+            <div class="actions">
+              <button class="quiet" id="save-receipt">下载工单凭证</button
+              ><button class="primary" id="view-receipt">查询此工单</button
+              ><button class="quiet" id="another-feedback">
+                提交另一条反馈
+              </button>
+            </div>
+          </div>
+        </section>
+        <section
+          class="card"
+          id="lookup-panel"
+          role="tabpanel"
+          aria-labelledby="lookup-tab"
+          hidden
+        >
+          <h2>查看处理进度</h2>
+          <p class="muted">输入提交时获得的工单 ID 即可查询。</p>
+          <form id="lookup-form">
+            <label
+              >工单 ID<input
+                name="id"
+                required
+                maxlength="28"
+                placeholder="TP-YYYYMMDD-XXXXXXXXXXXXXXXX"
+                autocapitalize="characters"
+                spellcheck="false"
+            /></label>
+            <div class="message" id="lookup-message" role="alert"></div>
+            <div class="actions"><button class="primary">查询工单</button></div>
+          </form>
+          <div id="lookup-result" class="detail" aria-live="polite"></div>
+        </section>
+      </div>
+    </main>
+    <div class="wrap">
+      <footer class="footer">
+        <a href="https://geekpie.club/">GeekPie</a
+        ><a href="https://techpie.geekpie.club/privacy">支持与隐私</a>
+      </footer>
+    </div>
+  </body>
+</html>
