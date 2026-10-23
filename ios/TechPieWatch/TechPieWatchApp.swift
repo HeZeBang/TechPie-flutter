@@ -127,6 +127,9 @@ struct CampusCardPages: View {
       let active = page == 0 && scenePhase == .active
       store.setCodeVisible(active)
     }
+    .task(id: page == 1 && scenePhase == .active ? store.snapshot?.onlineAccount : nil) {
+      if page == 1 && scenePhase == .active { await store.refreshCard() }
+    }
     .onDisappear { store.setCodeVisible(false) }
   }
 }
@@ -315,7 +318,7 @@ private struct CardInfoPage: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Spacer(minLength: 0)
-      if let card = store.snapshot?.card, store.snapshot?.enabled == true {
+      if let card = store.card {
         VStack(alignment: .leading, spacing: 3) {
           Text(card.name).font(.title2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.6)
           Text(card.studentID).font(.footnote).monospacedDigit().foregroundStyle(WatchPalette.secondary)
@@ -327,7 +330,10 @@ private struct CardInfoPage: View {
           if let time = store.balanceUpdatedAt {
             Text("更新于 \(Self.updateFormat.string(from: Date(timeIntervalSince1970: time)))")
               .font(.system(size: 10)).foregroundStyle(WatchPalette.secondary).padding(.top, 8)
-          } else { Text("等待手机更新").font(.caption2).foregroundStyle(WatchPalette.secondary).padding(.top, 8) }
+          }
+          if let message = store.cardMessage {
+            Text(message).font(.system(size: 10)).foregroundStyle(WatchPalette.secondary).padding(.top, 4)
+          }
         }
       } else {
         Text("请在手机同步校园卡信息").font(.footnote)

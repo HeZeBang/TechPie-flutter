@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 
 /// Login parameters approved by the paired phone. The watch acquires its own cookie.
-public struct WatchOnlineAccount: Codable, Equatable, Sendable {
+public struct WatchOnlineAccount: Codable, Hashable, Sendable {
   public var openID: String
   public var method: String
   public var idSerial: String

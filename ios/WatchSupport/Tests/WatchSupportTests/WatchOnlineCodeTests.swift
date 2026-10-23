@@ -93,6 +93,61 @@ final class WatchOnlineCodeTests: XCTestCase {
     XCTAssertEqual(requests.count, 7)
   }
 
+  func testCardRefreshUsesOwnSessionAndSharesItWithCodeGeneration() async throws {
+    let transport = ScriptedTransport([.session(), .quota(), .card(), .code(),
+      .card(name: "更新后的姓名", balance: "92.07", status: "挂失")])
+    let client = WatchOnlineCodeClient(account: account(), transport: transport)
+    let card = try await client.fetchCard()
+    XCTAssertEqual(card.name, "合成用户")
+    XCTAssertEqual(card.studentID, "SYNTHETIC-CARD")
+    XCTAssertEqual(card.balanceFen, 12860)
+    XCTAssertTrue(card.permitsPayment)
+    XCTAssertNotNil(card.updatedAt)
+    let initialRequests = await transport.requests
+    XCTAssertEqual(initialRequests.map { $0.url!.path }, ["/api/auth/third-party/ecard",
+      "/virtualcard/openQrcodeQuotaModify", "/myaccount/openMyAccountApp"])
+
+    _ = try await client.generate()
+    let updated = try await client.fetchCard()
+    XCTAssertEqual(updated.name, "更新后的姓名")
+    XCTAssertEqual(updated.balanceFen, 9207)
+    XCTAssertFalse(updated.permitsPayment)
+    let requests = await transport.requests
+    XCTAssertEqual(requests.count, 5, "Refreshing card data and codes must reuse the watch login")
+    XCTAssertTrue(requests.dropFirst().allSatisfy { $0.value(forHTTPHeaderField: "Cookie") == "JSESSIONID=watch-only" })
+  }
+
+  func testCardRefreshRejectsAnotherStudent() async throws {
+    let transport = ScriptedTransport([.session(), .quota(), .card(student: "OTHER")])
+    do {
+      _ = try await WatchOnlineCodeClient(account: account(), transport: transport).fetchCard()
+      XCTFail("Another student's card was accepted")
+    } catch let error as WatchOnlineFailure { XCTAssertEqual(error, .identityMismatch) }
+  }
+
+  func testCardRefreshKeepsTheCodeUntilAuthenticationIsRenewed() async throws {
+    let transport = ScriptedTransport([.session(), .quota(), .code(), .card(),
+      .http(401), .session(), .quota(), .card(), .code(), .session(), .quota(), .card()])
+    let client = WatchOnlineCodeClient(account: account(), transport: transport)
+    let frame = try await client.generate()
+    _ = try await client.fetchCard()
+    let resumable = await client.canResume(frame)
+    XCTAssertTrue(resumable, "Refreshing card information must retain an unused online code")
+
+    _ = try await client.fetchCard()
+    let afterRenewal = await client.canResume(frame)
+    XCTAssertFalse(afterRenewal, "Authentication renewal invalidates the old code even if the cookie string is reused")
+
+    // A clock adjustment also reacquires a session without an HTTP 401.
+    let earlier = Date().addingTimeInterval(-1)
+    let replacement = try await client.generate()
+    _ = try await client.fetchCard(now: earlier)
+    let afterClockAdjustment = await client.canResume(replacement)
+    XCTAssertFalse(afterClockAdjustment, "Every authentication reset must invalidate the retained code")
+    let requests = await transport.requests
+    XCTAssertEqual(requests.filter { $0.url!.path == "/offlineCode/openVirtualcard" }.count, 2)
+  }
+
   func testUnauthorizedCodeRefreshesSessionOnce() async throws {
     let transport = ScriptedTransport([.session(), .quota(), .http(401),
       .session(cookie: "JSESSIONID=renewed-watch"), .quota(), .code()])
@@ -447,6 +502,11 @@ private enum Reply {
   static func code(student: String = "SYNTHETIC-CARD") -> Reply {
     .body(["success": true, "data": ["code": "SYNTHETIC-PAYCODE", "qrcode": "5638A1B2C3D4",
       "cardbal": "128.60", "idserial": student, "cardid": "SYNTHETIC-CARD-ID"]], encrypted: true)
+  }
+  static func card(student: String = "SYNTHETIC-CARD", name: String = "合成用户",
+    balance: String = "128.60", status: String = "1") -> Reply {
+    .body(["success": true, "data": ["cardinfo": ["idserial": student,
+      "cardid": "SYNTHETIC-CARD-ID", "username": name, "cardbal": balance, "accstatus": status]]], encrypted: true)
   }
   static func payment(student: String = "SYNTHETIC-CARD") -> Reply {
     .body(["success": true, "url": "/pages/common/success/success",

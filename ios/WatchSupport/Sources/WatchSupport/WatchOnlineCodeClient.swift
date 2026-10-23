@@ -88,6 +88,43 @@ public actor WatchOnlineCodeClient {
     return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
   }
 
+  public func fetchCard(now: Date = Date()) async throws -> WatchCard {
+    do {
+      try account.validate()
+      for attempt in 0..<2 {
+        try Task.checkCancellation()
+        do {
+          let cookie = try await sessionCookie(now: now)
+          let response = try await campusRequest("/myaccount/openMyAccountApp", cookie: cookie, payload: [:])
+          try validateIdentity(response)
+          guard success(response) else { throw WatchOnlineFailure.rejected }
+          let data = response["data"] as? [String: Any] ?? response
+          guard let card = data["cardinfo"] as? [String: Any],
+            nonempty(card["idserial"]) == account.idSerial else { throw WatchOnlineFailure.identityMismatch }
+          let user = data["userInfo"] as? [String: Any]
+          guard let name = nonempty(card["username"]) ?? nonempty(user?["username"]),
+            let balanceFen = balance(card["cardbal"]) else { throw WatchOnlineFailure.invalidResponse }
+          let status = nonempty(card["accstatusStr"]) ?? nonempty(card["accstatus"])
+          return WatchCard(name: name, studentID: account.idSerial, balanceFen: balanceFen,
+            updatedAt: Date().timeIntervalSince1970, permitsPayment: status == "正常" || status == "1")
+        } catch WatchOnlineFailure.authentication where attempt == 0 { session = nil; codeLease = nil }
+      }
+      throw WatchOnlineFailure.authentication
+    } catch is CancellationError { throw CancellationError() }
+    catch let error as WatchOnlineFailure {
+      if error == .authentication || error == .identityMismatch { session = nil; codeLease = nil }
+      throw error
+    } catch let error as URLError {
+      if error.code == .cancelled { throw CancellationError() }
+      throw WatchOnlineFailure.network
+    } catch { throw WatchOnlineFailure.invalidResponse }
+  }
+
+  public func canResume(_ frame: WatchOnlineCode) -> Bool {
+    guard let lease = codeLease else { return false }
+    return frame.expiresAt > Date() && lease.frameID == frame.id && session?.cookie == lease.cookie
+  }
+
   public func poll(_ frame: WatchOnlineCode, now: Date = Date()) async throws -> WatchPaymentResult {
     try await checkOrder(frame, validUntil: frame.expiresAt, now: now, timeout: WatchPaymentSchedule.pollTimeout)
   }
@@ -145,12 +182,7 @@ public actor WatchOnlineCodeClient {
       for attempt in 0..<2 {
         try Task.checkCancellation()
         do {
-          if session == nil || now.timeIntervalSince(session!.lastUsed) >= 1800 || now < session!.lastUsed {
-            session = nil
-            session = try await acquireSession(now: now)
-          }
-          guard let cookie = session?.cookie else { throw WatchOnlineFailure.authentication }
-          session?.lastUsed = now
+          let cookie = try await sessionCookie(now: now)
           let response = try await campusRequest("/offlineCode/openVirtualcard", cookie: cookie,
             payload: ["openid": account.openID, "usertype": account.userType, "appcode": "1"])
           try validateIdentity(response)
@@ -186,6 +218,17 @@ public actor WatchOnlineCodeClient {
       if error.code == .cancelled { throw CancellationError() }
       throw WatchOnlineFailure.network
     } catch { throw WatchOnlineFailure.invalidResponse }
+  }
+
+  private func sessionCookie(now: Date) async throws -> String {
+    if let current = session, (0..<1800).contains(now.timeIntervalSince(current.lastUsed)) {
+      session?.lastUsed = now
+      return current.cookie
+    }
+    session = nil; codeLease = nil
+    let acquired = try await acquireSession(now: now)
+    session = acquired
+    return acquired.cookie
   }
 
   private func acquireSession(now: Date) async throws -> Session {

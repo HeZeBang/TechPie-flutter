@@ -15,6 +15,8 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   @Published private(set) var prefersOnline = true
   @Published private(set) var automaticallyChecksPayments = true
   @Published private(set) var paymentConfirmation: WatchPaymentConfirmation?
+  @Published private(set) var cardMessage: String?
+  @Published private var refreshedCard: WatchCard?
   @Published private var onlineBalance: Int?
   @Published private var onlineBalanceAt: Double?
   var matrix: QRMatrix? { display.matrix }
@@ -22,13 +24,25 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   var requiresAuthorization: Bool { display.requiresAuthorization }
   var codeMessage: String? { display.message ?? message }
   var codeLabel: String { display.kind == .online ? "在线消费码" : "离线消费码" }
+  var card: WatchCard? {
+    guard let snapshot, snapshot.enabled else { return nil }
+    if let refreshedCard, (refreshedCard.updatedAt ?? 0) >= (snapshot.card?.updatedAt ?? 0) {
+      return refreshedCard
+    }
+    return snapshot.card
+  }
+  private var displaySnapshot: WatchSnapshot? {
+    guard var value = snapshot else { return nil }
+    value.card = card
+    return value
+  }
   var balanceFen: Int? {
-    if let onlineBalanceAt, onlineBalanceAt >= (snapshot?.card?.updatedAt ?? 0) { return onlineBalance }
-    return snapshot?.card?.balanceFen
+    if let onlineBalanceAt, onlineBalanceAt >= (card?.updatedAt ?? 0) { return onlineBalance }
+    return card?.balanceFen
   }
   var balanceUpdatedAt: Double? {
-    if let onlineBalanceAt, onlineBalanceAt >= (snapshot?.card?.updatedAt ?? 0) { return onlineBalanceAt }
-    return snapshot?.card?.updatedAt
+    if let onlineBalanceAt, onlineBalanceAt >= (card?.updatedAt ?? 0) { return onlineBalanceAt }
+    return card?.updatedAt
   }
   private var onlineClient: WatchOnlineCodeClient?
   private var clientAccount: WatchOnlineAccount?
@@ -59,6 +73,35 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   }
 
   deinit { codeTask?.cancel(); cycleTask?.cancel(); codeExpiryTask?.cancel() }
+
+  private func client(for account: WatchOnlineAccount) -> WatchOnlineCodeClient {
+    if clientAccount != account {
+      clientAccount = account
+      onlineClient = WatchOnlineCodeClient(account: account)
+    }
+    return onlineClient!
+  }
+
+  @MainActor
+  func refreshCard() async {
+    guard !Task.isCancelled, let snapshot, snapshot.enabled, let account = snapshot.onlineAccount else { return }
+    setCodeVisible(false)
+    // A page change cancels code generation before reusing its login session.
+    await codeTask?.value
+    guard !Task.isCancelled, self.snapshot?.onlineAccount == account else { return }
+    let client = client(for: account)
+    cardMessage = nil
+    do {
+      let card = try await client.fetchCard()
+      guard !Task.isCancelled, self.snapshot?.onlineAccount == account else { return }
+      let previous = displaySnapshot
+      refreshedCard = card
+      if let current = displaySnapshot { display.reconcile(previous: previous, incoming: current) }
+    } catch {
+      guard !Task.isCancelled, self.snapshot?.onlineAccount == account else { return }
+      cardMessage = "卡片信息更新失败，显示上次数据"
+    }
+  }
 
   @discardableResult
   private func restoreStorage() -> Bool {
@@ -125,7 +168,7 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
       scheduleDisplayedCodeExpiry()
       return
     }
-    if let snapshot { display.reconcile(previous: snapshot, incoming: snapshot) }
+    if let snapshot = displaySnapshot { display.reconcile(previous: snapshot, incoming: snapshot) }
     codeExpiryTask?.cancel()
     codeExpiryTask = nil
     let preferred = paymentPreferences.resolvedKind(hasOnlineAccount: snapshot?.onlineAccount != nil)
@@ -224,6 +267,14 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
       Date(timeIntervalSince1970: snapshot?.credential?.expiresAt ?? 0))
     let client = onlineClient
     cycleTask = Task { @MainActor [weak self] in
+      if let frame, let client {
+        let canResume = await client.canResume(frame)
+        guard !Task.isCancelled, let self, self.codeVisible, self.cycleID == id else { return }
+        if !canResume {
+          self.refreshCode()
+          return
+        }
+      }
       var schedule = WatchPaymentSchedule(refreshAt: refreshAt, online: frame != nil, now: now)
       while !Task.isCancelled {
         guard let self, self.codeVisible, self.cycleID == id, !self.requiresAuthorization else { return }
@@ -292,18 +343,17 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   }
 
   func refreshCode(preservingCurrentCode: Bool = false, keepingConfirmation: Bool = false, forceOffline: Bool = false) {
-    guard codeVisible, let snapshot, !display.generating, !finishingCheck else { return }
+    guard codeVisible, let snapshot = displaySnapshot, !display.generating, !finishingCheck else { return }
     display.reconcile(previous: snapshot, incoming: snapshot)
     if display.kind == .online && !preservingCurrentCode { display.clearCode() }
     guard let currentGeneration = display.beginGeneration() else { return }
     stopCodeCycle(keepingConfirmation: keepingConfirmation)
     scheduleDisplayedCodeExpiry()
-    let useOnline = !forceOffline && paymentPreferences.resolvedKind(hasOnlineAccount: snapshot.onlineAccount != nil) == .online
-    if useOnline, clientAccount != snapshot.onlineAccount {
-      clientAccount = snapshot.onlineAccount
-      onlineClient = snapshot.onlineAccount.map { WatchOnlineCodeClient(account: $0) }
-    }
-    let client = useOnline ? onlineClient : nil
+    // URLSession can use the iPhone's network proxy even when a path monitor
+    // reports no direct watch connection. Fall back only after a real failure.
+    let useOnline = !forceOffline && paymentPreferences.resolvedKind(
+      hasOnlineAccount: snapshot.onlineAccount != nil) == .online
+    let client = useOnline ? snapshot.onlineAccount.map { self.client(for: $0) } : nil
     let credential = snapshot.credential
     codeTask = Task.detached(priority: .userInitiated) { [self] in
       do {
@@ -362,6 +412,7 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
       if incoming != snapshot {
         guard try incoming.canReplace(snapshot, target: targetID, nonce: nonce) else { return [:] }
         try WatchKeychain.write(data, key: "watch.snapshot")
+        let previous = displaySnapshot
         if incoming.subject != snapshot?.subject || incoming.onlineAccount != snapshot?.onlineAccount ||
           !incoming.enabled || incoming.card?.permitsPayment != true {
           codeTask?.cancel()
@@ -370,9 +421,11 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
           clientAccount = nil
           onlineBalance = nil
           onlineBalanceAt = nil
+          refreshedCard = nil
+          cardMessage = nil
         }
-        let needsCode = display.reconcile(previous: snapshot, incoming: incoming)
         snapshot = incoming
+        let needsCode = display.reconcile(previous: previous, incoming: displaySnapshot!)
         if needsCode { refreshCode() }
       }
       var receipt: [String: Any] = ["sourceID": incoming.sourceID, "targetID": targetID,
