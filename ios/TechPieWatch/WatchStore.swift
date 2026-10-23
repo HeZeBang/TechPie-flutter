@@ -438,6 +438,9 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
     DispatchQueue.main.async { [weak self] in self?.requestSync() }
   }
+  func sessionCompanionAppInstalledDidChange(_ session: WCSession) {
+    DispatchQueue.main.async { [weak self] in self?.requestSync() }
+  }
   func sessionReachabilityDidChange(_ session: WCSession) {
     DispatchQueue.main.async { [weak self] in if session.isReachable { self?.requestSync() } }
   }

@@ -66,10 +66,7 @@ struct WatchHome: View {
       let active = scenePhase == .active
       if !active { store.setCodeVisible(false) }
       guard active, path.isEmpty else { return }
-      while !Task.isCancelled {
-        store.requestSync()
-        do { try await Task.sleep(for: .seconds(10)) } catch { return }
-      }
+      store.requestSync()
     }
   }
 }
@@ -145,7 +142,7 @@ private struct WatchArtwork: View {
 
 private struct BundledArtwork: View {
   let name: String
-  var body: some View {
+  private static let images: [String: CGImage] = ["Logo", "widget-background"].reduce(into: [:]) { images, name in
     if let url = Bundle.main.url(forResource: name, withExtension: "png"),
       let source = CGImageSourceCreateWithURL(url as CFURL, nil),
       let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
@@ -153,6 +150,11 @@ private struct BundledArtwork: View {
         kCGImageSourceThumbnailMaxPixelSize: 512,
         kCGImageSourceShouldCacheImmediately: true,
       ] as CFDictionary) {
+      images[name] = image
+    }
+  }
+  var body: some View {
+    if let image = Self.images[name] {
       Image(decorative: image, scale: 1).resizable().scaledToFit()
     }
   }
