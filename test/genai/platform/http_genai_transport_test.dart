@@ -112,11 +112,12 @@ void main() {
     final transport = HttpGenAiTransport(
       createClient: () => client,
       headerTimeout: const Duration(milliseconds: 20),
+      chatHeaderTimeout: const Duration(milliseconds: 20),
       imageTimeout: const Duration(milliseconds: 150),
     );
     addTearDown(transport.dispose);
 
-    // Chat SSE uses headerTimeout
+    // Chat SSE uses its dedicated header budget.
     final chatStopwatch = Stopwatch()..start();
     await expectLater(
       transport.send(
@@ -142,6 +143,50 @@ void main() {
     );
     expect(imageStopwatch.elapsedMilliseconds, greaterThanOrEqualTo(120));
     client.gate.completeError(http.ClientException('done'));
+  });
+
+  test(
+      'slow vision headers survive the short metadata budget and remain cancellable',
+      () async {
+    final clients = <_PendingClient>[];
+    final transport = HttpGenAiTransport(
+      createClient: () {
+        final client = _PendingClient();
+        clients.add(client);
+        return client;
+      },
+      headerTimeout: const Duration(milliseconds: 10),
+      chatHeaderTimeout: const Duration(milliseconds: 250),
+    );
+    addTearDown(transport.dispose);
+    final cancellation = GenAiCancellation();
+    final pending = transport.send(
+      method: 'POST',
+      uri: Uri.https('example.invalid', '/htk/chat/start/chat'),
+      cancellation: cancellation,
+      headers: {'Accept': 'text/event-stream'},
+      body: '{"imageUrl":"https://example.invalid/red.png"}',
+    );
+    final timer = Timer(const Duration(milliseconds: 40), () {
+      clients.first.gate
+          .complete(http.StreamedResponse(const Stream.empty(), 200));
+    });
+    addTearDown(timer.cancel);
+    final result = await pending;
+    expect(result.statusCode, 200);
+    result.close();
+    final stopped = transport.send(
+      method: 'POST',
+      uri: Uri.https('example.invalid', '/htk/chat/start/chat'),
+      cancellation: cancellation,
+      headers: {'Accept': 'text/event-stream'},
+    );
+    final expectation =
+        expectLater(stopped, throwsA(failure(GenAiFailureKind.cancelled)));
+    cancellation.cancel();
+    await expectation;
+    expect(clients.last.closed, isTrue);
+    clients.last.gate.completeError(http.ClientException('cancelled'));
   });
 
   test('redirects cannot forward GenAI credentials to another origin',

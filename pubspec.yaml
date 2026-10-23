@@ -197,6 +197,7 @@ flutter:
     - assets/campus_card/audio/
     - assets/campus_card/data/
     - assets/campus_card/images/
+    - assets/genai/demo-campus.png
 
   fonts:
     # Roboto Medium, the exact face Telegram Android renders its "bold" UI

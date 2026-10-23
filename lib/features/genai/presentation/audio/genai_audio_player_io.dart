@@ -1,53 +1,20 @@
-import 'dart:async';
-import 'dart:io';
-
-import 'package:path_provider/path_provider.dart';
-
 import 'genai_audio_player.dart';
 
+/// Native playback is unavailable until an audio plugin is wired.
 GenAiAudioPlayer createGenAiAudioPlayer() => GenAiAudioPlayerIo();
 
 final class GenAiAudioPlayerIo implements GenAiAudioPlayer {
-  bool _playing = false;
-  void Function()? _onFinished;
-  File? _tempFile;
-
   @override
-  bool get isPlaying => _playing;
-
+  bool get isSupported => false;
   @override
-  set onFinished(void Function()? callback) {
-    _onFinished = callback;
-  }
-
+  bool get isPlaying => false;
   @override
-  Future<void> playWav(List<int> bytes) async {
-    await stop();
-    _playing = true;
-    try {
-      final dir = await getTemporaryDirectory();
-      final file = File(
-        '${dir.path}/genai_tts_${DateTime.now().millisecondsSinceEpoch}.wav',
-      );
-      await file.writeAsBytes(bytes);
-      _tempFile = file;
-    } catch (_) {}
-    // Simulated short completion or system open
-    _playing = false;
-    _onFinished?.call();
-  }
-
+  set onFinished(void Function()? callback) {}
   @override
-  Future<void> stop() async {
-    _playing = false;
-    try {
-      _tempFile?.deleteSync();
-    } catch (_) {}
-    _tempFile = null;
-  }
-
+  Future<void> playWav(List<int> bytes) async =>
+      throw UnsupportedError('Audio playback is unavailable on this platform.');
   @override
-  void dispose() {
-    unawaited(stop());
-  }
+  Future<void> stop() async {}
+  @override
+  void dispose() {}
 }

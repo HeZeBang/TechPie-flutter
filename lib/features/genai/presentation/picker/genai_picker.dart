@@ -15,6 +15,9 @@ final class GenAiPickedFile {
 abstract interface class GenAiPicker {
   factory GenAiPicker() => createGenAiPicker();
 
+  bool get supportsDocuments;
+  bool get supportsAudio;
+
   Future<GenAiPickedFile?> pickDocument();
   Future<GenAiPickedFile?> pickImage();
   Future<GenAiPickedFile?> pickAudio();

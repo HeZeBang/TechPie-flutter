@@ -1,7 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder_io.dart';
+import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder_io.dart'
+    as native;
 import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder_stub.dart';
 import 'package:techpie/features/genai/presentation/audio/wav_encoder.dart';
 
@@ -102,28 +103,14 @@ void main() {
     });
   });
 
-  group('GenAiAudioRecorderIO', () {
-    test('lifecycle operations succeed with simulated bytes', () async {
-      final mockBytes = Uint8List.fromList([1, 2, 3, 4]);
-      final recorder = GenAiAudioRecorderIO(simulatedAudioBytes: mockBytes);
-
-      expect(recorder.isRecording, isFalse);
-      expect(await recorder.hasPermission(), isTrue);
-
-      await recorder.start();
-      expect(recorder.isRecording, isTrue);
-
-      final stopped = await recorder.stop();
-      expect(recorder.isRecording, isFalse);
-      expect(stopped, equals(mockBytes));
-
-      await recorder.start();
-      await recorder.cancel();
-      expect(recorder.isRecording, isFalse);
-
-      recorder.dispose();
-      expect(recorder.isRecording, isFalse);
-    });
+  test('native recorder reports unavailable and cannot simulate recording',
+      () async {
+    final recorder = native.createGenAiAudioRecorder();
+    expect(recorder.isSupported, isFalse);
+    expect(await recorder.hasPermission(), isFalse);
+    await expectLater(recorder.start(), throwsUnsupportedError);
+    expect(await recorder.stop(), isNull);
+    recorder.dispose();
   });
 
   group('GenAiAudioRecorderStub', () {

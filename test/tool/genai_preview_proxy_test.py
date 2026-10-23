@@ -57,6 +57,30 @@ class ProxyTest(unittest.TestCase):
         self.client.request(method, path, headers=headers or {}, body=body)
         return self.client.getresponse()
 
+    def test_body_budget_accommodates_reference_base64_and_rejects_oversize(self):
+        # Three per-file Base64 paddings plus data URL prefixes and prompt metadata.
+        self.assertGreater(proxy.MAX_BODY, 4 * ((25 * 1024 * 1024 + 2) // 3) + 4096)
+        response = self.request('POST', '/htk/chat/start/chat', headers={
+            'Origin': ORIGIN, 'X-Access-Token': 'valid-token',
+            'Content-Length': str(proxy.MAX_BODY + 1),
+        })
+        self.assertEqual(response.status, 413)
+
+    def test_image_response_never_logs_payload_headers_or_urls(self):
+        result = {'success': True, 'code': 200,
+                  'data': [{'url': 'https://private-image.example/image.png'}]}
+        connection = Upstream(Response([json.dumps(result).encode()], content_type='application/json'))
+        with patch.object(proxy.http.client, 'HTTPSConnection', return_value=connection), patch('builtins.print') as output:
+            response = self.request('POST', '/htk/chat/start/chat',
+                {'Origin': ORIGIN, 'X-Access-Token': 'private-token', 'Accept': 'application/json'},
+                json.dumps({'chatInfo': 'private-prompt', 'imageBase64': 'private-image-data'}))
+            self.assertEqual(response.status, 200)
+            self.assertTrue(json.loads(response.read())['data'])
+            logged = str(output.call_args_list)
+            for secret in ['private-token', 'private-prompt', 'private-image-data', 'private-image.example']:
+                self.assertNotIn(secret, logged)
+            self.assertIn('Image response schema', logged)
+
     def test_foreign_origin_is_rejected_without_upstream(self):
         with patch.object(proxy.http.client, 'HTTPSConnection') as upstream:
             response = self.request('GET', '/htk/ai/aiModel/list', {'Origin': 'https://evil.example', 'X-Access-Token': 'real-token'})

@@ -6,11 +6,20 @@ final class _StubPicker implements GenAiPicker {
   const _StubPicker();
 
   @override
-  Future<GenAiPickedFile?> pickDocument() async => null;
+  bool get supportsDocuments => false;
+  @override
+  bool get supportsAudio => false;
+
+  @override
+  Future<GenAiPickedFile?> pickDocument() async => throw UnsupportedError(
+        'Document selection is unavailable on this platform.',
+      );
 
   @override
   Future<GenAiPickedFile?> pickImage() async => null;
 
   @override
-  Future<GenAiPickedFile?> pickAudio() async => null;
+  Future<GenAiPickedFile?> pickAudio() async => throw UnsupportedError(
+        'Audio selection is unavailable on this platform.',
+      );
 }

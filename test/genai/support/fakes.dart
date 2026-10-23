@@ -178,6 +178,9 @@ final class FakeGenAiAudioRecorder implements GenAiAudioRecorder {
   bool get isRecording => recording;
 
   @override
+  bool get isSupported => true;
+
+  @override
   Future<bool> hasPermission() async => permission;
 
   @override
@@ -219,6 +222,11 @@ final class FakeGenAiPicker implements GenAiPicker {
   int pickImageCalls = 0;
   int pickDocumentCalls = 0;
   int pickAudioCalls = 0;
+
+  @override
+  bool get supportsDocuments => true;
+  @override
+  bool get supportsAudio => true;
 
   @override
   Future<GenAiPickedFile?> pickDocument() async {

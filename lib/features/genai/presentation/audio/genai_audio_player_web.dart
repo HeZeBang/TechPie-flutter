@@ -15,6 +15,9 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
   void Function()? _onFinished;
 
   @override
+  bool get isSupported => true;
+
+  @override
   bool get isPlaying => _playing;
 
   @override

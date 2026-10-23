@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/genai/app/genai_runtime.dart';
 import 'package:techpie/features/genai/application/campus_genai_session_issuer.dart';
+import 'package:techpie/features/genai/application/genai_conversation_store.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
@@ -51,12 +53,13 @@ void main() {
       })> fixture({
     String username = _studentId,
     GenAiCampusExchange? exchange,
+    http.Client? renewalClient,
     bool trustedIssuer = true,
   }) async {
     final storage = StorageService(await SharedPreferences.getInstance());
     final logging = LoggingHttpClient(
       DebugLogger(),
-      inner: MockClient((_) async => http.Response('', 500)),
+      inner: renewalClient ?? MockClient((_) async => http.Response('', 500)),
     );
     final auth = AuthService(storage, logging, UniAuthService());
     await storage.saveSession(
@@ -89,6 +92,7 @@ void main() {
       thirdPartyAuth: bindings,
       transport: transport,
       store: store,
+      conversationStore: MemoryGenAiConversationStore(),
       issuer: trustedIssuer
           ? CampusGenAiSessionIssuer(
               thirdPartyAuth: bindings,
@@ -139,6 +143,55 @@ void main() {
       isTrue,
     );
   });
+
+  for (final discoveredId in [_studentId, '20241111']) {
+    test(
+        'SMS renewal identity $discoveredId must match the verified GenAI profile',
+        () async {
+      var exchanges = 0;
+      var renewals = 0;
+      final f = await fixture(
+        renewalClient: MockClient((request) async {
+          expect(request.url.path, '/api/auth/renew');
+          renewals++;
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'tgc': 'renewed-ids-tgc',
+              'sid': discoveredId,
+            }),
+            200,
+          );
+        }),
+        exchange: (provider, _) async {
+          if (++exchanges == 1) {
+            expect(provider.studentId, isEmpty);
+            throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+          }
+          expect(provider.studentId, discoveredId);
+          expect(provider.cookies, contains('CASTGC=renewed-ids-tgc'));
+          return const GenAiCredential(token: 'genai-token');
+        },
+      );
+      await f.runtime.workspace
+          .connectUsing(f.runtime.connectUsingCampusSession);
+      if (discoveredId == _studentId) {
+        expect(f.runtime.workspace.loginFailure, isNull);
+        expect(f.runtime.sessions.session?.profile.username, _studentId);
+        expect(f.store.writes, 1);
+      } else {
+        expect(
+          f.runtime.workspace.loginFailure,
+          failure(GenAiFailureKind.identityMismatch),
+        );
+        expect(f.runtime.sessions.session, isNull);
+        expect(f.store.writes, 0);
+      }
+      expect(f.runtime.sessions.owner?.studentId, discoveredId);
+      expect(renewals, 1);
+      expect(exchanges, 2);
+    });
+  }
 
   test('resolved identity survives IDS renewal and allows GenAI reconnect',
       () async {
@@ -212,6 +265,38 @@ void main() {
       expect(f.store.writes, 0);
     });
   }
+
+  test('unexpected IDS exchange failures become a redacted login error',
+      () async {
+    var attempts = 0;
+    final f = await fixture(
+      exchange: (_, __) async {
+        if (++attempts == 1) {
+          throw const FormatException('private IDS cookie value');
+        }
+        return const GenAiCredential(token: 'genai-token');
+      },
+    );
+    await f.runtime.workspace.connectUsing(f.runtime.connectUsingCampusSession);
+    expect(
+      f.runtime.workspace.loginFailure,
+      failure(GenAiFailureKind.transport),
+    );
+    expect(
+      f.runtime.workspace.loginFailure.toString(),
+      isNot(contains('private IDS cookie value')),
+    );
+    expect(f.runtime.sessions.owner, isNull);
+    expect(f.runtime.sessions.session, isNull);
+    expect(f.transport.requests, isEmpty);
+    expect(f.store.writes, 0);
+    expect(f.runtime.workspace.connecting, isFalse);
+    await f.runtime.workspace.connectUsing(f.runtime.connectUsingCampusSession);
+    expect(f.runtime.workspace.loginFailure, isNull);
+    expect(f.runtime.sessions.session?.profile.username, _studentId);
+    expect(attempts, 2);
+    expect(f.store.writes, 1);
+  });
 
   test('unknown campus identity cannot be bootstrapped by a generic issuer',
       () async {

@@ -6,6 +6,98 @@ import 'package:techpie/features/genai/presentation/genai_tools_page.dart';
 
 void main() {
   testWidgets(
+      'aspect ratio filters resolutions and validates linked and freeform custom sizes',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    addTearDown(demo.dispose);
+    await demo.workspace.reloadModels();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GenAiToolsPage(
+          workspace: demo.workspace,
+          demo: true,
+          initialTab: 1,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('genai-image-prompt')),
+      'synthetic sizing check',
+    );
+
+    Future<void> select(String key, String label) async {
+      final field = find.byKey(ValueKey(key));
+      await tester.ensureVisible(field);
+      await tester.tap(field);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text(label).last);
+      await tester.tap(find.text(label).last);
+      await tester.pumpAndSettle();
+    }
+
+    DropdownButton<String> dropdown(String key) =>
+        tester.widget<DropdownButton<String>>(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(DropdownButton<String>),
+          ),
+        );
+    expect(
+      dropdown('genai-image-resolution').items!.map((item) => item.value),
+      ['1K', '2K', 'custom'],
+    );
+    await select('genai-image-ratio', '16:9');
+    expect(
+      dropdown('genai-image-resolution').items!.map((item) => item.value),
+      ['1K', '2K', '4K', 'custom'],
+    );
+    await select('genai-image-resolution', '4K · 3840 × 2160');
+    expect(find.text('超2K分辨率属实验性质，效果可能不稳定。'), findsOneWidget);
+    await select('genai-image-ratio', '1:1 · 正方形');
+    expect(dropdown('genai-image-resolution').value, '1K');
+    await select('genai-image-ratio', '16:9');
+    await select('genai-image-resolution', '自定义分辨率');
+    final width = find.byKey(const ValueKey('genai-image-width'));
+    final height = find.byKey(const ValueKey('genai-image-height'));
+    await tester.ensureVisible(width);
+    await tester.enterText(width, '1600');
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(height).controller!.text, '900');
+    await tester.enterText(height, '1080');
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(width).controller!.text, '1920');
+    await select('genai-image-ratio', '自定义比例');
+    await tester.ensureVisible(width);
+    await tester.enterText(width, '800abc');
+    await tester.enterText(height, '820');
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(width).controller!.text, '800');
+    final generate = find.byKey(const ValueKey('genai-image-generate'));
+    expect(tester.widget<FilledButton>(generate).onPressed, isNotNull);
+    await tester.enterText(height, '100');
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(generate).onPressed, isNull);
+    await tester.enterText(height, '820');
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(generate);
+    await tester.tap(generate);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('800x820'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(
+      (await demo.workspace.repository.listImages(GenAiCancellation())).records,
+      isEmpty,
+    );
+  });
+
+  testWidgets(
       'tools browse history, require image confirmation, and show usage',
       (tester) async {
     final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
@@ -23,9 +115,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('saved test'), findsOneWidget);
-    await tester.tap(find.byTooltip('删除对话'));
+    await tester.tap(find.byTooltip('对话操作'));
     await tester.pumpAndSettle();
-    expect(find.text('这将删除学校平台上的记录，无法撤销。'), findsOneWidget);
+    await tester.tap(find.text('删除对话'));
+    await tester.pumpAndSettle();
+    expect(find.text('这将删除此对话的本机和学校记录，无法撤销。'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(
@@ -56,7 +150,7 @@ void main() {
     await tester.ensureVisible(find.text('生成 1 张图片'));
     await tester.tap(find.text('生成 1 张图片'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('可能扣除学校账号额度'), findsOneWidget);
+    expect(find.textContaining('本地演示使用校园测试图片'), findsOneWidget);
     expect(
       (await demo.workspace.repository.listImages(GenAiCancellation())).records,
       isEmpty,
@@ -64,7 +158,7 @@ void main() {
     await tester.tap(find.text('开始生成'));
     await tester.pumpAndSettle();
     expect(find.text('本次生成'), findsOneWidget);
-    expect(find.text('本地图片预览 · 演示'), findsOneWidget);
+    expect(find.text('本地测试图片'), findsOneWidget);
     await tester.pumpWidget(
       MaterialApp(
         home: GenAiToolsPage(

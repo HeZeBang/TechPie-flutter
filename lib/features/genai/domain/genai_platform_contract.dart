@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'genai_contract.dart';
 import 'genai_failure.dart';
+import 'genai_image_size.dart';
+import 'genai_reference_image.dart';
 
 final class GenAiPageResult<T> {
   const GenAiPageResult(
@@ -62,10 +64,18 @@ final class GenAiConversationSummary {
     }
     return GenAiConversationSummary(
       id: id,
-      title: genAiOptionalText(json, 'question'),
+      title: _displayTitle(genAiOptionalText(json, 'question')),
       time: genAiOptionalText(json, 'createTime'),
     );
   }
+  // The upstream sometimes uses the latest tool-result message as its title.
+  // Sanitize only an actual leading protocol frame, preserving quoted examples.
+  static String _displayTitle(String title) =>
+      RegExp(r'^<techpie-agent-(?:call|result|history)(?:\s|>)')
+              .hasMatch(title.trimLeft())
+          ? '校园工具对话'
+          : title;
+
   final String id;
   final String title;
   final String time;
@@ -77,22 +87,70 @@ final class GenAiSavedTurn {
     required this.answer,
     this.aiType = '',
     this.reasoning = '',
+    this.imageUrls = const [],
+    this.isHistoryGap = false,
   });
   factory GenAiSavedTurn.fromJson(Map<String, dynamic> json) {
-    final raw = genAiOptionalText(json, 'answer');
-    final thoughts = RegExp(r'<think>([\s\S]*?)</think>');
+    if ((json['question'] != null && json['question'] is! String) ||
+        (json['answer'] != null && json['answer'] is! String) ||
+        (json['question'] is! String && json['answer'] is! String)) {
+      throw const GenAiFailure(GenAiFailureKind.protocol);
+    }
+    var answer = genAiOptionalText(json, 'answer').trim();
+    final thoughts = <String>[];
+    final leadingThought = RegExp(r'^<think>([\s\S]*?)</think>\s*');
+    // Reasoning is a leading server envelope. Tags in prose, code examples or
+    // JSON tool arguments are literal answer content and must remain intact.
+    while (true) {
+      final match = leadingThought.firstMatch(answer);
+      if (match == null) break;
+      thoughts.add(match.group(1)!.trim());
+      answer = answer.substring(match.end);
+    }
     return GenAiSavedTurn(
       prompt: genAiOptionalText(json, 'question'),
-      answer: raw.replaceAll(thoughts, '').trim(),
-      reasoning:
-          thoughts.allMatches(raw).map((m) => m.group(1)!.trim()).join('\n'),
+      answer: answer,
+      reasoning: thoughts.join('\n'),
       aiType: genAiOptionalText(json, 'aiType'),
+      imageUrls: _savedImageUrls(json),
     );
   }
+
+  // The official client accepts an array, or comma-separated legacy imageUrl.
+  // Invalid optional attachments must not discard the saved text turn.
+  static List<String> _savedImageUrls(Map<String, dynamic> json) {
+    List<String> decode(Iterable<Object?> values) {
+      final urls = <String>{};
+      for (final value in values) {
+        if (value is! String) continue;
+        try {
+          urls.add(genAiImageUri(value).toString());
+        } on GenAiFailure {
+          continue;
+        }
+      }
+      return List.unmodifiable(urls);
+    }
+
+    final multiple = json['imageUrls'];
+    if (multiple is List) {
+      final urls = decode(multiple);
+      if (urls.isNotEmpty) return urls;
+    }
+    final single = json['imageUrl'];
+    return single is String ? decode(single.split(',')) : const [];
+  }
+
+  /// Canonical CDN URLs, never local preview proxy URLs.
+  final List<String> imageUrls;
   final String prompt;
   final String answer;
   final String aiType;
   final String reasoning;
+
+  /// An unreadable server row stays in sequence so adjacent agent records
+  /// cannot be joined across a missing step. It contains no model/user text.
+  final bool isHistoryGap;
 }
 
 Uri genAiImageUri(String value, {String? baseOrigin}) {
@@ -111,9 +169,10 @@ Uri genAiImageUri(String value, {String? baseOrigin}) {
     if (path.scheme != 'https' || path.host != host) {
       throw const GenAiFailure(GenAiFailureKind.protocol);
     }
-    final clean = path.path.startsWith('/sys/common/static/')
-        ? path.path.substring('/sys/common/static/'.length)
-        : (path.path.startsWith('/') ? path.path.substring(1) : path.path);
+    final imagePath = path.path.replaceFirst(RegExp(r'^/+'), '/');
+    final clean = imagePath.startsWith('/sys/common/static/')
+        ? imagePath.substring('/sys/common/static/'.length)
+        : imagePath.replaceFirst(RegExp(r'^/'), '');
     if (baseOrigin != null && baseOrigin.isNotEmpty) {
       final baseUri = Uri.tryParse(baseOrigin);
       if (baseUri != null && baseUri.host != 'genai.shanghaitech.edu.cn') {
@@ -140,10 +199,7 @@ final class GenAiImageRecord {
     required this.prompt,
     required this.images,
   });
-  factory GenAiImageRecord.fromJson(
-    Map<String, dynamic> json, {
-    String? baseOrigin,
-  }) {
+  factory GenAiImageRecord.fromJson(Map<String, dynamic> json) {
     final images = json['images'];
     if (images is! List) throw const GenAiFailure(GenAiFailureKind.protocol);
     return GenAiImageRecord(
@@ -153,7 +209,6 @@ final class GenAiImageRecord {
         images.map(
           (Object? row) => genAiImageUri(
             genAiRequiredString(genAiObject(row), 'imageUrl'),
-            baseOrigin: baseOrigin,
           ),
         ),
       ),
@@ -171,58 +226,30 @@ final class GenAiImageRequest {
     required this.groupId,
     this.size = '1024x1024',
     this.quality = 'low',
-  }) {
+    List<GenAiReferenceImage> referenceImages = const [],
+  }) : referenceImages = List.unmodifiable(referenceImages) {
+    GenAiReferenceImage.validate(this.referenceImages);
     if (prompt.trim().isEmpty ||
         groupId.isEmpty ||
         !model.isImage ||
-        !supportedSizes.contains(size) ||
+        !(GenAiImageSize.tryParse(size)?.isValid ?? false) ||
         !const ['low', 'medium', 'high'].contains(quality)) {
       throw ArgumentError('Invalid image request');
     }
   }
 
-  static const supportedSizes = {
-    '1024x1024',
-    '2048x2048',
-    '1024x688',
-    '2048x1360',
-    '688x1024',
-    '1360x2048',
-    '1024x768',
-    '2048x1536',
-    '768x1024',
-    '1536x2048',
-    '1024x816',
-    '2560x2048',
-    '816x1024',
-    '2048x2560',
-    '1136x640',
-    '2048x1152',
-    '3840x2160',
-    '640x1136',
-    '1152x2048',
-    '2160x3840',
-    '1152x576',
-    '2688x1344',
-    '3840x1920',
-    '576x1152',
-    '1344x2688',
-    '1920x3840',
-    '1344x576',
-    '2688x1152',
-    '3840x1648',
-    '576x1344',
-    '1152x2688',
-    '1648x3840',
+  static final supportedSizes = Set<String>.unmodifiable({
+    for (final sizes in GenAiImageSize.presets.values) ...sizes.values,
     '1536x1024',
     '1024x1536',
-  };
+  });
 
   final String prompt;
   final GenAiModel model;
   final String groupId;
   final String size;
   final String quality;
+  final List<GenAiReferenceImage> referenceImages;
   Map<String, Object?> toJson() => {
         'chatInfo': prompt,
         'type': '3',
@@ -235,8 +262,11 @@ final class GenAiImageRequest {
         'count': '1',
         'style': 'vivid',
         'outputFormat': 'png',
-        'imageBase64': null,
-        'imageBase64List': null,
+        'imageBase64':
+            referenceImages.length == 1 ? referenceImages.single.dataUrl : null,
+        'imageBase64List': referenceImages.length > 1
+            ? [for (final image in referenceImages) image.dataUrl]
+            : null,
         'outputCompression': null,
       };
 }

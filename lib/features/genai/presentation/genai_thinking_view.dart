@@ -9,6 +9,7 @@ class GenAiThinkingView extends StatefulWidget {
     this.isThinking = false,
     this.durationMs,
     this.initiallyExpanded = false,
+    this.autoExpandWhileThinking = true,
     this.onTapLink,
   });
 
@@ -16,6 +17,7 @@ class GenAiThinkingView extends StatefulWidget {
   final bool isThinking;
   final int? durationMs;
   final bool initiallyExpanded;
+  final bool autoExpandWhileThinking;
   final void Function(String href)? onTapLink;
 
   @override
@@ -23,12 +25,15 @@ class GenAiThinkingView extends StatefulWidget {
 }
 
 class _GenAiThinkingViewState extends State<GenAiThinkingView> {
-  late bool _expanded = widget.initiallyExpanded || widget.isThinking;
+  late bool _expanded = widget.initiallyExpanded ||
+      widget.autoExpandWhileThinking && widget.isThinking;
 
   @override
   void didUpdateWidget(covariant GenAiThinkingView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.isThinking && widget.isThinking) {
+    if (widget.autoExpandWhileThinking &&
+        !oldWidget.isThinking &&
+        widget.isThinking) {
       _expanded = true;
     }
   }

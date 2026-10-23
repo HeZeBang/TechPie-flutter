@@ -335,7 +335,7 @@ String normalizeMermaid(String source) {
     cleanedSource = cleanedSource.substring(0, cleanedSource.length - 3).trim();
   }
 
-  final lines = cleanedSource.split('\n');
+  final lines = _splitMermaidStatements(cleanedSource);
   final resultLines = <String>[];
 
   var isStateDiagram = false;
@@ -542,4 +542,53 @@ String normalizeMermaid(String source) {
   }
 
   return resultLines.join('\n');
+}
+
+/// Semicolons separate statements only outside labels and comments.
+List<String> _splitMermaidStatements(String source) {
+  final result = <String>[];
+  var buffer = StringBuffer();
+  var depth = 0;
+  String? quote;
+  var edgeLabel = false;
+  var comment = false;
+  var escaped = false;
+  for (var i = 0; i < source.length; i++) {
+    final char = source[i];
+    if (char == '\n') {
+      result.add(buffer.toString());
+      buffer = StringBuffer();
+      comment = false;
+      escaped = false;
+      continue;
+    }
+    if (!comment &&
+        quote == null &&
+        char == '%' &&
+        i + 1 < source.length &&
+        source[i + 1] == '%') {
+      comment = true;
+    }
+    if (!comment) {
+      if (quote != null) {
+        if (char == quote && !escaped) quote = null;
+      } else if (char == '"' || char == "'") {
+        quote = char;
+      } else if (char == '|') {
+        edgeLabel = !edgeLabel;
+      } else if ('[({'.contains(char)) {
+        depth++;
+      } else if ('])}'.contains(char) && depth > 0) {
+        depth--;
+      } else if (char == ';' && depth == 0 && !edgeLabel) {
+        result.add(buffer.toString());
+        buffer = StringBuffer();
+        continue;
+      }
+    }
+    escaped = char == r'\' && !escaped;
+    buffer.write(char);
+  }
+  result.add(buffer.toString());
+  return result;
 }

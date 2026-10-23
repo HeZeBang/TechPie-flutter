@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/data/demo_genai_backend.dart';
+import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder.dart';
 import 'package:techpie/features/genai/presentation/genai_thinking_view.dart';
@@ -17,6 +18,7 @@ void main() {
     WidgetTester tester, {
     Size size = const Size(1200, 900),
     bool connected = true,
+    bool demoMode = true,
     double scale = 1,
     double keyboard = 0,
     Duration delay = const Duration(milliseconds: 1),
@@ -41,7 +43,7 @@ void main() {
         ),
         home: GenAiWorkspace(
           controller: demo.workspace,
-          demo: true,
+          demo: demoMode,
           audioRecorder: audioRecorder,
           picker: picker,
           login: (_) async =>
@@ -52,6 +54,59 @@ void main() {
     await tester.pumpAndSettle();
     return demo;
   }
+
+  testWidgets(
+      'reopening saved vision chat builds network thumbnails and image viewer',
+      (tester) async {
+    final demo = await show(tester, delay: Duration.zero, demoMode: false);
+    await demo.workspace.addImageAttachment('red.png', [1, 2, 3]);
+    await demo.workspace.addImageAttachment('blue.png', [4, 5, 6]);
+    final sending = demo.workspace.send('Saved vision thumbnails');
+    await tester.pumpAndSettle();
+    await sending;
+    final urls = demo.workspace.turns.single.attachedImageUrls;
+    final id = demo.workspace.groupId;
+    demo.workspace.newConversation();
+    // The controller's archive queue belongs to the widget fake-async zone.
+    // Pump that queue instead of awaiting its futures from runAsync's real zone.
+    final opening = demo.workspace.openConversation(id, GenAiCancellation());
+    await tester.pumpAndSettle();
+    await opening;
+    final thumbnails = find.byWidgetPredicate(
+      (widget) =>
+          widget is Image &&
+          widget.image is NetworkImage &&
+          urls.contains((widget.image as NetworkImage).url),
+    );
+    expect(thumbnails, findsNWidgets(urls.length));
+    await tester.ensureVisible(thumbnails.first);
+    await tester.pumpAndSettle();
+    await tester.tap(thumbnails.first);
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(thumbnails, findsNWidgets(urls.length + 1));
+    Navigator.of(tester.element(find.byType(Dialog))).pop();
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GenAiWorkspace(
+          controller: demo.workspace,
+          demo: true,
+          login: (_) async =>
+              const GenAiCredential(token: DemoGenAiBackend.token),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('本地测试图片'), findsNWidgets(urls.length));
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Image && widget.image is NetworkImage,
+      ),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
       'wide workspace has no suggested prompts and sends typed Markdown chat',
@@ -103,7 +158,7 @@ void main() {
           controller: demo.workspace,
           campusBound: true,
           login: (_) async => throw StateError('manual login must not run'),
-          onPreviewLiveLogin: () => connects++,
+          onCampusLogin: () => connects++,
           onBindCampus: () {},
         ),
       ),
@@ -118,16 +173,17 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('dialogue and image sit beside new chat and usage is in account',
+  testWidgets(
+      'compact new chat moves below header while history and image stay above',
       (tester) async {
     await show(tester, size: const Size(674, 1000));
     expect(find.text('更多功能'), findsNothing);
     final fresh = tester.getCenter(find.byTooltip('新的对话'));
     final history = tester.getCenter(find.byTooltip('会话记录'));
     final image = tester.getCenter(find.byTooltip('图片创作'));
-    expect(fresh.dy, history.dy);
+    expect(fresh.dy, greaterThan(history.dy));
     expect(history.dy, image.dy);
-    expect(fresh.dx, lessThan(history.dx));
+    expect(fresh.dx, greaterThan(history.dx));
     expect(history.dx, lessThan(image.dx));
     expect(find.text('用量统计'), findsNothing);
     await tester.tap(find.byTooltip('会话记录'));
@@ -215,13 +271,13 @@ void main() {
     expect(demo.workspace.turns.length, 1);
   });
 
-  testWidgets('toggle thinking and net search chips updates controller state',
+  testWidgets('thinking and search menu update controller state',
       (tester) async {
     final demo = await show(tester);
     final thinkingChip = find.byKey(const ValueKey('genai-thinking-toggle'));
     final searchChip = find.byKey(const ValueKey('genai-search-toggle'));
     expect(thinkingChip, findsOneWidget);
-    expect(searchChip, findsOneWidget);
+    expect(searchChip, findsNothing);
 
     expect(demo.workspace.thinkingEnabled, isFalse);
     await tester.tap(thinkingChip);
@@ -229,6 +285,8 @@ void main() {
     expect(demo.workspace.thinkingEnabled, isTrue);
 
     expect(demo.workspace.netSearchEnabled, isFalse);
+    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
+    await tester.pumpAndSettle();
     await tester.tap(searchChip);
     await tester.pump();
     expect(demo.workspace.netSearchEnabled, isTrue);
@@ -239,7 +297,10 @@ void main() {
       (tester) async {
     final demo = await show(tester);
     await tester.tap(find.byKey(const ValueKey('genai-thinking-toggle')));
+    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('genai-search-toggle')));
+    await tester.pumpAndSettle();
     await tester.pump();
 
     await tester.enterText(
@@ -260,7 +321,7 @@ void main() {
     expect(find.textContaining('已检索 2 条网络参考来源'), findsOneWidget);
   });
 
-  testWidgets('TTS voice playback button triggers without exception',
+  testWidgets('native workspace hides unavailable audio and file actions',
       (tester) async {
     await show(tester);
     await tester.enterText(
@@ -272,9 +333,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final ttsButton = find.byKey(const ValueKey('genai-tts-0'));
-    expect(ttsButton, findsOneWidget);
-    await tester.tap(ttsButton);
-    await tester.pumpAndSettle();
+    expect(ttsButton, findsNothing);
+    expect(find.byKey(const ValueKey('genai-audio-stt')), findsNothing);
+    expect(find.byKey(const ValueKey('genai-upload-file')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -368,6 +429,8 @@ void main() {
     );
     await tester.pump();
 
+    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
+    await tester.pumpAndSettle();
     final imageBtn = find.byKey(const ValueKey('genai-upload-image'));
     expect(imageBtn, findsOneWidget);
 
@@ -470,6 +533,8 @@ void main() {
     );
     final demo = await show(tester, picker: picker);
 
+    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
+    await tester.pumpAndSettle();
     final imageBtn = find.byKey(const ValueKey('genai-upload-image'));
     await tester.tap(imageBtn);
     await tester.pumpAndSettle();
@@ -506,6 +571,8 @@ void main() {
 
     demo.backend.failUpload = true;
 
+    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
+    await tester.pumpAndSettle();
     final imageBtn = find.byKey(const ValueKey('genai-upload-image'));
     await tester.tap(imageBtn);
     await tester.pumpAndSettle();
@@ -630,6 +697,8 @@ void main() {
     );
     final demo = await show(tester, picker: picker);
 
+    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
+    await tester.pumpAndSettle();
     final imageBtn = find.byKey(const ValueKey('genai-upload-image'));
     await tester.tap(imageBtn);
     await tester.pumpAndSettle();
@@ -686,9 +755,9 @@ void main() {
     expect(find.byKey(const ValueKey('genai-user-edit-0')), findsNothing);
     expect(find.byKey(const ValueKey('genai-user-delete-0')), findsNothing);
 
-    // Assistant bubble has copy and tts buttons, but NO regenerate, delete or revert buttons
+    // Native audio is unavailable; copy remains available without editing actions.
     expect(find.byKey(const ValueKey('genai-copy-0')), findsOneWidget);
-    expect(find.byKey(const ValueKey('genai-tts-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('genai-tts-0')), findsNothing);
     expect(find.byKey(const ValueKey('genai-regenerate-0')), findsNothing);
     expect(find.byKey(const ValueKey('genai-delete-0')), findsNothing);
   });

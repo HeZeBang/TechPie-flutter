@@ -14,6 +14,7 @@ import 'features/genai/application/campus_genai_session_issuer.dart';
 import 'features/genai/data/debug_genai_transport.dart';
 import 'features/genai/data/demo_genai_backend.dart';
 import 'features/genai/data/loopback_genai_ids_exchange.dart';
+import 'features/genai/data/native_genai_ids_exchange.dart';
 import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
@@ -379,7 +380,12 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
                   ),
                 ).exchange,
               )
-            : null,
+            : !kIsWeb && !widget.preview
+                ? CampusGenAiSessionIssuer(
+                    thirdPartyAuth: widget.thirdPartyAuthService,
+                    exchange: NativeGenAiIdsExchange().exchange,
+                  )
+                : null,
         transport: widget.preview ? DebugGenAiTransport() : null,
         store: widget.preview ? DemoGenAiSessionStore() : null,
       );

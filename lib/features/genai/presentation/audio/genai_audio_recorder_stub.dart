@@ -6,6 +6,9 @@ GenAiAudioRecorder createGenAiAudioRecorder() => GenAiAudioRecorderStub();
 
 final class GenAiAudioRecorderStub implements GenAiAudioRecorder {
   @override
+  bool get isSupported => false;
+
+  @override
   bool get isRecording => false;
 
   @override

@@ -34,7 +34,9 @@ final class CampusGenAiSessionIssuer implements GenAiSessionIssuer {
             )) {
       throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
     }
-    if (initial.studentId.isNotEmpty && initial.studentId != owner.studentId) {
+    if (owner.studentId.isNotEmpty &&
+        initial.studentId.isNotEmpty &&
+        initial.studentId != owner.studentId) {
       throw const GenAiFailure(GenAiFailureKind.identityMismatch);
     }
     final credential = await cancellation.race(
@@ -42,7 +44,11 @@ final class CampusGenAiSessionIssuer implements GenAiSessionIssuer {
         thirdPartyAuth.cpdailyNode,
         (provider) async {
           cancellation.throwIfCancelled();
-          if (provider.studentId.isNotEmpty &&
+          // An SMS bootstrap starts without a school ID; renewal may discover
+          // it. Runtime still verifies the GenAI profile against that binding
+          // before connecting. A known owner must always match immediately.
+          if (owner.studentId.isNotEmpty &&
+              provider.studentId.isNotEmpty &&
               provider.studentId != owner.studentId) {
             throw const GenAiFailure(GenAiFailureKind.identityMismatch);
           }

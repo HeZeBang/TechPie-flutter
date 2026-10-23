@@ -282,6 +282,23 @@ class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody>
 
     final lines = const LineSplitter().convert(widget.data);
     final astNodes = document.parseLines(lines);
+    void normalizeTaskItems(List<md.Node> nodes) {
+      for (final node in nodes.whereType<md.Element>()) {
+        final children = node.children;
+        if (children == null) continue;
+        // flutter_markdown 0.7.6 cannot flush an inline containing only a
+        // checkbox. This occurs while streaming exactly "- [x] ".
+        if (node.tag == 'li' &&
+            children.length == 1 &&
+            children.single is md.Element &&
+            (children.single as md.Element).attributes['type'] == 'checkbox') {
+          children.add(md.Text(''));
+        }
+        normalizeTaskItems(children);
+      }
+    }
+
+    normalizeTaskItems(astNodes);
 
     final builder = MarkdownBuilder(
       delegate: this,
@@ -297,7 +314,19 @@ class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody>
       listItemCrossAxisAlignment: MarkdownListItemCrossAxisAlignment.baseline,
     );
 
-    _children = builder.build(astNodes);
+    try {
+      _children = builder.build(astNodes);
+    } catch (_) {
+      // Incomplete model output must not tear down the chat's element tree.
+      _disposeRecognizers();
+      _children = [
+        Text(
+          widget.data,
+          key: const ValueKey('genai-markdown-fallback'),
+          style: widget.styleSheet.p,
+        ),
+      ];
+    }
   }
 
   @override

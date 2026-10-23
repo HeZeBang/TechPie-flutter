@@ -447,3 +447,80 @@ details that are now aligned in the codebase:
    - Full test suite: all 751 tests passed, including all 100 GenAI tests.
    - Python proxy unit test suite: all 17 tests passed.
    - Flutter web-server hot-restarted cleanly.
+
+## Review fixes (2026-10-22)
+
+- One workspace send now owns the web-search cancellation scope. Stop, New Chat,
+  disposal, and session/account revision changes prevent the later chat POST.
+  The request retains its original group/model/options snapshot. A pending
+  attachment upload also cannot resume a send after its workspace scope changes.
+- History loading checks a selection ticket and workspace generation before
+  replacing state. A late response cannot erase a newer conversation or supersede
+  a more recent selection.
+- Native production builds install `CampusGenAiSessionIssuer` with a per-exchange
+  native HTTP cookie jar. CASTGC is sent only to the university IDS host;
+  redirects require HTTPS/443 on IDS or GenAI and token landing URLs are
+  intercepted before transmission. SMS-bound accounts can resolve their identity
+  through this trusted exchange and the existing verified-profile checks. The
+  workspace exposes this connection action outside debug preview as well.
+  Web preview continues to use the loopback bridge because browser clients
+  cannot inject the IDS Cookie header. Native exchange is covered by synthetic
+  HTTP tests; a physical-device live login has not been verified in this run.
+- Platform capabilities now control document/audio selection, recording and
+  playback UI. Browser implementations remain enabled. Native document/audio
+  pickers and native audio recording/playback remain unavailable: their controls
+  are hidden, permission checks report unavailable, and unsupported calls throw
+  instead of simulating successful work. Native image picking remains enabled.
+- Regression coverage includes Stop/New Chat/account switches during search,
+  stale and overlapping history selections, native cookie/redirect restrictions
+  and cancellation, production SMS login entry wiring, and capability gating.
+- Validation: all 810 Flutter tests passed, Flutter analysis reported no issues,
+  and all 20 Python preview-proxy tests passed. The full web demo runs from this
+  worktree on `http://127.0.0.1:18767/`, with the bridge on port 18768. Its initial
+  connection is a clearly marked synthetic session; real IDS login remains a
+  separate user action. No real image generation was requested during this run.
+
+### Browser review corrections (2026-10-22)
+
+- Pending document/image/audio selections, transcription, and TTS are scoped to
+  the original controller, session revision, and conversation revision. Late
+  selections are discarded before any upload. Changing scope cancels recording
+  and playback; a late browser microphone grant closes its tracks immediately.
+- Streaming empty task-list items are normalized before Markdown rendering;
+  unexpected builder failures use plain text without tearing down the workspace.
+  Mermaid statement separators preserve quoted labels, node labels, and comments.
+- Preview image diagnostics log schema flags only, never request payloads,
+  headers, or full responses.
+- Ordinary request headers retain a 20-second budget. Chat first-response
+  headers get 90 seconds for vision preprocessing/reasoning; SSE idle timeout
+  remains 60 seconds, with immediate cancellation. This does not promise that
+  the school backend will finish within the budget or automatically retry it.
+- The previous Kimi-K3 vision timeout was not reproduced in the next live run:
+  the same synthetic red image was correctly described. This verifies the
+  upload URL/request contract for that run, not the cause of the earlier timeout.
+
+Saved vision attachments are restored from `imageUrls` arrays or the legacy
+comma-separated `imageUrl`, matching the official conversation client. Each URL
+is validated against the university image CDN; invalid optional entries do not
+discard the text turn. Canonical CDN URLs remain in conversation state for retry,
+while thumbnail and full-size display use the configured preview bridge origin.
+The documented doubled slash before `sys/common/static` is normalized. Synthetic
+saved-image previews stay local and never request the campus CDN.
+
+Image sizing follows reference section 5.3: select one of 13 aspect ratios before
+its available 1K/2K/4K preset. Custom dimensions may be linked to the selected
+ratio (rounded to whole pixels), or edited independently under custom aspect
+ratio. The request accepts positive integer dimensions with 655,360–8,294,400
+total pixels, inclusive. Width above 2560 or height above 1440 shows the
+platform's experimental-resolution notice. The selected size is displayed in
+the existing quota confirmation and sent as `size: "<width>x<height>"`.
+
+Reference images follow section 5.2: selection and previews are local, without
+a CDN upload. The client accepts PNG/JPEG/WebP images, checks their signatures
+and decodes a small frame before accepting them. Up to four references are
+allowed, with at most 10 MiB per file and 25 MiB total before Base64 encoding.
+Generation serializes one reference as `imageBase64` and multiple references
+as `imageBase64List`, leaving the other field null; both stay null for text-only
+generation. Account changes clear references and discard late picker results.
+The preview bridge permits 36 MiB request bodies to accommodate Base64 expansion
+of the documented 25 MiB limit plus JSON metadata.

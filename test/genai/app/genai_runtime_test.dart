@@ -2,6 +2,7 @@ import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/genai/app/genai_runtime.dart';
+import 'package:techpie/features/genai/application/genai_conversation_store.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
@@ -53,6 +54,7 @@ void main() {
       thirdPartyAuth: bindings,
       transport: transport,
       store: store,
+      conversationStore: MemoryGenAiConversationStore(),
     );
     addTearDown(runtime.dispose);
     expect(runtime.sessions.owner?.studentId, '20240001');

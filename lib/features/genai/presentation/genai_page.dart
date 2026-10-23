@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../models/third_party_account.dart';
@@ -11,6 +11,8 @@ import '../../../pages/third_party_bind_page.dart';
 import '../../../services/service_provider.dart';
 import '../../../widgets/adaptive_page_navigation.dart';
 import '../app/genai_runtime.dart';
+import '../application/genai_agent_runner.dart';
+import '../application/techpie_genai_tools.dart';
 import '../data/demo_genai_backend.dart';
 import '../domain/genai_session.dart';
 import 'genai_login_page.dart';
@@ -25,8 +27,53 @@ class GenAiPage extends StatefulWidget {
 class _GenAiPageState extends State<GenAiPage> {
   bool _openingLive = false;
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final services = ServiceProvider.of(context);
+    final runtime = services.genAiRuntime;
+    if (runtime == null || runtime.workspace.agentAvailable) return;
+    final workspace = runtime.workspace;
+    workspace.configureAgent(
+      runner: GenAiAgentRunner(
+        streamChat: runtime.repository.streamChat,
+        tools: TechPieGenAiTools(
+          schedule: services.scheduleService,
+          assignments: services.assignmentService,
+          gym: services.oaGymService,
+          workspace: workspace,
+          auth: services.authService,
+          thirdPartyAuth: services.thirdPartyAuthService,
+          isDemo: () =>
+              runtime.isDemo &&
+              services.thirdPartyAuthService.cpdailyBinding?.token ==
+                  'synthetic-campus-token' &&
+              workspace.sessions.session?.credential.token ==
+                  DemoGenAiBackend.token,
+          previewEnvironment: runtime.isDemo,
+        ).createRegistry(),
+      ),
+      scope: () {
+        final accounts = [
+          for (final account in services.thirdPartyAuthService.accounts)
+            [
+              account.platform.name,
+              account.account,
+              account.sid,
+              account.boundAt.toUtc().toIso8601String(),
+            ],
+        ]..sort((a, b) => jsonEncode(a).compareTo(jsonEncode(b)));
+        return jsonEncode([services.authService.session?.userId, ...accounts]);
+      },
+      scopeChanges: Listenable.merge([
+        services.authService,
+        services.thirdPartyAuthService,
+      ]),
+    );
+  }
+
   Future<void> _connectLive(GenAiRuntime runtime) async {
-    if (_openingLive || !kDebugMode || !runtime.isDemo) return;
+    if (_openingLive) return;
     setState(() => _openingLive = true);
     final services = ServiceProvider.of(context);
     final primary = services.authService.session?.userId;
@@ -102,8 +149,9 @@ class _GenAiPageState extends State<GenAiPage> {
             (state.sessions.session == null ||
                 state.sessions.session?.credential.token ==
                     DemoGenAiBackend.token),
-        onPreviewLiveLogin:
-            runtime.isDemo ? () => unawaited(_connectLive(runtime)) : null,
+        onCampusLogin: (runtime.isDemo || runtime.sessions.canIssue)
+            ? () => unawaited(_connectLive(runtime))
+            : null,
         login: (context) async {
           if (runtime.sessions.canIssue &&
               services.thirdPartyAuthService.cpdailyBinding?.token !=

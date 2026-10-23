@@ -14,6 +14,11 @@ final class GenAiAudioRecorderWeb implements GenAiAudioRecorder {
   web.MediaRecorder? _mediaRecorder;
   final List<web.Blob> _chunks = [];
   bool _recording = false;
+  bool _disposed = false;
+  int _generation = 0;
+
+  @override
+  bool get isSupported => true;
 
   @override
   bool get isRecording => _recording;
@@ -30,17 +35,27 @@ final class GenAiAudioRecorderWeb implements GenAiAudioRecorder {
 
   @override
   Future<void> start() async {
-    await cancel();
+    if (_disposed) return;
+    final cancelling = cancel();
+    final generation = _generation;
+    await cancelling;
+    if (_disposed || generation != _generation) return;
     final nav = web.window.navigator;
     final stream = await nav.mediaDevices
         .getUserMedia(web.MediaStreamConstraints(audio: true.toJS))
         .toDart;
+    if (_disposed || generation != _generation) {
+      for (final track in stream.getTracks().toDart) {
+        track.stop();
+      }
+      return;
+    }
     _mediaStream = stream;
     _chunks.clear();
 
     final recorder = web.MediaRecorder(stream);
     recorder.ondataavailable = ((web.BlobEvent e) {
-      if (e.data.size > 0) {
+      if (generation == _generation && e.data.size > 0) {
         _chunks.add(e.data);
       }
     }).toJS;
@@ -52,6 +67,7 @@ final class GenAiAudioRecorderWeb implements GenAiAudioRecorder {
 
   @override
   Future<Uint8List?> stop() async {
+    final generation = _generation;
     final recorder = _mediaRecorder;
     if (recorder == null || !_recording) {
       _recording = false;
@@ -68,6 +84,7 @@ final class GenAiAudioRecorderWeb implements GenAiAudioRecorder {
 
     recorder.stop();
     await stopCompleter.future;
+    if (_disposed || generation != _generation) return null;
 
     _stopMediaStream();
     _mediaRecorder = null;
@@ -81,6 +98,7 @@ final class GenAiAudioRecorderWeb implements GenAiAudioRecorder {
     final audioCtx = web.AudioContext();
     try {
       final audioBuffer = await audioCtx.decodeAudioData(arrayBuffer).toDart;
+      if (_disposed || generation != _generation) return null;
       final numChannels = audioBuffer.numberOfChannels;
       final sampleRate = audioBuffer.sampleRate.round();
       final channels = <Float32List>[];
@@ -111,6 +129,7 @@ final class GenAiAudioRecorderWeb implements GenAiAudioRecorder {
 
   @override
   Future<void> cancel() async {
+    _generation++;
     _recording = false;
     final recorder = _mediaRecorder;
     if (recorder != null) {
@@ -125,6 +144,7 @@ final class GenAiAudioRecorderWeb implements GenAiAudioRecorder {
 
   @override
   void dispose() {
+    _disposed = true;
     unawaited(cancel());
   }
 }

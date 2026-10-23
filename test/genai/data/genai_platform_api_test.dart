@@ -19,6 +19,132 @@ import 'package:techpie/features/genai/platform/genai_transport.dart';
 import '../support/fakes.dart';
 
 void main() {
+  test('remote protocol titles become readable without hiding normal titles',
+      () {
+    for (final frame in ['call', 'result', 'history']) {
+      expect(
+        GenAiConversationSummary.fromJson({
+          'chatGroupId': 'conversation',
+          'question':
+              '  <techpie-agent-$frame version="2">private tool payload',
+        }).title,
+        '校园工具对话',
+      );
+    }
+    for (final title in [
+      '我的课表',
+      'Explain <techpie-agent-result>',
+      '```xml\n<techpie-agent-result>',
+      '<techpie-agent-result-example>',
+    ]) {
+      expect(
+        GenAiConversationSummary.fromJson({
+          'chatGroupId': 'conversation',
+          'question': title,
+        }).title,
+        title,
+      );
+    }
+  });
+
+  test('malformed server rows remain explicit gaps in their original positions',
+      () async {
+    final api = GenAiApiClient(
+      transport: ScriptedTransport(
+        (_) async => response(
+          json: {
+            'success': true,
+            'code': 200,
+            'result': [
+              {'question': 'Before', 'answer': 'First'},
+              null,
+              {'question': 42, 'answer': 'Malformed'},
+              {'id': 'metadata-without-message'},
+              {'question': 'After', 'answer': 'Last'},
+            ],
+          },
+        ),
+      ),
+    );
+    final rows =
+        await api.loadConversation('token', 'group', GenAiCancellation());
+    expect(rows, hasLength(5));
+    expect(
+      rows.map((row) => row.isHistoryGap),
+      [false, true, true, true, false],
+    );
+    expect(rows.first.answer, 'First');
+    expect(rows.last.answer, 'Last');
+    expect(
+      rows
+          .where((row) => row.isHistoryGap)
+          .every((row) => row.prompt.isEmpty && row.answer.isEmpty),
+      isTrue,
+    );
+  });
+
+  test(
+      'generated and saved images stay canonical across preview origin changes',
+      () async {
+    final transport = ScriptedTransport(
+      (request) async => response(
+        json: request.uri.path.endsWith('ai-image-history/list')
+            ? {
+                'success': true,
+                'code': 200,
+                'result': {
+                  'records': [
+                    {
+                      'id': 'image',
+                      'question': 'Synthetic picture',
+                      'images': [
+                        {'imageUrl': 'test/picture.png'},
+                      ],
+                    },
+                  ],
+                  'total': 1,
+                },
+              }
+            : {
+                'data': [
+                  {'url': 'test/picture.png'},
+                ],
+              },
+      ),
+    );
+    final first = GenAiApiClient(
+      transport: transport,
+      apiBase: Uri.parse('http://127.0.0.1:18768/htk/'),
+    );
+    final generated = await first.generateImage(
+      'token',
+      GenAiImageRequest(
+        prompt: 'Synthetic picture',
+        groupId: 'group',
+        model: const GenAiModel(
+          name: 'Image',
+          aiType: 'image',
+          rootAiType: 'fixture',
+          status: 2,
+        ),
+      ),
+      GenAiCancellation(),
+    );
+    final saved = await first.listImages('token', GenAiCancellation());
+    const canonical =
+        'https://genaipic.shanghaitech.edu.cn/sys/common/static/test/picture.png';
+    expect(generated.single.toString(), canonical);
+    expect(saved.records.single.images.single.toString(), canonical);
+    final restarted = GenAiApiClient(
+      transport: transport,
+      apiBase: Uri.parse('http://127.0.0.1:28768/htk/'),
+    );
+    expect(
+      restarted.imageDisplayUri(generated.single.toString()).toString(),
+      'http://127.0.0.1:28768/sys/common/static/test/picture.png',
+    );
+  });
+
   test('restored reasoning is kept out of assistant history content', () {
     final turn = GenAiSavedTurn.fromJson({
       'question': 'test',
@@ -26,6 +152,110 @@ void main() {
     });
     expect(turn.answer, 'Final answer');
     expect(turn.reasoning, 'private reasoning');
+  });
+
+  test(
+      'reasoning extraction preserves literal think tags in prose and tool JSON',
+      () {
+    const examples = [
+      'Example: <think>literal markup</think> remains visible.',
+      '```xml\n<think>literal code</think>\n```',
+      '<techpie-agent-call version="2" nonce="historicalNonce123456">\n'
+          '{"call_id":"image","name":"generate_image","arguments":{"prompt":"draw <think>literal</think>"}}\n'
+          '</techpie-agent-call>',
+    ];
+    for (final example in examples) {
+      final restored =
+          GenAiSavedTurn.fromJson({'question': 'Show tags', 'answer': example});
+      expect(restored.answer, example);
+      expect(restored.reasoning, isEmpty);
+      final withReasoning = GenAiSavedTurn.fromJson({
+        'question': 'Show tags',
+        'answer': '<think>private reasoning</think>\n$example',
+      });
+      expect(withReasoning.answer, example);
+      expect(withReasoning.reasoning, 'private reasoning');
+    }
+  });
+
+  test('saved vision turns decode legacy and current image fields safely', () {
+    const cdn = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/';
+    final legacy = GenAiSavedTurn.fromJson({
+      'question': 'Describe both',
+      'answer': 'Two images',
+      'imageUrl':
+          ' temp/a.png, https://genaipic.shanghaitech.edu.cn//sys/common/static/temp/b.png, temp/a.png ',
+    });
+    expect(legacy.imageUrls, ['${cdn}temp/a.png', '${cdn}temp/b.png']);
+    expect(() => legacy.imageUrls.add('x'), throwsUnsupportedError);
+    final modern = GenAiSavedTurn.fromJson({
+      'question': 'Saved question',
+      'answer': 'Saved answer',
+      'imageUrls': [null, 42, 'https://evil.test/a.png', 'temp/c.png', ''],
+      'imageUrl': 'temp/legacy.png',
+    });
+    expect(modern.imageUrls, ['${cdn}temp/c.png']);
+    expect(modern.answer, 'Saved answer');
+    for (final value in [
+      null,
+      3,
+      <Object?>[],
+      ['https://evil.test/x'],
+    ]) {
+      final turn = GenAiSavedTurn.fromJson({
+        'question': 'text survives',
+        'imageUrls': value,
+        'imageUrl': 'temp/fallback.png',
+      });
+      expect(turn.imageUrls, ['${cdn}temp/fallback.png']);
+    }
+    expect(
+      GenAiSavedTurn.fromJson({'question': 'old text'}).imageUrls,
+      isEmpty,
+    );
+    expect(
+      GenAiSavedTurn.fromJson({
+        'answer': 'still readable',
+        'imageUrl': 'https://evil.test/x, data:image/png;base64, file:///x',
+      }).answer,
+      'still readable',
+    );
+  });
+
+  test('history retains canonical images while preview uses configured bridge',
+      () async {
+    final api = GenAiApiClient(
+      apiBase: Uri.parse('http://127.0.0.1:18768/htk/'),
+      transport: ScriptedTransport(
+        (_) async => response(
+          json: {
+            'success': true,
+            'code': 200,
+            'result': [
+              {
+                'question': 'Describe',
+                'answer': 'Red',
+                'imageUrl': 'temp/red.png',
+              }
+            ],
+          },
+        ),
+      ),
+    );
+    final turns =
+        await api.loadConversation('token', 'group', GenAiCancellation());
+    final canonical = turns.single.imageUrls.single;
+    expect(
+      canonical,
+      'https://genaipic.shanghaitech.edu.cn/sys/common/static/temp/red.png',
+    );
+    expect(
+      api.imageDisplayUri(canonical).toString(),
+      'http://127.0.0.1:18768/sys/common/static/temp/red.png',
+    );
+    final production =
+        GenAiApiClient(transport: ScriptedTransport((_) async => response()));
+    expect(production.imageDisplayUri(canonical).toString(), canonical);
   });
 
   test(
@@ -403,7 +633,7 @@ void main() {
         prompt: 'test',
         groupId: 'g',
         model: model,
-        size: '999x999',
+        size: '100x100',
       ),
       throwsArgumentError,
     );

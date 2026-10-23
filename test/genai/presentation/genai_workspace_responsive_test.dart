@@ -1,0 +1,313 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:techpie/features/genai/application/genai_agent_runner.dart';
+import 'package:techpie/features/genai/data/demo_genai_backend.dart';
+import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
+import 'package:techpie/features/genai/domain/genai_contract.dart';
+import 'package:techpie/features/genai/presentation/genai_workspace.dart';
+
+import '../support/fakes.dart';
+
+const _prompt = ValueKey('genai-prompt');
+const _thinking = ValueKey('genai-thinking-toggle');
+const _campus = ValueKey('genai-agent-toggle');
+const _search = ValueKey('genai-active-search-toggle');
+const _compactNew = ValueKey('genai-new-chat-compact');
+const _wideNew = ValueKey('genai-new-chat-wide');
+
+Future<GenAiDemo> _show(
+  WidgetTester tester, {
+  required Size size,
+  double textScale = 1,
+  double keyboard = 0,
+}) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+  addTearDown(demo.dispose);
+  demo.workspace.configureAgent(
+    runner: GenAiAgentRunner(
+      tools: GenAiAgentToolRegistry([]),
+      streamChat: (_, __) async* {
+        yield const GenAiTextDelta('本地布局测试');
+        yield const GenAiChatFinished(GenAiFinishReason.stop);
+      },
+    ),
+  );
+  demo.workspace.setNetSearch(true);
+  final navigator = GlobalKey<NavigatorState>();
+  await tester.pumpWidget(
+    MaterialApp(
+      navigatorKey: navigator,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(textScale),
+          viewInsets: EdgeInsets.only(bottom: keyboard),
+        ),
+        child: child!,
+      ),
+      home: const Scaffold(body: Text('TechPie host')),
+    ),
+  );
+  // The real module is pushed from TechPie. Include its back button in the
+  // available-width budget instead of testing an unrealistically empty header.
+  unawaited(
+    navigator.currentState!.push<void>(
+      MaterialPageRoute(
+        builder: (_) => GenAiWorkspace(
+          controller: demo.workspace,
+          demo: true,
+          audioRecorder: FakeGenAiAudioRecorder(),
+          login: (_) async => null,
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return demo;
+}
+
+Future<void> _reachable(
+  WidgetTester tester,
+  Finder control,
+  Rect viewport,
+) async {
+  expect(control, findsOneWidget);
+  await tester.ensureVisible(control);
+  await tester.pumpAndSettle();
+  expect(control.hitTestable(), findsOneWidget);
+  final bounds = tester.getRect(control);
+  expect(viewport.contains(bounds.center), isTrue);
+  expect(bounds.left, greaterThanOrEqualTo(viewport.left - .5));
+  expect(bounds.right, lessThanOrEqualTo(viewport.right + .5));
+  expect(bounds.top, greaterThanOrEqualTo(viewport.top - .5));
+  expect(bounds.bottom, lessThanOrEqualTo(viewport.bottom + .5));
+  expect(tester.takeException(), isNull);
+}
+
+void main() {
+  const viewports = [
+    (name: 'narrow phone', size: Size(320, 740), scale: 1.0, keyboard: 0.0),
+    (
+      name: 'phone with enlarged text and keyboard',
+      size: Size(390, 844),
+      scale: 1.6,
+      keyboard: 280.0,
+    ),
+    (
+      name: 'landscape phone with keyboard',
+      size: Size(844, 390),
+      scale: 1.0,
+      keyboard: 140.0,
+    ),
+    (name: 'tablet', size: Size(768, 1024), scale: 1.0, keyboard: 0.0),
+    (
+      name: 'wide breakpoint with enlarged text',
+      size: Size(960, 720),
+      scale: 1.4,
+      keyboard: 0.0,
+    ),
+    (name: 'desktop', size: Size(1440, 900), scale: 1.0, keyboard: 0.0),
+  ];
+
+  for (final scenario in viewports) {
+    testWidgets('chat controls remain reachable on ${scenario.name}',
+        (tester) async {
+      final demo = await _show(
+        tester,
+        size: scenario.size,
+        textScale: scenario.scale,
+        keyboard: scenario.keyboard,
+      );
+      final viewport = Rect.fromLTWH(
+        0,
+        0,
+        scenario.size.width,
+        scenario.size.height - scenario.keyboard,
+      );
+      expect(tester.takeException(), isNull);
+      final model = find.byKey(const ValueKey('genai-model'));
+      final wide = scenario.size.width >= 960;
+      final fresh = find.byKey(wide ? _wideNew : _compactNew);
+      await _reachable(tester, model, viewport);
+      await _reachable(tester, fresh, viewport);
+      if (wide) {
+        expect(find.byKey(_compactNew), findsNothing);
+        expect(
+          tester.getRect(fresh).right,
+          lessThan(tester.getRect(model).left),
+        );
+      } else {
+        expect(find.byKey(_wideNew), findsNothing);
+        final modelBounds = tester.getRect(model);
+        final newBounds = tester.getRect(fresh);
+        expect(newBounds.left, greaterThanOrEqualTo(modelBounds.right));
+        expect(
+          (newBounds.center.dy - modelBounds.center.dy).abs(),
+          lessThan(12),
+        );
+        expect(
+          newBounds.top,
+          greaterThan(tester.getRect(find.byTooltip('GenAI 账户')).bottom),
+        );
+      }
+
+      final prompt = find.byKey(_prompt);
+      await _reachable(tester, prompt, viewport);
+      await tester.enterText(prompt, '保留我的草稿');
+      await tester.pumpAndSettle();
+      final thinking = find.byKey(_thinking);
+      final campus = find.byKey(_campus);
+      final search = find.byKey(_search);
+      for (final entry in [
+        (thinking, 'genai-thinking-menu-toggle'),
+        (campus, 'genai-agent-menu-toggle'),
+      ]) {
+        if (entry.$1.evaluate().isNotEmpty) {
+          await _reachable(tester, entry.$1, viewport);
+          expect(tester.getSize(entry.$1).height, greaterThanOrEqualTo(48));
+        } else {
+          await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
+          await tester.pumpAndSettle();
+          await _reachable(tester, find.byKey(ValueKey(entry.$2)), viewport);
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await tester.pumpAndSettle();
+        }
+      }
+      await _reachable(tester, search, viewport);
+      expect(tester.widget<FilterChip>(search).selected, isTrue);
+      if (campus.evaluate().isNotEmpty) {
+        expect(
+          tester.getRect(search).top,
+          greaterThanOrEqualTo(tester.getRect(campus).top),
+        );
+      }
+      await tester.tap(search);
+      await tester.pumpAndSettle();
+      expect(demo.workspace.netSearchEnabled, isFalse);
+      expect(search, findsNothing);
+      expect(tester.widget<TextField>(prompt).controller!.text, '保留我的草稿');
+      await _reachable(
+        tester,
+        find.byKey(const ValueKey('genai-audio-stt')),
+        viewport,
+      );
+      await _reachable(
+        tester,
+        find.byKey(const ValueKey('genai-send')),
+        viewport,
+      );
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('genai-send')))
+            .onPressed,
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets(
+      'inactive tools collapse before thinking and active modes stay visible',
+      (tester) async {
+    final demo = await _show(tester, size: const Size(430, 844));
+    final more = find.byKey(const ValueKey('genai-composer-more'));
+    final thinking = find.byKey(_thinking);
+    final campus = find.byKey(_campus);
+    final search = find.byKey(_search);
+    await tester.enterText(find.byKey(_prompt), '保留草稿');
+    expect(thinking, findsOneWidget);
+    expect(campus, findsNothing);
+    expect(search, findsOneWidget);
+    expect(tester.getCenter(more).dy, tester.getCenter(search).dy);
+    expect(
+      tester.getCenter(search).dy,
+      tester.getCenter(find.byKey(const ValueKey('genai-send'))).dy,
+    );
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('genai-thinking-menu-toggle')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('genai-agent-menu-toggle')));
+    await tester.pumpAndSettle();
+    expect(demo.workspace.agentEnabled, isTrue);
+    expect(campus, findsOneWidget);
+    expect(tester.widget<FilterChip>(campus).selected, isTrue);
+    expect(
+      tester.widget<TextField>(find.byKey(_prompt)).controller!.text,
+      '保留草稿',
+    );
+    demo.workspace.setThinking(true);
+    tester.view.physicalSize = const Size(320, 740);
+    await tester.pumpAndSettle();
+    expect(thinking, findsOneWidget);
+    expect(campus, findsOneWidget);
+    expect(tester.widget<FilterChip>(thinking).selected, isTrue);
+    expect(tester.takeException(), isNull);
+    await tester.tap(campus);
+    await tester.pumpAndSettle();
+    expect(campus, findsNothing);
+    expect(thinking, findsOneWidget);
+    await tester.tap(thinking);
+    await tester.pumpAndSettle();
+    demo.workspace.setNetSearch(true);
+    await tester.pumpAndSettle();
+    expect(thinking, findsNothing);
+    expect(search, findsOneWidget);
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('genai-thinking-menu-toggle')));
+    await tester.pumpAndSettle();
+    expect(demo.workspace.thinkingEnabled, isTrue);
+    expect(thinking, findsOneWidget);
+    expect(search, findsOneWidget);
+    tester.view.physicalSize = const Size(1440, 900);
+    await tester.pumpAndSettle();
+    expect(campus, findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      'draft survives mode changes and sidebar breakpoints until new chat',
+      (tester) async {
+    final demo = await _show(tester, size: const Size(768, 1024));
+    await tester.enterText(find.byKey(_prompt), '我的未发送草稿');
+    demo.workspace.setThinking(true);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byKey(_prompt)).controller!.text,
+      '我的未发送草稿',
+    );
+    // Crossing the sidebar breakpoint rebuilds both header and composer;
+    // it must not reset the draft for the same conversation.
+    tester.view.physicalSize = const Size(1200, 900);
+    await tester.pumpAndSettle();
+    expect(find.byKey(_wideNew), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byKey(_prompt)).controller!.text,
+      '我的未发送草稿',
+    );
+    tester.view.physicalSize = const Size(768, 1024);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byKey(_compactNew));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byKey(_prompt)).controller!.text,
+      isEmpty,
+    );
+    demo.workspace.setAgentEnabled(true);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+}

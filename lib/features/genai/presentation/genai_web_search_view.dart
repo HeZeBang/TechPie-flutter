@@ -8,10 +8,12 @@ class GenAiWebSearchView extends StatefulWidget {
     required this.citations,
     this.isSearching = false,
     required this.onOpenLink,
+    this.query,
   });
 
   final List<GenAiWebSearchCitation> citations;
   final bool isSearching;
+  final String? query;
   final void Function(String url) onOpenLink;
 
   @override
@@ -23,7 +25,9 @@ class _GenAiWebSearchViewState extends State<GenAiWebSearchView> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.citations.isEmpty && !widget.isSearching) {
+    if (widget.citations.isEmpty &&
+        !widget.isSearching &&
+        widget.query == null) {
       return const SizedBox.shrink();
     }
     final theme = Theme.of(context);
@@ -85,15 +89,18 @@ class _GenAiWebSearchViewState extends State<GenAiWebSearchView> {
                       color: accent,
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      '已检索 ${widget.citations.length} 条网络参考来源',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: muted,
+                    Expanded(
+                      child: Text(
+                        widget.query == null
+                            ? '已检索 ${widget.citations.length} 条网络参考来源'
+                            : '搜索：${widget.query} · ${widget.citations.length} 条来源',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: muted,
+                        ),
                       ),
                     ),
-                    const Spacer(),
                     Icon(
                       _expanded
                           ? Icons.keyboard_arrow_up

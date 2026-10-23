@@ -12,12 +12,15 @@ final class HttpGenAiTransport implements GenAiTransport {
   HttpGenAiTransport({
     http.Client Function()? createClient,
     this.headerTimeout = const Duration(seconds: 20),
+    this.chatHeaderTimeout = const Duration(seconds: 90),
     this.idleTimeout = const Duration(seconds: 60),
     this.imageTimeout = const Duration(minutes: 5),
   }) : _createClient = createClient ?? http.Client.new;
 
   final http.Client Function() _createClient;
   final Duration headerTimeout;
+  // Vision preprocessing and reasoning can delay the first SSE headers.
+  final Duration chatHeaderTimeout;
   final Duration idleTimeout;
   final Duration imageTimeout;
   final _active = <void Function()>{};
@@ -64,9 +67,12 @@ final class HttpGenAiTransport implements GenAiTransport {
       }
       final accept =
           headers['Accept'] ?? headers['accept'] ?? headers['ACCEPT'] ?? '';
-      final isImageGeneration = uri.path.endsWith('/chat/start/chat') &&
-          !accept.contains('text/event-stream');
-      final timeoutDuration = isImageGeneration ? imageTimeout : headerTimeout;
+      final isChat = uri.path.endsWith('/chat/start/chat');
+      final timeoutDuration = !isChat
+          ? headerTimeout
+          : accept.contains('text/event-stream')
+              ? chatHeaderTimeout
+              : imageTimeout;
       final response = await cancellation.race(
         client.send(request).timeout(timeoutDuration),
       );

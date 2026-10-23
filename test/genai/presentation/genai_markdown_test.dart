@@ -17,6 +17,52 @@ void main() {
     );
   }
 
+  testWidgets('empty streamed task items render and tear down safely',
+      (tester) async {
+    for (final input in ['- [x] ', '- [ ] ', '> - [x] ', '1. [x] ']) {
+      for (var length = 1; length <= input.length; length++) {
+        await tester.pumpWidget(
+          buildApp(GenAiMarkdown(data: input.substring(0, length))),
+        );
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byKey(const ValueKey('genai-markdown-fallback')),
+          findsNothing,
+        );
+      }
+      await tester
+          .pumpWidget(buildApp(GenAiMarkdown(data: '${input}finished')));
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  test(
+      'semicolon Mermaid statements parse without splitting labels or comments',
+      () {
+    const parser = MermaidParser();
+    final normalized =
+        normalizeMermaid('graph LR; A[Start] --> B[Done]; B --> C[End]');
+    expect(parser.parse(normalized), isNotNull);
+    expect(normalized, contains('graph LR\n'));
+    expect(
+      normalizeMermaid('graph LR; A[First; second] --> B[Done]'),
+      contains('First; second'),
+    );
+    expect(
+      normalizeMermaid('graph LR; A["Quoted; label"] --> B[Done]'),
+      contains('Quoted; label'),
+    );
+    expect(
+      normalizeMermaid('graph LR\n%% ignored; Z --> Y\nA --> B'),
+      isNot(contains('Z')),
+    );
+    expect(
+      normalizeMermaid('graph LR; A -->|Yes; proceed| B'),
+      contains('Yes; proceed'),
+    );
+  });
+
   testWidgets('renders inline and block LaTeX equations in KaTeX-HTML style',
       (tester) async {
     const markdown = '''

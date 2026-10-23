@@ -7,6 +7,8 @@ import 'genai_audio_recorder_stub.dart'
 abstract interface class GenAiAudioRecorder {
   factory GenAiAudioRecorder() => createGenAiAudioRecorder();
 
+  bool get isSupported;
+
   Future<bool> hasPermission();
   Future<void> start();
   Future<Uint8List?> stop();

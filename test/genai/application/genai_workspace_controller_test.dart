@@ -8,6 +8,7 @@ import 'package:techpie/features/genai/application/genai_session_service.dart';
 import 'package:techpie/features/genai/application/genai_workspace_controller.dart';
 import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/data/genai_api_client.dart';
+import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/platform/genai_transport.dart';
@@ -112,7 +113,7 @@ void main() {
     final second = jsonDecode(posts.last.body!) as Map<String, dynamic>;
     expect(first['chatGroupId'], second['chatGroupId']);
     expect(second['chatInfo'], 'second');
-    expect(second['messages'], [
+    expect((second['messages'] as List).skip(1).toList(), [
       {'role': 'user', 'content': 'first'},
       {'role': 'assistant', 'content': 'answer'},
     ]);
@@ -134,7 +135,10 @@ void main() {
     expect(workspace.turns.single.phase, GenAiChatPhase.interrupted);
     transport.handle = original;
     await workspace.send('next');
-    expect(jsonDecode(transport.requests.last.body!)['messages'], isEmpty);
+    final messages =
+        jsonDecode(transport.requests.last.body!)['messages'] as List;
+    expect(messages, hasLength(1));
+    expect((messages.single as Map)['role'], 'system');
   });
 
   test(
@@ -176,7 +180,10 @@ void main() {
       jsonDecode(transport.requests.last.body!)['chatGroupId'],
       isNot(before),
     );
-    expect(jsonDecode(transport.requests.last.body!)['messages'], isEmpty);
+    final messages =
+        jsonDecode(transport.requests.last.body!)['messages'] as List;
+    expect(messages, hasLength(1));
+    expect((messages.single as Map)['role'], 'system');
   });
 
   test('switching accounts removes messages and model selection', () async {
@@ -185,6 +192,23 @@ void main() {
     expect(workspace.turns, isEmpty);
     expect(workspace.models, isEmpty);
     expect(workspace.selectedModel, isNull);
+  });
+
+  test(
+      'reopening an unavailable saved model cannot silently select a paid replacement',
+      () async {
+    await workspace.send('saved with the free model');
+    final id = workspace.groupId;
+    workspace.newConversation();
+    transport.handle = (_) async => models(paidOnly: true);
+    await workspace.reloadModels();
+    expect(workspace.selectedModel, isNull);
+    expect(await workspace.openConversation(id, GenAiCancellation()), isTrue);
+    expect(workspace.turns.single.prompt, 'saved with the free model');
+    expect(workspace.selectedModel, isNull);
+    final requests = transport.requests.length;
+    await workspace.send('requires explicit model selection');
+    expect(transport.requests, hasLength(requests));
   });
 
   test('paid-only catalog requires explicit selection before a request can run',
@@ -241,6 +265,66 @@ void main() {
     final json = jsonDecode(post.body!) as Map<String, dynamic>;
     expect(json['imageUrl'], contains('temp/test_image.png'));
     expect(json['imageUrls'], equals([turn.attachedImageUrl]));
+  });
+
+  test(
+      'reopened vision chat restores all thumbnails and retries canonical URLs',
+      () async {
+    final original = transport.handle;
+    transport.handle = (r) async {
+      if (r.uri.path.endsWith('/getByChatGroupId')) {
+        return response(
+          json: {
+            'success': true,
+            'code': 200,
+            'result': [
+              {
+                'question': 'Describe both images',
+                'answer': 'Red and blue',
+                'aiType': 'free',
+                'imageUrl': 'temp/red.png, temp/blue.png',
+              }
+            ],
+          },
+        );
+      }
+      return original(r);
+    };
+    await workspace.openConversation('saved-vision', GenAiCancellation());
+    final turn = workspace.turns.single;
+    expect(turn.attachedImageBytes, isNull);
+    expect(turn.attachedImageUrls, hasLength(2));
+    expect(turn.attachedImageUrl, turn.attachedImageUrls.first);
+    final urls = turn.attachedImageUrls;
+    await workspace.retryTurn(0);
+    final payload =
+        jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
+    expect(payload['chatGroupId'], 'saved-vision');
+    expect(payload['imageUrl'], urls.first);
+    expect(payload['imageUrls'], urls);
+    expect(
+      urls.every(
+        (url) => url.startsWith('https://genaipic.shanghaitech.edu.cn/'),
+      ),
+      isTrue,
+    );
+    expect(workspace.turns.single.attachedImageUrls, urls);
+  });
+
+  test('demo upload send and history reopen preserves multiple attachments',
+      () async {
+    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    addTearDown(demo.dispose);
+    await demo.workspace.reloadModels();
+    await demo.workspace.addImageAttachment('red.png', [1, 2, 3]);
+    await demo.workspace.addImageAttachment('blue.png', [4, 5, 6]);
+    await demo.workspace.send('Describe these');
+    final urls = demo.workspace.turns.single.attachedImageUrls;
+    final id = demo.workspace.groupId;
+    demo.workspace.newConversation();
+    await demo.workspace.openConversation(id, GenAiCancellation());
+    expect(demo.workspace.turns.single.attachedImageUrls, urls);
+    expect(demo.workspace.turns.single.attachedImageBytesList, isEmpty);
   });
 
   test('send awaits in-flight image upload and does not drop attachment',
@@ -348,7 +432,7 @@ void main() {
     final lastReq =
         jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
     expect(lastReq['chatInfo'], 'turn 2');
-    expect(lastReq['messages'], [
+    expect((lastReq['messages'] as List).skip(1).toList(), [
       {'role': 'user', 'content': 'turn 1'},
       {'role': 'assistant', 'content': 'answer'},
     ]);

@@ -151,6 +151,57 @@ void main() {
     expect(runtime.sessions.owner?.studentId, '20249999');
     Navigator.of(tester.element(find.byType(GenAiLoginPage))).pop();
     await tester.pumpAndSettle();
+    // Keep the synthetic production-login check independent of course fetching.
+    bindings.removeListener(schedule.requestFetch);
+    // The production app also offers IDS identity resolution for an SMS binding.
+    await bindings.replaceAll([
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.cpdaily,
+        account: '13800138000',
+        sid: '00000000-0000-0000-0000-000000000001',
+        token: 'cpdaily-token',
+        boundAt: DateTime(2026),
+        raw: const {'tgc': 'existing-ids-tgc'},
+      ),
+    ]);
+    final app = tester.widget<TechPieApp>(find.byType(TechPieApp));
+    await tester.pumpWidget(
+      TechPieApp(
+        authService: app.authService,
+        debugLogger: app.debugLogger,
+        storageService: app.storageService,
+        themeService: app.themeService,
+        scheduleService: app.scheduleService,
+        assignmentService: app.assignmentService,
+        thirdPartyAuthService: app.thirdPartyAuthService,
+        oaGymService: app.oaGymService,
+        egateAppService: app.egateAppService,
+        uniAuthService: app.uniAuthService,
+        syncService: app.syncService,
+        updateService: app.updateService,
+        campusCardService: app.campusCardService,
+        ecardBindService: app.ecardBindService,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final production =
+        ServiceProvider.of(tester.element(find.byType(GenAiPage)))
+            .genAiRuntime!;
+    expect(production.isDemo, isFalse);
+    expect(production.sessions.canIssue, isTrue);
+    expect(production.sessions.owner, isNull);
+    expect(find.text('使用现有 IDS 会话连接'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const ValueKey('genai-connect')))
+          .onPressed,
+      isNotNull,
+    );
     await tester.pumpWidget(const SizedBox.shrink());
+    schedule.dispose();
+    assignments.dispose();
+    bindings.dispose();
+    auth.dispose();
+    http.close();
   });
 }

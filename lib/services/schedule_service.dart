@@ -45,6 +45,16 @@ class ScheduleService extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
 
+  String? _verifiedAccount;
+  String? _verifiedSemester;
+
+  /// Only a completed, successful fetch in this process establishes ownership.
+  /// Legacy disk caches have no account stamp and are not safe for agent export.
+  bool get hasVerifiedAccountData =>
+      _verifiedAccount != null &&
+      _verifiedAccount == _campusAccount() &&
+      _verifiedSemester == _selectedSemesterId;
+
   /// Calendar weeks in the selected semester, including an exam period after
   /// teaching ends. Falls back to a generous default until the calendar loads.
   int get totalWeeks {
@@ -162,7 +172,9 @@ class ScheduleService extends ChangeNotifier {
 
   CourseTable? courseTableFor(String? semesterId) {
     if (semesterId == null) return null;
-    return semesterId == _selectedSemesterId ? _courseTable : _storage.loadCourseTable(semesterId);
+    return semesterId == _selectedSemesterId
+        ? _courseTable
+        : _storage.loadCourseTable(semesterId);
   }
 
   TermCalendar? termCalendarFor(String? semesterId) {
@@ -202,14 +214,19 @@ class ScheduleService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _removeCustomCourse(String semesterId, String id) => _storage.saveCustomCourses(
+  Future<void> _removeCustomCourse(String semesterId, String id) =>
+      _storage.saveCustomCourses(
         semesterId,
-        customCoursesFor(semesterId).where((course) => course.id != id).toList(),
+        customCoursesFor(semesterId)
+            .where((course) => course.id != id)
+            .toList(),
       );
 
   Future<void> loadCachedData() async {
+    _verifiedAccount = null;
     _semesterInfo = _storage.loadSemesters();
-    _selectedSemesterId = _storage.selectedSemester ?? _semesterInfo?.defaultSemester;
+    _selectedSemesterId =
+        _storage.selectedSemester ?? _semesterInfo?.defaultSemester;
     if (_selectedSemesterId != null) {
       _courseTable = _storage.loadCourseTable(_selectedSemesterId!);
     }
@@ -222,16 +239,26 @@ class ScheduleService extends ChangeNotifier {
     if (!_hasCpdailyBinding) return;
     _loading = true;
     _error = null;
+    final account = _campusAccount();
+    String? fetchedSemester;
+    _verifiedAccount = null;
     notifyListeners();
 
     try {
       await fetchSemesters();
       _selectedSemesterId ??= _semesterInfo?.defaultSemester;
+      fetchedSemester = _selectedSemesterId;
       if (_selectedSemesterId != null) {
         await Future.wait([
           fetchCourseTable(_selectedSemesterId!),
           _fetchTermBeginForSemester(_selectedSemesterId!),
         ]);
+      }
+      if (account != null &&
+          account == _campusAccount() &&
+          fetchedSemester == _selectedSemesterId) {
+        _verifiedAccount = account;
+        _verifiedSemester = _selectedSemesterId;
       }
     } catch (e) {
       _error = e.toString();
@@ -252,6 +279,7 @@ class ScheduleService extends ChangeNotifier {
       throw Exception(data['error'] as String? ?? 'Failed to fetch semesters');
     }
 
+    _verifiedAccount = null;
     _semesterInfo = SemesterInfo.fromJson(data['data'] as Map<String, dynamic>);
     await _storage.saveSemesters(_semesterInfo!);
     notifyListeners();
@@ -260,7 +288,8 @@ class ScheduleService extends ChangeNotifier {
   Future<void> fetchCourseTable(String semesterId) async {
     final extra = <String, dynamic>{
       'semester_id': semesterId,
-      if (_semesterInfo?.tableId.isNotEmpty == true) 'table_id': _semesterInfo!.tableId,
+      if (_semesterInfo?.tableId.isNotEmpty == true)
+        'table_id': _semesterInfo!.tableId,
     };
 
     final resp = await _postWithRetry(
@@ -275,6 +304,7 @@ class ScheduleService extends ChangeNotifier {
       );
     }
 
+    _verifiedAccount = null;
     _courseTable = CourseTable.fromApiResponse(
       data['data'] as Map<String, dynamic>,
     );
@@ -296,7 +326,8 @@ class ScheduleService extends ChangeNotifier {
           // rank 0/1/2 (秋/春/暑) -> the term number the backend expects (1/2/3);
           // unrecognized term keys fall back to spring (2).
           final rank = semesterTermRank(semEntry.key);
-          semNum = rank < kSemesterTermNames.length ? (rank + 1).toString() : '2';
+          semNum =
+              rank < kSemesterTermNames.length ? (rank + 1).toString() : '2';
           break;
         }
       }
@@ -324,6 +355,7 @@ class ScheduleService extends ChangeNotifier {
       throw Exception(data['error'] as String? ?? 'Failed to fetch term begin');
     }
 
+    _verifiedAccount = null;
     _termCalendar = TermCalendar.fromJson(data['data'] as Map<String, dynamic>);
     await _storage.saveTermCalendar(cacheKey, _termCalendar!);
     notifyListeners();

@@ -44,6 +44,10 @@ final class GenAiApiClient {
   final int maxJsonBytes;
   final GenAiRequestSigner? _signer;
 
+  /// Resolve only for display; chat requests retain canonical university URLs.
+  Uri imageDisplayUri(String url) =>
+      genAiImageUri(url, baseOrigin: _base.origin);
+
   Future<GenAiProfile> verifyToken(
     String token,
     GenAiCancellation cancellation,
@@ -141,7 +145,11 @@ final class GenAiApiClient {
       try {
         turns.add(GenAiSavedTurn.fromJson(genAiObject(row)));
       } catch (_) {
-        // Skip corrupt rows so one bad turn does not fail the entire conversation.
+        // Preserve the missing position: skipping it can join unrelated tool
+        // calls/results and incorrectly present an incomplete task as complete.
+        turns.add(
+          const GenAiSavedTurn(prompt: '', answer: '', isHistoryGap: true),
+        );
       }
     }
     return List.unmodifiable(turns);
@@ -185,7 +193,6 @@ final class GenAiApiClient {
       data.map(
         (Object? row) => genAiImageUri(
           genAiRequiredString(genAiObject(row), 'url'),
-          baseOrigin: _base.origin,
         ),
       ),
     );
@@ -203,7 +210,7 @@ final class GenAiApiClient {
           {'pageNo': '$page', 'pageSize': '10'},
           cancellation,
         ),
-        (json) => GenAiImageRecord.fromJson(json, baseOrigin: _base.origin),
+        GenAiImageRecord.fromJson,
         page: page,
         pageSize: 10,
       );

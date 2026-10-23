@@ -16,6 +16,8 @@ final class GenAiRepository {
   final GenAiApiClient _api;
   final GenAiSessionService _sessions;
 
+  Uri imageDisplayUri(String url) => _api.imageDisplayUri(url);
+
   Future<T> _authorized<T>(
     GenAiCancellation cancellation,
     Future<T> Function(GenAiSession) action,

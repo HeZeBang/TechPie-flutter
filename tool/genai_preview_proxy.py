@@ -20,7 +20,8 @@ from urllib.parse import urlsplit, parse_qs
 UPSTREAM = 'genai.shanghaitech.edu.cn'
 IMAGE_CDN_UPSTREAM = 'genaipic.shanghaitech.edu.cn'
 TOKEN = re.compile(r'[A-Za-z0-9._~-]{1,8192}')
-MAX_BODY = 32 * 1024 * 1024
+# 25 MiB of reference images expands to ~33.34 MiB in Base64, plus JSON.
+MAX_BODY = 36 * 1024 * 1024
 AUTH_PATHS = {'/api/auth/third-party/egate', '/api/auth/mobile/send-sms', '/api/auth/renew'}
 
 
@@ -339,9 +340,6 @@ class Handler(BaseHTTPRequestHandler):
                 result = json.loads(image_bytes)
                 record_image_diagnostic(self.server.image_diagnostics, result, body, token)
                 data = result.get('data') if isinstance(result, dict) else None
-                print('Image upstream full response: ' + json.dumps(result, ensure_ascii=False), flush=True)
-                print('Image request headers: ' + json.dumps({k: (v if k != 'X-Access-Token' else '[token]') for k, v in headers.items()}), flush=True)
-                print('Image request body: ' + repr(body.decode('utf-8', 'replace') if body else None), flush=True)
                 print('Image response schema: ' + json.dumps({
                     'has_data': isinstance(data, list),
                     'has_url': bool(isinstance(data, list) and data and isinstance(data[0], dict) and 'url' in data[0]),

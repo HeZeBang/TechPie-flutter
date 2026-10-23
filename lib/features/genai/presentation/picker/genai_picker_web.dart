@@ -10,6 +10,11 @@ GenAiPicker createGenAiPicker() => GenAiPickerWeb();
 
 final class GenAiPickerWeb implements GenAiPicker {
   @override
+  bool get supportsDocuments => true;
+  @override
+  bool get supportsAudio => true;
+
+  @override
   Future<GenAiPickedFile?> pickDocument() => _pickFile(
         '.txt,.md,.pdf,.docx,.doc,.csv,.json,.py,.dart,.c,.cpp,.h,.java,.js,.ts',
       );

@@ -8,11 +8,13 @@ import '../../../services/auth_service.dart';
 import '../../../services/third_party_auth_service.dart';
 import '../application/campus_genai_session_issuer.dart';
 import '../application/genai_chat_service.dart';
+import '../application/genai_conversation_store.dart';
 import '../application/genai_repository.dart';
 import '../application/genai_session_service.dart';
 import '../application/genai_workspace_controller.dart';
 import '../data/genai_api_client.dart';
 import '../data/genai_request_signer.dart';
+import '../data/secure_genai_conversation_store.dart';
 import '../data/secure_genai_session_store.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_failure.dart';
@@ -28,6 +30,7 @@ final class GenAiRuntime {
     required ThirdPartyAuthService thirdPartyAuth,
     GenAiTransport? transport,
     GenAiSessionStore? store,
+    GenAiConversationStore? conversationStore,
     GenAiSessionIssuer? issuer,
     Uri? apiBase,
     this.isDemo = false,
@@ -58,6 +61,10 @@ final class GenAiRuntime {
       sessions: sessions,
       repository: repository,
       chat: chat,
+      conversationStore: conversationStore ??
+          (isDemo
+              ? MemoryGenAiConversationStore()
+              : SecureGenAiConversationStore()),
     );
     _auth.addListener(_syncOwner);
     _thirdPartyAuth.addListener(_syncOwner);
@@ -194,6 +201,13 @@ final class GenAiRuntime {
       _syncOwner();
       cancellation.throwIfCancelled();
       await sessions.connect(credential);
+    } catch (error) {
+      guard();
+      cancellation.throwIfCancelled();
+      if (error is GenAiFailure) rethrow;
+      // This identity-resolution path calls the campus issuer directly, so
+      // apply the same safe failure boundary as GenAiSessionService.
+      throw const GenAiFailure(GenAiFailureKind.transport);
     } finally {
       _auth.removeListener(guard);
       _thirdPartyAuth.removeListener(guard);

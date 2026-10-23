@@ -7,6 +7,8 @@ import '../application/genai_chat_service.dart';
 import '../application/genai_repository.dart';
 import '../application/genai_session_service.dart';
 import '../application/genai_workspace_controller.dart';
+import '../domain/genai_agent_contract.dart';
+import '../domain/genai_agent_protocol.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_session.dart';
@@ -25,6 +27,7 @@ final class DemoGenAiBackend implements GenAiTransport {
   static const token = 'synthetic-preview-token';
   static const studentId = '20240001';
   final _operations = <GenAiCancellation>{};
+  int _uploadSequence = 0;
   final _history = <String, List<Map<String, Object?>>>{};
   final _images = <Map<String, Object?>>[];
 
@@ -130,7 +133,7 @@ final class DemoGenAiBackend implements GenAiTransport {
         });
       }
       return _ok({
-        'url': 'temp/demo-upload-${DateTime.now().millisecondsSinceEpoch}.png',
+        'url': 'temp/demo-upload-${++_uploadSequence}.png',
         'width': 1024,
         'height': 1024,
       });
@@ -283,7 +286,10 @@ final class DemoGenAiBackend implements GenAiTransport {
       }
     }
     final String answer;
-    if (prompt.contains('样式') ||
+    final agentAnswer = _agentAnswer(prompt, history);
+    if (agentAnswer != null) {
+      answer = agentAnswer;
+    } else if (prompt.contains('样式') ||
         prompt.contains('排版') ||
         prompt.contains('markdown') ||
         prompt.contains('Markdown') ||
@@ -360,6 +366,12 @@ for var, val in result.items():
 
 \$\$\\oint_C \\mathbf{B} \\cdot d\\boldsymbol{\\ell} = \\mu_0 \\left( I_{\\text{enc}} + \\varepsilon_0 \\frac{d\\Phi_E}{dt} \\right)\$\$
 
+## 6. Mermaid 流程图
+
+```mermaid
+graph LR; A[Start] --> B[Done];
+```
+
 *这是本地演示排版示例，未调用校园模型。*
 ''';
     } else if (prompt.contains('代码') || request['aiType'] == 'demo-code') {
@@ -379,12 +391,265 @@ for var, val in result.items():
     final groupId = request['chatGroupId'] as String;
     _history.putIfAbsent(groupId, () => []).add({
       'question': prompt,
+      'imageUrl': (request['imageUrls'] as List<Object?>? ?? []).join(','),
       'answer': answer,
       'aiType': request['aiType'],
       'chatGroupId': groupId,
     });
     yield _event({}, finish: 'stop');
   }
+
+  /// Only the harness-owned system marker enables this local protocol fixture.
+  /// Normal chat, even when it quotes a tool call, retains its existing behavior.
+  String? _agentAnswer(String prompt, List<dynamic> history) {
+    final systems = history.whereType<Map<dynamic, dynamic>>().where(
+          (entry) =>
+              entry['role'] == 'system' &&
+              entry['content'] is String &&
+              (entry['content'] as String).startsWith(genAiAgentProtocolMarker),
+        );
+    final nonce = systems.isEmpty
+        ? null
+        : genAiAgentNonceFromSystem(systems.first['content'] as String);
+    if (nonce == null) return null;
+    final userMessages = <String>[
+      for (final entry in history)
+        if (entry is Map &&
+            entry['role'] == 'user' &&
+            entry['content'] is String)
+          entry['content'] as String,
+      prompt,
+    ];
+    final responses = <String, Map<String, Object?>>{};
+    var goal = '';
+    var goalNumber = 0;
+    for (final text in userMessages) {
+      final response = _agentToolResponse(text);
+      if (response == null) {
+        goal = text;
+        goalNumber++;
+        responses.clear();
+      } else if (response['name'] is String) {
+        responses[response['name'] as String] = response;
+      }
+    }
+    final lower = goal.toLowerCase();
+    final imageGoal =
+        RegExp('图片|图像|画一|画个|海报|image|picture|illustrat').hasMatch(lower);
+    final courtGoal =
+        RegExp('球场|场地|预约|羽毛球|乒乓|网球|匹克|court|reserve').hasMatch(lower);
+    final searchAvailable = (systems.first['content'] as String)
+        .split('AVAILABLE_TOOLS:')
+        .last
+        .contains('"name":"web_search"');
+    final sequence = imageGoal
+        ? const ['generate_image']
+        : courtGoal
+            ? const ['get_current_time', 'reserve_court']
+            : [
+                'get_current_time',
+                'get_semesters',
+                if (searchAvailable) 'web_search',
+                'get_week_schedule',
+                'get_assignments',
+              ];
+    for (final name in sequence) {
+      if (responses.containsKey(name)) continue;
+      final arguments = <String, Object?>{};
+      if (name == 'web_search') {
+        arguments['query'] = '上海科技大学 公开校园资源 图书馆';
+      } else if (name == 'generate_image') {
+        arguments.addAll({
+          'prompt': goal,
+          'width': 1024,
+          'height': 1024,
+          'quality': 'low',
+        });
+      } else if (name == 'reserve_court') {
+        final time = responses['get_current_time']?['result'];
+        final explicitDate = RegExp(r'\d{4}-\d{2}-\d{2}').firstMatch(goal)?[0];
+        final date = explicitDate ?? _agentDate(time);
+        if (date == null) {
+          return '本地演示：当前时间工具未返回有效日期，尚未查询或预约场地。';
+        }
+        arguments.addAll({
+          'action': 'availability',
+          'sport': lower.contains('网球') || lower.contains('tennis')
+              ? 'tennis'
+              : lower.contains('乒乓') || lower.contains('pingpong')
+                  ? 'pingpong'
+                  : lower.contains('匹克') || lower.contains('pickleball')
+                      ? 'pickleball'
+                      : 'badminton',
+          'date': date,
+          'time_slot': 8,
+        });
+      }
+      return encodeGenAiAgentCall(
+        GenAiAgentToolCall(
+          id: 'demo_${goalNumber}_${sequence.indexOf(name) + 1}_$name',
+          name: name,
+          arguments: arguments,
+        ),
+        nonce: nonce,
+      );
+    }
+    final output = StringBuffer();
+    for (final name in sequence) {
+      final response = responses[name]!;
+      if (response['ok'] != true) {
+        final error = response['error'];
+        final message = error is Map ? error['message'] : null;
+        output.writeln('**${_agentToolLabel(name)}**：'
+            '${_agentText(message, fallback: '工具未能完成请求。')}');
+        if (name == 'reserve_court') output.writeln('尚未提交任何场地预约。');
+        if (name == 'generate_image') {
+          final code = error is Map ? error['code'] : null;
+          output.writeln(
+            code == 'approval_denied' || code == 'denied'
+                ? '已取消，未执行生图。'
+                : '未确认生成成功，请先查看图片历史。',
+          );
+        }
+      } else {
+        final result = response['result'];
+        output.writeln(
+          result is Map
+              ? _agentSummary(name, result)
+              : '**${_agentToolLabel(name)}**：工具没有返回可展示的信息。',
+        );
+      }
+      output.writeln();
+    }
+    output.write('*本地确定性演示，未调用校园模型。*');
+    return output.toString();
+  }
+
+  String _agentSummary(String name, Map<dynamic, dynamic> result) {
+    switch (name) {
+      case 'web_search':
+        final citations = result['citations'];
+        final count = citations is List ? citations.length : 0;
+        return '**公开资源**：已通过联网搜索工具检索 $count 条参考来源，可展开搜索步骤查看。';
+      case 'get_current_time':
+        final time = result['campus_time'] ?? result['date'];
+        return '**当前时间**：${_agentCampusTime(time)}（上海）';
+      case 'get_semesters':
+        final id = result['selected_semester_id'];
+        final semesters = result['semesters'];
+        final selected = semesters is List
+            ? semesters
+                .whereType<Map<dynamic, dynamic>>()
+                .where((item) => item['id'] == id)
+                .firstOrNull
+            : null;
+        return '**当前学期**：${_agentText(selected?['label'] ?? id, fallback: '尚未选择')}';
+      case 'get_week_schedule':
+        final rows = _agentRows(result['courses']);
+        final week = result['week'];
+        final title = week is int ? '第 $week 周课表' : '本周课表';
+        final output = StringBuffer('**$title**：本次返回 ${rows.length} 节课');
+        if (result['truncated'] == true) output.write('，还有更多课程');
+        output.writeln('。');
+        for (final course in rows.take(3)) {
+          final day = course['weekday'];
+          final weekday = day is int && day >= 1 && day <= 7
+              ? '周${'一二三四五六日'[day - 1]} '
+              : '';
+          final start = course['start_time'];
+          final end = course['end_time'];
+          final time = start is String && end is String ? '$start–$end ' : '';
+          output.writeln(
+            '- $weekday$time${_agentText(course['name'], fallback: '未命名课程')}',
+          );
+        }
+        if (rows.length > 3) output.writeln('其余课程可展开课表工具卡片查看。');
+        return output.toString().trimRight();
+      case 'get_assignments':
+        final rows = _agentRows(result['assignments']);
+        final output = StringBuffer('**作业与截止时间**：本次返回 ${rows.length} 项');
+        if (result['truncated'] == true) output.write('，还有更多待办');
+        output.writeln('。');
+        for (final assignment in rows.take(3)) {
+          final due = assignment['due'];
+          final deadline =
+              due is String ? ' · 截止 ${_agentCampusTime(due)}（上海）' : '';
+          output.writeln(
+            '- ${_agentText(assignment['title'], fallback: '未命名作业')}$deadline',
+          );
+        }
+        if (rows.length > 3) output.writeln('其余待办可展开作业工具卡片查看。');
+        if (result['partial'] == true) output.writeln('部分来源尚未同步完整。');
+        return output.toString().trimRight();
+      case 'generate_image':
+        final images = result['images'];
+        if (result['status'] != 'generated' ||
+            images is! List ||
+            images.isEmpty) {
+          return '工具未返回已确认的图片，请先查看图片历史。';
+        }
+        return '工具已返回 ${images.length} 张图片，已显示在聊天中，点击图片可放大查看。';
+      case 'reserve_court':
+        final rows = _agentRows(result['availability']);
+        return '已收到 ${rows.length} 个时段的场地查询结果，可展开工具卡片查看。尚未提交任何场地预约。';
+      default:
+        return '${_agentToolLabel(name)}已完成，可展开工具卡片查看结果。';
+    }
+  }
+
+  List<Map<dynamic, dynamic>> _agentRows(Object? value) => value is List
+      ? value.whereType<Map<dynamic, dynamic>>().toList()
+      : const [];
+
+  String _agentText(Object? value, {required String fallback}) {
+    if (value is! String || value.trim().isEmpty) return fallback;
+    final text = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    return text.length <= 100 ? text : '${text.substring(0, 100)}…';
+  }
+
+  String _agentCampusTime(Object? value) {
+    if (value is! String) return '未知';
+    if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) return value;
+    final parsed = DateTime.tryParse(value);
+    if (parsed == null) return _agentText(value, fallback: '未知');
+    final campus = parsed.toUtc().add(const Duration(hours: 8));
+    String two(int part) => part.toString().padLeft(2, '0');
+    return '${campus.year}-${two(campus.month)}-${two(campus.day)} '
+        '${two(campus.hour)}:${two(campus.minute)}';
+  }
+
+  Map<String, Object?>? _agentToolResponse(String text) =>
+      decodeGenAiAgentRecord(text)?.result;
+
+  String? _agentDate(Object? value) {
+    if (value is! Map) return null;
+    for (final key in [
+      'campus_time',
+      'date',
+      'local_date',
+      'local_time',
+      'iso',
+      'iso8601',
+    ]) {
+      final field = value[key];
+      if (field is String) {
+        final match = RegExp(r'^\d{4}-\d{2}-\d{2}').firstMatch(field);
+        if (match != null) return match[0];
+      }
+    }
+    return null;
+  }
+
+  String _agentToolLabel(String name) => switch (name) {
+        'web_search' => '联网搜索',
+        'get_current_time' => '当前时间',
+        'get_semesters' => '学期',
+        'get_week_schedule' => '本周课表',
+        'get_assignments' => '作业与截止时间',
+        'reserve_court' => '场地查询',
+        'generate_image' => '图片创作',
+        _ => name,
+      };
 
   List<int> _event(Map<String, String> delta, {String? finish}) =>
       utf8.encode('data: ${jsonEncode({

@@ -5,6 +5,8 @@ import 'genai_audio_player_stub.dart'
 abstract interface class GenAiAudioPlayer {
   factory GenAiAudioPlayer() => createGenAiAudioPlayer();
 
+  bool get isSupported;
+
   Future<void> playWav(List<int> bytes);
   Future<void> stop();
   bool get isPlaying;
