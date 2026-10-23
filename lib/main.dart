@@ -403,8 +403,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     }
     if (release == null || !mounted) return;
 
+    // This State sits above the MaterialApp, so its own context has no
+    // MaterialLocalizations and no navigator to put a dialog on; ask the app's
+    // navigator instead.
+    final dialogContext = _navigatorKey.currentContext;
+    if (dialogContext == null || !dialogContext.mounted) return;
     _promptedThisLaunch = true;
-    await showUpdateAvailableDialog(context, release);
+    await showUpdateAvailableDialog(dialogContext, release);
   }
 
   Future<void> _openEcardPayCode() async {
