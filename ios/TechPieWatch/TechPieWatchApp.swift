@@ -94,7 +94,7 @@ struct WatchSettingsPage: View {
         ))
         .accessibilityIdentifier("watch-auto-payment-check")
       } footer: {
-        Text("仅在在线码页面可见时检查，成功后提示并换码。关闭后仍会定时刷新在线码。")
+        Text("开启后将定时轮询二维码状态，在消费成功后及时刷新，可能消耗更多电量")
       }
     }
     .navigationTitle("设置")
