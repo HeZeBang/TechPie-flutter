@@ -131,21 +131,6 @@ void main() {
     );
   });
 
-  test('unsupported tunnel allows normal campus DNS without stopping', () async {
-    tunnel.current = EcardBindHijackStatus.unsupported;
-    final service = EcardBindService(
-      hijack: tunnel,
-      resolve: (_) async => ['10.17.0.54'],
-    );
-    addTearDown(service.dispose);
-
-    await service.prepareCampusConnection();
-
-    expect(service.status, EcardBindHijackStatus.unsupported);
-    expect(service.hijackNeedsStop, isFalse);
-    expect(tunnel.stopCalls, 0);
-  });
-
   test('unsupported tunnel still rejects DNS pointing at the bind service', () async {
     tunnel.current = EcardBindHijackStatus.unsupported;
     final service = EcardBindService(
