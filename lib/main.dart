@@ -30,6 +30,7 @@ import 'services/update_service.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
 import 'widgets/update_dialogs.dart';
+
 void main(List<String> args) async {
   // If this Flutter engine is a desktop_webview_window title bar (secondary
   // engine inside the webview popup), render the navigation controls and
@@ -63,10 +64,11 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
   final httpClient = LoggingHttpClient(debugLogger);
   final uniAuthService = UniAuthService(logger: debugLogger);
-  final authService =
-      AuthService(storageService, httpClient, uniAuthService, logger: debugLogger);
+  final authService = AuthService(storageService, httpClient, uniAuthService,
+      logger: debugLogger,);
   final themeService = ThemeService(storageService);
-  final campusCardService = CampusCardService(debugLogger: debugLogger, storage: storageService);
+  final campusCardService =
+      CampusCardService(debugLogger: debugLogger, storage: storageService);
   final ecardBindService = EcardBindService();
   final ecardWidgetService = EcardWidgetService();
   final thirdPartyAuthService = ThirdPartyAuthService(
