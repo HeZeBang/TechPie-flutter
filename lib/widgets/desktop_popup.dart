@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'app_shell/app_shell_metrics.dart';
+
 enum DesktopPopoverPlacement { rightTop, belowEnd }
 
 typedef DesktopPopoverBuilder = Widget Function(
@@ -25,23 +27,62 @@ void showDesktopPopover({
   final screenSize = MediaQuery.sizeOf(anchorContext);
   final theme = Theme.of(anchorContext);
 
-  final rawLeft = switch (placement) {
-    DesktopPopoverPlacement.rightTop =>
-      anchorOffset.dx + anchorSize.width + offset.dx,
-    DesktopPopoverPlacement.belowEnd =>
-      anchorOffset.dx + anchorSize.width - width + offset.dx,
-  };
-  final rawTop = switch (placement) {
-    DesktopPopoverPlacement.rightTop => anchorOffset.dy + offset.dy,
-    DesktopPopoverPlacement.belowEnd =>
-      anchorOffset.dy + anchorSize.height + offset.dy,
-  };
+  // MobileShell's floating bottom nav bar sits above the screen edge, and a
+  // popover must not cover it. Read its height from the shell when the anchor
+  // lives inside one; otherwise fall back to the safe-area inset alone.
+  final metrics = anchorContext
+      .getElementForInheritedWidgetOfExactType<AppShellMetrics>()
+      ?.widget as AppShellMetrics?;
+  final bottomObstruction = metrics?.bottomObstruction ??
+      MediaQuery.viewPaddingOf(anchorContext).bottom;
 
-  final left = rawLeft
-      .clamp(16.0, math.max(16.0, screenSize.width - width - 24))
-      .toDouble();
-  final top =
-      rawTop.clamp(16.0, math.max(16.0, screenSize.height - 160)).toDouble();
+  const margin = 16.0;
+  // Lowest y a popover's top edge may take so its content stays above the bar.
+  final bottomLimit = screenSize.height - bottomObstruction - margin;
+
+  /// Where a popover of [size] belongs: the requested placement, flipped to
+  /// the other side of the anchor when it does not fit there, and clamped as
+  /// a last resort so it never leaves the screen.
+  Offset positionFor(Size size) {
+    var left = switch (placement) {
+      DesktopPopoverPlacement.rightTop =>
+        anchorOffset.dx + anchorSize.width + offset.dx,
+      DesktopPopoverPlacement.belowEnd =>
+        anchorOffset.dx + anchorSize.width - width + offset.dx,
+    };
+    var top = switch (placement) {
+      DesktopPopoverPlacement.rightTop => anchorOffset.dy + offset.dy,
+      DesktopPopoverPlacement.belowEnd =>
+        anchorOffset.dy + anchorSize.height + offset.dy,
+    };
+
+    // Open above the anchor when there is no room below it.
+    if (placement == DesktopPopoverPlacement.belowEnd &&
+        top + size.height > bottomLimit) {
+      final above = anchorOffset.dy - size.height - offset.dy;
+      if (above >= margin || above > top) {
+        top = above;
+      }
+    }
+
+    left = left.clamp(
+      margin,
+      math.max(margin, screenSize.width - size.width - margin),
+    ).toDouble();
+    top = top.clamp(
+      margin,
+      math.max(margin, bottomLimit - size.height),
+    ).toDouble();
+    return Offset(left, top);
+  }
+
+  // The content's height is only known after it has been laid out once — the
+  // callers build a variable number of rows. Render one invisible frame to
+  // measure it, then rebuild at the final position. Guessing the height here
+  // is what broke #139: the old code clamped against an assumed ~160px and
+  // taller menus ran off the bottom of the screen over the nav bar.
+  final contentKey = GlobalKey();
+  Size? measuredSize;
 
   OverlayEntry? entry;
   void close() {
@@ -51,6 +92,9 @@ void showDesktopPopover({
 
   entry = OverlayEntry(
     builder: (context) {
+      final position = measuredSize == null
+          ? const Offset(margin, margin)
+          : positionFor(measuredSize!);
       return Stack(
         children: [
           Positioned.fill(
@@ -61,12 +105,23 @@ void showDesktopPopover({
             ),
           ),
           Positioned(
-            left: left,
-            top: top,
+            left: position.dx,
+            top: position.dy,
             width: width,
-            child: Theme(
-              data: theme,
-              child: Builder(builder: (context) => builder(context, close)),
+            child: KeyedSubtree(
+              key: contentKey,
+              child: IgnorePointer(
+                ignoring: measuredSize == null,
+                child: Opacity(
+                  opacity: measuredSize == null ? 0 : 1,
+                  child: Theme(
+                    data: theme,
+                    child: Builder(
+                      builder: (context) => builder(context, close),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -75,6 +130,14 @@ void showDesktopPopover({
   );
 
   overlay.insert(entry!);
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final currentEntry = entry;
+    if (currentEntry == null) return; // Closed before the first frame finished.
+    final box = contentKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    measuredSize = box.size;
+    currentEntry.markNeedsBuild();
+  });
 }
 
 class DesktopPopoverSurface extends StatelessWidget {
