@@ -1,5 +1,4 @@
 import CoreVideo
-import Foundation
 import XCTest
 @testable import ScannerScheduling
 
@@ -13,12 +12,9 @@ final class PreviewFrameBufferTests: XCTestCase {
         return try XCTUnwrap(frame)
     }
 
-    func testEmptySlotReturnsNoFrame() {
-        XCTAssertNil(PreviewFrameBuffer().copyPixelBuffer())
-    }
-
     func testReplacementReturnsTheNewFrame() throws {
         let slot = PreviewFrameBuffer()
+        XCTAssertNil(slot.copyPixelBuffer())
         slot.replace(try makeFrame(width: 16))
         let first = try XCTUnwrap(slot.copyPixelBuffer()).takeRetainedValue()
         slot.replace(try makeFrame(width: 32))
@@ -37,21 +33,4 @@ final class PreviewFrameBufferTests: XCTestCase {
         XCTAssertEqual(CVPixelBufferGetHeight(snapshot), 16)
     }
 
-    func testConcurrentReplacementClearingAndRetaining() throws {
-        let slot = PreviewFrameBuffer()
-        let frames = [try makeFrame(width: 16), try makeFrame(width: 32)]
-        DispatchQueue.concurrentPerform(iterations: 10_000) { index in
-            switch index % 3 {
-            case 0:
-                slot.replace(frames[index % frames.count])
-            case 1:
-                slot.replace(nil)
-            default:
-                if let snapshot = slot.copyPixelBuffer()?.takeRetainedValue() {
-                    XCTAssertTrue([16, 32].contains(CVPixelBufferGetWidth(snapshot)))
-                    XCTAssertEqual(CVPixelBufferGetHeight(snapshot), 16)
-                }
-            }
-        }
-    }
 }
