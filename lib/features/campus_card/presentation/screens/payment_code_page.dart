@@ -140,7 +140,10 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
     super.didChangeDependencies();
     // Navigator's Overlay disables this mode below opaque routes, including
     // routes in the host navigator. Non-opaque status sheets stay visible.
-    _visible = TickerMode.of(context);
+    // `valuesOf` supersedes `of` (deprecated after v3.35): it reports whether
+    // tickers run in this subtree. Force-frame requests are a separate signal
+    // and not what visibility means here.
+    _visible = TickerMode.valuesOf(context).enabled;
     _updateActivity(defer: true);
   }
 

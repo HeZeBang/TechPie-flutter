@@ -12,7 +12,7 @@
 
 > [!WARNING]
 >
-> Android、iOS、macOS、Linux、Windows 统一使用 Flutter 3.35.7；HarmonyOS 使用专门适配 HarmonyOS 的 Flutter SDK。
+> Android、iOS、macOS、Linux、Windows 统一使用 Flutter 3.41.9；HarmonyOS 使用专门适配 HarmonyOS 的 Flutter SDK。
 
 ## Support Platform
 
@@ -73,7 +73,7 @@ export HOS_SDK_HOME="$HOME/dev/command-line-tools/sdk"
 - JDK 17
 - Android NDK 28
 - Android SDK 36
-- Flutter 3.35.7
+- Flutter 3.41.9
 - Android 7.0 (API 24) or later
 
 ### iOS
@@ -81,12 +81,12 @@ export HOS_SDK_HOME="$HOME/dev/command-line-tools/sdk"
 - macOS
 - Xcode
 - CocoaPods
-- Flutter 3.35.7
+- Flutter 3.41.9
 - iOS Deployment Target 15.5
 
 ### HarmonyOS
 
-- Flutter (OHOS patch) 3.35.8-ohos-1.0.4
+- Flutter (OHOS patch) 3.41.9+ohos-1.0.2
 - [Huawei Command Line Tools 26.0.0.851](https://developer.huawei.com/consumer/cn/download/command-line-tools-for-hmos) — HarmonyOS SDK 26.0.0 Release (API 26)
 
 ## Release & Versioning

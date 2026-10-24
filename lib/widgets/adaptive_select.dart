@@ -1,12 +1,18 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:techpie/utils/platform.dart';
+import 'package:techpie/widgets/ios/ios_native_select.dart';
 
 class AdaptiveSelectOption {
-  const AdaptiveSelectOption({required this.value, required this.label});
+  const AdaptiveSelectOption({
+    required this.value,
+    required this.label,
+    this.sfSymbol,
+  });
 
   final String value;
   final String label;
+  final String? sfSymbol;
 }
 
 class AdaptiveSelect extends StatelessWidget {
@@ -18,6 +24,8 @@ class AdaptiveSelect extends StatelessWidget {
     this.placeholder = 'Select',
     this.width = 150,
     this.height = iosMinimumInteractiveDimension,
+    this.useIosNativeMenu = false,
+    this.accessibilityLabel,
   });
 
   final List<AdaptiveSelectOption> options;
@@ -26,6 +34,8 @@ class AdaptiveSelect extends StatelessWidget {
   final String placeholder;
   final double width;
   final double height;
+  final bool useIosNativeMenu;
+  final String? accessibilityLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +47,26 @@ class AdaptiveSelect extends StatelessWidget {
     final effectiveHeight = height < iosMinimumInteractiveDimension
         ? iosMinimumInteractiveDimension
         : height;
+    if (useIosNativeMenu) {
+      return SizedBox(
+        width: effectiveWidth,
+        height: effectiveHeight,
+        child: IosNativeSelect(
+          value: value,
+          placeholder: placeholder,
+          accessibilityLabel: accessibilityLabel ?? placeholder,
+          options: [
+            for (final option in options)
+              IosNativeSelectOption(
+                value: option.value,
+                label: option.label,
+                sfSymbol: option.sfSymbol,
+              ),
+          ],
+          onChanged: onChanged,
+        ),
+      );
+    }
     final selected =
         options.where((option) => option.value == value).firstOrNull;
     final foreground = CupertinoColors.label.resolveFrom(context);

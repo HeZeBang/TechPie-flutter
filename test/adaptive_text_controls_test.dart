@@ -41,6 +41,17 @@ void main() {
 
     expect(find.byType(UiKitView), findsNothing);
     expect(find.byType(CupertinoTextField), findsNWidgets(2));
+    final groupRect = tester.getRect(find.byType(AdaptiveTextFieldGroup));
+    final lineRect = tester.getRect(
+      find.descendant(
+        of: find.byType(Divider),
+        matching: find.byType(DecoratedBox),
+      ),
+    );
+    expect(lineRect.left - groupRect.left, closeTo(16, 0.01));
+    expect(groupRect.right - lineRect.right, closeTo(16, 0.01));
+    expect(lineRect.center.dx, closeTo(groupRect.center.dx, 0.01));
+    expect(lineRect.center.dy, closeTo(groupRect.center.dy, 0.01));
     await tester.enterText(find.byType(CupertinoTextField).first, '20260001');
     expect(account.text, '20260001');
     debugDefaultTargetPlatformOverride = null;

@@ -44,7 +44,7 @@ jobs:
     # Studio Enterprise 2022 (17.14) with the Desktop C++ workload, which is what
     # Flutter asks for by name.
     #
-    # Flutter is 3.35.7 now; whether its mapping knows the VS on a 2025 image has
+    # Flutter is 3.41.9 now; whether its mapping knows the VS on a 2025 image has
     # not been tested here, so the pin stays until someone tries it there.
     timeout-minutes: 60
     # Windows runners run `run:` steps under pwsh by default. Everything below
@@ -98,7 +98,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.35.7
+          flutter-version: 3.41.9
           cache: true
 
       - name: Enable the Windows desktop target

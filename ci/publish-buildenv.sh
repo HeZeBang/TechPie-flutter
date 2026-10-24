@@ -52,7 +52,14 @@ cli_version="$(sed -n 's/^#[[:space:]]*Version:[[:space:]]*//p' "$CLD_DIR/versio
 flutter_version="$(sed -n 's/.*"frameworkVersion":[[:space:]]*"\([^"]*\)".*/\1/p' \
                      "$FLUTTER_DIR/bin/cache/flutter.version.json" | head -1)"
 [[ -n "$cli_version" && -n "$flutter_version" ]] || die "Could not read both toolchain versions"
-tag="${cli_version}-${flutter_version}"
+# Docker tags allow only [A-Za-z0-9_.-], and the OHOS fork's version can carry a
+# "+" (`3.41.9+ohos-1.0.2`). Mapping it to "_" keeps the tag readable and
+# collision-free — two fork versions never differ only in "+" versus "_".
+docker_tag() {
+  printf '%s' "${1//+/_}"
+}
+
+tag="$(docker_tag "${cli_version}-${flutter_version}")"
 
 # --- Staging context --------------------------------------------------------
 # Next to the sources so the hard links are on one filesystem; $TMPDIR may be a
