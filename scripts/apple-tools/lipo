@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Flutter 3.35 passes all architectures to one verification command. Xcode 27
+# requires one at a time: https://github.com/flutter/flutter/issues/188346
+# Keep every check and leave extraction and all other lipo operations unchanged.
+if [[ $# -gt 3 && "$2" == '-verify_arch' ]]; then
+  BINARY="$1"
+  shift 2
+  for ARCH in "$@"; do
+    /usr/bin/lipo "$BINARY" -verify_arch "$ARCH"
+  done
+else
+  exec /usr/bin/lipo "$@"
+fi

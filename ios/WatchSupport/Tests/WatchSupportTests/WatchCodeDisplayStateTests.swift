@@ -19,6 +19,98 @@ final class WatchCodeDisplayStateTests: XCTestCase {
     return state
   }
 
+  private func onlineReady(expiresAt: Date) throws -> WatchCodeDisplayState {
+    var value = try snapshot()
+    let account = WatchOnlineAccount(openID: "SYNTHETIC_OPENID_0123456789", method: "wechat_openid",
+      idSerial: value.card!.studentID, cardID: "SYNTHETIC-CARD-ID",
+      sessionEndpoint: "https://example.invalid/api/auth/third-party/ecard")
+    value.onlineAccount = account; value.subject = account.subject; value.credential = nil
+    try value.validate()
+    var state = WatchCodeDisplayState()
+    state.reconcile(previous: nil, incoming: value)
+    state.setActive(true)
+    state.finish(.success(first), generation: state.beginGeneration()!, kind: .online, expiresAt: expiresAt)
+    return state
+  }
+
+  func testOnlineRefreshKeepsCurrentCodeAndRevisionUntilReplacementIsReady() throws {
+    var state = try onlineReady(expiresAt: Date().addingTimeInterval(30))
+    let revision = state.codeRevision
+    let ticket = state.beginGeneration()!
+    XCTAssertEqual(state.matrix?.modules, first.modules)
+    XCTAssertEqual(state.codeRevision, revision)
+    XCTAssertTrue(state.generating)
+    state.finish(.success(second), generation: ticket, kind: .online, expiresAt: Date().addingTimeInterval(30))
+    XCTAssertEqual(state.matrix?.modules, second.modules)
+    XCTAssertNotEqual(state.codeRevision, revision)
+    XCTAssertFalse(state.generating)
+  }
+
+  func testCodeExpiryDuringRefreshDoesNotCancelTheReplacement() throws {
+    let deadline = Date().addingTimeInterval(10)
+    var state = try onlineReady(expiresAt: deadline)
+    let ticket = state.beginGeneration()!
+    state.expireOnlineCode(now: deadline.addingTimeInterval(-1))
+    XCTAssertEqual(state.matrix?.modules, first.modules)
+    state.expireOnlineCode(now: deadline)
+    XCTAssertNil(state.matrix)
+    XCTAssertTrue(state.generating)
+    XCTAssertTrue(state.accepts(generation: ticket))
+    state.finish(.success(second), generation: ticket, kind: .online, expiresAt: Date().addingTimeInterval(30))
+    XCTAssertEqual(state.matrix?.modules, second.modules)
+  }
+
+  func testBriefOnlineInactivityAndReturnKeepTheSameCodeAndRevision() throws {
+    var state = try onlineReady(expiresAt: Date().addingTimeInterval(30))
+    let revision = state.codeRevision
+    let ticket = state.beginGeneration()!
+    state.setActive(false)
+    state.pauseOnlineCode()
+    XCTAssertEqual(state.matrix?.modules, first.modules)
+    XCTAssertEqual(state.codeRevision, revision)
+    XCTAssertNil(state.beginGeneration())
+    state.setActive(true)
+    XCTAssertEqual(state.matrix?.modules, first.modules)
+    XCTAssertEqual(state.codeRevision, revision)
+    XCTAssertFalse(state.generating)
+    state.finish(.success(second), generation: ticket, kind: .online, expiresAt: Date().addingTimeInterval(30))
+    XCTAssertEqual(state.matrix?.modules, first.modules)
+  }
+
+  func testCancellationKeepsTheDisplayedCodeAndRejectsItsPendingReplacement() throws {
+    var state = ready(try snapshot())
+    let ticket = state.beginGeneration()!
+    state.cancelGeneration()
+    state.finish(.success(second), generation: ticket, kind: .online, expiresAt: Date().addingTimeInterval(30))
+    XCTAssertEqual(state.matrix?.modules, first.modules)
+    XCTAssertFalse(state.generating)
+    XCTAssertNotNil(state.beginGeneration())
+  }
+
+  func testClearingAnOnlineCodeRejectsItsPendingReplacement() throws {
+    var state = try onlineReady(expiresAt: Date().addingTimeInterval(30))
+    let ticket = state.beginGeneration()!
+    state.clearCode()
+    state.finish(.success(second), generation: ticket, kind: .online, expiresAt: Date().addingTimeInterval(30))
+    XCTAssertNil(state.matrix)
+    XCTAssertFalse(state.requiresAuthorization)
+    XCTAssertNotNil(state.beginGeneration())
+  }
+
+  func testPausedOnlinePreviewIsRemovedAtExpiry() throws {
+    let deadline = Date().addingTimeInterval(10)
+    var state = try onlineReady(expiresAt: deadline)
+    state.setActive(false)
+    state.pauseOnlineCode(now: deadline.addingTimeInterval(-1))
+    XCTAssertEqual(state.matrix?.modules, first.modules)
+    state.expireOnlineCode(now: deadline)
+    XCTAssertNil(state.matrix)
+    XCTAssertFalse(state.requiresAuthorization)
+    state.setActive(true)
+    XCTAssertNil(state.matrix)
+    XCTAssertNotNil(state.beginGeneration())
+  }
+
   func testBriefInactivityAndWakeKeepCodeUntilReplacementIsReady() throws {
     var state = ready(try snapshot())
     state.setActive(false)

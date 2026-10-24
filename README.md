@@ -12,7 +12,7 @@
 
 > [!WARNING]
 >
-> 注意，由于 HarmonyOS 支持的破坏性加入，上游 Dart/flutter 版本需要回退，部分特性无法使用。相关 SDK 需要降级。
+> Android、iOS、macOS、Linux、Windows 统一使用 Flutter 3.41.9；HarmonyOS 使用专门适配 HarmonyOS 的 Flutter SDK。
 
 ## Support Platform
 
@@ -72,14 +72,17 @@ export HOS_SDK_HOME="$HOME/dev/command-line-tools/sdk"
 - Aliyun mirror
 - JDK 17
 - Android NDK 28
-- Android SDK 35
+- Android SDK 36
+- Flutter 3.41.9
+- Android 7.0 (API 24) or later
 
 ### iOS
 
 - macOS
 - Xcode
 - CocoaPods
-- iOS Deployment Target 13.0
+- Flutter 3.41.9
+- iOS Deployment Target 15.5
 
 ### HarmonyOS
 

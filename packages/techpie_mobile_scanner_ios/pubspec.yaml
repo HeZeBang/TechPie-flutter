@@ -1,0 +1,19 @@
+name: techpie_mobile_scanner_ios
+description: TechPie's iOS implementation of the pinned mobile_scanner plugin.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.6.2 <4.0.0"
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    implements: mobile_scanner
+    platforms:
+      ios:
+        pluginClass: MobileScannerPlugin
