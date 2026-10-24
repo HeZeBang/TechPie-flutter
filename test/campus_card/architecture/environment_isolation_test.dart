@@ -93,8 +93,9 @@ void main() {
         .where((file) => file.path.endsWith('.dart'))
         // The trace is the one place allowed to log; its own gate is covered by
         // test/campus_card_http_trace_test.dart.
+        // URI paths use forward slashes on Windows as well as POSIX hosts.
         .where(
-          (file) => !file.path.endsWith('data/api/decrypted_http_trace.dart'),
+          (file) => !file.uri.path.endsWith('data/api/decrypted_http_trace.dart'),
         )) {
       expect(
         file.readAsStringSync(),
