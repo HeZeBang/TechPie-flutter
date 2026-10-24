@@ -128,7 +128,9 @@ Invalid chart numbers, overflowing/underflowing ranges and magnitudes above 1e15
 fall back to source text; this keeps the chart library's integer-based axis
 rounding bounded instead of hanging or substituting false zeros.
 
-Image creation offers 13 aspect ratios, then 1K/2K/4K presets or custom dimensions.
+Image creation groups its 13 aspect ratios by square, landscape and portrait,
+then offers the matching 1K/2K/4K presets. Switching landscape/portrait keeps
+the ratio family and supported resolution tier; custom dimensions remain available.
 Positive integer dimensions must total 655,360–8,294,400 pixels. Width above 2560
 or height above 1440 shows the platform's experimental-size notice. Reference
 images stay local until generation: PNG/JPEG/WebP, decoded/signature checked,

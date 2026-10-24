@@ -52,8 +52,7 @@ void main() {
     'timeout',
     'dispose',
   ]) {
-    testWidgets('main chat agent approval $action guards side effects',
-        (tester) async {
+    testWidgets('main chat agent approval $action guards side effects', (tester) async {
       final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
       addTearDown(demo.dispose);
       final scope = ValueNotifier(true);
@@ -127,8 +126,7 @@ void main() {
       expect(effects, 0);
       expect(tester.takeException(), isNull);
       if (action == 'approve') {
-        final activity =
-            find.byKey(const ValueKey('agent-tool-activity-heading'));
+        final activity = find.byKey(const ValueKey('agent-tool-activity-heading'));
         await tester.ensureVisible(activity);
         await tester.tap(activity);
         await tester.pump();
@@ -162,8 +160,7 @@ void main() {
           await pumpUntil(tester, () => !demo.workspace.sending);
           expect(
             requests.last.history.any(
-              (message) =>
-                  decodeGenAiAgentRecord(message.content)?.result != null,
+              (message) => decodeGenAiAgentRecord(message.content)?.result != null,
             ),
             isTrue,
           );
@@ -204,8 +201,7 @@ void main() {
     });
   }
 
-  testWidgets('agent toggle shares the main conversation beside thinking',
-      (tester) async {
+  testWidgets('agent toggle shares the main conversation beside thinking', (tester) async {
     final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     final requests = <GenAiChatRequest>[];
@@ -242,11 +238,10 @@ void main() {
     await send(tester, 'Remember my color');
     await pumpUntil(tester, () => !demo.workspace.sending);
     expect(
-      requests.single.history
-          .any((message) => message.content == 'My favorite color is blue'),
+      requests.single.history.any((message) => message.content == 'My favorite color is blue'),
       isTrue,
     );
-    expect(find.text('TechPie AI · 校园工具'), findsOneWidget);
+    expect(demo.workspace.turns.last.isAgent, isTrue);
     await tester.tap(agent);
     await tester.pump();
     await send(tester, 'Continue our conversation');
@@ -261,9 +256,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets(
-      'agent search combination and attachment controls stay consistent',
-      (tester) async {
+  testWidgets('agent search combination and attachment controls stay consistent', (tester) async {
     final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     demo.workspace.configureAgent(

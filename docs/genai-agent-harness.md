@@ -253,7 +253,8 @@ Tool data is untrusted input for the model. The harness has no arbitrary code,
 shell, file-system or browser execution tool. UI approvals are generated from
 validated prepared actions, not from text supplied by the model. User tasks and
 relevant tool results are sent to the selected school model using the existing
-GenAI service; the composer explains this data flow when agent mode is selected.
+GenAI service. Confirmation stays on the prepared action rather than in a
+permanent composer caption.
 
 ## Verification and demo
 

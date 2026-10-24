@@ -94,8 +94,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
   Color get _muted => _theme.colorScheme.onSurfaceVariant;
   Color get _border => _theme.colorScheme.outlineVariant;
   bool get _canSend =>
-      widget.canSubmit &&
-      (widget.draft.text.trim().isNotEmpty || widget.attachments.isNotEmpty);
+      widget.canSubmit && (widget.draft.text.trim().isNotEmpty || widget.attachments.isNotEmpty);
 
   @override
   void initState() {
@@ -178,15 +177,11 @@ class _GenAiComposerState extends State<GenAiComposer> {
       if (widget.supportsAudio)
         PopupMenuItem<String>(
           value: 'audio',
-          enabled: !widget.recognizingAudio &&
-              !widget.recording &&
-              !widget.startingRecording,
+          enabled: !widget.recognizingAudio && !widget.recording && !widget.startingRecording,
           child: _composerMenuRow(
             Icons.audio_file_outlined,
             '上传音频',
-            disabled: widget.recognizingAudio ||
-                widget.recording ||
-                widget.startingRecording,
+            disabled: widget.recognizingAudio || widget.recording || widget.startingRecording,
           ),
         ),
     ];
@@ -212,8 +207,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
                   useSafeArea: true,
                   showDragHandle: true,
                   shape: const RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(16)),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                   ),
                   builder: (context) => Padding(
                     padding: MediaQuery.viewInsetsOf(context),
@@ -262,8 +256,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: (selected ? _accent : _muted)
-                  .withValues(alpha: disabled ? .04 : .1),
+              color: (selected ? _accent : _muted).withValues(alpha: disabled ? .04 : .1),
               borderRadius: BorderRadius.circular(9),
             ),
             child: Icon(
@@ -283,9 +276,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: disabled
-                    ? _muted.withValues(alpha: .5)
-                    : _theme.colorScheme.onSurface,
+                color: disabled ? _muted.withValues(alpha: .5) : _theme.colorScheme.onSurface,
               ),
             ),
           ),
@@ -294,8 +285,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
       );
 
   static const _modePadding = EdgeInsets.symmetric(horizontal: 4);
-  static const _modeLabelPadding =
-      EdgeInsets.symmetric(horizontal: 4, vertical: 2);
+  static const _modeLabelPadding = EdgeInsets.symmetric(horizontal: 4, vertical: 2);
 
   TextStyle get _modeLabelStyle => _theme.textTheme.labelLarge!.copyWith(
         fontSize: 12,
@@ -309,10 +299,8 @@ class _GenAiComposerState extends State<GenAiComposer> {
       textScaler: MediaQuery.textScalerOf(context),
     )..layout();
     // Keep overflow decisions aligned with the actual icon and control padding.
-    final width = painter.width.ceilToDouble() +
-        20 +
-        _modePadding.horizontal +
-        _modeLabelPadding.horizontal;
+    final width =
+        painter.width.ceilToDouble() + 20 + _modePadding.horizontal + _modeLabelPadding.horizontal;
     painter.dispose();
     return width;
   }
@@ -335,8 +323,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
           size: 18,
           color: selected ? _accent : _muted,
         ),
-        avatarBoxConstraints:
-            const BoxConstraints.tightFor(width: 20, height: 20),
+        avatarBoxConstraints: const BoxConstraints.tightFor(width: 20, height: 20),
         selected: selected,
         onSelected: onSelected,
         showCheckmark: false,
@@ -365,10 +352,8 @@ class _GenAiComposerState extends State<GenAiComposer> {
   Widget _composerToolbar() => LayoutBuilder(
         builder: (context, constraints) {
           final hasAudio = widget.supportsRecording || widget.supportsAudio;
-          final actionWidth = (widget.contextStatus != null ? 48 : 0) +
-              (hasAudio ? 48 : 0) +
-              6 +
-              48;
+          final actionWidth =
+              (widget.contextStatus != null ? 48 : 0) + (hasAudio ? 48 : 0) + 6 + 48;
           final available = constraints.maxWidth - actionWidth - 8;
           final thinkingWidth = _modeChipWidth('深度思考');
           final campusWidth = _modeChipWidth('校园工具');
@@ -435,16 +420,13 @@ class _GenAiComposerState extends State<GenAiComposer> {
                   onLongPress: !widget.supportsAudio
                       ? null
                       : () {
-                          if (!widget.sending &&
-                              !widget.recognizingAudio &&
-                              !widget.recording) {
+                          if (!widget.sending && !widget.recognizingAudio && !widget.recording) {
                             widget.onPickAudio();
                           }
                         },
                   child: IconButton(
                     key: const ValueKey('genai-audio-stt'),
-                    constraints:
-                        const BoxConstraints(minWidth: 48, minHeight: 48),
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                     icon: widget.recognizingAudio
                         ? SizedBox(
                             width: 14,
@@ -504,9 +486,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
                   ),
                 ),
                 icon: Icon(
-                  widget.sending
-                      ? Icons.stop_rounded
-                      : Icons.arrow_upward_rounded,
+                  widget.sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
                   size: 21,
                   semanticLabel: widget.sending ? '停止生成' : '发送消息',
                 ),
@@ -554,7 +534,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
   Widget build(BuildContext context) => Align(
         alignment: Alignment.center,
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 868),
+          constraints: const BoxConstraints(maxWidth: 848),
           padding: EdgeInsets.fromLTRB(
             widget.wide ? 24 : 14,
             12,
@@ -567,14 +547,12 @@ class _GenAiComposerState extends State<GenAiComposer> {
               AnimatedContainer(
                 duration: const Duration(milliseconds: 160),
                 curve: Curves.easeOut,
-                padding: const EdgeInsets.fromLTRB(16, 8, 12, 10),
+                padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
                 decoration: BoxDecoration(
-                  color: _theme.colorScheme.surfaceContainerLow,
+                  color: _theme.colorScheme.surfaceContainerLowest,
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(
-                    color: widget.inputFocus.hasFocus
-                        ? _accent.withValues(alpha: .35)
-                        : _border.withValues(alpha: .65),
+                    color: widget.inputFocus.hasFocus ? _accent.withValues(alpha: .45) : _border,
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -605,8 +583,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
                               child: ListView.separated(
                                 scrollDirection: Axis.horizontal,
                                 itemCount: widget.attachments.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(width: 8),
+                                separatorBuilder: (_, __) => const SizedBox(width: 8),
                                 itemBuilder: (context, i) {
                                   final att = widget.attachments[i];
                                   final isError = att.error != null;
@@ -619,14 +596,12 @@ class _GenAiComposerState extends State<GenAiComposer> {
                                     ),
                                     decoration: BoxDecoration(
                                       color: isError
-                                          ? _theme.colorScheme.errorContainer
-                                              .withValues(alpha: .35)
+                                          ? _theme.colorScheme.errorContainer.withValues(alpha: .35)
                                           : _accent.withValues(alpha: .08),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
                                         color: isError
-                                            ? _theme.colorScheme.error
-                                                .withValues(alpha: .5)
+                                            ? _theme.colorScheme.error.withValues(alpha: .5)
                                             : _accent.withValues(alpha: .2),
                                       ),
                                     ),
@@ -648,9 +623,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
                                               style: TextStyle(
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w500,
-                                                color: isError
-                                                    ? _theme.colorScheme.error
-                                                    : _accent,
+                                                color: isError ? _theme.colorScheme.error : _accent,
                                               ),
                                             ),
                                           ),
@@ -661,10 +634,8 @@ class _GenAiComposerState extends State<GenAiComposer> {
                                             key: ValueKey(
                                               'genai-retry-attachment-${att.id}',
                                             ),
-                                            onTap: () => widget
-                                                .onRetryAttachment(att.id),
-                                            borderRadius:
-                                                BorderRadius.circular(10),
+                                            onTap: () => widget.onRetryAttachment(att.id),
+                                            borderRadius: BorderRadius.circular(10),
                                             child: Tooltip(
                                               message: '重新上传',
                                               child: Icon(
@@ -680,18 +651,14 @@ class _GenAiComposerState extends State<GenAiComposer> {
                                           key: ValueKey(
                                             'genai-remove-attachment-${att.id}',
                                           ),
-                                          onTap: () =>
-                                              widget.onRemoveAttachment(att.id),
-                                          borderRadius:
-                                              BorderRadius.circular(10),
+                                          onTap: () => widget.onRemoveAttachment(att.id),
+                                          borderRadius: BorderRadius.circular(10),
                                           child: Tooltip(
                                             message: '移除附件',
                                             child: Icon(
                                               Icons.close,
                                               size: 13,
-                                              color: isError
-                                                  ? _theme.colorScheme.error
-                                                  : _muted,
+                                              color: isError ? _theme.colorScheme.error : _muted,
                                             ),
                                           ),
                                         ),
@@ -753,8 +720,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
                           filled: false,
-                          contentPadding:
-                              const EdgeInsets.symmetric(vertical: 12),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                         style: const TextStyle(fontSize: 15.5, height: 1.6),
                       ),
@@ -762,14 +728,6 @@ class _GenAiComposerState extends State<GenAiComposer> {
                     _composerToolbar(),
                   ],
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                widget.agentEnabled
-                    ? '工具数据会发送给学校模型 · 预约和生图需确认'
-                    : 'AI 可能出错，请核查重要信息。',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 10, color: _muted),
               ),
             ],
           ),

@@ -64,8 +64,7 @@ void main() {
     expect(find.text('正在读取…'), findsNothing);
   }
 
-  testWidgets(
-      'local reference previews support four images, removal and confirmation count',
+  testWidgets('local reference previews support four images, removal and confirmation count',
       (tester) async {
     final picker = FakeGenAiPicker(
       nextImage: GenAiPickedFile(name: 'red.png', bytes: png),
@@ -88,7 +87,7 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('genai-remove-reference-0')));
     await tester.pumpAndSettle();
-    expect(find.text('参考图片（3/4）'), findsOneWidget);
+    expect(find.text('参考图片 · 3/4'), findsOneWidget);
     await tester.enterText(
       find.byKey(const ValueKey('genai-image-prompt')),
       'Use these reference colors',
@@ -103,7 +102,7 @@ void main() {
     await tester.pumpAndSettle();
     await demo.sessions.setOwner(null);
     await tester.pumpAndSettle();
-    expect(find.text('参考图片（0/4）'), findsOneWidget);
+    expect(find.text('添加参考图片'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('genai-reference-preview-0')),
       findsNothing,
@@ -111,16 +110,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('invalid and corrupt images are rejected and picker can recover',
-      (tester) async {
+  testWidgets('invalid and corrupt images are rejected and picker can recover', (tester) async {
     final picker = FakeGenAiPicker(
       nextImage: const GenAiPickedFile(name: 'fake.png', bytes: [1, 2, 3]),
     );
     await show(tester, picker);
     await pick(tester);
     expect(find.text('请选择 PNG、JPG 或 WebP 图片。'), findsOneWidget);
-    picker.nextImage =
-        GenAiPickedFile(name: 'truncated.png', bytes: png.take(12).toList());
+    picker.nextImage = GenAiPickedFile(name: 'truncated.png', bytes: png.take(12).toList());
     await pick(tester);
     expect(find.text('无法读取图片，请选择有效的 PNG、JPG 或 WebP 图片。'), findsOneWidget);
     picker.nextImage = GenAiPickedFile(name: 'valid.png', bytes: png);

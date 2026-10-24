@@ -47,10 +47,8 @@ class _GenAiPageState extends State<GenAiPage> {
           thirdPartyAuth: services.thirdPartyAuthService,
           isDemo: () =>
               runtime.isDemo &&
-              services.thirdPartyAuthService.cpdailyBinding?.token ==
-                  'synthetic-campus-token' &&
-              workspace.sessions.session?.credential.token ==
-                  DemoGenAiBackend.token,
+              services.thirdPartyAuthService.cpdailyBinding?.token == 'synthetic-campus-token' &&
+              workspace.sessions.session?.credential.token == DemoGenAiBackend.token,
           previewEnvironment: runtime.isDemo,
         ).createRegistry(),
       ),
@@ -88,8 +86,7 @@ class _GenAiPageState extends State<GenAiPage> {
       if (!cookies.split(';').any((c) => c.trim().startsWith('CASTGC='))) {
         await pushAdaptivePage<void>(
           context,
-          builder: (_) =>
-              const ThirdPartyBindPage(platform: ThirdPartyPlatform.cpdaily),
+          builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.cpdaily),
         );
       }
       if (!mounted || !current()) return;
@@ -110,9 +107,7 @@ class _GenAiPageState extends State<GenAiPage> {
           campusSession: CampusSessionHandle(bindings, bindings.cpdailyNode),
         ),
       );
-      if (credential == null ||
-          !current() ||
-          revision != runtime.sessions.revision) {
+      if (credential == null || !current() || revision != runtime.sessions.revision) {
         return;
       }
       await runtime.workspace.connect(credential);
@@ -142,26 +137,21 @@ class _GenAiPageState extends State<GenAiPage> {
       builder: (context, _) => GenAiWorkspace(
         controller: state,
         campusBound: services.thirdPartyAuthService.hasCpdailyBinding,
-        ephemeral: runtime.isDemo,
         demo: runtime.isDemo &&
-            services.thirdPartyAuthService.cpdailyBinding?.token ==
-                'synthetic-campus-token' &&
+            services.thirdPartyAuthService.cpdailyBinding?.token == 'synthetic-campus-token' &&
             (state.sessions.session == null ||
-                state.sessions.session?.credential.token ==
-                    DemoGenAiBackend.token),
+                state.sessions.session?.credential.token == DemoGenAiBackend.token),
         onCampusLogin: (runtime.isDemo || runtime.sessions.canIssue)
             ? () => unawaited(_connectLive(runtime))
             : null,
         login: (context) async {
           if (runtime.sessions.canIssue &&
-              services.thirdPartyAuthService.cpdailyBinding?.token !=
-                  'synthetic-campus-token') {
+              services.thirdPartyAuthService.cpdailyBinding?.token != 'synthetic-campus-token') {
             await state.connectUsing(runtime.connectUsingCampusSession);
             return null;
           }
           return runtime.isDemo &&
-                  services.thirdPartyAuthService.cpdailyBinding?.token ==
-                      'synthetic-campus-token'
+                  services.thirdPartyAuthService.cpdailyBinding?.token == 'synthetic-campus-token'
               ? await showDialog<GenAiCredential>(
                   context: context,
                   builder: (context) => AlertDialog(
@@ -196,9 +186,8 @@ class _GenAiPageState extends State<GenAiPage> {
                   ),
                 );
         },
-        onSignIn: services.authService.isLoggedIn
-            ? null
-            : () => unawaited(presentLoginPage(context)),
+        onSignIn:
+            services.authService.isLoggedIn ? null : () => unawaited(presentLoginPage(context)),
         onBindCampus: () => unawaited(
           pushAdaptivePage<void>(
             context,

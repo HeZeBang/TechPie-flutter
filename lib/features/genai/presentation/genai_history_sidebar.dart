@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../widgets/app_shell/desktop/desktop_sidebar_tokens.dart';
 import '../domain/genai_platform_contract.dart';
 import 'genai_copy.dart';
 import 'genai_history_controller.dart';
@@ -13,8 +14,6 @@ class GenAiHistorySidebar extends StatelessWidget {
     required this.connected,
     required this.sending,
     required this.activeId,
-    required this.username,
-    required this.demo,
     required this.actions,
     required this.onOpen,
     required this.menuBuilder,
@@ -24,8 +23,6 @@ class GenAiHistorySidebar extends StatelessWidget {
   final bool connected;
   final bool sending;
   final String activeId;
-  final String username;
-  final bool demo;
   final Widget actions;
   final ValueChanged<GenAiConversationSummary> onOpen;
   final Widget Function(GenAiConversationSummary conversation) menuBuilder;
@@ -42,10 +39,10 @@ class GenAiHistorySidebar extends StatelessWidget {
     final muted = theme.colorScheme.onSurfaceVariant;
     final border = theme.colorScheme.outlineVariant;
     return Container(
-      width: 248,
+      width: DesktopSidebarTokens.maxExpandedWidth,
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        border: Border(right: BorderSide(color: border)),
+        border: Border(right: BorderSide(color: border.withValues(alpha: .5))),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
@@ -56,29 +53,17 @@ class GenAiHistorySidebar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Row(
                 children: [
-                  Icon(Icons.auto_awesome_outlined, color: accent, size: 28),
+                  Icon(Icons.auto_awesome_outlined, color: accent, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'TechPie',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(left: 42, top: 2),
-              child: Text(
-                '校园智能助手',
-                style: TextStyle(
-                  color: muted,
-                  fontSize: 11,
-                  letterSpacing: .3,
-                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -108,13 +93,12 @@ class GenAiHistorySidebar extends StatelessWidget {
                       icon: const Icon(Icons.refresh, size: 16),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(
-                        minWidth: 24,
-                        minHeight: 24,
+                        minWidth: 40,
+                        minHeight: 40,
                       ),
                       tooltip: '刷新历史',
-                      onPressed: connected && !history.loading
-                          ? () => unawaited(history.load())
-                          : null,
+                      onPressed:
+                          connected && !history.loading ? () => unawaited(history.load()) : null,
                     ),
                 ],
               ),
@@ -123,10 +107,6 @@ class GenAiHistorySidebar extends StatelessWidget {
             Expanded(
               child: _sidebarHistoryList(context),
             ),
-            const SizedBox(height: 12),
-            Divider(height: 1, color: border),
-            const SizedBox(height: 12),
-            _sidebarUserFooter(context),
           ],
         ),
       ),
@@ -136,7 +116,7 @@ class GenAiHistorySidebar extends StatelessWidget {
   Widget _sidebarHistoryList(BuildContext context) {
     final theme = Theme.of(context);
     final conversations = history.conversations;
-    final accent = theme.colorScheme.primary;
+    final selected = theme.colorScheme.onSecondaryContainer;
     final muted = theme.colorScheme.onSurfaceVariant;
     if (!connected) {
       return Center(
@@ -148,7 +128,7 @@ class GenAiHistorySidebar extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 40),
+            constraints: const BoxConstraints(minHeight: 44),
             child: TextField(
               controller: history.searchController,
               style: const TextStyle(fontSize: 12),
@@ -157,7 +137,7 @@ class GenAiHistorySidebar extends StatelessWidget {
                 hintText: '搜索历史对话',
                 hintStyle: TextStyle(fontSize: 12, color: muted),
                 prefixIcon: Icon(Icons.search, size: 16, color: muted),
-                prefixIconConstraints: const BoxConstraints(minWidth: 32),
+                prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 44),
                 suffixIcon: history.searchController.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(
@@ -173,11 +153,10 @@ class GenAiHistorySidebar extends StatelessWidget {
                         },
                       )
                     : null,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                 isDense: true,
                 filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest
-                    .withValues(alpha: .5),
+                fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .5),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
@@ -216,8 +195,7 @@ class GenAiHistorySidebar extends StatelessWidget {
                           ),
                         )
                   : ListView.builder(
-                      itemCount:
-                          conversations.length + (history.hasMore ? 1 : 0),
+                      itemCount: conversations.length + (history.hasMore ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index >= conversations.length) {
                           return Center(
@@ -238,14 +216,13 @@ class GenAiHistorySidebar extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(vertical: 2),
                           child: Material(
                             color: isActive
-                                ? accent.withValues(alpha: .12)
+                                ? theme.colorScheme.secondaryContainer
                                 : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(DesktopSidebarTokens.navItemRadius),
                             child: InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: sending || isActive
-                                  ? null
-                                  : () => onOpen(item),
+                              borderRadius:
+                                  BorderRadius.circular(DesktopSidebarTokens.navItemRadius),
+                              onTap: sending || isActive ? null : () => onOpen(item),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 10,
@@ -258,29 +235,24 @@ class GenAiHistorySidebar extends StatelessWidget {
                                           ? Icons.chat_bubble_rounded
                                           : Icons.chat_bubble_outline_rounded,
                                       size: 16,
-                                      color: isActive ? accent : muted,
+                                      color: isActive ? selected : muted,
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
-                                            item.title.isEmpty
-                                                ? '未命名对话'
-                                                : item.title,
+                                            item.title.isEmpty ? '未命名对话' : item.title,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                               fontSize: 13,
-                                              fontWeight: isActive
-                                                  ? FontWeight.w600
-                                                  : FontWeight.normal,
-                                              color: isActive
-                                                  ? accent
-                                                  : theme.colorScheme.onSurface,
+                                              fontWeight:
+                                                  isActive ? FontWeight.w600 : FontWeight.normal,
+                                              color:
+                                                  isActive ? selected : theme.colorScheme.onSurface,
                                             ),
                                           ),
                                           if (item.time.isNotEmpty) ...[
@@ -307,42 +279,6 @@ class GenAiHistorySidebar extends StatelessWidget {
                         );
                       },
                     ),
-        ),
-      ],
-    );
-  }
-
-  Widget _sidebarUserFooter(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final accent = colors.primary;
-    final muted = colors.onSurfaceVariant;
-    return Row(
-      children: [
-        CircleAvatar(
-          radius: 16,
-          backgroundColor: accent.withValues(alpha: .1),
-          child: Icon(Icons.person_outline, size: 19, color: accent),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                connected ? (demo ? '预览同学' : username) : '尚未连接',
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                demo ? '本地演示账户' : '校园 GenAI',
-                style: TextStyle(fontSize: 10, color: muted),
-              ),
-            ],
-          ),
         ),
       ],
     );

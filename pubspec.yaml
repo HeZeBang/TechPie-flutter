@@ -194,6 +194,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/icon/icon.png
     - assets/campus_card/audio/
     - assets/campus_card/data/
     - assets/campus_card/images/

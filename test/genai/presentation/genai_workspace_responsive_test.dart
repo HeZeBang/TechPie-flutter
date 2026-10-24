@@ -3,11 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/genai/application/genai_agent_runner.dart';
 import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_contract.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
+import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/services/theme_service.dart';
 
 import '../support/fakes.dart';
 
@@ -91,18 +94,50 @@ Future<void> _reachable(
 }
 
 void main() {
-  testWidgets(
-      'document validation stays readable and removable on a narrow screen',
+  testWidgets('workspace follows live TechPie theme changes including AMOLED', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final themes = ThemeService(StorageService(await SharedPreferences.getInstance()));
+    addTearDown(themes.dispose);
+    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    addTearDown(demo.dispose);
+    final workspace = GenAiWorkspace(
+      controller: demo.workspace,
+      demo: true,
+      audioRecorder: FakeGenAiAudioRecorder(),
+      login: (_) async => null,
+    );
+    themes.updateSystemSchemes(
+      ColorScheme.fromSeed(seedColor: Colors.teal),
+      ColorScheme.fromSeed(seedColor: Colors.teal, brightness: Brightness.dark),
+    );
+    for (final mode in [AppThemeMode.light, AppThemeMode.dark, AppThemeMode.amoled]) {
+      await themes.setMode(mode);
+      final expected = mode == AppThemeMode.light ? themes.lightTheme : themes.darkTheme;
+      await tester.pumpWidget(MaterialApp(theme: expected, home: workspace));
+      await tester.pumpAndSettle();
+      final actual = Theme.of(tester.element(find.byKey(_prompt)));
+      expect(actual.colorScheme, expected.colorScheme);
+      expect(actual.scaffoldBackgroundColor, expected.scaffoldBackgroundColor);
+      final host = Theme.of(tester.element(find.byType(GenAiWorkspace)));
+      expect(actual.textTheme, host.textTheme);
+      expect(actual.inputDecorationTheme, expected.inputDecorationTheme);
+      expect(actual.dialogTheme, expected.dialogTheme);
+      if (mode == AppThemeMode.amoled) {
+        expect(actual.colorScheme.surface, Colors.black);
+      }
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('document validation stays readable and removable on a narrow screen',
       (tester) async {
-    final demo =
-        await _show(tester, size: const Size(320, 760), textScale: 1.3);
+    final demo = await _show(tester, size: const Size(320, 760), textScale: 1.3);
     await demo.workspace.addDocumentAttachment('presentation.pptx', [1, 2, 3]);
     await tester.pumpAndSettle();
     final attachment = demo.workspace.attachments.single;
     expect(find.textContaining(attachment.error!), findsOneWidget);
     expect(tester.takeException(), isNull);
-    await tester
-        .tap(find.byKey(ValueKey('genai-remove-attachment-${attachment.id}')));
+    await tester.tap(find.byKey(ValueKey('genai-remove-attachment-${attachment.id}')));
     await tester.pumpAndSettle();
     expect(demo.workspace.attachments, isEmpty);
     expect(tester.takeException(), isNull);
@@ -133,8 +168,7 @@ void main() {
   ];
 
   for (final scenario in viewports) {
-    testWidgets('chat controls remain reachable on ${scenario.name}',
-        (tester) async {
+    testWidgets('chat controls remain reachable on ${scenario.name}', (tester) async {
       final demo = await _show(
         tester,
         size: scenario.size,
@@ -229,9 +263,7 @@ void main() {
         viewport,
       );
       expect(
-        tester
-            .widget<IconButton>(find.byKey(const ValueKey('genai-send')))
-            .onPressed,
+        tester.widget<IconButton>(find.byKey(const ValueKey('genai-send'))).onPressed,
         isNotNull,
       );
       // A completed request adds the context indicator to the trailing actions.
@@ -251,8 +283,7 @@ void main() {
     });
   }
 
-  testWidgets(
-      'inactive tools collapse before thinking and active modes stay visible',
+  testWidgets('inactive tools collapse before thinking and active modes stay visible',
       (tester) async {
     final demo = await _show(tester, size: const Size(430, 844));
     final more = find.byKey(const ValueKey('genai-composer-more'));
@@ -314,9 +345,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets(
-      'draft survives mode changes and sidebar breakpoints until new chat',
-      (tester) async {
+  testWidgets('draft survives mode changes and sidebar breakpoints until new chat', (tester) async {
     final demo = await _show(tester, size: const Size(768, 1024));
     await tester.enterText(find.byKey(_prompt), '我的未发送草稿');
     demo.workspace.setThinking(true);
@@ -345,6 +374,15 @@ void main() {
     );
     demo.workspace.setAgentEnabled(true);
     await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(_prompt), '开始对话');
+    await tester.pump();
+    final editor = find.descendant(of: find.byKey(_prompt), matching: find.byType(EditableText));
+    final composer = tester.state(editor);
+    await tester.tap(find.byKey(const ValueKey('genai-send')));
+    await tester.pumpAndSettle();
+    expect(demo.workspace.turns, hasLength(1));
+    expect(tester.state(editor), same(composer));
+    expect(tester.widget<TextField>(find.byKey(_prompt)).focusNode!.hasFocus, isTrue);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

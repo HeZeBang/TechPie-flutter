@@ -30,8 +30,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final demo =
-        await GenAiDemo.create(connected: connected, chunkDelay: delay);
+    final demo = await GenAiDemo.create(connected: connected, chunkDelay: delay);
     addTearDown(demo.dispose);
     await tester.pumpWidget(
       MaterialApp(
@@ -50,8 +49,7 @@ void main() {
           demo: demoMode,
           audioRecorder: audioRecorder,
           picker: picker,
-          login: (_) async =>
-              const GenAiCredential(token: DemoGenAiBackend.token),
+          login: (_) async => const GenAiCredential(token: DemoGenAiBackend.token),
         ),
       ),
     );
@@ -59,8 +57,7 @@ void main() {
     return demo;
   }
 
-  testWidgets(
-      'reopening saved vision chat builds network thumbnails and image viewer',
+  testWidgets('reopening saved vision chat builds network thumbnails and image viewer',
       (tester) async {
     final demo = await show(tester, delay: Duration.zero, demoMode: false);
     await demo.workspace.addImageAttachment('red.png', [1, 2, 3]);
@@ -96,8 +93,7 @@ void main() {
         home: GenAiWorkspace(
           controller: demo.workspace,
           demo: true,
-          login: (_) async =>
-              const GenAiCredential(token: DemoGenAiBackend.token),
+          login: (_) async => const GenAiCredential(token: DemoGenAiBackend.token),
         ),
       ),
     );
@@ -112,12 +108,11 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'wide workspace has no suggested prompts and sends typed Markdown chat',
+  testWidgets('wide workspace has no suggested prompts and sends typed Markdown chat',
       (tester) async {
     final demo = await show(tester);
     expect(find.text('TechPie'), findsOneWidget);
-    expect(find.text('本地演示 · 不访问校园服务，不产生费用'), findsOneWidget);
+    expect(find.byTooltip('本地演示 · 不访问校园服务，不产生费用'), findsOneWidget);
     expect(find.text('理清学习思路'), findsNothing);
     expect(find.text('一起写段代码'), findsNothing);
     await tester.enterText(
@@ -133,8 +128,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'demo login connects without campus requests and logout clears the conversation',
+  testWidgets('demo login connects without campus requests and logout clears the conversation',
       (tester) async {
     final demo = await show(tester, connected: false);
     expect(find.text('连接你的校园 AI'), findsOneWidget);
@@ -150,8 +144,7 @@ void main() {
     expect(demo.sessions.session, isNull);
   });
 
-  testWidgets('bound IDS without a school ID offers identity resolution',
-      (tester) async {
+  testWidgets('bound IDS without a school ID offers identity resolution', (tester) async {
     final demo = await GenAiDemo.create(connected: false);
     addTearDown(demo.dispose);
     await demo.sessions.setOwner(null);
@@ -177,13 +170,11 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'compact new chat moves below header while history and image stay above',
+  testWidgets('compact new chat moves below header while history and image stay above',
       (tester) async {
     await show(tester, size: const Size(674, 1000));
     expect(find.text('更多功能'), findsNothing);
-    final fresh =
-        tester.getCenter(find.byKey(const ValueKey('genai-new-chat-compact')));
+    final fresh = tester.getCenter(find.byKey(const ValueKey('genai-new-chat-compact')));
     final history = tester.getCenter(find.byTooltip('会话记录'));
     final image = tester.getCenter(find.byTooltip('图片创作'));
     expect(fresh.dy, greaterThan(history.dy));
@@ -210,8 +201,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'Escape preserves draft and stopped turn retry expires after a new turn',
+  testWidgets('Escape preserves draft and stopped turn retry expires after a new turn',
       (tester) async {
     final demo = await show(tester, delay: const Duration(milliseconds: 20));
     await tester.enterText(
@@ -229,10 +219,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(
-      tester
-          .widget<TextField>(find.byKey(const ValueKey('genai-prompt')))
-          .controller!
-          .text,
+      tester.widget<TextField>(find.byKey(const ValueKey('genai-prompt'))).controller!.text,
       'Keep this next question',
     );
     expect(demo.workspace.contextUsage, isNull);
@@ -256,8 +243,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('streaming respects reading position until return to latest',
-      (tester) async {
+  testWidgets('streaming respects reading position until return to latest', (tester) async {
     final demo = await show(tester, delay: const Duration(milliseconds: 10));
     final first = demo.workspace.send('Markdown example');
     for (var step = 0; step < 500 && demo.workspace.sending; step++) {
@@ -266,8 +252,7 @@ void main() {
     expect(demo.workspace.sending, isFalse);
     await first;
     await tester.pumpAndSettle();
-    final list =
-        tester.widget<ListView>(find.byKey(const ValueKey('genai-thread')));
+    final list = tester.widget<ListView>(find.byKey(const ValueKey('genai-thread')));
     final scroll = list.controller!;
     expect(scroll.position.maxScrollExtent, greaterThan(200));
 
@@ -290,15 +275,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('narrow screen with large text and keyboard has no overflow',
-      (tester) async {
+  testWidgets('narrow screen with large text and keyboard has no overflow', (tester) async {
     await show(tester, size: const Size(320, 740), scale: 1.6, keyboard: 280);
     expect(find.byKey(const ValueKey('genai-prompt')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'new conversation and account switch remove drafts and previous output',
+  testWidgets('new conversation and account switch remove drafts and previous output',
       (tester) async {
     final demo = await show(tester);
     await tester.enterText(
@@ -312,8 +295,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('IME composition and Shift Enter do not submit a message',
-      (tester) async {
+  testWidgets('IME composition and Shift Enter do not submit a message', (tester) async {
     final demo = await show(tester);
     final input = find.byKey(const ValueKey('genai-prompt'));
     await tester.enterText(input, 'hello');
@@ -338,8 +320,7 @@ void main() {
     expect(demo.workspace.turns.length, 1);
   });
 
-  testWidgets('thinking and search menu update controller state',
-      (tester) async {
+  testWidgets('thinking and search menu update controller state', (tester) async {
     final demo = await show(tester);
     final thinkingChip = find.byKey(const ValueKey('genai-thinking-toggle'));
     final searchChip = find.byKey(const ValueKey('genai-search-toggle'));
@@ -359,8 +340,7 @@ void main() {
     expect(demo.workspace.netSearchEnabled, isTrue);
   });
 
-  testWidgets(
-      'chat with thinking and net search renders thinking and search views',
+  testWidgets('chat with thinking and net search renders thinking and search views',
       (tester) async {
     final demo = await show(tester);
     await tester.tap(find.byKey(const ValueKey('genai-thinking-toggle')));
@@ -388,8 +368,7 @@ void main() {
     expect(find.textContaining('已检索 2 条网络参考来源'), findsOneWidget);
   });
 
-  testWidgets('native workspace hides unavailable audio and file actions',
-      (tester) async {
+  testWidgets('native workspace hides unavailable audio and file actions', (tester) async {
     await show(tester);
     await tester.enterText(
       find.byKey(const ValueKey('genai-prompt')),
@@ -406,9 +385,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'microphone recording shows timer and waveform and can be cancelled',
-      (tester) async {
+  testWidgets('microphone recording shows timer and waveform and can be cancelled', (tester) async {
     final recorder = FakeGenAiAudioRecorder();
     await show(tester, audioRecorder: recorder);
 
@@ -440,8 +417,7 @@ void main() {
     );
   });
 
-  testWidgets(
-      'finishing microphone recording stops recorder and transcribes audio to draft',
+  testWidgets('finishing microphone recording stops recorder and transcribes audio to draft',
       (tester) async {
     final recorder = FakeGenAiAudioRecorder(
       recordedBytes: Uint8List.fromList([1, 2, 3, 4]),
@@ -467,8 +443,7 @@ void main() {
     expect(textField.controller!.text, '你好，这是通过语音识别转换的文字内容。');
   });
 
-  testWidgets('microphone recording handles permission denial gracefully',
-      (tester) async {
+  testWidgets('microphone recording handles permission denial gracefully', (tester) async {
     final recorder = FakeGenAiAudioRecorder(permission: false);
     await show(tester, audioRecorder: recorder);
 
@@ -479,8 +454,7 @@ void main() {
     expect(find.text('无法访问麦克风，请检查权限设置'), findsOneWidget);
   });
 
-  testWidgets(
-      'uploading image adds attachment chip without refreshing or resetting conversation',
+  testWidgets('uploading image adds attachment chip without refreshing or resetting conversation',
       (tester) async {
     final picker = FakeGenAiPicker(
       nextImage: GenAiPickedFile(
@@ -624,8 +598,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'failed upload blocks send, shows failure badge and warning, and allows retry',
+  testWidgets('failed upload blocks send, shows failure badge and warning, and allows retry',
       (tester) async {
     final sampleBytes = Uint8List.fromList([1, 2, 3, 4]);
     final picker = FakeGenAiPicker(
@@ -680,8 +653,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'uploading image displays thumbnail in composer and tapping opens image dialog',
+  testWidgets('uploading image displays thumbnail in composer and tapping opens image dialog',
       (tester) async {
     final sampleBytes = Uint8List.fromList([
       137,
@@ -769,8 +741,7 @@ void main() {
     expect(demo.workspace.attachments.length, 1);
     final attId = demo.workspace.attachments.first.id;
 
-    final thumbFinder =
-        find.byKey(ValueKey('genai-attachment-thumbnail-$attId'));
+    final thumbFinder = find.byKey(ValueKey('genai-attachment-thumbnail-$attId'));
     expect(thumbFinder, findsOneWidget);
 
     await tester.tap(thumbFinder);
@@ -791,8 +762,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'message deletion, reversion, and edit actions are disabled on chat bubbles',
+  testWidgets('message deletion, reversion, and edit actions are disabled on chat bubbles',
       (tester) async {
     final demo = await show(tester);
 
@@ -825,8 +795,7 @@ void main() {
     expect(find.byKey(const ValueKey('genai-delete-0')), findsNothing);
   });
 
-  testWidgets('sidebar session search filters in real time with debounce',
-      (tester) async {
+  testWidgets('sidebar session search filters in real time with debounce', (tester) async {
     final demo = await show(
       tester,
       size: const Size(1200, 900),
@@ -856,8 +825,7 @@ void main() {
     await tester.tap(find.byTooltip('刷新历史'));
     await tester.pumpAndSettle();
 
-    Finder historyItem(String text) =>
-        find.byWidgetPredicate((w) => w is Text && w.data == text);
+    Finder historyItem(String text) => find.byWidgetPredicate((w) => w is Text && w.data == text);
 
     expect(historyItem('alpha physics research'), findsOneWidget);
     expect(historyItem('beta chemistry notes'), findsOneWidget);

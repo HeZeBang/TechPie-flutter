@@ -98,9 +98,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     _imageModel = (previous != null
             ? _workspace.imageModels
                 .where(
-                  (m) =>
-                      m.aiType == previous.aiType &&
-                      m.rootAiType == previous.rootAiType,
+                  (m) => m.aiType == previous.aiType && m.rootAiType == previous.rootAiType,
                 )
                 .firstOrNull
             : null) ??
@@ -111,8 +109,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
   void _sessionChanged() {
     if (!mounted ||
         !_scopeValid ||
-        (_workspace.sessions.revision == _revision &&
-            _workspace.accountScope == _accountScope)) {
+        (_workspace.sessions.revision == _revision && _workspace.accountScope == _accountScope)) {
       return;
     }
     _searchDebounceTimer?.cancel();
@@ -255,8 +252,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     });
   }
 
-  Future<void> _openConversation(GenAiConversationSummary item) =>
-      _run((c) async {
+  Future<void> _openConversation(GenAiConversationSummary item) => _run((c) async {
         final opened = await _workspace.openConversation(item.id, c);
         c.throwIfCancelled();
         if (mounted && opened) Navigator.pop(context, true);
@@ -375,9 +371,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
             title: Text(const ['会话记录', '图片创作', '用量统计'][_tab]),
             actions: [
               IconButton(
-                onPressed: _busy || _searching || !_scopeValid
-                    ? null
-                    : () => unawaited(_load()),
+                onPressed: _busy || _searching || !_scopeValid ? null : () => unawaited(_load()),
                 icon: const Icon(Icons.refresh),
                 tooltip: '刷新',
               ),
@@ -418,8 +412,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       ? Padding(
           padding: const EdgeInsets.all(16),
           child: OutlinedButton(
-            onPressed:
-                _busy || _searching ? null : () => unawaited(_load(more: true)),
+            onPressed: _busy || _searching ? null : () => unawaited(_load(more: true)),
             child: const Text('加载更多'),
           ),
         )
@@ -499,12 +492,8 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  subtitle: item.time.isEmpty
-                      ? null
-                      : Text(genAiHistoryTime(item.time)),
-                  onTap: _busy || _searching
-                      ? null
-                      : () => unawaited(_openConversation(item)),
+                  subtitle: item.time.isEmpty ? null : Text(genAiHistoryTime(item.time)),
+                  onTap: _busy || _searching ? null : () => unawaited(_openConversation(item)),
                   trailing: GenAiConversationMenu(
                     key: ValueKey(item.id),
                     workspace: _workspace,
@@ -556,11 +545,9 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       try {
         final frame = await codec.getNextFrame();
         try {
-          final data =
-              await frame.image.toByteData(format: ui.ImageByteFormat.png);
+          final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
           if (data == null) throw StateError('Image preview unavailable');
-          thumbnail =
-              data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+          thumbnail = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
         } finally {
           frame.image.dispose();
         }
@@ -576,8 +563,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       if (!current()) return;
       setState(
         () => _referenceError = switch (error) {
-          GenAiReferenceImageFailure.unsupportedFormat =>
-            '请选择 PNG、JPG 或 WebP 图片。',
+          GenAiReferenceImageFailure.unsupportedFormat => '请选择 PNG、JPG 或 WebP 图片。',
           GenAiReferenceImageFailure.empty => '图片为空，请选择其他文件。',
           GenAiReferenceImageFailure.tooLarge => '单张参考图片不能超过 10 MB。',
           GenAiReferenceImageFailure.tooMany => '最多添加 4 张参考图片。',
@@ -598,28 +584,19 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Wrap(
-          spacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(
-              '参考图片（${_references.length}/4）',
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-            TextButton.icon(
-              key: const ValueKey('genai-add-reference'),
-              onPressed:
-                  enabled && _references.length < GenAiReferenceImage.maxCount
-                      ? () => unawaited(_pickReferenceImage())
-                      : null,
-              icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-              label: Text(_pickingReference ? '正在读取…' : '添加参考图片'),
-            ),
-          ],
-        ),
-        const Text(
-          '可选 · 最多 4 张，单张 10 MB，总计 25 MB。仅在开始生成时发送。',
-          style: TextStyle(fontSize: 12),
+        TextButton.icon(
+          key: const ValueKey('genai-add-reference'),
+          onPressed: enabled && _references.length < GenAiReferenceImage.maxCount
+              ? () => unawaited(_pickReferenceImage())
+              : null,
+          icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+          label: Text(
+            _pickingReference
+                ? '正在读取…'
+                : _references.isEmpty
+                    ? '添加参考图片'
+                    : '参考图片 · ${_references.length}/4',
+          ),
         ),
         if (_references.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -699,6 +676,29 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     );
   }
 
+  String _orientationOf(String ratio) {
+    if (ratio == 'custom') return 'custom';
+    final sides = ratio.split(':').map(int.parse).toList();
+    if (sides[0] == sides[1]) return 'square';
+    return sides[0] > sides[1] ? 'landscape' : 'portrait';
+  }
+
+  void _selectOrientation(String orientation) {
+    if (orientation == 'square' || orientation == 'custom') {
+      _selectAspectRatio(orientation == 'square' ? '1:1' : 'custom');
+      return;
+    }
+    // Flipping orientation keeps the ratio family and resolution tier.
+    final opposite = _aspectRatio.split(':').reversed.join(':');
+    _selectAspectRatio(
+      GenAiImageSize.presets.containsKey(opposite) && _orientationOf(opposite) == orientation
+          ? opposite
+          : orientation == 'landscape'
+              ? '16:9'
+              : '9:16',
+    );
+  }
+
   void _selectAspectRatio(String ratio) {
     final previousSize = _parsedSize;
     setState(() {
@@ -729,14 +729,14 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
         return;
       }
       final ratio = _aspectRatio.split(':').map(int.parse).toList();
-      other.text =
-          '${(amount * (width ? ratio[1] / ratio[0] : ratio[0] / ratio[1])).round()}';
+      other.text = '${(amount * (width ? ratio[1] / ratio[0] : ratio[0] / ratio[1])).round()}';
     });
   }
 
   Widget _imageSizeControls() {
     final enabled = !_busy && _scopeValid;
     final presets = GenAiImageSize.presets[_aspectRatio];
+    final orientation = _orientationOf(_aspectRatio);
     Widget dimension(TextEditingController controller, bool width) => SizedBox(
           width: 180,
           child: TextField(
@@ -762,22 +762,38 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
             SizedBox(
               width: 180,
               child: DropdownButtonFormField<String>(
-                key: const ValueKey('genai-image-ratio'),
+                key: const ValueKey('genai-image-orientation'),
                 isExpanded: true,
-                initialValue: _aspectRatio,
-                decoration: const InputDecoration(labelText: '画面比例'),
-                items: [
-                  for (final ratio in GenAiImageSize.presets.keys)
-                    DropdownMenuItem(
-                      value: ratio,
-                      child: Text(ratio == '1:1' ? '1:1 · 正方形' : ratio),
-                    ),
-                  const DropdownMenuItem(value: 'custom', child: Text('自定义比例')),
+                initialValue: orientation,
+                decoration: const InputDecoration(labelText: '画面方向'),
+                items: const [
+                  DropdownMenuItem(value: 'square', child: Text('正方形')),
+                  DropdownMenuItem(value: 'landscape', child: Text('横向')),
+                  DropdownMenuItem(value: 'portrait', child: Text('竖向')),
+                  DropdownMenuItem(value: 'custom', child: Text('自定义')),
                 ],
-                onChanged:
-                    enabled ? (value) => _selectAspectRatio(value!) : null,
+                onChanged: enabled ? (value) => _selectOrientation(value!) : null,
               ),
             ),
+            if (orientation == 'landscape' || orientation == 'portrait')
+              SizedBox(
+                width: 180,
+                child: DropdownButtonFormField<String>(
+                  key: const ValueKey('genai-image-ratio'),
+                  isExpanded: true,
+                  initialValue: _aspectRatio,
+                  decoration: const InputDecoration(labelText: '画面比例'),
+                  items: [
+                    for (final ratio in GenAiImageSize.presets.keys
+                        .where((ratio) => _orientationOf(ratio) == orientation))
+                      DropdownMenuItem(
+                        value: ratio,
+                        child: Text(ratio),
+                      ),
+                  ],
+                  onChanged: enabled ? (value) => _selectAspectRatio(value!) : null,
+                ),
+              ),
             if (presets != null)
               SizedBox(
                 width: 260,
@@ -821,9 +837,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                   DropdownMenuItem(value: 'medium', child: Text('标准')),
                   DropdownMenuItem(value: 'high', child: Text('高清')),
                 ],
-                onChanged: enabled
-                    ? (value) => setState(() => _quality = value!)
-                    : null,
+                onChanged: enabled ? (value) => setState(() => _quality = value!) : null,
               ),
             ),
           ],
@@ -891,8 +905,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                   ),
                 )
                 .toList(),
-            onChanged:
-                _busy ? null : (model) => setState(() => _imageModel = model),
+            onChanged: _busy ? null : (model) => setState(() => _imageModel = model),
           ),
         const SizedBox(height: 16),
         TextField(
@@ -948,9 +961,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                       Expanded(child: Text(record.prompt)),
                       IconButton(
                         tooltip: '删除图片记录',
-                        onPressed: _busy
-                            ? null
-                            : () => unawaited(_delete(record.id, image: true)),
+                        onPressed: _busy ? null : () => unawaited(_delete(record.id, image: true)),
                         icon: const Icon(Icons.delete_outline),
                       ),
                     ],
@@ -971,14 +982,10 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
           children: [
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 460),
-              child: widget.demo &&
-                      (uri.path.contains('techpie-preview') ||
-                          uri.host == 'demo')
+              child: widget.demo && (uri.path.contains('techpie-preview') || uri.host == 'demo')
                   ? const GenAiDemoImage()
                   : Image.network(
-                      _workspace.repository
-                          .imageDisplayUri(uri.toString())
-                          .toString(),
+                      _workspace.repository.imageDisplayUri(uri.toString()).toString(),
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => const Padding(
                         padding: EdgeInsets.all(32),
@@ -996,8 +1003,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       );
 
   Future<void> _openImage(Uri uri) async {
-    if (widget.demo &&
-        (uri.path.contains('techpie-preview') || uri.host == 'demo')) {
+    if (widget.demo && (uri.path.contains('techpie-preview') || uri.host == 'demo')) {
       return;
     }
     try {
@@ -1020,9 +1026,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            widget.demo
-                ? '以下为本地测试数据，不代表学校账号的实际额度。'
-                : '以下数据来自学校平台。额度与 Token 分开显示，结算可能延迟。',
+            widget.demo ? '以下为本地测试数据，不代表学校账号的实际额度。' : '以下数据来自学校平台。额度与 Token 分开显示，结算可能延迟。',
           ),
           for (final quota in _usage?.quotas ?? <GenAiQuota>[])
             Card(
