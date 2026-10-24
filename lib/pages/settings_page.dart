@@ -405,6 +405,15 @@ class _SettingsPageState extends State<SettingsPage> {
                   onTap: () => _showColorPicker(tileContext, themeService),
                 ),
               ),
+            if (themeService.supportsGlassModeSelection)
+              Builder(
+                builder: (tileContext) => ListTile(
+                  leading: Icon(themeService.glassMode.icon),
+                  title: const Text('Glass'),
+                  subtitle: Text(themeService.glassMode.label),
+                  onTap: () => _showGlassPicker(tileContext, themeService),
+                ),
+              ),
             const Divider(),
 
             // General section
@@ -618,6 +627,97 @@ class _SettingsPageState extends State<SettingsPage> {
                       : null,
                   onTap: () {
                     unawaited(themeService.setMode(mode));
+                    Navigator.pop(context);
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showGlassPicker(BuildContext context, ThemeService themeService) {
+    if (usesSidebarLayout(context)) {
+      showDesktopPopover(
+        anchorContext: context,
+        width: 260,
+        placement: DesktopPopoverPlacement.belowEnd,
+        offset: const Offset(0, 8),
+        builder: (context, close) {
+          final theme = Theme.of(context);
+          return DesktopPopoverSurface(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                  child: Text(
+                    'Choose glass style',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+                const Divider(height: 1),
+                for (final mode in AppGlassMode.values)
+                  DesktopMenuRow(
+                    leading: Icon(mode.icon, size: 20),
+                    title: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            mode.label,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                        if (themeService.glassMode == mode)
+                          Icon(
+                            Icons.check,
+                            size: 20,
+                            color: theme.colorScheme.primary,
+                          ),
+                      ],
+                    ),
+                    onTap: () {
+                      unawaited(themeService.setGlassMode(mode));
+                      close();
+                    },
+                  ),
+              ],
+            ),
+          );
+        },
+      );
+      return;
+    }
+
+    unawaited(
+      showModalBottomSheet<void>(
+        context: context,
+        builder: (context) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text(
+                  'Choose glass style',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              for (final mode in AppGlassMode.values)
+                ListTile(
+                  leading: Icon(mode.icon),
+                  title: Text(mode.label),
+                  trailing: themeService.glassMode == mode
+                      ? Icon(
+                          Icons.check,
+                          color: Theme.of(context).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () {
+                    unawaited(themeService.setGlassMode(mode));
                     Navigator.pop(context);
                   },
                 ),

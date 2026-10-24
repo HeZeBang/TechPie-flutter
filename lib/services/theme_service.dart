@@ -23,6 +23,53 @@ enum AppColorScheme {
   final IconData icon;
 }
 
+/// How chrome (app bars, bottom nav) composites over page content.
+/// Only Android lets the user pick; everywhere else keeps [AppGlassMode.frosted].
+enum AppGlassMode {
+  classic('Classic', Icons.blur_off_outlined),
+  frosted('Frosted Glass', Icons.blur_on_outlined),
+  liquid('Liquid Glass', Icons.water_drop_outlined);
+
+  const AppGlassMode(this.label, this.icon);
+  final String label;
+  final IconData icon;
+}
+
+/// Glass recipe for the active [AppGlassMode], attached to every [ThemeData] so
+/// chrome can read it with [GlassTheme.of]. `classic` draws opaque surfaces,
+/// `frosted` a plain blur, `liquid` the richer recipe (saturation-boosted blur,
+/// higher overlay alpha, specular sheen).
+class GlassTheme extends ThemeExtension<GlassTheme> {
+  const GlassTheme(this.mode);
+
+  final AppGlassMode mode;
+
+  /// Falls back to opaque surfaces when the platform asks for higher contrast.
+  static GlassTheme of(BuildContext context) {
+    final theme = Theme.of(context).extension<GlassTheme>() ??
+        const GlassTheme(AppGlassMode.frosted);
+    if (MediaQuery.maybeOf(context)?.highContrast ?? false) {
+      return const GlassTheme(AppGlassMode.classic);
+    }
+    return theme;
+  }
+
+  bool get translucent => mode != AppGlassMode.classic;
+  bool get sheen => mode == AppGlassMode.liquid;
+
+  /// Overlay alpha: liquid-glass mode uses 0.85, plain frosted mode 0.76.
+  double get overlayAlpha => mode == AppGlassMode.liquid ? 0.85 : 0.76;
+
+  @override
+  GlassTheme copyWith({AppGlassMode? mode}) => GlassTheme(mode ?? this.mode);
+
+  @override
+  GlassTheme lerp(ThemeExtension<GlassTheme>? other, double t) {
+    if (other is! GlassTheme) return this;
+    return t < 0.5 ? this : other;
+  }
+}
+
 class ThemeService extends ChangeNotifier {
   static const _techRedSeed = Color(0xFFA30B19);
   static const _iosLightAccent = Color(0xFF007AFF);
@@ -54,6 +101,10 @@ class ThemeService extends ChangeNotifier {
         _colorScheme = AppColorScheme.values.firstWhere(
           (s) => s.name == _storage.colorScheme,
           orElse: () => AppColorScheme.system,
+        ),
+        _glassMode = AppGlassMode.values.firstWhere(
+          (m) => m.name == _storage.glassMode,
+          orElse: () => AppGlassMode.frosted,
         );
 
   AppThemeMode _mode;
@@ -61,6 +112,9 @@ class ThemeService extends ChangeNotifier {
 
   AppColorScheme _colorScheme;
   AppColorScheme get colorScheme => _colorScheme;
+
+  AppGlassMode _glassMode;
+  AppGlassMode get glassMode => _glassMode;
 
   ColorScheme? _systemLight;
   ColorScheme? _systemDark;
@@ -77,6 +131,13 @@ class ThemeService extends ChangeNotifier {
     _colorScheme = scheme;
     notifyListeners();
     await _storage.setColorScheme(scheme.name);
+  }
+
+  Future<void> setGlassMode(AppGlassMode mode) async {
+    if (_glassMode == mode) return;
+    _glassMode = mode;
+    notifyListeners();
+    await _storage.setGlassMode(mode.name);
   }
 
   void updateSystemSchemes(ColorScheme? light, ColorScheme? dark) {
@@ -123,6 +184,22 @@ class ThemeService extends ChangeNotifier {
 
   bool get supportsColorSchemeSelection => !_usesIosTheme;
 
+  /// Glass compositing is user-selectable on Android only; other platforms
+  /// keep their native or legacy chrome at the frosted recipe.
+  bool get supportsGlassModeSelection =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  ThemeData get lightTheme => _withGlass(_lightThemeBase);
+
+  ThemeData get darkTheme => _withGlass(_darkThemeBase);
+
+  ThemeData _withGlass(ThemeData theme) {
+    final glass = GlassTheme(
+      supportsGlassModeSelection ? _glassMode : AppGlassMode.frosted,
+    );
+    return theme.copyWith(extensions: [glass]);
+  }
+
   ColorScheme _resolveScheme(Brightness brightness) {
     if (_colorScheme == AppColorScheme.system) {
       final system =
@@ -135,7 +212,7 @@ class ThemeService extends ChangeNotifier {
     );
   }
 
-  ThemeData get lightTheme {
+  ThemeData get _lightThemeBase {
     final base = ThemeData(
       useMaterial3: true,
       fontFamilyFallback: _fontFamilyFallback,
@@ -149,7 +226,7 @@ class ThemeService extends ChangeNotifier {
     return _buildIosTheme(base, brightness: Brightness.light);
   }
 
-  ThemeData get darkTheme {
+  ThemeData get _darkThemeBase {
     final base = _resolveScheme(Brightness.dark);
 
     if (_mode == AppThemeMode.amoled) {

@@ -27,6 +27,7 @@ class StorageService {
   static const _phoneKey = 'cached_phone';
   static const _themeModeKey = 'theme_mode';
   static const _colorSchemeKey = 'color_scheme';
+  static const _glassModeKey = 'glass_mode';
   static const _useLocalhostKey = 'use_localhost';
   static const _syncEnabledKey = 'sync_enabled';
   static const _syncLastAtKey = 'sync_last_at';
@@ -198,6 +199,10 @@ class StorageService {
 
   String get colorScheme => _prefs.getString(_colorSchemeKey) ?? 'system';
   Future<void> setColorScheme(String scheme) => _prefs.setString(_colorSchemeKey, scheme);
+
+  /// Android-only glass compositing style: `classic`, `frosted` or `liquid`.
+  String get glassMode => _prefs.getString(_glassModeKey) ?? 'frosted';
+  Future<void> setGlassMode(String mode) => _prefs.setString(_glassModeKey, mode);
 
   bool get maskPersonalInfo => _prefs.getBool(_maskPersonalInfoKey) ?? true;
   Future<void> setMaskPersonalInfo(bool value) =>

@@ -1,13 +1,18 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:techpie/services/theme_service.dart';
+import 'package:techpie/utils/glass.dart';
 import 'package:techpie/utils/platform.dart';
 
 /// AppBar with a fixed elevation and a Gaussian blur backdrop where supported.
 ///
 /// Replaces Material 3's scroll-triggered elevation lift with a constant
 /// surface. On iOS versions before Liquid Glass, this intentionally falls back
-/// to an opaque title bar so controls don't float over content.
+/// to an opaque title bar so controls don't float over content. The active
+/// [GlassTheme] recipe decides the same way on other platforms: `classic` is
+/// opaque, `frosted` a plain blur, `liquid` a saturation-boosted blur under a
+/// specular sheen.
 class BlurredAppBar extends StatelessWidget implements PreferredSizeWidget {
   const BlurredAppBar({
     super.key,
@@ -48,8 +53,9 @@ class BlurredAppBar extends StatelessWidget implements PreferredSizeWidget {
     final theme = Theme.of(context);
     final appBarTheme = theme.appBarTheme;
     final baseColor = appBarTheme.backgroundColor ?? theme.colorScheme.surface;
+    final glass = GlassTheme.of(context);
 
-    if (usesLegacyIosChrome()) {
+    if (usesLegacyIosChrome() || !glass.translucent) {
       return AppBar(
         leading: leading,
         automaticallyImplyLeading: automaticallyImplyLeading,
@@ -69,26 +75,49 @@ class BlurredAppBar extends StatelessWidget implements PreferredSizeWidget {
       );
     }
 
+    final bar = AppBar(
+      leading: leading,
+      automaticallyImplyLeading: automaticallyImplyLeading,
+      title: title,
+      actions: actions,
+      bottom: bottom,
+      centerTitle: centerTitle,
+      titleSpacing: titleSpacing,
+      leadingWidth: leadingWidth,
+      toolbarHeight: adaptiveTopBarHeight(),
+      backgroundColor: baseColor.withValues(
+        // Liquid glass sits denser than the frosted tint: with the sheen and
+        // the saturation-boosted blur, a 50% tint would read as noisy.
+        alpha: glass.sheen ? 0.65 : backgroundOpacity,
+      ),
+      foregroundColor: foregroundColor,
+      surfaceTintColor: Colors.transparent,
+      elevation: elevation,
+      scrolledUnderElevation: elevation,
+      shadowColor: theme.colorScheme.shadow,
+    );
+
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-        child: AppBar(
-          leading: leading,
-          automaticallyImplyLeading: automaticallyImplyLeading,
-          title: title,
-          actions: actions,
-          bottom: bottom,
-          centerTitle: centerTitle,
-          titleSpacing: titleSpacing,
-          leadingWidth: leadingWidth,
-          toolbarHeight: adaptiveTopBarHeight(),
-          backgroundColor: baseColor.withValues(alpha: backgroundOpacity),
-          foregroundColor: foregroundColor,
-          surfaceTintColor: Colors.transparent,
-          elevation: elevation,
-          scrolledUnderElevation: elevation,
-          shadowColor: theme.colorScheme.shadow,
-        ),
+        filter: glass.sheen
+            ? TgGlass.backdrop(sigma: blurSigma)
+            : ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+        child: glass.sheen
+            ? Stack(
+                children: [
+                  Positioned.fill(child: bar),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: TgGlass.sheen(theme.brightness),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : bar,
       ),
     );
   }

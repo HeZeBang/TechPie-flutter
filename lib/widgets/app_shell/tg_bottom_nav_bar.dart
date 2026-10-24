@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
+import '../../services/theme_service.dart';
 import '../../utils/glass.dart';
 import '../../utils/haptics.dart';
 import '../../utils/motion.dart';
@@ -259,10 +260,18 @@ class _TgBottomNavBarState extends State<TgBottomNavBar> with TickerProviderStat
     // Glass fill via inverse src-over: declare the final glass color
     // (official: light #FFFFFF / dark #232324 — mapped to the closest
     // surface-container tones so dynamic color keeps working), derive the
-    // translucent overlay against what's actually behind the bar.
+    // translucent overlay against what's actually behind the bar. `classic`
+    // skips the solve: the capsule is simply opaque.
+    final glass = GlassTheme.of(context);
     final glassTarget =
         brightness == Brightness.light ? scheme.surfaceContainerLowest : scheme.surfaceContainer;
-    final glassFill = TgGlass.solveSrcColor(scheme.surface, glassTarget);
+    final glassFill = glass.translucent
+        ? TgGlass.solveSrcColor(
+            scheme.surface,
+            glassTarget,
+            alpha: glass.overlayAlpha,
+          )
+        : glassTarget;
 
     final barScale = 1 + 0.019 * _barScaleT.setBool(_dragging);
 
@@ -299,8 +308,9 @@ class _TgBottomNavBarState extends State<TgBottomNavBar> with TickerProviderStat
                   ),
                   child: ClipRRect(
                     borderRadius: capsule,
-                    child: BackdropFilter(
-                      filter: TgGlass.backdrop(),
+                    child: _GlassComposite(
+                      glass: glass,
+                      brightness: brightness,
                       child: CustomPaint(
                         foregroundPainter: _GlassStrokePainter(
                           top: TgGlass.strokeTop(brightness),
@@ -439,6 +449,47 @@ class _TgBottomNavBarState extends State<TgBottomNavBar> with TickerProviderStat
     );
   }
 
+}
+
+/// Composites the capsule over the page content behind it: a blur in the
+/// translucent modes — with the saturation boost and a specular sheen on top
+/// in liquid mode — and plain paint in `classic`.
+class _GlassComposite extends StatelessWidget {
+  const _GlassComposite({
+    required this.glass,
+    required this.brightness,
+    required this.child,
+  });
+
+  final GlassTheme glass;
+  final Brightness brightness;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!glass.translucent) return child;
+
+    final blurred = BackdropFilter(
+      filter: TgGlass.backdrop(),
+      child: child,
+    );
+    if (!glass.sheen) return blurred;
+
+    return Stack(
+      children: [
+        blurred,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: TgGlass.sheen(brightness),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// The per-tab selection capsule (`GlassTabView.dispatchDraw`): full cell

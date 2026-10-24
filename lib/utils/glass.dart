@@ -30,6 +30,20 @@ abstract final class TgGlass {
   static Color shadowColor(Brightness brightness) =>
       brightness == Brightness.light ? const Color(0x20000000) : const Color(0x04FFFFFF);
 
+  /// Liquid-glass specular sheen drawn over the surface: a soft top-left
+  /// highlight that fades out toward the bottom-right.
+  static Gradient sheen(Brightness brightness) {
+    final peak = brightness == Brightness.light ? 0.18 : 0.10;
+    return LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        const Color(0xFFFFFFFF).withValues(alpha: peak),
+        const Color(0xFFFFFFFF).withValues(alpha: peak * 0.15),
+      ],
+    );
+  }
+
   /// Inverse src-over solve (`solveSrcColor`, the heart of the recipe):
   /// given the color [behind] the glass and the [target] color the glass
   /// should *end up looking like*, return the translucent overlay to draw —
