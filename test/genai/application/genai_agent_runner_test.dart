@@ -702,7 +702,7 @@ void main() {
   });
 
   test(
-      'compaction keeps the current followup goal through subsequent tool turns',
+      'agent retains full source history for repository compaction and later retrieval',
       () async {
     final requests = <GenAiChatRequest>[];
     final oldHistory = <GenAiMessage>[
@@ -717,7 +717,6 @@ void main() {
       ),
     ];
     final runner = testRunner(
-      limits: const GenAiAgentLimits(maxContextCharacters: 7000),
       tools: GenAiAgentToolRegistry([tool(execute: (_) async => 'z' * 900)]),
       streamChat: (r, _) {
         requests.add(r);
@@ -739,7 +738,7 @@ void main() {
       expect(
         r.prompt.length +
             r.history.fold<int>(0, (n, m) => n + m.content.length),
-        lessThanOrEqualTo(7000),
+        greaterThan(7000),
       );
     }
   });

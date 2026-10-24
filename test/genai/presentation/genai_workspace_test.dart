@@ -10,6 +10,7 @@ import 'package:techpie/features/genai/presentation/genai_thinking_view.dart';
 import 'package:techpie/features/genai/presentation/genai_web_search_view.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
 import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
+import 'package:techpie/widgets/adaptive_feedback.dart';
 
 import '../support/fakes.dart';
 
@@ -39,7 +40,10 @@ void main() {
             textScaler: TextScaler.linear(scale),
             viewInsets: EdgeInsets.only(bottom: keyboard),
           ),
-          child: child!,
+          child: AdaptiveFeedbackHost(
+            key: adaptiveFeedbackHostKey,
+            child: child!,
+          ),
         ),
         home: GenAiWorkspace(
           controller: demo.workspace,
@@ -178,7 +182,8 @@ void main() {
       (tester) async {
     await show(tester, size: const Size(674, 1000));
     expect(find.text('更多功能'), findsNothing);
-    final fresh = tester.getCenter(find.byTooltip('新的对话'));
+    final fresh =
+        tester.getCenter(find.byKey(const ValueKey('genai-new-chat-compact')));
     final history = tester.getCenter(find.byTooltip('会话记录'));
     final image = tester.getCenter(find.byTooltip('图片创作'));
     expect(fresh.dy, greaterThan(history.dy));
@@ -205,7 +210,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('stop preserves partial output and exposes an explicit retry',
+  testWidgets(
+      'Escape preserves draft and stopped turn retry expires after a new turn',
       (tester) async {
     final demo = await show(tester, delay: const Duration(milliseconds: 20));
     await tester.enterText(
@@ -216,11 +222,72 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('genai-send')));
     await tester.pump(const Duration(milliseconds: 80));
     await tester.pump(const Duration(milliseconds: 80));
-    await tester.tap(find.byTooltip('停止生成'));
+    await tester.enterText(
+      find.byKey(const ValueKey('genai-prompt')),
+      'Keep this next question',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('genai-prompt')))
+          .controller!
+          .text,
+      'Keep this next question',
+    );
+    expect(demo.workspace.contextUsage, isNull);
     expect(demo.workspace.turns.single.phase, GenAiChatPhase.cancelled);
     expect(demo.workspace.turns.single.answer, isNotEmpty);
-    expect(find.text('重试'), findsOneWidget);
+    expect(find.byKey(const ValueKey('genai-retry-0')), findsOneWidget);
+
+    final sending = demo.workspace.send('Continue with another question');
+    await tester.pumpAndSettle();
+    await sending;
+    await tester.drag(
+      find.byKey(const ValueKey('genai-thread')),
+      const Offset(0, 2000),
+    );
+    await tester.pumpAndSettle();
+    expect(demo.workspace.turns, hasLength(2));
+    expect(demo.workspace.turns.first.phase, GenAiChatPhase.cancelled);
+    expect(demo.workspace.turns.last.phase, GenAiChatPhase.completed);
+    expect(find.byKey(const ValueKey('genai-copy-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('genai-retry-0')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('streaming respects reading position until return to latest',
+      (tester) async {
+    final demo = await show(tester, delay: const Duration(milliseconds: 10));
+    final first = demo.workspace.send('Markdown example');
+    for (var step = 0; step < 500 && demo.workspace.sending; step++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(demo.workspace.sending, isFalse);
+    await first;
+    await tester.pumpAndSettle();
+    final list =
+        tester.widget<ListView>(find.byKey(const ValueKey('genai-thread')));
+    final scroll = list.controller!;
+    expect(scroll.position.maxScrollExtent, greaterThan(200));
+
+    final next = demo.workspace.send('Another Markdown example');
+    await tester.pump(const Duration(milliseconds: 80));
+    scroll.jumpTo(0);
+    for (var step = 0; step < 500 && demo.workspace.sending; step++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(demo.workspace.sending, isFalse);
+    await next;
+    await tester.pumpAndSettle();
+    expect(scroll.offset, 0);
+    expect(find.byKey(const ValueKey('genai-scroll-latest')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('genai-scroll-latest')));
+    await tester.pumpAndSettle();
+    expect(scroll.position.extentAfter, lessThan(1));
+    expect(find.byKey(const ValueKey('genai-scroll-latest')), findsNothing);
+    expect(find.byKey(const ValueKey('genai-context-status')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('narrow screen with large text and keyboard has no overflow',
@@ -580,11 +647,7 @@ void main() {
     expect(demo.workspace.attachments.length, 1);
     expect(demo.workspace.hasFailedUploads, isTrue);
 
-    expect(find.text('上传失败'), findsOneWidget);
-    expect(
-      find.text('附件上传失败，已阻止发送。请点击重试或删除失败的附件。'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('上传失败'), findsOneWidget);
 
     final sendBtn = find.byKey(const ValueKey('genai-send'));
     expect(tester.widget<IconButton>(sendBtn).onPressed, isNull);
@@ -606,7 +669,7 @@ void main() {
       demo.workspace.attachments.first.imageUrl,
       contains('temp/demo-upload-'),
     );
-    expect(find.text('上传失败'), findsNothing);
+    expect(find.textContaining('上传失败'), findsNothing);
     expect(tester.widget<IconButton>(sendBtn).onPressed, isNotNull);
 
     await tester.tap(sendBtn);

@@ -2,7 +2,8 @@
 
 The GenAI workspace has an **校园工具** toggle beside **深度思考** in the main chat
 composer. Enable it to use campus tools in the same conversation, with the selected
-model, shared draft and existing transcript. Tool progress, results and approval
+model, shared draft and existing transcript. In narrow layouts, inactive controls
+collapse into the + menu, with campus tools collapsing before thinking. Tool progress, results and approval
 cards appear inline. Successfully generated images appear directly beneath the
 tool result; tap an image to enlarge it. The harness shares the verified GenAI
 session and TechPie's existing service instances; it never takes a token from model output.
@@ -12,6 +13,20 @@ together. Turning agent mode off preserves attachments and the transcript and al
 ordinary chat to continue. A completed agent answer remains available
 as context for ordinary chat, and switching back preserves the tool exchanges for
 agent follow-ups. Changing modes invalidates late picker and media callbacks.
+
+The chat follows streamed output while the reader is near the latest message.
+Scrolling back pauses that behavior; **回到最新** resumes it. The stop button or
+Escape cancels the active generation and preserves any draft already in the
+composer. A stopped answer remains visibly incomplete. Stopping does not prove a
+remote tool side effect was cancelled; existing unknown-outcome warnings and
+mutation receipts still govern retries.
+
+A compact context indicator sits beside the microphone. It shows a conservative
+budget ring after preparation and a spinner while preparing or compacting.
+The tooltip and details dialog provide numerical estimates.
+Hover or focus reveals its full status, including compaction chunk progress;
+tapping opens the estimate explanation. This is separate from account usage and
+billing. These transient estimates are not stored as conversation evidence.
 
 ## Platform boundary
 
@@ -63,7 +78,8 @@ removes execution permission, not merely its button.
 Document and image uploads also work in agent mode through the existing school
 RAG and vision fields (`fileIds`, `imageUrls`). These are supplied on every model
 step and later agent turns within the same logical conversation, including restored
-chats. New chats and history gaps clear this attachment context. Reading capability
+chats. Ordinary chat uses the same attachment context. New chats and history gaps
+clear it; retries are limited to the latest turn. Reading capability
 still depends on the selected school model and backend; enabling tools cannot add
 vision to a text-only model. Uploaded content is untrusted reference material,
 never permission to execute actions. The search tool does not automatically receive
@@ -164,12 +180,18 @@ approval explicitly says the price is unavailable instead of inventing one.
 
 ## Lifecycle, limits and side effects
 
-Default limits are 12 model turns, two recoverable protocol errors, 24,000 context
-characters, 32,768 output characters and 6,000 tool-result characters. The run has a
+Default limits are 12 model turns, two recoverable protocol errors,
+32,768 output characters and 6,000 tool-result characters. The run has a
 10-minute deadline; ordinary tool work has a 60-second deadline. A host-owned prepared
 action may request a longer execution timeout, bounded at six minutes, for image
 generation. These are configurable client resource limits, not model token claims.
-History compaction preserves the task goal and recent complete tool exchanges.
+The repository now shares budgeted context compaction with ordinary chat. It
+separates the latest-message budget from the full context window, preserving
+the task goal, recent complete tool exchanges and source-checked memory while
+retaining the full archive. User records and tool receipts take factual precedence;
+one relevant older assistant artifact may be retained separately as unverified
+material for revision. See [context compaction](genai-api-contract.md#context-compaction)
+for accounting, checkpoint persistence, failure behavior and estimator limits.
 
 Account/session changes cancel active work, clear the visible private transcript
 and dismiss pending approvals. Archives remain isolated under their captured
@@ -192,15 +214,19 @@ is not cross-process or cross-device locking. Malformed authoritative records or
 indexes still report a storage error and preserve their original data.
 
 Generated-image results and image history now retain canonical campus CDN URLs;
-only the renderer resolves the active preview proxy. Older local archives migrate
+only the renderer resolves the active preview proxy. Answer and reasoning Markdown
+share the same trusted-image policy; arbitrary external images never load automatically. Older local archives migrate
 structured loopback/static image URLs in attachments, tool results and mutation
 receipts, leaving literal user/assistant text unchanged.
 
 When no local archive exists, adjacent matching call/result rows from older server
-logs are grouped into display-only tasks. V1 code examples remain ordinary text
+logs are grouped into inert historical tasks. Versioned same-chat compaction
+rows are skipped before pairing, and protocol-repair feedback stays within its
+original task. Recorded tool receipts remain source evidence for later questions
+in both ordinary and agent modes, ahead of prior assistant answers. V1 code examples remain ordinary text
 unless a matching receipt establishes a tool chain. Namespaced V2 records are
 recognized explicitly. Missing/orphan results produce recovery notices and unknown
-outcomes; raw protocol envelopes are not used as executable history. Imported
+outcomes; typed inert records never authorize execution. Imported
 server logs cannot recreate approvals or authoritative mutation receipts.
 Unreadable server rows remain explicit gaps in their original positions. A gap
 breaks tool-chain reconstruction, cannot be retried as a user request, and is

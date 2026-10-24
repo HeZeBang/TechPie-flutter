@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../widgets/adaptive_feedback.dart';
+import '../../../widgets/adaptive_page_navigation.dart';
 import '../application/genai_chat_service.dart';
 import '../application/genai_workspace_controller.dart';
 import '../domain/genai_cancellation.dart';
@@ -13,11 +15,17 @@ import '../domain/genai_platform_contract.dart';
 import '../domain/genai_session.dart';
 import 'audio/genai_audio_player.dart';
 import 'audio/genai_audio_recorder.dart';
+import 'audio/genai_workspace_media.dart';
 import 'genai_agent_widgets.dart';
 import 'genai_chat_copy.dart';
+import 'genai_composer.dart';
+import 'genai_context_status.dart';
 import 'genai_conversation_menu.dart';
 import 'genai_copy.dart';
 import 'genai_demo_image.dart';
+import 'genai_history_controller.dart';
+import 'genai_history_sidebar.dart';
+import 'genai_image.dart';
 import 'genai_theme.dart';
 import 'genai_thinking_view.dart';
 import 'genai_tools_page.dart';
@@ -67,60 +75,30 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   final _draft = TextEditingController();
   final _inputFocus = FocusNode();
   final _scroll = ScrollController();
-  final _conversations = <GenAiConversationSummary>[];
-  final _sidebarSearch = TextEditingController();
-  Timer? _sidebarSearchTimer;
-  String _sidebarQuery = '';
+  bool _followingLatest = true;
+  int _scrollRevision = 0;
+  late final GenAiHistoryController _history;
+  late final GenAiWorkspaceMedia _media;
   int _chatCopyIndex =
       DateTime.now().millisecondsSinceEpoch % genAiChatCopy.length;
   late String _copyGroupId;
   int _copyChangeRevision = 0;
   ({String hint, String title, String subtitle}) get _chatCopy =>
       genAiChatCopy[_chatCopyIndex];
-  late final GenAiPicker _picker;
-  late final GenAiAudioPlayer _audioPlayer;
-  late final GenAiAudioRecorder _audioRecorder;
-  bool _recordingAudio = false;
-  bool _startingAudio = false;
-  int _ttsOperation = 0;
-  late _WorkspaceScope _mediaScope;
-  int _recordingSeconds = 0;
-  Timer? _recordingTimer;
-  int? _playingTtsTurnIndex;
-  bool _loadingTts = false;
   Timer? _refresh;
   bool _openingLogin = false;
-  bool _loadingHistory = false;
-  bool _historyRequested = false;
-  GenAiFailure? _historyFailure;
   GenAiCancellation? _deletionCheck;
-  late int _historySessionRevision;
-  late String _historyGroupId;
-  late bool _historyWasSending;
-  bool _hasMoreHistory = false;
-  int _historyPage = 1;
-  GenAiCancellation? _historyCancellation;
+  late int _draftSessionRevision;
   GenAiOwner? _draftOwner;
-  Object? _historyAccountScope;
+  Object? _draftAccountScope;
   GenAiWorkspaceController get _state => widget.controller;
   _WorkspaceScope get _scope =>
       (_state, _state.sessions.revision, _state.conversationRevision);
   bool _isCurrent(_WorkspaceScope scope) => mounted && scope == _scope;
 
-  void _resetMedia() {
-    _ttsOperation++;
-    _playingTtsTurnIndex = null;
-    _loadingTts = false;
-    _recordingAudio = false;
-    _recordingTimer?.cancel();
-    unawaited(_audioRecorder.cancel());
-    unawaited(_audioPlayer.stop());
-  }
-
   late ThemeData _theme;
   Color get _accent => _theme.colorScheme.primary;
   Color get _muted => _theme.colorScheme.onSurfaceVariant;
-  Color get _border => _theme.colorScheme.outlineVariant;
   bool get _canSend =>
       _state.connected &&
       _state.selectedModel != null &&
@@ -132,26 +110,31 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   @override
   void initState() {
     super.initState();
-    _picker = widget.picker ?? GenAiPicker();
-    _audioPlayer = widget.audioPlayer ?? GenAiAudioPlayer();
-    _audioRecorder = widget.audioRecorder ?? GenAiAudioRecorder();
+    _scroll.addListener(_scrolled);
+    _history = GenAiHistoryController(_state);
+    _media = GenAiWorkspaceMedia(
+      workspace: _state,
+      picker: widget.picker,
+      audioPlayer: widget.audioPlayer,
+      audioRecorder: widget.audioRecorder,
+      onMessage: (message) => showAdaptiveFeedback(
+        context: context,
+        message: message,
+        style: AdaptiveFeedbackStyle.error,
+      ),
+      onTranscription: (text, {required requestFocus}) {
+        final current = _draft.text;
+        _draft.text = current.isEmpty ? text : '$current $text';
+        _draft.selection = TextSelection.collapsed(offset: _draft.text.length);
+        if (requestFocus) _inputFocus.requestFocus();
+      },
+    )..addListener(_mediaChanged);
     _draftOwner = _state.sessions.owner;
-    _historyAccountScope = _state.accountScope;
-    _historySessionRevision = _state.sessions.revision;
-    _historyGroupId = _state.groupId;
-    _historyWasSending = _state.sending;
-    _mediaScope = _scope;
+    _draftAccountScope = _state.accountScope;
+    _draftSessionRevision = _state.sessions.revision;
     _copyGroupId = _state.groupId;
     _state.addListener(_changed);
-    _draft.addListener(_draftChanged);
-    _inputFocus.addListener(_draftChanged);
-    _audioPlayer.onFinished = () {
-      if (mounted) setState(() => _playingTtsTurnIndex = null);
-    };
     unawaited(_state.restore());
-    if (_state.connected) {
-      unawaited(_loadHistory());
-    }
   }
 
   @override
@@ -166,15 +149,16 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     if (oldWidget.controller == widget.controller) return;
     oldWidget.controller.removeListener(_changed);
     oldWidget.controller.cancelAgentForPageExit();
-    _resetMedia();
-    _mediaScope = _scope;
-    _resetHistory();
+    _media.bindWorkspace(_state);
+    _history.bindWorkspace(_state);
+    _deletionCheck?.cancel();
+    _deletionCheck = null;
     _draftOwner = _state.sessions.owner;
-    _historyAccountScope = _state.accountScope;
-    _historySessionRevision = _state.sessions.revision;
-    _historyGroupId = _state.groupId;
-    _historyWasSending = _state.sending;
+    _draftAccountScope = _state.accountScope;
+    _draftSessionRevision = _state.sessions.revision;
     _copyGroupId = _state.groupId;
+    _followingLatest = true;
+    _scrollRevision++;
     _copyChangeRevision++;
     if (_state.turns.isEmpty) {
       _chatCopyIndex = (_chatCopyIndex + 1) % genAiChatCopy.length;
@@ -182,16 +166,17 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     _draft.clear();
     _state.addListener(_changed);
     unawaited(_state.restore());
-    if (_state.connected) unawaited(_loadHistory());
   }
 
-  void _draftChanged() {
+  void _mediaChanged() {
     if (mounted) setState(() {});
   }
 
   void _changed() {
     if (!mounted) return;
     if (_copyGroupId != _state.groupId) {
+      _followingLatest = true;
+      _scrollRevision++;
       final controller = _state;
       final groupId = _copyGroupId = controller.groupId;
       final revision = ++_copyChangeRevision;
@@ -213,29 +198,17 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
         });
       }
     }
-    if (_mediaScope != _scope) {
-      _mediaScope = _scope;
-      _resetMedia();
-    }
     if (_draftOwner != _state.sessions.owner ||
-        _historyAccountScope != _state.accountScope ||
-        _historySessionRevision != _state.sessions.revision) {
-      _historyAccountScope = _state.accountScope;
-      _historySessionRevision = _state.sessions.revision;
+        _draftAccountScope != _state.accountScope ||
+        _draftSessionRevision != _state.sessions.revision) {
+      _draftAccountScope = _state.accountScope;
+      _draftSessionRevision = _state.sessions.revision;
       _draftOwner = _state.sessions.owner;
       _draft.clear();
-      _resetHistory();
+      _deletionCheck?.cancel();
+      _deletionCheck = null;
     }
-    final historyChanged = _historyGroupId != _state.groupId ||
-        (_historyWasSending && !_state.sending);
-    _historyGroupId = _state.groupId;
-    _historyWasSending = _state.sending;
-    if (_state.connected &&
-        (!_historyRequested ||
-            (historyChanged && !(_sidebarSearchTimer?.isActive ?? false)))) {
-      unawaited(_loadHistory());
-    }
-    if (!_state.sending) {
+    if (!_state.sending || _state.pendingAgentApproval != null) {
       _refresh?.cancel();
       _refresh = null;
       _paint();
@@ -247,18 +220,40 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     }
   }
 
-  void _paint() {
-    final nearEnd = !_scroll.hasClients || _scroll.position.extentAfter < 120;
-    setState(() {});
-    if (nearEnd) _scrollToEnd();
+  void _scrolled() {
+    final following = _scroll.position.extentAfter < 120;
+    if (following != _followingLatest && mounted) {
+      setState(() => _followingLatest = following);
+    }
   }
 
-  void _scrollToEnd() {
+  void _paint() {
+    setState(() {});
+    if (_followingLatest) _scrollToEnd(followingOnly: true);
+  }
+
+  void _scrollToEnd({bool followingOnly = false}) {
+    final scope = _scope;
+    final revision = _scrollRevision;
+    if (!followingOnly) setState(() => _followingLatest = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _scroll.hasClients) {
-        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      if (!_isCurrent(scope) || !_scroll.hasClients) return;
+      // A drag beginning after this frame was scheduled must win over follow.
+      if (followingOnly && (!_followingLatest || revision != _scrollRevision)) {
+        return;
       }
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
+  }
+
+  void _stop() {
+    if (!_state.sending) return;
+    _state.stop();
+    _inputFocus.requestFocus();
+    showAdaptiveFeedback(
+      context: context,
+      message: '已停止生成，输入框中的草稿已保留。',
+    );
   }
 
   Future<void> _login() async {
@@ -279,90 +274,15 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       await controller.connect(credential);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法完成 GenAI 登录，请重试')),
+        showAdaptiveFeedback(
+          context: context,
+          message: '无法完成 GenAI 登录，请重试',
+          style: AdaptiveFeedbackStyle.error,
         );
       }
     } finally {
       if (mounted) setState(() => _openingLogin = false);
     }
-  }
-
-  void _resetHistory() {
-    _deletionCheck?.cancel();
-    _deletionCheck = null;
-    _historyCancellation?.cancel();
-    _historyCancellation = null;
-    _sidebarSearchTimer?.cancel();
-    _sidebarSearch.clear();
-    _sidebarQuery = '';
-    _conversations.clear();
-    _historyPage = 1;
-    _hasMoreHistory = false;
-    _loadingHistory = false;
-    _historyRequested = false;
-    _historyFailure = null;
-  }
-
-  Future<void> _loadHistory({bool more = false, String? query}) async {
-    if (!_state.connected || (more && _loadingHistory)) return;
-    _historyCancellation?.cancel();
-    final cancellation = GenAiCancellation();
-    _historyCancellation = cancellation;
-    final page = more ? _historyPage + 1 : 1;
-    final targetQuery = query ?? _sidebarQuery;
-    setState(() {
-      _historyRequested = true;
-      _loadingHistory = true;
-      _historyFailure = null;
-      if (!more) {
-        if (_sidebarQuery != targetQuery) _conversations.clear();
-        _sidebarQuery = targetQuery;
-      }
-    });
-    try {
-      final result = await _state.listConversations(
-        cancellation,
-        page: page,
-        query: targetQuery,
-      );
-      if (!mounted || cancellation.isCancelled) return;
-      setState(() {
-        if (!more) _conversations.clear();
-        for (final record in result.records) {
-          _conversations.removeWhere((item) => item.id == record.id);
-          _conversations.add(record);
-        }
-        _hasMoreHistory = result.hasMore;
-        _historyPage = page;
-      });
-    } catch (error) {
-      if (mounted && !cancellation.isCancelled) {
-        setState(
-          () => _historyFailure = error is GenAiFailure
-              ? error
-              : const GenAiFailure(GenAiFailureKind.transport),
-        );
-      }
-    } finally {
-      if (identical(_historyCancellation, cancellation)) {
-        _historyCancellation = null;
-        if (mounted) setState(() => _loadingHistory = false);
-      }
-    }
-  }
-
-  void _onSidebarSearchChanged(String text) {
-    _sidebarSearchTimer?.cancel();
-    _historyCancellation?.cancel();
-    _historyCancellation = null;
-    _loadingHistory = false;
-    // Notifications from streaming must not start a competing history load.
-    _historyRequested = true;
-    _sidebarSearchTimer = Timer(const Duration(milliseconds: 250), () {
-      if (mounted) unawaited(_loadHistory(query: text.trim()));
-    });
-    setState(() {});
   }
 
   Future<void> _openConversation(GenAiConversationSummary item) async {
@@ -383,8 +303,10 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       _scrollToEnd();
     } catch (_) {
       if (mounted && current()) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('加载对话失败')),
+        showAdaptiveFeedback(
+          context: context,
+          message: '加载对话失败',
+          style: AdaptiveFeedbackStyle.error,
         );
       }
     }
@@ -429,14 +351,14 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     try {
       await controller.deleteConversation(id, cancellation);
       if (mounted && current()) {
-        setState(() {
-          _conversations.removeWhere((c) => c.id == id);
-        });
+        _history.remove(id);
       }
     } catch (_) {
       if (mounted && current()) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('删除对话失败')),
+        showAdaptiveFeedback(
+          context: context,
+          message: '删除对话失败',
+          style: AdaptiveFeedbackStyle.error,
         );
       }
     }
@@ -456,19 +378,17 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
         controller.sessions.revision == revision;
     try {
       await controller.reconcilePendingDeletions(cancellation);
-      if (current() && !cancellation.isCancelled) await _loadHistory();
+      if (current() && !cancellation.isCancelled) await _history.load();
     } catch (error) {
       if (mounted && current() && !cancellation.isCancelled) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              genAiFailureText(
-                error is GenAiFailure
-                    ? error
-                    : const GenAiFailure(GenAiFailureKind.transport),
-              ),
-            ),
+        showAdaptiveFeedback(
+          context: context,
+          message: genAiFailureText(
+            error is GenAiFailure
+                ? error
+                : const GenAiFailure(GenAiFailureKind.transport),
           ),
+          style: AdaptiveFeedbackStyle.error,
         );
       }
     } finally {
@@ -483,13 +403,12 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     final controller = _state;
     final accountScope = controller.accountScope;
     final revision = controller.sessions.revision;
-    final opened = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => GenAiToolsPage(
-          workspace: controller,
-          initialTab: tab,
-          demo: widget.demo,
-        ),
+    final opened = await pushAdaptivePage<bool>(
+      context,
+      builder: (_) => GenAiToolsPage(
+        workspace: controller,
+        initialTab: tab,
+        demo: widget.demo,
       ),
     );
     if (mounted &&
@@ -497,7 +416,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
         controller.accountScope == accountScope &&
         controller.sessions.revision == revision) {
       if (opened == true) _draft.clear();
-      unawaited(_loadHistory());
+      unawaited(_history.load());
     }
   }
 
@@ -525,7 +444,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     final sending = _state.send(text);
     _scrollToEnd();
     await sending;
-    if (mounted) unawaited(_loadHistory());
+    if (mounted) unawaited(_history.load());
   }
 
   Future<void> _retryTurn(int index) async {
@@ -535,15 +454,23 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     final sending = _state.retryTurn(index);
     _scrollToEnd();
     await sending;
-    if (mounted) unawaited(_loadHistory());
+    if (mounted) unawaited(_history.load());
   }
 
   Future<void> _copy(String text, [String message = '已复制回复']) async {
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 1)),
-    );
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: message,
+        duration: const Duration(seconds: 1),
+      );
+    } catch (_) {
+      if (mounted) {
+        showAdaptiveFeedback(context: context, message: '无法复制，请手动选择文字');
+      }
+    }
   }
 
   Future<void> _openLink(String? link) async {
@@ -557,188 +484,10 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('无法打开链接')));
-      }
-    }
-  }
-
-  Future<void> _toggleTts(int index, String text) async {
-    if (!_audioPlayer.isSupported) return;
-    final scope = _scope;
-    final operation = ++_ttsOperation;
-    bool current() => _isCurrent(scope) && operation == _ttsOperation;
-    if (_playingTtsTurnIndex == index) {
-      await _audioPlayer.stop();
-      if (!current()) return;
-      setState(() {
-        _playingTtsTurnIndex = null;
-        _loadingTts = false;
-      });
-      return;
-    }
-    await _audioPlayer.stop();
-    if (!current()) return;
-    setState(() {
-      _playingTtsTurnIndex = index;
-      _loadingTts = true;
-    });
-    try {
-      final cleanText = text
-          .replaceAll(RegExp(r'```[\s\S]*?```'), '')
-          .replaceAll(RegExp(r'[#*`_~]'), '')
-          .trim();
-      final wavBytes = await scope.$1.synthesizeSpeech(
-        cleanText.length > 500 ? cleanText.substring(0, 500) : cleanText,
-      );
-      if (!current()) return;
-      setState(() => _loadingTts = false);
-      await _audioPlayer.playWav(wavBytes);
-    } catch (_) {
-      if (mounted && current()) {
-        setState(() {
-          _playingTtsTurnIndex = null;
-          _loadingTts = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('语音播报失败，请稍后重试')),
-        );
-      }
-    }
-  }
-
-  Future<void> _pickDocument() async {
-    final scope = _scope;
-    try {
-      if (!_picker.supportsDocuments) return;
-      final file = await _picker.pickDocument();
-      if (file == null || !_isCurrent(scope)) return;
-      await scope.$1.addDocumentAttachment(file.name, file.bytes);
-    } catch (_) {
-      if (mounted && _isCurrent(scope)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法选择文档')),
-        );
-      }
-    }
-  }
-
-  Future<void> _pickImage() async {
-    final scope = _scope;
-    try {
-      final file = await _picker.pickImage();
-      if (file == null || !_isCurrent(scope)) return;
-      await scope.$1.addImageAttachment(file.name, file.bytes);
-    } catch (_) {
-      if (mounted && _isCurrent(scope)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法选择图片')),
-        );
-      }
-    }
-  }
-
-  Future<void> _startAudioRecording() async {
-    if (!_audioRecorder.isSupported ||
-        _recordingAudio ||
-        _startingAudio ||
-        _state.sending ||
-        _state.recognizingAudio) {
-      return;
-    }
-    final scope = _scope;
-    _startingAudio = true;
-    try {
-      final hasPerm = await _audioRecorder.hasPermission();
-      if (!_isCurrent(scope)) return;
-      if (!hasPerm) {
-        if (mounted && _isCurrent(scope)) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('无法访问麦克风，请检查权限设置')),
-          );
-        }
-        return;
-      }
-      await _audioRecorder.start();
-      if (!_isCurrent(scope)) {
-        await _audioRecorder.cancel();
-        return;
-      }
-      setState(() {
-        _recordingAudio = true;
-        _recordingSeconds = 0;
-      });
-      _recordingTimer?.cancel();
-      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
-        setState(() {
-          _recordingSeconds++;
-        });
-        if (_recordingSeconds >= 120) {
-          unawaited(_stopAudioRecording());
-        }
-      });
-    } catch (_) {
-      if (mounted && _isCurrent(scope)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法启动麦克风录音，请检查权限设置')),
-        );
-      }
-    } finally {
-      _startingAudio = false;
-    }
-  }
-
-  Future<void> _stopAudioRecording() async {
-    final scope = _scope;
-    if (!_recordingAudio) return;
-    _recordingTimer?.cancel();
-    setState(() => _recordingAudio = false);
-    try {
-      final wavBytes = await _audioRecorder.stop();
-      if (wavBytes == null || wavBytes.isEmpty || !_isCurrent(scope)) return;
-      final text = await scope.$1.transcribeAudio('recording.wav', wavBytes);
-      if (text != null && text.isNotEmpty && _isCurrent(scope)) {
-        final current = _draft.text;
-        _draft.text = current.isEmpty ? text : '$current $text';
-        _draft.selection = TextSelection.collapsed(offset: _draft.text.length);
-        _inputFocus.requestFocus();
-      }
-    } catch (_) {
-      if (mounted && _isCurrent(scope)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('语音识别失败，请稍后重试')),
-        );
-      }
-    }
-  }
-
-  Future<void> _cancelAudioRecording() async {
-    if (!_recordingAudio) return;
-    _recordingTimer?.cancel();
-    setState(() => _recordingAudio = false);
-    await _audioRecorder.cancel();
-  }
-
-  Future<void> _pickAudioFile() async {
-    final scope = _scope;
-    try {
-      if (!_picker.supportsAudio) return;
-      final file = await _picker.pickAudio();
-      if (file == null || !_isCurrent(scope)) return;
-      final text = await scope.$1.transcribeAudio(file.name, file.bytes);
-      if (text != null && text.isNotEmpty && _isCurrent(scope)) {
-        final current = _draft.text;
-        _draft.text = current.isEmpty ? text : '$current $text';
-        _draft.selection = TextSelection.collapsed(offset: _draft.text.length);
-      }
-    } catch (_) {
-      if (mounted && _isCurrent(scope)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('语音识别失败，请稍后重试')),
+        showAdaptiveFeedback(
+          context: context,
+          message: '无法打开链接',
+          style: AdaptiveFeedbackStyle.error,
         );
       }
     }
@@ -746,19 +495,16 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
 
   @override
   void dispose() {
-    _sidebarSearchTimer?.cancel();
-    _sidebarSearch.dispose();
-    _recordingTimer?.cancel();
-    _audioRecorder.dispose();
-    _audioPlayer.dispose();
-    _historyCancellation?.cancel();
+    _media.removeListener(_mediaChanged);
+    _media.dispose();
+    _history.dispose();
     _deletionCheck?.cancel();
     _state.removeListener(_changed);
     _state.cancelAgentForPageExit();
     _refresh?.cancel();
     _draft.dispose();
-    _inputFocus.removeListener(_draftChanged);
     _inputFocus.dispose();
+    _scroll.removeListener(_scrolled);
     _scroll.dispose();
     super.dispose();
   }
@@ -767,421 +513,136 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   Widget build(BuildContext context) {
     final theme = _theme;
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
-    final canvas = theme.colorScheme.surface;
-    return Theme(
-      data: theme,
-      child: Scaffold(
-        backgroundColor: canvas,
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, size) {
-              final wide = size.maxWidth >= 960;
-              return Row(
-                children: [
-                  if (wide) _sidebar(theme),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        _header(wide),
-                        if (widget.demo && !keyboardOpen) _demoNotice(),
-                        if (_state.connected) _modelBar(wide),
-                        if (_state.catalogFailure != null)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: _notice(
-                              genAiFailureText(_state.catalogFailure!),
-                              action: TextButton(
-                                onPressed: () =>
-                                    unawaited(_state.reloadModels()),
-                                child: const Text('重新加载'),
-                              ),
-                            ),
-                          ),
-                        if (_state.uncertainDeletionCount > 0)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 6,
-                            ),
-                            child: _notice(
-                              '有 ${_state.uncertainDeletionCount} 个对话的删除结果待核实。检查后将恢复仍存在的对话，不会重复删除。',
-                              action: TextButton(
-                                onPressed: _deletionCheck != null
-                                    ? null
-                                    : () => unawaited(_checkDeletions()),
-                                child: Text(
-                                  _deletionCheck != null ? '正在检查…' : '检查删除结果',
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (_state.archiveFailure != null)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: _notice(
-                              '此对话尚未安全保存。请保留此页面，检查设备存储后重试。',
-                              action: TextButton(
-                                onPressed: () async {
-                                  try {
-                                    await _state.retrySaveConversations();
-                                  } catch (_) {
-                                    // The persistent notice remains until a successful retry.
-                                  }
-                                },
-                                child: const Text('重新保存'),
-                              ),
-                            ),
-                          ),
-                        Expanded(
-                          child: LayoutBuilder(
-                            builder: (context, bodySize) => Column(
-                              children: [
-                                Expanded(
-                                  child: !_state.connected
-                                      ? _loginPanel()
-                                      : _state.turns.isEmpty
-                                          ? _welcome(size.maxWidth)
-                                          : _thread(),
-                                ),
-                                if (_state.connected)
-                                  ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      maxHeight: bodySize.maxHeight *
-                                          (keyboardOpen ? .85 : .65),
-                                    ),
-                                    child: SingleChildScrollView(
-                                      reverse: true,
-                                      child: _composer(wide),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
+    final canvas = theme.scaffoldBackgroundColor;
+    return CallbackShortcuts(
+      bindings: {
+        if (_state.sending)
+          const SingleActivator(LogicalKeyboardKey.escape): _stop,
+      },
+      child: Theme(
+        data: theme,
+        child: Scaffold(
+          backgroundColor: canvas,
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, size) {
+                final wide = size.maxWidth >= 960;
+                return Row(
+                  children: [
+                    if (wide)
+                      GenAiHistorySidebar(
+                        history: _history,
+                        connected: _state.connected,
+                        sending: _state.sending,
+                        activeId: _state.groupId,
+                        username:
+                            _state.sessions.session?.profile.username ?? '',
+                        demo: widget.demo,
+                        actions: _chatActions(labels: true),
+                        onOpen: (item) => unawaited(_openConversation(item)),
+                        menuBuilder: (item) => GenAiConversationMenu(
+                          key: ValueKey(item.id),
+                          workspace: _state,
+                          conversation: item,
+                          enabled: !_state.sending,
+                          onChanged: () => unawaited(_history.load()),
+                          onDelete: () =>
+                              unawaited(_deleteConversation(item.id)),
                         ),
-                      ],
+                      ),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          _header(wide),
+                          if (widget.demo && !keyboardOpen) _demoNotice(),
+                          if (_state.connected) _modelBar(wide),
+                          if (_state.catalogFailure != null)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 20),
+                              child: _notice(
+                                genAiFailureText(_state.catalogFailure!),
+                                action: TextButton(
+                                  onPressed: () =>
+                                      unawaited(_state.reloadModels()),
+                                  child: const Text('重新加载'),
+                                ),
+                              ),
+                            ),
+                          if (_state.uncertainDeletionCount > 0)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 6,
+                              ),
+                              child: _notice(
+                                '有 ${_state.uncertainDeletionCount} 个对话的删除结果待核实。检查后将恢复仍存在的对话，不会重复删除。',
+                                action: TextButton(
+                                  onPressed: _deletionCheck != null
+                                      ? null
+                                      : () => unawaited(_checkDeletions()),
+                                  child: Text(
+                                    _deletionCheck != null ? '正在检查…' : '检查删除结果',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (_state.archiveFailure != null)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 20),
+                              child: _notice(
+                                '此对话尚未安全保存。请保留此页面，检查设备存储后重试。',
+                                action: TextButton(
+                                  onPressed: () async {
+                                    try {
+                                      await _state.retrySaveConversations();
+                                    } catch (_) {
+                                      // The persistent notice remains until a successful retry.
+                                    }
+                                  },
+                                  child: const Text('重新保存'),
+                                ),
+                              ),
+                            ),
+                          Expanded(
+                            child: LayoutBuilder(
+                              builder: (context, bodySize) => Column(
+                                children: [
+                                  Expanded(
+                                    child: !_state.connected
+                                        ? _loginPanel()
+                                        : _state.turns.isEmpty
+                                            ? _welcome(size.maxWidth)
+                                            : _threadArea(),
+                                  ),
+                                  if (_state.connected)
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxHeight: bodySize.maxHeight *
+                                            (keyboardOpen ? .85 : .65),
+                                      ),
+                                      child: SingleChildScrollView(
+                                        reverse: true,
+                                        child: _composer(wide),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              );
-            },
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
     );
   }
-
-  Widget _sidebar(ThemeData theme) => Container(
-        width: 248,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerLow,
-          border: Border(right: BorderSide(color: _border)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Row(
-                  children: [
-                    Icon(Icons.auto_awesome_outlined, color: _accent, size: 28),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'TechPie',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleLarge
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(left: 42, top: 2),
-                child: Text(
-                  '校园智能助手',
-                  style: TextStyle(
-                    color: _muted,
-                    fontSize: 11,
-                    letterSpacing: .3,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              _chatActions(labels: true),
-              const SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Row(
-                  children: [
-                    Text(
-                      '历史对话',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _muted,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (_loadingHistory)
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    else
-                      IconButton(
-                        icon: const Icon(Icons.refresh, size: 16),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 24,
-                          minHeight: 24,
-                        ),
-                        tooltip: '刷新历史',
-                        onPressed: _state.connected && !_loadingHistory
-                            ? () => unawaited(_loadHistory())
-                            : null,
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: _sidebarHistoryList(theme),
-              ),
-              const SizedBox(height: 12),
-              Divider(height: 1, color: _border),
-              const SizedBox(height: 12),
-              _sidebarUserFooter(theme),
-            ],
-          ),
-        ),
-      );
-
-  Widget _sidebarHistoryList(ThemeData theme) {
-    if (!_state.connected) {
-      return Center(
-        child: Text('未连接 GenAI', style: TextStyle(fontSize: 12, color: _muted)),
-      );
-    }
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: SizedBox(
-            height: 34,
-            child: TextField(
-              controller: _sidebarSearch,
-              style: const TextStyle(fontSize: 12),
-              onChanged: _onSidebarSearchChanged,
-              decoration: InputDecoration(
-                hintText: '搜索历史对话',
-                hintStyle: TextStyle(fontSize: 12, color: _muted),
-                prefixIcon: Icon(Icons.search, size: 16, color: _muted),
-                prefixIconConstraints: const BoxConstraints(minWidth: 32),
-                suffixIcon: _sidebarSearch.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 14),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 28),
-                        onPressed: () {
-                          _sidebarSearch.clear();
-                          _onSidebarSearchChanged('');
-                        },
-                      )
-                    : null,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                isDense: true,
-                filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest
-                    .withValues(alpha: .5),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        if (_historyFailure case final failure?)
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              children: [
-                Text(
-                  genAiFailureText(failure),
-                  style: TextStyle(fontSize: 12, color: _muted),
-                ),
-                TextButton(
-                  onPressed: () => unawaited(_loadHistory()),
-                  child: const Text('重试加载历史'),
-                ),
-              ],
-            ),
-          ),
-        Expanded(
-          child: _loadingHistory && _conversations.isEmpty
-              ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-              : _conversations.isEmpty
-                  ? _historyFailure != null
-                      ? const SizedBox.shrink()
-                      : Center(
-                          child: Text(
-                            _sidebarQuery.isNotEmpty ? '未找到相关对话' : '暂无历史对话',
-                            style: TextStyle(fontSize: 12, color: _muted),
-                          ),
-                        )
-                  : ListView.builder(
-                      itemCount:
-                          _conversations.length + (_hasMoreHistory ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index >= _conversations.length) {
-                          return Center(
-                            child: TextButton(
-                              onPressed: _loadingHistory
-                                  ? null
-                                  : () => unawaited(_loadHistory(more: true)),
-                              child: const Text(
-                                '加载更多',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          );
-                        }
-                        final item = _conversations[index];
-                        final isActive = item.id == _state.groupId;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Material(
-                            color: isActive
-                                ? _accent.withValues(alpha: .12)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: _state.sending || isActive
-                                  ? null
-                                  : () => unawaited(_openConversation(item)),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: isActive
-                                      ? Border.all(
-                                          color: _accent.withValues(alpha: .3),
-                                        )
-                                      : null,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      isActive
-                                          ? Icons.chat_bubble_rounded
-                                          : Icons.chat_bubble_outline_rounded,
-                                      size: 16,
-                                      color: isActive ? _accent : _muted,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            item.title.isEmpty
-                                                ? '未命名对话'
-                                                : item.title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: isActive
-                                                  ? FontWeight.w600
-                                                  : FontWeight.normal,
-                                              color: isActive
-                                                  ? _accent
-                                                  : theme.colorScheme.onSurface,
-                                            ),
-                                          ),
-                                          if (item.time.isNotEmpty) ...[
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              item.time.split(' ').first,
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                color: _muted,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                    GenAiConversationMenu(
-                                      key: ValueKey(item.id),
-                                      workspace: _state,
-                                      conversation: item,
-                                      enabled: !_state.sending,
-                                      onChanged: () =>
-                                          unawaited(_loadHistory()),
-                                      onDelete: () => unawaited(
-                                        _deleteConversation(item.id),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-        ),
-      ],
-    );
-  }
-
-  Widget _sidebarUserFooter(ThemeData theme) => Row(
-        children: [
-          CircleAvatar(
-            radius: 16,
-            backgroundColor: _accent.withValues(alpha: .1),
-            child: Icon(Icons.person_outline, size: 19, color: _accent),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _state.connected
-                      ? (widget.demo
-                          ? '预览同学'
-                          : _state.sessions.session!.profile.username)
-                      : '尚未连接',
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  widget.demo ? '本地演示账户' : '校园 GenAI',
-                  style: TextStyle(fontSize: 10, color: _muted),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
 
   Widget _chatActions({bool labels = false}) {
     final actions = [
@@ -1205,21 +666,22 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       ),
     ];
     Widget button((IconData, String, String, VoidCallback?) action) => labels
-        ? Tooltip(
-            message: action.$2,
-            child: TextButton(
-              key: action.$1 == Icons.edit_square
-                  ? const ValueKey('genai-new-chat-wide')
-                  : null,
-              onPressed: action.$4,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(action.$1, size: 21),
-                  const SizedBox(height: 5),
-                  Text(action.$3, style: const TextStyle(fontSize: 12)),
-                ],
-              ),
+        ? TextButton(
+            key: action.$1 == Icons.edit_square
+                ? const ValueKey('genai-new-chat-wide')
+                : null,
+            onPressed: action.$4,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(action.$1, size: 21),
+                const SizedBox(height: 5),
+                Text(
+                  action.$3,
+                  semanticsLabel: action.$2,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
             ),
           )
         : IconButton(
@@ -1248,7 +710,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             IconButton(
               onPressed: () => Navigator.of(context).pop(),
               tooltip: '返回',
-              icon: const Icon(Icons.arrow_back),
+              icon: const BackButtonIcon(),
             ),
           if (!wide && MediaQuery.sizeOf(context).width >= 480) ...[
             Icon(Icons.auto_awesome_outlined, color: _accent),
@@ -1446,18 +908,15 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
               ),
               if (!wide) ...[
                 const SizedBox(width: 8),
-                Tooltip(
-                  message: '新的对话',
-                  child: TextButton.icon(
-                    key: const ValueKey('genai-new-chat-compact'),
-                    onPressed: _newConversation,
-                    icon: const Icon(Icons.edit_square, size: 20),
-                    label: const Text('新对话'),
-                    style: TextButton.styleFrom(
-                      minimumSize: const Size(48, 48),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      foregroundColor: _accent,
-                    ),
+                TextButton.icon(
+                  key: const ValueKey('genai-new-chat-compact'),
+                  onPressed: _newConversation,
+                  icon: const Icon(Icons.edit_square, size: 20),
+                  label: const Text('新对话'),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    foregroundColor: _accent,
                   ),
                 ),
               ],
@@ -1636,6 +1095,34 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             ),
           );
         },
+      );
+
+  Widget _threadArea() => Stack(
+        children: [
+          Positioned.fill(
+            child: NotificationListener<ScrollStartNotification>(
+              onNotification: (notification) {
+                if (notification.depth == 0) _scrollRevision++;
+                return false;
+              },
+              child: _thread(),
+            ),
+          ),
+          if (!_followingLatest)
+            Positioned(
+              bottom: 12,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: FilledButton.tonalIcon(
+                  key: const ValueKey('genai-scroll-latest'),
+                  onPressed: _scrollToEnd,
+                  icon: const Icon(Icons.arrow_downward_rounded, size: 16),
+                  label: const Text('回到最新'),
+                ),
+              ),
+            ),
+        ],
       );
 
   Widget _thread() => ListView.builder(
@@ -1984,26 +1471,27 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                 ),
                               ],
                             ),
+                          if (turn.contextCompacted)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '已整理较早的上下文 · 完整记录已保留',
+                                style: TextStyle(color: _muted, fontSize: 11),
+                              ),
+                            ),
                           if (turn.answer.isNotEmpty)
                             GenAiMarkdown(
                               data: turn.answer,
                               selectable: true,
-                              imageBuilder: (uri, title, alt) => turn.isAgent
-                                  ? Text(alt ?? title ?? '图片请通过工具结果查看')
-                                  : Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 8,
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.network(
-                                          uri.toString(),
-                                          fit: BoxFit.contain,
-                                          errorBuilder: (_, __, ___) =>
-                                              Text(alt ?? title ?? '图片'),
-                                        ),
-                                      ),
-                                    ),
+                              imageBuilder: (uri, title, alt) =>
+                                  GenAiMarkdownImage(
+                                uri: uri,
+                                title: title,
+                                alt: alt,
+                                demo: widget.demo,
+                                imageDisplayUri:
+                                    _state.repository.imageDisplayUri,
+                              ),
                               onTapLink: (_, href, __) =>
                                   unawaited(_openLink(href)),
                             ),
@@ -2060,14 +1548,14 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   onPressed: () =>
                                       unawaited(_copy(turn.answer)),
                                 ),
-                                if (_audioPlayer.isSupported)
+                                if (_media.supportsPlayback)
                                   IconButton(
-                                    tooltip: _playingTtsTurnIndex == index
+                                    tooltip: _media.playingTtsTurnIndex == index
                                         ? '停止播放'
                                         : '语音播报',
                                     key: ValueKey('genai-tts-$index'),
-                                    icon: _loadingTts &&
-                                            _playingTtsTurnIndex == index
+                                    icon: _media.loadingTts &&
+                                            _media.playingTtsTurnIndex == index
                                         ? SizedBox(
                                             width: 14,
                                             height: 14,
@@ -2077,20 +1565,22 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                             ),
                                           )
                                         : Icon(
-                                            _playingTtsTurnIndex == index
+                                            _media.playingTtsTurnIndex == index
                                                 ? Icons.stop_circle_outlined
                                                 : Icons.volume_up_outlined,
                                             size: 16,
-                                            color: _playingTtsTurnIndex == index
+                                            color: _media.playingTtsTurnIndex ==
+                                                    index
                                                 ? _accent
                                                 : _muted,
                                           ),
                                     onPressed: () => unawaited(
-                                      _toggleTts(index, turn.answer),
+                                      _media.toggleTts(index, turn.answer),
                                     ),
                                   ),
                               ],
                               if (incomplete &&
+                                  index == _state.turns.length - 1 &&
                                   !turn.isHistoryGap &&
                                   _state.connected)
                                 TextButton.icon(
@@ -2117,23 +1607,43 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
         },
       );
 
-  Widget _composerMoreMenu({
-    bool collapsedThinking = false,
-    bool collapsedCampus = false,
-  }) {
+  Widget _composer(bool wide) {
     final scope = _scope;
-    return PopupMenuButton<String>(
-      key: const ValueKey('genai-composer-more'),
-      constraints: const BoxConstraints(minWidth: 228),
-      position: PopupMenuPosition.over,
-      tooltip: _state.netSearchEnabled ? '添加附件与搜索（联网搜索已开启）' : '添加附件与搜索',
-      enabled: !_state.sending,
-      icon: Badge(
-        isLabelVisible: _state.netSearchEnabled,
-        backgroundColor: _accent,
-        child: Icon(Icons.add, size: 20, color: _muted),
-      ),
-      onSelected: (action) {
+    return GenAiComposer(
+      draft: _draft,
+      inputFocus: _inputFocus,
+      hint: _chatCopy.hint,
+      wide: wide,
+      keyboardOpen: MediaQuery.viewInsetsOf(context).bottom > 0,
+      sending: _state.sending,
+      thinkingEnabled: _state.thinkingEnabled,
+      agentAvailable: _state.agentAvailable,
+      agentEnabled: _state.agentEnabled,
+      netSearchEnabled: _state.netSearchEnabled,
+      recognizingAudio: _state.recognizingAudio,
+      attachments: _state.attachments,
+      hasPendingUploads: _state.hasPendingUploads,
+      hasFailedUploads: _state.hasFailedUploads,
+      canSubmit: _state.connected &&
+          _state.selectedModel != null &&
+          !_state.sending &&
+          !_state.hasPendingUploads &&
+          !_state.hasFailedUploads,
+      supportsRecording: _media.supportsRecording,
+      supportsAudio: _media.supportsAudio,
+      supportsDocuments: _media.supportsDocuments,
+      recording: _media.recording,
+      startingRecording: _media.startingRecording,
+      recordingSeconds: _media.recordingSeconds,
+      onSend: () => unawaited(_send()),
+      onStop: _stop,
+      contextStatus: _state.contextUsage == null
+          ? null
+          : GenAiContextStatus(usage: _state.contextUsage!),
+      onThinkingChanged: _state.setThinking,
+      onAgentChanged: _state.setAgentEnabled,
+      onSearchChanged: _state.setNetSearch,
+      onMenuAction: (action) {
         if (!_isCurrent(scope) || _state.sending) return;
         switch (action) {
           case 'thinking':
@@ -2143,631 +1653,31 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
           case 'search':
             _state.setNetSearch(!_state.netSearchEnabled);
           case 'document':
-            unawaited(_pickDocument());
+            unawaited(_media.pickDocument());
           case 'image':
-            unawaited(_pickImage());
+            unawaited(_media.pickImage());
           case 'audio':
             if (!_state.recognizingAudio &&
-                !_recordingAudio &&
-                !_startingAudio) {
-              unawaited(_pickAudioFile());
+                !_media.recording &&
+                !_media.startingRecording) {
+              unawaited(_media.pickAudioFile());
             }
         }
       },
-      itemBuilder: (_) => [
-        if (collapsedThinking)
-          PopupMenuItem<String>(
-            key: const ValueKey('genai-thinking-menu-toggle'),
-            value: 'thinking',
-            child: _composerMenuRow(Icons.psychology_outlined, '深度思考'),
-          ),
-        if (collapsedCampus)
-          PopupMenuItem<String>(
-            key: const ValueKey('genai-agent-menu-toggle'),
-            value: 'campus',
-            child: _composerMenuRow(
-              Icons.auto_awesome_outlined,
-              '校园工具',
-            ),
-          ),
-        PopupMenuItem<String>(
-          key: const ValueKey('genai-search-toggle'),
-          value: 'search',
-          child: _composerMenuRow(
-            Icons.travel_explore_outlined,
-            '联网搜索',
-            selected: _state.netSearchEnabled,
-          ),
-        ),
-        const PopupMenuDivider(height: 12),
-        if (_picker.supportsDocuments)
-          PopupMenuItem<String>(
-            key: const ValueKey('genai-upload-file'),
-            value: 'document',
-            child: _composerMenuRow(
-              Icons.description_outlined,
-              '上传文档',
-            ),
-          ),
-        PopupMenuItem<String>(
-          key: const ValueKey('genai-upload-image'),
-          value: 'image',
-          child: _composerMenuRow(
-            Icons.image_outlined,
-            '上传图片',
-          ),
-        ),
-        if (_picker.supportsAudio)
-          PopupMenuItem<String>(
-            value: 'audio',
-            enabled:
-                !_state.recognizingAudio && !_recordingAudio && !_startingAudio,
-            child: _composerMenuRow(
-              Icons.audio_file_outlined,
-              '上传音频',
-              disabled:
-                  _state.recognizingAudio || _recordingAudio || _startingAudio,
-            ),
-          ),
-      ],
+      onPickAudio: () => unawaited(_media.pickAudioFile()),
+      onStartRecording: () => unawaited(_media.startAudioRecording()),
+      onStopRecording: () => unawaited(_media.stopAudioRecording()),
+      onCancelRecording: () => unawaited(_media.cancelAudioRecording()),
+      onRetryAttachment: (id) => unawaited(_state.retryAttachment(id)),
+      onRemoveAttachment: _state.removeAttachment,
+      onPreviewAttachment: (attachment) => _showImageDialog(
+        bytes: attachment.bytes.isEmpty
+            ? null
+            : Uint8List.fromList(attachment.bytes),
+        url: attachment.imageUrl,
+      ),
     );
   }
-
-  Widget _composerMenuRow(
-    IconData icon,
-    String title, {
-    bool selected = false,
-    bool disabled = false,
-  }) =>
-      Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: (selected ? _accent : _muted)
-                  .withValues(alpha: disabled ? .04 : .1),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Icon(
-              icon,
-              size: 18,
-              color: disabled
-                  ? _muted.withValues(alpha: .4)
-                  : selected
-                      ? _accent
-                      : _muted,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              title,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: disabled
-                    ? _muted.withValues(alpha: .5)
-                    : _theme.colorScheme.onSurface,
-              ),
-            ),
-          ),
-          if (selected) Icon(Icons.check_rounded, color: _accent, size: 18),
-        ],
-      );
-
-  static const _modePadding = EdgeInsets.symmetric(horizontal: 4);
-  static const _modeLabelPadding =
-      EdgeInsets.symmetric(horizontal: 4, vertical: 2);
-
-  TextStyle get _modeLabelStyle => _theme.textTheme.labelLarge!.copyWith(
-        fontSize: 12,
-        fontWeight: FontWeight.w500,
-      );
-
-  double _modeChipWidth(String label) {
-    final painter = TextPainter(
-      text: TextSpan(text: label, style: _modeLabelStyle),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout();
-    // Keep overflow decisions aligned with the actual icon and control padding.
-    final width = painter.width.ceilToDouble() +
-        20 +
-        _modePadding.horizontal +
-        _modeLabelPadding.horizontal;
-    painter.dispose();
-    return width;
-  }
-
-  Widget _modeChip({
-    required String key,
-    required String label,
-    required IconData icon,
-    required bool selected,
-    required ValueChanged<bool>? onSelected,
-  }) =>
-      FilterChip(
-        key: ValueKey(key),
-        label: Text(
-          label,
-          style: _modeLabelStyle.copyWith(color: selected ? _accent : _muted),
-        ),
-        avatar: Icon(
-          selected ? Icons.check_rounded : icon,
-          size: 18,
-          color: selected ? _accent : _muted,
-        ),
-        avatarBoxConstraints:
-            const BoxConstraints.tightFor(width: 20, height: 20),
-        selected: selected,
-        onSelected: onSelected,
-        showCheckmark: false,
-        padding: _modePadding,
-        labelPadding: _modeLabelPadding,
-        visualDensity: VisualDensity.standard,
-        materialTapTargetSize: MaterialTapTargetSize.padded,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-        side: BorderSide(
-          color: selected ? _accent.withValues(alpha: .28) : Colors.transparent,
-        ),
-        // Resolve both states explicitly so a host chip theme cannot make an
-        // inactive mode look selected. Keep selection visible while sending.
-        color: WidgetStateProperty.resolveWith(
-          (states) => Color.alphaBlend(
-            _accent.withValues(
-              alpha: states.contains(WidgetState.selected) ? .14 : .025,
-            ),
-            _theme.colorScheme.surface,
-          ),
-        ),
-      );
-
-  Widget _composerToolbar() => LayoutBuilder(
-        builder: (context, constraints) {
-          final hasAudio = _audioRecorder.isSupported || _picker.supportsAudio;
-          final actionWidth = (hasAudio ? 48 : 0) + 6 + 48;
-          final available = constraints.maxWidth - actionWidth - 8;
-          final thinkingWidth = _modeChipWidth('深度思考');
-          final campusWidth = _modeChipWidth('校园工具');
-          final searchWidth = _modeChipWidth('联网搜索');
-          var showThinking = true;
-          var showCampus = _state.agentAvailable;
-          double modesWidth() =>
-              48 +
-              (showThinking ? thinkingWidth + 6 : 0) +
-              (showCampus ? campusWidth + 6 : 0) +
-              (_state.netSearchEnabled ? searchWidth + 6 : 0);
-          // Reserve the microphone and Send first. Preserve active modes;
-          // hide inactive campus tools before hiding inactive thinking.
-          if (modesWidth() > available && showCampus && !_state.agentEnabled) {
-            showCampus = false;
-          }
-          if (modesWidth() > available && !_state.thinkingEnabled) {
-            showThinking = false;
-          }
-          final primary = <Widget>[
-            SizedBox(
-              width: 48,
-              height: 48,
-              child: _composerMoreMenu(
-                collapsedThinking: !showThinking,
-                collapsedCampus: _state.agentAvailable && !showCampus,
-              ),
-            ),
-            if (showThinking)
-              _modeChip(
-                key: 'genai-thinking-toggle',
-                label: '深度思考',
-                icon: Icons.psychology_outlined,
-                selected: _state.thinkingEnabled,
-                onSelected: _state.sending ? null : _state.setThinking,
-              ),
-            if (showCampus)
-              Tooltip(
-                message: '使用校园工具，可结合附件、深度思考和联网搜索',
-                child: _modeChip(
-                  key: 'genai-agent-toggle',
-                  label: '校园工具',
-                  icon: Icons.auto_awesome_outlined,
-                  selected: _state.agentEnabled,
-                  onSelected: _state.sending ? null : _state.setAgentEnabled,
-                ),
-              ),
-          ];
-          final search = _state.netSearchEnabled
-              ? Tooltip(
-                  message: '联网搜索已开启，点击关闭',
-                  child: _modeChip(
-                    key: 'genai-active-search-toggle',
-                    label: '联网搜索',
-                    icon: Icons.travel_explore_outlined,
-                    selected: true,
-                    onSelected: _state.sending ? null : _state.setNetSearch,
-                  ),
-                )
-              : null;
-          final actions = Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_audioRecorder.isSupported || _picker.supportsAudio)
-                GestureDetector(
-                  // Keep the semantics structure stable while
-                  // recording changes the inner button label.
-                  onLongPress: !_picker.supportsAudio
-                      ? null
-                      : () {
-                          if (!_state.sending &&
-                              !_state.recognizingAudio &&
-                              !_recordingAudio) {
-                            unawaited(_pickAudioFile());
-                          }
-                        },
-                  child: IconButton(
-                    key: const ValueKey('genai-audio-stt'),
-                    constraints:
-                        const BoxConstraints(minWidth: 48, minHeight: 48),
-                    tooltip: !_audioRecorder.isSupported
-                        ? '选择音频文件'
-                        : _recordingAudio
-                            ? '完成录音并识别'
-                            : _picker.supportsAudio
-                                ? '麦克风录音（长按选择音频文件）'
-                                : '麦克风录音',
-                    icon: _state.recognizingAudio
-                        ? SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.5,
-                              color: _accent,
-                            ),
-                          )
-                        : _recordingAudio
-                            ? const Icon(
-                                Icons.stop_circle_outlined,
-                                size: 19,
-                                color: Colors.redAccent,
-                              )
-                            : Icon(
-                                Icons.mic_none,
-                                size: 17,
-                                color: _muted,
-                              ),
-                    onPressed: _state.sending || _state.recognizingAudio
-                        ? null
-                        : !_audioRecorder.isSupported
-                            ? _pickAudioFile
-                            : _recordingAudio
-                                ? _stopAudioRecording
-                                : _startAudioRecording,
-                    visualDensity: VisualDensity.standard,
-                  ),
-                ),
-              const SizedBox(width: 6),
-              IconButton.filled(
-                key: const ValueKey('genai-send'),
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                tooltip: _state.sending
-                    ? '停止生成'
-                    : _state.hasPendingUploads
-                        ? '正在上传附件...'
-                        : _state.hasFailedUploads
-                            ? '附件上传失败，请重试或删除后发送'
-                            : '发送消息',
-                onPressed: _state.sending
-                    ? _state.stop
-                    : _canSend
-                        ? () => unawaited(_send())
-                        : null,
-                style: IconButton.styleFrom(
-                  backgroundColor: _accent,
-                  foregroundColor: _theme.colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                icon: Icon(
-                  _state.sending
-                      ? Icons.stop_rounded
-                      : Icons.arrow_upward_rounded,
-                  size: 21,
-                ),
-              ),
-            ],
-          );
-          final modes = [...primary, if (search != null) search];
-          final widestMode = [
-            48.0,
-            if (showThinking) thinkingWidth,
-            if (showCampus) campusWidth,
-            if (search != null) searchWidth,
-          ].reduce((a, b) => a > b ? a : b);
-          if (available < widestMode) {
-            // At very large text scales, keep active labels readable and let
-            // actions use their own row instead of squeezing the labels.
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Wrap(spacing: 6, runSpacing: 2, children: modes),
-                Align(alignment: Alignment.centerRight, child: actions),
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 2,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: modes,
-                ),
-              ),
-              const SizedBox(width: 8),
-              actions,
-            ],
-          );
-        },
-      );
-
-  Widget _composer(bool wide) => Align(
-        alignment: Alignment.center,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 868),
-          padding: EdgeInsets.fromLTRB(wide ? 24 : 14, 12, wide ? 24 : 14, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOut,
-                padding: const EdgeInsets.fromLTRB(18, 10, 12, 12),
-                decoration: BoxDecoration(
-                  color: Color.alphaBlend(
-                    _accent.withValues(alpha: .025),
-                    _theme.colorScheme.surface,
-                  ),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: _inputFocus.hasFocus
-                        ? _accent.withValues(alpha: .5)
-                        : _border,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: .04),
-                      blurRadius: 28,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_recordingAudio) _buildRecordingBar(),
-                    if (_state.attachments.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              height: 44,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _state.attachments.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(width: 8),
-                                itemBuilder: (context, i) {
-                                  final att = _state.attachments[i];
-                                  final isError = att.error != null;
-                                  return Container(
-                                    padding: EdgeInsets.fromLTRB(
-                                      att.isImage ? 5 : 8,
-                                      4,
-                                      8,
-                                      4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isError
-                                          ? _theme.colorScheme.errorContainer
-                                              .withValues(alpha: .35)
-                                          : _accent.withValues(alpha: .08),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: isError
-                                            ? _theme.colorScheme.error
-                                                .withValues(alpha: .5)
-                                            : _accent.withValues(alpha: .2),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        _buildAttachmentThumbnail(att, context),
-                                        const SizedBox(width: 8),
-                                        ConstrainedBox(
-                                          constraints: BoxConstraints(
-                                            maxWidth: isError ? 180 : 140,
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Flexible(
-                                                child: Text(
-                                                  att.name,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w500,
-                                                    color: isError
-                                                        ? _theme
-                                                            .colorScheme.error
-                                                        : _accent,
-                                                  ),
-                                                ),
-                                              ),
-                                              if (isError) ...[
-                                                const SizedBox(width: 4),
-                                                Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 4,
-                                                    vertical: 1,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: _theme
-                                                        .colorScheme.error
-                                                        .withValues(alpha: .15),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                      4,
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    att.error ?? '上传失败',
-                                                    style: TextStyle(
-                                                      fontSize: 9,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: _theme
-                                                          .colorScheme.error,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                        ),
-                                        if (isError) ...[
-                                          const SizedBox(width: 4),
-                                          InkWell(
-                                            key: ValueKey(
-                                              'genai-retry-attachment-${att.id}',
-                                            ),
-                                            onTap: () => unawaited(
-                                              _state.retryAttachment(att.id),
-                                            ),
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                            child: Tooltip(
-                                              message: '重新上传',
-                                              child: Icon(
-                                                Icons.refresh_rounded,
-                                                size: 14,
-                                                color: _theme.colorScheme.error,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                        const SizedBox(width: 4),
-                                        InkWell(
-                                          key: ValueKey(
-                                            'genai-remove-attachment-${att.id}',
-                                          ),
-                                          onTap: () =>
-                                              _state.removeAttachment(att.id),
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                          child: Tooltip(
-                                            message: '移除附件',
-                                            child: Icon(
-                                              Icons.close,
-                                              size: 13,
-                                              color: isError
-                                                  ? _theme.colorScheme.error
-                                                  : _muted,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                            if (_state.hasFailedUploads) ...[
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.error_outline,
-                                    size: 13,
-                                    color: _theme.colorScheme.error,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      '附件上传失败，已阻止发送。请点击重试或删除失败的附件。',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: _theme.colorScheme.error,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    Focus(
-                      onKeyEvent: (_, event) {
-                        if (event is KeyDownEvent &&
-                            event.logicalKey == LogicalKeyboardKey.enter &&
-                            !HardwareKeyboard.instance.isShiftPressed &&
-                            !(_draft.value.composing.isValid &&
-                                !_draft.value.composing.isCollapsed)) {
-                          unawaited(_send());
-                          return KeyEventResult.handled;
-                        }
-                        return KeyEventResult.ignored;
-                      },
-                      child: TextField(
-                        key: const ValueKey('genai-prompt'),
-                        controller: _draft,
-                        focusNode: _inputFocus,
-                        minLines: 1,
-                        maxLines: 6,
-                        keyboardType: TextInputType.multiline,
-                        textInputAction: TextInputAction.newline,
-                        decoration: InputDecoration(
-                          hintText: _chatCopy.hint,
-                          hintStyle: const TextStyle(fontSize: 14.5),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                          contentPadding:
-                              const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        style: const TextStyle(fontSize: 15.5, height: 1.6),
-                      ),
-                    ),
-                    _composerToolbar(),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                _state.agentEnabled
-                    ? '工具数据会发送给学校模型 · 预约和生图需确认'
-                    : 'AI 可能出错，请核查重要信息。',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 10, color: _muted),
-              ),
-            ],
-          ),
-        ),
-      );
 
   Widget _notice(String text, {Widget? action}) => Container(
         padding: const EdgeInsets.all(12),
@@ -2808,116 +1718,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             ),
           ],
         ),
-      );
-
-  Widget _buildAttachmentThumbnail(
-    GenAiAttachment att,
-    BuildContext context,
-  ) {
-    if (!att.isImage) {
-      if (att.uploading) {
-        return SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.5,
-            color: _accent,
-          ),
-        );
-      }
-      if (att.error != null) {
-        return Icon(
-          Icons.error_outline,
-          size: 16,
-          color: _theme.colorScheme.error,
-        );
-      }
-      return Icon(
-        Icons.description_outlined,
-        size: 16,
-        color: _accent,
-      );
-    }
-
-    final bytes = att.bytes.isNotEmpty ? Uint8List.fromList(att.bytes) : null;
-    final url = att.imageUrl;
-
-    Widget imageContent;
-    if (bytes != null) {
-      imageContent = Image.memory(
-        bytes,
-        width: 32,
-        height: 32,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildThumbnailFallback(context),
-      );
-    } else if (url != null && url.isNotEmpty) {
-      imageContent = Image.network(
-        url,
-        width: 32,
-        height: 32,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _buildThumbnailFallback(context),
-      );
-    } else {
-      imageContent = _buildThumbnailFallback(context);
-    }
-
-    return KeyedSubtree(
-      key: ValueKey('genai-attachment-thumbnail-${att.id}'),
-      child: GestureDetector(
-        onTap: () => _showImageDialog(bytes: bytes, url: url),
-        child: Tooltip(
-          message: '点击查看大图',
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              width: 32,
-              height: 32,
-              child: Stack(
-                fit: StackFit.expand,
-                alignment: Alignment.center,
-                children: [
-                  imageContent,
-                  if (att.uploading)
-                    Container(
-                      color: Colors.black.withValues(alpha: .45),
-                      child: const Center(
-                        child: SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    )
-                  else if (att.error != null)
-                    Container(
-                      color: _theme.colorScheme.error.withValues(alpha: .4),
-                      child: const Center(
-                        child: Icon(
-                          Icons.warning_amber_rounded,
-                          size: 16,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildThumbnailFallback(BuildContext context) => Container(
-        width: 32,
-        height: 32,
-        color: _accent.withValues(alpha: .12),
-        child: Icon(Icons.image_outlined, size: 16, color: _accent),
       );
 
   Widget _remoteAttachmentImage(String url, {double? height}) {
@@ -2979,131 +1779,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildRecordingBar() {
-    final m = (_recordingSeconds ~/ 60).toString().padLeft(2, '0');
-    final s = (_recordingSeconds % 60).toString().padLeft(2, '0');
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.red.withValues(alpha: .06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.red.withValues(alpha: .25)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(
-              color: Colors.redAccent,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '正在录音 $m:$s',
-            key: const ValueKey('genai-recording-duration'),
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.redAccent,
-            ),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: _AudioWaveformVisualizer(),
-          ),
-          TextButton(
-            key: const ValueKey('genai-cancel-recording'),
-            onPressed: _cancelAudioRecording,
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-            ),
-            child: const Text('取消', style: TextStyle(fontSize: 12)),
-          ),
-          const SizedBox(width: 4),
-          FilledButton.tonal(
-            key: const ValueKey('genai-finish-recording'),
-            onPressed: _stopAudioRecording,
-            style: FilledButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.check, size: 14),
-                SizedBox(width: 4),
-                Text('完成', style: TextStyle(fontSize: 12)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AudioWaveformVisualizer extends StatefulWidget {
-  const _AudioWaveformVisualizer();
-
-  @override
-  State<_AudioWaveformVisualizer> createState() =>
-      _AudioWaveformVisualizerState();
-}
-
-class _AudioWaveformVisualizerState extends State<_AudioWaveformVisualizer>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    unawaited(_controller.repeat(reverse: true));
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        final t = _controller.value;
-        const heights = [0.4, 0.8, 1.0, 0.6, 0.9, 0.5, 0.7];
-        return SizedBox(
-          height: 16,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(heights.length, (i) {
-              final wave = ((heights[i] + (i.isEven ? t : 1 - t) * 0.5) % 1.0)
-                  .clamp(0.2, 1.0);
-              return Container(
-                width: 2.5,
-                height: 16 * wave,
-                margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                decoration: BoxDecoration(
-                  color: Colors.redAccent.withValues(alpha: .7),
-                  borderRadius: BorderRadius.circular(1.5),
-                ),
-              );
-            }),
-          ),
-        );
-      },
     );
   }
 }

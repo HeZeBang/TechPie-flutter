@@ -18,7 +18,6 @@ final class GenAiAgentLimits {
   const GenAiAgentLimits({
     this.maxTurns = 12,
     this.maxProtocolErrors = 2,
-    this.maxContextCharacters = 24000,
     this.maxOutputCharacters = 32768,
     this.maxToolResultCharacters = 6000,
     this.maxMutationRecords = 64,
@@ -29,7 +28,6 @@ final class GenAiAgentLimits {
 
   final int maxTurns;
   final int maxProtocolErrors;
-  final int maxContextCharacters;
   final int maxOutputCharacters;
   final int maxToolResultCharacters;
   final int maxMutationRecords;
@@ -49,7 +47,6 @@ final class GenAiAgentRunner {
   }) : _streamChat = streamChat {
     if (limits.maxTurns <= 0 ||
         limits.maxProtocolErrors < 0 ||
-        limits.maxContextCharacters <= 0 ||
         limits.maxOutputCharacters <= 0 ||
         limits.maxToolResultCharacters < 256 ||
         limits.maxMutationRecords <= 0 ||
@@ -192,7 +189,7 @@ final class GenAiAgentRunner {
             .replaceAll('=', '');
         final system = _systemPrompt(nonce, activeTools, request);
         prompt = promptEntry.promptForNonce(nonce);
-        _compact(history, prompt, system, request.prompt);
+        // Repository compacts only the wire request; retain this full transcript.
         publish(promptEntry);
         yield GenAiAgentEvent(
           kind: GenAiAgentEventKind.modelStarted,
@@ -215,6 +212,8 @@ final class GenAiAgentRunner {
             ],
             thinking: request.thinking,
             fileIds: request.fileIds,
+            documentContents: request.documentContents,
+            contextGoal: request.prompt,
             imageUrl: request.imageUrl,
             imageUrls: request.imageUrls,
             // Agent search is an explicit tool, never an implicit model-side search.
@@ -236,6 +235,17 @@ final class GenAiAgentRunner {
                 outputLength += text.length;
               case GenAiReasoningDelta(:final text):
                 outputLength += text.length;
+              case GenAiContextUsageChanged(:final usage):
+                yield GenAiAgentEvent(
+                  kind: GenAiAgentEventKind.contextUsage,
+                  turn: turn,
+                  contextUsage: usage,
+                );
+              case GenAiContextCompacted():
+                yield GenAiAgentEvent(
+                  kind: GenAiAgentEventKind.contextCompacted,
+                  turn: turn,
+                );
               case GenAiChatFinished(:final reason):
                 finish = reason;
             }
@@ -561,38 +571,6 @@ You have a bounded number of steps. Recover from structured errors with correcte
 AVAILABLE_TOOLS:
 ${jsonEncode(activeTools.tools.map((tool) => tool.toJson()).toList())}
 ''';
-
-  void _compact(
-    List<GenAiAgentHistoryEntry> history,
-    String prompt,
-    String system,
-    String goal,
-  ) {
-    int size() =>
-        system.length +
-        prompt.length +
-        history.fold<int>(0, (sum, m) => sum + m.content.length);
-    // Preserve the original goal and current follow-up goal. Remove complete
-    // assistant/result pairs;
-    // the latest result and pending prompt always remain available.
-    while (size() > limits.maxContextCharacters && history.length > 3) {
-      var removable = -1;
-      for (var index = 1; index + 1 < history.length; index += 2) {
-        if (!history.sublist(index, index + 2).any(
-              (message) =>
-                  message.role == GenAiRole.user && message.content == goal,
-            )) {
-          removable = index;
-          break;
-        }
-      }
-      if (removable < 0) break;
-      history.removeRange(removable, removable + 2);
-    }
-    if (size() > limits.maxContextCharacters) {
-      throw const GenAiFailure(GenAiFailureKind.protocol);
-    }
-  }
 
   static List<GenAiAgentHistoryEntry> _continuation(
     List<GenAiAgentHistoryEntry> history,

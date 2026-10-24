@@ -10,6 +10,9 @@ enum GenAiFailureKind {
   interrupted,
   storage,
   busy,
+  messageTooLarge,
+  contextTooLarge,
+  attachmentContextUnknown,
 }
 
 /// Excludes upstream messages, URLs, tokens, and response bodies.

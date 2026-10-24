@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'genai_cancellation.dart';
+import 'genai_context_usage.dart';
 import 'genai_contract.dart';
 import 'genai_failure.dart';
 
@@ -221,6 +222,8 @@ final class GenAiAgentToolRegistry {
 
 enum GenAiAgentEventKind {
   modelStarted,
+  contextCompacted,
+  contextUsage,
   reasoningDelta,
   toolProposed,
   approvalRequired,
@@ -241,6 +244,7 @@ final class GenAiAgentEvent {
     this.result,
     this.text,
     this.failure,
+    this.contextUsage,
     this.history = const [],
   });
 
@@ -251,6 +255,7 @@ final class GenAiAgentEvent {
   final Map<String, Object?>? result;
   final String? text;
   final GenAiFailure? failure;
+  final GenAiContextUsage? contextUsage;
   final List<GenAiMessage> history;
 }
 

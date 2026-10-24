@@ -1,7 +1,9 @@
 import 'dart:convert';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
+import 'genai_copy_button.dart';
 
 enum GenAiChartType {
   bar,
@@ -51,13 +53,13 @@ class GenAiChartSpec {
       if (decoded is! Map<String, dynamic>) {
         return null;
       }
-      return fromMap(decoded, defaultTypeHint: defaultTypeHint);
+      return _fromMap(decoded, defaultTypeHint: defaultTypeHint);
     } catch (_) {
       return null;
     }
   }
 
-  static GenAiChartSpec? fromMap(
+  static GenAiChartSpec? _fromMap(
     Map<String, dynamic> map, {
     String? defaultTypeHint,
   }) {
@@ -136,7 +138,7 @@ class GenAiChartSpec {
             parsedLabels.add(
               item['name']?.toString() ?? item['label']?.toString() ?? '',
             );
-            final val = item['value'] ?? item['y'] ?? item['data'] ?? 0;
+            final val = item['value'] ?? item['y'] ?? item['data'];
             parsedValues.add(_toDouble(val));
           }
         }
@@ -150,8 +152,27 @@ class GenAiChartSpec {
       }
     }
 
-    if (series.isEmpty) {
+    if (series.isEmpty || series.any((s) => s.values.isEmpty)) {
       return null;
+    }
+    // fl_chart computes padded bounds, ranges and pie totals during paint.
+    // Finite inputs can still overflow these operations; show the source instead.
+    final values = series.expand((s) => s.values);
+    var min = 0.0;
+    var max = 0.0;
+    for (final value in values) {
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+    final paddedMax = max == 0 ? 10.0 : max * 1.15;
+    final span = paddedMax - min;
+    if (!span.isFinite || span / 100 == 0) return null;
+    if (type == GenAiChartType.pie) {
+      final slices = series.first.values;
+      final total = slices.fold<double>(0, (sum, value) => sum + value);
+      if (slices.any((value) => value < 0) || !total.isFinite || total <= 0) {
+        return null;
+      }
     }
 
     // Ensure labels length matches longest series
@@ -183,13 +204,18 @@ class GenAiChartSpec {
   }
 
   static double _toDouble(dynamic val) {
-    if (val is num) {
-      return val.toDouble();
+    final value = val is num
+        ? val.toDouble()
+        : val is String
+            ? double.tryParse(val)
+            : null;
+    // fl_chart's automatic interval rounding converts values to integers.
+    // Keep padding/ranges within the exact-integer range on native and web;
+    // enormous scientific values remain available in the source fallback.
+    if (value == null || !value.isFinite || value.abs() > 1e15) {
+      throw const FormatException('Chart value exceeds renderer bounds');
     }
-    if (val is String) {
-      return double.tryParse(val) ?? 0.0;
-    }
-    return 0.0;
+    return value;
   }
 }
 
@@ -209,7 +235,6 @@ class GenAiChartView extends StatefulWidget {
 
 class _GenAiChartViewState extends State<GenAiChartView> {
   bool _showCode = false;
-  bool _copied = false;
   GenAiChartSpec? _spec;
 
   @override
@@ -229,17 +254,6 @@ class _GenAiChartViewState extends State<GenAiChartView> {
 
   void _parseSpec() {
     _spec = GenAiChartSpec.parse(widget.code, defaultTypeHint: widget.typeHint);
-  }
-
-  Future<void> _copyCode() async {
-    setState(() => _copied = true);
-    try {
-      await Clipboard.setData(ClipboardData(text: widget.code));
-    } catch (_) {}
-    await Future<void>.delayed(const Duration(seconds: 2));
-    if (mounted) {
-      setState(() => _copied = false);
-    }
   }
 
   @override
@@ -425,20 +439,10 @@ class _GenAiChartViewState extends State<GenAiChartView> {
                 ),
               ),
             ),
-          Tooltip(
-            message: _copied ? '已复制' : '复制数据',
-            child: InkWell(
-              onTap: _copyCode,
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: Icon(
-                  _copied ? Icons.check_rounded : Icons.copy_rounded,
-                  size: 16,
-                  color: _copied ? theme.colorScheme.primary : theme.hintColor,
-                ),
-              ),
-            ),
+          GenAiCopyButton(
+            text: widget.code,
+            tooltip: '复制数据',
+            showLabel: false,
           ),
         ],
       ),

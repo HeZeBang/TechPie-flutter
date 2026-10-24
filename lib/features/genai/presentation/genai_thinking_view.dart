@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import 'markdown/genai_markdown.dart';
 
@@ -44,11 +45,8 @@ class _GenAiThinkingViewState extends State<GenAiThinkingView> {
       return const SizedBox.shrink();
     }
     final theme = Theme.of(context);
-    final accent = theme.brightness == Brightness.dark
-        ? const Color(0xff67d4c2)
-        : const Color(0xff167c6d);
+    final accent = theme.colorScheme.primary;
     final muted = theme.colorScheme.onSurfaceVariant;
-    final border = theme.colorScheme.outlineVariant.withValues(alpha: .4);
 
     final title = widget.isThinking
         ? '正在深度思考…'
@@ -56,14 +54,8 @@ class _GenAiThinkingViewState extends State<GenAiThinkingView> {
             ? '已深度思考 (${(widget.durationMs! / 1000).toStringAsFixed(1)} 秒)'
             : '已完成深度思考');
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .25),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: border),
-      ),
-      clipBehavior: Clip.antiAlias,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: Colors.transparent,
         child: Column(
@@ -71,17 +63,18 @@ class _GenAiThinkingViewState extends State<GenAiThinkingView> {
           children: [
             InkWell(
               onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(8),
               child: Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                 child: Row(
                   children: [
                     if (widget.isThinking)
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: SizedBox(
-                          width: 13,
-                          height: 13,
+                          width: 18,
+                          height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 1.5,
                             color: accent,
@@ -93,15 +86,14 @@ class _GenAiThinkingViewState extends State<GenAiThinkingView> {
                         padding: const EdgeInsets.only(right: 8),
                         child: Icon(
                           Icons.psychology_outlined,
-                          size: 16,
-                          color: accent,
+                          size: 18,
+                          color: muted,
                         ),
                       ),
                     Expanded(
                       child: Text(
                         title,
-                        style: TextStyle(
-                          fontSize: 13,
+                        style: theme.textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.w500,
                           color: widget.isThinking ? accent : muted,
                         ),
@@ -119,30 +111,21 @@ class _GenAiThinkingViewState extends State<GenAiThinkingView> {
               ),
             ),
             if (_expanded && widget.reasoning.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(color: border.withValues(alpha: .2)),
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: DefaultTextStyle(
-                    style: TextStyle(
+              Padding(
+                padding: const EdgeInsets.fromLTRB(34, 0, 8, 8),
+                child: GenAiMarkdown(
+                  data: widget.reasoning,
+                  selectable: true,
+                  styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                    p: theme.textTheme.bodySmall?.copyWith(
+                      color: muted,
                       fontSize: 13,
-                      color: muted.withValues(alpha: .85),
-                      height: 1.6,
-                      fontStyle: FontStyle.italic,
-                    ),
-                    child: GenAiMarkdown(
-                      data: widget.reasoning,
-                      selectable: true,
-                      onTapLink: (_, href, __) {
-                        if (href != null) widget.onTapLink?.call(href);
-                      },
+                      height: 1.7,
                     ),
                   ),
+                  onTapLink: (_, href, __) {
+                    if (href != null) widget.onTapLink?.call(href);
+                  },
                 ),
               ),
           ],

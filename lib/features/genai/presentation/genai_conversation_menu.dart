@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../widgets/adaptive_feedback.dart';
 import '../application/genai_transcript_export.dart';
 import '../application/genai_workspace_controller.dart';
 import '../domain/genai_cancellation.dart';
@@ -112,16 +113,16 @@ class _GenAiConversationMenuState extends State<GenAiConversationMenu> {
                               ClipboardData(text: markdown),
                             );
                             if (dialogContext.mounted && current()) {
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                const SnackBar(
-                                  content: Text('已复制 Markdown 对话'),
-                                ),
+                              showAdaptiveFeedback(
+                                context: dialogContext,
+                                message: '已复制 Markdown 对话',
                               );
                             }
                           } catch (_) {
                             if (dialogContext.mounted) {
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                const SnackBar(content: Text('无法复制，请手动选择文字')),
+                              showAdaptiveFeedback(
+                                context: dialogContext,
+                                message: '无法复制，请手动选择文字',
                               );
                             }
                           }
@@ -136,10 +137,9 @@ class _GenAiConversationMenuState extends State<GenAiConversationMenu> {
       }
     } catch (_) {
       if (mounted && current()) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(action == 'rename' ? '重命名失败，请重试' : '导出失败，请重试'),
-          ),
+        showAdaptiveFeedback(
+          context: context,
+          message: action == 'rename' ? '重命名失败，请重试' : '导出失败，请重试',
         );
       }
     } finally {

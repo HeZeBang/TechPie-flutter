@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../domain/genai_cancellation.dart';
+import '../domain/genai_context_usage.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
 import 'genai_repository.dart';
@@ -35,6 +36,9 @@ final class GenAiChatService extends ChangeNotifier {
   GenAiFailure? _failure;
   GenAiFinishReason? _finishReason;
 
+  bool contextCompacted = false;
+  GenAiContextUsage? contextUsage;
+
   String get answer => _answer.toString();
   String get reasoning => _reasoning.toString();
   GenAiChatPhase get phase => _phase;
@@ -47,6 +51,8 @@ final class GenAiChatService extends ChangeNotifier {
     final turn = ++_turn;
     final operation = GenAiCancellation();
     _operation = operation;
+    contextCompacted = false;
+    contextUsage = null;
     _answer = StringBuffer();
     _reasoning = StringBuffer();
     _failure = null;
@@ -57,6 +63,10 @@ final class GenAiChatService extends ChangeNotifier {
       await for (final event in _repository.streamChat(request, operation)) {
         if (_disposed || turn != _turn) return;
         switch (event) {
+          case GenAiContextUsageChanged(:final usage):
+            contextUsage = usage;
+          case GenAiContextCompacted():
+            contextCompacted = true;
           case GenAiTextDelta(:final text):
             _answer.write(text);
             _phase = GenAiChatPhase.streaming;
@@ -74,6 +84,7 @@ final class GenAiChatService extends ChangeNotifier {
       }
     } catch (error) {
       if (_disposed || turn != _turn) return;
+      contextUsage = null;
       _failure = error is GenAiFailure
           ? error
           : const GenAiFailure(GenAiFailureKind.transport);
@@ -99,6 +110,7 @@ final class GenAiChatService extends ChangeNotifier {
 
   void stop() {
     if (_operation == null) return;
+    contextUsage = null;
     _operation!.cancel();
     _operation = null;
     _turn++;
@@ -107,6 +119,8 @@ final class GenAiChatService extends ChangeNotifier {
   }
 
   void clear() {
+    contextCompacted = false;
+    contextUsage = null;
     _operation?.cancel(GenAiFailureKind.accountChanged);
     _operation = null;
     _turn++;
@@ -121,6 +135,7 @@ final class GenAiChatService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    contextUsage = null;
     _operation?.cancel();
     super.dispose();
   }

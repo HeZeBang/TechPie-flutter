@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import 'genai_chart_view.dart';
+import 'genai_copy_button.dart';
 import 'genai_latex.dart';
 import 'genai_mermaid_view.dart';
 import 'genai_syntax_highlighter.dart';
@@ -89,7 +89,7 @@ class GenAiPreBuilder extends MarkdownElementBuilder {
 }
 
 /// A standard code block with language indicator and copy-to-clipboard button.
-class GenAiStandardCodeBlock extends StatefulWidget {
+class GenAiStandardCodeBlock extends StatelessWidget {
   const GenAiStandardCodeBlock({
     super.key,
     required this.code,
@@ -98,24 +98,6 @@ class GenAiStandardCodeBlock extends StatefulWidget {
 
   final String code;
   final String? language;
-
-  @override
-  State<GenAiStandardCodeBlock> createState() => _GenAiStandardCodeBlockState();
-}
-
-class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
-  bool _copied = false;
-
-  Future<void> _copyCode() async {
-    setState(() => _copied = true);
-    try {
-      await Clipboard.setData(ClipboardData(text: widget.code));
-    } catch (_) {}
-    await Future<void>.delayed(const Duration(seconds: 2));
-    if (mounted) {
-      setState(() => _copied = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -127,7 +109,7 @@ class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
     final cardBg = isDark
         ? Colors.white.withValues(alpha: .03)
         : Colors.black.withValues(alpha: .025);
-    final rawLang = widget.language?.trim();
+    final rawLang = language?.trim();
     final displayLang = (rawLang != null && rawLang.isNotEmpty)
         ? rawLang.toUpperCase()
         : 'CODE';
@@ -185,41 +167,10 @@ class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
                   ),
                 ),
                 const Spacer(),
-                Tooltip(
-                  message: _copied ? '已复制' : '复制代码',
-                  child: InkWell(
-                    onTap: _copyCode,
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _copied ? Icons.check_rounded : Icons.copy_rounded,
-                            size: 13,
-                            color: _copied
-                                ? theme.colorScheme.primary
-                                : theme.hintColor,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            _copied ? '已复制' : '复制',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: _copied
-                                  ? theme.colorScheme.primary
-                                  : theme.hintColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                GenAiCopyButton(
+                  text: code,
+                  tooltip: '复制代码',
+                  showLabel: true,
                 ),
               ],
             ),
@@ -249,11 +200,11 @@ class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
                 color: theme.textTheme.bodyMedium?.color?.withValues(alpha: .9),
               );
               final spans = highlighter.highlight(
-                code: widget.code,
-                language: widget.language,
+                code: code,
+                language: language,
                 baseStyle: baseCodeStyle,
               );
-              final lineCount = '\n'.allMatches(widget.code).length + 1;
+              final lineCount = '\n'.allMatches(code).length + 1;
               final showLineNumbers = lineCount > 1;
 
               return Padding(

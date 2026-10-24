@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../domain/genai_agent_contract.dart';
 import '../domain/genai_platform_contract.dart';
 import 'genai_demo_image.dart';
+import 'genai_image.dart';
 import 'genai_thinking_view.dart';
 import 'genai_web_search_view.dart';
 
@@ -51,7 +52,8 @@ class GenAiAgentToolActivity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final hasFailures = events.any(
       (event) => event.result?['ok'] == false || event.result?['error'] != null,
     );
@@ -62,62 +64,73 @@ class GenAiAgentToolActivity extends StatelessWidget {
             : hasFailures
                 ? ' · 有未完成项'
                 : '';
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest.withValues(alpha: .2),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: colors.outlineVariant.withValues(alpha: .4)),
+    return ListTileTheme(
+      data: ListTileTheme.of(context).copyWith(
+        minLeadingWidth: 18,
+        horizontalTitleGap: 8,
       ),
-      clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        key: const ValueKey('agent-tool-activity-toggle'),
-        // Preserve a user's collapse choice while streamed events change.
-        // Saved turns start compact; live turns initially show their progress.
-        initiallyExpanded: running,
-        maintainState: true,
-        dense: true,
-        shape: const Border(),
-        collapsedShape: const Border(),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-        leading:
-            Icon(Icons.auto_awesome_outlined, size: 16, color: colors.primary),
-        title: Text(
-          '处理过程 · ${events.length} 次工具调用$status',
-          key: const ValueKey('agent-tool-activity-heading'),
-          style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
-        ),
-        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-        children: [
-          if (activity.isEmpty) ...[
-            if (legacyReasoning.isNotEmpty || legacyCitations.isNotEmpty)
-              const Padding(
-                padding: EdgeInsets.all(8),
-                child: Text('历史记录未保存步骤顺序', style: TextStyle(fontSize: 11)),
-              ),
-            if (legacyReasoning.isNotEmpty)
-              GenAiThinkingView(
-                reasoning: legacyReasoning,
-                onTapLink: onOpenLink,
-              ),
-            if (legacyCitations.isNotEmpty)
-              GenAiWebSearchView(
-                citations: legacyCitations,
-                onOpenLink: onOpenLink ?? (_) {},
+      child: Material(
+        color: Colors.transparent,
+        child: ExpansionTile(
+          key: const ValueKey('agent-tool-activity-toggle'),
+          // Preserve a user's collapse choice while streamed events change.
+          // Saved turns start compact; live turns initially show their progress.
+          initiallyExpanded: running,
+          maintainState: true,
+          dense: true,
+          shape: const Border(),
+          collapsedShape: const Border(),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+          leading: Icon(
+            Icons.auto_awesome_outlined,
+            size: 18,
+            color: running ? colors.primary : colors.onSurfaceVariant,
+          ),
+          title: Text(
+            '处理过程 · ${events.length} 次工具调用$status',
+            key: const ValueKey('agent-tool-activity-heading'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: running ? colors.primary : colors.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(8, 0, 0, 4),
+          children: [
+            if (activity.isEmpty) ...[
+              if (legacyReasoning.isNotEmpty || legacyCitations.isNotEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Text('历史记录未保存步骤顺序', style: TextStyle(fontSize: 11)),
+                ),
+              if (legacyReasoning.isNotEmpty)
+                GenAiThinkingView(
+                  reasoning: legacyReasoning,
+                  onTapLink: onOpenLink,
+                ),
+              if (legacyCitations.isNotEmpty)
+                GenAiWebSearchView(
+                  citations: legacyCitations,
+                  onOpenLink: onOpenLink ?? (_) {},
+                ),
+            ],
+            for (final event in activity.isEmpty ? events : activity)
+              Container(
+                key: ValueKey(
+                  '${event.turn}-${event.call?.id ?? event.kind.name}',
+                ),
+                margin: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.only(left: 12),
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: colors.outlineVariant.withValues(alpha: .6),
+                    ),
+                  ),
+                ),
+                child: _activityEntry(event),
               ),
           ],
-          for (final event in activity.isEmpty ? events : activity)
-            Container(
-              key: ValueKey(
-                '${event.turn}-${event.call?.id ?? event.kind.name}',
-              ),
-              margin: const EdgeInsets.only(top: 8),
-              padding: const EdgeInsets.only(left: 10),
-              decoration: BoxDecoration(
-                border: Border(left: BorderSide(color: colors.outlineVariant)),
-              ),
-              child: _activityEntry(event),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -188,7 +201,8 @@ class GenAiAgentToolCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final call = event.call;
     if (call == null) return const SizedBox.shrink();
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final result = event.result;
     final complete = event.kind == GenAiAgentEventKind.toolFinished;
     final failed = result?['ok'] == false || result?['error'] != null;
@@ -214,80 +228,116 @@ class GenAiAgentToolCard extends StatelessWidget {
                 : event.kind == GenAiAgentEventKind.approvalRequired
                     ? '等待你的确认'
                     : '处理中';
-    return Card(
-      margin: const EdgeInsets.only(top: 8),
-      elevation: 0,
-      color: colors.surfaceContainerLow,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ExpansionTile(
-            key: ValueKey('agent-tool-${call.id}'),
-            dense: true,
-            leading: Icon(
-              unknown || failed
-                  ? Icons.info_outline
-                  : complete
-                      ? Icons.check_circle_outline
-                      : Icons.more_horiz,
-              size: 20,
-            ),
-            title: Text(genAiAgentToolName(call.name)),
-            subtitle: Text(status),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: [
-              if (result?['reused'] == true)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('已复用之前的结果，没有重复执行。'),
+    return ListTileTheme(
+      data: ListTileTheme.of(context).copyWith(
+        minLeadingWidth: 18,
+        horizontalTitleGap: 8,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        clipBehavior: Clip.antiAlias,
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ExpansionTile(
+              key: ValueKey('agent-tool-${call.id}'),
+              dense: true,
+              shape: const Border(),
+              collapsedShape: const Border(),
+              tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+              leading: Icon(
+                unknown || failed
+                    ? Icons.info_outline
+                    : complete
+                        ? Icons.check_circle_outline
+                        : Icons.more_horiz,
+                size: 18,
+                color: unknown || failed
+                    ? colors.error
+                    : complete || stopped
+                        ? colors.onSurfaceVariant
+                        : colors.primary,
+              ),
+              title: Text(
+                genAiAgentToolName(call.name),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              subtitle: Text(
+                status,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: unknown || failed
+                      ? colors.error
+                      : complete || stopped
+                          ? colors.onSurfaceVariant
+                          : colors.primary,
+                ),
+              ),
+              childrenPadding: const EdgeInsets.fromLTRB(34, 0, 8, 8),
+              children: [
+                if (result?['reused'] == true)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('已复用之前的结果，没有重复执行。'),
+                    ),
+                  ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color:
+                        colors.surfaceContainerHighest.withValues(alpha: .35),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: SelectableText(
+                    const JsonEncoder.withIndent('  ')
+                        .convert(result ?? call.arguments),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                      height: 1.5,
+                    ),
                   ),
                 ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: SelectableText(
-                  const JsonEncoder.withIndent('  ')
-                      .convert(result ?? call.arguments),
-                  style: const TextStyle(fontSize: 12, height: 1.5),
+              ],
+            ),
+            if (generated)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: images.isEmpty
+                    ? const Text('图片未能直接预览，可查看图片记录。')
+                    : Column(
+                        children: [
+                          for (final uri in images)
+                            _GenAiAgentImagePreview(
+                              key: ValueKey('agent-image-${call.id}-$uri'),
+                              uri: uri,
+                              demo: demo &&
+                                  uri.pathSegments.any(
+                                    (part) =>
+                                        part.startsWith('techpie-preview'),
+                                  ),
+                            ),
+                        ],
+                      ),
+              ),
+            if ((complete || unknown) && call.name == 'generate_image')
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: onOpenImages,
+                    icon: const Icon(Icons.photo_library_outlined, size: 18),
+                    label: const Text('查看图片'),
+                  ),
                 ),
               ),
-            ],
-          ),
-          if (generated)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: images.isEmpty
-                  ? const Text('图片未能直接预览，可查看图片记录。')
-                  : Column(
-                      children: [
-                        for (final uri in images)
-                          _GenAiAgentImagePreview(
-                            key: ValueKey('agent-image-${call.id}-$uri'),
-                            uri: uri,
-                            demo: demo &&
-                                uri.pathSegments.any(
-                                  (part) => part.startsWith('techpie-preview'),
-                                ),
-                          ),
-                      ],
-                    ),
-            ),
-          if ((complete || unknown) && call.name == 'generate_image')
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: onOpenImages,
-                  icon: const Icon(Icons.photo_library_outlined, size: 18),
-                  label: const Text('查看图片'),
-                ),
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -298,42 +348,12 @@ class GenAiAgentToolCard extends StatelessWidget {
     final images = <Uri>[];
     for (final value in values) {
       if (value is! String) continue;
-      try {
-        final raw = Uri.parse(value.trim());
-        if (raw.userInfo.isNotEmpty ||
-            raw.hasQuery ||
-            raw.hasFragment ||
-            raw.pathSegments.any((part) => part == '..' || part == '.')) {
-          continue;
-        }
-        String canonicalInput = value;
-        if (raw.hasAuthority && raw.host != 'genaipic.shanghaitech.edu.cn') {
-          final resolve = imageDisplayUri;
-          if (resolve == null) continue;
-          final expected = resolve(
-            'https://genaipic.shanghaitech.edu.cn/sys/common/static/techpie-agent-origin-check.png',
-          );
-          // API results can already have the app's local preview proxy origin.
-          // Only that exact configured origin and static-image route are valid.
-          if ((raw.scheme != 'https' && raw.scheme != 'http') ||
-              raw.origin != expected.origin ||
-              !raw.path.startsWith('/sys/common/static/')) {
-            continue;
-          }
-          canonicalInput = Uri(
-            scheme: 'https',
-            host: 'genaipic.shanghaitech.edu.cn',
-            path: raw.path,
-          ).toString();
-        }
-        final canonical = genAiImageUri(canonicalInput);
-        final display =
-            imageDisplayUri?.call(canonical.toString()) ?? canonical;
-        if (!images.contains(display)) images.add(display);
-        if (images.length == 4) break;
-      } catch (_) {
-        // Invalid or unrecognized URLs never trigger remote image requests.
-      }
+      final display = genAiAutomaticImageUri(
+        value,
+        imageDisplayUri: imageDisplayUri,
+      );
+      if (display != null && !images.contains(display)) images.add(display);
+      if (images.length == 4) break;
     }
     return images;
   }
@@ -488,15 +508,19 @@ class GenAiAgentApprovalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Card(
       key: const ValueKey('agent-approval'),
       margin: const EdgeInsets.symmetric(vertical: 8),
       elevation: 0,
-      color: colors.surfaceContainerLow,
+      color: Color.alphaBlend(
+        colors.primary.withValues(alpha: .04),
+        colors.surface,
+      ),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: colors.primary.withValues(alpha: .28)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -509,7 +533,10 @@ class GenAiAgentApprovalCard extends StatelessWidget {
                   .replaceAll(' · low', ' · 普通')
                   .replaceAll(' · medium', ' · 标准')
                   .replaceAll(' · high', ' · 精细'),
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 8),
             ConstrainedBox(
@@ -527,16 +554,18 @@ class GenAiAgentApprovalCard extends StatelessWidget {
                               width: 72,
                               child: Text(
                                 _detailLabel(entry.key),
-                                style: TextStyle(
+                                style: theme.textTheme.bodySmall?.copyWith(
                                   color: colors.onSurfaceVariant,
-                                  fontSize: 12,
                                 ),
                               ),
                             ),
                             Expanded(
                               child: SelectableText(
                                 _detailValue(entry),
-                                style: const TextStyle(fontSize: 13),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: 13,
+                                  height: 1.5,
+                                ),
                               ),
                             ),
                           ],

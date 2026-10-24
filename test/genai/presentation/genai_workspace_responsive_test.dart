@@ -91,6 +91,23 @@ Future<void> _reachable(
 }
 
 void main() {
+  testWidgets(
+      'document validation stays readable and removable on a narrow screen',
+      (tester) async {
+    final demo =
+        await _show(tester, size: const Size(320, 760), textScale: 1.3);
+    await demo.workspace.addDocumentAttachment('presentation.pptx', [1, 2, 3]);
+    await tester.pumpAndSettle();
+    final attachment = demo.workspace.attachments.single;
+    expect(find.textContaining(attachment.error!), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester
+        .tap(find.byKey(ValueKey('genai-remove-attachment-${attachment.id}')));
+    await tester.pumpAndSettle();
+    expect(demo.workspace.attachments, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   const viewports = [
     (name: 'narrow phone', size: Size(320, 740), scale: 1.0, keyboard: 0.0),
     (
@@ -174,8 +191,17 @@ void main() {
         } else {
           await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
           await tester.pumpAndSettle();
-          await _reachable(tester, find.byKey(ValueKey(entry.$2)), viewport);
-          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          final menuItem = find.byKey(ValueKey(entry.$2));
+          await _reachable(tester, menuItem, viewport);
+          if (scenario.keyboard > 0) {
+            await tester.tap(menuItem);
+            await tester.pumpAndSettle();
+            await _reachable(tester, entry.$1, viewport);
+            expect(tester.widget<FilterChip>(entry.$1).selected, isTrue);
+            await tester.tap(entry.$1);
+          } else {
+            await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          }
           await tester.pumpAndSettle();
         }
       }
@@ -208,6 +234,18 @@ void main() {
             .onPressed,
         isNotNull,
       );
+      // A completed request adds the context indicator to the trailing actions.
+      // It must remain reachable beside audio even with a keyboard or large text.
+      final sent = demo.workspace.send('布局检查');
+      await tester.pumpAndSettle();
+      await sent;
+      final contextStatus = find.byKey(const ValueKey('genai-context-status'));
+      final audio = find.byKey(const ValueKey('genai-audio-stt'));
+      await _reachable(tester, contextStatus, viewport);
+      final contextBounds = tester.getRect(contextStatus);
+      final audioBounds = tester.getRect(audio);
+      expect(contextBounds.right, lessThanOrEqualTo(audioBounds.left));
+      expect(contextBounds.center.dy, audioBounds.center.dy);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });

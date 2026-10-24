@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../widgets/adaptive_feedback.dart';
 import '../application/genai_workspace_controller.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_contract.dart';
@@ -498,7 +499,9 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  subtitle: item.time.isEmpty ? null : Text(item.time),
+                  subtitle: item.time.isEmpty
+                      ? null
+                      : Text(genAiHistoryTime(item.time)),
                   onTap: _busy || _searching
                       ? null
                       : () => unawaited(_openConversation(item)),
@@ -998,11 +1001,12 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       return;
     }
     try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw StateError('No image URL handler');
+      }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('无法打开图片')));
+        showAdaptiveFeedback(context: context, message: '无法打开图片');
       }
     }
   }

@@ -1,3 +1,4 @@
+import 'genai_context_usage.dart';
 import 'genai_failure.dart';
 
 enum GenAiRole { user, assistant, system }
@@ -22,11 +23,15 @@ final class GenAiChatRequest {
     this.thinking = false,
     this.netGo = false,
     List<String> fileIds = const [],
+    this.contextCompacted = false,
+    this.contextGoal,
+    Map<String, String> documentContents = const {},
     this.imageUrl,
     List<String> imageUrls = const [],
     this.maxTokens,
   })  : history = List.unmodifiable(history),
         fileIds = List.unmodifiable(fileIds),
+        documentContents = Map.unmodifiable(documentContents),
         imageUrls = List.unmodifiable(imageUrls) {
     if ([chatGroupId, prompt, aiType, rootAiType]
             .any((s) => s.trim().isEmpty) ||
@@ -43,6 +48,11 @@ final class GenAiChatRequest {
   final bool thinking;
   final bool netGo;
   final List<String> fileIds;
+
+  /// Local budget metadata; never serialized into the upstream payload.
+  final Map<String, String> documentContents;
+  final String? contextGoal;
+  final bool contextCompacted;
   final String? imageUrl;
   final List<String> imageUrls;
   final int? maxTokens;
@@ -106,6 +116,15 @@ enum GenAiFinishReason { stop, length, contentFilter, done, other }
 
 sealed class GenAiChatEvent {
   const GenAiChatEvent();
+}
+
+final class GenAiContextUsageChanged extends GenAiChatEvent {
+  const GenAiContextUsageChanged(this.usage);
+  final GenAiContextUsage usage;
+}
+
+final class GenAiContextCompacted extends GenAiChatEvent {
+  const GenAiContextCompacted();
 }
 
 final class GenAiTextDelta extends GenAiChatEvent {

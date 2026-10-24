@@ -124,7 +124,7 @@ void main() {
   });
 
   test(
-      'an interrupted response stays visible but is excluded from future context',
+      'older interrupted turns stay visible and cannot truncate later exchanges',
       () async {
     final original = transport.handle;
     transport.handle = (r) async => r.method == 'POST'
@@ -139,6 +139,15 @@ void main() {
         jsonDecode(transport.requests.last.body!)['messages'] as List;
     expect(messages, hasLength(1));
     expect((messages.single as Map)['role'], 'system');
+    final requests = transport.requests.length;
+    await workspace.retryTurn(0);
+    expect(transport.requests, hasLength(requests));
+    expect(workspace.turns.map((turn) => turn.prompt), ['interrupted', 'next']);
+    final id = workspace.groupId;
+    workspace.newConversation();
+    await workspace.openConversation(id, GenAiCancellation());
+    expect(workspace.turns.map((turn) => turn.prompt), ['interrupted', 'next']);
+    expect(workspace.turns.first.answer, 'partial');
   });
 
   test(
@@ -268,7 +277,7 @@ void main() {
   });
 
   test(
-      'reopened vision chat restores all thumbnails and retries canonical URLs',
+      'reopened vision chat carries canonical images into follow-ups and retries',
       () async {
     final original = transport.handle;
     transport.handle = (r) async {
@@ -296,7 +305,12 @@ void main() {
     expect(turn.attachedImageUrls, hasLength(2));
     expect(turn.attachedImageUrl, turn.attachedImageUrls.first);
     final urls = turn.attachedImageUrls;
-    await workspace.retryTurn(0);
+    await workspace.send('What differs between them?');
+    expect(
+      jsonDecode(transport.requests.last.body!)['imageUrls'],
+      urls,
+    );
+    await workspace.retryTurn(1);
     final payload =
         jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
     expect(payload['chatGroupId'], 'saved-vision');
@@ -308,7 +322,10 @@ void main() {
       ),
       isTrue,
     );
-    expect(workspace.turns.single.attachedImageUrls, urls);
+    expect(workspace.turns.first.attachedImageUrls, urls);
+    workspace.newConversation();
+    await workspace.send('Unrelated task');
+    expect(jsonDecode(transport.requests.last.body!)['imageUrls'], isNull);
   });
 
   test('demo upload send and history reopen preserves multiple attachments',

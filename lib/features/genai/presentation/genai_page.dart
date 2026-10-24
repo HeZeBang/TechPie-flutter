@@ -9,6 +9,7 @@ import '../../../pages/login_page.dart';
 import '../../../pages/third_party_accounts_page.dart';
 import '../../../pages/third_party_bind_page.dart';
 import '../../../services/service_provider.dart';
+import '../../../widgets/adaptive_feedback.dart';
 import '../../../widgets/adaptive_page_navigation.dart';
 import '../app/genai_runtime.dart';
 import '../application/genai_agent_runner.dart';
@@ -117,8 +118,7 @@ class _GenAiPageState extends State<GenAiPage> {
       await runtime.workspace.connect(credential);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('无法完成 GenAI 登录，请重试')));
+        showAdaptiveFeedback(context: context, message: '无法完成 GenAI 登录，请重试');
       }
     } finally {
       if (mounted) setState(() => _openingLive = false);

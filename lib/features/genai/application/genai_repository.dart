@@ -1,20 +1,44 @@
+import 'dart:async';
+
 import '../data/genai_api_client.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
 import '../domain/genai_session.dart';
+import 'genai_context_compactor.dart';
 import 'genai_session_service.dart';
 
 final class GenAiRepository {
-  const GenAiRepository({
+  GenAiRepository({
     required GenAiApiClient api,
     required GenAiSessionService sessions,
+    GenAiContextCompactor? contextCompactor,
   })  : _api = api,
-        _sessions = sessions;
+        _sessions = sessions,
+        _context = contextCompactor ?? GenAiContextCompactor();
 
   final GenAiApiClient _api;
   final GenAiSessionService _sessions;
+  final GenAiContextCompactor _context;
+  int? _contextRevision;
+
+  void _checkContextRevision() {
+    if (_contextRevision != _sessions.revision) {
+      _context.clear();
+      _contextRevision = _sessions.revision;
+    }
+  }
+
+  Map<String, Object?> contextSnapshot(String id) {
+    _checkContextRevision();
+    return _context.snapshot(id);
+  }
+
+  void restoreContext(String id, Map<String, Object?> value) {
+    _checkContextRevision();
+    _context.restore(id, value);
+  }
 
   Uri imageDisplayUri(String url) => _api.imageDisplayUri(url);
 
@@ -57,13 +81,30 @@ final class GenAiRepository {
   }) =>
       _authorized(
         c,
-        (s) => _api.listConversations(
-          s.credential.token,
-          s.profile.id,
-          c,
-          page: page,
-          query: query,
-        ),
+        (s) async {
+          final result = await _api.listConversations(
+            s.credential.token,
+            s.profile.id,
+            c,
+            page: page,
+            query: query,
+          );
+          return GenAiPageResult(
+            result.records
+                .map(
+                  (r) => GenAiContextCompactor.isSummaryGroup(r.id)
+                      ? GenAiConversationSummary(
+                          id: r.id,
+                          title: '上下文整理（旧版辅助会话）',
+                          time: r.time,
+                        )
+                      : r,
+                )
+                .toList(),
+            page: result.page,
+            hasMore: result.hasMore,
+          );
+        },
       );
   Future<List<GenAiSavedTurn>> loadConversation(
     String id,
@@ -188,8 +229,47 @@ final class GenAiRepository {
       final session = await operation.race(_sessions.requireSession());
       operation.throwIfCancelled();
       try {
-        await for (final event
-            in _api.streamChat(request, session.credential.token, operation)) {
+        _checkContextRevision();
+        // Bridge preparation callbacks into this request's stream so chunk
+        // progress reaches consumers while the summarizer is still running.
+        final progress = StreamController<GenAiChatEvent>();
+        GenAiChatRequest? prepared;
+        Future<void> prepare() async {
+          try {
+            prepared = await _context.prepare(
+              request,
+              operation,
+              (summary, cancellation) => _api.streamChat(
+                summary,
+                session.credential.token,
+                cancellation,
+              ),
+              onUsage: (usage) {
+                if (!operation.isCancelled) {
+                  progress.add(GenAiContextUsageChanged(usage));
+                }
+              },
+            );
+          } catch (error, stack) {
+            progress.addError(error, stack);
+          } finally {
+            await progress.close();
+          }
+        }
+
+        unawaited(prepare());
+        await for (final event in progress.stream) {
+          operation.throwIfCancelled();
+          yield event;
+        }
+        operation.throwIfCancelled();
+        if (prepared!.contextCompacted) yield const GenAiContextCompacted();
+        operation.throwIfCancelled();
+        await for (final event in _api.streamChat(
+          prepared!,
+          session.credential.token,
+          operation,
+        )) {
           yield event;
         }
       } on GenAiFailure catch (error) {

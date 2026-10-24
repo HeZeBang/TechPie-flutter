@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
+import '../../domain/genai_document_upload.dart';
 import 'genai_picker.dart';
 
 GenAiPicker createGenAiPicker() => GenAiPickerWeb();
@@ -16,7 +17,7 @@ final class GenAiPickerWeb implements GenAiPicker {
 
   @override
   Future<GenAiPickedFile?> pickDocument() => _pickFile(
-        '.txt,.md,.pdf,.docx,.doc,.csv,.json,.py,.dart,.c,.cpp,.h,.java,.js,.ts',
+        GenAiDocumentUpload.pickerAccept,
       );
 
   @override

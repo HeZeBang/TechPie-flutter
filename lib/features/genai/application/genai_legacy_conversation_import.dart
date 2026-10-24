@@ -1,5 +1,6 @@
 import '../domain/genai_agent_contract.dart';
 import '../domain/genai_agent_protocol.dart';
+import '../domain/genai_context_record.dart';
 import '../domain/genai_platform_contract.dart';
 import 'genai_chat_service.dart';
 import 'genai_conversation_turn.dart';
@@ -10,6 +11,7 @@ import 'genai_conversation_turn.dart';
 List<GenAiConversationTurn> importGenAiLegacyConversation(
   List<GenAiSavedTurn> rows,
 ) {
+  rows = rows.where((row) => !isGenAiContextExtraction(row.prompt)).toList();
   final turns = <GenAiConversationTurn>[];
   GenAiConversationTurn? active;
   GenAiAgentToolCall? pending;
@@ -53,12 +55,16 @@ List<GenAiConversationTurn> importGenAiLegacyConversation(
     pending = null;
   }
 
-  void consumeAnswer(GenAiSavedTurn row) {
+  void consumeAnswer(GenAiSavedTurn row, {bool repairFollows = false}) {
     final turn = active!;
     if (row.reasoning.isNotEmpty) {
       turn.reasoning = [turn.reasoning, row.reasoning]
           .where((part) => part.isNotEmpty)
           .join('\n');
+    }
+    if (repairFollows) {
+      pending = null;
+      return;
     }
     final answerCall = _call(row.answer);
     if (answerCall != null) {
@@ -90,11 +96,25 @@ List<GenAiConversationTurn> importGenAiLegacyConversation(
       continue;
     }
     final response = _result(row.prompt);
+    final nextResult =
+        index + 1 < rows.length ? _result(rows[index + 1].prompt) : null;
+    final repairFollows = nextResult != null &&
+        nextResult['call_id'] == null &&
+        nextResult['name'] == null &&
+        nextResult['ok'] == false;
+    if (active != null &&
+        pending == null &&
+        response != null &&
+        response['call_id'] == null &&
+        response['ok'] == false) {
+      consumeAnswer(row, repairFollows: repairFollows);
+      continue;
+    }
     if (active != null && pending != null) {
       if (_matches(pending!, response)) {
         appendEvent(pending!, response!);
         pending = null;
-        consumeAnswer(row);
+        consumeAnswer(row, repairFollows: repairFollows);
         continue;
       }
       finishInterrupted();
@@ -120,8 +140,13 @@ List<GenAiConversationTurn> importGenAiLegacyConversation(
     }
 
     final call = _call(row.answer);
-    final nextResult =
-        index + 1 < rows.length ? _result(rows[index + 1].prompt) : null;
+    if (repairFollows) {
+      active = _savedTurn(row, isAgent: true)..answer = '';
+      turns.add(active!);
+      pending = null;
+      step = 0;
+      continue;
+    }
     // A standalone code example is still ordinary text. Only a matching,
     // adjacent call/result pair establishes an old tool-assisted trajectory.
     if (call != null &&

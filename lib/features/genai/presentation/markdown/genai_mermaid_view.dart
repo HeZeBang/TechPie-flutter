@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_mermaid/flutter_mermaid.dart';
+
+import 'genai_copy_button.dart';
 
 class GenAiMermaidView extends StatefulWidget {
   const GenAiMermaidView({
@@ -18,7 +19,6 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
   final TransformationController _transformController =
       TransformationController();
   bool _showCode = false;
-  bool _copied = false;
   String? _renderError;
 
   @override
@@ -37,17 +37,6 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
     if (oldWidget.code != widget.code) {
       _renderError = null;
       _resetZoom();
-    }
-  }
-
-  Future<void> _copyCode() async {
-    setState(() => _copied = true);
-    try {
-      await Clipboard.setData(ClipboardData(text: widget.code));
-    } catch (_) {}
-    await Future<void>.delayed(const Duration(seconds: 2));
-    if (mounted) {
-      setState(() => _copied = false);
     }
   }
 
@@ -200,22 +189,10 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
                     ),
                   ),
                 ),
-                Tooltip(
-                  message: _copied ? '已复制' : '复制代码',
-                  child: InkWell(
-                    onTap: _copyCode,
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Icon(
-                        _copied ? Icons.check_rounded : Icons.copy_rounded,
-                        size: 16,
-                        color: _copied
-                            ? theme.colorScheme.primary
-                            : theme.hintColor,
-                      ),
-                    ),
-                  ),
+                GenAiCopyButton(
+                  text: widget.code,
+                  tooltip: '复制代码',
+                  showLabel: false,
                 ),
               ],
             ),

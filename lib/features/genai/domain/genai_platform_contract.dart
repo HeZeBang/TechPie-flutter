@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'genai_context_record.dart';
 import 'genai_contract.dart';
 import 'genai_failure.dart';
 import 'genai_image_size.dart';
@@ -70,8 +71,9 @@ final class GenAiConversationSummary {
   }
   // The upstream sometimes uses the latest tool-result message as its title.
   // Sanitize only an actual leading protocol frame, preserving quoted examples.
-  static String _displayTitle(String title) =>
-      RegExp(r'^<techpie-agent-(?:call|result|history)(?:\s|>)')
+  static String _displayTitle(String title) => isGenAiContextExtraction(title)
+      ? '对话（已整理上下文）'
+      : RegExp(r'^<techpie-agent-(?:call|result|history)(?:\s|>)')
               .hasMatch(title.trimLeft())
           ? '校园工具对话'
           : title;
@@ -389,17 +391,24 @@ final class GenAiUploadedFile {
   const GenAiUploadedFile({
     required this.fileId,
     required this.fileName,
-    this.content = '',
+    required this.content,
     this.chatGroupId = '',
   });
 
-  factory GenAiUploadedFile.fromJson(Map<String, dynamic> json) =>
-      GenAiUploadedFile(
-        fileId: genAiRequiredString(json, 'fileId'),
-        fileName: genAiOptionalText(json, 'fileName'),
-        content: genAiOptionalText(json, 'content'),
-        chatGroupId: genAiOptionalText(json, 'chatGroupId'),
-      );
+  factory GenAiUploadedFile.fromJson(Map<String, dynamic> json) {
+    final content = json['content'];
+    // Empty extraction is known zero content; absent extraction is unknown.
+    // The server injects the file into context, so unknown text cannot be budgeted.
+    if (content is! String) {
+      throw const GenAiFailure(GenAiFailureKind.protocol);
+    }
+    return GenAiUploadedFile(
+      fileId: genAiRequiredString(json, 'fileId'),
+      fileName: genAiOptionalText(json, 'fileName'),
+      content: content,
+      chatGroupId: genAiOptionalText(json, 'chatGroupId'),
+    );
+  }
 
   final String fileId;
   final String fileName;

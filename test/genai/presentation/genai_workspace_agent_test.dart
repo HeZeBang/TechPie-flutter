@@ -154,7 +154,7 @@ void main() {
           expect(effects, 0);
           expect(find.text('未完成 · 查看原因'), findsOneWidget);
         case 'stop':
-          await tester.tap(find.byTooltip('停止生成'));
+          await tester.tap(find.byKey(const ValueKey('genai-send')));
           await pumpUntil(tester, () => !demo.workspace.sending);
           expect(effects, 0);
           expect(demo.workspace.turns.single.phase, GenAiChatPhase.cancelled);
@@ -232,7 +232,12 @@ void main() {
     final groupId = demo.workspace.groupId;
     await send(tester, 'My favorite color is blue');
     await pumpUntil(tester, () => !demo.workspace.sending);
-    await tester.tap(agent);
+    // The context indicator now shares the trailing action row; inactive tools
+    // remain available from + when they no longer fit beside thinking.
+    expect(agent, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('genai-agent-menu-toggle')));
     await tester.pump();
     await send(tester, 'Remember my color');
     await pumpUntil(tester, () => !demo.workspace.sending);

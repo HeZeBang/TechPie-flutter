@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_contract.dart';
+import '../domain/genai_document_upload.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
 import '../platform/genai_transport.dart';
@@ -278,10 +279,11 @@ final class GenAiApiClient {
     required GenAiCancellation cancellation,
   }) async {
     _validateToken(token);
+    final uploadName = GenAiDocumentUpload.prepareFileName(fileName, bytes);
     final multipart = GenAiMultipartData.create(
       fields: {'biz': 'temp'},
       fileFieldName: 'file',
-      fileName: fileName,
+      fileName: uploadName,
       fileBytes: bytes,
     );
     final uri = _base.resolve('chat/upload/chat/file').replace(

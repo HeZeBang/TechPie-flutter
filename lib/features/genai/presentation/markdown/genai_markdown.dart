@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
+import '../genai_image.dart';
 import 'genai_code_block.dart';
 import 'genai_latex.dart';
 
@@ -202,7 +203,12 @@ class GenAiMarkdown extends StatelessWidget {
         'pre': GenAiPreBuilder(),
       },
       styleSheet: effectiveStyleSheet,
-      imageBuilder: imageBuilder,
+      imageBuilder: imageBuilder ??
+          (uri, title, alt) => GenAiMarkdownImage(
+                uri: uri,
+                title: title,
+                alt: alt,
+              ),
       onTapLink: onTapLink,
     );
   }

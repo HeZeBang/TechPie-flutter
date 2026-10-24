@@ -14,6 +14,7 @@ import 'package:techpie/features/genai/data/genai_request_signer.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
+import 'package:techpie/features/genai/domain/genai_context_usage.dart';
 import 'package:techpie/features/genai/domain/genai_contract.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
@@ -31,8 +32,7 @@ String _call(String id, GenAiChatRequest request) => encodeGenAiAgentCall(
       nonce: genAiAgentNonceFromSystem(request.history.first.content)!,
     );
 
-String _search(String id, String query, GenAiChatRequest request) =>
-    encodeGenAiAgentCall(
+String _search(String id, String query, GenAiChatRequest request) => encodeGenAiAgentCall(
       GenAiAgentToolCall(
         id: id,
         name: 'web_search',
@@ -88,8 +88,7 @@ class _ArchiveStore implements GenAiConversationStore {
   }
 
   @override
-  Future<List<GenAiConversationSummary>> list(String scope) =>
-      memory.list(scope);
+  Future<List<GenAiConversationSummary>> list(String scope) => memory.list(scope);
   @override
   Future<Set<String>> deletedIds(String scope) async {
     final value = await memory.deletedIds(scope);
@@ -108,11 +107,9 @@ class _ArchiveStore implements GenAiConversationStore {
   }
 
   @override
-  Future<void> rollbackDeletion(String scope, String id) =>
-      memory.rollbackDeletion(scope, id);
+  Future<void> rollbackDeletion(String scope, String id) => memory.rollbackDeletion(scope, id);
   @override
-  Future<Set<String>> pendingDeletionIds(String scope) =>
-      memory.pendingDeletionIds(scope);
+  Future<Set<String>> pendingDeletionIds(String scope) => memory.pendingDeletionIds(scope);
 
   @override
   Future<void> delete(String scope, String id) {
@@ -175,6 +172,7 @@ void main() {
             'result': {
               'fileId': 'fixture-document',
               'fileName': 'reference.txt',
+              'content': 'Synthetic document evidence',
             },
           },
         );
@@ -267,8 +265,7 @@ void main() {
     );
   }
 
-  test('agent and chat share group, model and context across mode switches',
-      () async {
+  test('agent and chat share group, model and context across mode switches', () async {
     final requests = <GenAiChatRequest>[];
     install((request, _) {
       requests.add(request);
@@ -309,7 +306,8 @@ void main() {
     );
     expect(
       body['messages'].toString(),
-      isNot(contains('techpie-agent-history')),
+      contains('techpie-agent-history'),
+      reason: 'Inert tool receipts remain source evidence when tools are disabled',
     );
     final normalMessages = body['messages'] as List;
     expect((normalMessages.first as Map)['role'], 'system');
@@ -328,11 +326,156 @@ void main() {
       contains('normal followup'),
     );
     expect(
-      requests.last.history
-          .any((m) => m.content.contains('techpie-agent-history')),
+      requests.last.history.any((m) => m.content.contains('techpie-agent-history')),
       isTrue,
     );
     expect(workspace.groupId, group);
+  });
+
+  test('agent archives store per-turn evidence and recover legacy checkpoints and gaps', () async {
+    final requests = <GenAiChatRequest>[];
+    install((request, _) {
+      requests.add(request);
+      return _answer(requests.length == 1 ? _call('archive-read', request) : 'Recorded.');
+    });
+    workspace.setAgentEnabled(true);
+    final id = workspace.groupId;
+    var halfSize = 0;
+    for (var i = 0; i < 20; i++) {
+      await workspace.send('Original source $i: ${'x' * 2000}');
+      if (i == 0) {
+        // This first cumulative checkpoint is the format of older archives.
+        workspace.turns.first.agentTranscriptIsDelta = false;
+      }
+      await workspace.flushConversations();
+      if (i == 9) halfSize = archives.writes.last.$2.encode().length;
+    }
+    final saved = archives.writes.last.$2;
+    final archiveScope = archives.writes.last.$1;
+    expect(saved.encode().length, lessThan(halfSize * 2.2));
+    expect(
+      saved.restoreTurns().fold<int>(0, (n, turn) => n + turn.agentTranscript.length),
+      42, // Twenty exchanges and one typed tool call/result pair.
+    );
+    final legacyJson = jsonDecode(saved.encode()) as Map<String, dynamic>;
+    ((legacyJson['turns'] as List).first as Map).remove('agentTranscriptIsDelta');
+    await archives.memory.write(archiveScope, GenAiConversationArchive.fromJson(legacyJson));
+    workspace.newConversation();
+    expect(await workspace.openConversation(id, GenAiCancellation()), isTrue);
+    await workspace.send('Recall the original records');
+    final history = requests.last.history.skip(1).map((m) => m.content).join();
+    expect(history, contains('Original source 0:'));
+    expect(history, contains('Original source 19:'));
+    expect(history, contains('archive-read'));
+    expect(history, contains('42'));
+    await workspace.retryTurn(workspace.turns.length - 1);
+    expect(requests.last.history.skip(1).map((m) => m.content).join(), history);
+
+    // Recovery must not join evidence across a missing-history boundary.
+    final afterGap = GenAiConversationArchive(
+      id: id,
+      title: saved.title,
+      updatedAt: DateTime.now(),
+      turns: [
+        ...saved.restoreTurns(),
+        GenAiConversationTurn('Missing history', isHistoryGap: true),
+        GenAiConversationTurn('Only after the gap')
+          ..answer = 'Understood.'
+          ..phase = GenAiChatPhase.completed,
+      ],
+      agentEnabled: true,
+      netSearchEnabled: false,
+      thinkingEnabled: false,
+      modelAiType: saved.modelAiType,
+      modelRootAiType: saved.modelRootAiType,
+      mutations: saved.mutations,
+    );
+    workspace.newConversation();
+    await workspace.flushConversations();
+    await archives.memory.write(archiveScope, afterGap);
+    expect(await workspace.openConversation(id, GenAiCancellation()), isTrue);
+    await workspace.send('Continue after the gap');
+    final gapHistory = requests.last.history.map((m) => m.content).join();
+    expect(gapHistory, contains('Only after the gap'));
+    expect(gapHistory, isNot(contains('Original source')));
+    expect(gapHistory, isNot(contains('archive-read')));
+  });
+
+  test('documents survive normal followups, mode switches, reopen and retry without leaking',
+      () async {
+    final agentRequests = <GenAiChatRequest>[];
+    install((request, _) {
+      agentRequests.add(request);
+      return _answer('agent answer');
+    });
+    var uploads = 0;
+    final original = transport.handle;
+    transport.handle = (request) async {
+      if (request.uri.path.endsWith('/chat/upload/chat/file')) {
+        uploads++;
+        return response(
+          json: {
+            'success': true,
+            'code': 200,
+            'result': {
+              'fileId': 'doc-$uploads',
+              'fileName': 'reference.txt',
+              'content': 'Synthetic document evidence',
+            },
+          },
+        );
+      }
+      return original(request);
+    };
+    Map<String, dynamic> lastChat() =>
+        jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
+    await workspace.addDocumentAttachment('notes.md', utf8.encode('# Context'));
+    expect(workspace.attachments.single.name, 'notes.md');
+    await workspace.send('Summarize');
+    await workspace.send('What are the details?');
+    expect(lastChat()['fileIds'], ['doc-1']);
+    expect(lastChat().containsKey('fileIDs'), isFalse);
+    expect(
+      (lastChat()['messages'] as List).first['content'],
+      contains('documents: true'),
+    );
+    await workspace.addDocumentAttachment('data.csv', utf8.encode('a,b\n1,2'));
+    await workspace.send('Compare both documents');
+    expect(lastChat()['fileIds'], ['doc-1', 'doc-2']);
+    workspace.setAgentEnabled(true);
+    await workspace.send('Use tools with both documents');
+    expect(agentRequests.last.fileIds, ['doc-1', 'doc-2']);
+    workspace.setAgentEnabled(false);
+    final id = workspace.groupId;
+    await workspace.flushConversations();
+    workspace.newConversation();
+    expect(await workspace.openConversation(id, GenAiCancellation()), isTrue);
+    workspace.setAgentEnabled(false);
+    await workspace.send('Continue after reopening');
+    expect(lastChat()['fileIds'], ['doc-1', 'doc-2']);
+    final beforeRetry = transport.requests.length;
+    await workspace.retryTurn(1);
+    expect(transport.requests, hasLength(beforeRetry));
+    await workspace.retryTurn(workspace.turns.length - 1);
+    expect(lastChat()['fileIds'], ['doc-1', 'doc-2']);
+    expect(uploads, 2, reason: 'Followups reuse IDs without uploading again');
+    workspace.newConversation();
+    await workspace.send('Unrelated question');
+    expect(lastChat().containsKey('fileIds'), isFalse);
+    expect(
+      (lastChat()['messages'] as List).first['content'],
+      contains('documents: false'),
+    );
+  });
+
+  test('invalid document errors remain actionable and prevent sending', () async {
+    final before = transport.requests.length;
+    await workspace.addDocumentAttachment('slides.pptx', [1, 2, 3]);
+    expect(workspace.attachments.single.error, contains('不支持此格式'));
+    expect(transport.requests.length, before);
+    await workspace.send('Read this');
+    expect(workspace.turns, isEmpty);
+    expect(transport.requests.length, before);
   });
 
   test('agent/search coexist with uploaded attachments', () async {
@@ -356,8 +499,7 @@ void main() {
     expect(workspace.attachments, hasLength(2));
   });
 
-  test('combined modes ground tool follow-ups and restore all settings',
-      () async {
+  test('combined modes ground tool follow-ups and restore all settings', () async {
     final original = transport.handle;
     transport.handle = (request) async {
       if (request.uri.path.endsWith('/list')) {
@@ -428,18 +570,14 @@ void main() {
     expect(requests.map((r) => r.thinking), [true, true, true, true]);
     expect(requests.every((r) => !r.netGo), isTrue);
     expect(
-      requests.last.history
-          .any((m) => m.content.contains('Synthetic campus evidence')),
+      requests.last.history.any((m) => m.content.contains('Synthetic campus evidence')),
       isTrue,
     );
     expect(
-      requests.last.history
-          .any((m) => m.content.contains('Reasoning stays separate.')),
+      requests.last.history.any((m) => m.content.contains('Reasoning stays separate.')),
       isFalse,
     );
-    final searches = transport.requests
-        .where((r) => r.uri.path.endsWith('/net/search'))
-        .toList();
+    final searches = transport.requests.where((r) => r.uri.path.endsWith('/net/search')).toList();
     expect(searches, hasLength(2));
     expect(
       (jsonDecode(searches.first.body!) as Map)['chatInfo'],
@@ -467,9 +605,7 @@ void main() {
     workspace.newConversation();
     expect(await workspace.openConversation(id, GenAiCancellation()), isTrue);
     expect(
-      workspace.agentEnabled &&
-          workspace.netSearchEnabled &&
-          workspace.thinkingEnabled,
+      workspace.agentEnabled && workspace.netSearchEnabled && workspace.thinkingEnabled,
       isTrue,
     );
     expect(workspace.turns.single.citations, hasLength(2));
@@ -575,8 +711,7 @@ void main() {
   test('disabled search is neither advertised nor executable', () async {
     var calls = 0;
     install((request, _) {
-      final catalog =
-          request.history.first.content.split('AVAILABLE_TOOLS:').last;
+      final catalog = request.history.first.content.split('AVAILABLE_TOOLS:').last;
       expect(catalog, isNot(contains('web_search')));
       calls++;
       if (calls == 1) {
@@ -595,8 +730,7 @@ void main() {
     expect(workspace.turns.single.answer, 'Search is disabled.');
   });
 
-  test('normal chat notifications cannot overwrite an active agent turn',
-      () async {
+  test('normal chat notifications cannot overwrite an active agent turn', () async {
     final gate = Completer<void>();
     install((_, cancellation) async* {
       await cancellation.race(gate.future);
@@ -656,8 +790,56 @@ void main() {
     });
   }
 
-  test('stop and immediate followup retain unknown outcome and reuse ledger',
-      () async {
+  for (final action in ['stop', 'new', 'scope']) {
+    test('$action clears agent compaction progress before a new request', () async {
+      const pendingUsage = GenAiContextUsage(
+        stage: GenAiContextStage.compacting,
+        estimatedInputUnits: 12000,
+        allowedInputUnits: 18000,
+        originalInputUnits: 12000,
+        totalChunks: 3,
+      );
+      const readyUsage = GenAiContextUsage(
+        stage: GenAiContextStage.ready,
+        estimatedInputUnits: 300,
+        allowedInputUnits: 18000,
+        originalInputUnits: 300,
+      );
+      final release = Completer<void>();
+      install((request, _) async* {
+        if (request.prompt == 'old') {
+          yield const GenAiContextUsageChanged(pendingUsage);
+          // Deliberately finish after cancellation to exercise stale progress.
+          await release.future;
+          yield const GenAiContextUsageChanged(pendingUsage);
+        } else {
+          yield const GenAiContextUsageChanged(readyUsage);
+        }
+        yield* _answer('done');
+      });
+      workspace.setAgentEnabled(true);
+      final old = workspace.send('old');
+      await _until(() => workspace.contextUsage == pendingUsage);
+      switch (action) {
+        case 'stop':
+          workspace.stop();
+        case 'new':
+          workspace.newConversation();
+        case 'scope':
+          scope.value++;
+      }
+      expect(workspace.contextUsage, isNull);
+      await old;
+      await workspace.send('next');
+      release.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(workspace.contextUsage, readyUsage);
+      expect(workspace.turns.last.answer, 'done');
+      expect(workspace.turns.last.phase, GenAiChatPhase.completed);
+    });
+  }
+
+  test('stop and immediate followup retain unknown outcome and reuse ledger', () async {
     var executed = 0;
     final dispatched = Completer<void>();
     final release = Completer<Object?>();
@@ -666,9 +848,7 @@ void main() {
       (request, _) {
         requests.add(request);
         return _answer(
-          requests.length <= 2
-              ? _call('mutation-${requests.length}', request)
-              : 'checked',
+          requests.length <= 2 ? _call('mutation-${requests.length}', request) : 'checked',
         );
       },
       approval: true,
@@ -722,8 +902,7 @@ void main() {
     );
   });
 
-  test('agent timeout becomes a failed turn instead of a stuck spinner',
-      () async {
+  test('agent timeout becomes a failed turn instead of a stuck spinner', () async {
     final pending = StreamController<GenAiChatEvent>();
     addTearDown(pending.close);
     install(
@@ -737,9 +916,7 @@ void main() {
     expect(workspace.sending, isFalse);
   });
 
-  test(
-      'typed sessions reopen across controller restart with title, tools and mode',
-      () async {
+  test('typed sessions reopen across controller restart with title, tools and mode', () async {
     final requests = <GenAiChatRequest>[];
     install((request, _) {
       requests.add(request);
@@ -751,8 +928,7 @@ void main() {
     await workspace.send('original user question');
     final id = workspace.groupId;
     await workspace.renameConversation(id, 'My campus session');
-    final before =
-        await workspace.conversationForExport(id, GenAiCancellation());
+    final before = await workspace.conversationForExport(id, GenAiCancellation());
     workspace.newConversation();
     await workspace.openConversation(id, GenAiCancellation());
     expect(workspace.title, 'My campus session');
@@ -786,8 +962,7 @@ void main() {
     expect(workspace.selectedModel?.aiType, before.modelAiType);
     await workspace.send('continue');
     expect(
-      requests.last.history
-          .any((m) => m.content.contains('techpie-agent-history')),
+      requests.last.history.any((m) => m.content.contains('techpie-agent-history')),
       isTrue,
     );
     expect(
@@ -795,22 +970,16 @@ void main() {
       contains('original user question'),
     );
     expect(
-      (await workspace.listConversations(GenAiCancellation()))
-          .records
-          .single
-          .title,
+      (await workspace.listConversations(GenAiCancellation())).records.single.title,
       'My campus session',
     );
   });
 
-  test(
-      'durable approved result survives restart without another action or approval',
-      () async {
+  test('durable approved result survives restart without another action or approval', () async {
     var executed = 0;
     var modelTurns = 0;
     install(
-      (request, _) =>
-          _answer((++modelTurns).isEven ? 'done' : _call('action', request)),
+      (request, _) => _answer((++modelTurns).isEven ? 'done' : _call('action', request)),
       approval: true,
       execute: () async {
         executed++;
@@ -864,8 +1033,7 @@ void main() {
     expect(workspace.turns.last.answer, 'already done');
   });
 
-  test('pending approval archives restore cancelled and need fresh approval',
-      () async {
+  test('pending approval archives restore cancelled and need fresh approval', () async {
     var executions = 0;
     install(
       (request, _) => _answer(_call('pending', request)),
@@ -893,9 +1061,7 @@ void main() {
     expect(executions, 0);
   });
 
-  test(
-      'durable checkpoint failure blocks mutation dispatch and exposes storage error',
-      () async {
+  test('durable checkpoint failure blocks mutation dispatch and exposes storage error', () async {
     var executions = 0;
     install(
       (request, _) => _answer(_call('action', request)),
@@ -917,8 +1083,7 @@ void main() {
     expect(workspace.pendingAgentApproval, isNull);
   });
 
-  test('late archive open cannot replace a new chat and scopes isolate history',
-      () async {
+  test('late archive open cannot replace a new chat and scopes isolate history', () async {
     install((_, __) => _answer('done'));
     await workspace.send('private');
     final id = workspace.groupId;
@@ -942,17 +1107,12 @@ void main() {
     );
     scope.value--;
     expect(
-      (await workspace.listConversations(GenAiCancellation()))
-          .records
-          .single
-          .id,
+      (await workspace.listConversations(GenAiCancellation())).records.single.id,
       id,
     );
   });
 
-  test(
-      'successful deletion prevents old writers and stale opens resurrecting session',
-      () async {
+  test('successful deletion prevents old writers and stale opens resurrecting session', () async {
     install((_, __) => _answer('done'));
     await workspace.send('remove me');
     final id = workspace.groupId;
@@ -989,8 +1149,7 @@ void main() {
     expect(kept.restoreTurns().single.prompt, 'keep on failure');
   });
 
-  test(
-      'storage recovery retries failed saves and local history remains available offline',
+  test('storage recovery retries failed saves and local history remains available offline',
       () async {
     install((_, __) => _answer('done'));
     await workspace.send('survives outage');
@@ -1016,16 +1175,12 @@ void main() {
       return original(request);
     };
     expect(
-      (await workspace.listConversations(GenAiCancellation()))
-          .records
-          .single
-          .id,
+      (await workspace.listConversations(GenAiCancellation())).records.single.id,
       id,
     );
   });
 
-  test(
-      'account switch while save is queued cannot send deletion through the new account',
+  test('account switch while save is queued cannot send deletion through the new account',
       () async {
     install((_, __) => _answer('done'));
     await workspace.send('old account session');
@@ -1052,17 +1207,14 @@ void main() {
     await flush;
     await rejected;
     expect(
-      transport.requests
-          .where((request) => request.uri.path.endsWith('/delete/groupId')),
+      transport.requests.where((request) => request.uri.path.endsWith('/delete/groupId')),
       isEmpty,
     );
     expect(await archives.read(old.$1, id), isNotNull);
   });
 
   for (final action in ['export', 'rename']) {
-    test(
-        '$action cannot fetch server history after a binding switch during local read',
-        () async {
+    test('$action cannot fetch server history after a binding switch during local read', () async {
       install((_, __) => _answer('done'));
       archives.readGate = Completer<void>();
       archives.readStarted = Completer<void>();
@@ -1092,8 +1244,7 @@ void main() {
     });
   }
 
-  test('failed older save cannot retry over a newer successful archive',
-      () async {
+  test('failed older save cannot retry over a newer successful archive', () async {
     install((_, __) => _answer('done'));
     await workspace.send('first');
     final id = workspace.groupId;
@@ -1116,8 +1267,7 @@ void main() {
     expect(workspace.archiveFailure, isNull);
   });
 
-  test('rename waiting on storage preserves a later durable action receipt',
-      () async {
+  test('rename waiting on storage preserves a later durable action receipt', () async {
     var calls = 0;
     install(
       (request, _) => _answer(
@@ -1148,9 +1298,7 @@ void main() {
     await workspace.flushConversations();
     for (final pair in archives.writes.skip(checkpointIndex)) {
       expect(
-        (pair.$2.mutations['effects']! as Map)
-            .values
-            .any((value) => (value as Map)['ok'] == true),
+        (pair.$2.mutations['effects']! as Map).values.any((value) => (value as Map)['ok'] == true),
         isTrue,
       );
     }
@@ -1158,9 +1306,7 @@ void main() {
     expect(workspace.turns, hasLength(2));
   });
 
-  test(
-      'deleting current session rotates group before another message can be sent',
-      () async {
+  test('deleting current session rotates group before another message can be sent', () async {
     install((_, __) => _answer('done'));
     await workspace.send('delete this session');
     final oldId = workspace.groupId;
@@ -1183,21 +1329,15 @@ void main() {
     await deletion;
     expect(workspace.groupId, nextId);
     expect(workspace.turns.single.prompt, 'keep this new message');
-    final posts = transport.requests
-        .where((request) => request.method == 'POST')
-        .toList();
+    final posts = transport.requests.where((request) => request.method == 'POST').toList();
     expect(jsonDecode(posts.last.body!)['chatGroupId'], nextId);
     expect(
-      (await workspace.listConversations(GenAiCancellation()))
-          .records
-          .single
-          .id,
+      (await workspace.listConversations(GenAiCancellation())).records.single.id,
       nextId,
     );
   });
 
-  test('slow server listing cannot return a concurrently deleted local session',
-      () async {
+  test('slow server listing cannot return a concurrently deleted local session', () async {
     install((_, __) => _answer('done'));
     await workspace.send('old list entry');
     final id = workspace.groupId;
@@ -1230,9 +1370,7 @@ void main() {
     expect((await listing).records, isEmpty);
   });
 
-  test(
-      'slow server listing uses the latest local rename instead of stale metadata',
-      () async {
+  test('slow server listing uses the latest local rename instead of stale metadata', () async {
     install((_, __) => _answer('done'));
     await workspace.send('original title');
     final id = workspace.groupId;
@@ -1270,24 +1408,18 @@ void main() {
     await workspace.retrySaveConversations();
     expect(workspace.archiveFailure, isNull);
     expect(
-      transport.requests
-          .where((request) => request.uri.path.endsWith('/delete/groupId')),
+      transport.requests.where((request) => request.uri.path.endsWith('/delete/groupId')),
       hasLength(1),
     );
     expect(
-      (await workspace.listConversations(GenAiCancellation()))
-          .records
-          .single
-          .id,
+      (await workspace.listConversations(GenAiCancellation())).records.single.id,
       workspace.groupId,
     );
     expect(await workspace.openConversation(id, GenAiCancellation()), isFalse);
     expect(workspace.turns.single.prompt, 'new session remains usable');
   });
 
-  test(
-      'failed current-session deletion restores the latest unsaved settings in archive',
-      () async {
+  test('failed current-session deletion restores the latest unsaved settings in archive', () async {
     install((_, __) => _answer('done'));
     await workspace.send('recover latest settings');
     final id = workspace.groupId;
@@ -1362,8 +1494,7 @@ void main() {
     expect(workspace.uncertainDeletionCount, 1);
     await workspace.retrySaveConversations();
     expect(
-      transport.requests
-          .where((request) => request.uri.path.endsWith('/delete/groupId')),
+      transport.requests.where((request) => request.uri.path.endsWith('/delete/groupId')),
       hasLength(1),
     );
     await workspace.reconcilePendingDeletions(GenAiCancellation());
@@ -1371,15 +1502,12 @@ void main() {
     expect(await workspace.openConversation(id, GenAiCancellation()), isTrue);
     expect(workspace.turns.single.prompt, 'uncertain delete');
     expect(
-      transport.requests
-          .where((request) => request.uri.path.endsWith('/delete/groupId')),
+      transport.requests.where((request) => request.uri.path.endsWith('/delete/groupId')),
       hasLength(1),
     );
   });
 
-  test(
-      'read-only reconciliation finalizes absence without repeating remote deletion',
-      () async {
+  test('read-only reconciliation finalizes absence without repeating remote deletion', () async {
     install((_, __) => _answer('done'));
     await workspace.send('already deleted remotely');
     final id = workspace.groupId;
@@ -1403,14 +1531,12 @@ void main() {
     expect(workspace.uncertainDeletionCount, 0);
     expect(await workspace.openConversation(id, GenAiCancellation()), isFalse);
     expect(
-      transport.requests
-          .where((request) => request.uri.path.endsWith('/delete/groupId')),
+      transport.requests.where((request) => request.uri.path.endsWith('/delete/groupId')),
       hasLength(1),
     );
   });
 
-  test('failed durable deletion intent prevents remote DELETE dispatch',
-      () async {
+  test('failed durable deletion intent prevents remote DELETE dispatch', () async {
     install((_, __) => _answer('done'));
     await workspace.send('keep when journal unavailable');
     final id = workspace.groupId;
@@ -1420,17 +1546,14 @@ void main() {
       throwsA(isA<GenAiFailure>()),
     );
     expect(
-      transport.requests
-          .where((request) => request.uri.path.endsWith('/delete/groupId')),
+      transport.requests.where((request) => request.uri.path.endsWith('/delete/groupId')),
       isEmpty,
     );
     expect(await workspace.openConversation(id, GenAiCancellation()), isTrue);
     expect(workspace.turns.single.prompt, 'keep when journal unavailable');
   });
 
-  test(
-      'partially persisted deletion intent rolls back before any remote effect',
-      () async {
+  test('partially persisted deletion intent rolls back before any remote effect', () async {
     install((_, __) => _answer('done'));
     await workspace.send('keep after journal partial failure');
     final id = workspace.groupId;
@@ -1441,8 +1564,7 @@ void main() {
       throwsA(isA<GenAiFailure>()),
     );
     expect(
-      transport.requests
-          .where((request) => request.uri.path.endsWith('/delete/groupId')),
+      transport.requests.where((request) => request.uri.path.endsWith('/delete/groupId')),
       isEmpty,
     );
     expect(await archives.pendingDeletionIds(storageScope), isEmpty);
@@ -1451,9 +1573,7 @@ void main() {
     expect(workspace.turns.single.prompt, 'keep after journal partial failure');
   });
 
-  test(
-      'new conversation cancels stale upload and no longer blocks the next send',
-      () async {
+  test('new conversation cancels stale upload and no longer blocks the next send', () async {
     install((_, __) => _answer('agent answer'));
     final original = transport.handle;
     final uploadStarted = Completer<void>();
@@ -1478,8 +1598,7 @@ void main() {
     gate.complete();
   });
 
-  test('history gap blocks retry and resets both chat and agent context',
-      () async {
+  test('history gap blocks retry and resets both chat and agent context', () async {
     final requests = <GenAiChatRequest>[];
     install((request, _) {
       requests.add(request);
@@ -1494,11 +1613,15 @@ void main() {
       updatedAt: DateTime.now(),
       turns: [
         GenAiConversationTurn('before gap')
+          ..attachedFileIds = ['stale-document']
+          ..attachedFileContents = {'stale-document': 'old source'}
           ..answer = 'old answer'
           ..phase = GenAiChatPhase.completed,
         GenAiConversationTurn('missing record', isHistoryGap: true)
           ..phase = GenAiChatPhase.interrupted,
         GenAiConversationTurn('after gap')
+          ..attachedFileIds = ['current-document']
+          ..attachedFileContents = {'current-document': 'new source'}
           ..answer = 'new answer'
           ..phase = GenAiChatPhase.completed,
       ],
@@ -1518,12 +1641,16 @@ void main() {
     expect(transport.requests.length, before);
     expect(workspace.turns, hasLength(3));
     await workspace.send('normal followup');
-    final messages =
-        jsonDecode(transport.requests.last.body!)['messages'] as List;
+    final messages = jsonDecode(transport.requests.last.body!)['messages'] as List;
     expect(messages.toString(), isNot(contains('before gap')));
     expect(messages.toString(), contains('after gap'));
+    expect(
+      jsonDecode(transport.requests.last.body!)['fileIds'],
+      ['current-document'],
+    );
     workspace.setAgentEnabled(true);
     await workspace.send('agent followup');
+    expect(requests.last.fileIds, ['current-document']);
     expect(
       requests.last.history.map((message) => message.content),
       isNot(contains('before gap')),

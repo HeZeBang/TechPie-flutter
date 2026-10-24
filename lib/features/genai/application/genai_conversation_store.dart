@@ -18,6 +18,7 @@ final class GenAiConversationArchive {
     required this.modelAiType,
     required this.modelRootAiType,
     required Map<String, Object?> mutations,
+    Map<String, Object?> contextMemory = const {},
   }) : _json = genAiAgentJsonMap({
           'version': 1,
           'id': id,
@@ -30,6 +31,7 @@ final class GenAiConversationArchive {
           'modelAiType': modelAiType,
           'modelRootAiType': modelRootAiType,
           'mutations': mutations,
+          'contextMemory': contextMemory,
         });
 
   GenAiConversationArchive._(this._json)
@@ -74,6 +76,9 @@ final class GenAiConversationArchive {
       ];
   Map<String, Object?> get mutations =>
       Map<String, Object?>.from(_json['mutations']! as Map);
+  Map<String, Object?> get contextMemory => Map<String, Object?>.from(
+        _json['contextMemory'] as Map? ?? const {},
+      );
   Map<String, Object?> toJson() => _json;
   String encode() => jsonEncode(_json);
   GenAiConversationSummary get summary => GenAiConversationSummary(

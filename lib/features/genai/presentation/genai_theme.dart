@@ -1,37 +1,23 @@
 import 'package:flutter/material.dart';
 
-/// A quiet, shared palette scoped to GenAI; preserves the app's fonts and mode.
+/// Chat-specific spacing and controls, inheriting the user's app palette.
 ThemeData genAiTheme(ThemeData base) {
-  final dark = base.brightness == Brightness.dark;
-  final surface = dark ? const Color(0xff181b1b) : Colors.white;
-  final panel = dark ? const Color(0xff222626) : const Color(0xfff5f6f6);
-  final ink = dark ? const Color(0xffedf0ef) : const Color(0xff202725);
-  final muted = dark ? const Color(0xffa6b0ac) : const Color(0xff69736f);
-  final border = dark ? const Color(0xff363e3a) : const Color(0xffe5e9e7);
-  final accent = dark ? const Color(0xff83d5b6) : const Color(0xff23745a);
-  final scheme = base.colorScheme.copyWith(
-    primary: accent,
-    onPrimary: dark ? const Color(0xff10271d) : Colors.white,
-    secondary: accent,
-    surface: surface,
-    surfaceContainerLowest: surface,
-    surfaceContainerLow: panel,
-    surfaceContainer: panel,
-    surfaceContainerHigh: panel,
-    surfaceContainerHighest: panel,
-    onSurface: ink,
-    onSurfaceVariant: muted,
-    outline: muted,
-    outlineVariant: border,
-    surfaceTint: Colors.transparent,
-  );
+  final scheme = base.colorScheme;
+  final surface = base.scaffoldBackgroundColor;
+  final panel = scheme.surfaceContainerLow;
+  final ink = scheme.onSurface;
+  final muted = scheme.onSurfaceVariant;
+  final border = scheme.outlineVariant;
+  final accent = scheme.primary;
   final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(14));
   return base.copyWith(
-    colorScheme: scheme,
-    scaffoldBackgroundColor: surface,
     dividerColor: border,
+    tooltipTheme: base.tooltipTheme.copyWith(
+      waitDuration: const Duration(milliseconds: 700),
+      showDuration: const Duration(seconds: 2),
+    ),
     textTheme: base.textTheme.apply(bodyColor: ink, displayColor: ink),
-    iconTheme: IconThemeData(color: muted, size: 20),
+    iconTheme: base.iconTheme.copyWith(color: muted, size: 20),
     appBarTheme: base.appBarTheme.copyWith(
       backgroundColor: surface,
       foregroundColor: ink,

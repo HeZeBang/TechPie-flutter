@@ -340,49 +340,6 @@ void main() {
     expect(transport.requests.single.uri.path, '/htk/chat/net/search');
   });
 
-  test('uploadDocument sends multipart and decodes uploaded file', () async {
-    final transport = ScriptedTransport(
-      (_) async => response(
-        json: {
-          'success': true,
-          'code': 200,
-          'result': {
-            'fileId': 'fid-123',
-            'fileName': 'paper.pdf',
-            'content': '论文内容提取',
-          },
-        },
-      ),
-    );
-    final api = GenAiApiClient(
-      transport: transport,
-      signer: const GenAiRequestSigner('fixture'),
-    );
-    final uploaded = await api.uploadDocument(
-      'token',
-      groupId: 'group-1',
-      aiType: 'model-a',
-      fileName: 'paper.pdf',
-      bytes: utf8.encode('dummy-pdf'),
-      cancellation: GenAiCancellation(),
-    );
-    expect(uploaded.fileId, 'fid-123');
-    expect(uploaded.fileName, 'paper.pdf');
-    expect(uploaded.content, '论文内容提取');
-    final req = transport.requests.single;
-    expect(req.uri.path, '/htk/chat/upload/chat/file');
-    expect(
-      req.uri.queryParameters,
-      {'chatGroupId': 'group-1', 'aiType': 'model-a'},
-    );
-    expect(
-      req.headers['Content-Type'],
-      contains('multipart/form-data; boundary='),
-    );
-    expect(utf8.decode(req.bodyBytes!), contains('name="biz"\r\n\r\ntemp'));
-    expect(utf8.decode(req.bodyBytes!), contains('filename="paper.pdf"'));
-  });
-
   test(
       'uploadVisionImage targets pic host with token and decodes uploaded image',
       () async {

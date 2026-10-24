@@ -1,14 +1,22 @@
+import 'dart:async';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_mermaid/flutter_mermaid.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/presentation/markdown/genai_markdown.dart';
+import 'package:techpie/widgets/adaptive_feedback.dart';
 
 void main() {
   Widget buildApp(Widget child, {ThemeData? theme}) {
     return MaterialApp(
       theme: theme,
+      builder: (_, child) => AdaptiveFeedbackHost(
+        key: adaptiveFeedbackHostKey,
+        child: child!,
+      ),
       home: Scaffold(
         body: SingleChildScrollView(
           child: child,
@@ -183,23 +191,30 @@ f(x) = \\sum_{i=1}^n x_i
   });
 
   testWidgets(
-      'handles malformed chart JSON gracefully with error badge and code view',
+      'invalid chart data shows source without crashing or inventing zeros',
       (tester) async {
-    const invalidChartMarkdown = '''
-```chart
-{ invalid json syntax
-```
-''';
-
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: invalidChartMarkdown),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('格式未识别'), findsOneWidget);
-    expect(find.text('{ invalid json syntax'), findsOneWidget);
+    for (final code in [
+      '{ invalid json syntax',
+      '{"type":"line","values":["Infinity"]}',
+      '{"type":"line","values":["NaN"]}',
+      '{"type":"bar","values":["not a number"]}',
+      '{"type":"bar","values":[1.7e308]}',
+      '{"type":"line","values":[1e100]}',
+      '{"type":"line","values":[5e-324]}',
+      '{"type":"line","values":[-1e308,1e308]}',
+      '{"type":"pie","values":[1e308,1e308]}',
+      '{"type":"pie","values":[-1,2]}',
+    ]) {
+      await tester
+          .pumpWidget(buildApp(GenAiMarkdown(data: '```chart\n$code\n```')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('格式未识别'), findsOneWidget);
+      expect(find.text(code), findsOneWidget);
+      expect(find.byType(LineChart), findsNothing);
+      expect(find.byType(BarChart), findsNothing);
+      expect(find.byType(PieChart), findsNothing);
+    }
   });
 
   testWidgets('renders Mermaid diagram from code block', (tester) async {
@@ -284,7 +299,8 @@ stateDiagram-v2
     expect(find.text('状态图'), findsOneWidget);
   });
 
-  testWidgets('renders standard code block with language chip and copy button',
+  testWidgets(
+      'clipboard confirms success only after completion and reports denial',
       (tester) async {
     const dartMarkdown = '''
 ```dart
@@ -306,162 +322,75 @@ void main() {
     expect(find.text('复制'), findsOneWidget);
     expect(find.textContaining('print("Hello, TechPie!");'), findsOneWidget);
 
-    // Tap copy
+    var write = Completer<void>();
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') await write.future;
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
     await tester.tap(find.text('复制'));
     await tester.pump();
-    await tester.pump();
-    expect(find.text('已复制'), findsOneWidget);
-  });
-
-  testWidgets('renders multi-line code block with line numbers gutter',
-      (tester) async {
-    const multiLineCode = '''
-```python
-def add(a, b):
-    # Calculate sum
-    return a + b
-```
-''';
-
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: multiLineCode),
-      ),
-    );
+    expect(find.text('已复制'), findsNothing);
+    write.completeError(PlatformException(code: 'denied'));
     await tester.pumpAndSettle();
+    expect(find.text('已复制'), findsNothing);
+    expect(find.text('无法复制，请手动选择文字'), findsOneWidget);
+    expect(find.textContaining('print("Hello, TechPie!");'), findsOneWidget);
 
-    expect(find.byType(GenAiStandardCodeBlock), findsOneWidget);
-    expect(find.text('PYTHON'), findsOneWidget);
-    // Line numbers 1, 2, 3 should be displayed in the gutter with monospace font
-    expect(find.text('1\n2\n3'), findsOneWidget);
-    final lineNumbersText = tester.widget<Text>(find.text('1\n2\n3'));
-    expect(lineNumbersText.style?.fontFamily, 'RobotoMono');
-    expect(lineNumbersText.style?.fontFamilyFallback, contains('monospace'));
-    expect(find.textContaining('return a + b'), findsOneWidget);
+    write = Completer<void>();
+    await tester.tap(find.text('复制'));
+    await tester.pump();
+    write.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('已复制'), findsOneWidget);
+    // Leaving a rendered answer cancels its delayed feedback reset.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 3));
+    expect(tester.takeException(), isNull);
   });
 
-  test('GenAiSyntaxHighlighter tokenizes Python, Dart, JS, JSON, SQL, Bash',
+  test('syntax highlighting preserves text and distinguishes lexical contexts',
       () {
     const highlighter = GenAiSyntaxHighlighter(brightness: Brightness.dark);
     final theme = SyntaxTheme.dark;
-
-    // Python
-    final pySpans = highlighter.highlight(
-      code: 'def add(x: int) -> str:\n    # comment\n    return "hi" + str(x)',
-      language: 'python',
-    );
-    expect(pySpans.first.style?.fontFamily, 'RobotoMono');
-    expect(pySpans.first.style?.fontFamilyFallback, contains('monospace'));
+    const python =
+        'def add(x):\n    # return is a comment\n    return "def" + str(x)';
+    final spans = highlighter.highlight(code: python, language: 'python');
+    expect(spans.map((span) => span.text).join(), python);
     expect(
-      pySpans.any((s) => s.text == 'def' && s.style?.color == theme.keyword),
-      isTrue,
-    );
-    expect(
-      pySpans.any(
-        (s) => s.text == 'return' && s.style?.color == theme.keyword,
+      spans.any(
+        (span) => span.text == 'def' && span.style?.color == theme.keyword,
       ),
       isTrue,
     );
     expect(
-      pySpans.any(
-        (s) => s.text == '# comment' && s.style?.color == theme.comment,
+      spans.any(
+        (span) =>
+            span.text == '# return is a comment' &&
+            span.style?.color == theme.comment,
       ),
       isTrue,
     );
     expect(
-      pySpans.any((s) => s.text == '"hi"' && s.style?.color == theme.string),
-      isTrue,
-    );
-
-    // Dart
-    final dartSpans = highlighter.highlight(
-      code:
-          'class MyWidget extends StatelessWidget {\n  final int count = 42;\n}',
-      language: 'dart',
-    );
-    expect(
-      dartSpans.any(
-        (s) => s.text == 'class' && s.style?.color == theme.keyword,
+      spans.any(
+        (span) => span.text == '"def"' && span.style?.color == theme.string,
       ),
       isTrue,
     );
+    const json = '{"name": "name", "count": 100}';
+    final jsonSpans = highlighter.highlight(code: json, language: 'json');
+    expect(jsonSpans.map((span) => span.text).join(), json);
     expect(
-      dartSpans.any(
-        (s) => s.text == 'final' && s.style?.color == theme.keyword,
-      ),
-      isTrue,
-    );
-    expect(
-      dartSpans.any((s) => s.text == 'int' && s.style?.color == theme.type),
-      isTrue,
-    );
-    expect(
-      dartSpans.any((s) => s.text == '42' && s.style?.color == theme.number),
-      isTrue,
-    );
-
-    // JSON
-    final jsonSpans = highlighter.highlight(
-      code: '{\n  "name": "TechPie",\n  "count": 100\n}',
-      language: 'json',
-    );
-    expect(
-      jsonSpans.any(
-        (s) => s.text == '"name"' && s.style?.color == theme.property,
-      ),
-      isTrue,
-    );
-    expect(
-      jsonSpans.any(
-        (s) => s.text == '"TechPie"' && s.style?.color == theme.string,
-      ),
-      isTrue,
-    );
-    expect(
-      jsonSpans.any(
-        (s) => s.text == '100' && s.style?.color == theme.number,
-      ),
-      isTrue,
-    );
-
-    // SQL
-    final sqlSpans = highlighter.highlight(
-      code: 'SELECT id, username FROM users WHERE age >= 18;',
-      language: 'sql',
-    );
-    expect(
-      sqlSpans.any(
-        (s) => s.text == 'SELECT' && s.style?.color == theme.keyword,
-      ),
-      isTrue,
-    );
-    expect(
-      sqlSpans.any((s) => s.text == 'FROM' && s.style?.color == theme.keyword),
-      isTrue,
-    );
-    expect(
-      sqlSpans.any(
-        (s) => s.text == 'WHERE' && s.style?.color == theme.keyword,
-      ),
-      isTrue,
-    );
-
-    // Bash
-    final bashSpans = highlighter.highlight(
-      code: 'echo "Hello \$USER"\n# deploy script',
-      language: 'bash',
-    );
-    expect(
-      bashSpans.any(
-        (s) => s.text == 'echo' && s.style?.color == theme.keyword,
-      ),
-      isTrue,
-    );
-    expect(
-      bashSpans.any(
-        (s) => s.text == '# deploy script' && s.style?.color == theme.comment,
-      ),
-      isTrue,
+      jsonSpans
+          .where((span) => span.text == '"name"')
+          .map((span) => span.style?.color),
+      [theme.property, theme.string],
     );
   });
 

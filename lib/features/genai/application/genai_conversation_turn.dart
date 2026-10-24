@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../domain/genai_agent_contract.dart';
 import '../domain/genai_agent_protocol.dart';
+import '../domain/genai_context_usage.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
@@ -53,9 +54,31 @@ final class GenAiConversationTurn {
     }
   }
 
+  /// Source evidence for follow-up requests, including server-only imports.
+  /// No preparation, approval or mutation-ledger state is reconstructed.
+  List<GenAiAgentHistoryEntry> get evidenceEntries => [
+        GenAiAgentHistoryEntry.text(GenAiRole.user, prompt),
+        for (final event in agentEvents.values)
+          if (event.call != null && event.result != null) ...[
+            GenAiAgentHistoryEntry.call(event.call!),
+            GenAiAgentHistoryEntry.result(event.result!),
+          ],
+        if (answer.isNotEmpty) GenAiAgentHistoryEntry.text(GenAiRole.assistant, answer),
+      ];
+
   String agentStatus = '';
+  // Legacy archives may contain this redundant wire history. New turns use
+  // only the typed transcript below.
   List<GenAiMessage> agentHistory = const [];
   List<GenAiAgentHistoryEntry> agentTranscript = const [];
+
+  /// Older archives stored a cumulative checkpoint on every agent turn.
+  /// New turns retain only their own entries, keeping memory and storage linear.
+  bool agentTranscriptIsDelta = false;
+  bool contextCompacted = false;
+
+  /// Status of the latest request in this turn; never persisted as live progress.
+  GenAiContextUsage? contextUsage;
   String answer = '';
   String reasoning = '';
   bool isAgentThinking = false;
@@ -65,6 +88,7 @@ final class GenAiConversationTurn {
   List<GenAiWebSearchCitation> citations = const [];
   List<String> attachedFileNames = const [];
   List<String> attachedFileIds = const [];
+  Map<String, String> attachedFileContents = const {};
   String? attachedImageUrl;
   List<String> attachedImageUrls = const [];
   Uint8List? attachedImageBytes;
@@ -83,6 +107,7 @@ extension GenAiConversationTurnArchive on GenAiConversationTurn {
         'isAgent': isAgent,
         'isHistoryGap': isHistoryGap,
         'answer': answer,
+        'contextCompacted': contextCompacted,
         'reasoning': reasoning,
         'phase': phase.name,
         'thinkingDurationMs': thinkingDurationMs,
@@ -91,6 +116,7 @@ extension GenAiConversationTurnArchive on GenAiConversationTurn {
           for (final message in agentHistory)
             {'role': message.role.name, 'content': message.content},
         ],
+        'agentTranscriptIsDelta': agentTranscriptIsDelta,
         'agentTranscript': [
           for (final entry in agentTranscript) entry.toJson(),
         ],
@@ -102,6 +128,7 @@ extension GenAiConversationTurnArchive on GenAiConversationTurn {
         ],
         'attachedFileNames': attachedFileNames,
         'attachedFileIds': attachedFileIds,
+        'attachedFileContents': attachedFileContents,
         'attachedImageUrl': attachedImageUrl,
         'attachedImageUrls': attachedImageUrls,
         'attachedImageBytes': attachedImageUrls.isNotEmpty ||
@@ -136,20 +163,19 @@ GenAiConversationTurn genAiTurnFromArchive(Map<String, Object?> json) {
     throw const FormatException('Invalid conversation turn');
   }
   final savedPhase = GenAiChatPhase.values.byName(json['phase']! as String);
-  final interrupted = savedPhase == GenAiChatPhase.preparing ||
-      savedPhase == GenAiChatPhase.streaming;
+  final interrupted =
+      savedPhase == GenAiChatPhase.preparing || savedPhase == GenAiChatPhase.streaming;
   final turn = GenAiConversationTurn(
     json['prompt']! as String,
     isAgent: json['isAgent']! as bool,
     isHistoryGap: json['isHistoryGap'] as bool? ?? false,
   )
     ..answer = json['answer']! as String
+    ..contextCompacted = json['contextCompacted'] as bool? ?? false
     ..reasoning = json['reasoning']! as String
     ..phase = interrupted ? GenAiChatPhase.cancelled : savedPhase
     ..thinkingDurationMs = json['thinkingDurationMs'] as int?
-    ..agentStatus = interrupted
-        ? '任务已中断。已提交的操作可能完成，请先查看工具记录。'
-        : json['agentStatus']! as String
+    ..agentStatus = interrupted ? '任务已中断。已提交的操作可能完成，请先查看工具记录。' : json['agentStatus']! as String
     ..agentHistory = [
       for (final raw in json['agentHistory']! as List)
         GenAiMessage(
@@ -157,20 +183,23 @@ GenAiConversationTurn genAiTurnFromArchive(Map<String, Object?> json) {
           content: raw['content'] as String,
         ),
     ]
+    ..agentTranscriptIsDelta = json['agentTranscriptIsDelta'] as bool? ?? false
     ..agentTranscript = [
       for (final raw in json['agentTranscript']! as List)
         GenAiAgentHistoryEntry.fromJson(_archiveMap(raw)),
     ]
     ..attachedFileNames = _archiveStrings(json['attachedFileNames'])
     ..attachedFileIds = _archiveStrings(json['attachedFileIds'])
+    ..attachedFileContents = Map<String, String>.from(
+      json['attachedFileContents'] as Map? ?? const {},
+    )
     ..attachedImageUrl = json['attachedImageUrl'] as String?
     ..attachedImageUrls = _archiveStrings(json['attachedImageUrls'])
     ..attachedImageBytes = json['attachedImageBytes'] == null
         ? null
         : base64Decode(json['attachedImageBytes']! as String)
     ..attachedImageBytesList = [
-      for (final encoded in _archiveStrings(json['attachedImageBytesList']))
-        base64Decode(encoded),
+      for (final encoded in _archiveStrings(json['attachedImageBytesList'])) base64Decode(encoded),
     ]
     ..citations = [
       for (final raw in json['citations']! as List)
@@ -216,8 +245,7 @@ Map<String, Object?> _agentEventToArchive(GenAiAgentEvent event) => {
 GenAiAgentEvent _agentEventFromArchive(Map<String, Object?> event) {
   final rawCall = event['call'];
   final call = rawCall == null ? null : _archiveMap(rawCall);
-  final receipt =
-      event['receipt'] == null ? null : _archiveMap(event['receipt']);
+  final receipt = event['receipt'] == null ? null : _archiveMap(event['receipt']);
   return GenAiAgentEvent(
     kind: GenAiAgentEventKind.values.byName(event['kind']! as String),
     turn: event['turn']! as int,
@@ -247,8 +275,7 @@ GenAiAgentEvent _agentEventFromArchive(Map<String, Object?> event) {
   );
 }
 
-Map<String, Object?> _archiveMap(Object? value) =>
-    Map<String, Object?>.from(value! as Map);
+Map<String, Object?> _archiveMap(Object? value) => Map<String, Object?>.from(value! as Map);
 List<String> _archiveStrings(Object? value) =>
     List<String>.unmodifiable((value! as List).cast<String>());
 
