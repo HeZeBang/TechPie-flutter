@@ -761,7 +761,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
               child: DropdownButtonFormField<String>(
                 key: const ValueKey('genai-image-ratio'),
                 isExpanded: true,
-                value: _aspectRatio,
+                initialValue: _aspectRatio,
                 decoration: const InputDecoration(labelText: '画面比例'),
                 items: [
                   for (final ratio in GenAiImageSize.presets.keys)
@@ -781,7 +781,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                 child: DropdownButtonFormField<String>(
                   key: const ValueKey('genai-image-resolution'),
                   isExpanded: true,
-                  value: _resolution,
+                  initialValue: _resolution,
                   decoration: const InputDecoration(labelText: '分辨率'),
                   items: [
                     for (final entry in presets.entries)
@@ -811,7 +811,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
               width: 150,
               child: DropdownButtonFormField<String>(
                 isExpanded: true,
-                value: _quality,
+                initialValue: _quality,
                 decoration: const InputDecoration(labelText: '质量'),
                 items: const [
                   DropdownMenuItem(value: 'low', child: Text('普通')),
@@ -874,7 +874,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
         else
           DropdownButtonFormField<GenAiModel>(
             key: const ValueKey('genai-image-model'),
-            value: _imageModel,
+            initialValue: _imageModel,
             isExpanded: true,
             decoration: const InputDecoration(labelText: '生图模型'),
             items: models

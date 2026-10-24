@@ -3067,7 +3067,8 @@ class _AudioWaveformVisualizerState extends State<_AudioWaveformVisualizer>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
+    );
+    unawaited(_controller.repeat(reverse: true));
   }
 
   @override
