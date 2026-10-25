@@ -504,6 +504,7 @@ class GenAiAgentApprovalCard extends StatelessWidget {
         'players': '人数',
         'price': '费用',
         'contact': '联系信息',
+        'policy': '预约限制',
       }[key] ??
       key;
 
@@ -595,7 +596,7 @@ class GenAiAgentApprovalCard extends StatelessWidget {
                   child: FilledButton(
                     key: const ValueKey('agent-approve'),
                     onPressed: onApprove,
-                    child: const Text('确认执行'),
+                    child: Text(call.name == 'reserve_court' ? '确认预约此场地' : '确认执行'),
                   ),
                 ),
               ],

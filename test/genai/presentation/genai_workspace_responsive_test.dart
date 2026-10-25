@@ -27,6 +27,7 @@ Future<GenAiDemo> _show(
   required Size size,
   double textScale = 1,
   double keyboard = 0,
+  EdgeInsets safeArea = EdgeInsets.zero,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -52,6 +53,8 @@ Future<GenAiDemo> _show(
         data: MediaQuery.of(context).copyWith(
           textScaler: TextScaler.linear(textScale),
           viewInsets: EdgeInsets.only(bottom: keyboard),
+          padding: safeArea,
+          viewPadding: safeArea,
         ),
         child: child!,
       ),
@@ -158,6 +161,10 @@ void main() {
       scale: 1.0,
       keyboard: 140.0,
     ),
+    (name: 'compact landscape large text', size: Size(568, 320), scale: 2.0, keyboard: 0.0),
+    (name: 'landscape phone', size: Size(667, 375), scale: 1.0, keyboard: 0.0),
+    (name: 'large landscape phone', size: Size(932, 430), scale: 1.0, keyboard: 0.0),
+    (name: 'landscape enlarged text', size: Size(844, 390), scale: 2.0, keyboard: 0.0),
     (name: 'tablet', size: Size(768, 1024), scale: 1.0, keyboard: 0.0),
     (
       name: 'wide breakpoint with enlarged text',
@@ -175,6 +182,9 @@ void main() {
         size: scenario.size,
         textScale: scenario.scale,
         keyboard: scenario.keyboard,
+        safeArea: scenario.name == 'landscape phone with keyboard'
+            ? const EdgeInsets.fromLTRB(59, 0, 59, 21)
+            : EdgeInsets.zero,
       );
       final viewport = Rect.fromLTWH(
         0,
@@ -212,6 +222,12 @@ void main() {
         expect(
           tester.getRect(fresh).right,
           lessThan(tester.getRect(model).left),
+        );
+      } else if (scenario.size.width >= 560 && scenario.size.width > scenario.size.height) {
+        expect(find.byKey(_wideNew), findsNothing);
+        expect(
+          tester.getRect(model).top,
+          greaterThanOrEqualTo(tester.getRect(find.byKey(_prompt)).bottom),
         );
       } else {
         expect(find.byKey(_wideNew), findsNothing);
@@ -374,6 +390,11 @@ void main() {
       tester.widget<TextField>(find.byKey(_prompt)).controller!.text,
       '我的未发送草稿',
     );
+    tester.view.physicalSize = const Size(844, 390);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byKey(_prompt)).controller!.text, '我的未发送草稿');
+    expect(demo.workspace.thinkingEnabled, isTrue);
+    expect(tester.takeException(), isNull);
     // Crossing the sidebar breakpoint rebuilds both header and composer;
     // it must not reset the draft for the same conversation.
     tester.view.physicalSize = const Size(1200, 900);
@@ -386,9 +407,15 @@ void main() {
     expect(find.byKey(_prompt), findsNothing);
     expect(find.byKey(_wideNew), findsOneWidget);
     await tester.enterText(find.byKey(const ValueKey('genai-image-prompt')), '保留图片草稿');
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpAndSettle();
+    expect(find.text('图片创作'), findsOneWidget);
+    expect(find.text('保留图片草稿'), findsOneWidget);
     await tester.tap(backToChat);
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(find.byKey(_prompt)).controller!.text, '我的未发送草稿');
+    tester.view.physicalSize = const Size(1200, 900);
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, '图片创作'));
     await tester.pumpAndSettle();
     expect(find.text('保留图片草稿'), findsOneWidget);

@@ -30,6 +30,7 @@ void main() {
   late GenAiAgentToolRegistry registry;
   late GenAiAgentToolContext context;
   late bool isDemo;
+  late DateTime now;
 
   setUp(() async {
     demo = await GenAiDemo.create();
@@ -40,6 +41,7 @@ void main() {
     auth = _Auth();
     bindings = _Bindings();
     isDemo = false;
+    now = DateTime.utc(2026, 10, 22, 3);
     context = GenAiAgentToolContext(
       cancellation: GenAiCancellation(),
       isCurrent: () => true,
@@ -52,7 +54,7 @@ void main() {
       auth: auth,
       thirdPartyAuth: bindings,
       isDemo: () => isDemo,
-      now: () => DateTime.utc(2026, 10, 22, 3),
+      now: () => now,
     ).createRegistry();
   });
   tearDown(() => demo.dispose());
@@ -61,8 +63,7 @@ void main() {
     String name,
     Map<String, Object?> args,
   ) async {
-    registry
-        .validate(GenAiAgentToolCall(id: 'test', name: name, arguments: args));
+    registry.validate(GenAiAgentToolCall(id: 'test', name: name, arguments: args));
     return registry[name]!.prepare(args, context);
   }
 
@@ -108,8 +109,7 @@ void main() {
     );
   });
 
-  test('time and semester results omit internal table and account identifiers',
-      () async {
+  test('time and semester results omit internal table and account identifiers', () async {
     final time = await run('get_current_time', {});
     expect(time['campus_time'], '2026-10-22T11:00:00.000+08:00');
     final semesters = await run('get_semesters', {});
@@ -119,10 +119,8 @@ void main() {
     expect(schedule.fetches, 1);
   });
 
-  test('weekly schedule includes custom courses and leaves semester unchanged',
-      () async {
-    final result =
-        await run('get_week_schedule', {'semester_id': 'term', 'week': 2});
+  test('weekly schedule includes custom courses and leaves semester unchanged', () async {
+    final result = await run('get_week_schedule', {'semester_id': 'term', 'week': 2});
     final rows = result['courses']! as List;
     expect(rows, hasLength(2));
     expect(rows.last, containsPair('custom', true));
@@ -132,32 +130,27 @@ void main() {
     await expectLater(
       prepare('get_week_schedule', {'week': 60}).then((tool) => tool.execute()),
       throwsA(
-        isA<GenAiAgentToolException>()
-            .having((error) => error.code, 'code', 'invalid_arguments'),
+        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'invalid_arguments'),
       ),
     );
   });
 
-  test('other-semester disk cache cannot bypass current-account verification',
-      () async {
+  test('other-semester disk cache cannot bypass current-account verification', () async {
     await expectLater(
       run('get_week_schedule', {'semester_id': 'old-term', 'week': 2}),
       throwsA(
-        isA<GenAiAgentToolException>()
-            .having((error) => error.code, 'code', 'semester_not_loaded'),
+        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'semester_not_loaded'),
       ),
     );
     expect(schedule.fetches, 0);
   });
 
-  test('failed refresh does not export unverified cached course data',
-      () async {
+  test('failed refresh does not export unverified cached course data', () async {
     schedule.verified = false;
     await expectLater(
       run('get_week_schedule', {'week': 2}),
       throwsA(
-        isA<GenAiAgentToolException>()
-            .having((error) => error.code, 'code', 'data_unverified'),
+        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'data_unverified'),
       ),
     );
   });
@@ -174,9 +167,7 @@ void main() {
     expect(next['courses'], isNotEmpty);
   });
 
-  test(
-      'missing calendar requires explicit week instead of inventing current week',
-      () async {
+  test('missing calendar requires explicit week instead of inventing current week', () async {
     schedule.calendar = null;
     await expectLater(
       run('get_week_schedule', {}),
@@ -188,9 +179,7 @@ void main() {
     expect((await run('get_week_schedule', {'week': 2}))['week'], 2);
   });
 
-  test(
-      'assignments respect visible list completion override and inclusive campus date',
-      () async {
+  test('assignments respect visible list completion override and inclusive campus date', () async {
     final result = await run('get_assignments', {'due_before': '2026-10-23'});
     final rows = result['assignments']! as List;
     expect(rows, hasLength(1));
@@ -209,8 +198,7 @@ void main() {
     );
   });
 
-  test('binding change while refreshing prevents returning newly mixed data',
-      () async {
+  test('binding change while refreshing prevents returning newly mixed data', () async {
     final gate = Completer<void>();
     assignments.refreshGate = gate.future;
     final future = run('get_assignments', {'refresh': true});
@@ -245,9 +233,7 @@ void main() {
     'players_count': 2,
   };
 
-  test(
-      'court preparation reads availability and approval precedes recheck and booking',
-      () async {
+  test('court preparation reads availability and approval precedes recheck and booking', () async {
     final prepared = await prepare('reserve_court', book);
     expect(prepared.requiresApproval, isTrue);
     final equivalent = await prepare('reserve_court', {...book, 'end_slot': 8});
@@ -261,28 +247,75 @@ void main() {
     expect(gym.bookings, 1);
   });
 
-  test('shared physical court aliases have the same mutation identity',
-      () async {
+  test('bulk ranges and model-supplied approvals cannot authorize a booking', () async {
+    for (final args in [
+      {...book, 'end_slot': 9},
+      {
+        ...book,
+        'court_number': [1, 2, 3],
+      },
+      {...book, 'confirmed': true},
+      {...book, 'action': 'book_all'},
+    ]) {
+      await expectLater(prepare('reserve_court', args), throwsA(isA<GenAiAgentToolException>()));
+    }
+    expect(gym.bookings, 0);
+    expect(gym.checks, 0);
+  });
+
+  test('reservation approvals are single-use and expire before POST after renewal', () async {
+    expect(registry['reserve_court']!.maxApprovalsPerRun, 1);
+    final prepared = await prepare('reserve_court', book);
+    final first = prepared.execute();
+    await expectLater(
+      prepared.execute(),
+      throwsA(
+        isA<GenAiAgentToolException>().having((e) => e.code, 'code', 'booking_already_attempted'),
+      ),
+    );
+    await first;
+    expect(gym.bookings, 1);
+    final stale = await prepare('reserve_court', {...book, 'time_slot': 9});
+    now = now.add(const Duration(minutes: 2));
+    await expectLater(
+      stale.execute(),
+      throwsA(
+        isA<GenAiAgentToolException>()
+            .having((e) => e.code, 'code', 'approval_expired')
+            .having((e) => e.effectNotDispatched, 'not dispatched', isTrue),
+      ),
+    );
+    final renewed = await prepare('reserve_court', {...book, 'time_slot': 10});
+    gym.beforePost = () => now = now.add(const Duration(minutes: 2));
+    await expectLater(
+      renewed.execute(),
+      throwsA(
+        isA<GenAiAgentToolException>()
+            .having((e) => e.code, 'code', 'approval_expired')
+            .having((e) => e.effectNotDispatched, 'not dispatched', isTrue),
+      ),
+    );
+    expect(gym.bookings, 1);
+  });
+
+  test('shared physical court aliases have the same mutation identity', () async {
     gym.allCourts = true;
     final tennis = await prepare('reserve_court', {...book, 'court_number': 4});
     final pickleball = await prepare(
       'reserve_court',
-      {...book, 'sport': 'pickleball', 'court_number': 1},
+      {...book, 'sport': 'pickleball', 'court_number': 1, 'players_count': 4},
     );
     expect(tennis.effectKey, pickleball.effectKey);
     expect(gym.bookings, 0);
   });
 
-  test(
-      'court availability and contact changes after approval prevent submission',
-      () async {
+  test('court availability and contact changes after approval prevent submission', () async {
     final prepared = await prepare('reserve_court', book);
     gym.available = false;
     await expectLater(
       prepared.execute(),
       throwsA(
-        isA<GenAiAgentToolException>()
-            .having((error) => error.code, 'code', 'court_not_available'),
+        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'court_not_available'),
       ),
     );
     expect(gym.bookings, 0);
@@ -292,15 +325,13 @@ void main() {
     await expectLater(
       again.execute(),
       throwsA(
-        isA<GenAiAgentToolException>()
-            .having((error) => error.code, 'code', 'profile_changed'),
+        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'profile_changed'),
       ),
     );
     expect(gym.bookings, 0);
   });
 
-  test('account or cancellation during booking session renewal prevents POST',
-      () async {
+  test('account or cancellation during booking session renewal prevents POST', () async {
     final prepared = await prepare('reserve_court', book);
     gym.beforePost = () {
       auth.loggedIn = false;
@@ -334,28 +365,24 @@ void main() {
     await expectLater(
       prepare('reserve_court', book),
       throwsA(
-        isA<GenAiAgentToolException>()
-            .having((error) => error.code, 'code', 'demo_unavailable'),
+        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'demo_unavailable'),
       ),
     );
     expect(gym.checks, 0);
     expect(gym.bookings, 0);
   });
 
-  test('image preparation validates current models size and requires approval',
-      () async {
+  test('image preparation validates current models size and requires approval', () async {
     await expectLater(
       prepare('generate_image', {'prompt': 'test', 'model': 'invented'}),
       throwsA(
-        isA<GenAiAgentToolException>()
-            .having((error) => error.code, 'code', 'model_unavailable'),
+        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'model_unavailable'),
       ),
     );
     await expectLater(
       prepare('generate_image', {'prompt': 'test', 'width': 1, 'height': 1}),
       throwsA(
-        isA<GenAiAgentToolException>()
-            .having((error) => error.code, 'code', 'invalid_arguments'),
+        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'invalid_arguments'),
       ),
     );
     final prepared = await prepare(
@@ -386,8 +413,7 @@ void main() {
   });
 
   test('cancelled image approval cannot dispatch generation', () async {
-    final prepared =
-        await prepare('generate_image', {'prompt': 'A red square'});
+    final prepared = await prepare('generate_image', {'prompt': 'A red square'});
     context.cancellation.cancel();
     await expectLater(prepared.execute(), throwsA(isA<GenAiFailure>()));
     expect(

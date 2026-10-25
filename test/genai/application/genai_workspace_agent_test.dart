@@ -1047,6 +1047,7 @@ void main() {
     final send = workspace.send('pending action');
     await _until(() => workspace.pendingAgentApproval != null);
     final id = workspace.groupId;
+    final oldApproval = workspace.pendingAgentApproval!;
     await workspace.flushConversations();
     workspace.newConversation();
     await send;
@@ -1056,6 +1057,10 @@ void main() {
     expect(executions, 0);
     final retry = workspace.send('try now');
     await _until(() => workspace.pendingAgentApproval != null);
+    final currentApproval = workspace.pendingAgentApproval;
+    workspace.resolveAgentApproval(true, expected: oldApproval);
+    expect(workspace.pendingAgentApproval, same(currentApproval));
+    expect(executions, 0);
     workspace.stop();
     await retry;
     expect(executions, 0);

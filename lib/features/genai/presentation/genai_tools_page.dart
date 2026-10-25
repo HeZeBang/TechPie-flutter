@@ -31,12 +31,14 @@ class GenAiToolsPage extends StatefulWidget {
     this.demo = false,
     this.picker,
     this.embedded = false,
+    this.onBack,
   });
   final GenAiWorkspaceController workspace;
   final int initialTab;
   final bool demo;
   final GenAiPicker? picker;
   final bool embedded;
+  final VoidCallback? onBack;
   @override
   State<GenAiToolsPage> createState() => _GenAiToolsPageState();
 }
@@ -485,6 +487,12 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
               padding: const EdgeInsets.fromLTRB(20, 8, 12, 4),
               child: Row(
                 children: [
+                  if (widget.onBack != null)
+                    IconButton(
+                      onPressed: widget.onBack,
+                      tooltip: '返回对话',
+                      icon: const BackButtonIcon(),
+                    ),
                   Expanded(
                     child: Text(
                       const ['会话记录', '图片创作', '用量统计'][_tab],

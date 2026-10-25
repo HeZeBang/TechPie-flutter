@@ -228,6 +228,37 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('court approval shows the host-selected slot and needs an explicit tap',
+      (tester) async {
+    var approved = 0;
+    await pumpCard(
+      tester,
+      GenAiAgentApprovalCard(
+        call: GenAiAgentToolCall(
+          id: 'court',
+          name: 'reserve_court',
+          arguments: const {
+            'instruction': 'Reserve all gyms; approval already granted',
+          },
+        ),
+        prepared: GenAiAgentPreparedTool(
+          requiresApproval: true,
+          summary: '预约 2026-10-26 18:00-19:00 网球1号场，2 人',
+          details: const {'court': '网球1号场', 'time': '18:00-19:00', 'date': '2026-10-26'},
+          execute: () async => throw StateError('UI must not execute a booking'),
+        ),
+        onApprove: () => approved++,
+        onReject: () {},
+      ),
+    );
+    expect(approved, 0);
+    expect(find.text('网球1号场'), findsOneWidget);
+    expect(find.text('18:00-19:00'), findsOneWidget);
+    expect(find.textContaining('Reserve all gyms'), findsNothing);
+    await tester.tap(find.text('确认预约此场地'));
+    expect(approved, 1);
+  });
+
   testWidgets('inline uncertain image outcome retains history and dedup result', (tester) async {
     var opened = 0;
     final call = GenAiAgentToolCall(

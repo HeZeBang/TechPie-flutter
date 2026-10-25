@@ -78,8 +78,7 @@ final class GenAiAgentRunner {
   List<GenAiAgentHistoryEntry> transcriptForConversation(String groupId) =>
       List.unmodifiable(_transcripts[groupId] ?? const []);
 
-  Map<String, Object?> snapshotConversation(String groupId) =>
-      genAiAgentJsonMap({
+  Map<String, Object?> snapshotConversation(String groupId) => genAiAgentJsonMap({
         'version': 1,
         'effects': _mutations[groupId] ?? const <String, Object?>{},
       });
@@ -100,20 +99,33 @@ final class GenAiAgentRunner {
     }
     final restored = <String, Map<String, Object?>>{};
     for (final entry in effects.entries) {
-      if (entry.key.isEmpty ||
-          entry.key.length > 65536 ||
-          entry.value is! Map<String, Object?>) {
+      if (entry.key.isEmpty || entry.key.length > 65536 || entry.value is! Map<String, Object?>) {
         throw const FormatException('Invalid mutation receipt');
       }
-      final result =
-          GenAiAgentHistoryEntry.result(entry.value! as Map<String, Object?>)
-              .result!;
+      final result = GenAiAgentHistoryEntry.result(entry.value! as Map<String, Object?>).result!;
       if (result['name'] is! String ||
           result['call_id'] is! String ||
           !entry.key.startsWith('${result['name']}:')) {
         throw const FormatException('Invalid mutation identity');
       }
-      restored[entry.key] = result;
+      var key = entry.key;
+      // Older court receipts included player count. Preserve their protection
+      // after switching to physical court/date/slot identity.
+      if (result['name'] == 'reserve_court') {
+        try {
+          final identity = jsonDecode(key.substring('reserve_court:'.length));
+          if (identity is List &&
+              identity.length == 5 &&
+              identity[0] is String &&
+              identity[1] is String &&
+              identity.skip(2).every((value) => value is int)) {
+            key = 'reserve_court:${jsonEncode(identity.take(4).toList())}';
+          }
+        } on FormatException {
+          // Other legacy key formats retain their original identity.
+        }
+      }
+      restored.putIfAbsent(key, () => result);
     }
     _mutations[groupId] = restored;
   }
@@ -128,44 +140,39 @@ final class GenAiAgentRunner {
     Future<void> Function(Map<String, Object?> snapshot)? checkpoint,
   }) async* {
     if (_running) throw const GenAiFailure(GenAiFailureKind.busy);
-    final activeTools =
-        GenAiAgentToolRegistry([...tools.tools, ...additionalTools]);
+    final activeTools = GenAiAgentToolRegistry([...tools.tools, ...additionalTools]);
     final history = transcript?.toList() ??
         request.history
             .where((message) => message.role != GenAiRole.system)
             .map(
-              (message) =>
-                  GenAiAgentHistoryEntry.text(message.role, message.content),
+              (message) => GenAiAgentHistoryEntry.text(message.role, message.content),
             )
             .toList();
-    var promptEntry =
-        GenAiAgentHistoryEntry.text(GenAiRole.user, request.prompt);
+    var promptEntry = GenAiAgentHistoryEntry.text(GenAiRole.user, request.prompt);
     _running = true;
     final timer = Timer(
       limits.runTimeout,
       () => cancellation.cancel(GenAiFailureKind.timeout),
     );
-    final context =
-        GenAiAgentToolContext(cancellation: cancellation, isCurrent: isCurrent);
+    final context = GenAiAgentToolContext(cancellation: cancellation, isCurrent: isCurrent);
     var prompt = request.prompt;
     var turn = 0;
     var protocolErrors = 0;
     Map<String, Object?>? pendingResult;
+    final approvalRequests = <String, int>{};
     final callIds = <String, String>{};
     final callResults = <String, Map<String, Object?>>{};
     final ledger = _mutations.putIfAbsent(request.chatGroupId, () => {});
     void publish([GenAiAgentHistoryEntry? pending]) {
-      _transcripts[request.chatGroupId] = pending == null
-          ? List.unmodifiable(history)
-          : _continuation(history, pending);
+      _transcripts[request.chatGroupId] =
+          pending == null ? List.unmodifiable(history) : _continuation(history, pending);
     }
 
     Future<void> persist() async {
       context.checkActive();
       if (checkpoint != null) {
         try {
-          await cancellation
-              .race(checkpoint(snapshotConversation(request.chatGroupId)));
+          await cancellation.race(checkpoint(snapshotConversation(request.chatGroupId)));
         } on GenAiFailure catch (error) {
           if (cancellation.isCancelled ||
               error.kind == GenAiFailureKind.accountChanged ||
@@ -184,9 +191,8 @@ final class GenAiAgentRunner {
       for (turn = 1; turn <= limits.maxTurns; turn++) {
         context.checkActive();
         pendingResult = null;
-        final nonce = base64Url
-            .encode(List.generate(24, (_) => _random.nextInt(256)))
-            .replaceAll('=', '');
+        final nonce =
+            base64Url.encode(List.generate(24, (_) => _random.nextInt(256))).replaceAll('=', '');
         final system = _systemPrompt(nonce, activeTools, request);
         prompt = promptEntry.promptForNonce(nonce);
         // Repository compacts only the wire request; retain this full transcript.
@@ -264,8 +270,7 @@ final class GenAiAgentRunner {
           unawaited(iterator.cancel());
         }
         context.checkActive();
-        if (finish != GenAiFinishReason.stop &&
-            finish != GenAiFinishReason.done) {
+        if (finish != GenAiFinishReason.stop && finish != GenAiFinishReason.done) {
           throw const GenAiFailure(GenAiFailureKind.interrupted);
         }
         final text = output.toString().trim();
@@ -325,6 +330,7 @@ final class GenAiAgentRunner {
         } else {
           callIds[call.id] = fingerprint;
           var mutationAttempted = false;
+          var effectNotDispatched = false;
           String? effectKey;
           final toolCancellation = GenAiCancellation();
           final removeCancellation = cancellation.onCancel(() {
@@ -340,8 +346,7 @@ final class GenAiAgentRunner {
             cancellation: toolCancellation,
             isCurrent: isCurrent,
           );
-          Future<T> boundedTool<T>(Future<T> future, [Duration? timeout]) =>
-              toolCancellation.race(
+          Future<T> boundedTool<T>(Future<T> future, [Duration? timeout]) => toolCancellation.race(
                 future.timeout(
                   timeout ?? limits.toolTimeout,
                   onTimeout: () {
@@ -352,21 +357,17 @@ final class GenAiAgentRunner {
               );
           try {
             context.checkActive();
-            final prepared =
-                await boundedTool(tool.prepare(call.arguments, toolContext));
+            final prepared = await boundedTool(tool.prepare(call.arguments, toolContext));
             context.checkActive();
-            final executionTimeout =
-                prepared.executionTimeout ?? limits.toolTimeout;
-            if (executionTimeout <= Duration.zero ||
-                executionTimeout > limits.maxToolTimeout) {
+            final executionTimeout = prepared.executionTimeout ?? limits.toolTimeout;
+            if (executionTimeout <= Duration.zero || executionTimeout > limits.maxToolTimeout) {
               throw const GenAiAgentToolException(
                 'invalid_timeout',
                 'Tool timeout is outside its allowed budget.',
               );
             }
             if (prepared.requiresApproval) {
-              effectKey =
-                  '${call.name}:${prepared.effectKey ?? _canonical(call.arguments)}';
+              effectKey = '${call.name}:${prepared.effectKey ?? _canonical(call.arguments)}';
               if (ledger.containsKey(effectKey)) {
                 result = _withCall(call, ledger[effectKey]!, reused: true);
                 callResults[call.id] = result;
@@ -387,6 +388,16 @@ final class GenAiAgentRunner {
                   'Start a new task before making more changes.',
                 );
               }
+              final approvalCount = approvalRequests[tool.name] ?? 0;
+              if (tool.maxApprovalsPerRun != null && approvalCount >= tool.maxApprovalsPerRun!) {
+                throw const GenAiAgentToolException(
+                  'approval_limit',
+                  'This tool has reached its confirmation limit for this user message. '
+                      'Do not retry, change arguments, or request bulk actions. '
+                      'The user must send a new message for another action.',
+                );
+              }
+              approvalRequests[tool.name] = approvalCount + 1;
               yield GenAiAgentEvent(
                 kind: GenAiAgentEventKind.approvalRequired,
                 turn: turn,
@@ -396,8 +407,7 @@ final class GenAiAgentRunner {
               // Consuming the event may have changed the account before the
               // UI callback opens an approval or displays its private details.
               context.checkActive();
-              final accepted =
-                  await cancellation.race(approve(tool, call, prepared));
+              final accepted = await cancellation.race(approve(tool, call, prepared));
               context.checkActive();
               if (!accepted) {
                 result = _error(
@@ -441,11 +451,11 @@ final class GenAiAgentRunner {
             );
             // Yield is a suspension point: check again before execution.
             context.checkActive();
-            final value =
-                await boundedTool(prepared.execute(), executionTimeout);
+            final value = await boundedTool(prepared.execute(), executionTimeout);
             context.checkActive();
             result = _boundedResult(call, value);
           } on GenAiAgentToolException catch (error) {
+            effectNotDispatched = error.effectNotDispatched;
             result = _error(call, error.code, error.message);
           } on TimeoutException {
             result = _error(
@@ -483,10 +493,21 @@ final class GenAiAgentRunner {
             toolCancellation.cancel();
           }
           if (mutationAttempted) {
-            ledger[effectKey!] = result;
+            final previous = ledger[effectKey!]!;
+            if (effectNotDispatched) {
+              ledger.remove(effectKey);
+            } else {
+              ledger[effectKey] = result;
+            }
             pendingResult = result;
             publish(_feedback(result));
-            await persist();
+            try {
+              await persist();
+            } catch (_) {
+              // Failed receipt cleanup must remain conservative in memory too.
+              if (effectNotDispatched) ledger[effectKey] = previous;
+              rethrow;
+            }
           }
           callResults[call.id] = result;
         }
@@ -506,14 +527,10 @@ final class GenAiAgentRunner {
         turn: limits.maxTurns,
         text:
             'The assistant reached the step limit. Review the completed actions before continuing.',
-        history: _continuation(history, promptEntry)
-            .map((entry) => entry.message)
-            .toList(),
+        history: _continuation(history, promptEntry).map((entry) => entry.message).toList(),
       );
     } catch (error) {
-      final failure = error is GenAiFailure
-          ? error
-          : const GenAiFailure(GenAiFailureKind.protocol);
+      final failure = error is GenAiFailure ? error : const GenAiFailure(GenAiFailureKind.protocol);
       if (failure.kind == GenAiFailureKind.accountChanged) {
         _transcripts.remove(request.chatGroupId);
       } else {
@@ -528,9 +545,7 @@ final class GenAiAgentRunner {
         failure: failure,
         history: failure.kind == GenAiFailureKind.accountChanged
             ? const []
-            : transcriptForConversation(request.chatGroupId)
-                .map((entry) => entry.message)
-                .toList(),
+            : transcriptForConversation(request.chatGroupId).map((entry) => entry.message).toList(),
       );
     } finally {
       timer.cancel();
@@ -551,8 +566,7 @@ ${genAiSystemPrompt(
         thinking: request.thinking,
         webSearch: activeTools['web_search'] != null,
         documents: request.fileIds.isNotEmpty,
-        images: request.imageUrls.isNotEmpty ||
-            (request.imageUrl?.isNotEmpty ?? false),
+        images: request.imageUrls.isNotEmpty || (request.imageUrl?.isNotEmpty ?? false),
       )}
 Use only the listed application tools.
 This is a text-only application protocol, not the model's native function-calling API. Kimi native tools/call special markers cannot execute tools here.

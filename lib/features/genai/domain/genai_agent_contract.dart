@@ -24,10 +24,12 @@ final class GenAiAgentTool {
     required this.description,
     required Map<String, Object?> parameters,
     required this.prepare,
+    this.maxApprovalsPerRun,
   }) : parameters = genAiAgentJsonMap(parameters) {
     if (!RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(name) ||
         description.trim().isEmpty ||
-        parameters['type'] != 'object') {
+        parameters['type'] != 'object' ||
+        (maxApprovalsPerRun != null && maxApprovalsPerRun! <= 0)) {
       throw ArgumentError('Invalid agent tool definition');
     }
   }
@@ -36,6 +38,10 @@ final class GenAiAgentTool {
   final String description;
   final Map<String, Object?> parameters;
   final GenAiAgentPrepare prepare;
+
+  /// Host policy, never a model argument. Denied requests also consume the
+  /// budget; changing call IDs or arguments cannot start a bulk approval loop.
+  final int? maxApprovalsPerRun;
 
   Map<String, Object?> toJson() => {
         'name': name,
@@ -105,7 +111,11 @@ final class GenAiAgentToolCall {
 /// Messages are deliberately authored by the adapter, never raw exceptions,
 /// credentials, request headers, or server response bodies.
 final class GenAiAgentToolException implements Exception {
-  const GenAiAgentToolException(this.code, this.message);
+  const GenAiAgentToolException(this.code, this.message, {this.effectNotDispatched = false});
+
+  /// Only a trusted adapter may assert this, before making any external change.
+  /// It permits fresh confirmation in a later user request, never automatic retry.
+  final bool effectNotDispatched;
   final String code;
   final String message;
 }
@@ -156,9 +166,7 @@ final class GenAiAgentToolRegistry {
           _invalid(path, 'must be an object.');
         }
         final properties = schema['properties'];
-        final fields = properties is Map<String, Object?>
-            ? properties
-            : const <String, Object?>{};
+        final fields = properties is Map<String, Object?> ? properties : const <String, Object?>{};
         final required = schema['required'];
         if (required is List) {
           for (final key in required) {
@@ -176,8 +184,7 @@ final class GenAiAgentToolRegistry {
         if (value is! List) _invalid(path, 'must be an array.');
         final minimum = schema['minItems'];
         final maximum = schema['maxItems'];
-        if (minimum is int && value.length < minimum ||
-            maximum is int && value.length > maximum) {
+        if (minimum is int && value.length < minimum || maximum is int && value.length > maximum) {
           _invalid(path, 'has an invalid number of items.');
         }
         final items = schema['items'];
@@ -191,8 +198,7 @@ final class GenAiAgentToolRegistry {
         if (value is! String) _invalid(path, 'must be a string.');
         final minimum = schema['minLength'];
         final maximum = schema['maxLength'];
-        if (minimum is int && value.length < minimum ||
-            maximum is int && value.length > maximum) {
+        if (minimum is int && value.length < minimum || maximum is int && value.length > maximum) {
           _invalid(path, 'has an invalid length.');
         }
         final pattern = schema['pattern'];
@@ -201,15 +207,12 @@ final class GenAiAgentToolRegistry {
         }
       case 'integer':
       case 'number':
-        if (value is! num ||
-            !value.isFinite ||
-            schema['type'] == 'integer' && value is! int) {
+        if (value is! num || !value.isFinite || schema['type'] == 'integer' && value is! int) {
           _invalid(path, 'must be a finite ${schema['type']}.');
         }
         final minimum = schema['minimum'];
         final maximum = schema['maximum'];
-        if (minimum is num && value < minimum ||
-            maximum is num && value > maximum) {
+        if (minimum is num && value < minimum || maximum is num && value > maximum) {
           _invalid(path, 'is outside the allowed range.');
         }
       case 'boolean':

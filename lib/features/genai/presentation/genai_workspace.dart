@@ -533,6 +533,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             child: LayoutBuilder(
               builder: (context, size) {
                 final wide = size.maxWidth >= 960;
+                final viewport = MediaQuery.sizeOf(context);
+                final landscape = !wide && size.maxWidth >= 560 && viewport.width > viewport.height;
+                final modelInComposer = wide || landscape;
                 return Row(
                   children: [
                     if (wide)
@@ -556,7 +559,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                     Expanded(
                       child: Column(
                         children: [
-                          _header(wide),
+                          if (!_showImages || wide) _header(wide, landscape: landscape),
                           if (_showImages && _state.connected)
                             Expanded(
                               child: GenAiToolsPage(
@@ -566,10 +569,11 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                 demo: widget.demo,
                                 picker: widget.picker,
                                 embedded: true,
+                                onBack: wide ? null : () => setState(() => _showImages = false),
                               ),
                             )
                           else ...[
-                            if (_state.connected && !wide) _modelBar(),
+                            if (_state.connected && !modelInComposer) _modelBar(),
                             if (_state.catalogFailure != null)
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -628,8 +632,8 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                         child: Column(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            _welcome(size.maxWidth),
-                                            _composer(wide),
+                                            _welcome(size.maxWidth, horizontal: landscape),
+                                            _composer(wide, modelInComposer: modelInComposer),
                                           ],
                                         ),
                                       ),
@@ -641,7 +645,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                         child: !_state.connected
                                             ? _loginPanel()
                                             : _state.turns.isEmpty
-                                                ? _welcome(size.maxWidth)
+                                                ? _welcome(size.maxWidth, horizontal: landscape)
                                                 : _threadArea(),
                                       ),
                                       if (_state.connected)
@@ -652,7 +656,8 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                           ),
                                           child: SingleChildScrollView(
                                             reverse: true,
-                                            child: _composer(wide),
+                                            child:
+                                                _composer(wide, modelInComposer: modelInComposer),
                                           ),
                                         ),
                                     ],
@@ -733,7 +738,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
           );
   }
 
-  Widget _header(bool wide) {
+  Widget _header(bool wide, {required bool landscape}) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: wide ? 28 : 12, vertical: 10),
       child: Row(
@@ -764,6 +769,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             ),
           ),
           if (widget.demo) _demoNotice(),
+          if (landscape && _state.connected && !_showImages) _newChatButton(),
           if (!wide) _chatActions(),
           if (!wide) _accountMenu(),
         ],
@@ -882,18 +888,20 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
           children: [
             Expanded(child: _modelSelector()),
             const SizedBox(width: 8),
-            TextButton.icon(
-              key: const ValueKey('genai-new-chat-compact'),
-              onPressed: _newConversation,
-              icon: const Icon(Icons.edit_square, size: 18),
-              label: const Text('新对话'),
-              style: TextButton.styleFrom(
-                minimumSize: const Size(48, 48),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                foregroundColor: _theme.colorScheme.onSurface,
-              ),
-            ),
+            _newChatButton(),
           ],
+        ),
+      );
+
+  Widget _newChatButton() => TextButton.icon(
+        key: const ValueKey('genai-new-chat-compact'),
+        onPressed: _newConversation,
+        icon: const Icon(Icons.edit_square, size: 18),
+        label: const Text('新对话'),
+        style: TextButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          foregroundColor: _theme.colorScheme.onSurface,
         ),
       );
 
@@ -1004,33 +1012,38 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
         ),
       );
 
-  Widget _welcome(double width) => Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.asset(
-                'assets/icon/icon.png',
-                width: 96,
-                height: 96,
-                semanticLabel: 'TechPie',
+  Widget _welcome(double width, {required bool horizontal}) {
+    final logo = Image.asset(
+      'assets/icon/icon.png',
+      width: horizontal ? 64 : 96,
+      height: horizontal ? 64 : 96,
+      semanticLabel: 'TechPie',
+    );
+    final title = Text(
+      _chatCopy.title,
+      key: const ValueKey('genai-welcome-title'),
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: width < 500 ? 25 : 30,
+        fontWeight: FontWeight.w500,
+        letterSpacing: -.6,
+      ),
+    );
+    return Center(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.symmetric(horizontal: 24, vertical: horizontal ? 12 : 24),
+        child: horizontal
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [logo, const SizedBox(width: 12), Flexible(child: title)],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [logo, const SizedBox(height: 12), title],
               ),
-              const SizedBox(height: 12),
-              Text(
-                _chatCopy.title,
-                key: const ValueKey('genai-welcome-title'),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: width < 500 ? 25 : 30,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: -.6,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+      ),
+    );
+  }
 
   Widget _threadArea() => Stack(
         children: [
@@ -1314,11 +1327,18 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   index == _state.turns.length - 1)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 12),
-                                  child: GenAiAgentApprovalCard(
-                                    call: _state.pendingAgentApproval!.call,
-                                    prepared: _state.pendingAgentApproval!.prepared,
-                                    onApprove: () => _state.resolveAgentApproval(true),
-                                    onReject: () => _state.resolveAgentApproval(false),
+                                  child: Builder(
+                                    builder: (context) {
+                                      final pending = _state.pendingAgentApproval!;
+                                      return GenAiAgentApprovalCard(
+                                        call: pending.call,
+                                        prepared: pending.prepared,
+                                        onApprove: () =>
+                                            _state.resolveAgentApproval(true, expected: pending),
+                                        onReject: () =>
+                                            _state.resolveAgentApproval(false, expected: pending),
+                                      );
+                                    },
                                   ),
                                 ),
                               if (turn.agentEvents.isNotEmpty) const SizedBox(height: 12),
@@ -1489,7 +1509,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
         },
       );
 
-  Widget _composer(bool wide) {
+  Widget _composer(bool wide, {required bool modelInComposer}) {
     final scope = _scope;
     return GenAiComposer(
       key: _composerKey,
@@ -1497,7 +1517,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       inputFocus: _inputFocus,
       hint: _chatCopy.hint,
       wide: wide,
-      modelSelector: wide ? _modelSelector() : null,
+      modelSelector: modelInComposer ? _modelSelector() : null,
       keyboardOpen: MediaQuery.viewInsetsOf(context).bottom > 0,
       sending: _state.sending,
       thinkingEnabled: _state.thinkingEnabled,

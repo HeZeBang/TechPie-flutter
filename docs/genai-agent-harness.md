@@ -193,6 +193,27 @@ one relevant older assistant artifact may be retained separately as unverified
 material for revision. See [context compaction](genai-api-contract.md#context-compaction)
 for accounting, checkpoint persistence, failure behavior and estimator limits.
 
+Court bookings have an additional host-enforced limit: **one approval proposal
+per user message**, including rejected proposals. Different call IDs, courts,
+dates, player counts, or instructions to approve everything cannot increase this
+budget. Availability queries remain read-only; a booking targets one physical
+court and one time slot. The user must click **确认预约此场地** on the prepared
+court/date/time details. Approval applies only to that pending action and expires
+two minutes after preparation; the expiry is checked again immediately before
+submission, including after session renewal. Execution is single-use. When the
+adapter proves an approval expired before submission, its receipt is cleared
+durably so a new user message can request fresh confirmation; the current run
+still cannot propose another booking. Deduplication
+ignores player count and normalizes shared court aliases; older saved receipts
+are migrated so reopening a chat cannot reopen an already handled booking.
+
+These safeguards constrain the agent in this client, not the gym API itself.
+They are not an account-wide or cross-device quota. A modified client or direct
+API caller still requires server-side authorization, quotas and idempotency.
+A new user message may propose another booking, but always requires new explicit
+confirmation. Timeout/unknown outcomes must be checked in booking history, never
+automatically resubmitted.
+
 Account/session changes cancel active work, clear the visible private transcript
 and dismiss pending approvals. Archives remain isolated under their captured
 account scope. The run also captures connected third-party identities, so changing

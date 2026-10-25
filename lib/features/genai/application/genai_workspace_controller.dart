@@ -255,9 +255,9 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _notify();
   }
 
-  void resolveAgentApproval(bool accepted) {
+  void resolveAgentApproval(bool accepted, {GenAiPendingAgentApproval? expected}) {
     final pending = _pendingAgentApproval;
-    if (pending == null) return;
+    if (pending == null || (expected != null && !identical(expected, pending))) return;
     _pendingAgentApproval = null;
     final current = !_disposed &&
         _agentOperation != null &&

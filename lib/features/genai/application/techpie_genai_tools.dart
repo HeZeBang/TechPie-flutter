@@ -115,8 +115,11 @@ final class TechPieGenAiTools {
         ),
         GenAiAgentTool(
           name: 'reserve_court',
+          maxApprovalsPerRun: 1,
           description: 'Check real OA court availability or book one concrete '
-              'court after user approval. action=availability is read-only. '
+              'court after user approval. Only one booking proposal per user message; '
+              'bulk bookings are prohibited, even if requested. '
+              'action=availability is read-only. '
               'Slots 1..11 are 11:00-12:00 through 21:00-22:00, Shanghai time. '
               'book requires court_number and players_count, and uses the '
               'contact profile already saved in TechPie. Never guess availability, '
@@ -187,9 +190,7 @@ final class TechPieGenAiTools {
     final scope = _scope;
     return () {
       context.checkActive();
-      if (_scope != scope ||
-          !auth.isLoggedIn ||
-          !thirdPartyAuth.hasCpdailyBinding) {
+      if (_scope != scope || !auth.isLoggedIn || !thirdPartyAuth.hasCpdailyBinding) {
         context.cancellation.cancel(GenAiFailureKind.accountChanged);
         context.checkActive();
       }
@@ -275,8 +276,7 @@ final class TechPieGenAiTools {
     GenAiAgentToolContext context,
   ) async {
     final guard = _guard(context);
-    final semesterId =
-        args['semester_id'] as String? ?? schedule.selectedSemesterId;
+    final semesterId = args['semester_id'] as String? ?? schedule.selectedSemesterId;
     if (semesterId == null || semesterId.isEmpty) {
       throw const GenAiAgentToolException('data_unavailable', '请先在课表页选择学期。');
     }
@@ -350,8 +350,7 @@ final class TechPieGenAiTools {
       });
     final courses = allCourses
         .where(
-          (course) =>
-              args['weekday'] == null || course.dayOfWeek == args['weekday'],
+          (course) => args['weekday'] == null || course.dayOfWeek == args['weekday'],
         )
         .toList();
     final offset = args['offset'] as int? ?? 0;
@@ -383,8 +382,7 @@ final class TechPieGenAiTools {
       'demo': _isDemo(),
       'courses': rows,
       'truncated': offset + rows.length < courses.length,
-      'next_offset':
-          offset + rows.length < courses.length ? offset + rows.length : null,
+      'next_offset': offset + rows.length < courses.length ? offset + rows.length : null,
     };
   }
 
@@ -426,14 +424,11 @@ final class TechPieGenAiTools {
             ? assignments.visibleAssignments
             : assignments.verifiedVisibleAssignments)
         .where((assignment) {
-      if (args['include_completed'] != true &&
-          assignments.isCompleted(assignment)) {
+      if (args['include_completed'] != true && assignments.isCompleted(assignment)) {
         return false;
       }
       if (before != null &&
-          _date(assignment.due.toUtc().add(const Duration(hours: 8)))
-                  .compareTo(before) >
-              0) {
+          _date(assignment.due.toUtc().add(const Duration(hours: 8))).compareTo(before) > 0) {
         return false;
       }
       return true;
@@ -450,8 +445,7 @@ final class TechPieGenAiTools {
             'kind': assignment.kind.id,
             'due': assignment.due.toUtc().toIso8601String(),
             'completed': assignments.isCompleted(assignment),
-            if (assignment case ExamAssignment(:final location))
-              'location': _bounded(location),
+            if (assignment case ExamAssignment(:final location)) 'location': _bounded(location),
           },
       ],
       offset,
@@ -461,13 +455,11 @@ final class TechPieGenAiTools {
       'source': 'techpie_cache',
       'ownership_verified': !_isDemo(),
       'loading': assignments.loading,
-      'partial':
-          assignments.error != null || assignments.platformErrors.isNotEmpty,
+      'partial': assignments.error != null || assignments.platformErrors.isNotEmpty,
       'demo': _isDemo(),
       'assignments': rows,
       'truncated': offset + rows.length < values.length,
-      'next_offset':
-          offset + rows.length < values.length ? offset + rows.length : null,
+      'next_offset': offset + rows.length < values.length ? offset + rows.length : null,
     };
   }
 
@@ -482,8 +474,7 @@ final class TechPieGenAiTools {
         '本地演示没有真实 OA 场地数据，不能查询或提交预约。请连接真实校园账号。',
       );
     }
-    final sport =
-        OaSport.values.firstWhere((value) => value.id == args['sport']);
+    final sport = OaSport.values.firstWhere((value) => value.id == args['sport']);
     final date = args['date']! as String;
     final day = _parseDate(date);
     final slot = args['time_slot']! as int;
@@ -497,9 +488,7 @@ final class TechPieGenAiTools {
     final book = args['action'] == 'book';
     final number = args['court_number'] as int?;
     final players = args['players_count'] as int?;
-    final court = oaCourtsForSport(sport)
-        .where((value) => value.number == number)
-        .firstOrNull;
+    final court = oaCourtsForSport(sport).where((value) => value.number == number).firstOrNull;
     if (book && (court == null || players == null || end != slot)) {
       throw const GenAiAgentToolException(
         'invalid_arguments',
@@ -601,6 +590,19 @@ final class TechPieGenAiTools {
     requireProfile();
     final approvedProfile = gym.bookingProfile().toJson();
     final approvedStudent = gym.bookingStudentId;
+    final preparedAt = _now();
+    var executionClaimed = false;
+    void requireFreshApproval() {
+      final age = _now().difference(preparedAt);
+      if (age.isNegative || age >= const Duration(minutes: 2)) {
+        throw const GenAiAgentToolException(
+          'approval_expired',
+          '预约确认已过期，请重新发起请求并核对场地和时间。',
+          effectNotDispatched: true,
+        );
+      }
+    }
+
     final details = <String, Object?>{
       'date': date,
       'sport': sport.label,
@@ -609,21 +611,32 @@ final class TechPieGenAiTools {
       'players': players,
       'price': '平台未提供价格；请以学校预约结果为准',
       'contact': '使用场馆预约中已保存的联系信息',
+      'policy': '仅预约此场地的这一个时段；每条消息最多一次预约确认，2 分钟内有效。',
     };
     return GenAiAgentPreparedTool(
       requiresApproval: true,
       effectKey: jsonEncode(
-        [court.bookingSport.id, date, slot, court.bookingNumber, players],
+        [court.bookingSport.id, date, slot, court.bookingNumber],
       ),
-      summary:
-          '预约 $date ${oaTimeSlots[slot - 1].range} ${court.label}，$players 人',
+      summary: '预约 $date ${oaTimeSlots[slot - 1].range} ${court.label}，$players 人',
       details: details,
       execute: () async {
+        guard();
+        requireFreshApproval();
+        if (executionClaimed) {
+          throw const GenAiAgentToolException(
+            'booking_already_attempted',
+            '此预约已处理，不能重复提交。请在场馆预约页核实结果。',
+          );
+        }
+        // Claim synchronously before any await so concurrent callbacks cannot
+        // dispatch the same approval twice, even when its outcome is unknown.
+        executionClaimed = true;
         requireAvailable(await availability());
+        requireFreshApproval();
         guard();
         requireProfile();
-        if (jsonEncode(gym.bookingProfile().toJson()) !=
-                jsonEncode(approvedProfile) ||
+        if (jsonEncode(gym.bookingProfile().toJson()) != jsonEncode(approvedProfile) ||
             gym.bookingStudentId != approvedStudent) {
           throw const GenAiAgentToolException(
             'profile_changed',
@@ -641,6 +654,7 @@ final class TechPieGenAiTools {
             playersCount: players!,
             shouldContinue: () {
               guard();
+              requireFreshApproval();
               return true;
             },
           );
@@ -724,9 +738,7 @@ final class TechPieGenAiTools {
       execute: () async {
         guard();
         if (!workspace.imageModels.any(
-          (value) =>
-              value.aiType == model.aiType &&
-              value.rootAiType == model.rootAiType,
+          (value) => value.aiType == model.aiType && value.rootAiType == model.rootAiType,
         )) {
           throw const GenAiAgentToolException(
             'model_unavailable',
@@ -735,8 +747,7 @@ final class TechPieGenAiTools {
         }
         final List<Uri> images;
         try {
-          images = await workspace.repository
-              .generateImage(request, context.cancellation);
+          images = await workspace.repository.generateImage(request, context.cancellation);
         } on GenAiFailure catch (failure) {
           if (failure.kind == GenAiFailureKind.cancelled ||
               failure.kind == GenAiFailureKind.accountChanged ||
@@ -784,8 +795,7 @@ Map<String, Object?> _string({required int max}) =>
     {'type': 'string', 'minLength': 1, 'maxLength': max};
 Map<String, Object?> _integer(int min, int max) =>
     {'type': 'integer', 'minimum': min, 'maximum': max};
-Map<String, Object?> _enum(List<String> values) =>
-    {'type': 'string', 'enum': values};
+Map<String, Object?> _enum(List<String> values) => {'type': 'string', 'enum': values};
 DateTime _parseDate(String value) {
   final day = DateTime.tryParse(value);
   if (day == null || _date(day) != value) {
@@ -799,8 +809,7 @@ DateTime _parseDate(String value) {
 
 String _date(DateTime value) =>
     '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
-String _bounded(String value) =>
-    value.length <= 240 ? value : value.substring(0, 240);
+String _bounded(String value) => value.length <= 240 ? value : value.substring(0, 240);
 
 List<Map<String, Object?>> _boundedRows(
   List<Map<String, Object?>> rows,
