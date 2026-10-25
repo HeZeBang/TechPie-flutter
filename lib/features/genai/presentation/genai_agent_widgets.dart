@@ -8,6 +8,7 @@ import '../domain/genai_platform_contract.dart';
 import 'genai_demo_image.dart';
 import 'genai_image.dart';
 import 'genai_thinking_view.dart';
+import 'genai_tool_result_summary.dart';
 import 'genai_web_search_view.dart';
 
 String genAiAgentToolName(String? name) => switch (name) {
@@ -148,9 +149,7 @@ class GenAiAgentToolActivity extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.all(8),
         child: Text(
-          running && identical(event, activity.lastOrNull)
-              ? '正在修正工具请求'
-              : '工具请求格式不匹配，已请求重试',
+          running && identical(event, activity.lastOrNull) ? '正在修正工具请求' : '工具请求格式不匹配，已请求重试',
           style: const TextStyle(fontSize: 12),
         ),
       );
@@ -164,8 +163,7 @@ class GenAiAgentToolActivity extends StatelessWidget {
         query: event.call!.arguments['query'] as String?,
         citations: [
           for (final raw in result['citations'] as List)
-            if (raw is Map)
-              GenAiWebSearchCitation.fromJson(Map<String, dynamic>.from(raw)),
+            if (raw is Map) GenAiWebSearchCitation.fromJson(Map<String, dynamic>.from(raw)),
         ],
         onOpenLink: onOpenLink ?? (_) {},
       );
@@ -210,6 +208,7 @@ class GenAiAgentToolCard extends StatelessWidget {
     final unknown = error is Map && error['code'] == 'outcome_unknown' ||
         stopped && !complete && event.kind == GenAiAgentEventKind.toolStarted;
     final payload = result?['result'];
+    final summary = genAiToolResultSummary(call.name, result);
     final generated = complete &&
         !failed &&
         result?['ok'] == true &&
@@ -285,22 +284,32 @@ class GenAiAgentToolCard extends StatelessWidget {
                       child: Text('已复用之前的结果，没有重复执行。'),
                     ),
                   ),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color:
-                        colors.surfaceContainerHighest.withValues(alpha: .35),
-                    borderRadius: BorderRadius.circular(6),
+                if (summary.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Align(alignment: Alignment.centerLeft, child: SelectableText(summary)),
                   ),
-                  child: SelectableText(
-                    const JsonEncoder.withIndent('  ')
-                        .convert(result ?? call.arguments),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                      height: 1.5,
+                ExpansionTile(
+                  title: const Text('技术详情'),
+                  dense: true,
+                  tilePadding: EdgeInsets.zero,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceContainerHighest.withValues(alpha: .35),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: SelectableText(
+                        const JsonEncoder.withIndent('  ').convert(result ?? call.arguments),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                          height: 1.5,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
@@ -317,8 +326,7 @@ class GenAiAgentToolCard extends StatelessWidget {
                               uri: uri,
                               demo: demo &&
                                   uri.pathSegments.any(
-                                    (part) =>
-                                        part.startsWith('techpie-preview'),
+                                    (part) => part.startsWith('techpie-preview'),
                                   ),
                             ),
                         ],
@@ -370,8 +378,7 @@ class _GenAiAgentImagePreview extends StatefulWidget {
   final bool demo;
 
   @override
-  State<_GenAiAgentImagePreview> createState() =>
-      _GenAiAgentImagePreviewState();
+  State<_GenAiAgentImagePreview> createState() => _GenAiAgentImagePreviewState();
 }
 
 class _GenAiAgentImagePreviewState extends State<_GenAiAgentImagePreview> {
@@ -500,11 +507,9 @@ class GenAiAgentApprovalCard extends StatelessWidget {
       }[key] ??
       key;
 
-  static String _detailValue(MapEntry<String, Object?> entry) =>
-      entry.key == 'quality'
-          ? const {'low': '普通', 'medium': '标准', 'high': '精细'}[entry.value] ??
-              '${entry.value}'
-          : '${entry.value ?? '—'}';
+  static String _detailValue(MapEntry<String, Object?> entry) => entry.key == 'quality'
+      ? const {'low': '普通', 'medium': '标准', 'high': '精细'}[entry.value] ?? '${entry.value}'
+      : '${entry.value ?? '—'}';
 
   @override
   Widget build(BuildContext context) {

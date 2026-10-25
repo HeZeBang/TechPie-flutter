@@ -103,6 +103,13 @@ void main() {
     await tester.enterText(height, '1080');
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(width).controller!.text, '1920');
+    await select('genai-image-orientation', '竖向');
+    expect(dropdown('genai-image-resolution').value, 'custom');
+    expect(tester.widget<TextField>(width).controller!.text, '1080');
+    expect(tester.widget<TextField>(height).controller!.text, '1920');
+    await select('genai-image-orientation', '横向');
+    expect(tester.widget<TextField>(width).controller!.text, '1920');
+    expect(tester.widget<TextField>(height).controller!.text, '1080');
     await select('genai-image-orientation', '自定义');
     await tester.ensureVisible(width);
     await tester.enterText(width, '800abc');
@@ -186,7 +193,8 @@ void main() {
     );
     await tester.tap(find.text('开始生成'));
     await tester.pumpAndSettle();
-    expect(find.text('本次生成'), findsOneWidget);
+    await tester.ensureVisible(find.text('图片历史'));
+    await tester.pumpAndSettle();
     expect(find.text('本地测试图片'), findsOneWidget);
     await tester.pumpWidget(
       MaterialApp(

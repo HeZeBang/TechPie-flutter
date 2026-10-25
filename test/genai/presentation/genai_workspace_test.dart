@@ -111,7 +111,7 @@ void main() {
   testWidgets('wide workspace has no suggested prompts and sends typed Markdown chat',
       (tester) async {
     final demo = await show(tester);
-    expect(find.text('TechPie'), findsOneWidget);
+    expect(find.text('GenAI'), findsOneWidget);
     expect(find.byTooltip('本地演示 · 不访问校园服务，不产生费用'), findsOneWidget);
     expect(find.text('理清学习思路'), findsNothing);
     expect(find.text('一起写段代码'), findsNothing);
@@ -228,8 +228,13 @@ void main() {
     expect(find.byKey(const ValueKey('genai-retry-0')), findsOneWidget);
 
     final sending = demo.workspace.send('Continue with another question');
-    await tester.pumpAndSettle();
+    // Network delay timers can outlive a settled frame after layout changes.
+    for (var step = 0; step < 500 && demo.workspace.sending; step++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(demo.workspace.sending, isFalse);
     await sending;
+    await tester.pumpAndSettle();
     await tester.drag(
       find.byKey(const ValueKey('genai-thread')),
       const Offset(0, 2000),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show SemanticsAction;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -182,12 +183,31 @@ void main() {
         scenario.size.height - scenario.keyboard,
       );
       expect(tester.takeException(), isNull);
+      final semantics = tester.ensureSemantics();
+      final input = tester.widget<TextField>(find.byKey(_prompt));
+      final surface = find.byKey(const ValueKey('genai-composer-surface'));
+      await tester.ensureVisible(surface);
+      try {
+        final surfaceSemantics = tester.getSemantics(surface).getSemanticsData();
+        expect(surfaceSemantics.label, '输入消息');
+        expect(surfaceSemantics.hasAction(SemanticsAction.tap), isTrue);
+      } finally {
+        semantics.dispose();
+      }
+      // Padding is part of the input hit area, without stealing toolbar taps.
+      await tester.tapAt(tester.getTopRight(surface) + const Offset(-4, 10));
+      await tester.pumpAndSettle();
+      expect(input.focusNode!.hasFocus, isTrue);
+      input.focusNode!.unfocus();
+      await tester.pumpAndSettle();
       final model = find.byKey(const ValueKey('genai-model'));
       final wide = scenario.size.width >= 960;
       final fresh = find.byKey(wide ? _wideNew : _compactNew);
       await _reachable(tester, model, viewport);
       await _reachable(tester, fresh, viewport);
       if (wide) {
+        final account = find.byTooltip('GenAI 账户');
+        expect(account, findsOneWidget);
         expect(find.byKey(_compactNew), findsNothing);
         expect(
           tester.getRect(fresh).right,
@@ -359,6 +379,21 @@ void main() {
     tester.view.physicalSize = const Size(1200, 900);
     await tester.pumpAndSettle();
     expect(find.byKey(_wideNew), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, '图片创作'));
+    await tester.pumpAndSettle();
+    final backToChat = find.byTooltip('返回对话');
+    expect(backToChat, findsOneWidget);
+    expect(find.byKey(_prompt), findsNothing);
+    expect(find.byKey(_wideNew), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('genai-image-prompt')), '保留图片草稿');
+    await tester.tap(backToChat);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byKey(_prompt)).controller!.text, '我的未发送草稿');
+    await tester.tap(find.widgetWithText(TextButton, '图片创作'));
+    await tester.pumpAndSettle();
+    expect(find.text('保留图片草稿'), findsOneWidget);
+    await tester.tap(backToChat);
+    await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byKey(_prompt)).controller!.text,
       '我的未发送草稿',

@@ -46,6 +46,7 @@ class GenAiComposer extends StatefulWidget {
     required this.onRemoveAttachment,
     required this.onPreviewAttachment,
     this.contextStatus,
+    this.modelSelector,
   });
 
   final TextEditingController draft;
@@ -83,6 +84,7 @@ class GenAiComposer extends StatefulWidget {
   final ValueChanged<String> onRemoveAttachment;
   final ValueChanged<GenAiAttachment> onPreviewAttachment;
   final Widget? contextStatus;
+  final Widget? modelSelector;
 
   @override
   State<GenAiComposer> createState() => _GenAiComposerState();
@@ -352,8 +354,13 @@ class _GenAiComposerState extends State<GenAiComposer> {
   Widget _composerToolbar() => LayoutBuilder(
         builder: (context, constraints) {
           final hasAudio = widget.supportsRecording || widget.supportsAudio;
-          final actionWidth =
-              (widget.contextStatus != null ? 48 : 0) + (hasAudio ? 48 : 0) + 6 + 48;
+          final modelWidth = widget.modelSelector == null ? 0.0 : 180.0;
+          final actionWidth = modelWidth +
+              (modelWidth > 0 ? 8 : 0) +
+              (widget.contextStatus != null ? 48 : 0) +
+              (hasAudio ? 48 : 0) +
+              6 +
+              48;
           final available = constraints.maxWidth - actionWidth - 8;
           final thinkingWidth = _modeChipWidth('深度思考');
           final campusWidth = _modeChipWidth('校园工具');
@@ -411,6 +418,10 @@ class _GenAiComposerState extends State<GenAiComposer> {
           final actions = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.modelSelector != null) ...[
+                SizedBox(width: modelWidth, child: widget.modelSelector),
+                const SizedBox(width: 8),
+              ],
               if (widget.contextStatus != null)
                 SizedBox.square(dimension: 48, child: widget.contextStatus),
               if (widget.supportsRecording || widget.supportsAudio)
@@ -544,189 +555,207 @@ class _GenAiComposerState extends State<GenAiComposer> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOut,
-                padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
-                decoration: BoxDecoration(
-                  color: _theme.colorScheme.surfaceContainerLowest,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: widget.inputFocus.hasFocus ? _accent.withValues(alpha: .45) : _border,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: .04),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (widget.recording)
-                      GenAiRecordingBar(
-                        seconds: widget.recordingSeconds,
-                        onCancel: widget.onCancelRecording,
-                        onComplete: widget.onStopRecording,
+              Semantics(
+                container: true,
+                label: '输入消息',
+                onTap: widget.inputFocus.requestFocus,
+                child: TextFieldTapRegion(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    excludeFromSemantics: true,
+                    onTap: widget.inputFocus.requestFocus,
+                    child: AnimatedContainer(
+                      key: const ValueKey('genai-composer-surface'),
+                      duration: const Duration(milliseconds: 160),
+                      curve: Curves.easeOut,
+                      padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
+                      decoration: BoxDecoration(
+                        color: _theme.colorScheme.surfaceContainerLowest,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color:
+                              widget.inputFocus.hasFocus ? _accent.withValues(alpha: .45) : _border,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: .04),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                    if (widget.attachments.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              height: 44,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: widget.attachments.length,
-                                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                                itemBuilder: (context, i) {
-                                  final att = widget.attachments[i];
-                                  final isError = att.error != null;
-                                  return Container(
-                                    padding: EdgeInsets.fromLTRB(
-                                      att.isImage ? 5 : 8,
-                                      4,
-                                      8,
-                                      4,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (widget.recording)
+                            GenAiRecordingBar(
+                              seconds: widget.recordingSeconds,
+                              onCancel: widget.onCancelRecording,
+                              onComplete: widget.onStopRecording,
+                            ),
+                          if (widget.attachments.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    height: 44,
+                                    child: ListView.separated(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: widget.attachments.length,
+                                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                                      itemBuilder: (context, i) {
+                                        final att = widget.attachments[i];
+                                        final isError = att.error != null;
+                                        return Container(
+                                          padding: EdgeInsets.fromLTRB(
+                                            att.isImage ? 5 : 8,
+                                            4,
+                                            8,
+                                            4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isError
+                                                ? _theme.colorScheme.errorContainer
+                                                    .withValues(alpha: .35)
+                                                : _accent.withValues(alpha: .08),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(
+                                              color: isError
+                                                  ? _theme.colorScheme.error.withValues(alpha: .5)
+                                                  : _accent.withValues(alpha: .2),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              _buildAttachmentThumbnail(att, context),
+                                              const SizedBox(width: 8),
+                                              ConstrainedBox(
+                                                constraints: BoxConstraints(
+                                                  maxWidth: isError ? 180 : 140,
+                                                ),
+                                                child: Tooltip(
+                                                  message: att.error ?? att.name,
+                                                  child: Text(
+                                                    att.name,
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w500,
+                                                      color: isError
+                                                          ? _theme.colorScheme.error
+                                                          : _accent,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              if (isError) ...[
+                                                const SizedBox(width: 4),
+                                                InkWell(
+                                                  key: ValueKey(
+                                                    'genai-retry-attachment-${att.id}',
+                                                  ),
+                                                  onTap: () => widget.onRetryAttachment(att.id),
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  child: Tooltip(
+                                                    message: '重新上传',
+                                                    child: Icon(
+                                                      Icons.refresh_rounded,
+                                                      size: 14,
+                                                      color: _theme.colorScheme.error,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                              const SizedBox(width: 4),
+                                              InkWell(
+                                                key: ValueKey(
+                                                  'genai-remove-attachment-${att.id}',
+                                                ),
+                                                onTap: () => widget.onRemoveAttachment(att.id),
+                                                borderRadius: BorderRadius.circular(10),
+                                                child: Tooltip(
+                                                  message: '移除附件',
+                                                  child: Icon(
+                                                    Icons.close,
+                                                    size: 13,
+                                                    color:
+                                                        isError ? _theme.colorScheme.error : _muted,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: isError
-                                          ? _theme.colorScheme.errorContainer.withValues(alpha: .35)
-                                          : _accent.withValues(alpha: .08),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: isError
-                                            ? _theme.colorScheme.error.withValues(alpha: .5)
-                                            : _accent.withValues(alpha: .2),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
+                                  ),
+                                  if (widget.hasFailedUploads) ...[
+                                    const SizedBox(height: 6),
+                                    Row(
                                       children: [
-                                        _buildAttachmentThumbnail(att, context),
-                                        const SizedBox(width: 8),
-                                        ConstrainedBox(
-                                          constraints: BoxConstraints(
-                                            maxWidth: isError ? 180 : 140,
-                                          ),
-                                          child: Tooltip(
-                                            message: att.error ?? att.name,
-                                            child: Text(
-                                              att.name,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w500,
-                                                color: isError ? _theme.colorScheme.error : _accent,
-                                              ),
-                                            ),
-                                          ),
+                                        Icon(
+                                          Icons.error_outline,
+                                          size: 13,
+                                          color: _theme.colorScheme.error,
                                         ),
-                                        if (isError) ...[
-                                          const SizedBox(width: 4),
-                                          InkWell(
-                                            key: ValueKey(
-                                              'genai-retry-attachment-${att.id}',
-                                            ),
-                                            onTap: () => widget.onRetryAttachment(att.id),
-                                            borderRadius: BorderRadius.circular(10),
-                                            child: Tooltip(
-                                              message: '重新上传',
-                                              child: Icon(
-                                                Icons.refresh_rounded,
-                                                size: 14,
-                                                color: _theme.colorScheme.error,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
                                         const SizedBox(width: 4),
-                                        InkWell(
-                                          key: ValueKey(
-                                            'genai-remove-attachment-${att.id}',
-                                          ),
-                                          onTap: () => widget.onRemoveAttachment(att.id),
-                                          borderRadius: BorderRadius.circular(10),
-                                          child: Tooltip(
-                                            message: '移除附件',
-                                            child: Icon(
-                                              Icons.close,
-                                              size: 13,
-                                              color: isError ? _theme.colorScheme.error : _muted,
+                                        Expanded(
+                                          child: Text(
+                                            '${widget.attachments.where((a) => a.error != null).map((a) => a.error!).toSet().join('；')}。请重试或删除失败的附件后发送。',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: _theme.colorScheme.error,
                                             ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                  );
-                                },
-                              ),
-                            ),
-                            if (widget.hasFailedUploads) ...[
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.error_outline,
-                                    size: 13,
-                                    color: _theme.colorScheme.error,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      '${widget.attachments.where((a) => a.error != null).map((a) => a.error!).toSet().join('；')}。请重试或删除失败的附件后发送。',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: _theme.colorScheme.error,
-                                      ),
-                                    ),
-                                  ),
+                                  ],
                                 ],
                               ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    Focus(
-                      onKeyEvent: (_, event) {
-                        if (event is KeyDownEvent &&
-                            event.logicalKey == LogicalKeyboardKey.enter &&
-                            !HardwareKeyboard.instance.isShiftPressed &&
-                            !(widget.draft.value.composing.isValid &&
-                                !widget.draft.value.composing.isCollapsed)) {
-                          widget.onSend();
-                          return KeyEventResult.handled;
-                        }
-                        return KeyEventResult.ignored;
-                      },
-                      child: TextField(
-                        key: const ValueKey('genai-prompt'),
-                        controller: widget.draft,
-                        focusNode: widget.inputFocus,
-                        minLines: 1,
-                        maxLines: 6,
-                        keyboardType: TextInputType.multiline,
-                        textInputAction: TextInputAction.newline,
-                        decoration: InputDecoration(
-                          hintText: widget.hint,
-                          hintStyle: const TextStyle(fontSize: 14.5),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        style: const TextStyle(fontSize: 15.5, height: 1.6),
+                            ),
+                          Focus(
+                            onKeyEvent: (_, event) {
+                              if (event is KeyDownEvent &&
+                                  event.logicalKey == LogicalKeyboardKey.enter &&
+                                  !HardwareKeyboard.instance.isShiftPressed &&
+                                  !(widget.draft.value.composing.isValid &&
+                                      !widget.draft.value.composing.isCollapsed)) {
+                                widget.onSend();
+                                return KeyEventResult.handled;
+                              }
+                              return KeyEventResult.ignored;
+                            },
+                            child: TextField(
+                              key: const ValueKey('genai-prompt'),
+                              controller: widget.draft,
+                              focusNode: widget.inputFocus,
+                              minLines: 1,
+                              maxLines: 6,
+                              keyboardType: TextInputType.multiline,
+                              textInputAction: TextInputAction.newline,
+                              decoration: InputDecoration(
+                                hintText: widget.hint,
+                                hintStyle: const TextStyle(fontSize: 14.5),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                filled: false,
+                                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              style: const TextStyle(fontSize: 15.5, height: 1.6),
+                            ),
+                          ),
+                          _composerToolbar(),
+                        ],
                       ),
                     ),
-                    _composerToolbar(),
-                  ],
+                  ),
                 ),
               ),
             ],

@@ -15,6 +15,7 @@ class GenAiHistorySidebar extends StatelessWidget {
     required this.sending,
     required this.activeId,
     required this.actions,
+    required this.accountMenu,
     required this.onOpen,
     required this.menuBuilder,
   });
@@ -24,6 +25,7 @@ class GenAiHistorySidebar extends StatelessWidget {
   final bool sending;
   final String activeId;
   final Widget actions;
+  final Widget accountMenu;
   final ValueChanged<GenAiConversationSummary> onOpen;
   final Widget Function(GenAiConversationSummary conversation) menuBuilder;
 
@@ -57,12 +59,13 @@ class GenAiHistorySidebar extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'TechPie',
+                      'GenAI',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
+                  accountMenu,
                 ],
               ),
             ),

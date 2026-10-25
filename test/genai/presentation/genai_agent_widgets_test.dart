@@ -18,10 +18,8 @@ void main() {
     );
   }
 
-  testWidgets('completed and restored repairs never appear to be still running',
-      (tester) async {
-    const repair =
-        GenAiAgentEvent(kind: GenAiAgentEventKind.protocolError, turn: 1);
+  testWidgets('completed and restored repairs never appear to be still running', (tester) async {
+    const repair = GenAiAgentEvent(kind: GenAiAgentEventKind.protocolError, turn: 1);
     Future<void> show(bool running, {String id = 'live'}) => pumpCard(
           tester,
           GenAiAgentToolActivity(
@@ -44,8 +42,7 @@ void main() {
     expect(find.text('工具请求格式不匹配，已请求重试'), findsOneWidget);
   });
 
-  testWidgets(
-      'tool activity keeps collapse choice through updates and isolates turns',
+  testWidgets('tool activity keeps collapse choice through updates and isolates turns',
       (tester) async {
     final first = GenAiAgentEvent(
       kind: GenAiAgentEventKind.toolFinished,
@@ -106,8 +103,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'ordered process interleaves reasoning, tools and searchable sources',
+  testWidgets('ordered process interleaves reasoning, tools and searchable sources',
       (tester) async {
     final tool = GenAiAgentEvent(
       kind: GenAiAgentEventKind.toolFinished,
@@ -190,8 +186,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('inline approval uses prepared details and host callbacks',
-      (tester) async {
+  testWidgets('inline approval uses prepared details and host callbacks', (tester) async {
     var approved = 0;
     var rejected = 0;
     final mutableDetails = <String, Object?>{
@@ -233,8 +228,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('inline uncertain image outcome retains history and dedup result',
-      (tester) async {
+  testWidgets('inline uncertain image outcome retains history and dedup result', (tester) async {
     var opened = 0;
     final call = GenAiAgentToolCall(
       id: 'image-1',
@@ -265,14 +259,17 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('agent-tool-image-1')));
     await tester.pumpAndSettle();
     expect(find.text('已复用之前的结果，没有重复执行。'), findsOneWidget);
+    expect(find.text('Verify status before retrying.'), findsOneWidget);
+    expect(find.textContaining('outcome_unknown'), findsNothing);
+    await tester.tap(find.text('技术详情'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('outcome_unknown'), findsOneWidget);
     await tester.tap(find.text('查看图片'));
     expect(opened, 1);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('inline stopped tool distinguishes dispatched and unstarted work',
-      (tester) async {
+  testWidgets('inline stopped tool distinguishes dispatched and unstarted work', (tester) async {
     final call = GenAiAgentToolCall(
       id: 'image-2',
       name: 'generate_image',
@@ -325,13 +322,10 @@ void main() {
         },
       );
 
-  const campusImage =
-      'https://genaipic.shanghaitech.edu.cn/sys/common/static/image15test/red.png';
-  const demoImage =
-      'https://genaipic.shanghaitech.edu.cn/sys/common/static/techpie-preview.png';
+  const campusImage = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/image15test/red.png';
+  const demoImage = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/techpie-preview.png';
 
-  testWidgets('generated image is visible without expanding tool details',
-      (tester) async {
+  testWidgets('generated image is visible without expanding tool details', (tester) async {
     await pumpCard(
       tester,
       GenAiAgentToolCard(event: generatedEvent([campusImage]), stopped: false),
@@ -351,16 +345,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-      'image result rejects arbitrary URLs and permits configured proxy only',
+  testWidgets('image result rejects arbitrary URLs and permits configured proxy only',
       (tester) async {
     Uri resolve(String value) => Uri.parse(value).replace(
           scheme: 'http',
           host: '127.0.0.1',
           port: 18768,
         );
-    const validProxy =
-        'http://127.0.0.1:18768/sys/common/static/image15test/blue.png';
+    const validProxy = 'http://127.0.0.1:18768/sys/common/static/image15test/blue.png';
     await pumpCard(
       tester,
       GenAiAgentToolCard(
@@ -390,8 +382,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('only successful image-tool results render returned image URLs',
-      (tester) async {
+  testWidgets('only successful image-tool results render returned image URLs', (tester) async {
     for (final event in [
       generatedEvent([campusImage], ok: false),
       generatedEvent([campusImage], name: 'get_assignments'),
@@ -408,8 +399,7 @@ void main() {
   });
 
   for (final local in [true, false]) {
-    testWidgets('image viewer local=$local closes with source card',
-        (tester) async {
+    testWidgets('image viewer local=$local closes with source card', (tester) async {
       final present = ValueNotifier(true);
       addTearDown(present.dispose);
       await pumpCard(
@@ -460,8 +450,7 @@ void main() {
     });
   }
 
-  testWidgets('demo-enabled real-account image still renders its verified URL',
-      (tester) async {
+  testWidgets('demo-enabled real-account image still renders its verified URL', (tester) async {
     await pumpCard(
       tester,
       GenAiAgentToolCard(

@@ -18,6 +18,7 @@ import 'genai_agent_web_search.dart';
 import 'genai_chat_service.dart';
 import 'genai_conversation_store.dart';
 import 'genai_conversation_turn.dart';
+import 'genai_image_studio_controller.dart';
 import 'genai_legacy_conversation_import.dart';
 import 'genai_repository.dart';
 import 'genai_session_service.dart';
@@ -100,6 +101,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   final GenAiSessionService sessions;
   final GenAiConversationStore _conversationStore;
   final GenAiRepository _repository;
+  late final imageStudio = GenAiImageStudioController(_repository);
   final GenAiChatService _chat;
   final _turns = <GenAiConversationTurn>[];
   GenAiOwner? _owner;
@@ -1661,6 +1663,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
 
   void _notify() {
     if (!_disposed) {
+      imageStudio.updateScope((_archiveScope, sessions.revision));
       _scheduleArchive();
       notifyListeners();
     }
@@ -1672,6 +1675,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     stop();
     _flushPendingArchives();
     _disposed = true;
+    imageStudio.dispose();
     _agentOperation?.cancel();
     resolveAgentApproval(false);
     _agentScopeChanges?.removeListener(_agentScopeChanged);

@@ -100,6 +100,21 @@ void main() {
     expect(find.textContaining('3 张参考图片'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
+    // Leaving the studio retains the complete draft, including preview bytes.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GenAiToolsPage(
+          workspace: demo.workspace,
+          demo: true,
+          initialTab: 1,
+          picker: picker,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Use these reference colors'), findsOneWidget);
+    expect(find.text('参考图片 · 3/4'), findsOneWidget);
     await demo.sessions.setOwner(null);
     await tester.pumpAndSettle();
     expect(find.text('添加参考图片'), findsOneWidget);
