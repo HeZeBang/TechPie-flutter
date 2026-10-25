@@ -69,7 +69,7 @@ class AdaptiveConfirmationButton extends StatelessWidget {
       width: constrainedWidth,
       height: constrainedHeight,
       child: CupertinoButton(
-        minSize: iosMinimumInteractiveDimension,
+        minimumSize: const Size.square(iosMinimumInteractiveDimension),
         padding: const EdgeInsets.symmetric(horizontal: 8),
         onPressed: callback,
         child: hasLabel

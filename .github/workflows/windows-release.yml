@@ -29,22 +29,23 @@ jobs:
   windows:
     name: Build Windows release
     runs-on: windows-2022
-    # Pinned, not `windows-latest`: that label now resolves to the
-    # `windows-2025-vs2026` image, and Flutter 3.27.4 does not know Visual Studio
-    # 2026. `flutter_tools/lib/src/windows/visual_studio.dart` maps a major version
-    # it does not recognise to the 2019 generator:
+    # Pinned, not `windows-latest`: a release should build on an image this
+    # pipeline was verified against, not on whatever `latest` becomes next. The pin
+    # dates from a real failure: with Flutter 3.27.4 on the `windows-2025-vs2026`
+    # image, `flutter_tools/lib/src/windows/visual_studio.dart` mapped an
+    # unrecognised Visual Studio major version to the 2019 generator
     #
     #   17 => 'Visual Studio 17 2022',
     #   _  => 'Visual Studio 16 2019',
     #
     # so CMake was asked for a VS 2019 the image does not carry and answered
-    # "could not find any instance of Visual Studio" — which names the generator it
-    # was given, not the toolchain that is missing. `windows-2022` carries Visual
+    # "could not find any instance of Visual Studio" — naming the generator it was
+    # given, not the toolchain that is missing. `windows-2022` carries Visual
     # Studio Enterprise 2022 (17.14) with the Desktop C++ workload, which is what
     # Flutter asks for by name.
     #
-    # This pin is a dead end eventually: when the image is retired, the Flutter
-    # version has to move first.
+    # Flutter is 3.35.7 now; whether its mapping knows the VS on a 2025 image has
+    # not been tested here, so the pin stays until someone tries it there.
     timeout-minutes: 60
     # Windows runners run `run:` steps under pwsh by default. Everything below
     # except the packaging step is POSIX shell — starting with
@@ -97,7 +98,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.27.4
+          flutter-version: 3.41.9
           cache: true
 
       - name: Enable the Windows desktop target

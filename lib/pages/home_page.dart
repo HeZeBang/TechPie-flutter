@@ -194,7 +194,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       );
     }
 
-    _staggerController!.forward();
+    unawaited(_staggerController!.forward());
   }
 
   String _timeForCourse(Course course) {
