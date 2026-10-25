@@ -54,6 +54,30 @@ void main() {
       dropdown('genai-image-resolution').items!.map((item) => item.value),
       ['1K', '2K', '4K', 'custom'],
     );
+    final direction = find.byKey(const ValueKey('genai-image-orientation'));
+    final ratio = find.byKey(const ValueKey('genai-image-ratio'));
+    final resolution = find.byKey(const ValueKey('genai-image-resolution'));
+    final quality = find.byKey(const ValueKey('genai-image-quality'));
+    expect(tester.getTopLeft(direction).dy, tester.getTopLeft(ratio).dy);
+    expect(tester.getTopLeft(resolution).dy, tester.getTopLeft(quality).dy);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    for (final scenario in [(320.0, 1.0), (390.0, 1.6), (1440.0, 1.0)]) {
+      tester.view.physicalSize = Size(scenario.$1, 900);
+      tester.platformDispatcher.textScaleFactorTestValue = scenario.$2;
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(ratio);
+      expect(dropdown('genai-image-ratio').value, '16:9');
+      expect(tester.getRect(ratio).right, lessThanOrEqualTo(scenario.$1));
+      if (scenario.$2 > 1) {
+        expect(tester.getTopLeft(ratio).dy, greaterThan(tester.getTopLeft(direction).dy));
+      } else {
+        expect(tester.getTopLeft(direction).dy, tester.getTopLeft(ratio).dy);
+      }
+      expect(tester.takeException(), isNull);
+    }
+    tester.view.physicalSize = const Size(390, 900);
+    tester.platformDispatcher.textScaleFactorTestValue = 1;
+    await tester.pumpAndSettle();
     await select('genai-image-resolution', '4K · 3840 × 2160');
     expect(find.text('超2K分辨率属实验性质，效果可能不稳定。'), findsOneWidget);
     await select('genai-image-orientation', '竖向');

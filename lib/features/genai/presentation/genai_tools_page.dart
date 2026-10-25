@@ -733,125 +733,155 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     });
   }
 
+  Widget _imageFieldPair(
+    Widget first,
+    Widget? second, {
+    double firstWidth = 130,
+    double secondWidth = 130,
+  }) =>
+      LayoutBuilder(
+        builder: (context, constraints) {
+          if (second == null) return first;
+          final scale = MediaQuery.textScalerOf(context).scale(16) / 16;
+          if (constraints.maxWidth < (firstWidth + secondWidth) * scale + 12) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [first, const SizedBox(height: 12), second],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: firstWidth.round(), child: first),
+              const SizedBox(width: 12),
+              Expanded(flex: secondWidth.round(), child: second),
+            ],
+          );
+        },
+      );
+
   Widget _imageSizeControls() {
     final enabled = !_busy && _scopeValid;
     final presets = GenAiImageSize.presets[_aspectRatio];
     final orientation = _orientationOf(_aspectRatio);
-    Widget dimension(TextEditingController controller, bool width) => SizedBox(
-          width: 180,
-          child: TextField(
-            key: ValueKey(width ? 'genai-image-width' : 'genai-image-height'),
-            controller: controller,
-            enabled: enabled,
-            keyboardType: TextInputType.number,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(7),
-            ],
-            decoration: InputDecoration(labelText: width ? '宽度（px）' : '高度（px）'),
-            onChanged: (value) => _editDimension(value, width: width),
-          ),
+    Widget dimension(TextEditingController controller, bool width) => TextField(
+          key: ValueKey(width ? 'genai-image-width' : 'genai-image-height'),
+          controller: controller,
+          enabled: enabled,
+          keyboardType: TextInputType.number,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(7),
+          ],
+          decoration: InputDecoration(labelText: width ? '宽度（px）' : '高度（px）'),
+          onChanged: (value) => _editDimension(value, width: width),
         );
+    final direction = DropdownButtonFormField<String>(
+      key: const ValueKey('genai-image-orientation'),
+      isExpanded: true,
+      initialValue: orientation,
+      decoration: const InputDecoration(labelText: '方向'),
+      items: [
+        for (final option in const [
+          ('square', '正方形', Icons.crop_square),
+          ('landscape', '横向', Icons.crop_landscape),
+          ('portrait', '竖向', Icons.crop_portrait),
+          ('custom', '自定义', Icons.tune),
+        ])
+          DropdownMenuItem(
+            value: option.$1,
+            child: Row(
+              children: [
+                Icon(option.$3, size: 18),
+                const SizedBox(width: 8),
+                Flexible(child: Text(option.$2)),
+              ],
+            ),
+          ),
+      ],
+      onChanged: enabled ? (value) => _selectOrientation(value!) : null,
+    );
+    final ratio = orientation == 'landscape' || orientation == 'portrait'
+        ? DropdownButtonFormField<String>(
+            key: const ValueKey('genai-image-ratio'),
+            isExpanded: true,
+            initialValue: _aspectRatio,
+            decoration: const InputDecoration(labelText: '比例'),
+            items: [
+              for (final ratio in GenAiImageSize.presets.keys
+                  .where((ratio) => _orientationOf(ratio) == orientation))
+                DropdownMenuItem(value: ratio, child: Text(ratio)),
+            ],
+            onChanged: enabled ? (value) => _selectAspectRatio(value!) : null,
+          )
+        : null;
+    final resolution = presets == null
+        ? null
+        : DropdownButtonFormField<String>(
+            key: const ValueKey('genai-image-resolution'),
+            isExpanded: true,
+            initialValue: _resolution,
+            decoration: const InputDecoration(labelText: '分辨率'),
+            items: [
+              for (final entry in presets.entries)
+                DropdownMenuItem(
+                  value: entry.key,
+                  child: Text('${entry.key} · ${entry.value.replaceAll('x', ' × ')}'),
+                ),
+              const DropdownMenuItem(value: 'custom', child: Text('自定义分辨率')),
+            ],
+            onChanged: enabled
+                ? (value) => setState(() {
+                      final previous = _parsedSize;
+                      _resolution = value!;
+                      if (_customSize && previous != null) _setCustomDimensions(previous);
+                    })
+                : null,
+          );
+    final quality = DropdownButtonFormField<String>(
+      key: const ValueKey('genai-image-quality'),
+      isExpanded: true,
+      initialValue: _quality,
+      decoration: const InputDecoration(labelText: '质量'),
+      items: const [
+        DropdownMenuItem(value: 'low', child: Text('普通')),
+        DropdownMenuItem(value: 'medium', child: Text('标准')),
+        DropdownMenuItem(value: 'high', child: Text('高清')),
+      ],
+      onChanged: enabled ? (value) => setState(() => _quality = value!) : null,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Wrap(
-          spacing: 16,
-          runSpacing: 16,
-          children: [
-            SizedBox(
-              width: 180,
-              child: DropdownButtonFormField<String>(
-                key: const ValueKey('genai-image-orientation'),
-                isExpanded: true,
-                initialValue: orientation,
-                decoration: const InputDecoration(labelText: '画面方向'),
-                items: const [
-                  DropdownMenuItem(value: 'square', child: Text('正方形')),
-                  DropdownMenuItem(value: 'landscape', child: Text('横向')),
-                  DropdownMenuItem(value: 'portrait', child: Text('竖向')),
-                  DropdownMenuItem(value: 'custom', child: Text('自定义')),
-                ],
-                onChanged: enabled ? (value) => _selectOrientation(value!) : null,
-              ),
-            ),
-            if (orientation == 'landscape' || orientation == 'portrait')
-              SizedBox(
-                width: 180,
-                child: DropdownButtonFormField<String>(
-                  key: const ValueKey('genai-image-ratio'),
-                  isExpanded: true,
-                  initialValue: _aspectRatio,
-                  decoration: const InputDecoration(labelText: '画面比例'),
-                  items: [
-                    for (final ratio in GenAiImageSize.presets.keys
-                        .where((ratio) => _orientationOf(ratio) == orientation))
-                      DropdownMenuItem(
-                        value: ratio,
-                        child: Text(ratio),
-                      ),
-                  ],
-                  onChanged: enabled ? (value) => _selectAspectRatio(value!) : null,
-                ),
-              ),
-            if (presets != null)
-              SizedBox(
-                width: 260,
-                child: DropdownButtonFormField<String>(
-                  key: const ValueKey('genai-image-resolution'),
-                  isExpanded: true,
-                  initialValue: _resolution,
-                  decoration: const InputDecoration(labelText: '分辨率'),
-                  items: [
-                    for (final entry in presets.entries)
-                      DropdownMenuItem(
-                        value: entry.key,
-                        child: Text(
-                          '${entry.key} · ${entry.value.replaceAll('x', ' × ')}',
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final scale = MediaQuery.textScalerOf(context).scale(16) / 16;
+            final width = constraints.maxWidth >= 760 * scale
+                ? (constraints.maxWidth - 16) / 2
+                : constraints.maxWidth;
+            return Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: [
+                SizedBox(width: width, child: _imageFieldPair(direction, ratio)),
+                SizedBox(
+                  width: width,
+                  child: resolution == null
+                      ? quality
+                      : _imageFieldPair(
+                          resolution,
+                          quality,
+                          firstWidth: 205,
+                          secondWidth: 86,
                         ),
-                      ),
-                    const DropdownMenuItem(
-                      value: 'custom',
-                      child: Text('自定义分辨率'),
-                    ),
-                  ],
-                  onChanged: enabled
-                      ? (value) => setState(() {
-                            final previous = _parsedSize;
-                            _resolution = value!;
-                            if (_customSize && previous != null) {
-                              _setCustomDimensions(previous);
-                            }
-                          })
-                      : null,
                 ),
-              ),
-            SizedBox(
-              width: 150,
-              child: DropdownButtonFormField<String>(
-                isExpanded: true,
-                initialValue: _quality,
-                decoration: const InputDecoration(labelText: '质量'),
-                items: const [
-                  DropdownMenuItem(value: 'low', child: Text('普通')),
-                  DropdownMenuItem(value: 'medium', child: Text('标准')),
-                  DropdownMenuItem(value: 'high', child: Text('高清')),
-                ],
-                onChanged: enabled ? (value) => setState(() => _quality = value!) : null,
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
         if (_customSize) ...[
           const SizedBox(height: 16),
-          Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            children: [
-              dimension(_imageWidth, true),
-              dimension(_imageHeight, false),
-            ],
-          ),
+          _imageFieldPair(dimension(_imageWidth, true), dimension(_imageHeight, false)),
           const SizedBox(height: 8),
           Text(
             _aspectRatio == 'custom'
