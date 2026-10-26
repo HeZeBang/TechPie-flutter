@@ -492,20 +492,24 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
 
     final uncompleted = sorted.where((a) => !service.isCompleted(a)).toList();
     final completed = sorted.where((a) => service.isCompleted(a)).toList()
-      ..sort((a, b) => (b.lateDue ?? b.due).compareTo(a.lateDue ?? a.due));
+      ..sort((a, b) => b.effectiveDue.compareTo(a.effectiveDue));
 
     final overdue = uncompleted
-        .where((a) => (a.lateDue ?? a.due).isBefore(now))
+        .where((a) => a.effectiveDue.isBefore(now))
         .toList()
-      ..sort((a, b) => (a.lateDue ?? a.due).compareTo(b.lateDue ?? b.due));
+      ..sort((a, b) => a.effectiveDue.compareTo(b.effectiveDue));
     final upcoming = uncompleted
-        .where((a) => !(a.lateDue ?? a.due).isBefore(now))
+        .where((a) => !a.effectiveDue.isBefore(now))
         .toList()
       ..sort((a, b) {
         final targetA =
-            (a.lateDue != null && a.due.isBefore(now)) ? a.lateDue! : a.due;
+            (a.effectiveLateDue != null && a.due.isBefore(now))
+                ? a.effectiveLateDue!
+                : a.due;
         final targetB =
-            (b.lateDue != null && b.due.isBefore(now)) ? b.lateDue! : b.due;
+            (b.effectiveLateDue != null && b.due.isBefore(now))
+                ? b.effectiveLateDue!
+                : b.due;
         return targetA.compareTo(targetB);
       });
 
@@ -912,15 +916,16 @@ class _AssignmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final now = DateTime.now();
-    final finalDue = assignment.lateDue ?? assignment.due;
+    final lateDue = assignment.effectiveLateDue;
+    final finalDue = assignment.effectiveDue;
     final isPast = finalDue.isBefore(now);
     final isLateWindow = !completed &&
-        assignment.lateDue != null &&
+        lateDue != null &&
         assignment.due.isBefore(now) &&
         !isPast;
 
     final formatter = DateFormat('MM/dd HH:mm');
-    final displayDue = isLateWindow ? assignment.lateDue! : assignment.due;
+    final displayDue = isLateWindow ? lateDue : assignment.due;
     final dueLabel = isLateWindow ? 'Late Due: ' : 'Due: ';
     final dueString = formatter.format(displayDue);
 
@@ -1113,7 +1118,7 @@ class _AssignmentCard extends StatelessWidget {
                             : (isLateWindow
                                 ? Text(
                                     _formatRemainingTime(
-                                      assignment.lateDue!,
+                                      lateDue,
                                       now,
                                       prefix: 'Late',
                                     ),
@@ -1139,103 +1144,9 @@ class _AssignmentCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              _DeadlineProgressBar(
-                due: assignment.due,
-                lateDue: assignment.lateDue,
-                releaseDate: assignment.releaseDate,
-                completed: completed,
-                now: now,
-              ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-double _calculateRemainingFraction(
-  DateTime targetDue,
-  DateTime? releaseDate,
-  DateTime now,
-) {
-  if (now.isAfter(targetDue)) return 0.0;
-  final start = releaseDate ?? targetDue.subtract(const Duration(days: 7));
-  final totalMillis = targetDue.difference(start).inMilliseconds;
-  if (totalMillis <= 0) return 0.0;
-  final remainMillis = targetDue.difference(now).inMilliseconds;
-  return (remainMillis / totalMillis).clamp(0.0, 1.0);
-}
-
-class _DeadlineProgressBar extends StatelessWidget {
-  final DateTime due;
-  final DateTime? lateDue;
-  final DateTime? releaseDate;
-  final bool completed;
-  final DateTime now;
-
-  const _DeadlineProgressBar({
-    required this.due,
-    this.lateDue,
-    required this.releaseDate,
-    required this.completed,
-    required this.now,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final finalDue = lateDue ?? due;
-    final isPast = now.isAfter(finalDue);
-    final isLateWindow = !completed &&
-        lateDue != null &&
-        now.isAfter(due) &&
-        !isPast;
-    final activeDue = isLateWindow ? lateDue! : due;
-    final hoursLeft = activeDue.difference(now).inHours;
-
-    final Color barColor;
-    if (completed) {
-      barColor = Colors.green;
-    } else if (isPast || isLateWindow) {
-      barColor = Colors.red;
-    } else if (hoursLeft < 24) {
-      barColor = Colors.orange;
-    } else {
-      barColor = theme.colorScheme.primary;
-    }
-
-    final fraction = _calculateRemainingFraction(activeDue, releaseDate, now);
-
-    return Container(
-      height: 6,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(3),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-          width: 0.8,
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(2.5),
-        child: isPast && !completed
-            ? Container(
-                color: Colors.red.withValues(alpha: 0.85),
-              )
-            : Align(
-                alignment: Alignment.centerRight,
-                child: FractionallySizedBox(
-                  widthFactor: completed && isPast ? 1.0 : fraction,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: barColor,
-                      borderRadius: BorderRadius.circular(2.5),
-                    ),
-                  ),
-                ),
-              ),
       ),
     );
   }
