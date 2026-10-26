@@ -537,21 +537,20 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                     Icon(
                       _pastCollapsed ? Icons.chevron_right : Icons.expand_more,
                       size: 20,
-                      color: Colors.red,
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       '已逾期 (${overdue.length})',
                       style: theme.textTheme.labelLarge?.copyWith(
-                        color: Colors.red,
-                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const Spacer(),
                     Text(
                       _pastCollapsed ? '展开' : '折叠',
                       style: theme.textTheme.labelMedium?.copyWith(
-                        color: Colors.red,
+                        color: theme.colorScheme.primary,
                       ),
                     ),
                   ],
@@ -1051,7 +1050,7 @@ class _AssignmentCard extends StatelessWidget {
                 children: [
                   Icon(
                     Icons.access_time,
-                    size: 18,
+                    size: 16,
                     color: completed
                         ? theme.colorScheme.onSurfaceVariant
                         : (isPast || isLateWindow
@@ -1061,7 +1060,7 @@ class _AssignmentCard extends StatelessWidget {
                   const SizedBox(width: 6),
                   Text(
                     '$dueLabel$dueString',
-                    style: theme.textTheme.bodyMedium?.copyWith(
+                    style: theme.textTheme.bodySmall?.copyWith(
                       color: completed
                           ? theme.colorScheme.onSurfaceVariant
                           : (isPast || isLateWindow
@@ -1093,13 +1092,13 @@ class _AssignmentCard extends StatelessWidget {
                             children: [
                               const Icon(
                                 Icons.check_circle,
-                                size: 18,
+                                size: 16,
                                 color: Colors.green,
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 '已完成',
-                                style: theme.textTheme.bodyMedium?.copyWith(
+                                style: theme.textTheme.bodySmall?.copyWith(
                                   color: Colors.green,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -1110,7 +1109,7 @@ class _AssignmentCard extends StatelessWidget {
                             ? Text(
                                 'Overdue',
                                 key: const ValueKey('overdue'),
-                                style: theme.textTheme.bodyMedium?.copyWith(
+                                style: theme.textTheme.bodySmall?.copyWith(
                                   color: Colors.red,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -1123,7 +1122,7 @@ class _AssignmentCard extends StatelessWidget {
                                       prefix: 'Late',
                                     ),
                                     key: const ValueKey('late_remain'),
-                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                    style: theme.textTheme.bodySmall?.copyWith(
                                       color: Colors.red,
                                       fontWeight: FontWeight.bold,
                                       fontFeatures: const [
@@ -1134,7 +1133,7 @@ class _AssignmentCard extends StatelessWidget {
                                 : Text(
                                     _formatRemainingTime(assignment.due, now),
                                     key: const ValueKey('remain'),
-                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                    style: theme.textTheme.bodySmall?.copyWith(
                                       color: theme.colorScheme.onSurfaceVariant,
                                       fontFeatures: const [
                                         FontFeature.tabularFigures(),
