@@ -658,7 +658,7 @@ Future<void> _showAccountDetailSheet(
                     InkWell(
                       borderRadius: BorderRadius.circular(4),
                       onTap: () {
-                        Clipboard.setData(ClipboardData(text: cookieText));
+                        unawaited(Clipboard.setData(ClipboardData(text: cookieText)));
                         ScaffoldMessenger.of(sheetContext).showSnackBar(
                           const SnackBar(
                             content: Text('Cookie 已复制'),

@@ -906,7 +906,7 @@ class _AnimatedSuccessCheckState extends State<AnimatedSuccessCheck>
         TweenSequenceItem(tween: Tween(begin: 1.07, end: 1), weight: 28),
       ],
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
-    _controller.forward();
+    unawaited(_controller.forward());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(widget.feedback?.play(FeedbackEvent.paymentSuccess));
