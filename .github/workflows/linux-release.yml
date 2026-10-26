@@ -91,7 +91,10 @@ jobs:
             liblzma-dev \
             libwebkit2gtk-4.1-dev \
             libsecret-1-dev \
-            libjsoncpp-dev
+            libjsoncpp-dev \
+            libjson-glib-dev \
+            qt6-base-dev \
+            qt6-declarative-dev
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -131,6 +134,14 @@ jobs:
           # platform's artifact, with the file left in whatever shape the build
           # produced. The archive holds `bundle/` itself, so it extracts to one
           # directory — the runner, its libraries and data/ next to each other.
+          cmake -S linux/widgets -B build/linux-widgets -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/linux-widgets --parallel 2
+          mkdir -p build/linux/x64/release/bundle/widgets
+          cp assets/icon/icon.png build/linux/x64/release/bundle/techpie.png
+          cp -R build/linux-widgets/kde linux/widgets/gnome linux/widgets/common \
+            build/linux/x64/release/bundle/widgets/
+          cp linux/widgets/install.py \
+            build/linux/x64/release/bundle/widgets/
           mkdir -p dist
           tar -czf "dist/TechPie-${RELEASE_NAME}-linux-x86-64.tar.gz" \
             -C build/linux/x64/release bundle

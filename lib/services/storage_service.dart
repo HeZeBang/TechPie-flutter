@@ -33,6 +33,8 @@ class StorageService {
   static const _syncMasterKeyKey = 'sync_master_key'; // secure storage
   static const _deviceIdKey = 'device_id';
   static const _maskPersonalInfoKey = 'mask_personal_info';
+  static const _proxyUrlKey = 'app_proxy_url';
+  static const _proxyEnabledKey = 'app_proxy_enabled';
 
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
@@ -203,6 +205,11 @@ class StorageService {
   Future<void> setMaskPersonalInfo(bool value) =>
       _prefs.setBool(_maskPersonalInfoKey, value);
 
+  String get appProxyUrl => _prefs.getString(_proxyUrlKey) ?? '';
+  Future<void> setAppProxyUrl(String value) => _prefs.setString(_proxyUrlKey, value);
+  bool get appProxyEnabled => _prefs.getBool(_proxyEnabledKey) ?? false;
+  Future<void> setAppProxyEnabled(bool value) => _prefs.setBool(_proxyEnabledKey, value);
+
   bool get useLocalhost =>
       !kReleaseMode && (_prefs.getBool(_useLocalhostKey) ?? false);
   Future<void> setUseLocalhost(bool value) =>
@@ -314,6 +321,14 @@ class StorageService {
 
   // Assignments cache (non-sensitive — stored as JSON in SharedPreferences)
   static const _assignmentsKey = 'cached_assignments';
+
+  bool get hasCachedAssignments => _prefs.containsKey(_assignmentsKey);
+
+  bool get deadlineWidgetsEnabled => _prefs.getBool('deadline_widgets_enabled') ?? false;
+
+  Future<void> setDeadlineWidgetsEnabled(bool enabled) async {
+    await _prefs.setBool('deadline_widgets_enabled', enabled);
+  }
 
   Future<void> saveCachedAssignments(List<Map<String, dynamic>> items) =>
       _prefs.setString(_assignmentsKey, jsonEncode(items));

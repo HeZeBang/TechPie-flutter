@@ -1,0 +1,9 @@
+{
+  "uuid": "deadlines@techpie.geekpie.club",
+  "name": "TechPie Deadlines",
+  "description": "Upcoming TechPie assignments and exams from a local display-only snapshot.",
+  "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
+  "version": 1,
+  "settings-schema": "org.gnome.shell.extensions.techpie-deadlines",
+  "url": "https://github.com/HeZeBang/TechPie-flutter"
+}

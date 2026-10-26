@@ -1,0 +1,22 @@
+.techpie-deadline-row { spacing: 4px; max-width: 420px; }
+.techpie-deadline-heading { spacing: 6px; }
+.techpie-deadline-title { font-weight: bold; }
+.techpie-deadline-kind { font-size: 0.75em; color: rgba(255, 255, 255, 0.68); }
+.techpie-deadline-detail { font-size: 0.85em; color: rgba(255, 255, 255, 0.72); }
+.techpie-deadline-time { padding: 3px 8px; border-radius: 999px; font-weight: bold; }
+.techpie-deadline-time-urgent { color: #ed333b; }
+.techpie-deadline-time-soon { color: -st-accent-color; }
+.techpie-deadline-card-urgent { background-color: rgba(163, 11, 25, 0.92); }
+.techpie-deadline-card-soon { background-color: rgba(163, 11, 25, 0.45); }
+.techpie-deadline-card-normal { background-color: rgba(255, 255, 255, 0.08); }
+.techpie-deadline-card-urgent, .techpie-deadline-card-soon, .techpie-deadline-card-normal {
+  padding: 9px 11px; border-radius: 12px;
+}
+.techpie-deadline-card-urgent .techpie-deadline-time { background-color: rgba(255, 255, 255, 0.18); color: #fff; }
+.techpie-deadline-card-soon .techpie-deadline-time { background-color: rgba(163, 11, 25, 0.3); }
+.techpie-deadline-card-normal .techpie-deadline-time { background-color: rgba(255, 255, 255, 0.1); }
+.techpie-desktop-card { padding: 18px; spacing: 14px; border-radius: 16px; }
+.techpie-desktop-header { font-weight: bold; padding: 8px 0; }
+.techpie-desktop-rows { spacing: 12px; }
+.techpie-desktop-item { text-align: left; border-radius: 8px; padding: 8px; }
+.techpie-desktop-item:hover { background-color: rgba(128, 128, 128, 0.2); }

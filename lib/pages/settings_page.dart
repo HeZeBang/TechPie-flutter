@@ -7,9 +7,12 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/http_client.dart';
 import '../services/service_provider.dart';
+import '../services/storage_service.dart';
 import '../services/sync_service.dart';
 import '../services/theme_service.dart';
+import '../services/uni_auth_service.dart';
 import '../services/update_service.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
@@ -409,6 +412,20 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // General section
             _sectionHeader(theme, 'General'),
+            if (sp.deadlineWidgetService != null)
+              _AdaptiveSwitchTile(
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.widgets_outlined),
+                title: 'Deadline widgets',
+                subtitle: 'Share task titles and dates with your desktop. '
+                    'Widgets use cached data while TechPie is closed.',
+                value: storage.deadlineWidgetsEnabled,
+                onChanged: (value) async {
+                  await storage.setDeadlineWidgetsEnabled(value);
+                  await sp.deadlineWidgetService!.setEnabled(value);
+                  if (mounted) setState(() {});
+                },
+              ),
             _AdaptiveSwitchTile(
               usesIosLiquidGlass: useIosChrome,
               secondary: const Icon(Icons.visibility_off_outlined),
@@ -420,6 +437,28 @@ class _SettingsPageState extends State<SettingsPage> {
                 setState(() {
                   _isPersonalInfoBlurred = value;
                 });
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.lan_outlined),
+              title: const Text('Application proxy'),
+              subtitle: Text(
+                storage.appProxyEnabled && storage.appProxyUrl.isNotEmpty
+                    ? storage.appProxyUrl
+                    : 'Disabled',
+              ),
+              onTap: () => _showProxySettings(storage, sp.uniAuthService),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.power_settings_new),
+              title: const Text('Enable application proxy'),
+              value: storage.appProxyEnabled,
+              onChanged: (value) async {
+                await storage.setAppProxyEnabled(value);
+                final proxy = value ? storage.appProxyUrl : '';
+                configureAppProxy(proxy);
+                sp.uniAuthService.setProxyUrl(proxy);
+                if (mounted) setState(() {});
               },
             ),
             ListTile(
@@ -536,6 +575,43 @@ class _SettingsPageState extends State<SettingsPage> {
     if (ok == true) {
       await auth.logout();
     }
+  }
+
+  Future<void> _showProxySettings(StorageService storage, UniAuthService uniAuth) async {
+    final controller = TextEditingController(text: storage.appProxyUrl);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Application proxy'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '127.0.0.1:7890'),
+          keyboardType: TextInputType.url,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null || !mounted) return;
+    final proxy = value.trim();
+    if (proxy.isNotEmpty && !RegExp(r'^[^\s:]+:\d{1,5}$').hasMatch(proxy)) {
+      await showAdaptiveAlertDialog<void>(
+        context: context,
+        title: 'Invalid proxy',
+        message: 'Use host:port, for example 127.0.0.1:7890.',
+        actions: const [AdaptiveAlertAction<void>(label: 'OK')],
+      );
+      return;
+    }
+    await storage.setAppProxyUrl(proxy);
+    await storage.setAppProxyEnabled(proxy.isNotEmpty);
+    configureAppProxy(proxy);
+    uniAuth.setProxyUrl(proxy);
+    setState(() {});
   }
 
   void _showThemePicker(BuildContext context, ThemeService themeService) {
