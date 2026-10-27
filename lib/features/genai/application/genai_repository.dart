@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import '../data/genai_api_client.dart';
 import '../domain/genai_cancellation.dart';
+import '../domain/genai_context_usage.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
@@ -256,6 +257,7 @@ final class GenAiRepository {
         // progress reaches consumers while the summarizer is still running.
         final progress = StreamController<GenAiChatEvent>();
         GenAiChatRequest? prepared;
+        GenAiContextUsage? readyUsage;
         Future<void> prepare() async {
           try {
             prepared = await _context.prepare(
@@ -267,6 +269,7 @@ final class GenAiRepository {
                 cancellation,
               ),
               onUsage: (usage) {
+                if (usage.stage == GenAiContextStage.ready) readyUsage = usage;
                 if (!operation.isCancelled) {
                   progress.add(GenAiContextUsageChanged(usage));
                 }
@@ -293,6 +296,14 @@ final class GenAiRepository {
             boundary != null &&
             _recordedMemory[request.chatGroupId] != jsonEncode(boundary)) {
           prepared = prepared!.withRecord({...request.record, 'context': memory});
+        }
+        if (prepared!.record.isNotEmpty) {
+          // The ring describes this prepared request, not a recomputation from
+          // answers on reopen. Persist on every agent step; no extra POST.
+          prepared = prepared!.withRecord({
+            ...prepared!.record,
+            'contextUsage': readyUsage!.toRecord(),
+          });
           _context.checkWireBudget(prepared!);
         }
         if (prepared!.contextCompacted) yield const GenAiContextCompacted();

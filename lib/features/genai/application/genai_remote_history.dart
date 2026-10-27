@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../domain/genai_agent_contract.dart';
 import '../domain/genai_agent_protocol.dart';
 import '../domain/genai_context_record.dart';
+import '../domain/genai_context_usage.dart';
 import '../domain/genai_platform_contract.dart';
 import '../domain/genai_remote_record.dart';
 import 'genai_chat_service.dart';
@@ -131,8 +132,15 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
           }
         }
       }
+      // A turn can contain multiple model requests. Its latest server step
+      // owns the estimate; do not retain an older step's value when absent.
+      turn.contextUsage = GenAiContextUsage.fromRecord(record['contextUsage']);
+      turn.contextCompacted = turn.contextCompacted || (turn.contextUsage?.compacted ?? false);
       leaf = turnId;
-      settings = record;
+      settings = {
+        ...record,
+        if (record['aiType'] == null && row.aiType.isNotEmpty) 'aiType': row.aiType,
+      };
       if (row.createdAt != null && row.createdAt!.isAfter(lastMessage)) {
         lastMessage = row.createdAt!;
       }
@@ -154,6 +162,16 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
           }
           turn.agentEvents[result['call_id']! as String] = event;
           turn.recordAgentActivity(event);
+          // Version 2 references this already-stored receipt by its execution
+          // identities instead of repeating the result in a second ledger.
+          final keys = (record['effectKeys'] as List? ?? const []).cast<String>();
+          if (keys.any((key) => !key.startsWith('${previous.call!.name}:'))) {
+            throw const FormatException('Invalid mutation identity');
+          }
+          effects = {
+            'version': 1,
+            'effects': {...?effects['effects'] as Map?, for (final key in keys) key: result},
+          };
         }
       }
       if (row.reasoning.isNotEmpty) {

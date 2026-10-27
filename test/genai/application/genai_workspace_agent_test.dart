@@ -127,7 +127,7 @@ void main() {
       b.workspace.setAgentEnabled(enabled);
       server.onGenerate = (body) {
         expect(body['imageUrls'], enabled ? [revision] : [image, revision]);
-        if (enabled) expect(body['chatInfo'], contains(image));
+        if (enabled) expect(body['messages'].toString(), contains(image));
         expect(body['imageUrl'], revision);
         expect(body['netGo'], false);
         return enabled ? server.finalAnswer(body, 'The saved picture.') : 'The saved picture.';

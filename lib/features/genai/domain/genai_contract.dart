@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'genai_context_usage.dart';
 import 'genai_failure.dart';
 import 'genai_remote_record.dart';
@@ -42,7 +40,6 @@ final class GenAiChatRequest {
     List<String> imageUrls = const [],
     this.maxTokens,
     this.record = const {},
-    this.agentControl = const {},
   })  : history = List.unmodifiable(history),
         fileIds = List.unmodifiable(fileIds),
         documentContents = Map.unmodifiable(documentContents),
@@ -55,17 +52,9 @@ final class GenAiChatRequest {
 
   /// Host-authored metadata persisted together with this exchange.
   final Map<String, Object?> record;
-  final Map<String, Object?> agentControl;
   String get storedPrompt => record.isEmpty
-      ? (agentControl.isEmpty
-          ? prompt
-          : '$prompt\n<techpie-agent-control>\n${jsonEncode(agentControl)}\n</techpie-agent-control>')
-      : encodeGenAiRemoteRecord({
-          ...record,
-          'kind': 'exchange',
-          'input': prompt,
-          if (agentControl.isNotEmpty) 'agent_control': agentControl,
-        });
+      ? prompt
+      : encodeGenAiRemoteRecord({...record, 'kind': 'exchange', 'input': prompt});
 
   final String chatGroupId;
   final String prompt;
@@ -98,7 +87,6 @@ final class GenAiChatRequest {
         contextGoal: contextGoal,
         contextCompacted: contextCompacted,
         record: value,
-        agentControl: agentControl,
       );
 
   Map<String, Object?> toJson() => {

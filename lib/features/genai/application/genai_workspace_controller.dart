@@ -789,7 +789,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         'agent': turn.isAgent,
         'thinking': thinkingEnabled,
         'search': false,
-        'aiType': model.aiType,
         'rootAiType': model.rootAiType,
         if (_titleOverride != null) 'title': _titleOverride,
       };
@@ -1295,7 +1294,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       turn.isAgentThinking = false;
       turn.phase = GenAiChatPhase.cancelled;
       if (turn.isAgent) {
-        turn.agentStatus = '已停止。已提交的预约或图片任务仍可能完成，请先查看记录。';
+        turn.agentStatus = '已停止';
       }
     }
     _active = null;

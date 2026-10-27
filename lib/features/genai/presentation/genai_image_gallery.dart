@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../domain/genai_platform_contract.dart';
+import 'genai_image_actions.dart';
 
 /// A lazy image-history sliver whose tile sizes follow the decoded images.
 class GenAiImageGallery extends StatefulWidget {
@@ -103,6 +104,7 @@ class _GenAiImageGalleryState extends State<GenAiImageGallery> {
                     child: Semantics(
                       button: true,
                       label: '查看图片：$prompt',
+                      onTap: () => widget.onOpen(record),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -115,15 +117,19 @@ class _GenAiImageGalleryState extends State<GenAiImageGallery> {
                                   if (uri == null)
                                     const _ImageUnavailable()
                                   else
-                                    _MeasuredImage(
-                                      key: ValueKey(uri),
+                                    GenAiImageActions(
                                       image: widget.imageProvider(uri),
-                                      onAspectRatio: (ratio) => _imageMeasured(uri, ratio),
+                                      link: widget.isDemo(uri) ? null : uri,
+                                      child: _MeasuredImage(
+                                        key: ValueKey(uri),
+                                        image: widget.imageProvider(uri),
+                                        onAspectRatio: (ratio) => _imageMeasured(uri, ratio),
+                                      ),
                                     ),
                                   if (record.images.length > 1)
                                     PositionedDirectional(
                                       top: 8,
-                                      end: 8,
+                                      start: 8,
                                       child: _ImageBadge(
                                         icon: Icons.photo_library_outlined,
                                         label: '${record.images.length}',

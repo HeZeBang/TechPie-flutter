@@ -341,7 +341,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
           final modelWidth = widget.modelSelector == null ? 0.0 : 180.0;
           final actionWidth = modelWidth +
               (modelWidth > 0 ? 8 : 0) +
-              (widget.contextStatus != null ? 48 : 0) +
+              (widget.contextStatus != null ? 32 : 0) +
               (hasAudio ? 48 : 0) +
               6 +
               48;
@@ -394,7 +394,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
                 const SizedBox(width: 8),
               ],
               if (widget.contextStatus != null)
-                SizedBox.square(dimension: 48, child: widget.contextStatus),
+                SizedBox(width: 32, height: 48, child: widget.contextStatus),
               if (widget.supportsRecording || widget.supportsAudio)
                 GestureDetector(
                   // Keep the semantics structure stable while

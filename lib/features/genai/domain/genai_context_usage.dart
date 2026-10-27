@@ -19,6 +19,41 @@ final class GenAiContextUsage {
         assert(originalInputUnits >= 0),
         assert(completedChunks >= 0 && completedChunks <= totalChunks);
 
+  /// Only completed accounting is portable; never restore a live progress phase.
+  Map<String, Object?>? toRecord() => stage != GenAiContextStage.ready
+      ? null
+      : {
+          'input': estimatedInputUnits,
+          'limit': allowedInputUnits,
+          'original': originalInputUnits,
+          'compacted': compacted,
+        };
+
+  /// Optional display metadata must not make an otherwise valid chat unreadable.
+  static GenAiContextUsage? fromRecord(Object? value) {
+    if (value is! Map) return null;
+    final input = value['input'];
+    final limit = value['limit'];
+    final original = value['original'];
+    final compacted = value['compacted'];
+    if (input is! int ||
+        input < 0 ||
+        limit is! int ||
+        limit <= 0 ||
+        original is! int ||
+        original < 0 ||
+        compacted is! bool) {
+      return null;
+    }
+    return GenAiContextUsage(
+      stage: GenAiContextStage.ready,
+      estimatedInputUnits: input,
+      allowedInputUnits: limit,
+      originalInputUnits: original,
+      compacted: compacted,
+    );
+  }
+
   final GenAiContextStage stage;
   final int estimatedInputUnits;
   final int allowedInputUnits;

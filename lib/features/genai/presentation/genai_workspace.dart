@@ -252,7 +252,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     _inputFocus.requestFocus();
     showAdaptiveFeedback(
       context: context,
-      message: '已停止生成，输入框中的草稿已保留。',
+      message: '已停止',
     );
   }
 
@@ -1398,7 +1398,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                       ? turn.agentStatus
                                       : turn.failure != null
                                           ? genAiFailureText(turn.failure!)
-                                          : '已停止生成 · 内容可能不完整',
+                                          : '已停止',
                                   style: TextStyle(
                                     color: _muted,
                                     fontSize: 12,
@@ -1529,8 +1529,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       recordingSeconds: _media.recordingSeconds,
       onSend: () => unawaited(_send()),
       onStop: _stop,
-      contextStatus:
-          _state.contextUsage == null ? null : GenAiContextStatus(usage: _state.contextUsage!),
+      contextStatus: _state.turns.isEmpty && _state.contextUsage == null
+          ? null
+          : GenAiContextStatus(usage: _state.contextUsage),
       onThinkingChanged: _state.setThinking,
       onAgentChanged: _state.setAgentEnabled,
       onMenuAction: (action) {

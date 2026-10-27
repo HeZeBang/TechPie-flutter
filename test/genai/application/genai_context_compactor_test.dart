@@ -102,19 +102,25 @@ void main() {
       prompt: 'Latest tool result',
       aiType: 'Kimi-k3',
       rootAiType: 'xinference',
-      history: sourceHistory(),
-      agentControl: control,
+      history: [
+        GenAiMessage(
+          role: GenAiRole.system,
+          content: '${sourceHistory().first.content}\n${jsonEncode(control)}',
+        ),
+        ...sourceHistory().skip(1),
+      ],
       record: const {'step_id': 'active_nonce_0123456789'},
     );
     final prepared =
         await GenAiContextCompactor(policy: policy).prepare(input, GenAiCancellation(), summary);
     expect(prepared.contextCompacted, true);
-    expect(prepared.agentControl, control);
+    expect(prepared.history.first.content, input.history.first.content);
     final wire = prepared.withRecord({
       ...prepared.record,
       'context': {'boundary': 'saved'},
     }).toJson();
-    expect(decodeGenAiRemoteRecord(wire['chatInfo']! as String)?['agent_control'], control);
+    expect(decodeGenAiRemoteRecord(wire['chatInfo']! as String)?['agent_control'], isNull);
+    expect(wire['messages'].toString(), contains('Read the original budget'));
     expect(prepared.history.first.content, contains('Never repeat an unknown action'));
     expect(wire['netGo'], false);
   });

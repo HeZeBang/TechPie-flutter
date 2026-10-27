@@ -17,6 +17,7 @@ import '../domain/genai_reference_image.dart';
 import 'genai_conversation_menu.dart';
 import 'genai_copy.dart';
 import 'genai_demo_image.dart';
+import 'genai_image_actions.dart';
 import 'genai_image_gallery.dart';
 import 'genai_image_save.dart';
 import 'genai_theme.dart';
@@ -1298,7 +1299,23 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                               height: (height * .55).clamp(160.0, 520.0),
                               child: uri == null
                                   ? const Center(child: Text('此记录没有可预览的图片'))
-                                  : _image(uri),
+                                  : GenAiImageActions(
+                                      image: widget.demo &&
+                                              (uri.path.contains('techpie-preview') ||
+                                                  uri.host == 'demo')
+                                          ? const AssetImage(GenAiDemoImage.assetName)
+                                          : NetworkImage(
+                                              _workspace.repository
+                                                  .imageDisplayUri(uri.toString())
+                                                  .toString(),
+                                            ),
+                                      link: widget.demo &&
+                                              (uri.path.contains('techpie-preview') ||
+                                                  uri.host == 'demo')
+                                          ? null
+                                          : uri,
+                                      child: SizedBox.expand(child: _image(uri)),
+                                    ),
                             ),
                             if (record.images.length > 1)
                               Row(

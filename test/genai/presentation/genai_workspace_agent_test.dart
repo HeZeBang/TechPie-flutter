@@ -228,12 +228,8 @@ void main() {
     final groupId = demo.workspace.groupId;
     await send(tester, 'My favorite color is blue');
     await pumpUntil(tester, () => !demo.workspace.sending);
-    // The context indicator now shares the trailing action row; inactive tools
-    // remain available from + when they no longer fit beside thinking.
-    expect(agent, findsNothing);
-    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('genai-agent-menu-toggle')));
+    // The compact, noninteractive context indicator leaves room for this toggle.
+    await tester.tap(agent);
     await tester.pump();
     await send(tester, 'Remember my color');
     await pumpUntil(tester, () => !demo.workspace.sending);

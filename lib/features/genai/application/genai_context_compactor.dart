@@ -814,7 +814,6 @@ final class GenAiContextCompactor {
         chatGroupId: input.chatGroupId,
         prompt: input.prompt,
         record: input.record,
-        agentControl: input.agentControl,
         aiType: input.aiType,
         rootAiType: input.rootAiType,
         history: history,

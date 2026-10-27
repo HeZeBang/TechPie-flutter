@@ -4,7 +4,8 @@ import 'package:techpie/features/genai/domain/genai_context_usage.dart';
 import 'package:techpie/features/genai/presentation/genai_context_status.dart';
 
 void main() {
-  testWidgets('preparation states fit narrow layouts and explain estimates', (tester) async {
+  testWidgets('context status remains accessible without an interactive popup', (tester) async {
+    final semantics = tester.ensureSemantics();
     tester.view.physicalSize = const Size(320, 740);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -36,14 +37,22 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
       if (stage == GenAiContextStage.compacting) {
-        expect(find.byTooltip('正在整理上下文 · 2/3'), findsOneWidget);
+        expect(find.bySemanticsLabel('正在整理上下文 · 2/3'), findsOneWidget);
       }
     }
-    expect(find.byTooltip('已整理上下文 · 估算 40%'), findsOneWidget);
+    expect(find.bySemanticsLabel('已整理上下文 · 估算 40%'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('genai-context-status')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('不是实际 Token 用量或计费额度'), findsOneWidget);
-    expect(find.textContaining('整理前约为 110%'), findsOneWidget);
+    expect(find.byType(Dialog), findsNothing);
+    expect(find.byType(Tooltip), findsNothing);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const MaterialApp(home: GenAiContextStatus(usage: null)));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('上下文 · 此历史记录未保存估算'), findsOneWidget);
+    expect(
+      tester.widget<CircularProgressIndicator>(find.byType(CircularProgressIndicator)).value,
+      0,
+    );
+    semantics.dispose();
   });
 }

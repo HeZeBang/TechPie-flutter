@@ -125,7 +125,7 @@ final class GenAiConversationTurn {
   bool agentTranscriptIsDelta = false;
   bool contextCompacted = false;
 
-  /// Status of the latest request in this turn; never persisted as live progress.
+  /// Latest request accounting; only its ready snapshot survives recovery.
   GenAiContextUsage? contextUsage;
   String answer = '';
   String reasoning = '';
@@ -169,6 +169,7 @@ extension GenAiConversationTurnArchive on GenAiConversationTurn {
         'isHistoryGap': isHistoryGap,
         'answer': answer,
         'contextCompacted': contextCompacted,
+        'contextUsage': contextUsage?.toRecord(),
         'reasoning': reasoning,
         'phase': phase.name,
         'thinkingDurationMs': thinkingDurationMs,
@@ -236,6 +237,7 @@ GenAiConversationTurn genAiTurnFromArchive(Map<String, Object?> json) {
   )
     ..answer = json['answer']! as String
     ..contextCompacted = json['contextCompacted'] as bool? ?? false
+    ..contextUsage = GenAiContextUsage.fromRecord(json['contextUsage'])
     ..reasoning = json['reasoning']! as String
     ..phase = interrupted ? GenAiChatPhase.cancelled : savedPhase
     ..thinkingDurationMs = json['thinkingDurationMs'] as int?

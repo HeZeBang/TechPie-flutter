@@ -50,9 +50,10 @@ are cleared before a bounded repair. Invalid framing is corrected in a text-only
 step containing the rejected output as labelled, untrusted candidate data. The
 candidate never executes directly; the same current-nonce parser and tool-schema
 checks still apply. This avoids repeatedly invoking a vision route just to fix
-syntax. Every step repeats the active task and current
-protocol in a trailing `agent_control` field; repair must continue that task using
-already completed results, not ask for a new request.
+syntax. Each request injects the protocol and `CURRENT_REQUEST` (active task,
+image catalog and any rejected candidate) in its system message. These controls
+are reconstructed for inference, not persisted. The saved `step_id` is also the
+current call nonce. Repair continues the active task using completed results.
 
 Normal chat accepts ordinary streamed answers. Both modes share the repository,
 context builder, attachments and reconstructed source history. Web search is disabled in both modes; old saved citations remain readable.
@@ -62,10 +63,13 @@ context builder, attachments and reconstructed source history. Web search is dis
 The school persists `chatInfo` and the answer, not the supplied `messages` context.
 The decoder strips only the known school upload-label prefix before parsing records;
 it never scans arbitrary document text for embedded records.
-Actual exchanges therefore put a versioned `<techpie-record version="1">` JSON
+Actual exchanges therefore put a versioned `<techpie-record version="2">` JSON
 record in `chatInfo`. The record contains the current input, step ID, turn identity,
-mode/model metadata and any changed recovery data. The original request and file
-text are recorded on the first step; continuations refer to its turn ID. Parent IDs
+mode, model routing and changed recovery data. The model ID comes from the
+server row; its root routing ID is retained because the server does not return it.
+Default values and duplicate identities are omitted. Version 1 records remain
+readable; older clients need updating to interpret version 2. The original request
+and file text are recorded on the first step; continuations refer to its turn ID. Parent IDs
 make retries explicit. The latest appended path is displayed; other branches stay
 on the server and still contribute conservative mutation protection.
 
@@ -90,7 +94,12 @@ There are no extra model calls just to save a receipt or checkpoint. Recovery
 metadata rides on the next normal exchange. Compaction sends only a small prefix
 boundary marker: summary answers are recovered directly from their existing
 extraction rows by source hash, then validated against original quotes. Mutation
-receipts use deltas rather than repeated ledger snapshots. Memory extraction
+receipts are stored once as the next input. `effectKeys` associates that receipt
+with normalized execution identities that cannot be inferred from raw tool
+arguments; any other changed receipts use ledger deltas. Approval counts remain
+explicit because declined or interrupted confirmations cannot be inferred from
+successful results. Context estimates are small ready snapshots, allowing the
+usage ring to recover without replaying a model request. Memory extraction
 itself can use bounded model calls in the same group.
 Renaming is draft metadata until the next real message, which the UI explains.
 

@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
+import 'package:techpie/features/genai/presentation/genai_image_actions.dart';
 import 'package:techpie/features/genai/presentation/genai_image_gallery.dart';
 
 void main() {
@@ -74,6 +75,21 @@ void main() {
     );
     await tester.tap(tile(1));
     expect(opened, '1');
+    await tester.tap(find.descendant(of: tile(0), matching: find.byType(GenAiImageActions)));
+    expect(opened, '0');
+    opened = null;
+    final semantics = tester.ensureSemantics();
+    await tester.pump();
+    final imageNode = tester.getSemantics(
+      find.byWidgetPredicate(
+        (widget) => widget is Semantics && widget.properties.label == '查看图片：Gallery image 0',
+      ),
+    );
+    expect(imageNode.getSemanticsData().hasAction(ui.SemanticsAction.tap), isTrue);
+    tester.binding.renderViews.single.owner!.semanticsOwner!
+        .performAction(imageNode.id, ui.SemanticsAction.tap);
+    expect(opened, '0');
+    semantics.dispose();
 
     // A tall earlier tile must not be culled when shorter later tiles are above the viewport.
     scroll.jumpTo(rect(0).bottom - 100);

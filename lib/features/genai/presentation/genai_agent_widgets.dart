@@ -7,6 +7,7 @@ import '../domain/genai_agent_contract.dart';
 import '../domain/genai_platform_contract.dart';
 import 'genai_demo_image.dart';
 import 'genai_image.dart';
+import 'genai_image_actions.dart';
 import 'genai_thinking_view.dart';
 import 'genai_tool_result_summary.dart';
 import 'genai_web_search_view.dart';
@@ -385,18 +386,24 @@ class _GenAiAgentImagePreview extends StatefulWidget {
 class _GenAiAgentImagePreviewState extends State<_GenAiAgentImagePreview> {
   DialogRoute<void>? _viewer;
 
-  Widget _image() => widget.demo
-      ? const GenAiDemoImage()
-      : Image.network(
-          widget.uri.toString(),
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => const Center(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: Text('图片暂时无法预览，请查看图片记录。'),
-            ),
-          ),
-        );
+  Widget _image() => GenAiImageActions(
+        image: widget.demo
+            ? const AssetImage(GenAiDemoImage.assetName)
+            : NetworkImage(widget.uri.toString()),
+        link: widget.demo ? null : genAiImageUri(widget.uri.path),
+        child: widget.demo
+            ? const GenAiDemoImage()
+            : Image.network(
+                widget.uri.toString(),
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text('图片暂时无法预览，请查看图片记录。'),
+                  ),
+                ),
+              ),
+      );
 
   void _open() {
     if (_viewer != null) return;
@@ -414,7 +421,7 @@ class _GenAiAgentImagePreviewState extends State<_GenAiAgentImagePreview> {
             ),
             Positioned(
               top: 8,
-              right: 8,
+              left: 8,
               child: IconButton.filledTonal(
                 tooltip: '关闭图片预览',
                 onPressed: () => Navigator.of(context).pop(),
@@ -453,6 +460,7 @@ class _GenAiAgentImagePreviewState extends State<_GenAiAgentImagePreview> {
         child: Semantics(
           button: true,
           label: '放大生成的图片',
+          onTap: _open,
           child: Tooltip(
             message: '点击放大',
             child: InkWell(
@@ -465,7 +473,7 @@ class _GenAiAgentImagePreviewState extends State<_GenAiAgentImagePreview> {
                   child: SizedBox(
                     height: 240,
                     width: double.infinity,
-                    child: _image(),
+                    child: Center(child: _image()),
                   ),
                 ),
               ),

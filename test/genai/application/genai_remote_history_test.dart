@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
 import 'package:techpie/features/genai/application/genai_remote_history.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
+import 'package:techpie/features/genai/domain/genai_context_usage.dart';
 import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
 import 'package:techpie/features/genai/domain/genai_remote_record.dart';
 
@@ -13,7 +16,14 @@ void main() {
   test('late completion cannot revive a cancelled ancestor or hide its follow-up', () {
     final stopped = GenAiConversationTurn('Long task', id: 'stopped', isAgent: true)
       ..phase = GenAiChatPhase.cancelled
-      ..answer = 'Partial answer';
+      ..answer = 'Partial answer'
+      ..contextUsage = const GenAiContextUsage(
+        stage: GenAiContextStage.ready,
+        estimatedInputUnits: 2000,
+        allowedInputUnits: 10000,
+        originalInputUnits: 9000,
+        compacted: true,
+      );
     final followup = GenAiConversationTurn('New question', id: 'next', parentId: stopped.id);
     GenAiSavedTurn row(GenAiConversationTurn turn, String answer, {bool carryStop = false}) =>
         GenAiSavedTurn(
@@ -36,6 +46,7 @@ void main() {
     expect(recovered.map((turn) => turn.id), ['stopped', 'next']);
     expect(recovered.first.phase, GenAiChatPhase.cancelled);
     expect(recovered.first.answer, 'Partial answer');
+    expect(recovered.first.contextUsage?.toRecord(), stopped.contextUsage!.toRecord());
     expect(recovered.last.answer, 'New answer');
   });
 
@@ -59,6 +70,14 @@ void main() {
                 'search': false,
                 'aiType': 'Kimi-k3',
                 'rootAiType': 'xinference',
+                'contextUsage': step == 's4'
+                    ? {'input': -1}
+                    : {
+                        'input': step == 's2' ? 2600 : 1500,
+                        'limit': 10000,
+                        'original': 9000,
+                        'compacted': true,
+                      },
               })}',
           answer: answer,
         );
@@ -96,10 +115,77 @@ void main() {
     expect(recovered.first.attachedFileContents['file-a'], contains('5837'));
     expect(recovered.first.agentEvents['c1']!.result!['ok'], true);
     expect(recovered.first.answer, 'Semester 3.');
+    expect(recovered.first.contextUsage?.estimatedInputUnits, 2600);
+    expect(recovered.first.contextCompacted, isTrue);
+    expect(recovered.last.contextUsage, isNull);
+    expect(recovered.any((turn) => turn.isHistoryGap), isFalse);
     expect(recovered.first.phase, GenAiChatPhase.completed);
     expect(decodeGenAiRemoteRecord('arbitrary document prose ${rows.first.prompt}'), isNull);
     expect(recovered.last.answer, 'New answer');
     expect(recovered.first.evidenceEntries.where((e) => e.result != null), hasLength(1));
+  });
+
+  test('mixed record versions recover normalized mutation identities without duplicate receipts',
+      () {
+    final original = GenAiConversationTurn('Book a court', id: 'a', isAgent: true);
+    final call = GenAiAgentToolCall(
+      id: 'book',
+      name: 'reserve_court',
+      arguments: const {'action': 'book', 'court': 'Court One'},
+    );
+    const effectKey = 'reserve_court:court-id/date/slot';
+    final receipt = <String, Object?>{
+      'call_id': call.id,
+      'name': call.name,
+      'ok': true,
+      'result': {'booking_id': 'booking-314'},
+    };
+    // Literal v1 framing exercises compatibility, rather than the v2 writer.
+    final old = '<techpie-record version="1">\n${jsonEncode({
+          'kind': 'exchange',
+          'step_id': 'old-step',
+          'turn': original.toRemoteInput(),
+          'input': original.prompt,
+          'agent': true,
+          'aiType': 'Kimi-k3',
+          'rootAiType': 'xinference',
+        })}\n</techpie-record>';
+    final compact = encodeGenAiRemoteRecord({
+      'kind': 'exchange',
+      'step_id': 'new-step',
+      'turn_id': original.id,
+      'turn': null,
+      'input': encodeGenAiAgentResult(receipt, nonce: nonce),
+      'effectKeys': [effectKey],
+      'mutations': {'version': 1, 'effects': <String, Object?>{}},
+      'approvalBudget': {'reserve_court': 1},
+      'agent': true,
+      'thinking': false,
+      'search': false,
+      'rootAiType': 'xinference',
+    });
+    final rows = [
+      GenAiSavedTurn(prompt: old, answer: encodeGenAiAgentCall(call, nonce: nonce)),
+      GenAiSavedTurn(
+        prompt: compact,
+        answer: encodeGenAiAgentFinal('Booked.', nonce: nonce),
+        aiType: 'Kimi-k3',
+      ),
+    ];
+    final archive = decodeGenAiConversation('group', rows).archive;
+    final turn = archive.restoreTurns().single;
+    expect(turn.phase, GenAiChatPhase.completed);
+    expect(turn.agentEvents[call.id]!.result, receipt);
+    expect(turn.approvalBudget['reserve_court'], 1);
+    expect((archive.mutations['effects']! as Map)[effectKey], receipt);
+    expect(archive.agentEnabled, true);
+    expect(archive.modelAiType, 'Kimi-k3');
+    expect(archive.modelRootAiType, 'xinference');
+    final record = decodeGenAiRemoteRecord(compact)!;
+    expect(record.keys, isNot(contains('mutations')));
+    expect(record.keys, isNot(contains('agent')));
+    expect(record.keys, isNot(contains('thinking')));
+    expect('booking-314'.allMatches(compact), hasLength(1));
   });
 
   test('upload fallback parents migrate without reviving stale interrupted snapshots', () {

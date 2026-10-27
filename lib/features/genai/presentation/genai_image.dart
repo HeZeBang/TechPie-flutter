@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../domain/genai_platform_contract.dart';
 import 'genai_demo_image.dart';
+import 'genai_image_actions.dart';
 
 /// Model text and tool output may only load campus images automatically.
 /// A configured display resolver may route them through the preview proxy.
@@ -62,10 +63,8 @@ class GenAiMarkdownImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = [alt, title]
-        .whereType<String>()
-        .where((value) => value.trim().isNotEmpty)
-        .firstOrNull;
+    final label =
+        [alt, title].whereType<String>().where((value) => value.trim().isNotEmpty).firstOrNull;
     final display = genAiAutomaticImageUri(
       uri.toString(),
       imageDisplayUri: imageDisplayUri,
@@ -76,20 +75,24 @@ class GenAiMarkdownImage extends StatelessWidget {
         style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
       );
     }
-    final local = demo &&
-        display.pathSegments.any((part) => part.startsWith('techpie-preview'));
+    final local = demo && display.pathSegments.any((part) => part.startsWith('techpie-preview'));
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: local
-            ? const GenAiDemoImage()
-            : Image.network(
-                display.toString(),
-                fit: BoxFit.contain,
-                semanticLabel: label,
-                errorBuilder: (_, __, ___) => Text(label ?? '图片无法加载'),
-              ),
+        child: GenAiImageActions(
+          image:
+              local ? const AssetImage(GenAiDemoImage.assetName) : NetworkImage(display.toString()),
+          link: local ? null : genAiImageUri(display.path),
+          child: local
+              ? const GenAiDemoImage()
+              : Image.network(
+                  display.toString(),
+                  fit: BoxFit.contain,
+                  semanticLabel: label,
+                  errorBuilder: (_, __, ___) => Text(label ?? '图片无法加载'),
+                ),
+        ),
       ),
     );
   }

@@ -38,6 +38,10 @@ void main() {
     for (var i = 0; i < 10; i++) {
       await a.workspace.send('Record $i: original number 5837.\n${'source evidence ' * 700}');
       expect(a.workspace.turns.last.phase, GenAiChatPhase.completed);
+      expect(
+        decodeGenAiRemoteRecord(server.generations.last['chatInfo'] as String)!['contextUsage'],
+        a.workspace.contextUsage!.toRecord(),
+      );
     }
     expect(server.summaries, greaterThan(0));
     expect(server.generations, hasLength(10));
@@ -51,7 +55,13 @@ void main() {
     for (final agent in [false, true]) {
       final fresh = await JournalClient.create(server, policy: policy);
       addTearDown(fresh.dispose);
+      final requestsBeforeOpen = server.generations.length;
+      final savedUsage =
+          decodeGenAiRemoteRecord(server.generations.last['chatInfo'] as String)!['contextUsage'];
       await fresh.workspace.openConversation(a.workspace.groupId, GenAiCancellation());
+      expect(fresh.workspace.contextUsage?.toRecord(), savedUsage);
+      expect(fresh.workspace.contextUsage?.stage, GenAiContextStage.ready);
+      expect(server.generations.length, requestsBeforeOpen);
       expect(fresh.workspace.turns.length, greaterThanOrEqualTo(10));
       fresh.workspace.setAgentEnabled(agent);
       server.onGenerate = (body) => agent
@@ -61,6 +71,13 @@ void main() {
       expect(fresh.workspace.turns.last.phase, GenAiChatPhase.completed);
       expect(server.generations.last['messages'].toString(), contains('5837'));
       expect(server.summaries, calls);
+      final liveUsage = fresh.workspace.contextUsage!.toRecord();
+      final reopened = await JournalClient.create(server, policy: policy);
+      addTearDown(reopened.dispose);
+      await reopened.workspace.openConversation(a.workspace.groupId, GenAiCancellation());
+      expect(reopened.workspace.contextUsage?.toRecord(), liveUsage);
+      expect(reopened.workspace.agentEnabled, agent);
+      expect(server.generations.length, requestsBeforeOpen + 1);
     }
   });
   test('account change while summarizing cannot dispatch the actual generation or save memory',

@@ -17,6 +17,10 @@ const objectSchema = <String, Object?>{
 
 const testNonce = 'synthetic_nonce_0123456789';
 
+Map<String, dynamic> currentControl(GenAiChatRequest request) =>
+    jsonDecode(request.history.first.content.split('CURRENT_REQUEST:\n').last)
+        as Map<String, dynamic>;
+
 GenAiAgentRunner testRunner({
   required GenAiAgentToolRegistry tools,
   required GenAiAgentChatStream streamChat,
@@ -350,7 +354,7 @@ void main() {
       tools: GenAiAgentToolRegistry([]),
       streamChat: (r, _) {
         step++;
-        final manifest = r.agentControl['image_context']! as Map;
+        final manifest = currentControl(r)['image_context']! as Map;
         expect(manifest['images'], [
           {'id': 'image_1', 'url': earlier},
           {'id': 'image_2', 'url': latest},
@@ -443,11 +447,11 @@ void main() {
       ]),
       streamChat: (r, _) {
         expect(
-          r.agentControl['current_task'],
-          requests == 0 ? 'Answer the user input above.' : 'Create and describe the campus picture',
+          currentControl(r)['current_task'],
+          'Create and describe the campus picture',
         );
-        expect(r.storedPrompt, contains('agent-control'));
-        expect(r.agentControl['current_nonce'], genAiAgentNonceFromSystem(r.history.first.content));
+        expect(r.storedPrompt, isNot(contains('agent_control')));
+        expect(genAiAgentNonceFromSystem(r.history.first.content), isNotNull);
         if (++requests == 1) return answer(call('image', name: 'generate_image'));
         expect(executions, 1);
         if (requests == 2) {
@@ -457,7 +461,7 @@ void main() {
         expect(r.imageUrl, isNull);
         expect(r.imageUrls, isEmpty);
         expect(r.history.every((m) => m.imageUrls.isEmpty), true);
-        expect((r.agentControl['format_repair']! as Map)['candidate'], 'The picture is ready.');
+        expect(currentControl(r)['format_repair'], 'The picture is ready.');
         expect(r.prompt, contains('previously completed tools remain completed'));
         expect(r.history.any((m) => m.content == 'The picture is ready.'), false);
         expect(r.history.map((m) => m.content).join(), contains('"status":"generated"'));

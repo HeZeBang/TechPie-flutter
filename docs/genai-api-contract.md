@@ -83,8 +83,10 @@ transport, protocol and storage failures remain distinguishable and sanitized.
 Every generation has exactly one host-built system message reflecting current
 modes, followed by prior context. Both chat modes use the selected `thinking` flag and
 force `netGo: false`; neither dispatches a search preflight or exposes a search tool.
-Agent requests also carry the active task and protocol in `agent_control` after the
-current input, so long history and protocol corrections do not replace the task.
+Agent requests inject the active task, current image catalog and protocol-repair
+candidate into that system message as `CURRENT_REQUEST`. Generic instructions and
+reconstructible controls are not persisted in `chatInfo`; its `step_id` also serves
+as the current call nonce.
 
 The request signer includes the public frontend's protocol salt by default;
 `TECHPI_GENAI_SIGNING_SALT` can override it. It is public protocol configuration,
@@ -135,6 +137,12 @@ Validated canonical CDN URLs are stored; only rendering resolves the preview
 proxy. Model Markdown in replies and reasoning, and tool image results, share a
 trusted-image policy: arbitrary external/data/file URLs do not load automatically.
 Blocked images show a placeholder. The debug campus image is a bundled real scene.
+Chat images, gallery tiles and viewers share long-press/right-click actions and an
+accessible menu button. Copy/share uses the displayed image provider; copied links
+use canonical campus URLs. Unsupported platform actions are hidden: Linux copies
+an image file, OHOS retains save/link actions, and web clipboard/share depends on
+browser support and permissions. Android clipboard URIs use a non-exported cache
+FileProvider; iPad sharing supplies the visible image bounds as its popover origin.
 Invalid chart numbers, overflowing/underflowing ranges and magnitudes above 1e15
 fall back to source text; this keeps the chart library's integer-based axis
 rounding bounded instead of hanging or substituting false zeros.
@@ -159,10 +167,15 @@ retains original records and source-validated boundaries; it does not repeatedly
 summarize an unchanged prefix on every follow-up.
 
 GenAI's history API is the sole durable conversation store. Normal exchanges put
-versioned host records in `chatInfo`, including turn/parent/step identifiers,
+version 2 host records in `chatInfo` (with version 1 read compatibility), including
+turn/parent/step identifiers,
 attachment metadata and changed compaction/operation recovery state. `messages`
 remains the inference context, never a persistence mechanism. Changed operation receipts and compacted-prefix markers
 are piggybacked on real requests, not saved through extra bookkeeping generations.
+`effectKeys` references the current input receipt instead of duplicating its
+payload. Defaults and duplicate identifiers are omitted, and the model ID is read
+from the server row. Original document text, retry ancestry, approval budgets,
+normalized operation identities and request context estimates remain portable.
 Summary answers are recovered from existing same-chat extraction rows by source
 hash and revalidated against the original messages.
 Fresh instances decode the same server records for UI, export and model evidence.
