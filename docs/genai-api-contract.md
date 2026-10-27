@@ -79,7 +79,7 @@ Extraction counts in full toward context, without duplicate instruction copies.
 Archived IDs do not guarantee server availability; expired files need re-upload.
 
 Vision history accepts URL arrays and legacy comma-separated `imageUrl`. Store
-canonical validated CDN URLs, resolving preview proxies only for rendering. Chat,
+canonical validated CDN URLs. Chat,
 reasoning and tool images share the trusted-URL policy; external/data/file images
 do not load automatically. Chat, gallery and viewer share long-press/right-click
 and accessible image actions. Copy/share capability varies by platform; Android
@@ -97,9 +97,8 @@ quota implications. Ambiguous outcomes are never automatically regenerated.
 Native and web implement chat, history, images, usage and agents. Native document
 selection is implemented; native audio capture/playback remains unavailable.
 Web audio depends on browser capability and permission. Production web SSO needs
-a bridge: browser JavaScript cannot inject IDS cookies. Debug loopback helpers
-are not a production authentication path. Never expose seeded academic data as
-live account data or add the test-only IDS academic integration to production.
+a bridge: browser JavaScript cannot inject IDS cookies. No development login
+proxy or seeded academic data is bundled.
 
 Run `flutter analyze --no-pub` and `flutter test --no-pub` with the repository SDK.
 Keep regression coverage for framing/stream boundaries, ownership races,
@@ -108,6 +107,6 @@ compaction provenance. Keep one-off screenshots, demo fixtures, diagnostics and
 live-run reports outside production changes.
 
 The browser transport test needs an explicit local fixture: run
-`python3 tool/genai_stream_fixture.py --port 18765`, then
+`python3 test/genai/support/stream_fixture.py --port 18765`, then
 `flutter test --no-pub --platform chrome --dart-define=GENAI_TEST_ORIGIN=http://127.0.0.1:18765 test/genai/platform/http_genai_transport_browser_test.dart`.
 Synthetic tests do not establish current school-service availability.

@@ -242,26 +242,7 @@ void main() {
     expect(availability, isNot(contains('time_slot')));
   });
 
-  test('local images are labeled and proxied real images export canonical links', () {
-    final local = exportGenAiTranscript(
-      archive(
-        withResults({
-          'generate_image': {
-            'status': 'generated',
-            'demo': true,
-            'quality': 'low',
-            'size': '1024x1024',
-            'images': [
-              'https://genaipic.shanghaitech.edu.cn/sys/common/static/techpie-preview/image-1.png',
-            ],
-          },
-        }),
-      ),
-    );
-    expect(local, contains('本地测试图片'));
-    expect(local, contains('质量：普通'));
-    expect(local, isNot(contains('![')));
-    expect(local, isNot(contains('https://')));
+  test('legacy proxied images export canonical links', () {
     final real = exportGenAiTranscript(
       archive(
         withResults({

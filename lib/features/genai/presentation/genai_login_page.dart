@@ -22,14 +22,12 @@ class GenAiLoginPage extends StatefulWidget {
     this.campusWebSession,
     this.campusSession,
     this.openPortal,
-    this.ephemeral = false,
   });
 
   final GenAiSessionService sessions;
   final CampusWebSession? campusWebSession;
   final CampusSessionHandle? campusSession;
   final Future<bool> Function(Uri)? openPortal;
-  final bool ephemeral;
 
   @override
   State<GenAiLoginPage> createState() => _GenAiLoginPageState();
@@ -41,15 +39,11 @@ class _GenAiLoginPageState extends State<GenAiLoginPage> {
   bool _finished = false;
   String? _error;
 
-  bool get _authorized =>
-      widget.sessions.revision == _revision && widget.sessions.owner != null;
+  bool get _authorized => widget.sessions.revision == _revision && widget.sessions.owner != null;
   bool get _supportsEmbedded =>
       widget.openPortal == null &&
       !kIsWeb &&
-      (isAndroid() ||
-          isIos() ||
-          isOhos() ||
-          defaultTargetPlatform == TargetPlatform.macOS);
+      (isAndroid() || isIos() || isOhos() || defaultTargetPlatform == TargetPlatform.macOS);
 
   @override
   void initState() {
@@ -59,9 +53,7 @@ class _GenAiLoginPageState extends State<GenAiLoginPage> {
   }
 
   void _ownerChanged() {
-    if (!_authorized &&
-        mounted &&
-        (ModalRoute.of(context)?.isCurrent ?? false)) {
+    if (!_authorized && mounted && (ModalRoute.of(context)?.isCurrent ?? false)) {
       _finish(null);
     }
   }
@@ -96,12 +88,11 @@ class _GenAiLoginPageState extends State<GenAiLoginPage> {
       return;
     }
     try {
-      final opened =
-          await (widget.openPortal?.call(GenAiLoginPolicy.loginUri) ??
-              launchUrl(
-                GenAiLoginPolicy.loginUri,
-                mode: LaunchMode.externalApplication,
-              ));
+      final opened = await (widget.openPortal?.call(GenAiLoginPolicy.loginUri) ??
+          launchUrl(
+            GenAiLoginPolicy.loginUri,
+            mode: LaunchMode.externalApplication,
+          ));
       if (!opened && mounted) setState(() => _error = '无法打开浏览器，请重试。');
     } catch (_) {
       if (mounted) setState(() => _error = '无法打开浏览器，请重试。');
@@ -150,7 +141,7 @@ class _GenAiLoginPageState extends State<GenAiLoginPage> {
                     '请使用校园账号 ${widget.sessions.owner?.studentId ?? ''} 登录。'
                     '${_supportsEmbedded && widget.campusSession != null ? '将优先复用 TechPie 已有的 IDS 登录状态。' : ''}'
                     'TechPie 会验证 GenAI 身份。'
-                    '${widget.ephemeral ? '本次预览的令牌仅保存在内存中。' : '令牌将保存在本机安全存储中。'}',
+                    '令牌将保存在本机安全存储中。',
                   ),
                   const SizedBox(height: 24),
                   FilledButton.icon(
@@ -242,8 +233,7 @@ class _GenAiBrowserLoginPageState extends State<GenAiBrowserLoginPage> {
   int _progress = 0;
   bool _finished = false;
   bool _failed = false;
-  bool get _authorized =>
-      widget.sessions.revision == _revision && widget.sessions.owner != null;
+  bool get _authorized => widget.sessions.revision == _revision && widget.sessions.owner != null;
 
   @override
   void initState() {
@@ -277,8 +267,7 @@ class _GenAiBrowserLoginPageState extends State<GenAiBrowserLoginPage> {
       final controller = WebViewController();
       _controller = controller;
       final session = widget.campusSession;
-      final browserSession =
-          session?.tpAuth.campusWebSession ?? widget.campusWebSession;
+      final browserSession = session?.tpAuth.campusWebSession ?? widget.campusWebSession;
       if (session != null) {
         await session.prepare();
       } else {
@@ -350,8 +339,7 @@ class _GenAiBrowserLoginPageState extends State<GenAiBrowserLoginPage> {
                     LinearProgressIndicator(
                       value: _progress == 0 ? null : _progress / 100,
                     ),
-                  if (_controller != null)
-                    Expanded(child: WebViewWidget(controller: _controller!)),
+                  if (_controller != null) Expanded(child: WebViewWidget(controller: _controller!)),
                 ],
               ),
       );

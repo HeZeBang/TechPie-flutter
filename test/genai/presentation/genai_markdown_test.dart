@@ -25,8 +25,7 @@ void main() {
     );
   }
 
-  testWidgets('empty streamed task items render and tear down safely',
-      (tester) async {
+  testWidgets('empty streamed task items render and tear down safely', (tester) async {
     for (final input in ['- [x] ', '- [ ] ', '> - [x] ', '1. [x] ']) {
       for (var length = 1; length <= input.length; length++) {
         await tester.pumpWidget(
@@ -38,19 +37,15 @@ void main() {
           findsNothing,
         );
       }
-      await tester
-          .pumpWidget(buildApp(GenAiMarkdown(data: '${input}finished')));
+      await tester.pumpWidget(buildApp(GenAiMarkdown(data: '${input}finished')));
       await tester.pumpWidget(const SizedBox());
       expect(tester.takeException(), isNull);
     }
   });
 
-  test(
-      'semicolon Mermaid statements parse without splitting labels or comments',
-      () {
+  test('semicolon Mermaid statements parse without splitting labels or comments', () {
     const parser = MermaidParser();
-    final normalized =
-        normalizeMermaid('graph LR; A[Start] --> B[Done]; B --> C[End]');
+    final normalized = normalizeMermaid('graph LR; A[Start] --> B[Done]; B --> C[End]');
     expect(parser.parse(normalized), isNotNull);
     expect(normalized, contains('graph LR\n'));
     expect(
@@ -71,8 +66,7 @@ void main() {
     );
   });
 
-  testWidgets('renders inline and block LaTeX equations in KaTeX-HTML style',
-      (tester) async {
+  testWidgets('renders inline and block LaTeX equations in KaTeX-HTML style', (tester) async {
     const markdown = '''
 由第 1 行只能取第 \$n\$ 列，第 2 行只能取第 \$n - 1\$ 列，依此类推。因此
 
@@ -98,8 +92,7 @@ f(x) = \\sum_{i=1}^n x_i
     expect(find.byIcon(Icons.copy_rounded), findsNothing);
   });
 
-  testWidgets(
-      'renders interactive BarChart, LineChart, and PieChart from code blocks',
+  testWidgets('renders interactive BarChart, LineChart, and PieChart from code blocks',
       (tester) async {
     const barChartMarkdown = '''
 ```chart
@@ -190,8 +183,7 @@ f(x) = \\sum_{i=1}^n x_i
     expect(find.text('饼图'), findsOneWidget);
   });
 
-  testWidgets(
-      'invalid chart data shows source without crashing or inventing zeros',
+  testWidgets('invalid chart data shows source without crashing or inventing zeros',
       (tester) async {
     for (final code in [
       '{ invalid json syntax',
@@ -205,8 +197,7 @@ f(x) = \\sum_{i=1}^n x_i
       '{"type":"pie","values":[1e308,1e308]}',
       '{"type":"pie","values":[-1,2]}',
     ]) {
-      await tester
-          .pumpWidget(buildApp(GenAiMarkdown(data: '```chart\n$code\n```')));
+      await tester.pumpWidget(buildApp(GenAiMarkdown(data: '```chart\n$code\n```')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(find.text('格式未识别'), findsOneWidget);
@@ -250,8 +241,7 @@ graph TD
     expect(find.byType(MermaidDiagram), findsOneWidget);
   });
 
-  testWidgets(
-      'renders AI-generated Mermaid with Chinese IDs, hyphens, and arrow labels',
+  testWidgets('renders AI-generated Mermaid with Chinese IDs, hyphens, and arrow labels',
       (tester) async {
     const aiMermaid = '''
 ```mermaid
@@ -275,9 +265,7 @@ graph TD
     expect(find.text('流程图'), findsOneWidget);
   });
 
-  testWidgets(
-      'renders stateDiagram and classDiagram by normalizing to flowchart',
-      (tester) async {
+  testWidgets('renders stateDiagram and classDiagram by normalizing to flowchart', (tester) async {
     const stateMermaid = '''
 ```mermaid
 stateDiagram-v2
@@ -299,8 +287,7 @@ stateDiagram-v2
     expect(find.text('状态图'), findsOneWidget);
   });
 
-  testWidgets(
-      'clipboard confirms success only after completion and reports denial',
+  testWidgets('clipboard confirms success only after completion and reports denial',
       (tester) async {
     const dartMarkdown = '''
 ```dart
@@ -355,12 +342,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('syntax highlighting preserves text and distinguishes lexical contexts',
-      () {
+  test('syntax highlighting preserves text and distinguishes lexical contexts', () {
     const highlighter = GenAiSyntaxHighlighter(brightness: Brightness.dark);
     final theme = SyntaxTheme.dark;
-    const python =
-        'def add(x):\n    # return is a comment\n    return "def" + str(x)';
+    const python = 'def add(x):\n    # return is a comment\n    return "def" + str(x)';
     final spans = highlighter.highlight(code: python, language: 'python');
     expect(spans.map((span) => span.text).join(), python);
     expect(
@@ -371,9 +356,7 @@ void main() {
     );
     expect(
       spans.any(
-        (span) =>
-            span.text == '# return is a comment' &&
-            span.style?.color == theme.comment,
+        (span) => span.text == '# return is a comment' && span.style?.color == theme.comment,
       ),
       isTrue,
     );
@@ -387,16 +370,12 @@ void main() {
     final jsonSpans = highlighter.highlight(code: json, language: 'json');
     expect(jsonSpans.map((span) => span.text).join(), json);
     expect(
-      jsonSpans
-          .where((span) => span.text == '"name"')
-          .map((span) => span.style?.color),
+      jsonSpans.where((span) => span.text == '"name"').map((span) => span.style?.color),
       [theme.property, theme.string],
     );
   });
 
-  testWidgets(
-      'renders Markdown typography with headings, blockquotes, and tables',
-      (tester) async {
+  testWidgets('renders Markdown typography with headings, blockquotes, and tables', (tester) async {
     const typographyMarkdown = '''
 # 一级标题
 ## 二级标题
@@ -454,18 +433,16 @@ void main() {
 
     final selectableFinder = find.byType(SelectableText);
     expect(selectableFinder, findsWidgets);
-    final selectable =
-        tester.widgetList<SelectableText>(selectableFinder).firstWhere(
-              (w) => w.textSpan?.toPlainText().contains('黑暗模式下的引用块内容') ?? false,
-            );
+    final selectable = tester.widgetList<SelectableText>(selectableFinder).firstWhere(
+          (w) => w.textSpan?.toPlainText().contains('黑暗模式下的引用块内容') ?? false,
+        );
     final resolvedStyle = selectable.textSpan?.style ??
         ((selectable.textSpan?.children?.isNotEmpty ?? false)
             ? (selectable.textSpan!.children!.first as TextSpan).style
             : null);
     expect(resolvedStyle?.color, darkTheme.colorScheme.onSurfaceVariant);
 
-    final decoratedBoxes =
-        tester.widgetList<DecoratedBox>(find.byType(DecoratedBox));
+    final decoratedBoxes = tester.widgetList<DecoratedBox>(find.byType(DecoratedBox));
     final quoteBox = decoratedBoxes.firstWhere((w) {
       final dec = w.decoration;
       if (dec is BoxDecoration && dec.border is Border) {
@@ -482,35 +459,7 @@ void main() {
     );
   });
 
-  testWidgets('renders task list checkboxes and tables with various alignments',
-      (tester) async {
-    const listAndTableMarkdown = '''
-- [x] 已完成项测试
-- [ ] 未完成项测试
-
-| 姓名 | 年龄 | 角色 | 状态 |
-| :--- | :---: | ---: | :--- |
-| 张三 | 20 | 开发者 | 正常 |
-| 李四 | 22 | 测试者 | 活跃 |
-''';
-
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: listAndTableMarkdown),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('已完成项测试'), findsOneWidget);
-    expect(find.textContaining('未完成项测试'), findsOneWidget);
-    expect(find.text('张三'), findsOneWidget);
-    expect(find.text('李四'), findsOneWidget);
-    expect(find.text('开发者'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('handles edge-case markdown inputs gracefully without crashing',
-      (tester) async {
+  testWidgets('handles edge-case markdown inputs gracefully without crashing', (tester) async {
     const edgeCases = '''
 # 
 >

@@ -13,13 +13,11 @@ class GenAiImageGallery extends StatefulWidget {
     super.key,
     required this.records,
     required this.imageProvider,
-    required this.isDemo,
     required this.onOpen,
   });
 
   final List<GenAiImageRecord> records;
   final ImageProvider<Object> Function(Uri) imageProvider;
-  final bool Function(Uri) isDemo;
   final ValueChanged<GenAiImageRecord> onOpen;
 
   @override
@@ -119,7 +117,7 @@ class _GenAiImageGalleryState extends State<GenAiImageGallery> {
                                   else
                                     GenAiImageActions(
                                       image: widget.imageProvider(uri),
-                                      link: widget.isDemo(uri) ? null : uri,
+                                      link: uri,
                                       child: _MeasuredImage(
                                         key: ValueKey(uri),
                                         image: widget.imageProvider(uri),
@@ -134,12 +132,6 @@ class _GenAiImageGalleryState extends State<GenAiImageGallery> {
                                         icon: Icons.photo_library_outlined,
                                         label: '${record.images.length}',
                                       ),
-                                    ),
-                                  if (uri != null && widget.isDemo(uri))
-                                    const PositionedDirectional(
-                                      bottom: 8,
-                                      start: 8,
-                                      child: _ImageBadge(label: '本地测试图片'),
                                     ),
                                 ],
                               ),

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_agent_runner.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
@@ -10,6 +9,7 @@ import 'package:techpie/features/genai/presentation/genai_conversation_menu.dart
 import 'package:techpie/features/genai/presentation/genai_tools_page.dart';
 
 import '../support/fakes.dart';
+import '../support/workspace_server.dart';
 
 void main() {
   for (final changedScope in ['account', 'binding']) {
@@ -21,7 +21,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final binding = ValueNotifier('binding-a');
       addTearDown(binding.dispose);
-      final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+      final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
       addTearDown(demo.dispose);
       demo.workspace.configureAgent(
         runner: GenAiAgentRunner(
@@ -63,7 +63,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: GenAiToolsPage(workspace: demo.workspace, demo: true),
+          home: GenAiToolsPage(workspace: demo.workspace),
         ),
       );
       await tester.pumpAndSettle();
@@ -159,7 +159,7 @@ void main() {
     });
   }
   testWidgets('a reused history row cannot rename a different conversation', (tester) async {
-    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     await demo.workspace.reloadModels();
     Future<void> send(String prompt) async {

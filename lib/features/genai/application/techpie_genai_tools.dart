@@ -26,11 +26,8 @@ final class TechPieGenAiTools {
     required this.workspace,
     required this.auth,
     required this.thirdPartyAuth,
-    bool Function()? isDemo,
-    this.previewEnvironment = false,
     DateTime Function()? now,
-  })  : _isDemo = isDemo ?? (() => false),
-        _now = now ?? DateTime.now;
+  }) : _now = now ?? DateTime.now;
 
   final ScheduleService schedule;
   final AssignmentService assignments;
@@ -38,9 +35,7 @@ final class TechPieGenAiTools {
   final GenAiWorkspaceController workspace;
   final AuthService auth;
   final ThirdPartyAuthService thirdPartyAuth;
-  final bool Function() _isDemo;
   final DateTime Function() _now;
-  final bool previewEnvironment;
   String? _verifiedAssignmentScope;
 
   GenAiAgentToolRegistry createRegistry() => GenAiAgentToolRegistry([
@@ -211,7 +206,7 @@ final class TechPieGenAiTools {
     }
     return {
       'source': 'techpie_cache',
-      'ownership_verified': !_isDemo(),
+      'ownership_verified': true,
       'selected_semester_id': schedule.selectedSemesterId,
       'default_semester_id': info.defaultSemester,
       'semesters': [
@@ -221,33 +216,13 @@ final class TechPieGenAiTools {
       ],
       'refresh_failed': schedule.error != null,
       'loading': schedule.loading,
-      'demo': _isDemo(),
     };
-  }
-
-  void _checkCampusPreview() {
-    if (previewEnvironment && !_isDemo()) {
-      throw const GenAiAgentToolException(
-        'preview_unavailable',
-        '浏览器预览没有真实课表与作业连接。请在正式 TechPie 中使用校园工具；不会把演示缓存当作真实数据。',
-      );
-    }
   }
 
   Future<void> _refreshSchedule(
     Map<String, Object?> args,
     GenAiAgentToolContext context,
   ) async {
-    _checkCampusPreview();
-    if (_isDemo()) {
-      if (args['refresh'] == true) {
-        throw const GenAiAgentToolException(
-          'demo_unavailable',
-          '本地演示只提供已载入的课表数据，不能刷新校园服务。',
-        );
-      }
-      return;
-    }
     if (schedule.loading) {
       throw const GenAiAgentToolException('busy', '课表正在刷新，请等待后重试。');
     }
@@ -280,7 +255,7 @@ final class TechPieGenAiTools {
     if (semesterId == null || semesterId.isEmpty) {
       throw const GenAiAgentToolException('data_unavailable', '请先在课表页选择学期。');
     }
-    if (semesterId != schedule.selectedSemesterId && !_isDemo()) {
+    if (semesterId != schedule.selectedSemesterId) {
       throw const GenAiAgentToolException(
         'semester_not_loaded',
         '只能读取已验证的当前学期。请先在课表页切换学期。',
@@ -369,7 +344,7 @@ final class TechPieGenAiTools {
     );
     return {
       'source': 'techpie_cache',
-      'ownership_verified': !_isDemo(),
+      'ownership_verified': true,
       'semester_id': semesterId,
       'semester_label': schedule.semesterInfo?.findSemesterLabel(semesterId),
       'week': week,
@@ -377,7 +352,6 @@ final class TechPieGenAiTools {
       'calendar_available': calendar != null,
       'refresh_failed': schedule.error != null,
       'loading': schedule.loading,
-      'demo': _isDemo(),
       'courses': rows,
       'truncated': offset + rows.length < courses.length,
       'next_offset': offset + rows.length < courses.length ? offset + rows.length : null,
@@ -391,12 +365,10 @@ final class TechPieGenAiTools {
     final guard = _guard(context);
     final before = args['due_before'] as String?;
     if (before != null) _parseDate(before);
-    _checkCampusPreview();
     final dataScope = '$_scope|${schedule.selectedSemesterId}';
-    if (!_isDemo() &&
-        (args['refresh'] == true ||
-            _verifiedAssignmentScope != dataScope ||
-            !assignments.hasVerifiedAccountData)) {
+    if (args['refresh'] == true ||
+        _verifiedAssignmentScope != dataScope ||
+        !assignments.hasVerifiedAccountData) {
       if (assignments.loading) {
         throw const GenAiAgentToolException('busy', '作业正在刷新，请等待后重试。');
       }
@@ -409,17 +381,9 @@ final class TechPieGenAiTools {
         );
       }
       _verifiedAssignmentScope = dataScope;
-    } else if (_isDemo() && args['refresh'] == true) {
-      throw const GenAiAgentToolException(
-        'demo_unavailable',
-        '本地演示只提供缓存作业，不能刷新校园服务。',
-      );
     }
     guard();
-    final values = (_isDemo()
-            ? assignments.visibleAssignments
-            : assignments.verifiedVisibleAssignments)
-        .where((assignment) {
+    final values = assignments.verifiedVisibleAssignments.where((assignment) {
       if (args['include_completed'] != true && assignments.isCompleted(assignment)) {
         return false;
       }
@@ -449,11 +413,10 @@ final class TechPieGenAiTools {
     );
     return {
       'source': 'techpie_cache',
-      'ownership_verified': !_isDemo(),
+      'ownership_verified': true,
       'loading': assignments.loading,
       'partial': assignments.error != null || assignments.platformErrors.isNotEmpty,
       'unavailable_platforms': assignments.platformErrors.keys.toList(),
-      'demo': _isDemo(),
       'assignments': rows,
       'truncated': offset + rows.length < values.length,
       'next_offset': offset + rows.length < values.length ? offset + rows.length : null,
@@ -465,12 +428,6 @@ final class TechPieGenAiTools {
     GenAiAgentToolContext context,
   ) async {
     final guard = _guard(context);
-    if (_isDemo()) {
-      throw const GenAiAgentToolException(
-        'demo_unavailable',
-        '本地演示没有真实 OA 场地数据，不能查询或提交预约。请连接真实校园账号。',
-      );
-    }
     final sport = OaSport.values.firstWhere((value) => value.id == args['sport']);
     final date = args['date']! as String;
     final day = _parseDate(date);
@@ -735,7 +692,7 @@ final class TechPieGenAiTools {
         'size': request.size,
         'quality': quality,
         'count': 1,
-        'quota': _isDemo() ? '本地演示，不消耗校园额度' : '将使用校园生图额度，实际费用以平台结算为准',
+        'quota': '将使用校园生图额度，实际费用以平台结算为准',
       },
       execute: () async {
         guard();
@@ -774,7 +731,6 @@ final class TechPieGenAiTools {
           'size': request.size,
           'quality': quality,
           'images': images.map((uri) => uri.toString()).toList(),
-          'demo': _isDemo(),
         };
       },
     );

@@ -6,7 +6,6 @@ import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/application/genai_repository.dart';
 import 'package:techpie/features/genai/application/genai_session_service.dart';
 import 'package:techpie/features/genai/application/genai_workspace_controller.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/data/genai_api_client.dart';
 import 'package:techpie/features/genai/data/genai_request_signer.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
@@ -16,9 +15,10 @@ import 'package:techpie/features/genai/presentation/genai_tools_page.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
 
 import '../support/fakes.dart';
+import '../support/workspace_server.dart';
 
 void main() {
-  late DemoGenAiBackend backend;
+  late FakeGenAiServer backend;
   late ScriptedTransport transport;
   late GenAiSessionService sessions;
   late GenAiChatService chat;
@@ -40,7 +40,7 @@ void main() {
 
   Future<void> initialize() async {
     requests = [];
-    backend = DemoGenAiBackend(chunkDelay: Duration.zero);
+    backend = FakeGenAiServer(chunkDelay: Duration.zero);
     transport = ScriptedTransport((request) {
       if (request.uri.path.endsWith('/listByContentGroup')) {
         final gate = Completer<GenAiResponse>();
@@ -62,8 +62,7 @@ void main() {
     );
     sessions = GenAiSessionService(api: api, store: MemorySessionStore());
     await sessions.setOwner(ownerA);
-    await sessions
-        .connect(const GenAiCredential(token: DemoGenAiBackend.token));
+    await sessions.connect(const GenAiCredential(token: FakeGenAiServer.token));
     final repository = GenAiRepository(api: api, sessions: sessions);
     chat = GenAiChatService(repository);
     workspace = GenAiWorkspaceController(
@@ -90,10 +89,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: tools
-            ? GenAiToolsPage(workspace: workspace, demo: true)
+            ? GenAiToolsPage(workspace: workspace)
             : GenAiWorkspace(
                 controller: workspace,
-                demo: true,
                 login: (_) async => null,
               ),
       ),
@@ -134,8 +132,7 @@ void main() {
           isNull,
         );
       }
-      requests.last.$2
-          .complete(history('latest result', total: tools ? 40 : 1));
+      requests.last.$2.complete(history('latest result', total: tools ? 40 : 1));
       await tester.pumpAndSettle();
       expect(find.text('latest result'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
@@ -162,11 +159,9 @@ void main() {
     });
   }
 
-  testWidgets('history failure is visible and only retries on user request',
-      (tester) async {
+  testWidgets('history failure is visible and only retries on user request', (tester) async {
     await show(tester);
-    requests.single.$2
-        .completeError(const GenAiFailure(GenAiFailureKind.transport));
+    requests.single.$2.completeError(const GenAiFailure(GenAiFailureKind.transport));
     await tester.pumpAndSettle();
     expect(find.text('重试加载历史'), findsOneWidget);
     expect(find.text('暂无历史对话'), findsNothing);
@@ -184,8 +179,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('delete confirmation cannot authorize a different account',
-      (tester) async {
+  testWidgets('delete confirmation cannot authorize a different account', (tester) async {
     await show(tester);
     requests.single.$2.complete(history('old account chat'));
     await tester.pumpAndSettle();
@@ -193,18 +187,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除对话'));
     await tester.pumpAndSettle();
-    final oldConfirm = tester
-        .widget<FilledButton>(find.widgetWithText(FilledButton, '删除'))
-        .onPressed!;
+    final oldConfirm =
+        tester.widget<FilledButton>(find.widgetWithText(FilledButton, '删除')).onPressed!;
     await sessions.setOwner(
       const GenAiOwner(
         primaryUserId: 'new-primary',
-        studentId: DemoGenAiBackend.studentId,
+        studentId: FakeGenAiServer.studentId,
         bindingId: 'new-binding',
       ),
     );
-    await sessions
-        .connect(const GenAiCredential(token: DemoGenAiBackend.token));
+    await sessions.connect(const GenAiCredential(token: FakeGenAiServer.token));
     await tester.pump();
     oldConfirm();
     await tester.pump();
@@ -214,9 +206,7 @@ void main() {
     );
     expect(find.text('账号已切换'), findsOneWidget);
     expect(
-      tester
-          .widget<FilledButton>(find.widgetWithText(FilledButton, '删除'))
-          .onPressed,
+      tester.widget<FilledButton>(find.widgetWithText(FilledButton, '删除')).onPressed,
       isNull,
     );
     requests.last.$2.complete(history('new account chat'));
@@ -227,14 +217,12 @@ void main() {
     expect(find.text('old account chat'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
-  testWidgets('old account menu cannot disconnect a replacement session',
-      (tester) async {
+  testWidgets('old account menu cannot disconnect a replacement session', (tester) async {
     await show(tester);
     requests.single.$2.complete(history('initial chat'));
     await tester.pumpAndSettle();
     final menu = find.byWidgetPredicate(
-      (widget) =>
-          widget is PopupMenuButton<String> && widget.tooltip == 'GenAI 账户',
+      (widget) => widget is PopupMenuButton<String> && widget.tooltip == 'GenAI 账户',
     );
     final oldAction = tester.widget<PopupMenuButton<String>>(menu).onSelected!;
     await tester.tap(menu);
@@ -242,12 +230,11 @@ void main() {
     await sessions.setOwner(
       const GenAiOwner(
         primaryUserId: 'replacement-primary',
-        studentId: DemoGenAiBackend.studentId,
+        studentId: FakeGenAiServer.studentId,
         bindingId: 'replacement-binding',
       ),
     );
-    await sessions
-        .connect(const GenAiCredential(token: DemoGenAiBackend.token));
+    await sessions.connect(const GenAiCredential(token: FakeGenAiServer.token));
     await tester.pump();
     oldAction('disconnect');
     await tester.pump();

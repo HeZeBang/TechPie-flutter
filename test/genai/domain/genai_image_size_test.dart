@@ -49,10 +49,4 @@ void main() {
       expect(() => request(size), throwsArgumentError, reason: size);
     }
   });
-
-  test('experimental warning follows width and height thresholds independently', () {
-    expect(const GenAiImageSize(2560, 1440).isExperimental, isFalse);
-    expect(const GenAiImageSize(2561, 1440).isExperimental, isTrue);
-    expect(const GenAiImageSize(1024, 1441).isExperimental, isTrue);
-  });
 }

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/presentation/genai_tools_page.dart';
+
+import '../support/workspace_server.dart';
 
 void main() {
   testWidgets('aspect ratio filters resolutions and validates linked and freeform custom sizes',
@@ -11,14 +12,13 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     await demo.workspace.reloadModels();
     await tester.pumpWidget(
       MaterialApp(
         home: GenAiToolsPage(
           workspace: demo.workspace,
-          demo: true,
           initialTab: 1,
         ),
       ),
@@ -137,7 +137,7 @@ void main() {
   });
 
   testWidgets('tools browse history, require image confirmation, and show usage', (tester) async {
-    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     await demo.workspace.reloadModels();
     final sending = demo.workspace.send('saved test');
@@ -147,7 +147,7 @@ void main() {
     await sending;
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiToolsPage(workspace: demo.workspace, demo: true),
+        home: GenAiToolsPage(workspace: demo.workspace),
       ),
     );
     await tester.pumpAndSettle();
@@ -168,7 +168,6 @@ void main() {
         home: GenAiToolsPage(
           key: const ValueKey('images'),
           workspace: demo.workspace,
-          demo: true,
           initialTab: 1,
         ),
       ),
@@ -176,7 +175,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('genai-image-model')));
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('图片创作 · 演示').last);
+    await tester.tap(find.textContaining('Test image').last);
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('genai-image-prompt')),
@@ -186,7 +185,7 @@ void main() {
     await tester.ensureVisible(find.text('生成 1 张图片'));
     await tester.tap(find.text('生成 1 张图片'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('本地演示使用校园测试图片'), findsOneWidget);
+    expect(find.textContaining('额度'), findsWidgets);
     expect(
       (await demo.workspace.repository.listImages(GenAiCancellation())).records,
       isEmpty,
@@ -195,13 +194,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('图片历史'));
     await tester.pumpAndSettle();
-    expect(find.text('本地测试图片'), findsOneWidget);
+    expect(find.byType(Image), findsWidgets);
     await tester.pumpWidget(
       MaterialApp(
         home: GenAiToolsPage(
           key: const ValueKey('usage'),
           workspace: demo.workspace,
-          demo: true,
           initialTab: 2,
         ),
       ),
@@ -218,7 +216,7 @@ void main() {
   });
 
   testWidgets('session search filters in real time with debounce and clear', (tester) async {
-    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     await demo.workspace.reloadModels();
 
@@ -239,7 +237,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiToolsPage(workspace: demo.workspace, demo: true),
+        home: GenAiToolsPage(workspace: demo.workspace),
       ),
     );
     await tester.pumpAndSettle();

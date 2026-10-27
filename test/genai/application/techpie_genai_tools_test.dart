@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/techpie_genai_tools.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
@@ -20,8 +19,10 @@ import 'package:techpie/services/oa_gym_service.dart';
 import 'package:techpie/services/schedule_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 
+import '../support/workspace_server.dart';
+
 void main() {
-  late GenAiDemo demo;
+  late TestGenAiWorkspace demo;
   late _Schedule schedule;
   late _Assignments assignments;
   late _Gym gym;
@@ -29,18 +30,16 @@ void main() {
   late _Bindings bindings;
   late GenAiAgentToolRegistry registry;
   late GenAiAgentToolContext context;
-  late bool isDemo;
   late DateTime now;
 
   setUp(() async {
-    demo = await GenAiDemo.create();
+    demo = await TestGenAiWorkspace.create();
     await demo.workspace.reloadModels();
     schedule = _Schedule();
     assignments = _Assignments();
     gym = _Gym();
     auth = _Auth();
     bindings = _Bindings();
-    isDemo = false;
     now = DateTime.utc(2026, 10, 22, 3);
     context = GenAiAgentToolContext(
       cancellation: GenAiCancellation(),
@@ -53,7 +52,6 @@ void main() {
       workspace: demo.workspace,
       auth: auth,
       thirdPartyAuth: bindings,
-      isDemo: () => isDemo,
       now: () => now,
     ).createRegistry();
   });
@@ -385,18 +383,6 @@ void main() {
     expect(gym.bookings, 0);
   });
 
-  test('demo refuses invented court availability and bookings', () async {
-    isDemo = true;
-    await expectLater(
-      prepare('reserve_court', book),
-      throwsA(
-        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'demo_unavailable'),
-      ),
-    );
-    expect(gym.checks, 0);
-    expect(gym.bookings, 0);
-  });
-
   test('image preparation validates current models size and requires approval', () async {
     await expectLater(
       prepare('generate_image', {'prompt': 'test', 'model': 'invented'}),
@@ -421,7 +407,7 @@ void main() {
       'width': 1536,
       'height': 1024,
       'quality': 'low',
-      'model': 'demo-image',
+      'model': 'test-image',
     });
     expect(prepared.effectKey, equivalent.effectKey);
     expect(

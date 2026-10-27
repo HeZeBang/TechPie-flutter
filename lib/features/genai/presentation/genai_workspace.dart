@@ -23,7 +23,6 @@ import 'genai_composer.dart';
 import 'genai_context_status.dart';
 import 'genai_conversation_menu.dart';
 import 'genai_copy.dart';
-import 'genai_demo_image.dart';
 import 'genai_history_controller.dart';
 import 'genai_history_sidebar.dart';
 import 'genai_image.dart';
@@ -43,7 +42,6 @@ class GenAiWorkspace extends StatefulWidget {
     super.key,
     required this.controller,
     required this.login,
-    this.demo = false,
     this.campusBound = false,
     this.onSignIn,
     this.onBindCampus,
@@ -55,7 +53,6 @@ class GenAiWorkspace extends StatefulWidget {
 
   final GenAiWorkspaceController controller;
   final GenAiLoginAction login;
-  final bool demo;
   final bool campusBound;
   final VoidCallback? onSignIn;
   final VoidCallback? onBindCampus;
@@ -415,7 +412,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       builder: (_) => GenAiToolsPage(
         workspace: controller,
         initialTab: tab,
-        demo: widget.demo,
         picker: widget.picker,
       ),
     );
@@ -566,7 +562,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                 key: const ValueKey('genai-image-workspace'),
                                 workspace: _state,
                                 initialTab: 1,
-                                demo: widget.demo,
                                 picker: widget.picker,
                                 embedded: true,
                                 onBack: wide ? null : () => setState(() => _showImages = false),
@@ -768,7 +763,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                     ),
             ),
           ),
-          if (widget.demo) _demoNotice(),
           if (landscape && _state.connected && !_showImages) _newChatButton(),
           if (!wide) _chatActions(),
           if (!wide) _accountMenu(),
@@ -791,8 +785,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             unawaited(_openTools(2));
           case 'campus':
             widget.onBindCampus?.call();
-          case 'ids':
-            widget.onCampusLogin?.call();
           case 'disconnect':
             unawaited(_state.disconnect());
           case 'connect':
@@ -817,11 +809,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
           ),
         if (widget.onBindCampus != null)
           const PopupMenuItem(value: 'campus', child: Text('管理校园账号')),
-        if (widget.demo && widget.onCampusLogin != null)
-          const PopupMenuItem(
-            value: 'ids',
-            child: Text('使用 TechPie IDS 登录'),
-          ),
         if (_state.connected)
           const PopupMenuItem(
             value: 'disconnect',
@@ -836,19 +823,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       ],
     );
   }
-
-  Widget _demoNotice() => Tooltip(
-        message: '本地演示 · 不访问校园服务，不产生费用',
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: _theme.colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text('演示', style: TextStyle(fontSize: 11, color: _muted)),
-        ),
-      );
 
   Widget _modelSelector() => ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 250),
@@ -966,9 +940,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                           ? '正在验证身份…'
                           : _state.sessions.owner == null
                               ? '使用现有 IDS 会话连接'
-                              : widget.demo
-                                  ? '连接本地演示'
-                                  : '使用校园账号连接',
+                              : '使用校园账号连接',
                     ),
                     style: FilledButton.styleFrom(
                       backgroundColor: _accent,
@@ -1308,7 +1280,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   onOpenLink: (url) => unawaited(_openLink(url)),
                                   running: _state.sending && index == _state.turns.length - 1,
                                   stopped: incomplete,
-                                  demo: widget.demo,
                                   imageDisplayUri: _state.repository.imageDisplayUri,
                                   onOpenImages:
                                       _state.sending ? null : () => unawaited(_openTools(1)),
@@ -1385,7 +1356,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   uri: uri,
                                   title: title,
                                   alt: alt,
-                                  demo: widget.demo,
                                   imageDisplayUri: _state.repository.imageDisplayUri,
                                 ),
                                 onTapLink: (_, href, __) => unawaited(_openLink(href)),
@@ -1606,14 +1576,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       );
 
   Widget _remoteAttachmentImage(String url, {double? height}) {
-    // Saved fixture URLs are synthetic; never fetch them from the campus CDN.
-    if (widget.demo) {
-      return SizedBox(
-        height: height ?? 180,
-        width: 180,
-        child: const GenAiDemoImage(),
-      );
-    }
     return Image.network(
       url,
       height: height,

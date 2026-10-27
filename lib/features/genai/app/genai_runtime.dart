@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
-
 import '../../../models/third_party_account.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/third_party_auth_service.dart';
@@ -30,12 +28,10 @@ final class GenAiRuntime {
     GenAiSessionStore? store,
     GenAiSessionIssuer? issuer,
     Uri? apiBase,
-    this.isDemo = false,
   })  : _auth = auth,
         _thirdPartyAuth = thirdPartyAuth,
         _issuer = issuer,
         _transport = transport ?? HttpGenAiTransport() {
-    if (isDemo && !kDebugMode) throw UnsupportedError('Preview is debug-only');
     final api = GenAiApiClient(
       transport: _transport,
       apiBase: apiBase,
@@ -64,7 +60,6 @@ final class GenAiRuntime {
     _syncOwner();
   }
 
-  final bool isDemo;
   final AuthService _auth;
   final ThirdPartyAuthService _thirdPartyAuth;
   final GenAiTransport _transport;

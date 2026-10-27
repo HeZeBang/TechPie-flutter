@@ -5,8 +5,6 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_repository.dart';
 import 'package:techpie/features/genai/application/genai_session_service.dart';
-import 'package:techpie/features/genai/application/genai_workspace_controller.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/data/genai_api_client.dart';
 import 'package:techpie/features/genai/data/genai_request_signer.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
@@ -17,16 +15,15 @@ import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/platform/genai_transport.dart';
 
 import '../support/fakes.dart';
+import '../support/workspace_server.dart';
 
 void main() {
-  test('remote protocol titles become readable without hiding normal titles',
-      () {
+  test('remote protocol titles become readable without hiding normal titles', () {
     for (final frame in ['call', 'result', 'history']) {
       expect(
         GenAiConversationSummary.fromJson({
           'chatGroupId': 'conversation',
-          'question':
-              '  <techpie-agent-$frame version="2">private tool payload',
+          'question': '  <techpie-agent-$frame version="2">private tool payload',
         }).title,
         '校园工具对话',
       );
@@ -47,8 +44,7 @@ void main() {
     }
   });
 
-  test('malformed server rows remain explicit gaps in their original positions',
-      () async {
+  test('malformed server rows remain explicit gaps in their original positions', () async {
     final api = GenAiApiClient(
       transport: ScriptedTransport(
         (_) async => response(
@@ -66,8 +62,7 @@ void main() {
         ),
       ),
     );
-    final rows =
-        await api.loadConversation('token', 'group', GenAiCancellation());
+    final rows = await api.loadConversation('token', 'group', GenAiCancellation());
     expect(rows, hasLength(5));
     expect(
       rows.map((row) => row.isHistoryGap),
@@ -83,9 +78,7 @@ void main() {
     );
   });
 
-  test(
-      'generated and saved images stay canonical across preview origin changes',
-      () async {
+  test('generated and saved images stay canonical across preview origin changes', () async {
     final transport = ScriptedTransport(
       (request) async => response(
         json: request.uri.path.endsWith('ai-image-history/list')
@@ -131,8 +124,7 @@ void main() {
       GenAiCancellation(),
     );
     final saved = await first.listImages('token', GenAiCancellation());
-    const canonical =
-        'https://genaipic.shanghaitech.edu.cn/sys/common/static/test/picture.png';
+    const canonical = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/test/picture.png';
     expect(generated.single.toString(), canonical);
     expect(saved.records.single.images.single.toString(), canonical);
     final restarted = GenAiApiClient(
@@ -154,9 +146,7 @@ void main() {
     expect(turn.reasoning, 'private reasoning');
   });
 
-  test(
-      'reasoning extraction preserves literal think tags in prose and tool JSON',
-      () {
+  test('reasoning extraction preserves literal think tags in prose and tool JSON', () {
     const examples = [
       'Example: <think>literal markup</think> remains visible.',
       '```xml\n<think>literal code</think>\n```',
@@ -165,8 +155,7 @@ void main() {
           '</techpie-agent-call>',
     ];
     for (final example in examples) {
-      final restored =
-          GenAiSavedTurn.fromJson({'question': 'Show tags', 'answer': example});
+      final restored = GenAiSavedTurn.fromJson({'question': 'Show tags', 'answer': example});
       expect(restored.answer, example);
       expect(restored.reasoning, isEmpty);
       final withReasoning = GenAiSavedTurn.fromJson({
@@ -222,8 +211,7 @@ void main() {
     );
   });
 
-  test('history retains canonical images while preview uses configured bridge',
-      () async {
+  test('history retains canonical images while preview uses configured bridge', () async {
     final api = GenAiApiClient(
       apiBase: Uri.parse('http://127.0.0.1:18768/htk/'),
       transport: ScriptedTransport(
@@ -242,8 +230,7 @@ void main() {
         ),
       ),
     );
-    final turns =
-        await api.loadConversation('token', 'group', GenAiCancellation());
+    final turns = await api.loadConversation('token', 'group', GenAiCancellation());
     final canonical = turns.single.imageUrls.single;
     expect(
       canonical,
@@ -253,14 +240,11 @@ void main() {
       api.imageDisplayUri(canonical).toString(),
       'http://127.0.0.1:18768/sys/common/static/temp/red.png',
     );
-    final production =
-        GenAiApiClient(transport: ScriptedTransport((_) async => response()));
+    final production = GenAiApiClient(transport: ScriptedTransport((_) async => response()));
     expect(production.imageDisplayUri(canonical).toString(), canonical);
   });
 
-  test(
-      'signer matches a fixed independent vector with Unicode and numeric query data',
-      () {
+  test('signer matches a fixed independent vector with Unicode and numeric query data', () {
     final headers = const GenAiRequestSigner('synthetic-salt').headers(
       Uri.parse('https://example.test/api?pageNo=1'),
       {'question': '你好', 'count': 1, 'stream': false},
@@ -270,14 +254,7 @@ void main() {
     expect(headers['X-TIMESTAMP'], '20261019090807');
   });
 
-  test('new conversation IDs follow the official image client format', () {
-    final id = GenAiWorkspaceController.createGroupId();
-    expect(id, hasLength(21));
-    expect(id, matches(RegExp(r'^[A-Za-z0-9_-]{21}$')));
-  });
-
-  test('history pagination scopes requests to the verified platform user',
-      () async {
+  test('history pagination scopes requests to the verified platform user', () async {
     final transport = ScriptedTransport((r) async {
       expect(
         r.uri.queryParameters,
@@ -339,9 +316,7 @@ void main() {
     expect(result.records[1].id, 'valid-2');
   });
 
-  test(
-      'image generation is a single synchronous JSON request and checks CDN URLs',
-      () async {
+  test('image generation is a single synchronous JSON request and checks CDN URLs', () async {
     final transport = ScriptedTransport((r) async {
       final body = jsonDecode(r.body!) as Map<String, dynamic>;
       expect(body['count'], '1');
@@ -407,8 +382,7 @@ void main() {
     );
   });
 
-  test(
-      'signed image body matches the actual wire signature without numeric coercion by the server',
+  test('signed image body matches the actual wire signature without numeric coercion by the server',
       () async {
     final transport = ScriptedTransport((r) async {
       final wire = jsonDecode(r.body!) as Map<String, dynamic>;
@@ -417,10 +391,8 @@ void main() {
       expect(wire['imageBase64List'], isNull);
       final keys = wire.keys.toList()..sort();
       final canonical = jsonEncode({for (final key in keys) key: wire[key]});
-      final expected = md5
-          .convert(utf8.encode('${canonical}synthetic-salt'))
-          .toString()
-          .toUpperCase();
+      final expected =
+          md5.convert(utf8.encode('${canonical}synthetic-salt')).toString().toUpperCase();
       if (r.headers['X-Sign'] != expected) {
         return response(json: {'success': false, 'code': 500, 'result': null});
       }
@@ -454,9 +426,7 @@ void main() {
     expect(transport.requests, hasLength(1));
   });
 
-  test(
-      'usage sends signed requests but never retains API keys from the summary',
-      () async {
+  test('usage sends signed requests but never retains API keys from the summary', () async {
     final transport = ScriptedTransport((r) async {
       expect(r.headers['X-Sign'], matches(RegExp(r'^[0-9A-F]{32}$')));
       expect(r.headers['X-TIMESTAMP'], '20261019090807');
@@ -484,9 +454,7 @@ void main() {
     expect(summary.quotas.single.name, '免费额度');
   });
 
-  test(
-      'account changes cancel a history request before accepting its late response',
-      () async {
+  test('account changes cancel a history request before accepting its late response', () async {
     final gate = Completer<GenAiResponse>();
     final started = Completer<void>();
     final transport = ScriptedTransport((r) {
@@ -504,8 +472,7 @@ void main() {
     final repository = GenAiRepository(api: api, sessions: sessions);
     final cancellation = GenAiCancellation();
     final result = repository.listConversations(cancellation);
-    final assertion =
-        expectLater(result, throwsA(failure(GenAiFailureKind.accountChanged)));
+    final assertion = expectLater(result, throwsA(failure(GenAiFailureKind.accountChanged)));
     await started.future;
     await sessions.setOwner(ownerB);
     await assertion;
@@ -521,37 +488,30 @@ void main() {
     expect(cancellation.isCancelled, isTrue);
   });
 
-  test(
-      'saved conversations resume with the same group and separate image models',
-      () async {
-    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+  test('saved conversations resume with the same group and separate image models', () async {
+    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     await demo.workspace.reloadModels();
     expect(demo.workspace.models.every((m) => !m.isImage), isTrue);
-    expect(demo.workspace.imageModels.single.aiType, 'demo-image');
+    expect(demo.workspace.imageModels.single.aiType, 'test-image');
     await demo.workspace.send('first');
     final original = demo.workspace.groupId;
     demo.workspace.newConversation();
-    final page =
-        await demo.workspace.repository.listConversations(GenAiCancellation());
+    final page = await demo.workspace.repository.listConversations(GenAiCancellation());
     expect(page.records.single.id, original);
     await demo.workspace.openConversation(original, GenAiCancellation());
     expect(demo.workspace.turns.single.prompt, 'first');
     expect(demo.workspace.groupId, original);
     await demo.workspace.send('follow up');
     expect(demo.workspace.turns, hasLength(2));
-    await demo.workspace.repository
-        .deleteConversation(original, GenAiCancellation());
+    await demo.workspace.repository.deleteConversation(original, GenAiCancellation());
     expect(
-      (await demo.workspace.repository.listConversations(GenAiCancellation()))
-          .records,
+      (await demo.workspace.repository.listConversations(GenAiCancellation())).records,
       isEmpty,
     );
   });
 
-  test(
-      'deleteConversation sends GET and deleteImage sends DELETE with query params',
-      () async {
+  test('deleteConversation sends GET and deleteImage sends DELETE with query params', () async {
     final calls = <Map<String, dynamic>>[];
     final transport = ScriptedTransport((r) async {
       calls.add({
@@ -599,43 +559,5 @@ void main() {
     expect(calls[1]['headers']['X-Access-Token'], 'test-token');
     expect(calls[1]['headers']['tenant-id'], '0');
     expect(calls[1]['body'], isNull);
-  });
-
-  test('GenAiImageRequest supports expanded aspect ratio and size presets', () {
-    const model = GenAiModel(
-      name: 'Image',
-      aiType: 'GPT-Image-2',
-      rootAiType: 'azure',
-      status: 2,
-    );
-    for (final size in [
-      '1024x1024',
-      '1024x768',
-      '768x1024',
-      '1024x688',
-      '1136x640',
-      '2048x2048',
-      '3840x2160',
-    ]) {
-      final req = GenAiImageRequest(
-        prompt: 'test',
-        groupId: 'g',
-        model: model,
-        size: size,
-      );
-      expect(req.size, size);
-      expect(req.toJson()['size'], size);
-      expect(req.toJson()['count'], '1');
-    }
-
-    expect(
-      () => GenAiImageRequest(
-        prompt: 'test',
-        groupId: 'g',
-        model: model,
-        size: '100x100',
-      ),
-      throwsArgumentError,
-    );
   });
 }

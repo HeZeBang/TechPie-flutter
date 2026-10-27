@@ -6,7 +6,6 @@ import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/application/genai_repository.dart';
 import 'package:techpie/features/genai/application/genai_session_service.dart';
 import 'package:techpie/features/genai/application/genai_workspace_controller.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/data/genai_api_client.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
@@ -15,10 +14,11 @@ import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/platform/genai_transport.dart';
 
 import '../support/fakes.dart';
+import '../support/workspace_server.dart';
 
 void main() {
   test('explicit IDS connection surfaces reauthentication instead of failing silently', () async {
-    final demo = await GenAiDemo.create(connected: false);
+    final demo = await TestGenAiWorkspace.create(connected: false);
     addTearDown(demo.dispose);
     await demo.workspace.restore();
     expect(demo.workspace.loginFailure, isNull);
@@ -327,7 +327,7 @@ void main() {
   });
 
   test('demo upload send and history reopen preserves multiple attachments', () async {
-    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     await demo.workspace.reloadModels();
     await demo.workspace.addImageAttachment('red.png', [1, 2, 3]);

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_chat_service.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder.dart';
@@ -11,13 +10,13 @@ import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 
 import '../support/fakes.dart';
+import '../support/workspace_server.dart';
 
 void main() {
-  Future<GenAiDemo> show(
+  Future<TestGenAiWorkspace> show(
     WidgetTester tester, {
     Size size = const Size(1200, 900),
     bool connected = true,
-    bool demoMode = true,
     double scale = 1,
     double keyboard = 0,
     Duration delay = const Duration(milliseconds: 1),
@@ -28,7 +27,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final demo = await GenAiDemo.create(connected: connected, chunkDelay: delay);
+    final demo = await TestGenAiWorkspace.create(connected: connected, chunkDelay: delay);
     addTearDown(demo.dispose);
     await tester.pumpWidget(
       MaterialApp(
@@ -44,10 +43,9 @@ void main() {
         ),
         home: GenAiWorkspace(
           controller: demo.workspace,
-          demo: demoMode,
           audioRecorder: audioRecorder,
           picker: picker,
-          login: (_) async => const GenAiCredential(token: DemoGenAiBackend.token),
+          login: (_) async => const GenAiCredential(token: FakeGenAiServer.token),
         ),
       ),
     );
@@ -57,7 +55,7 @@ void main() {
 
   testWidgets('reopening saved vision chat builds network thumbnails and image viewer',
       (tester) async {
-    final demo = await show(tester, delay: Duration.zero, demoMode: false);
+    final demo = await show(tester, delay: Duration.zero);
     await demo.workspace.addImageAttachment('red.png', [1, 2, 3]);
     await demo.workspace.addImageAttachment('blue.png', [4, 5, 6]);
     final sending = demo.workspace.send('Saved vision thumbnails');
@@ -85,30 +83,12 @@ void main() {
     expect(thumbnails, findsNWidgets(urls.length + 1));
     Navigator.of(tester.element(find.byType(Dialog))).pop();
     await tester.pumpAndSettle();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: GenAiWorkspace(
-          controller: demo.workspace,
-          demo: true,
-          login: (_) async => const GenAiCredential(token: DemoGenAiBackend.token),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('本地测试图片'), findsNWidgets(urls.length));
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget is Image && widget.image is NetworkImage,
-      ),
-      findsNothing,
-    );
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('typed chat sends only on submission and renders the reply', (tester) async {
     final demo = await show(tester);
     expect(find.text('GenAI'), findsOneWidget);
-    expect(find.byTooltip('本地演示 · 不访问校园服务，不产生费用'), findsOneWidget);
     await tester.enterText(
       find.byKey(const ValueKey('genai-prompt')),
       '帮我制定学习计划',
@@ -122,8 +102,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('demo login connects without campus requests and logout clears the conversation',
-      (tester) async {
+  testWidgets('login connects and logout clears the conversation', (tester) async {
     final demo = await show(tester, connected: false);
     expect(find.text('连接你的校园 AI'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('genai-connect')));
@@ -139,7 +118,7 @@ void main() {
   });
 
   testWidgets('bound IDS without a school ID offers identity resolution', (tester) async {
-    final demo = await GenAiDemo.create(connected: false);
+    final demo = await TestGenAiWorkspace.create(connected: false);
     addTearDown(demo.dispose);
     await demo.sessions.setOwner(null);
     var connects = 0;
@@ -190,12 +169,14 @@ void main() {
     final demo = await show(tester, delay: const Duration(milliseconds: 20));
     await tester.enterText(
       find.byKey(const ValueKey('genai-prompt')),
-      'test stop',
+      List.filled(50, 'test stop').join(' '),
     );
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('genai-send')));
-    await tester.pump(const Duration(milliseconds: 80));
-    await tester.pump(const Duration(milliseconds: 80));
+    for (var step = 0; step < 50 && demo.workspace.turns.single.answer.isEmpty; step++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(demo.workspace.sending, isTrue);
     await tester.enterText(
       find.byKey(const ValueKey('genai-prompt')),
       'Keep this next question',
@@ -234,7 +215,7 @@ void main() {
 
   testWidgets('streaming respects reading position until return to latest', (tester) async {
     final demo = await show(tester, delay: const Duration(milliseconds: 10));
-    final first = demo.workspace.send('Markdown example');
+    final first = demo.workspace.send(List.generate(40, (i) => 'Paragraph $i.\n').join('\n'));
     for (var step = 0; step < 500 && demo.workspace.sending; step++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -575,7 +556,7 @@ void main() {
     expect(demo.workspace.hasFailedUploads, isFalse);
     expect(
       demo.workspace.attachments.first.imageUrl,
-      contains('temp/demo-upload-'),
+      contains('temp/test-upload-'),
     );
     expect(find.textContaining('上传失败'), findsNothing);
     expect(tester.widget<IconButton>(sendBtn).onPressed, isNotNull);

@@ -3,11 +3,12 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
 import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
+
+import '../support/workspace_server.dart';
 
 class DeferredPicker implements GenAiPicker {
   final selected = Completer<GenAiPickedFile?>();
@@ -58,9 +59,8 @@ class DeferredRecorder implements GenAiAudioRecorder {
 void main() {
   for (final kind in ['document', 'image', 'audio']) {
     for (final boundary in ['account', 'conversation', 'controller']) {
-      testWidgets('pending $kind selection cannot cross $boundary scope',
-          (tester) async {
-        final demo = await GenAiDemo.create();
+      testWidgets('pending $kind selection cannot cross $boundary scope', (tester) async {
+        final demo = await TestGenAiWorkspace.create();
         final picker = DeferredPicker();
         addTearDown(demo.dispose);
         await tester.pumpWidget(
@@ -84,7 +84,7 @@ void main() {
         if (boundary == 'conversation') {
           demo.workspace.newConversation();
         } else if (boundary == 'controller') {
-          final replacement = await GenAiDemo.create();
+          final replacement = await TestGenAiWorkspace.create();
           addTearDown(replacement.dispose);
           await tester.pumpWidget(
             MaterialApp(
@@ -99,12 +99,11 @@ void main() {
           await demo.sessions.setOwner(
             const GenAiOwner(
               primaryUserId: 'another-primary',
-              studentId: DemoGenAiBackend.studentId,
+              studentId: FakeGenAiServer.studentId,
               bindingId: 'another-binding',
             ),
           );
-          await demo.sessions
-              .connect(const GenAiCredential(token: DemoGenAiBackend.token));
+          await demo.sessions.connect(const GenAiCredential(token: FakeGenAiServer.token));
         }
         await tester.pumpAndSettle();
         picker.selected.complete(
@@ -114,15 +113,10 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        final current = tester
-            .widget<GenAiWorkspace>(find.byType(GenAiWorkspace))
-            .controller;
+        final current = tester.widget<GenAiWorkspace>(find.byType(GenAiWorkspace)).controller;
         final attachments = current.attachments;
         expect(
-          tester
-              .widget<TextField>(find.byKey(const ValueKey('genai-prompt')))
-              .controller!
-              .text,
+          tester.widget<TextField>(find.byKey(const ValueKey('genai-prompt'))).controller!.text,
           isEmpty,
         );
         await tester.pumpWidget(const SizedBox());
@@ -136,9 +130,8 @@ void main() {
     }
   }
   for (final boundary in ['dispose', 'conversation', 'account']) {
-    testWidgets('pending microphone start must stop after $boundary',
-        (tester) async {
-      final demo = await GenAiDemo.create();
+    testWidgets('pending microphone start must stop after $boundary', (tester) async {
+      final demo = await TestGenAiWorkspace.create();
       final recorder = DeferredRecorder();
       addTearDown(demo.dispose);
       await tester.pumpWidget(
@@ -168,8 +161,7 @@ void main() {
       expect(
         remainedActive,
         isFalse,
-        reason:
-            'Microphone start completed after dispose and left the recorder active',
+        reason: 'Microphone start completed after dispose and left the recorder active',
       );
     });
   }

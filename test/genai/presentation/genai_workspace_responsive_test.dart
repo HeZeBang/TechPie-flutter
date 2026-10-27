@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/genai/application/genai_agent_runner.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_contract.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
@@ -14,6 +13,7 @@ import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/theme_service.dart';
 
 import '../support/fakes.dart';
+import '../support/workspace_server.dart';
 
 const _prompt = ValueKey('genai-prompt');
 const _thinking = ValueKey('genai-thinking-toggle');
@@ -21,7 +21,7 @@ const _campus = ValueKey('genai-agent-toggle');
 const _compactNew = ValueKey('genai-new-chat-compact');
 const _wideNew = ValueKey('genai-new-chat-wide');
 
-Future<GenAiDemo> _show(
+Future<TestGenAiWorkspace> _show(
   WidgetTester tester, {
   required Size size,
   double textScale = 1,
@@ -32,7 +32,7 @@ Future<GenAiDemo> _show(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
-  final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+  final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
   addTearDown(demo.dispose);
   demo.workspace.configureAgent(
     runner: GenAiAgentRunner(
@@ -66,7 +66,6 @@ Future<GenAiDemo> _show(
       MaterialPageRoute(
         builder: (_) => GenAiWorkspace(
           controller: demo.workspace,
-          demo: true,
           audioRecorder: FakeGenAiAudioRecorder(),
           login: (_) async => null,
         ),
@@ -100,11 +99,10 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final themes = ThemeService(StorageService(await SharedPreferences.getInstance()));
     addTearDown(themes.dispose);
-    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     final workspace = GenAiWorkspace(
       controller: demo.workspace,
-      demo: true,
       audioRecorder: FakeGenAiAudioRecorder(),
       login: (_) async => null,
     );

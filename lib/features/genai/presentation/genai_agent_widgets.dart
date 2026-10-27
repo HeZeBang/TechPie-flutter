@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../domain/genai_agent_contract.dart';
 import '../domain/genai_platform_contract.dart';
-import 'genai_demo_image.dart';
 import 'genai_image.dart';
 import 'genai_image_actions.dart';
 import 'genai_thinking_view.dart';
@@ -37,7 +36,6 @@ class GenAiAgentToolActivity extends StatelessWidget {
     this.legacyCitations = const [],
     this.onOpenLink,
     this.onOpenImages,
-    this.demo = false,
     this.imageDisplayUri,
   });
 
@@ -50,7 +48,6 @@ class GenAiAgentToolActivity extends StatelessWidget {
   final List<GenAiWebSearchCitation> legacyCitations;
   final void Function(String)? onOpenLink;
   final VoidCallback? onOpenImages;
-  final bool demo;
   final Uri Function(String)? imageDisplayUri;
 
   @override
@@ -174,7 +171,6 @@ class GenAiAgentToolActivity extends StatelessWidget {
       event: event,
       stopped: stopped,
       onOpenImages: onOpenImages,
-      demo: demo,
       imageDisplayUri: imageDisplayUri,
     );
   }
@@ -187,14 +183,12 @@ class GenAiAgentToolCard extends StatelessWidget {
     required this.event,
     required this.stopped,
     this.onOpenImages,
-    this.demo = false,
     this.imageDisplayUri,
   });
 
   final GenAiAgentEvent event;
   final bool stopped;
   final VoidCallback? onOpenImages;
-  final bool demo;
   final Uri Function(String)? imageDisplayUri;
 
   @override
@@ -326,10 +320,6 @@ class GenAiAgentToolCard extends StatelessWidget {
                             _GenAiAgentImagePreview(
                               key: ValueKey('agent-image-${call.id}-$uri'),
                               uri: uri,
-                              demo: demo &&
-                                  uri.pathSegments.any(
-                                    (part) => part.startsWith('techpie-preview'),
-                                  ),
                             ),
                         ],
                       ),
@@ -373,11 +363,9 @@ class _GenAiAgentImagePreview extends StatefulWidget {
   const _GenAiAgentImagePreview({
     super.key,
     required this.uri,
-    required this.demo,
   });
 
   final Uri uri;
-  final bool demo;
 
   @override
   State<_GenAiAgentImagePreview> createState() => _GenAiAgentImagePreviewState();
@@ -387,22 +375,18 @@ class _GenAiAgentImagePreviewState extends State<_GenAiAgentImagePreview> {
   DialogRoute<void>? _viewer;
 
   Widget _image() => GenAiImageActions(
-        image: widget.demo
-            ? const AssetImage(GenAiDemoImage.assetName)
-            : NetworkImage(widget.uri.toString()),
-        link: widget.demo ? null : genAiImageUri(widget.uri.path),
-        child: widget.demo
-            ? const GenAiDemoImage()
-            : Image.network(
-                widget.uri.toString(),
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text('图片暂时无法预览，请查看图片记录。'),
-                  ),
-                ),
-              ),
+        image: NetworkImage(widget.uri.toString()),
+        link: genAiImageUri(widget.uri.path),
+        child: Image.network(
+          widget.uri.toString(),
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: Text('图片暂时无法预览，请查看图片记录。'),
+            ),
+          ),
+        ),
       );
 
   void _open() {

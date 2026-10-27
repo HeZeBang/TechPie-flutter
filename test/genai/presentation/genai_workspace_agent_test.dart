@@ -34,7 +34,6 @@ void main() {
       MaterialApp(
         home: GenAiWorkspace(
           controller: controller,
-          demo: true,
           picker: _Picker(),
           login: (_) async => null,
         ),
@@ -84,7 +83,7 @@ void main() {
               return {
                 'status': 'generated',
                 'images': [
-                  'https://genaipic.shanghaitech.edu.cn/sys/common/static/techpie-preview/image-1.png',
+                  'https://genaipic.shanghaitech.edu.cn/sys/common/static/test-images/image-1.png',
                 ],
               };
             },
@@ -141,7 +140,7 @@ void main() {
           await pumpUntil(tester, () => !demo.workspace.sending);
           expect(effects, 1);
           expect(find.text('已完成'), findsOneWidget);
-          expect(find.text('本地测试图片'), findsOneWidget);
+          expect(find.byType(Image), findsWidgets);
         case 'reject':
           final reject = find.byKey(const ValueKey('agent-reject'));
           await tester.ensureVisible(reject);

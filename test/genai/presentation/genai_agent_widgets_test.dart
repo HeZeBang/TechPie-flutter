@@ -354,7 +354,6 @@ void main() {
       );
 
   const campusImage = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/image15test/red.png';
-  const demoImage = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/techpie-preview.png';
 
   testWidgets('generated image is visible without expanding tool details', (tester) async {
     await pumpCard(
@@ -430,69 +429,35 @@ void main() {
     expect(find.text('图片未能直接预览，可查看图片记录。'), findsOneWidget);
   });
 
-  for (final local in [true, false]) {
-    testWidgets('image viewer local=$local closes with source card', (tester) async {
-      final present = ValueNotifier(true);
-      addTearDown(present.dispose);
-      await pumpCard(
-        tester,
-        ValueListenableBuilder<bool>(
-          valueListenable: present,
-          builder: (_, visible, __) => visible
-              ? GenAiAgentToolCard(
-                  event: generatedEvent([local ? demoImage : campusImage]),
-                  stopped: false,
-                  demo: local,
-                )
-              : const SizedBox.shrink(),
-        ),
-      );
-      if (local) {
-        expect(find.text('本地测试图片'), findsOneWidget);
-        expect(
-          tester.widget<Image>(find.byType(Image)).image,
-          isA<AssetImage>(),
-        );
-      } else {
-        expect(find.byType(Image), findsOneWidget);
-      }
-      await tester.tap(find.byTooltip('点击放大'));
-      await tester.pumpAndSettle();
-      expect(find.byType(Dialog), findsOneWidget);
-      expect(find.byType(InteractiveViewer), findsOneWidget);
-      if (local) {
-        expect(
-          tester.widgetList<Image>(find.byType(Image)).every(
-                (image) => image.image is AssetImage,
-              ),
-          isTrue,
-        );
-      }
-      await tester.tap(find.byTooltip('关闭图片预览'));
-      await tester.pumpAndSettle();
-      expect(find.byType(Dialog), findsNothing);
-      await tester.tap(find.byTooltip('点击放大'));
-      await tester.pumpAndSettle();
-      present.value = false;
-      await tester.pumpAndSettle();
-      expect(find.byType(Dialog), findsNothing);
-      expect(find.byType(Image), findsNothing);
-      expect(find.text('本地测试图片'), findsNothing);
-      expect(tester.takeException(), isNull);
-    });
-  }
-
-  testWidgets('demo-enabled real-account image still renders its verified URL', (tester) async {
+  testWidgets('image viewer closes with source card', (tester) async {
+    final present = ValueNotifier(true);
+    addTearDown(present.dispose);
     await pumpCard(
       tester,
-      GenAiAgentToolCard(
-        event: generatedEvent([campusImage]),
-        stopped: false,
-        demo: true,
+      ValueListenableBuilder<bool>(
+        valueListenable: present,
+        builder: (_, visible, __) => visible
+            ? GenAiAgentToolCard(
+                event: generatedEvent([campusImage]),
+                stopped: false,
+              )
+            : const SizedBox.shrink(),
       ),
     );
     expect(find.byType(Image), findsOneWidget);
-    expect(find.text('本地测试图片'), findsNothing);
+    await tester.tap(find.byTooltip('点击放大'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    await tester.tap(find.byTooltip('关闭图片预览'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsNothing);
+    await tester.tap(find.byTooltip('点击放大'));
+    await tester.pumpAndSettle();
+    present.value = false;
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsNothing);
+    expect(find.byType(Image), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

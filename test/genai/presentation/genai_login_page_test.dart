@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/genai_login_page.dart';
 
 import '../support/fakes.dart';
+import '../support/workspace_server.dart';
 
 void main() {
   testWidgets(
       'token import stays obscured, rejects foreign URLs, and returns only a valid credential',
       (tester) async {
-    final demo = await GenAiDemo.create(connected: false);
+    final demo = await TestGenAiWorkspace.create(connected: false);
     addTearDown(demo.dispose);
     GenAiCredential? result;
     await tester.pumpWidget(
@@ -58,10 +58,8 @@ void main() {
     ); // Server verification is the next explicit step.
   });
 
-  testWidgets(
-      'account change dismisses an open login without returning a token',
-      (tester) async {
-    final demo = await GenAiDemo.create(connected: false);
+  testWidgets('account change dismisses an open login without returning a token', (tester) async {
+    final demo = await TestGenAiWorkspace.create(connected: false);
     addTearDown(demo.dispose);
     GenAiCredential? result;
     await tester.pumpWidget(

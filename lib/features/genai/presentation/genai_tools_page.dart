@@ -16,7 +16,6 @@ import '../domain/genai_platform_contract.dart';
 import '../domain/genai_reference_image.dart';
 import 'genai_conversation_menu.dart';
 import 'genai_copy.dart';
-import 'genai_demo_image.dart';
 import 'genai_image_actions.dart';
 import 'genai_image_gallery.dart';
 import 'genai_image_save.dart';
@@ -29,14 +28,12 @@ class GenAiToolsPage extends StatefulWidget {
     super.key,
     required this.workspace,
     this.initialTab = 0,
-    this.demo = false,
     this.picker,
     this.embedded = false,
     this.onBack,
   });
   final GenAiWorkspaceController workspace;
   final int initialTab;
-  final bool demo;
   final GenAiPicker? picker;
   final bool embedded;
   final VoidCallback? onBack;
@@ -421,7 +418,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
             'medium': '标准',
             'high': '高清',
           }[_quality]}${request.referenceImages.isEmpty ? '' : ' · ${request.referenceImages.length} 张参考图片'}\n'
-          '${widget.demo ? '本地演示使用校园测试图片，不访问学校服务，也不会扣费。' : '可能扣除学校账号额度。生成可能需要几分钟，可离开此页面，稍后回来查看结果。'}',
+          '可能扣除学校账号额度。生成可能需要几分钟，可离开此页面，稍后回来查看结果。',
         ),
         actions: [
           TextButton(
@@ -504,11 +501,6 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                   _refreshButton(),
                 ],
               ),
-            ),
-          if (widget.demo && !widget.embedded)
-            const Padding(
-              padding: EdgeInsets.all(8),
-              child: Text('本地演示数据 · 不访问校园服务'),
             ),
           if (_busy || _loading || _searching) const LinearProgressIndicator(),
           if (_failure != null)
@@ -1087,7 +1079,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                         (m) => DropdownMenuItem(
                           value: m,
                           child: Text(
-                            '${m.name} · ${widget.demo ? '本地测试' : m.payType == 'FREE' ? '免费' : '扣除额度'}',
+                            '${m.name} · ${m.payType == 'FREE' ? '免费' : '扣除额度'}',
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -1201,45 +1193,39 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     return GenAiImageGallery(
       records: records,
       imageProvider: (uri) =>
-          widget.demo && (uri.path.contains('techpie-preview') || uri.host == 'demo')
-              ? const AssetImage(GenAiDemoImage.assetName)
-              : NetworkImage(_workspace.repository.imageDisplayUri(uri.toString()).toString()),
-      isDemo: (uri) => widget.demo && (uri.path.contains('techpie-preview') || uri.host == 'demo'),
+          NetworkImage(_workspace.repository.imageDisplayUri(uri.toString()).toString()),
       onOpen: (record) {
         if (_currentScope) unawaited(_previewImage(record));
       },
     );
   }
 
-  Widget _image(Uri uri, {BoxFit fit = BoxFit.contain}) => widget.demo &&
-          (uri.path.contains('techpie-preview') || uri.host == 'demo')
-      ? GenAiDemoImage(fit: fit)
-      : Image.network(
-          _workspace.repository.imageDisplayUri(uri.toString()).toString(),
-          fit: fit,
-          loadingBuilder: (context, child, progress) => progress == null
-              ? child
-              : const Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+  Widget _image(Uri uri, {BoxFit fit = BoxFit.contain}) => Image.network(
+        _workspace.repository.imageDisplayUri(uri.toString()).toString(),
+        fit: fit,
+        loadingBuilder: (context, child, progress) => progress == null
+            ? child
+            : const Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-          errorBuilder: (context, _, __) => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.broken_image_outlined, color: Theme.of(context).colorScheme.outline),
-                  const SizedBox(height: 8),
-                  const Text('预览暂不可用', textAlign: TextAlign.center),
-                ],
               ),
+        errorBuilder: (context, _, __) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.broken_image_outlined, color: Theme.of(context).colorScheme.outline),
+                const SizedBox(height: 8),
+                const Text('预览暂不可用', textAlign: TextAlign.center),
+              ],
             ),
           ),
-        );
+        ),
+      );
 
   Future<void> _previewImage(GenAiImageRecord record) async {
     if (!_currentScope) return;
@@ -1300,20 +1286,12 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                               child: uri == null
                                   ? const Center(child: Text('此记录没有可预览的图片'))
                                   : GenAiImageActions(
-                                      image: widget.demo &&
-                                              (uri.path.contains('techpie-preview') ||
-                                                  uri.host == 'demo')
-                                          ? const AssetImage(GenAiDemoImage.assetName)
-                                          : NetworkImage(
-                                              _workspace.repository
-                                                  .imageDisplayUri(uri.toString())
-                                                  .toString(),
-                                            ),
-                                      link: widget.demo &&
-                                              (uri.path.contains('techpie-preview') ||
-                                                  uri.host == 'demo')
-                                          ? null
-                                          : uri,
+                                      image: NetworkImage(
+                                        _workspace.repository
+                                            .imageDisplayUri(uri.toString())
+                                            .toString(),
+                                      ),
+                                      link: uri,
                                       child: SizedBox.expand(child: _image(uri)),
                                     ),
                             ),
@@ -1436,16 +1414,11 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       ),
     );
     try {
-      final Uint8List bytes;
-      if (widget.demo && (uri.path.contains('techpie-preview') || uri.host == 'demo')) {
-        bytes = (await rootBundle.load(GenAiDemoImage.assetName)).buffer.asUint8List();
-      } else {
-        final response = await client.get<List<int>>(
-          _workspace.repository.imageDisplayUri(uri.toString()).toString(),
-          options: Options(responseType: ResponseType.bytes),
-        );
-        bytes = Uint8List.fromList(response.data ?? const []);
-      }
+      final response = await client.get<List<int>>(
+        _workspace.repository.imageDisplayUri(uri.toString()).toString(),
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final bytes = Uint8List.fromList(response.data ?? const []);
       if (!_currentScope) return;
       if (bytes.isEmpty) throw const FormatException('Empty image');
       // Use the actual image format, not a URL suffix that may be absent.
@@ -1476,9 +1449,6 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
 
   Future<void> _openImage(Uri uri) async {
     if (!_currentScope) return;
-    if (widget.demo && (uri.path.contains('techpie-preview') || uri.host == 'demo')) {
-      return;
-    }
     try {
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
         throw StateError('No image URL handler');
@@ -1498,8 +1468,8 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
-          Text(
-            widget.demo ? '以下为本地测试数据，不代表学校账号的实际额度。' : '以下数据来自学校平台。额度与 Token 分开显示，结算可能延迟。',
+          const Text(
+            '以下数据来自学校平台。额度与 Token 分开显示，结算可能延迟。',
           ),
           for (final quota in _usage?.quotas ?? <GenAiQuota>[])
             Card(

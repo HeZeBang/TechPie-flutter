@@ -3,11 +3,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/presentation/genai_tools_page.dart';
 import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
 
 import '../support/fakes.dart';
+import '../support/workspace_server.dart';
 
 class DeferredReferencePicker implements GenAiPicker {
   @override
@@ -27,19 +27,18 @@ void main() {
   final png = base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAApElEQVR4nO3QMQ0AMAzAsCEpf1ADMwZ7m8NSAEQ+d0afzvpBPECAAAECFA4QIECAAIUDBAgQIEDhAAECBAhQOECAAAECFA4QIECAAIUDBAgQIEDhAAECBAhQOECAAAECFA4QIECAAIUDBAgQIEDhAAECBAhQOECAAAECFA4QIECAAIUDBAgQIEDhAAECBAhQOECAAAECFA4QIECAAIUDBAgQoM0eMcZiSiv2Au4AAAAASUVORK5CYII=',
   );
-  Future<GenAiDemo> show(WidgetTester tester, GenAiPicker picker) async {
+  Future<TestGenAiWorkspace> show(WidgetTester tester, GenAiPicker picker) async {
     tester.view.physicalSize = const Size(390, 1100);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     await demo.workspace.reloadModels();
     await tester.pumpWidget(
       MaterialApp(
         home: GenAiToolsPage(
           workspace: demo.workspace,
-          demo: true,
           initialTab: 1,
           picker: picker,
         ),
@@ -106,7 +105,6 @@ void main() {
       MaterialApp(
         home: GenAiToolsPage(
           workspace: demo.workspace,
-          demo: true,
           initialTab: 1,
           picker: picker,
         ),

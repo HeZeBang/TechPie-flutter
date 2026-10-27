@@ -48,7 +48,6 @@ void main() {
                 records: records,
                 imageProvider: (uri) =>
                     providers![int.parse(uri.pathSegments.last.split('.').first)],
-                isDemo: (_) => false,
                 onOpen: (record) => opened = record.id,
               ),
             ],
@@ -132,7 +131,6 @@ void main() {
               GenAiImageGallery(
                 records: records,
                 imageProvider: (_) => MemoryImage(Uint8List.fromList([0])),
-                isDemo: (_) => false,
                 onOpen: (record) => opened = record.id,
               ),
             ],

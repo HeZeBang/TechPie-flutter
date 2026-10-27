@@ -6,7 +6,6 @@ import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/application/genai_repository.dart';
 import 'package:techpie/features/genai/application/genai_session_service.dart';
 import 'package:techpie/features/genai/application/genai_workspace_controller.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/data/genai_api_client.dart';
 import 'package:techpie/features/genai/data/genai_request_signer.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
@@ -15,9 +14,10 @@ import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/genai_tools_page.dart';
 
 import '../support/fakes.dart';
+import '../support/workspace_server.dart';
 
 void main() {
-  late DemoGenAiBackend backend;
+  late FakeGenAiServer backend;
   late GenAiSessionService sessions;
   late GenAiWorkspaceController workspace;
   late GenAiChatService chat;
@@ -29,7 +29,7 @@ void main() {
     generationGate = null;
     historyGate = null;
     historyFails = false;
-    backend = DemoGenAiBackend(chunkDelay: Duration.zero);
+    backend = FakeGenAiServer(chunkDelay: Duration.zero);
     final transport = ScriptedTransport((request) async {
       if (request.uri.path == '/htk/chat/start/chat') await generationGate?.future;
       if (request.uri.path == '/htk/ai-image-history/list') {
@@ -48,7 +48,7 @@ void main() {
     final api = GenAiApiClient(transport: transport, signer: const GenAiRequestSigner('synthetic'));
     sessions = GenAiSessionService(api: api, store: MemorySessionStore());
     await sessions.setOwner(ownerA);
-    await sessions.connect(const GenAiCredential(token: DemoGenAiBackend.token));
+    await sessions.connect(const GenAiCredential(token: FakeGenAiServer.token));
     final repository = GenAiRepository(api: api, sessions: sessions);
     chat = GenAiChatService(repository);
     workspace = GenAiWorkspaceController(sessions: sessions, repository: repository, chat: chat);
@@ -68,7 +68,6 @@ void main() {
       MaterialApp(
         home: GenAiToolsPage(
           workspace: workspace,
-          demo: true,
           initialTab: 1,
         ),
       ),
@@ -101,7 +100,7 @@ void main() {
     expect(workspace.imageStudio.pending, isEmpty);
     await tester.ensureVisible(find.text('图片历史'));
     await tester.pumpAndSettle();
-    expect(find.text('本地测试图片'), findsOneWidget);
+    expect(find.byType(Image), findsWidgets);
     final tile = find.byKey(const ValueKey('genai-image-preview-image-1'));
     await tester.ensureVisible(tile);
     await tester.tap(tile);

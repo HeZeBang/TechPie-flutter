@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../domain/genai_platform_contract.dart';
-import 'genai_demo_image.dart';
 import 'genai_image_actions.dart';
 
 /// Model text and tool output may only load campus images automatically.
@@ -52,14 +51,12 @@ class GenAiMarkdownImage extends StatelessWidget {
     this.title,
     this.alt,
     this.imageDisplayUri,
-    this.demo = false,
   });
 
   final Uri uri;
   final String? title;
   final String? alt;
   final Uri Function(String)? imageDisplayUri;
-  final bool demo;
 
   @override
   Widget build(BuildContext context) {
@@ -75,23 +72,19 @@ class GenAiMarkdownImage extends StatelessWidget {
         style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
       );
     }
-    final local = demo && display.pathSegments.any((part) => part.startsWith('techpie-preview'));
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: GenAiImageActions(
-          image:
-              local ? const AssetImage(GenAiDemoImage.assetName) : NetworkImage(display.toString()),
-          link: local ? null : genAiImageUri(display.path),
-          child: local
-              ? const GenAiDemoImage()
-              : Image.network(
-                  display.toString(),
-                  fit: BoxFit.contain,
-                  semanticLabel: label,
-                  errorBuilder: (_, __, ___) => Text(label ?? '图片无法加载'),
-                ),
+          image: NetworkImage(display.toString()),
+          link: genAiImageUri(display.path),
+          child: Image.network(
+            display.toString(),
+            fit: BoxFit.contain,
+            semanticLabel: label,
+            errorBuilder: (_, __, ___) => Text(label ?? '图片无法加载'),
+          ),
         ),
       ),
     );

@@ -88,7 +88,6 @@ Timetable tools reuse `ScheduleService` data verified for the current campus
 account and selected semester. Unverified caches or explicit refresh requests use
 the normal service first. Late responses from another account/selection cannot
 establish ownership. Network failure and unverified ownership remain distinct.
-Demo academic data must never be presented as real-account data.
 
 Reservations and paid image generation require a host-prepared proposal and
 explicit confirmation. Validation, identity checks, reservation limits and

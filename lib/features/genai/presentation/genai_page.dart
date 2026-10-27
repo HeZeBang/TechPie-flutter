@@ -14,7 +14,6 @@ import '../../../widgets/adaptive_page_navigation.dart';
 import '../app/genai_runtime.dart';
 import '../application/genai_agent_runner.dart';
 import '../application/techpie_genai_tools.dart';
-import '../data/demo_genai_backend.dart';
 import '../domain/genai_session.dart';
 import 'genai_login_page.dart';
 import 'genai_workspace.dart';
@@ -45,11 +44,6 @@ class _GenAiPageState extends State<GenAiPage> {
           workspace: workspace,
           auth: services.authService,
           thirdPartyAuth: services.thirdPartyAuthService,
-          isDemo: () =>
-              runtime.isDemo &&
-              services.thirdPartyAuthService.cpdailyBinding?.token == 'synthetic-campus-token' &&
-              workspace.sessions.session?.credential.token == DemoGenAiBackend.token,
-          previewEnvironment: runtime.isDemo,
         ).createRegistry(),
       ),
       scope: () {
@@ -90,8 +84,7 @@ class _GenAiPageState extends State<GenAiPage> {
         );
       }
       if (!mounted || !current()) return;
-      if (bindings.cpdailyBinding?.token == 'synthetic-campus-token' ||
-          bindings.cpdailyNode.cookieProvider == null) {
+      if (bindings.cpdailyNode.cookieProvider == null) {
         return;
       }
       if (runtime.sessions.canIssue) {
@@ -103,7 +96,6 @@ class _GenAiPageState extends State<GenAiPage> {
         context,
         builder: (_) => GenAiLoginPage(
           sessions: runtime.sessions,
-          ephemeral: true,
           campusSession: CampusSessionHandle(bindings, bindings.cpdailyNode),
         ),
       );
@@ -137,54 +129,22 @@ class _GenAiPageState extends State<GenAiPage> {
       builder: (context, _) => GenAiWorkspace(
         controller: state,
         campusBound: services.thirdPartyAuthService.hasCpdailyBinding,
-        demo: runtime.isDemo &&
-            services.thirdPartyAuthService.cpdailyBinding?.token == 'synthetic-campus-token' &&
-            (state.sessions.session == null ||
-                state.sessions.session?.credential.token == DemoGenAiBackend.token),
-        onCampusLogin: (runtime.isDemo || runtime.sessions.canIssue)
-            ? () => unawaited(_connectLive(runtime))
-            : null,
+        onCampusLogin: runtime.sessions.canIssue ? () => unawaited(_connectLive(runtime)) : null,
         login: (context) async {
-          if (runtime.sessions.canIssue &&
-              services.thirdPartyAuthService.cpdailyBinding?.token != 'synthetic-campus-token') {
+          if (runtime.sessions.canIssue) {
             await state.connectUsing(runtime.connectUsingCampusSession);
             return null;
           }
-          return runtime.isDemo &&
-                  services.thirdPartyAuthService.cpdailyBinding?.token == 'synthetic-campus-token'
-              ? await showDialog<GenAiCredential>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('连接校园 GenAI · 本地预览'),
-                    content: const Text('TechPie 已登录，校园账号为 20240001。\n\n'
-                        '继续后将通过本地接口验证相同的校园身份、加载模型并开启流式对话。'
-                        '正式版本在此打开学校 IDS 登录。'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('取消'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(
-                          context,
-                          const GenAiCredential(token: DemoGenAiBackend.token),
-                        ),
-                        child: const Text('使用演示账号连接'),
-                      ),
-                    ],
-                  ),
-                )
-              : await pushAdaptivePage<GenAiCredential>(
-                  context,
-                  builder: (_) => GenAiLoginPage(
-                    sessions: state.sessions,
-                    ephemeral: runtime.isDemo,
-                    campusSession: CampusSessionHandle(
-                      services.thirdPartyAuthService,
-                      services.thirdPartyAuthService.cpdailyNode,
-                    ),
-                  ),
-                );
+          return await pushAdaptivePage<GenAiCredential>(
+            context,
+            builder: (_) => GenAiLoginPage(
+              sessions: state.sessions,
+              campusSession: CampusSessionHandle(
+                services.thirdPartyAuthService,
+                services.thirdPartyAuthService.cpdailyNode,
+              ),
+            ),
+          );
         },
         onSignIn:
             services.authService.isLoggedIn ? null : () => unawaited(presentLoginPage(context)),

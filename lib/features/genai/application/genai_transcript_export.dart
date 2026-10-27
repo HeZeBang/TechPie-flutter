@@ -125,11 +125,10 @@ void _writeToolResult(
   String name,
   Map<dynamic, dynamic> value,
 ) {
-  if (value['demo'] == true) out.writeln('本地演示数据。\n');
   if (value['refresh_failed'] == true) out.writeln('刷新失败，以下为已保存的数据。\n');
   if (value['partial'] == true) out.writeln('部分数据未能加载，以下结果可能不完整。\n');
   if (value['loading'] == true) out.writeln('数据仍在刷新。\n');
-  if (value['ownership_verified'] == false && value['demo'] != true) {
+  if (value['ownership_verified'] == false) {
     out.writeln('数据归属尚未验证。\n');
   }
   switch (name) {
@@ -197,7 +196,7 @@ void _writeToolResult(
       );
       if (value['status'] == 'generated' && value['images'] is List) {
         for (final image in (value['images'] as List).whereType<String>()) {
-          _writeImage(out, image, demo: value['demo'] == true);
+          _writeImage(out, image);
         }
       }
     default:
@@ -242,19 +241,7 @@ void _writeImage(
   StringBuffer out,
   String value, {
   bool reference = false,
-  bool demo = false,
 }) {
-  final parsed = Uri.tryParse(value);
-  final local = demo ||
-      parsed != null &&
-          (parsed.pathSegments.any((part) => part.startsWith('techpie-preview')) ||
-              parsed.path.contains('/temp/demo-upload-'));
-  if (local) {
-    out.writeln(
-      '${reference ? '参考图片' : '生成图片'}：本地测试图片（仅随 TechPie 演示提供，不是可访问的校园图片链接）。\n',
-    );
-    return;
-  }
   final uri = _imageUri(value);
   if (uri != null) {
     out.writeln('![${reference ? '参考图片' : '生成图片'}](<$uri>)\n');
