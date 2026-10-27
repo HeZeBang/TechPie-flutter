@@ -1,0 +1,241 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:markdown/markdown.dart' as md;
+
+import 'genai_chart_view.dart';
+import 'genai_code_font.dart';
+import 'genai_copy_button.dart';
+import 'genai_latex.dart';
+import 'genai_mermaid_view.dart';
+import 'genai_syntax_highlighter.dart';
+
+/// Pre builder that routes code blocks to Mermaid, Chart, LaTeX, or standard code block.
+class GenAiPreBuilder extends MarkdownElementBuilder {
+  @override
+  bool isBlockElement() => true;
+
+  @override
+  Widget? visitText(md.Text text, TextStyle? preferredStyle) {
+    return const SizedBox.shrink();
+  }
+
+  @override
+  Widget? visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final (language, code) = _extractCodeInfo(element);
+
+    if (code.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final lang = language?.toLowerCase().trim() ?? '';
+
+    // 1. Mermaid diagram
+    if (lang == 'mermaid') {
+      return GenAiMermaidView(code: code);
+    }
+
+    // 2. Chart
+    if (lang == 'chart' ||
+        lang == 'fl_chart' ||
+        lang.startsWith('chart:') ||
+        lang.startsWith('chart-')) {
+      String? typeHint;
+      if (lang.startsWith('chart:')) {
+        typeHint = lang.substring('chart:'.length);
+      } else if (lang.startsWith('chart-')) {
+        typeHint = lang.substring('chart-'.length);
+      }
+      return GenAiChartView(code: code, typeHint: typeHint);
+    }
+
+    // 3. LaTeX / Math
+    if (lang == 'latex' || lang == 'tex' || lang == 'math') {
+      return GenAiLatexBlockView(formula: code);
+    }
+
+    // 4. Standard programming code block
+    return GenAiStandardCodeBlock(
+      code: code,
+      language: language,
+    );
+  }
+
+  (String?, String) _extractCodeInfo(md.Element element) {
+    String? language;
+    var code = element.textContent;
+
+    if (element.children != null && element.children!.isNotEmpty) {
+      final firstChild = element.children!.first;
+      if (firstChild is md.Element) {
+        final className = firstChild.attributes['class'];
+        if (className != null && className.startsWith('language-')) {
+          language = className.substring('language-'.length);
+        }
+        code = firstChild.textContent;
+      }
+    }
+
+    // Trim trailing newline added by markdown parser
+    if (code.endsWith('\n')) {
+      code = code.substring(0, code.length - 1);
+    }
+
+    return (language, code);
+  }
+}
+
+/// A standard code block with language indicator and copy-to-clipboard button.
+class GenAiStandardCodeBlock extends StatelessWidget {
+  const GenAiStandardCodeBlock({
+    super.key,
+    required this.code,
+    this.language,
+  });
+
+  final String code;
+  final String? language;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: .08) : Colors.black.withValues(alpha: .06);
+    final cardBg =
+        isDark ? Colors.white.withValues(alpha: .03) : Colors.black.withValues(alpha: .025);
+    final rawLang = language?.trim();
+    final displayLang = (rawLang != null && rawLang.isNotEmpty) ? rawLang.toUpperCase() : 'CODE';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: .06)
+                      : Colors.black.withValues(alpha: .04),
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Text(
+                    displayLang,
+                    style: TextStyle(
+                      fontFamily: kGenAiMonospaceFamily,
+                      fontFamilyFallback: kGenAiMonospaceFallback,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.primary,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                GenAiCopyButton(
+                  text: code,
+                  tooltip: '复制代码',
+                  showLabel: true,
+                ),
+              ],
+            ),
+          ),
+
+          // Code Body
+          Builder(
+            builder: (context) {
+              final highlighter = GenAiSyntaxHighlighter(brightness: theme.brightness);
+              final baseCodeStyle = TextStyle(
+                fontFamily: kGenAiMonospaceFamily,
+                fontFamilyFallback: kGenAiMonospaceFallback,
+                fontSize: 13.5,
+                height: 1.6,
+                color: theme.textTheme.bodyMedium?.color?.withValues(alpha: .9),
+              );
+              final spans = highlighter.highlight(
+                code: code,
+                language: language,
+                baseStyle: baseCodeStyle,
+              );
+              final lineCount = '\n'.allMatches(code).length + 1;
+              final showLineNumbers = lineCount > 1;
+
+              return Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: showLineNumbers ? 0 : 14,
+                ),
+                child: showLineNumbers
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 14, right: 10),
+                            child: Text(
+                              List.generate(lineCount, (i) => '${i + 1}').join('\n'),
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontFamily: kGenAiMonospaceFamily,
+                                fontFamilyFallback: kGenAiMonospaceFallback,
+                                fontSize: 13.5,
+                                height: 1.6,
+                                color: theme.hintColor.withValues(alpha: .35),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            color: isDark
+                                ? Colors.white.withValues(alpha: .06)
+                                : Colors.black.withValues(alpha: .04),
+                          ),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              child: SelectableText.rich(
+                                TextSpan(children: spans),
+                                style: baseCodeStyle,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: SelectableText.rich(
+                          TextSpan(children: spans),
+                          style: baseCodeStyle,
+                        ),
+                      ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}

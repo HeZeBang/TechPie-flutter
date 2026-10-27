@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../features/campus_card/app/app_providers.dart';
+import '../features/genai/presentation/genai_page.dart';
 import '../pages/campus_card_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
@@ -39,6 +40,14 @@ class Feature {
 }
 
 final featureEntries = <Feature>[
+  Feature(
+    id: 'genai',
+    description: '校园 GenAI',
+    mode: FeatureMode.native,
+    nativeEntry: (context) =>
+        pushAdaptivePage<void>(context, builder: (_) => const GenAiPage()),
+    icon: const Icon(Icons.auto_awesome_outlined),
+  ),
   Feature(
     id: 'elrc_recordings',
     description: '课程录播',

@@ -1,7 +1,6 @@
 import 'dart:async';
 
-import 'package:desktop_webview_window/desktop_webview_window.dart'
-    show runWebViewTitleBarWidget;
+import 'package:desktop_webview_window/desktop_webview_window.dart' show runWebViewTitleBarWidget;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/utils/platform.dart';
 
 import 'features/campus_card/app/app_providers.dart';
+import 'features/genai/app/genai_runtime.dart';
+import 'features/genai/application/campus_genai_session_issuer.dart';
+import 'features/genai/data/native_genai_ids_exchange.dart';
 import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
@@ -64,11 +66,14 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
   final httpClient = LoggingHttpClient(debugLogger);
   final uniAuthService = UniAuthService(logger: debugLogger);
-  final authService = AuthService(storageService, httpClient, uniAuthService,
-      logger: debugLogger,);
+  final authService = AuthService(
+    storageService,
+    httpClient,
+    uniAuthService,
+    logger: debugLogger,
+  );
   final themeService = ThemeService(storageService);
-  final campusCardService =
-      CampusCardService(debugLogger: debugLogger, storage: storageService);
+  final campusCardService = CampusCardService(debugLogger: debugLogger, storage: storageService);
   final ecardBindService = EcardBindService();
   final ecardWidgetService = EcardWidgetService();
   final thirdPartyAuthService = ThirdPartyAuthService(
@@ -209,9 +214,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     // refresh token (legacy session) this is a no-op and returns false —
     // that is NOT a "login expired" condition, only an actual renewal
     // failure is.
-    final renewMain = authService.isLoggedIn
-        ? authService.tryRenewSession()
-        : Future.value(true);
+    final renewMain = authService.isLoggedIn ? authService.tryRenewSession() : Future.value(true);
     final renewThirdParty = thirdPartyAuthService.autoRenewIfNeeded();
 
     final results = await Future.wait([renewMain, renewThirdParty]);
@@ -220,9 +223,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
 
     // Only surface a renewal failure when we actually had a refresh token
     // to try (a no-op returning false is not an expiry).
-    if (!mainOk &&
-        authService.session?.geekpieRefreshToken != null &&
-        !isIos()) {
+    if (!mainOk && authService.session?.geekpieRefreshToken != null && !isIos()) {
       showAdaptiveFeedback(
         message: '登录已过期，请重新登录',
         style: AdaptiveFeedbackStyle.error,
@@ -242,8 +243,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       // and this used to be a second round on top of theirs.
       scheduleService.requestFetch(force: true);
     }
-    if (authService.isLoggedIn ||
-        thirdPartyAuthService.boundPlatforms.isNotEmpty) {
+    if (authService.isLoggedIn || thirdPartyAuthService.boundPlatforms.isNotEmpty) {
       await assignmentService.fetchAssignments();
     }
 
@@ -337,6 +337,18 @@ class TechPieApp extends StatefulWidget {
 
 class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
+  late GenAiRuntime _genAiRuntime;
+
+  GenAiRuntime _createGenAiRuntime() => GenAiRuntime(
+        auth: widget.authService,
+        thirdPartyAuth: widget.thirdPartyAuthService,
+        issuer: !kIsWeb
+            ? CampusGenAiSessionIssuer(
+                thirdPartyAuth: widget.thirdPartyAuthService,
+                exchange: NativeGenAiIdsExchange().exchange,
+              )
+            : null,
+      );
 
   /// The silent check runs at launch and whenever the app comes back to the
   /// foreground, but not more often than this: a resume is not a reason to hit
@@ -349,6 +361,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _genAiRuntime = _createGenAiRuntime();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_checkForUpdatesQuietly());
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
@@ -357,6 +370,11 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.authService != widget.authService ||
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService) {
+      _genAiRuntime.dispose();
+      _genAiRuntime = _createGenAiRuntime();
+    }
     if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
     oldWidget.ecardWidgetService?.clearOpenPayHandler();
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
@@ -365,6 +383,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _genAiRuntime.dispose();
     widget.ecardWidgetService?.clearOpenPayHandler();
     widget.campusCardService.dispose();
     super.dispose();
@@ -450,6 +469,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        genAiRuntime: _genAiRuntime,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
