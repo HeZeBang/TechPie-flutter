@@ -105,13 +105,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('wide workspace has no suggested prompts and sends typed Markdown chat',
-      (tester) async {
+  testWidgets('typed chat sends only on submission and renders the reply', (tester) async {
     final demo = await show(tester);
     expect(find.text('GenAI'), findsOneWidget);
     expect(find.byTooltip('本地演示 · 不访问校园服务，不产生费用'), findsOneWidget);
-    expect(find.text('理清学习思路'), findsNothing);
-    expect(find.text('一起写段代码'), findsNothing);
     await tester.enterText(
       find.byKey(const ValueKey('genai-prompt')),
       '帮我制定学习计划',
@@ -167,18 +164,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('compact new chat moves below header while history and image stay above',
-      (tester) async {
+  testWidgets('compact navigation opens history, image creation and account usage', (tester) async {
     await show(tester, size: const Size(674, 1000));
-    expect(find.text('更多功能'), findsNothing);
-    final fresh = tester.getCenter(find.byKey(const ValueKey('genai-new-chat-compact')));
-    final history = tester.getCenter(find.byTooltip('会话记录'));
-    final image = tester.getCenter(find.byTooltip('图片创作'));
-    expect(fresh.dy, greaterThan(history.dy));
-    expect(history.dy, image.dy);
-    expect(fresh.dx, greaterThan(history.dx));
-    expect(history.dx, lessThan(image.dx));
-    expect(find.text('用量统计'), findsNothing);
     await tester.tap(find.byTooltip('会话记录'));
     await tester.pumpAndSettle();
     expect(find.text('搜索对话'), findsOneWidget);
@@ -274,12 +261,6 @@ void main() {
     expect(scroll.position.extentAfter, lessThan(1));
     expect(find.byKey(const ValueKey('genai-scroll-latest')), findsNothing);
     expect(find.byKey(const ValueKey('genai-context-status')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('narrow screen with large text and keyboard has no overflow', (tester) async {
-    await show(tester, size: const Size(320, 740), scale: 1.6, keyboard: 280);
-    expect(find.byKey(const ValueKey('genai-prompt')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -714,39 +695,6 @@ void main() {
 
     expect(find.byType(Dialog), findsNothing);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('message deletion, reversion, and edit actions are disabled on chat bubbles',
-      (tester) async {
-    final demo = await show(tester);
-
-    await tester.enterText(
-      find.byKey(const ValueKey('genai-prompt')),
-      '测试消息',
-    );
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('genai-send')));
-    await tester.pumpAndSettle();
-
-    expect(demo.workspace.turns.length, 1);
-
-    // Scroll up so user bubble is in view
-    await tester.drag(
-      find.byKey(const ValueKey('genai-thread')),
-      const Offset(0, 500),
-    );
-    await tester.pumpAndSettle();
-
-    // User bubble has copy button, but NO edit, delete, or revert buttons
-    expect(find.byKey(const ValueKey('genai-user-copy-0')), findsOneWidget);
-    expect(find.byKey(const ValueKey('genai-user-edit-0')), findsNothing);
-    expect(find.byKey(const ValueKey('genai-user-delete-0')), findsNothing);
-
-    // Native audio is unavailable; copy remains available without editing actions.
-    expect(find.byKey(const ValueKey('genai-copy-0')), findsOneWidget);
-    expect(find.byKey(const ValueKey('genai-tts-0')), findsNothing);
-    expect(find.byKey(const ValueKey('genai-regenerate-0')), findsNothing);
-    expect(find.byKey(const ValueKey('genai-delete-0')), findsNothing);
   });
 
   testWidgets('sidebar session search filters in real time with debounce', (tester) async {

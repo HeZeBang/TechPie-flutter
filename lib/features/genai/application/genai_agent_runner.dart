@@ -356,7 +356,10 @@ final class GenAiAgentRunner {
             }
           }
         } finally {
-          unawaited(iterator.cancel());
+          // Cancellation must not wait on a stalled provider. Its cleanup may
+          // finish later with the same abort error; the run already owns and
+          // reports that outcome, so consume errors from the detached cleanup.
+          iterator.cancel().ignore();
         }
         context.checkActive();
         if (finish != GenAiFinishReason.stop && finish != GenAiFinishReason.done) {

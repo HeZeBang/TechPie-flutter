@@ -205,7 +205,7 @@ class _RenameDialogState extends State<_RenameDialog> {
           maxLength: 120,
           decoration: const InputDecoration(
             labelText: '对话名称',
-            helperText: '仅修改本机名称，原始消息保留。',
+            helperText: '名称将在此对话的下一条消息时同步。',
           ),
           onChanged: (_) => setState(() {}),
           onSubmitted: (_) => _save(),

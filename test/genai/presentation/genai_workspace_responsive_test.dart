@@ -146,7 +146,7 @@ void main() {
   });
 
   const viewports = [
-    (name: 'narrow phone', size: Size(320, 740), scale: 1.0, keyboard: 0.0),
+    (name: 'narrow phone', size: Size(320, 740), scale: 1.6, keyboard: 280.0),
     (
       name: 'phone with enlarged text and keyboard',
       size: Size(390, 844),

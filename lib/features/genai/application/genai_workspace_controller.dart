@@ -87,8 +87,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   })  : _repository = repository,
         _chat = chat {
     _owner = sessions.owner;
-    _draftTitles.clear();
-    _uncertainDeletions.clear();
     _agentSessionRevision = sessions.revision;
     _archiveScope = _currentArchiveScope();
     sessions.addListener(_sessionChanged);
@@ -626,9 +624,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       summaries.add(
         GenAiConversationSummary(
           id: item.id,
-          title: _draftTitles[item.id] ??
-              (history.archive.restoreTurns().isEmpty ? item.title : summary.title),
-          time: history.archive.restoreTurns().isEmpty ? item.time : summary.time,
+          title: _draftTitles[item.id] ?? (history.archive.isEmpty ? item.title : summary.title),
+          time: history.archive.isEmpty ? item.time : summary.time,
         ),
       );
     }
@@ -664,7 +661,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     for (final entry in _uncertainDeletions.entries.toList()) {
       if (entry.value != _archiveScope) continue;
       final remote = await _readConversation(entry.key, cancellation);
-      if (remote.archive.restoreTurns().isEmpty && _groupId == entry.key) newConversation();
+      if (remote.archive.isEmpty && _groupId == entry.key) newConversation();
       _uncertainDeletions.remove(entry.key);
     }
     _notify();
@@ -849,7 +846,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       isAgent: _agentEnabled,
     )
       ..thinkingStartTime = DateTime.now()
-      ..isSearching = false
       ..attachedFileNames = attachedFileNames
       ..attachedFileIds = fileIds
       ..attachedFileContents = {
@@ -862,7 +858,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       ..attachedImageBytesList = attachedImageBytesList;
     _attachments.clear();
     if (turn.isAgent) {
-      turn.isSearching = false;
       await _executeAgentTurn(turn, model);
     } else {
       await _executeSendTurn(turn, model);
@@ -907,7 +902,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     )
       ..approvalBudget.addAll(target.approvalBudget)
       ..thinkingStartTime = DateTime.now()
-      ..isSearching = false
       ..attachedFileNames = fileNames
       ..attachedFileIds = fileIds
       ..attachedFileContents = fileContents
@@ -917,7 +911,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       ..attachedImageBytesList = imageBytesList;
 
     if (turn.isAgent) {
-      turn.isSearching = false;
       await _executeAgentTurn(turn, model);
     } else {
       await _executeSendTurn(turn, model);
@@ -940,8 +933,9 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     GenAiConversationTurn turn,
     GenAiAgentRunner runner,
     String groupId,
-    int transcriptStart,
-  ) {
+    int transcriptStart, {
+    bool terminal = false,
+  }) {
     turn.agentTranscript =
         runner.transcriptForConversation(groupId).skip(transcriptStart).toList(growable: false);
     turn.agentTranscriptIsDelta = true;
@@ -959,6 +953,14 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           )
           .lastOrNull;
       if (existing == null) continue;
+      // The pre-dispatch receipt protects crash recovery; it is not a completed
+      // outcome while the live tool is still running. Promote it only when the
+      // run terminates or the runner actually reports a finished tool.
+      if (!terminal &&
+          existing.value.kind != GenAiAgentEventKind.toolFinished &&
+          (result['error'] as Map?)?['code'] == 'outcome_unknown') {
+        continue;
+      }
       final reconciled = GenAiAgentEvent(
         kind: GenAiAgentEventKind.toolFinished,
         turn: existing.value.turn,
@@ -1066,7 +1068,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
               _agentScope?.call() == scope &&
               (event.kind == GenAiAgentEventKind.cancelled ||
                   event.kind == GenAiAgentEventKind.failed)) {
-            _captureAgentTranscript(turn, runner, groupId, transcriptStart);
+            _captureAgentTranscript(turn, runner, groupId, transcriptStart, terminal: true);
           }
           break;
         }
@@ -1080,7 +1082,14 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         if (event.kind != GenAiAgentEventKind.reasoningDelta &&
             event.kind != GenAiAgentEventKind.answerDelta &&
             event.kind != GenAiAgentEventKind.contextUsage) {
-          _captureAgentTranscript(turn, runner, groupId, transcriptStart);
+          _captureAgentTranscript(
+            turn,
+            runner,
+            groupId,
+            transcriptStart,
+            terminal: event.kind == GenAiAgentEventKind.cancelled ||
+                event.kind == GenAiAgentEventKind.failed,
+          );
         }
         switch (event.kind) {
           case GenAiAgentEventKind.contextUsage:
@@ -1139,7 +1148,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         turn.agentStatus = '无法继续任务，请检查工具记录。已提交的操作不要重复执行。';
       }
     } finally {
-      turn.isSearching = false;
       turn.isAgentThinking = false;
       operation.cancel();
       if (identical(_agentOperation, operation)) {
@@ -1284,7 +1292,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _chat.stop();
     if (_active case final turn?) {
       turn.contextUsage = null;
-      turn.isSearching = false;
       turn.isAgentThinking = false;
       turn.phase = GenAiChatPhase.cancelled;
       if (turn.isAgent) {

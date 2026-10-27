@@ -1333,10 +1333,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                 ),
                               if (turn.agentEvents.isNotEmpty) const SizedBox(height: 12),
                             ],
-                            if (!turn.isAgent && (turn.citations.isNotEmpty || turn.isSearching))
+                            if (!turn.isAgent && turn.citations.isNotEmpty)
                               GenAiWebSearchView(
                                 citations: turn.citations,
-                                isSearching: turn.isSearching,
                                 onOpenLink: (url) => unawaited(_openLink(url)),
                               ),
                             if (!turn.isAgent &&
@@ -1352,7 +1351,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                             if (turn.answer.isEmpty &&
                                 !incomplete &&
                                 turn.reasoning.isEmpty &&
-                                !turn.isSearching &&
                                 (!turn.isAgent || _state.pendingAgentApproval == null))
                               Row(
                                 children: [

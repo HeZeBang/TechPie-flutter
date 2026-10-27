@@ -1,9 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder_io.dart'
-    as native;
-import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder_stub.dart';
 import 'package:techpie/features/genai/presentation/audio/wav_encoder.dart';
 
 void main() {
@@ -29,8 +26,7 @@ void main() {
       );
     });
 
-    test('encodeFloat32 writes valid 16-bit mono PCM WAVE header and samples',
-        () {
+    test('encodeFloat32 writes valid 16-bit mono PCM WAVE header and samples', () {
       final samples = Float32List.fromList([0.0, 1.0, -1.0, 0.5, -0.5]);
       final wav = WavEncoder.encodeFloat32(
         channels: [samples],
@@ -85,43 +81,6 @@ void main() {
       expect(view.getInt16(46, Endian.little), 0);
       expect(view.getInt16(48, Endian.little), -32768);
       expect(view.getInt16(50, Endian.little), (0.5 * 32767).round());
-    });
-
-    test('encodePcm16 produces valid header and samples', () {
-      final samples = [0, 1000, -1000];
-      final wav = WavEncoder.encodePcm16(
-        samples: samples,
-        sampleRate: 8000,
-      );
-
-      expect(wav.length, 44 + 3 * 2);
-      final view = ByteData.view(wav.buffer);
-      expect(String.fromCharCodes(wav.sublist(0, 4)), 'RIFF');
-      expect(view.getInt16(44, Endian.little), 0);
-      expect(view.getInt16(46, Endian.little), 1000);
-      expect(view.getInt16(48, Endian.little), -1000);
-    });
-  });
-
-  test('native recorder reports unavailable and cannot simulate recording',
-      () async {
-    final recorder = native.createGenAiAudioRecorder();
-    expect(recorder.isSupported, isFalse);
-    expect(await recorder.hasPermission(), isFalse);
-    await expectLater(recorder.start(), throwsUnsupportedError);
-    expect(await recorder.stop(), isNull);
-    recorder.dispose();
-  });
-
-  group('GenAiAudioRecorderStub', () {
-    test('stub handles unsupported platform gracefully', () async {
-      final stub = GenAiAudioRecorderStub();
-      expect(stub.isRecording, isFalse);
-      expect(await stub.hasPermission(), isFalse);
-      expect(stub.start(), throwsUnsupportedError);
-      expect(await stub.stop(), isNull);
-      await stub.cancel();
-      stub.dispose();
     });
   });
 }

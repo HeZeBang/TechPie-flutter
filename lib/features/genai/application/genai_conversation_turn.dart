@@ -132,7 +132,6 @@ final class GenAiConversationTurn {
   bool isAgentThinking = false;
   int? thinkingDurationMs;
   DateTime? thinkingStartTime;
-  bool isSearching = false;
   List<GenAiWebSearchCitation> citations = const [];
   List<String> attachedFileNames = const [];
   List<String> attachedFileIds = const [];

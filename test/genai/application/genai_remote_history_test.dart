@@ -10,6 +10,35 @@ import 'package:techpie/features/genai/domain/genai_remote_record.dart';
 const nonce = 'remote_test_nonce_012345';
 
 void main() {
+  test('late completion cannot revive a cancelled ancestor or hide its follow-up', () {
+    final stopped = GenAiConversationTurn('Long task', id: 'stopped', isAgent: true)
+      ..phase = GenAiChatPhase.cancelled
+      ..answer = 'Partial answer';
+    final followup = GenAiConversationTurn('New question', id: 'next', parentId: stopped.id);
+    GenAiSavedTurn row(GenAiConversationTurn turn, String answer, {bool carryStop = false}) =>
+        GenAiSavedTurn(
+          prompt: encodeGenAiRemoteRecord({
+            'kind': 'exchange',
+            'step_id': 'step-${turn.id}',
+            'turn': turn.toRemoteInput(),
+            'input': turn.prompt,
+            if (carryStop) 'interrupted': [stopped.toInterruptedRecord()],
+          }),
+          answer: answer,
+        );
+    // Aborting Fetch cannot stop the upstream model: its old POST may be
+    // persisted after a newer request carrying the explicit stop record.
+    final rows = [
+      row(followup, 'New answer', carryStop: true),
+      row(stopped, encodeGenAiAgentFinal('Late full answer', nonce: nonce)),
+    ];
+    final recovered = decodeGenAiConversation('group', rows).archive.restoreTurns();
+    expect(recovered.map((turn) => turn.id), ['stopped', 'next']);
+    expect(recovered.first.phase, GenAiChatPhase.cancelled);
+    expect(recovered.first.answer, 'Partial answer');
+    expect(recovered.last.answer, 'New answer');
+  });
+
   test('server-only recovery joins identified tools, preserves files and selects retry ancestry',
       () {
     final source = GenAiConversationTurn('Read my document', id: 'a', isAgent: true)

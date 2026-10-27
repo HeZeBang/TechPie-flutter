@@ -38,6 +38,50 @@ Future<void> until(bool Function() ready) async {
 }
 
 void main() {
+  for (final cancel in [false, true]) {
+    test('live mutation stays running until completion or cancellation: cancel=$cancel', () async {
+      final server = JournalServer();
+      final started = Completer<void>();
+      final finish = Completer<Object?>();
+      final client = await JournalClient.create(
+        server,
+        tools: [
+          testTool(
+            mutation: true,
+            execute: () {
+              started.complete();
+              return finish.future;
+            },
+          ),
+        ],
+      );
+      addTearDown(client.dispose);
+      client.workspace.setAgentEnabled(true);
+      server.onGenerate = (body) => server.generations.length == 1
+          ? server.call(body, name: 'reserve_court', arguments: {'action': 'book'})
+          : server.finalAnswer(body, 'Done.');
+      final sending = client.workspace.send('Book one court');
+      await until(() => client.workspace.pendingAgentApproval != null);
+      client.workspace.resolveAgentApproval(true);
+      await started.future;
+      final turn = client.workspace.turns.single;
+      expect(turn.agentEvents.values.single.kind, GenAiAgentEventKind.toolStarted);
+      expect(turn.agentEvents.values.single.result, isNull);
+      // The unknown receipt still exists for recovery even while the UI runs.
+      expect(turn.agentTranscript.last.result?['error'], containsPair('code', 'outcome_unknown'));
+      if (cancel) client.workspace.stop();
+      finish.complete({'status': 'booked'});
+      await sending;
+      final result = turn.agentEvents.values.single.result!;
+      expect(turn.agentEvents.values.single.kind, GenAiAgentEventKind.toolFinished);
+      if (cancel) {
+        expect(result['error'], containsPair('code', 'outcome_unknown'));
+      } else {
+        expect(result['ok'], true);
+      }
+    });
+  }
+
   test('generated-image receipts supply visual context after remote recovery in both modes',
       () async {
     final server = JournalServer();

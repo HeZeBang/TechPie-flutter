@@ -1288,6 +1288,27 @@ void main() {
     expect(executions, 0);
   });
 
+  test('cancellation consumes late stream cleanup errors without blocking the run', () async {
+    final cancellation = GenAiCancellation();
+    final listening = Completer<void>();
+    final cleanup = Completer<void>();
+    final stream = StreamController<GenAiChatEvent>(
+      onListen: listening.complete,
+      onCancel: () => cleanup.future,
+    );
+    final runner = testRunner(
+      tools: GenAiAgentToolRegistry([]),
+      streamChat: (_, __) => stream.stream,
+    );
+    final running = run(runner, cancellation: cancellation);
+    await listening.future;
+    cancellation.cancel();
+    expect((await running).last.kind, GenAiAgentEventKind.cancelled);
+    cleanup.completeError(const GenAiFailure(GenAiFailureKind.cancelled));
+    await Future<void>.delayed(Duration.zero);
+    await stream.close();
+  });
+
   test('late preparation after cancellation cannot reach execution', () async {
     final prepared = Completer<GenAiAgentPreparedTool>();
     final preparing = Completer<void>();

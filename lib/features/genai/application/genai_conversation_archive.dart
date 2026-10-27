@@ -80,6 +80,8 @@ final class GenAiConversationArchive {
   final String? modelAiType;
   final String? modelRootAiType;
 
+  bool get isEmpty => (_json['turns']! as List).isEmpty;
+
   List<GenAiConversationTurn> restoreTurns() => [
         for (final raw in _json['turns']! as List)
           genAiTurnFromArchive(Map<String, Object?>.from(raw as Map)),

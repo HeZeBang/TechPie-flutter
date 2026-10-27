@@ -22,6 +22,7 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
   final turns = <String, GenAiConversationTurn>{};
   final legacy = <GenAiSavedTurn>[];
   final seen = <String>{};
+  final explicitlyStopped = <String>{};
   var memory = <String, Object?>{};
   var effects = <String, Object?>{};
   var settings = <String, Object?>{};
@@ -103,6 +104,7 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
           if (event.call != null && event.result == null) addCall(stopped, event.call!);
         }
         turns[stopped.id] = stopped;
+        explicitlyStopped.add(stopped.id);
       }
       final input = record['input']! as String;
       final source =
@@ -117,6 +119,10 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
             : GenAiConversationTurn.fromRemoteInput(source, input);
       });
       turn.parentId = aliases[turn.parentId] ?? turn.parentId;
+      // A later request can carry an explicit stop before the upstream finishes
+      // persisting the aborted POST. That late answer must not revive the turn
+      // or move the active path back from its already-saved follow-up.
+      if (explicitlyStopped.contains(turnId)) continue;
       if (record['approvalBudget'] is Map) {
         final budget = Map<String, int>.from(record['approvalBudget']! as Map);
         for (final entry in budget.entries) {

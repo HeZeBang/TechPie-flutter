@@ -6,13 +6,11 @@ class GenAiWebSearchView extends StatefulWidget {
   const GenAiWebSearchView({
     super.key,
     required this.citations,
-    this.isSearching = false,
     required this.onOpenLink,
     this.query,
   });
 
   final List<GenAiWebSearchCitation> citations;
-  final bool isSearching;
   final String? query;
   final void Function(String url) onOpenLink;
 
@@ -25,43 +23,13 @@ class _GenAiWebSearchViewState extends State<GenAiWebSearchView> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.citations.isEmpty &&
-        !widget.isSearching &&
-        widget.query == null) {
+    if (widget.citations.isEmpty && widget.query == null) {
       return const SizedBox.shrink();
     }
     final theme = Theme.of(context);
-    final accent = theme.brightness == Brightness.dark
-        ? const Color(0xff67d4c2)
-        : const Color(0xff167c6d);
+    final accent = theme.colorScheme.primary;
     final muted = theme.colorScheme.onSurfaceVariant;
     final border = theme.colorScheme.outlineVariant.withValues(alpha: .4);
-
-    if (widget.isSearching && widget.citations.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 13,
-              height: 13,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.5,
-                color: accent,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '正在检索网页信息…',
-              style: TextStyle(
-                fontSize: 12,
-                color: muted,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -79,8 +47,7 @@ class _GenAiWebSearchViewState extends State<GenAiWebSearchView> {
               onTap: () => setState(() => _expanded = !_expanded),
               borderRadius: BorderRadius.circular(10),
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                 child: Row(
                   children: [
                     Icon(
@@ -102,9 +69,7 @@ class _GenAiWebSearchViewState extends State<GenAiWebSearchView> {
                       ),
                     ),
                     Icon(
-                      _expanded
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
+                      _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
                       size: 16,
                       color: muted,
                     ),
