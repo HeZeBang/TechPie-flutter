@@ -55,7 +55,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "E34C05B9C95E87D00F79F0EE"
             BuildableName = "TechPieWatch.app"
-            BlueprintName = "TechPieWatch"
             ReferencedContainer = "container:Runner.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -72,7 +71,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "E34C05B9C95E87D00F79F0EE"
             BuildableName = "TechPieWatch.app"
-            BlueprintName = "TechPieWatch"
             ReferencedContainer = "container:Runner.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
