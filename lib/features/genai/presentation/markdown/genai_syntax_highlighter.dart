@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'genai_code_font.dart';
+
 /// Syntax token classification for code highlighting.
 enum SyntaxTokenType {
   keyword,
@@ -123,20 +125,7 @@ class GenAiSyntaxHighlighter {
   final SyntaxTheme? customTheme;
 
   SyntaxTheme get theme =>
-      customTheme ??
-      (brightness == Brightness.dark ? SyntaxTheme.dark : SyntaxTheme.light);
-
-  static const _commonMonospaceFallback = [
-    'RobotoMono',
-    'monospace',
-    'SF Mono',
-    'Menlo',
-    'Monaco',
-    'Consolas',
-    'Fira Code',
-    'JetBrains Mono',
-    'Courier New',
-  ];
+      customTheme ?? (brightness == Brightness.dark ? SyntaxTheme.dark : SyntaxTheme.light);
 
   static const Set<String> _dartKeywords = {
     'abstract',
@@ -614,11 +603,12 @@ class GenAiSyntaxHighlighter {
     if (code.isEmpty) return const [];
 
     final lang = language?.toLowerCase().trim() ?? '';
-    final defaultStyle = (baseStyle ?? const TextStyle()).copyWith(
-      fontFamily: 'RobotoMono',
-      fontFamilyFallback: _commonMonospaceFallback,
-      color: theme.plain,
-    );
+    final defaultStyle = (baseStyle ??
+            const TextStyle(
+              fontFamily: kGenAiMonospaceFamily,
+              fontFamilyFallback: kGenAiMonospaceFallback,
+            ))
+        .copyWith(color: theme.plain);
 
     final spans = <TextSpan>[];
     final isPython = lang == 'python' || lang == 'py';
@@ -632,16 +622,14 @@ class GenAiSyntaxHighlighter {
         lang == 'mjs';
     final isJson = lang == 'json';
     final isSql = lang == 'sql';
-    final isBash =
-        lang == 'bash' || lang == 'sh' || lang == 'zsh' || lang == 'shell';
+    final isBash = lang == 'bash' || lang == 'sh' || lang == 'zsh' || lang == 'shell';
     final isCpp = lang == 'c' ||
         lang == 'cpp' ||
         lang == 'cxx' ||
         lang == 'cc' ||
         lang == 'h' ||
         lang == 'hpp';
-    final isHtmlOrXml =
-        lang == 'html' || lang == 'xml' || lang == 'svg' || lang == 'htm';
+    final isHtmlOrXml = lang == 'html' || lang == 'xml' || lang == 'svg' || lang == 'htm';
 
     // Build regular expression for language tokens
     final patterns = <String>[];
@@ -739,9 +727,7 @@ class GenAiSyntaxHighlighter {
       }
 
       // Strings
-      if (token.startsWith('"') ||
-          token.startsWith("'") ||
-          token.startsWith('`')) {
+      if (token.startsWith('"') || token.startsWith("'") || token.startsWith('`')) {
         // Special JSON property check: "key":
         if (isJson && token.startsWith('"')) {
           final nextIndex = match.end;
@@ -802,8 +788,7 @@ class GenAiSyntaxHighlighter {
       }
 
       // Numbers
-      if (RegExp(r'^(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)$')
-          .hasMatch(token)) {
+      if (RegExp(r'^(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)$').hasMatch(token)) {
         spans.add(
           TextSpan(
             text: token,
@@ -831,10 +816,7 @@ class GenAiSyntaxHighlighter {
           isKeyword = true;
         } else if (isCpp && _cppKeywords.contains(token)) {
           isKeyword = true;
-        } else if (token == 'true' ||
-            token == 'false' ||
-            token == 'null' ||
-            token == 'undefined') {
+        } else if (token == 'true' || token == 'false' || token == 'null' || token == 'undefined') {
           isKeyword = true;
         }
 

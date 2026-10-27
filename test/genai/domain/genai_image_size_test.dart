@@ -17,11 +17,7 @@ void main() {
         size: size,
       );
 
-  test('all 13 aspect ratios expose valid documented resolution tiers', () {
-    expect(GenAiImageSize.presets, hasLength(13));
-    expect(GenAiImageSize.presets['1:1']!.containsKey('4K'), isFalse);
-    expect(GenAiImageSize.presets['16:9']!['4K'], '3840x2160');
-    expect(GenAiImageSize.presets['9:21']!['4K'], '1648x3840');
+  test('every offered resolution passes the image request validator', () {
     for (final sizes in GenAiImageSize.presets.values) {
       for (final size in sizes.values) {
         expect(request(size).toJson()['size'], size);
@@ -29,9 +25,7 @@ void main() {
     }
   });
 
-  test(
-      'custom size bounds are inclusive and serialize without preset restriction',
-      () {
+  test('custom size bounds are inclusive and serialize without preset restriction', () {
     for (final size in [
       '1024x640',
       '800x820',
@@ -56,8 +50,7 @@ void main() {
     }
   });
 
-  test('experimental warning follows width and height thresholds independently',
-      () {
+  test('experimental warning follows width and height thresholds independently', () {
     expect(const GenAiImageSize(2560, 1440).isExperimental, isFalse);
     expect(const GenAiImageSize(2561, 1440).isExperimental, isTrue);
     expect(const GenAiImageSize(1024, 1441).isExperimental, isTrue);

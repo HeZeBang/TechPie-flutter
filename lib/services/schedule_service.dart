@@ -47,6 +47,13 @@ class ScheduleService extends ChangeNotifier {
 
   String? _verifiedAccount;
   String? _verifiedSemester;
+  int _fetchGeneration = 0;
+
+  void _checkFetchScope(int generation, String? account) {
+    if (generation != _fetchGeneration || account != _campusAccount()) {
+      throw StateError('Timetable selection or account changed during refresh');
+    }
+  }
 
   /// Only a completed, successful fetch in this process establishes ownership.
   /// Legacy disk caches have no account stamp and are not safe for agent export.
@@ -123,7 +130,7 @@ class ScheduleService extends ChangeNotifier {
     await fetchAll();
     // Only a success counts as "fetched for": a failed attempt has to be able to
     // try again on the next trigger.
-    if (account != null && _error == null) {
+    if (account != null && account == _campusAccount() && hasVerifiedAccountData) {
       _fetchedForAccount = account;
     }
   }
@@ -172,9 +179,7 @@ class ScheduleService extends ChangeNotifier {
 
   CourseTable? courseTableFor(String? semesterId) {
     if (semesterId == null) return null;
-    return semesterId == _selectedSemesterId
-        ? _courseTable
-        : _storage.loadCourseTable(semesterId);
+    return semesterId == _selectedSemesterId ? _courseTable : _storage.loadCourseTable(semesterId);
   }
 
   TermCalendar? termCalendarFor(String? semesterId) {
@@ -214,19 +219,18 @@ class ScheduleService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _removeCustomCourse(String semesterId, String id) =>
-      _storage.saveCustomCourses(
+  Future<void> _removeCustomCourse(String semesterId, String id) => _storage.saveCustomCourses(
         semesterId,
-        customCoursesFor(semesterId)
-            .where((course) => course.id != id)
-            .toList(),
+        customCoursesFor(semesterId).where((course) => course.id != id).toList(),
       );
 
   Future<void> loadCachedData() async {
+    _fetchGeneration++;
+    _loading = false;
+    _suppressAssignmentRefetch = false;
     _verifiedAccount = null;
     _semesterInfo = _storage.loadSemesters();
-    _selectedSemesterId =
-        _storage.selectedSemester ?? _semesterInfo?.defaultSemester;
+    _selectedSemesterId = _storage.selectedSemester ?? _semesterInfo?.defaultSemester;
     if (_selectedSemesterId != null) {
       _courseTable = _storage.loadCourseTable(_selectedSemesterId!);
     }
@@ -237,6 +241,7 @@ class ScheduleService extends ChangeNotifier {
   Future<void> fetchAll() async {
     if (_loading) return; // 避免启动时并发重复调用
     if (!_hasCpdailyBinding) return;
+    final generation = ++_fetchGeneration;
     _loading = true;
     _error = null;
     final account = _campusAccount();
@@ -246,6 +251,7 @@ class ScheduleService extends ChangeNotifier {
 
     try {
       await fetchSemesters();
+      _checkFetchScope(generation, account);
       _selectedSemesterId ??= _semesterInfo?.defaultSemester;
       fetchedSemester = _selectedSemesterId;
       if (_selectedSemesterId != null) {
@@ -254,6 +260,7 @@ class ScheduleService extends ChangeNotifier {
           _fetchTermBeginForSemester(_selectedSemesterId!),
         ]);
       }
+      _checkFetchScope(generation, account);
       if (account != null &&
           account == _campusAccount() &&
           fetchedSemester == _selectedSemesterId) {
@@ -261,19 +268,24 @@ class ScheduleService extends ChangeNotifier {
         _verifiedSemester = _selectedSemesterId;
       }
     } catch (e) {
-      _error = e.toString();
+      if (generation == _fetchGeneration) _error = e.toString();
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (generation == _fetchGeneration) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
   Future<void> fetchSemesters() async {
+    final generation = _fetchGeneration;
+    final account = _campusAccount();
     final resp = await _postWithRetry(
       '$_baseUrl/schedule/semesters',
       const <String, dynamic>{},
       'fetchSemesters',
     );
+    _checkFetchScope(generation, account);
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     if (data['success'] != true) {
       throw Exception(data['error'] as String? ?? 'Failed to fetch semesters');
@@ -286,10 +298,11 @@ class ScheduleService extends ChangeNotifier {
   }
 
   Future<void> fetchCourseTable(String semesterId) async {
+    final generation = _fetchGeneration;
+    final account = _campusAccount();
     final extra = <String, dynamic>{
       'semester_id': semesterId,
-      if (_semesterInfo?.tableId.isNotEmpty == true)
-        'table_id': _semesterInfo!.tableId,
+      if (_semesterInfo?.tableId.isNotEmpty == true) 'table_id': _semesterInfo!.tableId,
     };
 
     final resp = await _postWithRetry(
@@ -297,6 +310,7 @@ class ScheduleService extends ChangeNotifier {
       extra,
       'fetchCourseTable',
     );
+    _checkFetchScope(generation, account);
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     if (data['success'] != true) {
       throw Exception(
@@ -326,8 +340,7 @@ class ScheduleService extends ChangeNotifier {
           // rank 0/1/2 (秋/春/暑) -> the term number the backend expects (1/2/3);
           // unrecognized term keys fall back to spring (2).
           final rank = semesterTermRank(semEntry.key);
-          semNum =
-              rank < kSemesterTermNames.length ? (rank + 1).toString() : '2';
+          semNum = rank < kSemesterTermNames.length ? (rank + 1).toString() : '2';
           break;
         }
       }
@@ -343,6 +356,8 @@ class ScheduleService extends ChangeNotifier {
     String semester,
     String cacheKey,
   ) async {
+    final generation = _fetchGeneration;
+    final account = _campusAccount();
     final extra = <String, dynamic>{'year': year, 'semester': semester};
 
     final resp = await _postWithRetry(
@@ -350,6 +365,7 @@ class ScheduleService extends ChangeNotifier {
       extra,
       'fetchTermBegin',
     );
+    _checkFetchScope(generation, account);
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     if (data['success'] != true) {
       throw Exception(data['error'] as String? ?? 'Failed to fetch term begin');
@@ -364,8 +380,12 @@ class ScheduleService extends ChangeNotifier {
   Future<void> selectSemester(String semesterId) async {
     // No-op if the semester is already selected.
     if (_selectedSemesterId == semesterId) return;
+    final generation = ++_fetchGeneration;
+    final account = _campusAccount();
+    _verifiedAccount = null;
     _selectedSemesterId = semesterId;
     await _storage.setSelectedSemester(semesterId);
+    if (generation != _fetchGeneration) return;
 
     // Load cached data for the new semester so the UI updates instantly.
     _courseTable = _storage.loadCourseTable(semesterId);
@@ -381,7 +401,9 @@ class ScheduleService extends ChangeNotifier {
     notifyListeners();
 
     if (!_hasCpdailyBinding) {
+      _loading = false;
       _suppressAssignmentRefetch = false;
+      notifyListeners();
       return;
     }
 
@@ -394,16 +416,22 @@ class ScheduleService extends ChangeNotifier {
         fetchCourseTable(semesterId),
         _fetchTermBeginForSemester(semesterId),
       ]);
+      _checkFetchScope(generation, account);
+      // Semester switching is a real fetch too, not an unowned disk-cache read.
+      // Never stamp a response after its campus account or selection changed.
+      if (account != null && account == _campusAccount() && semesterId == _selectedSemesterId) {
+        _verifiedAccount = account;
+        _verifiedSemester = semesterId;
+      }
     } catch (e) {
-      _error = e.toString();
+      if (generation == _fetchGeneration) _error = e.toString();
     } finally {
-      _loading = false;
-      _suppressAssignmentRefetch = false;
-      // This final notify fires _onScheduleChanged again. Because
-      // _suppressAssignmentRefetch is now false, AssignmentService will
-      // refetch (the EAMS session is primed by our fetchCourseTable above,
-      // so exam_table succeeds on the first try).
-      notifyListeners();
+      if (generation == _fetchGeneration) {
+        _loading = false;
+        _suppressAssignmentRefetch = false;
+        // Refetch assignments only after the current selection has primed EAMS.
+        notifyListeners();
+      }
     }
   }
 

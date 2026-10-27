@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import 'genai_code_font.dart';
 import 'genai_copy_button.dart';
 
 enum GenAiChartType {
@@ -64,8 +65,7 @@ class GenAiChartSpec {
     String? defaultTypeHint,
   }) {
     // 1. Detect type
-    var typeStr =
-        (map['type'] ?? defaultTypeHint ?? 'bar').toString().toLowerCase();
+    var typeStr = (map['type'] ?? defaultTypeHint ?? 'bar').toString().toLowerCase();
     if (typeStr.contains('line')) {
       typeStr = 'line';
     } else if (typeStr.contains('pie')) {
@@ -100,9 +100,7 @@ class GenAiChartSpec {
       for (var i = 0; i < list.length; i++) {
         final item = list[i];
         if (item is Map) {
-          final sName = item['label']?.toString() ??
-              item['name']?.toString() ??
-              '数据 ${i + 1}';
+          final sName = item['label']?.toString() ?? item['name']?.toString() ?? '数据 ${i + 1}';
           final rawData = item['data'] ?? item['values'] ?? const <dynamic>[];
           final values = _toDoubleList(rawData);
           series.add(GenAiChartSeries(name: sName, values: values));
@@ -113,9 +111,7 @@ class GenAiChartSpec {
       for (var i = 0; i < list.length; i++) {
         final item = list[i];
         if (item is Map) {
-          final sName = item['name']?.toString() ??
-              item['label']?.toString() ??
-              '数据 ${i + 1}';
+          final sName = item['name']?.toString() ?? item['label']?.toString() ?? '数据 ${i + 1}';
           final rawData = item['data'] ?? item['values'] ?? const <dynamic>[];
           final values = _toDoubleList(rawData);
           series.add(GenAiChartSeries(name: sName, values: values));
@@ -246,8 +242,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
   @override
   void didUpdateWidget(GenAiChartView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.code != widget.code ||
-        oldWidget.typeHint != widget.typeHint) {
+    if (oldWidget.code != widget.code || oldWidget.typeHint != widget.typeHint) {
       _parseSpec();
     }
   }
@@ -260,12 +255,10 @@ class _GenAiChartViewState extends State<GenAiChartView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: .08)
-        : Colors.black.withValues(alpha: .06);
-    final cardBg = isDark
-        ? Colors.white.withValues(alpha: .03)
-        : Colors.black.withValues(alpha: .02);
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: .08) : Colors.black.withValues(alpha: .06);
+    final cardBg =
+        isDark ? Colors.white.withValues(alpha: .03) : Colors.black.withValues(alpha: .02);
 
     final spec = _spec;
 
@@ -294,8 +287,8 @@ class _GenAiChartViewState extends State<GenAiChartView> {
               child: SelectableText(
                 widget.code,
                 style: const TextStyle(
-                  fontFamily: 'RobotoMono',
-                  fontFamilyFallback: ['monospace', 'Menlo'],
+                  fontFamily: kGenAiMonospaceFamily,
+                  fontFamilyFallback: kGenAiMonospaceFallback,
                   fontSize: 12,
                 ),
               ),
@@ -335,8 +328,8 @@ class _GenAiChartViewState extends State<GenAiChartView> {
               child: SelectableText(
                 widget.code,
                 style: const TextStyle(
-                  fontFamily: 'RobotoMono',
-                  fontFamilyFallback: ['monospace', 'Menlo'],
+                  fontFamily: kGenAiMonospaceFamily,
+                  fontFamilyFallback: kGenAiMonospaceFallback,
                   fontSize: 12,
                 ),
               ),
@@ -375,9 +368,8 @@ class _GenAiChartViewState extends State<GenAiChartView> {
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: isDark
-                ? Colors.white.withValues(alpha: .06)
-                : Colors.black.withValues(alpha: .04),
+            color:
+                isDark ? Colors.white.withValues(alpha: .06) : Colors.black.withValues(alpha: .04),
           ),
         ),
       ),
@@ -405,8 +397,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: badgeColor.withValues(alpha: .12),
                     borderRadius: BorderRadius.circular(6),
@@ -452,9 +443,8 @@ class _GenAiChartViewState extends State<GenAiChartView> {
   Widget _buildBarChart(BuildContext context, GenAiChartSpec spec) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final gridColor = isDark
-        ? Colors.white.withValues(alpha: .06)
-        : Colors.black.withValues(alpha: .05);
+    final gridColor =
+        isDark ? Colors.white.withValues(alpha: .06) : Colors.black.withValues(alpha: .05);
 
     final numGroups = spec.labels.length;
     final numSeries = spec.series.length;
@@ -479,9 +469,8 @@ class _GenAiChartViewState extends State<GenAiChartView> {
       for (var sIdx = 0; sIdx < numSeries; sIdx++) {
         final s = spec.series[sIdx];
         final val = i < s.values.length ? s.values[i] : 0.0;
-        final color = s.color ??
-            GenAiChartSpec
-                .defaultPalette[sIdx % GenAiChartSpec.defaultPalette.length];
+        final color =
+            s.color ?? GenAiChartSpec.defaultPalette[sIdx % GenAiChartSpec.defaultPalette.length];
         rods.add(
           BarChartRodData(
             toY: val,
@@ -508,10 +497,8 @@ class _GenAiChartViewState extends State<GenAiChartView> {
         ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
@@ -557,9 +544,8 @@ class _GenAiChartViewState extends State<GenAiChartView> {
   Widget _buildLineChart(BuildContext context, GenAiChartSpec spec) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final gridColor = isDark
-        ? Colors.white.withValues(alpha: .06)
-        : Colors.black.withValues(alpha: .05);
+    final gridColor =
+        isDark ? Colors.white.withValues(alpha: .06) : Colors.black.withValues(alpha: .05);
 
     var maxY = 0.0;
     var minY = double.infinity;
@@ -588,9 +574,8 @@ class _GenAiChartViewState extends State<GenAiChartView> {
     final lineBars = <LineChartBarData>[];
     for (var sIdx = 0; sIdx < spec.series.length; sIdx++) {
       final s = spec.series[sIdx];
-      final color = s.color ??
-          GenAiChartSpec
-              .defaultPalette[sIdx % GenAiChartSpec.defaultPalette.length];
+      final color =
+          s.color ?? GenAiChartSpec.defaultPalette[sIdx % GenAiChartSpec.defaultPalette.length];
       final spots = <FlSpot>[];
       for (var i = 0; i < s.values.length; i++) {
         spots.add(FlSpot(i.toDouble(), s.values[i]));
@@ -626,10 +611,8 @@ class _GenAiChartViewState extends State<GenAiChartView> {
         ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
@@ -680,8 +663,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
       for (var i = 0; i < series.values.length; i++) {
         final val = series.values[i];
         final pct = total > 0 ? (val / total * 100).round() : 0;
-        final color = GenAiChartSpec
-            .defaultPalette[i % GenAiChartSpec.defaultPalette.length];
+        final color = GenAiChartSpec.defaultPalette[i % GenAiChartSpec.defaultPalette.length];
         sections.add(
           PieChartSectionData(
             value: val,
@@ -716,17 +698,15 @@ class _GenAiChartViewState extends State<GenAiChartView> {
       if (series != null) {
         for (var i = 0; i < series.values.length; i++) {
           final label = i < spec.labels.length ? spec.labels[i] : '项目 ${i + 1}';
-          final color = GenAiChartSpec
-              .defaultPalette[i % GenAiChartSpec.defaultPalette.length];
+          final color = GenAiChartSpec.defaultPalette[i % GenAiChartSpec.defaultPalette.length];
           items.add(_buildLegendItem(color, label, theme));
         }
       }
     } else {
       for (var i = 0; i < spec.series.length; i++) {
         final s = spec.series[i];
-        final color = s.color ??
-            GenAiChartSpec
-                .defaultPalette[i % GenAiChartSpec.defaultPalette.length];
+        final color =
+            s.color ?? GenAiChartSpec.defaultPalette[i % GenAiChartSpec.defaultPalette.length];
         items.add(_buildLegendItem(color, s.name, theme));
       }
     }

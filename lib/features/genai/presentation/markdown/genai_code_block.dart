@@ -3,6 +3,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import 'genai_chart_view.dart';
+import 'genai_code_font.dart';
 import 'genai_copy_button.dart';
 import 'genai_latex.dart';
 import 'genai_mermaid_view.dart';
@@ -103,16 +104,12 @@ class GenAiStandardCodeBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: .08)
-        : Colors.black.withValues(alpha: .06);
-    final cardBg = isDark
-        ? Colors.white.withValues(alpha: .03)
-        : Colors.black.withValues(alpha: .025);
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: .08) : Colors.black.withValues(alpha: .06);
+    final cardBg =
+        isDark ? Colors.white.withValues(alpha: .03) : Colors.black.withValues(alpha: .025);
     final rawLang = language?.trim();
-    final displayLang = (rawLang != null && rawLang.isNotEmpty)
-        ? rawLang.toUpperCase()
-        : 'CODE';
+    final displayLang = (rawLang != null && rawLang.isNotEmpty) ? rawLang.toUpperCase() : 'CODE';
 
     return Container(
       width: double.infinity,
@@ -140,8 +137,7 @@ class GenAiStandardCodeBlock extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.primary.withValues(alpha: .1),
                     borderRadius: BorderRadius.circular(5),
@@ -149,16 +145,8 @@ class GenAiStandardCodeBlock extends StatelessWidget {
                   child: Text(
                     displayLang,
                     style: TextStyle(
-                      fontFamily: 'RobotoMono',
-                      fontFamilyFallback: const [
-                        'RobotoMono',
-                        'monospace',
-                        'SF Mono',
-                        'Menlo',
-                        'Monaco',
-                        'Consolas',
-                        'Courier New',
-                      ],
+                      fontFamily: kGenAiMonospaceFamily,
+                      fontFamilyFallback: kGenAiMonospaceFallback,
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
                       color: theme.colorScheme.primary,
@@ -179,22 +167,10 @@ class GenAiStandardCodeBlock extends StatelessWidget {
           // Code Body
           Builder(
             builder: (context) {
-              final highlighter =
-                  GenAiSyntaxHighlighter(brightness: theme.brightness);
-              const monospaceFallback = [
-                'RobotoMono',
-                'monospace',
-                'SF Mono',
-                'Menlo',
-                'Monaco',
-                'Consolas',
-                'Fira Code',
-                'JetBrains Mono',
-                'Courier New',
-              ];
+              final highlighter = GenAiSyntaxHighlighter(brightness: theme.brightness);
               final baseCodeStyle = TextStyle(
-                fontFamily: 'RobotoMono',
-                fontFamilyFallback: monospaceFallback,
+                fontFamily: kGenAiMonospaceFamily,
+                fontFamilyFallback: kGenAiMonospaceFallback,
                 fontSize: 13.5,
                 height: 1.6,
                 color: theme.textTheme.bodyMedium?.color?.withValues(alpha: .9),
@@ -219,12 +195,11 @@ class GenAiStandardCodeBlock extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.only(left: 14, right: 10),
                             child: Text(
-                              List.generate(lineCount, (i) => '${i + 1}')
-                                  .join('\n'),
+                              List.generate(lineCount, (i) => '${i + 1}').join('\n'),
                               textAlign: TextAlign.right,
                               style: TextStyle(
-                                fontFamily: 'RobotoMono',
-                                fontFamilyFallback: monospaceFallback,
+                                fontFamily: kGenAiMonospaceFamily,
+                                fontFamilyFallback: kGenAiMonospaceFallback,
                                 fontSize: 13.5,
                                 height: 1.6,
                                 color: theme.hintColor.withValues(alpha: .35),
@@ -240,8 +215,7 @@ class GenAiStandardCodeBlock extends StatelessWidget {
                           Expanded(
                             child: SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 14),
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
                               child: SelectableText.rich(
                                 TextSpan(children: spans),
                                 style: baseCodeStyle,

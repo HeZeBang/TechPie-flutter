@@ -227,18 +227,6 @@ flutter:
         - asset: assets/fonts/rmedium.ttf
           weight: 500
 
-    # Roboto Mono (Apache-2.0). Bundled for code blocks and monospace text across platforms.
-    - family: RobotoMono
-      fonts:
-        - asset: assets/fonts/RobotoMono-Regular.ttf
-        - asset: assets/fonts/RobotoMono-Medium.ttf
-          weight: 500
-    - family: monospace
-      fonts:
-        - asset: assets/fonts/RobotoMono-Regular.ttf
-        - asset: assets/fonts/RobotoMono-Medium.ttf
-          weight: 500
-
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

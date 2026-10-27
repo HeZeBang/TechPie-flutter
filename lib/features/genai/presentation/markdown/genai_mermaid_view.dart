@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_mermaid/flutter_mermaid.dart';
 
+import 'genai_code_font.dart';
 import 'genai_copy_button.dart';
 
 class GenAiMermaidView extends StatefulWidget {
@@ -16,8 +17,7 @@ class GenAiMermaidView extends StatefulWidget {
 }
 
 class _GenAiMermaidViewState extends State<GenAiMermaidView> {
-  final TransformationController _transformController =
-      TransformationController();
+  final TransformationController _transformController = TransformationController();
   bool _showCode = false;
   String? _renderError;
 
@@ -82,12 +82,10 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: .08)
-        : Colors.black.withValues(alpha: .06);
-    final cardBg = isDark
-        ? Colors.white.withValues(alpha: .03)
-        : Colors.black.withValues(alpha: .02);
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: .08) : Colors.black.withValues(alpha: .06);
+    final cardBg =
+        isDark ? Colors.white.withValues(alpha: .03) : Colors.black.withValues(alpha: .02);
     final diagramType = _detectDiagramType(widget.code);
 
     return Container(
@@ -142,8 +140,7 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color:
-                              theme.colorScheme.primary.withValues(alpha: .12),
+                          color: theme.colorScheme.primary.withValues(alpha: .12),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -233,8 +230,8 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
               child: SelectableText(
                 widget.code,
                 style: const TextStyle(
-                  fontFamily: 'RobotoMono',
-                  fontFamilyFallback: ['monospace', 'Menlo'],
+                  fontFamily: kGenAiMonospaceFamily,
+                  fontFamilyFallback: kGenAiMonospaceFallback,
                   fontSize: 12,
                   height: 1.5,
                 ),
@@ -242,8 +239,7 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
             ),
           ] else
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(bottom: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
               child: Container(
                 constraints: const BoxConstraints(
                   minHeight: 140,
@@ -259,8 +255,7 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
                   child: Center(
                     child: MermaidDiagram(
                       code: normalizeMermaid(widget.code),
-                      style:
-                          isDark ? MermaidStyle.dark() : const MermaidStyle(),
+                      style: isDark ? MermaidStyle.dark() : const MermaidStyle(),
                       onError: (error) {
                         if (mounted) {
                           setState(() => _renderError = error);
@@ -407,9 +402,7 @@ String normalizeMermaid(String source) {
     resultLines.add('flowchart TD');
     for (final rawLine in lines) {
       var line = rawLine.trim();
-      if (line.isEmpty ||
-          line.startsWith('%%') ||
-          line.toLowerCase().startsWith('statediagram')) {
+      if (line.isEmpty || line.startsWith('%%') || line.toLowerCase().startsWith('statediagram')) {
         continue;
       }
       line = line.replaceAll('[*]', 'state_terminal((●))');
@@ -428,9 +421,7 @@ String normalizeMermaid(String source) {
     resultLines.add('flowchart TD');
     for (final rawLine in lines) {
       var line = rawLine.trim();
-      if (line.isEmpty ||
-          line.startsWith('%%') ||
-          line.toLowerCase().startsWith('classdiagram')) {
+      if (line.isEmpty || line.startsWith('%%') || line.toLowerCase().startsWith('classdiagram')) {
         continue;
       }
       if (line.contains('<|--')) {
@@ -469,8 +460,7 @@ String normalizeMermaid(String source) {
             (cleanLabel.startsWith("'") && cleanLabel.endsWith("'"))) {
           cleanLabel = cleanLabel.substring(1, cleanLabel.length - 1).trim();
         }
-        final bracketMatch =
-            RegExp(r'^([^\s\[]+)\s*\[(.+)\]$').firstMatch(cleanLabel);
+        final bracketMatch = RegExp(r'^([^\s\[]+)\s*\[(.+)\]$').firstMatch(cleanLabel);
         if (bracketMatch != null) {
           final rawId = bracketMatch.group(1)!;
           final label = bracketMatch.group(2)!;
@@ -539,11 +529,7 @@ List<String> _splitMermaidStatements(String source) {
       escaped = false;
       continue;
     }
-    if (!comment &&
-        quote == null &&
-        char == '%' &&
-        i + 1 < source.length &&
-        source[i + 1] == '%') {
+    if (!comment && quote == null && char == '%' && i + 1 < source.length && source[i + 1] == '%') {
       comment = true;
     }
     if (!comment) {

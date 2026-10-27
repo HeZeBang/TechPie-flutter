@@ -41,7 +41,6 @@ final class TechPieGenAiTools {
   final bool Function() _isDemo;
   final DateTime Function() _now;
   final bool previewEnvironment;
-  String? _verifiedScheduleScope;
   String? _verifiedAssignmentScope;
 
   GenAiAgentToolRegistry createRegistry() => GenAiAgentToolRegistry([
@@ -67,9 +66,8 @@ final class TechPieGenAiTools {
         ),
         GenAiAgentTool(
           name: 'get_semesters',
-          description: 'Read TechPie academic semesters. First use refreshes '
-              'the school service to verify current-account ownership. Later '
-              'calls use verified cached data unless refresh=true. Cached data may be stale.',
+          description: 'Read TechPie academic semesters. Use current-account verified '
+              'data from TechPie; refresh when unverified or refresh=true. Cached data may be stale.',
           parameters: _schema({'refresh': _boolean}),
           prepare: (args, context) async => GenAiAgentPreparedTool(
             execute: () => _semesters(args, context),
@@ -80,8 +78,8 @@ final class TechPieGenAiTools {
           description: 'Read courses and custom courses for a teaching week. '
               'semester_id defaults to the selected semester. week defaults to '
               'the current campus week only when a calendar is available. Other '
-              'semesters must first be selected in TechPie. First use verifies '
-              'ownership by refreshing; this does not change the selected semester. '
+              'semesters must first be selected in TechPie. Unverified data is refreshed '
+              'before reading; this does not change the selected semester. '
               'Use weekday to filter and next_offset with offset to read additional results.',
           parameters: _schema({
             'semester_id': _string(max: 100),
@@ -250,25 +248,25 @@ final class TechPieGenAiTools {
       }
       return;
     }
-    final scope = '$_scope|${schedule.selectedSemesterId}';
-    if (args['refresh'] != true &&
-        _verifiedScheduleScope == scope &&
-        schedule.hasVerifiedAccountData) {
-      return;
-    }
     if (schedule.loading) {
       throw const GenAiAgentToolException('busy', '课表正在刷新，请等待后重试。');
     }
+    if (args['refresh'] != true && schedule.hasVerifiedAccountData) return;
     final guard = _guard(context);
     await context.cancellation.race(schedule.fetchAll());
     guard();
-    if (schedule.error != null || !schedule.hasVerifiedAccountData) {
+    if (schedule.error != null) {
+      throw const GenAiAgentToolException(
+        'service_unavailable',
+        '课表刷新失败，请在课表页检查连接状态后重试。',
+      );
+    }
+    if (!schedule.hasVerifiedAccountData) {
       throw const GenAiAgentToolException(
         'data_unverified',
         '无法确认课表属于当前校园账号，请在课表页刷新后重试。',
       );
     }
-    _verifiedScheduleScope = '$_scope|${schedule.selectedSemesterId}';
   }
 
   Future<Object?> _weekSchedule(
@@ -276,6 +274,8 @@ final class TechPieGenAiTools {
     GenAiAgentToolContext context,
   ) async {
     final guard = _guard(context);
+    await _refreshSchedule(args, context);
+    guard();
     final semesterId = args['semester_id'] as String? ?? schedule.selectedSemesterId;
     if (semesterId == null || semesterId.isEmpty) {
       throw const GenAiAgentToolException('data_unavailable', '请先在课表页选择学期。');
@@ -286,8 +286,6 @@ final class TechPieGenAiTools {
         '只能读取已验证的当前学期。请先在课表页切换学期。',
       );
     }
-    await _refreshSchedule(args, context);
-    guard();
     final table = schedule.courseTableFor(semesterId);
     final calendar = schedule.termCalendarFor(semesterId);
     if (table == null) {

@@ -7,6 +7,7 @@ import 'package:markdown/markdown.dart' as md;
 
 import '../genai_image.dart';
 import 'genai_code_block.dart';
+import 'genai_code_font.dart';
 import 'genai_latex.dart';
 
 export 'genai_chart_view.dart';
@@ -14,20 +15,6 @@ export 'genai_code_block.dart';
 export 'genai_latex.dart';
 export 'genai_mermaid_view.dart';
 export 'genai_syntax_highlighter.dart';
-
-const String kGenAiMonospaceFamily = 'RobotoMono';
-
-const List<String> kGenAiMonospaceFallback = [
-  'RobotoMono',
-  'monospace',
-  'SF Mono',
-  'Menlo',
-  'Monaco',
-  'Consolas',
-  'Fira Code',
-  'JetBrains Mono',
-  'Courier New',
-];
 
 /// An advanced Markdown renderer with LaTeX math, interactive Charts, Mermaid diagrams,
 /// and syntax code blocks.
@@ -121,17 +108,14 @@ class GenAiMarkdown extends StatelessWidget {
               ),
             ),
             color: isDark
-                ? theme.colorScheme.surfaceContainerHighest
-                    .withValues(alpha: .28)
-                : theme.colorScheme.surfaceContainerHighest
-                    .withValues(alpha: .38),
+                ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: .28)
+                : theme.colorScheme.surfaceContainerHighest.withValues(alpha: .38),
             borderRadius: const BorderRadius.only(
               topRight: Radius.circular(8),
               bottomRight: Radius.circular(8),
             ),
           ),
-      blockquotePadding: styleSheet?.blockquotePadding ??
-          const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      blockquotePadding: styleSheet?.blockquotePadding ?? const EdgeInsets.fromLTRB(16, 10, 16, 10),
       code: styleSheet?.code ??
           TextStyle(
             fontFamily: kGenAiMonospaceFamily,
@@ -139,9 +123,8 @@ class GenAiMarkdown extends StatelessWidget {
             fontSize: 13.5,
             fontWeight: FontWeight.w500,
             color: isDark ? const Color(0xFFFFB4AB) : accent,
-            backgroundColor: isDark
-                ? Colors.white.withValues(alpha: .08)
-                : accent.withValues(alpha: .08),
+            backgroundColor:
+                isDark ? Colors.white.withValues(alpha: .08) : accent.withValues(alpha: .08),
           ),
       tableHead: styleSheet?.tableHead ??
           TextStyle(
@@ -157,14 +140,13 @@ class GenAiMarkdown extends StatelessWidget {
           ),
       tableBorder: styleSheet?.tableBorder ??
           TableBorder.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: .14)
-                : Colors.black.withValues(alpha: .12),
+            color:
+                isDark ? Colors.white.withValues(alpha: .14) : Colors.black.withValues(alpha: .12),
             width: 1,
             borderRadius: BorderRadius.circular(6),
           ),
-      tableCellsPadding: styleSheet?.tableCellsPadding ??
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      tableCellsPadding:
+          styleSheet?.tableCellsPadding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       listBullet: styleSheet?.listBullet ??
           TextStyle(
             fontSize: 15.5,
@@ -239,8 +221,7 @@ class _GenAiMarkdownBody extends StatefulWidget {
   State<_GenAiMarkdownBody> createState() => _GenAiMarkdownBodyState();
 }
 
-class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody>
-    implements MarkdownBuilderDelegate {
+class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody> implements MarkdownBuilderDelegate {
   List<Widget>? _children;
   final List<GestureRecognizer> _recognizers = <GestureRecognizer>[];
 

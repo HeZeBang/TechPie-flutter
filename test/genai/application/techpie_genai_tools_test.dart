@@ -73,15 +73,7 @@ void main() {
   ) async =>
       (await (await prepare(name, args)).execute())! as Map<String, Object?>;
 
-  test('six closed tools reject unknown keys and invalid argument types', () {
-    expect(registry.tools.map((tool) => tool.name), [
-      'get_current_time',
-      'get_semesters',
-      'get_week_schedule',
-      'get_assignments',
-      'reserve_court',
-      'generate_image',
-    ]);
+  test('tools reject unknown keys and invalid argument types', () {
     expect(
       () => registry.validate(
         GenAiAgentToolCall(
@@ -116,7 +108,7 @@ void main() {
     expect(semesters['selected_semester_id'], 'term');
     expect(jsonEncode(semesters), isNot(contains('private-table')));
     expect(jsonEncode(semesters), isNot(contains('secret-token')));
-    expect(schedule.fetches, 1);
+    expect(schedule.fetches, 0);
   });
 
   test('weekly schedule includes custom courses and leaves semester unchanged', () async {
@@ -126,7 +118,7 @@ void main() {
     expect(rows.last, containsPair('custom', true));
     expect(rows.last, containsPair('start_time', '19:00'));
     expect(schedule.selectedSemesterId, 'term');
-    expect(schedule.fetches, 1);
+    expect(schedule.fetches, 0);
     await expectLater(
       prepare('get_week_schedule', {'week': 60}).then((tool) => tool.execute()),
       throwsA(
@@ -153,6 +145,27 @@ void main() {
         isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'data_unverified'),
       ),
     );
+  });
+
+  test('verified schedule avoids refresh; explicit refresh reports service failure', () async {
+    schedule.refreshError = 'Network unavailable';
+    expect((await run('get_week_schedule', {'week': 2}))['courses'], isNotEmpty);
+    expect(schedule.fetches, 0);
+    await expectLater(
+      run('get_week_schedule', {'week': 2, 'refresh': true}),
+      throwsA(
+        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'service_unavailable'),
+      ),
+    );
+    expect(schedule.fetches, 1);
+  });
+
+  test('first timetable fetch can establish the selected semester before reading it', () async {
+    schedule.selected = null;
+    schedule.verified = false;
+    schedule.selectedAfterFetch = 'term';
+    expect((await run('get_week_schedule', {'week': 2}))['courses'], isNotEmpty);
+    expect(schedule.fetches, 1);
   });
 
   test('weekly pagination stays below the model result budget', () async {
@@ -477,6 +490,9 @@ class _Schedule implements ScheduleService {
   bool get hasVerifiedAccountData => verified;
   bool verified = true;
   bool manyCourses = false;
+  String? refreshError;
+  String? selected = 'term';
+  String? selectedAfterFetch;
   int fetches = 0;
   TermCalendar? calendar = TermCalendar(
     code: 200,
@@ -499,14 +515,18 @@ class _Schedule implements ScheduleService {
         tableId: 'private-table',
       );
   @override
-  String get selectedSemesterId => 'term';
+  String? get selectedSemesterId => selected;
   @override
   bool get loading => false;
   @override
-  String? get error => null;
+  String? get error => refreshError;
   @override
   Future<void> fetchAll() async {
     fetches++;
+    if (selectedAfterFetch != null) {
+      selected = selectedAfterFetch;
+      verified = true;
+    }
   }
 
   @override

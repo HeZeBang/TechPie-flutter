@@ -3,6 +3,8 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:markdown/markdown.dart' as md;
 
+import 'genai_code_font.dart';
+
 /// Preprocesses raw markdown to convert `$$...$$` and `\[...\]` display math blocks
 /// into clean standard ````latex` code blocks, preventing inline paragraph leakage.
 String preprocessLatexBlocks(String input) {
@@ -25,9 +27,8 @@ String preprocessLatexBlocks(String input) {
         (match) {
           final formula = match[1]!.trim();
           final punct = match[2] ?? '';
-          final formulaWithPunct = punct.isNotEmpty && !formula.endsWith(punct)
-              ? '$formula$punct'
-              : formula;
+          final formulaWithPunct =
+              punct.isNotEmpty && !formula.endsWith(punct) ? '$formula$punct' : formula;
           return '\n\n```latex\n$formulaWithPunct\n```\n\n';
         },
       );
@@ -38,9 +39,8 @@ String preprocessLatexBlocks(String input) {
         (match) {
           final formula = match[1]!.trim();
           final punct = match[2] ?? '';
-          final formulaWithPunct = punct.isNotEmpty && !formula.endsWith(punct)
-              ? '$formula$punct'
-              : formula;
+          final formulaWithPunct =
+              punct.isNotEmpty && !formula.endsWith(punct) ? '$formula$punct' : formula;
           return '\n\n```latex\n$formulaWithPunct\n```\n\n';
         },
       );
@@ -54,8 +54,7 @@ String preprocessLatexBlocks(String input) {
 
 /// Inline syntax for LaTeX math: `$formula$` or `\(formula\)`.
 class LatexInlineSyntax extends md.InlineSyntax {
-  LatexInlineSyntax()
-      : super(r'(?:\$([^\s\$](?:[^\$\n]*?[^\s\$])?)\$|\\\((.+?)\\\))');
+  LatexInlineSyntax() : super(r'(?:\$([^\s\$](?:[^\$\n]*?[^\s\$])?)\$|\\\((.+?)\\\))');
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {
@@ -91,13 +90,11 @@ class GenAiLatexInlineBuilder extends MarkdownElementBuilder {
       return const SizedBox.shrink();
     }
 
-    final baseStyle =
-        preferredStyle ?? parentStyle ?? Theme.of(context).textTheme.bodyMedium;
+    final baseStyle = preferredStyle ?? parentStyle ?? Theme.of(context).textTheme.bodyMedium;
     final resolvedColor = baseStyle?.color ??
         Theme.of(context).textTheme.bodyMedium?.color ??
         Theme.of(context).colorScheme.onSurface;
-    final textStyle =
-        (baseStyle ?? const TextStyle()).copyWith(color: resolvedColor);
+    final textStyle = (baseStyle ?? const TextStyle()).copyWith(color: resolvedColor);
 
     return Text.rich(
       WidgetSpan(
@@ -112,8 +109,8 @@ class GenAiLatexInlineBuilder extends MarkdownElementBuilder {
             onErrorFallback: (_) => Text(
               formula,
               style: textStyle.copyWith(
-                fontFamily: 'RobotoMono',
-                fontFamilyFallback: const ['monospace', 'Menlo'],
+                fontFamily: kGenAiMonospaceFamily,
+                fontFamilyFallback: kGenAiMonospaceFallback,
                 color: Theme.of(context).colorScheme.error,
               ),
             ),
@@ -176,8 +173,8 @@ class GenAiLatexBlockView extends StatelessWidget {
                   onErrorFallback: (error) => SelectableText(
                     cleanFormula,
                     style: TextStyle(
-                      fontFamily: 'RobotoMono',
-                      fontFamilyFallback: const ['monospace', 'Menlo'],
+                      fontFamily: kGenAiMonospaceFamily,
+                      fontFamilyFallback: kGenAiMonospaceFallback,
                       fontSize: 13,
                       color: theme.colorScheme.error,
                     ),
