@@ -404,9 +404,7 @@ final class TechPieGenAiTools {
       }
       await context.cancellation.race(assignments.fetchAssignments());
       guard();
-      if (assignments.error != null ||
-          assignments.platformErrors.isNotEmpty ||
-          !assignments.hasVerifiedAccountData) {
+      if (!assignments.hasVerifiedAccountData) {
         throw const GenAiAgentToolException(
           'data_unverified',
           '无法确认作业数据属于当前绑定账号，请在作业页完成同步后重试。',
@@ -456,6 +454,7 @@ final class TechPieGenAiTools {
       'ownership_verified': !_isDemo(),
       'loading': assignments.loading,
       'partial': assignments.error != null || assignments.platformErrors.isNotEmpty,
+      'unavailable_platforms': assignments.platformErrors.keys.toList(),
       'demo': _isDemo(),
       'assignments': rows,
       'truncated': offset + rows.length < values.length,
@@ -632,18 +631,23 @@ final class TechPieGenAiTools {
         // Claim synchronously before any await so concurrent callbacks cannot
         // dispatch the same approval twice, even when its outcome is unknown.
         executionClaimed = true;
-        requireAvailable(await availability());
-        requireFreshApproval();
-        guard();
-        requireProfile();
-        if (jsonEncode(gym.bookingProfile().toJson()) != jsonEncode(approvedProfile) ||
-            gym.bookingStudentId != approvedStudent) {
-          throw const GenAiAgentToolException(
-            'profile_changed',
-            '预约联系信息已变更，请重新确认预约。',
-          );
+        try {
+          requireAvailable(await availability());
+          requireFreshApproval();
+          guard();
+          requireProfile();
+          if (jsonEncode(gym.bookingProfile().toJson()) != jsonEncode(approvedProfile) ||
+              gym.bookingStudentId != approvedStudent) {
+            throw const GenAiAgentToolException(
+              'profile_changed',
+              '预约联系信息已变更，请重新确认预约。',
+            );
+          }
+          validateStart();
+        } on GenAiAgentToolException catch (error) {
+          // No booking POST is reachable until all preparation checks pass.
+          throw GenAiAgentToolException(error.code, error.message, effectNotDispatched: true);
         }
-        validateStart();
         OaBookingResult result;
         try {
           result = await gym.bookCourt(

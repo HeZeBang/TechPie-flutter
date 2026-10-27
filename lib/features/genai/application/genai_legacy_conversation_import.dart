@@ -6,7 +6,7 @@ import 'genai_chat_service.dart';
 import 'genai_conversation_turn.dart';
 
 /// Recovers display-only tasks from the server's append-only model-step log.
-/// Local typed archives take precedence. Imported text never restores approvals,
+/// Imported text never restores approvals,
 /// mutation receipts, or executable agent history.
 List<GenAiConversationTurn> importGenAiLegacyConversation(
   List<GenAiSavedTurn> rows,
@@ -19,6 +19,14 @@ List<GenAiConversationTurn> importGenAiLegacyConversation(
 
   void appendEvent(GenAiAgentToolCall call, Map<String, Object?> result) {
     final turn = active!;
+    if (call.name == 'reserve_court' &&
+        (call.arguments['action'] == 'book' || call.arguments.isEmpty)) {
+      // Recovered receipts never grant a second proposal when retrying this turn.
+      turn.approvalBudget[call.name] = 1;
+    }
+    if (call.name == 'generate_image' && (result['error'] as Map?)?['code'] == 'approval_denied') {
+      turn.approvalBudget['generate_image:denied'] = 1;
+    }
     var key = call.id;
     var duplicate = 1;
     while (turn.agentEvents.containsKey(key)) {
@@ -58,9 +66,7 @@ List<GenAiConversationTurn> importGenAiLegacyConversation(
   void consumeAnswer(GenAiSavedTurn row, {bool repairFollows = false}) {
     final turn = active!;
     if (row.reasoning.isNotEmpty) {
-      turn.reasoning = [turn.reasoning, row.reasoning]
-          .where((part) => part.isNotEmpty)
-          .join('\n');
+      turn.reasoning = [turn.reasoning, row.reasoning].where((part) => part.isNotEmpty).join('\n');
     }
     if (repairFollows) {
       pending = null;
@@ -76,10 +82,8 @@ List<GenAiConversationTurn> importGenAiLegacyConversation(
       finishInterrupted();
       return;
     }
-    turn.answer = row.answer;
-    turn.phase = turn.agentStatus.isEmpty
-        ? GenAiChatPhase.completed
-        : GenAiChatPhase.interrupted;
+    turn.answer = decodeGenAiAgentFinal(row.answer) ?? row.answer;
+    turn.phase = turn.agentStatus.isEmpty ? GenAiChatPhase.completed : GenAiChatPhase.interrupted;
     active = null;
     pending = null;
   }
@@ -96,8 +100,7 @@ List<GenAiConversationTurn> importGenAiLegacyConversation(
       continue;
     }
     final response = _result(row.prompt);
-    final nextResult =
-        index + 1 < rows.length ? _result(rows[index + 1].prompt) : null;
+    final nextResult = index + 1 < rows.length ? _result(rows[index + 1].prompt) : null;
     final repairFollows = nextResult != null &&
         nextResult['call_id'] == null &&
         nextResult['name'] == null &&
@@ -151,7 +154,7 @@ List<GenAiConversationTurn> importGenAiLegacyConversation(
     // adjacent call/result pair establishes an old tool-assisted trajectory.
     if (call != null &&
         (_matches(call, nextResult) ||
-            row.answer.trim().startsWith('<techpie-agent-call version="2"'))) {
+            row.answer.trim().startsWith('<techpie-agent-call version='))) {
       active = _savedTurn(row, isAgent: true)
         ..answer = ''
         ..phase = GenAiChatPhase.interrupted;
@@ -171,24 +174,19 @@ GenAiConversationTurn _savedTurn(
   bool isAgent = false,
 }) =>
     GenAiConversationTurn(saved.prompt, isAgent: isAgent)
-      ..answer = saved.answer
+      ..answer = decodeGenAiAgentFinal(saved.answer) ?? saved.answer
       ..reasoning = saved.reasoning
       ..attachedImageUrl = saved.imageUrls.firstOrNull
       ..attachedImageUrls = saved.imageUrls
-      ..phase = saved.answer.isEmpty
-          ? GenAiChatPhase.interrupted
-          : GenAiChatPhase.completed;
+      ..phase = saved.answer.isEmpty ? GenAiChatPhase.interrupted : GenAiChatPhase.completed;
 
-GenAiAgentToolCall? _call(String value) =>
-    decodeGenAiAgentRecord(value, allowLegacy: true)?.call;
+GenAiAgentToolCall? _call(String value) => decodeGenAiAgentRecord(value, allowLegacy: true)?.call;
 
 Map<String, Object?>? _result(String value) =>
     decodeGenAiAgentRecord(value, allowLegacy: true)?.result;
 
 bool _matches(GenAiAgentToolCall call, Map<String, Object?>? result) =>
-    result != null &&
-    result['call_id'] == call.id &&
-    result['name'] == call.name;
+    result != null && result['call_id'] == call.id && result['name'] == call.name;
 
 bool _protocolEnvelope(String value) {
   final text = value.trim();

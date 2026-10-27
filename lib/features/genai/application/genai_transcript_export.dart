@@ -2,7 +2,7 @@ import '../../../models/oa_gym.dart';
 import '../domain/genai_agent_contract.dart';
 import '../domain/genai_platform_contract.dart';
 import 'genai_chat_service.dart';
-import 'genai_conversation_store.dart';
+import 'genai_conversation_archive.dart';
 
 /// A user-readable snapshot, never a replayable protocol or credential export.
 String exportGenAiTranscript(GenAiConversationArchive archive) {
@@ -175,8 +175,7 @@ void _writeToolResult(
               assignment['title'],
               assignment['course'],
               assignment['kind'] == 'exam' ? '考试' : '作业',
-              if (_text(assignment['due']).isNotEmpty)
-                '截止 ${_campusTime(assignment['due'])}',
+              if (_text(assignment['due']).isNotEmpty) '截止 ${_campusTime(assignment['due'])}',
               assignment['completed'] == true ? '已完成' : '未完成',
               assignment['location'],
             ])}');
@@ -210,8 +209,7 @@ void _writeToolResult(
 }
 
 void _writeCourt(StringBuffer out, Map<dynamic, dynamic> value) {
-  final sport =
-      OaSport.values.where((sport) => sport.id == value['sport']).firstOrNull;
+  final sport = OaSport.values.where((sport) => sport.id == value['sport']).firstOrNull;
   _field(out, '运动', sport?.label);
   if (value['status'] == 'availability') {
     for (final row in _rows(value['availability'])) {
@@ -230,8 +228,7 @@ void _writeCourt(StringBuffer out, Map<dynamic, dynamic> value) {
     if (value['court_number'] != null) {
       _field(out, '场地', '${value['court_number']} 号场地');
     }
-    final slot =
-        oaTimeSlots.where((slot) => slot.id == value['time_slot']).firstOrNull;
+    final slot = oaTimeSlots.where((slot) => slot.id == value['time_slot']).firstOrNull;
     _field(out, '时段', slot?.range);
     if (value['players_count'] != null) {
       _field(out, '人数', '${value['players_count']} 人');
@@ -250,8 +247,7 @@ void _writeImage(
   final parsed = Uri.tryParse(value);
   final local = demo ||
       parsed != null &&
-          (parsed.pathSegments
-                  .any((part) => part.startsWith('techpie-preview')) ||
+          (parsed.pathSegments.any((part) => part.startsWith('techpie-preview')) ||
               parsed.path.contains('/temp/demo-upload-'));
   if (local) {
     out.writeln(

@@ -14,12 +14,11 @@ import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
 import '../domain/genai_session.dart';
 import 'genai_agent_runner.dart';
-import 'genai_agent_web_search.dart';
 import 'genai_chat_service.dart';
-import 'genai_conversation_store.dart';
+import 'genai_conversation_archive.dart';
 import 'genai_conversation_turn.dart';
 import 'genai_image_studio_controller.dart';
-import 'genai_legacy_conversation_import.dart';
+import 'genai_remote_history.dart';
 import 'genai_repository.dart';
 import 'genai_session_service.dart';
 import 'genai_system_prompt.dart';
@@ -79,18 +78,17 @@ final class GenAiAttachment {
       );
 }
 
-/// Owns the current in-memory conversation. The app runtime retains it across
-/// page navigation; server history is a separate feature.
+/// Transient UI and execution state reconstructed from GenAI server records.
 final class GenAiWorkspaceController extends ChangeNotifier {
   GenAiWorkspaceController({
     required this.sessions,
     required GenAiRepository repository,
     required GenAiChatService chat,
-    GenAiConversationStore? conversationStore,
-  })  : _conversationStore = conversationStore ?? MemoryGenAiConversationStore(),
-        _repository = repository,
+  })  : _repository = repository,
         _chat = chat {
     _owner = sessions.owner;
+    _draftTitles.clear();
+    _uncertainDeletions.clear();
     _agentSessionRevision = sessions.revision;
     _archiveScope = _currentArchiveScope();
     sessions.addListener(_sessionChanged);
@@ -99,7 +97,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   }
 
   final GenAiSessionService sessions;
-  final GenAiConversationStore _conversationStore;
   final GenAiRepository _repository;
   late final imageStudio = GenAiImageStudioController(_repository);
   final GenAiChatService _chat;
@@ -116,7 +113,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   bool _loadingModels = false;
   bool _disposed = false;
   bool _thinkingEnabled = false;
-  bool _netSearchEnabled = false;
   bool _recognizingAudio = false;
   final _attachments = <GenAiAttachment>[];
   final _pendingUploads = <Future<void>>{};
@@ -137,15 +133,11 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   String _groupId = createGroupId();
   String? _archiveScope;
   String? _titleOverride;
-  final _archiveFailures = <String, String>{};
-  Future<void> _archiveWrites = Future.value();
-  Timer? _archiveTimer;
-  (String, String, int)? _dirtyArchive;
-  final _pendingArchives = <String, (String, GenAiConversationArchive, int)>{};
-  final _archiveVersions = <String, int>{};
-  final _deletingArchives = <String>{};
-  final _pendingLocalDeletes = <String, (String, String)>{};
+  final _draftTitles = <String, String>{};
+  final _interruptedTurns = <String, Map<String, Object?>>{};
   final _uncertainDeletions = <String, String>{};
+  GenAiCancellation? _refreshOperation;
+  GenAiFailure? _recoveryFailure;
   Map<String, Object?> _restoredMutations = const {
     'version': 1,
     'effects': <String, Object?>{},
@@ -158,21 +150,19 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   GenAiRepository get repository => _repository;
 
   /// Opaque identity for views containing account- or binding-scoped data.
-  Object? get accountScope => _archiveScope;
+  Object? get accountScope => (_archiveScope, _agentScopeValue);
+  Object get _archiveRevision => (sessions.revision, _agentScopeValue);
   GenAiModel? get selectedModel => _selectedModel;
   GenAiFailure? get loginFailure => _loginFailure;
   GenAiFailure? get catalogFailure => _catalogFailure;
-  GenAiFailure? get archiveFailure => _archiveFailures.containsValue(_archiveScope)
-      ? const GenAiFailure(GenAiFailureKind.storage)
-      : null;
+  GenAiFailure? get archiveFailure => _recoveryFailure;
   int get uncertainDeletionCount =>
       _uncertainDeletions.values.where((scope) => scope == _archiveScope).length;
   bool get connecting => _connecting;
   bool get loadingModels => _loadingModels;
-  bool get sending => _active != null;
+  bool get sending => _active != null || _refreshOperation != null;
   bool get connected => sessions.session != null;
-  bool get thinkingEnabled => _thinkingEnabled;
-  bool get netSearchEnabled => _netSearchEnabled;
+  bool get thinkingEnabled => _thinkingEnabled && (_selectedModel?.supportsThinking ?? false);
   bool get agentAvailable => _agentRunner != null;
   bool get agentEnabled => _agentEnabled;
   GenAiPendingAgentApproval? get pendingAgentApproval => _pendingAgentApproval;
@@ -214,7 +204,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       _agentRunner?.clear();
     }
     _agentScopeChanges?.removeListener(_agentScopeChanged);
-    _flushPendingArchives();
     _agentRunner = runner;
     _agentScope = scope;
     _agentScopeValue = nextScope;
@@ -222,7 +211,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _agentScopeChanges = scopeChanges;
     _agentSessionRevision = sessions.revision;
     scopeChanges?.addListener(_agentScopeChanged);
-    unawaited(_restoreDeletionIntents());
   }
 
   void _agentScopeChanged() {
@@ -232,7 +220,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _agentScopeValue = scope;
     newConversation();
     _agentRunner?.clear();
-    unawaited(_restoreDeletionIntents());
   }
 
   void setAgentEnabled(bool value) {
@@ -244,14 +231,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _agentEnabled = value;
     // A picker opened in the previous mode must not attach a late file.
     _conversationRevision++;
-    _notify();
-  }
-
-  void toggleNetSearch() => setNetSearch(!_netSearchEnabled);
-
-  void setNetSearch(bool value) {
-    if (_disposed || sending || _netSearchEnabled == value) return;
-    _netSearchEnabled = value;
     _notify();
   }
 
@@ -549,6 +528,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _agentSessionRevision = sessions.revision;
     if (_owner != sessions.owner) {
       _owner = sessions.owner;
+      _draftTitles.clear();
+      _uncertainDeletions.clear();
       newConversation();
       _loginFailure = null;
       _agentRunner?.clear();
@@ -605,169 +586,25 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   }
 
   String? _currentArchiveScope() =>
-      sessions.owner == null ? null : jsonEncode([sessions.owner!.storageId, _agentScopeValue]);
+      sessions.owner == null ? null : jsonEncode([sessions.owner!.storageId, null]);
 
-  String _archiveKey(String scope, String id) => '$scope:$id';
-
-  GenAiConversationArchive _snapshot({Map<String, Object?>? mutations}) => GenAiConversationArchive(
-        id: _groupId,
-        title: title,
-        updatedAt: DateTime.now(),
-        turns: _turns,
-        contextMemory: _repository.contextSnapshot(_groupId),
-        agentEnabled: _agentEnabled,
-        netSearchEnabled: _netSearchEnabled,
-        thinkingEnabled: _thinkingEnabled,
-        modelAiType: _selectedModel?.aiType,
-        modelRootAiType: _selectedModel?.rootAiType,
-        mutations: mutations ??
-            (_ledgerNeedsRestore
-                ? _restoredMutations
-                : _agentRunner?.snapshotConversation(_groupId) ?? _restoredMutations),
-      );
-
-  void _scheduleArchive() {
-    final scope = _archiveScope;
-    if (scope == null || _turns.isEmpty) return;
-    final key = _archiveKey(scope, _groupId);
-    if (_deletingArchives.contains(key)) return;
-    final version = (_archiveVersions[key] ?? 0) + 1;
-    _archiveVersions[key] = version;
-    // Streaming notifications only mark the current conversation dirty. Copy
-    // its complete transcript once per batch, before any scope/turn reset.
-    _dirtyArchive = (scope, _groupId, version);
-    _pendingArchives.remove(key);
-    _archiveTimer ??= Timer(const Duration(milliseconds: 100), _flushPendingArchives);
-  }
-
-  Future<void> _writeArchive(
-    String scope,
-    GenAiConversationArchive archive, {
-    int? version,
-    bool allowDeleting = false,
-  }) {
-    final key = _archiveKey(scope, archive.id);
-    final writeVersion = version ?? (_archiveVersions[key] ?? 0) + 1;
-    if (version == null) _archiveVersions[key] = writeVersion;
-    final dirty = _dirtyArchive;
-    if (dirty != null) {
-      final (dirtyScope, id, dirtyVersion) = dirty;
-      if (_archiveKey(dirtyScope, id) == key && dirtyVersion <= writeVersion) {
-        _dirtyArchive = null;
-      }
-    }
-    if ((_pendingArchives[key]?.$3 ?? 0) <= writeVersion) {
-      _pendingArchives.remove(key);
-    }
-    final write = _archiveWrites.then((_) async {
-      if (_deletingArchives.contains(key) && !allowDeleting) {
-        throw const GenAiFailure(GenAiFailureKind.cancelled);
-      }
-      try {
-        await _conversationStore.write(scope, archive);
-        _archiveFailures.remove(key);
-      } catch (_) {
-        throw const GenAiFailure(GenAiFailureKind.storage);
-      }
-    });
-    _archiveWrites = write.then<void>(
-      (_) {},
-      onError: (Object error, StackTrace _) {
-        if (error is GenAiFailure && error.kind == GenAiFailureKind.cancelled) {
-          return;
-        }
-        _archiveFailures[key] = scope;
-        if (_archiveVersions[key] == writeVersion) {
-          _pendingArchives.putIfAbsent(
-            key,
-            () => (scope, archive, writeVersion),
-          );
-        }
-        if (!_disposed) notifyListeners();
-      },
-    );
-    return write;
-  }
-
-  void _flushPendingArchives() {
-    _archiveTimer?.cancel();
-    _archiveTimer = null;
-    final dirty = _dirtyArchive;
-    if (dirty != null) {
-      final (scope, id, version) = dirty;
-      _dirtyArchive = null;
-      final key = _archiveKey(scope, id);
-      if (scope == _archiveScope && id == _groupId && !_deletingArchives.contains(key)) {
-        _pendingArchives[key] = (scope, _snapshot(), version);
-      }
-    }
-    final pending = _pendingArchives.values.toList();
-    _pendingArchives.clear();
-    for (final (scope, archive, version) in pending) {
-      // _writeArchive attaches its own failure handler; a background save never
-      // leaks an unhandled future and the UI exposes archiveFailure.
-      unawaited(_writeArchive(scope, archive, version: version));
-    }
-  }
-
-  Future<void> flushConversations() async {
-    _flushPendingArchives();
-    await _archiveWrites;
-    final failure = archiveFailure;
-    if (failure != null) throw failure;
-  }
-
-  Future<void> retrySaveConversations() async {
-    await _archiveWrites;
-    for (final entry in _pendingLocalDeletes.entries.toList()) {
-      final (scope, id) = entry.value;
-      await _conversationStore.delete(scope, id);
-      _pendingLocalDeletes.remove(entry.key);
-      _uncertainDeletions.remove(entry.key);
-      _archiveFailures.remove(entry.key);
-    }
-    _scheduleArchive();
-    await flushConversations();
-    _notify();
-  }
-
-  void _checkArchiveScope(
-    String scope,
-    int revision, [
-    GenAiCancellation? cancellation,
-  ]) {
+  void _checkArchiveScope(String scope, Object revision, [GenAiCancellation? cancellation]) {
     cancellation?.throwIfCancelled();
     if (_disposed ||
         _archiveScope != scope ||
-        sessions.revision != revision ||
+        _archiveRevision != revision ||
         _agentScope?.call() != _agentScopeValue) {
       throw const GenAiFailure(GenAiFailureKind.accountChanged);
     }
   }
 
-  Future<void> _restoreDeletionIntents() async {
+  Future<GenAiRemoteHistory> _readConversation(String id, GenAiCancellation cancellation) async {
     final scope = _archiveScope;
-    if (scope == null || _disposed) return;
-    try {
-      final pending = await _conversationStore.pendingDeletionIds(scope);
-      if (_disposed || _archiveScope != scope) return;
-      _recordDeletionIntents(scope, pending);
-      notifyListeners();
-    } catch (_) {
-      // Listing/export will surface storage failures with their normal retry
-      // path. Never turn an unreadable deletion journal into a remote retry.
-    }
-  }
-
-  void _recordDeletionIntents(String scope, Set<String> pending) {
-    _uncertainDeletions.removeWhere((_, value) => value == scope);
-    for (final id in pending) {
-      final key = _archiveKey(scope, id);
-      _deletingArchives.add(key);
-      if (!_pendingLocalDeletes.containsKey(key)) {
-        _uncertainDeletions[key] = scope;
-      }
-    }
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    final rows = await _repository.loadConversation(id, cancellation);
+    _checkArchiveScope(scope, revision, cancellation);
+    return decodeGenAiConversation(id, rows);
   }
 
   Future<GenAiPageResult<GenAiConversationSummary>> listConversations(
@@ -775,339 +612,190 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     int page = 1,
     String query = '',
   }) async {
-    _agentScopeChanged();
     final scope = _archiveScope;
-    final revision = sessions.revision;
-    if (scope == null) {
-      throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
-    }
-    await flushConversations();
-    final local = await _conversationStore.list(scope);
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    final remote = await _repository.listConversations(cancellation, page: page, query: query);
     _checkArchiveScope(scope, revision, cancellation);
-    GenAiPageResult<GenAiConversationSummary> remote;
-    try {
-      remote = await _repository.listConversations(
-        cancellation,
-        page: page,
-        query: query,
-      );
-    } on GenAiFailure catch (error) {
-      _checkArchiveScope(scope, revision, cancellation);
-      if (local.isEmpty ||
-          error.kind == GenAiFailureKind.accountChanged ||
-          error.kind == GenAiFailureKind.authenticationRequired ||
-          error.kind == GenAiFailureKind.cancelled) {
-        rethrow;
-      }
-      remote = GenAiPageResult(const [], page: page, hasMore: false);
-    }
-    cancellation.throwIfCancelled();
-    if (_disposed || _archiveScope != scope || sessions.revision != revision) {
-      throw const GenAiFailure(GenAiFailureKind.accountChanged);
-    }
-    // A remote listing can be slow. Renames, imports and deletions completed
-    // meanwhile must win over the earlier local snapshot.
-    final latestLocal = await _conversationStore.list(scope);
-    final deleted = await _conversationStore.deletedIds(scope);
-    final pendingDeletionIds = await _conversationStore.pendingDeletionIds(scope);
-    _checkArchiveScope(scope, revision, cancellation);
-    _recordDeletionIntents(scope, pendingDeletionIds);
-    final localIds = latestLocal.map((item) => item.id).toSet();
-    final queryLower = query.toLowerCase();
-    return GenAiPageResult(
-      [
-        if (page == 1)
-          ...latestLocal.where(
-            (item) =>
-                item.title.toLowerCase().contains(queryLower) &&
-                !_deletingArchives.contains(_archiveKey(scope, item.id)),
-          ),
-        ...remote.records.where(
-          (item) =>
-              !localIds.contains(item.id) &&
-              !deleted.contains(item.id) &&
-              !_deletingArchives.contains(_archiveKey(scope, item.id)),
+    // The server title/time may describe a tool continuation or housekeeping
+    // exchange. Derive both from logical user turns, not last-open timestamps.
+    final summaries = <GenAiConversationSummary>[];
+    for (final item in remote.records) {
+      final history = await _readConversation(item.id, cancellation);
+      final summary = history.archive.summary;
+      summaries.add(
+        GenAiConversationSummary(
+          id: item.id,
+          title: _draftTitles[item.id] ??
+              (history.archive.restoreTurns().isEmpty ? item.title : summary.title),
+          time: history.archive.restoreTurns().isEmpty ? item.time : summary.time,
         ),
-      ],
+      );
+    }
+    return GenAiPageResult(
+      summaries..sort(GenAiConversationSummary.newestFirst),
       page: page,
       hasMore: remote.hasMore,
     );
   }
 
-  Future<void> deleteConversation(
-    String id,
-    GenAiCancellation cancellation,
-  ) async {
-    _agentScopeChanged();
-    final revision = sessions.revision;
+  Future<void> deleteConversation(String id, GenAiCancellation cancellation) async {
     final scope = _archiveScope;
-    if (scope == null) {
-      throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    if (_uncertainDeletions.containsKey(id)) {
+      throw const GenAiFailure(GenAiFailureKind.interrupted);
     }
-    final key = _archiveKey(scope, id);
-    final current = _groupId == id;
-    if (current) stop();
-    final rollback = current && _turns.isNotEmpty ? _snapshot() : _pendingArchives[key]?.$2;
-    _deletingArchives.add(key);
-    _pendingArchives.remove(key);
-    if (current) newConversation();
-    var remoteDeleted = _pendingLocalDeletes.containsKey(key);
-    var dispatched = false;
-    var intentAttempted = false;
-    var preexistingIntent = false;
-    var localDeleted = false;
+    if (_groupId == id) stop();
+    _uncertainDeletions[id] = scope;
     try {
-      await _archiveWrites;
+      await _repository.deleteConversation(id, cancellation);
       _checkArchiveScope(scope, revision, cancellation);
-      final pending = await _conversationStore.pendingDeletionIds(scope);
-      _checkArchiveScope(scope, revision, cancellation);
-      preexistingIntent = pending.contains(id);
-      if (preexistingIntent && !remoteDeleted) {
-        _uncertainDeletions[key] = scope;
-        throw const GenAiFailure(GenAiFailureKind.interrupted);
-      }
-      if (!remoteDeleted) {
-        if (rollback != null) {
-          await _writeArchive(scope, rollback, allowDeleting: true);
-        }
-        _checkArchiveScope(scope, revision, cancellation);
-        // The intent is durable before any remote effect; restarting cannot
-        // resurrect the local record or silently repeat an ambiguous DELETE.
-        intentAttempted = true;
-        await _conversationStore.beginDeletion(scope, id);
-        _checkArchiveScope(scope, revision, cancellation);
-        dispatched = true;
-        await _repository.deleteConversation(id, cancellation);
-        remoteDeleted = true;
-      }
-      await _conversationStore.delete(scope, id);
-      localDeleted = true;
-      _pendingLocalDeletes.remove(key);
-      _uncertainDeletions.remove(key);
-      _archiveFailures.remove(key);
-      _checkArchiveScope(scope, revision, cancellation);
+      _uncertainDeletions.remove(id);
+      _draftTitles.remove(id);
+      if (_groupId == id) newConversation();
+    } finally {
       _notify();
-    } catch (error) {
-      final definiteRejection = error is GenAiFailure &&
-          (error.kind == GenAiFailureKind.authenticationRequired ||
-              error.kind == GenAiFailureKind.rejected &&
-                  const [400, 401, 403, 404, 422].contains(error.statusCode));
-      if (!remoteDeleted && !preexistingIntent && (!dispatched || definiteRejection)) {
-        if (intentAttempted) {
-          await _conversationStore.rollbackDeletion(scope, id);
-        }
-        _deletingArchives.remove(key);
-        _uncertainDeletions.remove(key);
-      } else if (remoteDeleted && !localDeleted) {
-        _pendingLocalDeletes[key] = (scope, id);
-        _archiveFailures[key] = scope;
-      } else if (!remoteDeleted) {
-        _uncertainDeletions[key] = scope;
-      }
-      _notify();
-      rethrow;
     }
   }
 
-  /// Explicit recovery checks read server state; they never repeat DELETE.
+  /// Reconciliation reads only. An ambiguous DELETE is never repeated.
   Future<void> reconcilePendingDeletions(GenAiCancellation cancellation) async {
-    _agentScopeChanged();
-    final scope = _archiveScope;
-    final revision = sessions.revision;
-    if (scope == null) {
-      throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    for (final entry in _uncertainDeletions.entries.toList()) {
+      if (entry.value != _archiveScope) continue;
+      final remote = await _readConversation(entry.key, cancellation);
+      if (remote.archive.restoreTurns().isEmpty && _groupId == entry.key) newConversation();
+      _uncertainDeletions.remove(entry.key);
     }
-    final pending = await _conversationStore.pendingDeletionIds(scope);
-    for (final id in pending) {
-      _checkArchiveScope(scope, revision, cancellation);
-      final rows = await _repository.loadConversation(id, cancellation);
-      _checkArchiveScope(scope, revision, cancellation);
-      final key = _archiveKey(scope, id);
-      if (rows.isEmpty) {
-        await _conversationStore.delete(scope, id);
-      } else {
-        await _conversationStore.rollbackDeletion(scope, id);
-        _deletingArchives.remove(key);
-      }
-      _pendingLocalDeletes.remove(key);
-      _uncertainDeletions.remove(key);
-      _archiveFailures.remove(key);
-    }
-    _checkArchiveScope(scope, revision, cancellation);
     _notify();
   }
 
   Future<GenAiConversationArchive> conversationForExport(
     String id,
     GenAiCancellation cancellation,
-  ) async {
-    _agentScopeChanged();
-    final scope = _archiveScope;
-    final revision = sessions.revision;
-    if (scope == null) {
-      throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
-    }
-    await flushConversations();
-    if (_deletingArchives.contains(_archiveKey(scope, id)) ||
-        (await _conversationStore.deletedIds(scope)).contains(id)) {
-      throw const GenAiFailure(GenAiFailureKind.rejected);
-    }
-    final local = await _conversationStore.read(scope, id);
-    _checkArchiveScope(scope, revision, cancellation);
-    final rows = local == null
-        ? await _repository.loadConversation(id, cancellation)
-        : const <GenAiSavedTurn>[];
-    cancellation.throwIfCancelled();
-    if (_disposed ||
-        scope != _archiveScope ||
-        revision != sessions.revision ||
-        _deletingArchives.contains(_archiveKey(scope, id))) {
-      throw const GenAiFailure(GenAiFailureKind.accountChanged);
-    }
-    if (local != null) return local;
-    final imported = importGenAiLegacyConversation(rows);
-    return GenAiConversationArchive(
-      id: id,
-      title: imported.firstOrNull?.prompt ?? '对话',
-      updatedAt: DateTime.now(),
-      turns: imported,
-      agentEnabled: false,
-      netSearchEnabled: false,
-      thinkingEnabled: false,
-      modelAiType: rows.firstOrNull?.aiType,
-      modelRootAiType: null,
-      mutations: const {'version': 1, 'effects': <String, Object?>{}},
-    );
-  }
+  ) async =>
+      (await _readConversation(id, cancellation)).archive;
 
+  /// Rename is draft metadata until the next normal exchange. No hidden model
+  /// generation is made merely to persist a label.
   Future<void> renameConversation(String id, String name) async {
-    _agentScopeChanged();
-    final title = name.trim();
-    if (title.isEmpty || title.length > 120) {
-      throw ArgumentError.value(name, 'name');
-    }
-    final scope = _archiveScope;
-    final revision = sessions.revision;
-    if (scope == null) {
-      throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
-    }
-    await flushConversations();
-    var saved = await _conversationStore.read(scope, id);
-    if (saved == null) {
-      _checkArchiveScope(scope, revision);
-      final rows = await _repository.loadConversation(id, GenAiCancellation());
-      saved = GenAiConversationArchive(
-        id: id,
-        title: title,
-        updatedAt: DateTime.now(),
-        turns: importGenAiLegacyConversation(rows),
-        agentEnabled: false,
-        netSearchEnabled: false,
-        thinkingEnabled: false,
-        modelAiType: rows.firstOrNull?.aiType,
-        modelRootAiType: null,
-        mutations: const {'version': 1, 'effects': <String, Object?>{}},
-      );
-    }
-    if (_disposed ||
-        _archiveScope != scope ||
-        sessions.revision != revision ||
-        _deletingArchives.contains(_archiveKey(scope, id)) ||
-        (await _conversationStore.deletedIds(scope)).contains(id)) {
-      throw const GenAiFailure(GenAiFailureKind.accountChanged);
-    }
-    _checkArchiveScope(scope, revision);
-    final current = _groupId == id;
-    final previousTitle = _titleOverride;
-    if (current) _titleOverride = title;
-    final json = {
-      ...(current ? _snapshot().toJson() : saved.toJson()),
-      'title': title,
-      'updatedAt': DateTime.now().toUtc().toIso8601String(),
-    };
-    try {
-      await _writeArchive(scope, GenAiConversationArchive.fromJson(json));
-    } catch (_) {
-      if (current && _archiveScope == scope && _groupId == id) {
-        _titleOverride = previousTitle;
-      }
-      rethrow;
-    }
-    if (!_disposed && _archiveScope == scope && _groupId == id) {
-      _titleOverride = title;
-      _notify();
+    final value = name.trim();
+    if (value.isEmpty || value.length > 120) throw ArgumentError.value(name, 'name');
+    _draftTitles[id] = value;
+    if (_groupId == id) _titleOverride = value;
+    _notify();
+  }
+
+  void _applyRemote(GenAiConversationArchive archive, {bool restoreModes = true}) {
+    _turns
+      ..clear()
+      ..addAll(archive.restoreTurns());
+    _titleOverride = _draftTitles[archive.id] ?? archive.title;
+    _repository.restoreContext(archive.id, archive.contextMemory);
+    _restoredMutations = archive.mutations;
+    _ledgerNeedsRestore = true;
+    if (restoreModes) {
+      _agentEnabled = archive.agentEnabled;
+      _thinkingEnabled = archive.thinkingEnabled;
+      _selectedModel = models
+              .where(
+                (m) =>
+                    m.aiType == archive.modelAiType &&
+                    (archive.modelRootAiType == null || m.rootAiType == archive.modelRootAiType),
+              )
+              .firstOrNull ??
+          _selectedModel;
     }
   }
 
-  Future<bool> openConversation(
-    String id,
-    GenAiCancellation cancellation,
-  ) async {
-    if (_disposed) return false;
-    _agentScopeChanged();
-    if (_active?.isAgent ?? false) stop();
-    if (sending) return false;
+  Future<bool> openConversation(String id, GenAiCancellation cancellation) async {
+    if (_disposed || sending) return false;
     final load = ++_conversationLoad;
     final generation = _generation;
-    final scope = _archiveScope;
-    final revision = sessions.revision;
-    if (scope == null) {
-      throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
-    }
-    await flushConversations();
-    if (_deletingArchives.contains(_archiveKey(scope, id)) ||
-        (await _conversationStore.deletedIds(scope)).contains(id)) {
-      return false;
-    }
-    final archive = await _conversationStore.read(scope, id);
-    _checkArchiveScope(scope, revision, cancellation);
-    if (load != _conversationLoad || generation != _generation) return false;
-    final rows = archive == null
-        ? await _repository.loadConversation(id, cancellation)
-        : const <GenAiSavedTurn>[];
-    cancellation.throwIfCancelled();
-    if (_disposed ||
-        load != _conversationLoad ||
-        generation != _generation ||
-        revision != sessions.revision ||
-        _archiveScope != scope ||
-        _deletingArchives.contains(_archiveKey(scope, id))) {
+    final remote = await _readConversation(id, cancellation);
+    if (_disposed || load != _conversationLoad || generation != _generation || sending) {
       return false;
     }
     newConversation();
     _groupId = id;
-    _archiveScope = scope;
-    _turns.addAll(archive?.restoreTurns() ?? importGenAiLegacyConversation(rows));
-    if (_turns.isEmpty) {
-      _groupId = createGroupId();
-    }
-    if (archive != null) {
-      _repository.restoreContext(id, archive.contextMemory);
-      _titleOverride = archive.title;
-      _agentEnabled = archive.agentEnabled;
-      _netSearchEnabled = archive.netSearchEnabled;
-      _thinkingEnabled = archive.thinkingEnabled;
-      _restoredMutations = archive.mutations;
-      _ledgerNeedsRestore = true;
-    } else {
-      // Remote rows carry tool traces, but no saved mode preferences. Never
-      // inherit an unrelated conversation's search/thinking or approval state.
-      _agentEnabled = _turns.lastOrNull?.isAgent ?? false;
-      _netSearchEnabled = false;
-      _thinkingEnabled = false;
-    }
-    final aiType = archive?.modelAiType ?? rows.firstOrNull?.aiType;
-    final rootAiType = archive?.modelRootAiType;
-    _selectedModel = models
-            .where(
-              (model) =>
-                  model.aiType == aiType && (rootAiType == null || model.rootAiType == rootAiType),
-            )
-            .firstOrNull ??
-        _selectedModel;
+    _applyRemote(remote.archive);
     _notify();
     return true;
   }
+
+  /// Refresh the authoritative path before continuing, without discarding an
+  /// unsaved exchange after a dropped connection. The user can explicitly open
+  /// server history or start a new chat in that case.
+  Future<bool> _refreshBeforeSend() async {
+    if (_turns.isEmpty) return true;
+    final operation = GenAiCancellation();
+    final generation = _generation;
+    _refreshOperation = operation;
+    _notify();
+    try {
+      final remote = await _readConversation(_groupId, operation);
+      if (generation != _generation || operation.isCancelled) return false;
+      final recovered = remote.archive.restoreTurns();
+      final missing = _turns.where((t) => !recovered.any((r) => r.id == t.id)).toList();
+      if (missing.any((t) => t.phase == GenAiChatPhase.completed)) {
+        _recoveryFailure = const GenAiFailure(GenAiFailureKind.interrupted);
+        return false;
+      }
+      // Explicitly stopped/failed exchanges are inert records, carried once by
+      // the next real request. No metadata-only model call is needed.
+      final interrupted = _turns
+          .where(
+            (t) =>
+                t.phase == GenAiChatPhase.cancelled ||
+                t.phase == GenAiChatPhase.interrupted ||
+                t.phase == GenAiChatPhase.failed,
+          )
+          .toList();
+      for (final turn in interrupted) {
+        _interruptedTurns[turn.id] = turn.toInterruptedRecord();
+      }
+      _interruptedTurns.removeWhere(
+        (id, _) => recovered.any(
+          (r) => r.id == id && r.phase == GenAiChatPhase.cancelled,
+        ),
+      );
+      _applyRemote(remote.archive, restoreModes: false);
+      for (final turn in interrupted) {
+        final index = _turns.indexWhere((t) => t.id == turn.id);
+        if (index >= 0) {
+          _turns[index] = turn;
+        } else {
+          _turns.add(turn);
+        }
+      }
+      _recoveryFailure = null;
+      return true;
+    } on GenAiFailure catch (error) {
+      if (!operation.isCancelled) _recoveryFailure = error;
+      return false;
+    } finally {
+      if (identical(_refreshOperation, operation)) _refreshOperation = null;
+      operation.cancel();
+      _notify();
+    }
+  }
+
+  Future<void> retrySaveConversations() async {
+    // This action reconciles existing server data; it never resends a POST.
+    if (!sending) await _refreshBeforeSend();
+  }
+
+  Map<String, Object?> _recordFor(GenAiConversationTurn turn, GenAiModel model) => {
+        'step_id': createGroupId(),
+        'turn': turn.toRemoteInput(),
+        if (_interruptedTurns.isNotEmpty) 'interrupted': _interruptedTurns.values.toList(),
+        'agent': turn.isAgent,
+        'thinking': thinkingEnabled,
+        'search': false,
+        'aiType': model.aiType,
+        'rootAiType': model.rootAiType,
+        if (_titleOverride != null) 'title': _titleOverride,
+      };
 
   void selectModel(GenAiModel model) {
     if (sending || !models.contains(model)) return;
@@ -1119,7 +807,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _agentScopeChanged();
     final model = _selectedModel;
     final generation = _generation;
-    final revision = sessions.revision;
+    final revision = _archiveRevision;
     if (_disposed || sending || !connected || model == null) {
       return;
     }
@@ -1130,9 +818,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         sending ||
         !connected ||
         generation != _generation ||
-        revision != sessions.revision) {
+        revision != _archiveRevision) {
       return;
     }
+    if (_turns.isNotEmpty && !await _refreshBeforeSend()) return;
     if (hasFailedUploads) {
       return;
     }
@@ -1153,9 +842,14 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       for (final a in imageAttachments)
         if (a.bytes.isNotEmpty) Uint8List.fromList(a.bytes),
     ];
-    final turn = GenAiConversationTurn(prompt.trim(), isAgent: _agentEnabled)
+    final turn = GenAiConversationTurn(
+      prompt.trim(),
+      id: createGroupId(),
+      parentId: _turns.lastOrNull?.id,
+      isAgent: _agentEnabled,
+    )
       ..thinkingStartTime = DateTime.now()
-      ..isSearching = _netSearchEnabled
+      ..isSearching = false
       ..attachedFileNames = attachedFileNames
       ..attachedFileIds = fileIds
       ..attachedFileContents = {
@@ -1187,6 +881,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     if (_disposed || sending || !connected || model == null) return;
     if (index < 0 || index >= _turns.length) return;
 
+    if (_turns.isNotEmpty && !await _refreshBeforeSend()) return;
+    if (index != _turns.length - 1) return;
     final target = _turns[index];
     if (target.isAgent && (!agentAvailable || _attachments.isNotEmpty || hasPendingUploads)) {
       return;
@@ -1202,9 +898,16 @@ final class GenAiWorkspaceController extends ChangeNotifier {
 
     _turns.removeLast();
 
-    final turn = GenAiConversationTurn(prompt, isAgent: target.isAgent)
+    final turn = GenAiConversationTurn(
+      prompt,
+      id: createGroupId(),
+      parentId: target.parentId,
+      actionScopeId: target.actionScopeId ?? target.id,
+      isAgent: target.isAgent,
+    )
+      ..approvalBudget.addAll(target.approvalBudget)
       ..thinkingStartTime = DateTime.now()
-      ..isSearching = _netSearchEnabled
+      ..isSearching = false
       ..attachedFileNames = fileNames
       ..attachedFileIds = fileIds
       ..attachedFileContents = fileContents
@@ -1222,20 +925,11 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   }
 
   List<GenAiAgentHistoryEntry> _agentConversationTranscript() {
-    var history = <GenAiAgentHistoryEntry>[];
+    final history = <GenAiAgentHistoryEntry>[];
     for (final turn in _turns) {
       if (turn.isHistoryGap) {
         history.clear();
-        continue;
-      }
-      if (turn.isAgent && turn.agentTranscript.isNotEmpty) {
-        if (turn.agentTranscriptIsDelta) {
-          history.addAll(turn.agentTranscript);
-        } else {
-          history = List.of(turn.agentTranscript);
-        }
-      } else if (turn.phase == GenAiChatPhase.completed ||
-          (turn.isAgent && turn.agentEvents.isNotEmpty)) {
+      } else if (turn.phase == GenAiChatPhase.completed || turn.agentEvents.isNotEmpty) {
         history.addAll(turn.evidenceEntries);
       }
     }
@@ -1282,7 +976,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     GenAiModel model,
   ) async {
     final thinking = _thinkingEnabled && model.supportsThinking;
-    final netSearch = _netSearchEnabled;
     final runner = _agentRunner;
     if (runner == null) return;
     final groupId = _groupId;
@@ -1314,6 +1007,13 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       if (!current()) return;
       if (_ledgerNeedsRestore) {
         runner.restoreConversation(groupId, _restoredMutations);
+        for (final savedTurn in _turns) {
+          runner.recoverCalls(
+            groupId,
+            savedTurn.agentEvents.values,
+            turnId: savedTurn.actionScopeId ?? savedTurn.id,
+          );
+        }
         _ledgerNeedsRestore = false;
       }
       final transcript = _agentConversationTranscript();
@@ -1324,37 +1024,27 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         request: GenAiChatRequest(
           chatGroupId: groupId,
           prompt: turn.prompt,
+          record: _recordFor(turn, model),
           aiType: model.aiType,
           rootAiType: model.rootAiType,
           history: const [],
           thinking: thinking,
-          netGo: false,
           fileIds: attachments.fileIds,
           documentContents: attachments.documentContents,
           imageUrls: attachments.imageUrls,
-          imageUrl: attachments.imageUrls.firstOrNull,
+          imageUrl: attachments.imageUrls.lastOrNull,
           maxTokens: 2048,
         ),
         cancellation: operation,
         isCurrent: current,
         transcript: transcript,
-        additionalTools: [
-          if (netSearch)
-            genAiAgentWebSearch(
-              repository: _repository,
-              groupId: groupId,
-              aiType: model.aiType,
-              rootAiType: model.rootAiType,
-            ),
-        ],
+        approvalBudget: turn.approvalBudget,
         checkpoint: (mutations) async {
           if (!current()) throw const GenAiFailure(GenAiFailureKind.cancelled);
-          final archiveScope = _archiveScope;
-          if (archiveScope == null) {
-            throw const GenAiFailure(GenAiFailureKind.accountChanged);
-          }
           _captureAgentTranscript(turn, runner, groupId, transcriptStart);
-          await _writeArchive(archiveScope, _snapshot(mutations: mutations));
+          final step = _repository.lastStepFor(groupId);
+          if (step == null) throw const GenAiFailure(GenAiFailureKind.storage);
+          await _repository.confirmStep(groupId, step, operation);
           if (!current()) throw const GenAiFailure(GenAiFailureKind.cancelled);
         },
         approve: (tool, call, prepared) {
@@ -1377,7 +1067,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
               (event.kind == GenAiAgentEventKind.cancelled ||
                   event.kind == GenAiAgentEventKind.failed)) {
             _captureAgentTranscript(turn, runner, groupId, transcriptStart);
-            _scheduleArchive();
           }
           break;
         }
@@ -1388,23 +1077,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         }
         turn.recordAgentActivity(event);
         if (event.call != null) turn.agentEvents[event.call!.id] = event;
-        if (event.call?.name == 'web_search') {
-          turn.isSearching = event.kind == GenAiAgentEventKind.toolStarted;
-          if (event.kind == GenAiAgentEventKind.toolFinished) {
-            final result = event.result?['result'];
-            if (result is Map && result['citations'] is List) {
-              turn.citations = [
-                ...turn.citations,
-                for (final raw in result['citations'] as List)
-                  if (raw is Map)
-                    GenAiWebSearchCitation.fromJson(
-                      Map<String, dynamic>.from(raw),
-                    ),
-              ];
-            }
-          }
-        }
         if (event.kind != GenAiAgentEventKind.reasoningDelta &&
+            event.kind != GenAiAgentEventKind.answerDelta &&
             event.kind != GenAiAgentEventKind.contextUsage) {
           _captureAgentTranscript(turn, runner, groupId, transcriptStart);
         }
@@ -1414,11 +1088,16 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           case GenAiAgentEventKind.contextCompacted:
             turn.contextCompacted = true;
           case GenAiAgentEventKind.modelStarted:
+            turn.answer = '';
             turn.contextUsage = null;
             turn.phase = GenAiChatPhase.streaming;
             turn.agentStatus = '正在处理 · 第 ${event.turn} 步';
             turn.isAgentThinking = thinking;
             if (turn.reasoning.isNotEmpty) turn.reasoning += '\n\n';
+          case GenAiAgentEventKind.answerDelta:
+            turn.isAgentThinking = false;
+            turn.answer += event.text ?? '';
+            turn.agentStatus = '';
           case GenAiAgentEventKind.reasoningDelta:
             turn.isAgentThinking = true;
             turn.reasoning += event.text ?? '';
@@ -1432,6 +1111,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           case GenAiAgentEventKind.toolFinished:
             turn.agentStatus = '已收到工具结果，继续处理';
           case GenAiAgentEventKind.protocolError:
+            turn.answer = '';
             turn.isAgentThinking = false;
             turn.agentStatus = '正在修正工具参数';
           case GenAiAgentEventKind.completed:
@@ -1456,8 +1136,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         turn.failure =
             error is GenAiFailure ? error : const GenAiFailure(GenAiFailureKind.protocol);
         turn.phase = GenAiChatPhase.failed;
-        turn.agentStatus =
-            turn.isSearching ? '联网搜索失败，请重试或关闭联网搜索后继续。' : '无法继续任务，请检查工具记录。已提交的操作不要重复执行。';
+        turn.agentStatus = '无法继续任务，请检查工具记录。已提交的操作不要重复执行。';
       }
     } finally {
       turn.isSearching = false;
@@ -1471,8 +1150,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       drained.complete();
       if (identical(_agentDrain, drained.future)) _agentDrain = null;
       _notify();
-      _flushPendingArchives();
-      await _archiveWrites;
     }
   }
 
@@ -1494,8 +1171,12 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       } else {
         fileIds.addAll(turn.attachedFileIds);
         documentContents.addAll(turn.attachedFileContents);
-        imageUrls.addAll(turn.attachedImageUrls);
-        if (turn.attachedImageUrl case final image? when image.isNotEmpty) {
+        for (final image in [
+          if (turn.attachedImageUrl case final image? when image.isNotEmpty) image,
+          ...turn.attachedImageUrls,
+          for (final event in turn.agentEvents.values) ...genAiGeneratedImages(event.result),
+        ]) {
+          imageUrls.remove(image);
           imageUrls.add(image);
         }
       }
@@ -1524,8 +1205,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     final generation = ++_generation;
     final revision = sessions.revision;
     final groupId = _groupId;
-    final thinking = _thinkingEnabled;
-    final netSearch = _netSearchEnabled;
+    final thinking = thinkingEnabled;
     final operation = GenAiCancellation();
     _sendOperation = operation;
     _turns.add(turn);
@@ -1533,26 +1213,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _notify();
 
     try {
-      if (netSearch) {
-        try {
-          final citations = await _repository.searchWeb(
-            GenAiChatRequest(
-              chatGroupId: groupId,
-              prompt: turn.prompt,
-              aiType: model.aiType,
-              rootAiType: model.rootAiType,
-              history: history,
-              netGo: true,
-            ),
-            operation,
-          );
-          turn.citations = citations;
-        } catch (_) {}
-        turn.isSearching = false;
-        _notify();
-      }
-
-      // Search cancellation/account changes must never start a fresh chat POST.
+      // Cancellation/account changes must never start a fresh chat POST.
       if (_disposed ||
           operation.isCancelled ||
           generation != _generation ||
@@ -1564,6 +1225,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         GenAiChatRequest(
           chatGroupId: groupId,
           prompt: turn.prompt,
+          record: _recordFor(turn, model),
           aiType: model.aiType,
           rootAiType: model.rootAiType,
           history: [
@@ -1572,7 +1234,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
               content: genAiSystemPrompt(
                 campusTools: false,
                 thinking: thinking,
-                webSearch: netSearch,
                 documents: attachments.fileIds.isNotEmpty,
                 images: attachments.imageUrls.isNotEmpty,
               ),
@@ -1580,10 +1241,9 @@ final class GenAiWorkspaceController extends ChangeNotifier {
             ...history,
           ],
           thinking: thinking,
-          netGo: netSearch,
           fileIds: attachments.fileIds,
           documentContents: attachments.documentContents,
-          imageUrl: attachments.imageUrls.firstOrNull,
+          imageUrl: attachments.imageUrls.lastOrNull,
           imageUrls: attachments.imageUrls,
         ),
       );
@@ -1592,8 +1252,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       if (identical(_sendOperation, operation)) _sendOperation = null;
       if (generation == _generation && identical(_active, turn)) _active = null;
       _notify();
-      _flushPendingArchives();
-      await _archiveWrites;
     }
   }
 
@@ -1616,6 +1274,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   }
 
   void stop() {
+    _refreshOperation?.cancel();
+    _refreshOperation = null;
     _agentOperation?.cancel();
     _agentOperation = null;
     resolveAgentApproval(false);
@@ -1639,13 +1299,14 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   void newConversation() {
     _conversationRevision++;
     stop();
-    _flushPendingArchives();
     _chat.clear();
     _turns.clear();
+    _interruptedTurns.clear();
     _cancelAttachments();
     _groupId = createGroupId();
     _archiveScope = _currentArchiveScope();
     _titleOverride = null;
+    _recoveryFailure = null;
     _ledgerNeedsRestore = false;
     _restoredMutations = const {'version': 1, 'effects': <String, Object?>{}};
     _notify();
@@ -1664,7 +1325,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   void _notify() {
     if (!_disposed) {
       imageStudio.updateScope((_archiveScope, sessions.revision));
-      _scheduleArchive();
       notifyListeners();
     }
   }
@@ -1673,7 +1333,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   void dispose() {
     _cancelAttachments();
     stop();
-    _flushPendingArchives();
     _disposed = true;
     imageStudio.dispose();
     _agentOperation?.cancel();

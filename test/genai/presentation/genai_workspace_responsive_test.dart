@@ -18,7 +18,6 @@ import '../support/fakes.dart';
 const _prompt = ValueKey('genai-prompt');
 const _thinking = ValueKey('genai-thinking-toggle');
 const _campus = ValueKey('genai-agent-toggle');
-const _search = ValueKey('genai-active-search-toggle');
 const _compactNew = ValueKey('genai-new-chat-compact');
 const _wideNew = ValueKey('genai-new-chat-wide');
 
@@ -44,7 +43,6 @@ Future<GenAiDemo> _show(
       },
     ),
   );
-  demo.workspace.setNetSearch(true);
   final navigator = GlobalKey<NavigatorState>();
   await tester.pumpWidget(
     MaterialApp(
@@ -250,7 +248,6 @@ void main() {
       await tester.pumpAndSettle();
       final thinking = find.byKey(_thinking);
       final campus = find.byKey(_campus);
-      final search = find.byKey(_search);
       for (final entry in [
         (thinking, 'genai-thinking-menu-toggle'),
         (campus, 'genai-agent-menu-toggle'),
@@ -275,18 +272,6 @@ void main() {
           await tester.pumpAndSettle();
         }
       }
-      await _reachable(tester, search, viewport);
-      expect(tester.widget<FilterChip>(search).selected, isTrue);
-      if (campus.evaluate().isNotEmpty) {
-        expect(
-          tester.getRect(search).top,
-          greaterThanOrEqualTo(tester.getRect(campus).top),
-        );
-      }
-      await tester.tap(search);
-      await tester.pumpAndSettle();
-      expect(demo.workspace.netSearchEnabled, isFalse);
-      expect(search, findsNothing);
       expect(tester.widget<TextField>(prompt).controller!.text, '保留我的草稿');
       await _reachable(
         tester,
@@ -321,18 +306,16 @@ void main() {
 
   testWidgets('inactive tools collapse before thinking and active modes stay visible',
       (tester) async {
-    final demo = await _show(tester, size: const Size(430, 844));
+    final demo = await _show(tester, size: const Size(320, 844));
     final more = find.byKey(const ValueKey('genai-composer-more'));
     final thinking = find.byKey(_thinking);
     final campus = find.byKey(_campus);
-    final search = find.byKey(_search);
     await tester.enterText(find.byKey(_prompt), '保留草稿');
     expect(thinking, findsOneWidget);
     expect(campus, findsNothing);
-    expect(search, findsOneWidget);
-    expect(tester.getCenter(more).dy, tester.getCenter(search).dy);
+    expect(tester.getCenter(more).dy, tester.getCenter(thinking).dy);
     expect(
-      tester.getCenter(search).dy,
+      tester.getCenter(thinking).dy,
       tester.getCenter(find.byKey(const ValueKey('genai-send'))).dy,
     );
     await tester.tap(more);
@@ -361,19 +344,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(campus, findsNothing);
     expect(thinking, findsOneWidget);
-    await tester.tap(thinking);
-    await tester.pumpAndSettle();
-    demo.workspace.setNetSearch(true);
-    await tester.pumpAndSettle();
-    expect(thinking, findsNothing);
-    expect(search, findsOneWidget);
-    await tester.tap(more);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('genai-thinking-menu-toggle')));
-    await tester.pumpAndSettle();
-    expect(demo.workspace.thinkingEnabled, isTrue);
-    expect(thinking, findsOneWidget);
-    expect(search, findsOneWidget);
     tester.view.physicalSize = const Size(1440, 900);
     await tester.pumpAndSettle();
     expect(campus, findsOneWidget);

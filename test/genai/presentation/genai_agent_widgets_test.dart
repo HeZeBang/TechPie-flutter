@@ -423,6 +423,7 @@ void main() {
     ]) {
       await pumpCard(tester, GenAiAgentToolCard(event: event, stopped: false));
       expect(find.byType(Image), findsNothing);
+      if (event.result?['ok'] == false) expect(find.text('查看图片'), findsNothing);
       expect(find.byTooltip('点击放大'), findsNothing);
       expect(tester.takeException(), isNull);
     }

@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import '../data/genai_api_client.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
+import '../domain/genai_remote_record.dart';
 import '../domain/genai_session.dart';
 import 'genai_context_compactor.dart';
 import 'genai_session_service.dart';
@@ -22,10 +24,17 @@ final class GenAiRepository {
   final GenAiSessionService _sessions;
   final GenAiContextCompactor _context;
   int? _contextRevision;
+  final _lastSteps = <String, String>{};
+  final _confirmedSteps = <String, String>{};
+  final _recordedMemory = <String, String>{};
+  String? lastStepFor(String id) => _lastSteps[id];
 
   void _checkContextRevision() {
     if (_contextRevision != _sessions.revision) {
       _context.clear();
+      _lastSteps.clear();
+      _confirmedSteps.clear();
+      _recordedMemory.clear();
       _contextRevision = _sessions.revision;
     }
   }
@@ -38,6 +47,26 @@ final class GenAiRepository {
   void restoreContext(String id, Map<String, Object?> value) {
     _checkContextRevision();
     _context.restore(id, value);
+    _recordedMemory[id] = jsonEncode(value['_boundary']);
+  }
+
+  /// Read-only durability barrier. Generation requests are never replayed.
+  /// The caller must fail closed before an external effect if its proposal
+  /// cannot yet be recovered through the school's own history API.
+  Future<void> confirmStep(String groupId, String stepId, GenAiCancellation cancellation) async {
+    _checkContextRevision();
+    if (_confirmedSteps[groupId] == stepId) return;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) {
+        await cancellation.race(Future<void>.delayed(Duration(milliseconds: 250 * attempt)));
+      }
+      final rows = await loadConversation(groupId, cancellation);
+      if (rows.any((row) => decodeGenAiRemoteRecord(row.prompt)?['step_id'] == stepId)) {
+        _confirmedSteps[groupId] = stepId;
+        return;
+      }
+    }
+    throw const GenAiFailure(GenAiFailureKind.storage);
   }
 
   Uri imageDisplayUri(String url) => _api.imageDisplayUri(url);
@@ -64,8 +93,7 @@ final class GenAiRepository {
       cancellation.throwIfCancelled();
       return value;
     } on GenAiFailure catch (error) {
-      if (session != null &&
-          error.kind == GenAiFailureKind.authenticationRequired) {
+      if (session != null && error.kind == GenAiFailureKind.authenticationRequired) {
         await _sessions.reject(session);
       }
       rethrow;
@@ -135,12 +163,6 @@ final class GenAiRepository {
         c,
         (s) => _api.usageOrders(s.credential.token, c, page: page),
       );
-
-  Future<List<GenAiWebSearchCitation>> searchWeb(
-    GenAiChatRequest request,
-    GenAiCancellation c,
-  ) =>
-      _authorized(c, (s) => _api.searchWeb(s.credential.token, request, c));
 
   Future<GenAiUploadedFile> uploadDocument({
     required String groupId,
@@ -263,13 +285,29 @@ final class GenAiRepository {
           yield event;
         }
         operation.throwIfCancelled();
+        // Piggyback recoverable memory on the actual exchange, never create
+        // quota-consuming bookkeeping chats. Re-budget the complete wire input.
+        final boundary = contextSnapshot(request.chatGroupId)['_boundary'];
+        final memory = {'_boundary': boundary};
+        if (request.record.isNotEmpty &&
+            boundary != null &&
+            _recordedMemory[request.chatGroupId] != jsonEncode(boundary)) {
+          prepared = prepared!.withRecord({...request.record, 'context': memory});
+          _context.checkWireBudget(prepared!);
+        }
         if (prepared!.contextCompacted) yield const GenAiContextCompacted();
         operation.throwIfCancelled();
+        if (prepared!.record['step_id'] case final String step) {
+          _lastSteps[request.chatGroupId] = step;
+        }
         await for (final event in _api.streamChat(
           prepared!,
           session.credential.token,
           operation,
         )) {
+          if (event is GenAiChatFinished && prepared!.record.containsKey('context')) {
+            _recordedMemory[request.chatGroupId] = jsonEncode(boundary);
+          }
           yield event;
         }
       } on GenAiFailure catch (error) {

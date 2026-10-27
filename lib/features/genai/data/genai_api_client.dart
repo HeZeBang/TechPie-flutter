@@ -28,8 +28,7 @@ final class GenAiApiClient {
                 : const GenAiRequestSigner(
                     String.fromEnvironment('TECHPI_GENAI_SIGNING_SALT'),
                   )) {
-    final loopback =
-        const ['localhost', '127.0.0.1', '::1'].contains(_base.host);
+    final loopback = const ['localhost', '127.0.0.1', '::1'].contains(_base.host);
     if ((_base.scheme != 'https' && !(_base.scheme == 'http' && loopback)) ||
         !_base.path.endsWith('/') ||
         _base.userInfo.isNotEmpty ||
@@ -46,8 +45,7 @@ final class GenAiApiClient {
   final GenAiRequestSigner? _signer;
 
   /// Resolve only for display; chat requests retain canonical university URLs.
-  Uri imageDisplayUri(String url) =>
-      genAiImageUri(url, baseOrigin: _base.origin);
+  Uri imageDisplayUri(String url) => genAiImageUri(url, baseOrigin: _base.origin);
 
   Future<GenAiProfile> verifyToken(
     String token,
@@ -98,8 +96,10 @@ final class GenAiApiClient {
           aiType: genAiRequiredString(model, 'aiType'),
           rootAiType: genAiRequiredString(model, 'rootAiType'),
           status: int.tryParse('${model['status']}'),
-          payType:
-              model['payType'] is String ? model['payType'] as String : null,
+          enableDeepThink: model['enableDeepThink'] == true ||
+              model['enableDeepThink'] == 1 ||
+              model['enableDeepThink'] == '1',
+          payType: model['payType'] is String ? model['payType'] as String : null,
         );
       }),
     );
@@ -247,29 +247,6 @@ final class GenAiApiClient {
     }
   }
 
-  Future<List<GenAiWebSearchCitation>> searchWeb(
-    String token,
-    GenAiChatRequest request,
-    GenAiCancellation cancellation,
-  ) async {
-    final result = genAiObject(
-      await _jsonRequest(
-        'chat/net/search',
-        token,
-        cancellation,
-        body: request.toJson(),
-        signed: true,
-      ),
-    );
-    final links = result['links'];
-    if (links is! List) return const [];
-    return List.unmodifiable(
-      links.map(
-        (Object? item) => GenAiWebSearchCitation.fromJson(genAiObject(item)),
-      ),
-    );
-  }
-
   Future<GenAiUploadedFile> uploadDocument(
     String token, {
     required String groupId,
@@ -337,9 +314,8 @@ final class GenAiApiClient {
       fileBytes: bytes,
       fileContentType: contentType,
     );
-    final host = _base.host == 'genai.shanghaitech.edu.cn'
-        ? 'genaipic.shanghaitech.edu.cn'
-        : _base.host;
+    final host =
+        _base.host == 'genai.shanghaitech.edu.cn' ? 'genaipic.shanghaitech.edu.cn' : _base.host;
     final uri = _base.replace(
       host: host,
       path: '/sys/common/upload',
@@ -360,12 +336,7 @@ final class GenAiApiClient {
       bodyBytes: multipart.bytes,
     );
     try {
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw GenAiFailure(
-          GenAiFailureKind.rejected,
-          statusCode: response.statusCode,
-        );
-      }
+      _checkStatus(response.statusCode);
       final value = await _readJson(response);
       cancellation.throwIfCancelled();
       return GenAiUploadedImage.fromJson(genAiObject(genAiEnvelope(value)));
@@ -403,11 +374,7 @@ final class GenAiApiClient {
     );
     try {
       _checkStatus(response.statusCode);
-      final contentType = response.headers['content-type']
-          ?.split(';')
-          .first
-          .trim()
-          .toLowerCase();
+      final contentType = response.headers['content-type']?.split(';').first.trim().toLowerCase();
       if (contentType != null && contentType.startsWith('audio/')) {
         final bytes = <int>[];
         await for (final chunk in response.bytes) {
@@ -505,9 +472,7 @@ final class GenAiApiClient {
     bool raw = false,
   }) async {
     _validateToken(token);
-    final uri = _base
-        .resolve(path)
-        .replace(queryParameters: query.isEmpty ? null : query);
+    final uri = _base.resolve(path).replace(queryParameters: query.isEmpty ? null : query);
     final signer = _signer;
     if (signed && signer == null) {
       throw const GenAiFailure(GenAiFailureKind.rejected);
@@ -535,9 +500,7 @@ final class GenAiApiClient {
         final image = genAiObject(value);
         if (image['success'] == false ||
             image['code'] == 401 ||
-            (image['code'] is int &&
-                image['code'] != 0 &&
-                image['code'] != 200)) {
+            (image['code'] is int && image['code'] != 0 && image['code'] != 200)) {
           genAiEnvelope(image);
         }
         // The image API also returns {success: true, data: [...]} without the
@@ -598,18 +561,13 @@ final class GenAiApiClient {
     );
     try {
       _checkStatus(response.statusCode);
-      final contentType = response.headers['content-type']
-          ?.split(';')
-          .first
-          .trim()
-          .toLowerCase();
+      final contentType = response.headers['content-type']?.split(';').first.trim().toLowerCase();
       if (contentType != 'text/event-stream') {
         // Some business/auth failures arrive as a JSON envelope with HTTP 200.
         genAiEnvelope(await _readJson(response));
         throw const GenAiFailure(GenAiFailureKind.protocol);
       }
-      await for (final event
-          in const GenAiSseDecoder().decode(response.bytes)) {
+      await for (final event in const GenAiSseDecoder().decode(response.bytes)) {
         cancellation.throwIfCancelled();
         if (event.type == 'error') {
           throw const GenAiFailure(GenAiFailureKind.rejected);
@@ -647,9 +605,7 @@ final class GenAiApiClient {
             throw const GenAiFailure(GenAiFailureKind.protocol);
           }
           if (value is String && value.isNotEmpty) {
-            yield field == 'content'
-                ? GenAiTextDelta(value)
-                : GenAiReasoningDelta(value);
+            yield field == 'content' ? GenAiTextDelta(value) : GenAiReasoningDelta(value);
           }
         }
         final finish = choice['finish_reason'];
@@ -676,10 +632,8 @@ final class GenAiApiClient {
   }
 
   Future<Object?> _readJson(GenAiResponse response) async {
-    final contentType =
-        response.headers['content-type']?.split(';').first.trim().toLowerCase();
-    if (contentType != 'application/json' &&
-        !(contentType?.endsWith('+json') ?? false)) {
+    final contentType = response.headers['content-type']?.split(';').first.trim().toLowerCase();
+    if (contentType != 'application/json' && !(contentType?.endsWith('+json') ?? false)) {
       throw const GenAiFailure(GenAiFailureKind.protocol);
     }
     final bytes = <int>[];

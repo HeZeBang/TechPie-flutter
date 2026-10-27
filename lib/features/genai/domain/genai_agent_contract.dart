@@ -228,6 +228,7 @@ enum GenAiAgentEventKind {
   contextCompacted,
   contextUsage,
   reasoningDelta,
+  answerDelta,
   toolProposed,
   approvalRequired,
   toolStarted,
@@ -276,4 +277,13 @@ Object? _freeze(Object? value) {
   }
   if (value is List) return List<Object?>.unmodifiable(value.map(_freeze));
   return value;
+}
+
+String genAiCanonicalJson(Object? value) {
+  if (value is Map<String, Object?>) {
+    final keys = value.keys.toList()..sort();
+    return '{${keys.map((key) => '${jsonEncode(key)}:${genAiCanonicalJson(value[key])}').join(',')}}';
+  }
+  if (value is List) return '[${value.map(genAiCanonicalJson).join(',')}]';
+  return jsonEncode(value);
 }

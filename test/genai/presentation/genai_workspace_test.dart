@@ -6,8 +6,6 @@ import 'package:techpie/features/genai/data/demo_genai_backend.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder.dart';
-import 'package:techpie/features/genai/presentation/genai_thinking_view.dart';
-import 'package:techpie/features/genai/presentation/genai_web_search_view.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
 import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
@@ -68,8 +66,7 @@ void main() {
     final urls = demo.workspace.turns.single.attachedImageUrls;
     final id = demo.workspace.groupId;
     demo.workspace.newConversation();
-    // The controller's archive queue belongs to the widget fake-async zone.
-    // Pump that queue instead of awaiting its futures from runAsync's real zone.
+    // Pump server recovery in the widget's fake-async zone.
     final opening = demo.workspace.openConversation(id, GenAiCancellation());
     await tester.pumpAndSettle();
     await opening;
@@ -163,7 +160,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('校园身份待同步'), findsOneWidget);
     expect(find.text('绑定校园账号'), findsNothing);
-    expect(find.text('管理校园账号'), findsOneWidget);
+    expect(find.text('管理校园账号'), findsNothing);
     await tester.tap(find.text('使用现有 IDS 会话连接'));
     await tester.pump();
     expect(connects, 1);
@@ -323,54 +320,6 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(demo.workspace.turns.length, 1);
-  });
-
-  testWidgets('thinking and search menu update controller state', (tester) async {
-    final demo = await show(tester);
-    final thinkingChip = find.byKey(const ValueKey('genai-thinking-toggle'));
-    final searchChip = find.byKey(const ValueKey('genai-search-toggle'));
-    expect(thinkingChip, findsOneWidget);
-    expect(searchChip, findsNothing);
-
-    expect(demo.workspace.thinkingEnabled, isFalse);
-    await tester.tap(thinkingChip);
-    await tester.pump();
-    expect(demo.workspace.thinkingEnabled, isTrue);
-
-    expect(demo.workspace.netSearchEnabled, isFalse);
-    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
-    await tester.pumpAndSettle();
-    await tester.tap(searchChip);
-    await tester.pump();
-    expect(demo.workspace.netSearchEnabled, isTrue);
-  });
-
-  testWidgets('chat with thinking and net search renders thinking and search views',
-      (tester) async {
-    final demo = await show(tester);
-    await tester.tap(find.byKey(const ValueKey('genai-thinking-toggle')));
-    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('genai-search-toggle')));
-    await tester.pumpAndSettle();
-    await tester.pump();
-
-    await tester.enterText(
-      find.byKey(const ValueKey('genai-prompt')),
-      '介绍上海科技大学',
-    );
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('genai-send')));
-    await tester.pumpAndSettle();
-
-    expect(demo.workspace.turns.single.phase, GenAiChatPhase.completed);
-    expect(demo.workspace.turns.single.reasoning, isNotEmpty);
-    expect(demo.workspace.turns.single.citations.length, 2);
-
-    expect(find.byType(GenAiThinkingView), findsOneWidget);
-    expect(find.byType(GenAiWebSearchView), findsOneWidget);
-    expect(find.textContaining('已深度思考'), findsOneWidget);
-    expect(find.textContaining('已检索 2 条网络参考来源'), findsOneWidget);
   });
 
   testWidgets('native workspace hides unavailable audio and file actions', (tester) async {

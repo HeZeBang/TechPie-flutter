@@ -18,9 +18,9 @@ class GenAiComposer extends StatefulWidget {
     required this.keyboardOpen,
     required this.sending,
     required this.thinkingEnabled,
+    this.supportsThinking = true,
     required this.agentAvailable,
     required this.agentEnabled,
-    required this.netSearchEnabled,
     required this.recognizingAudio,
     required this.attachments,
     required this.hasPendingUploads,
@@ -36,7 +36,6 @@ class GenAiComposer extends StatefulWidget {
     required this.onStop,
     required this.onThinkingChanged,
     required this.onAgentChanged,
-    required this.onSearchChanged,
     required this.onMenuAction,
     required this.onPickAudio,
     required this.onStartRecording,
@@ -56,9 +55,9 @@ class GenAiComposer extends StatefulWidget {
   final bool keyboardOpen;
   final bool sending;
   final bool thinkingEnabled;
+  final bool supportsThinking;
   final bool agentAvailable;
   final bool agentEnabled;
-  final bool netSearchEnabled;
   final bool recognizingAudio;
   final List<GenAiAttachment> attachments;
   final bool hasPendingUploads;
@@ -74,7 +73,6 @@ class GenAiComposer extends StatefulWidget {
   final VoidCallback onStop;
   final ValueChanged<bool> onThinkingChanged;
   final ValueChanged<bool> onAgentChanged;
-  final ValueChanged<bool> onSearchChanged;
   final ValueChanged<String> onMenuAction;
   final VoidCallback onPickAudio;
   final VoidCallback onStartRecording;
@@ -149,16 +147,6 @@ class _GenAiComposerState extends State<GenAiComposer> {
             '校园工具',
           ),
         ),
-      PopupMenuItem<String>(
-        key: const ValueKey('genai-search-toggle'),
-        value: 'search',
-        child: _composerMenuRow(
-          Icons.travel_explore_outlined,
-          '联网搜索',
-          selected: widget.netSearchEnabled,
-        ),
-      ),
-      const PopupMenuDivider(height: 12),
       if (widget.supportsDocuments)
         PopupMenuItem<String>(
           key: const ValueKey('genai-upload-file'),
@@ -187,12 +175,8 @@ class _GenAiComposerState extends State<GenAiComposer> {
           ),
         ),
     ];
-    final tooltip = widget.netSearchEnabled ? '添加附件与搜索（联网搜索已开启）' : '添加附件与搜索';
-    final icon = Badge(
-      isLabelVisible: widget.netSearchEnabled,
-      backgroundColor: _accent,
-      child: Icon(Icons.add, size: 20, color: _muted),
-    );
+    const tooltip = '添加附件';
+    final icon = Icon(Icons.add, size: 20, color: _muted);
     // Flutter's popup route does not avoid viewInsets. A scrollable sheet
     // keeps every action reachable while the software keyboard is visible.
     if (widget.keyboardOpen) {
@@ -364,14 +348,10 @@ class _GenAiComposerState extends State<GenAiComposer> {
           final available = constraints.maxWidth - actionWidth - 8;
           final thinkingWidth = _modeChipWidth('深度思考');
           final campusWidth = _modeChipWidth('校园工具');
-          final searchWidth = _modeChipWidth('联网搜索');
-          var showThinking = true;
+          var showThinking = widget.supportsThinking;
           var showCampus = widget.agentAvailable;
           double modesWidth() =>
-              48 +
-              (showThinking ? thinkingWidth + 6 : 0) +
-              (showCampus ? campusWidth + 6 : 0) +
-              (widget.netSearchEnabled ? searchWidth + 6 : 0);
+              48 + (showThinking ? thinkingWidth + 6 : 0) + (showCampus ? campusWidth + 6 : 0);
           // Reserve the microphone and Send first. Preserve active modes;
           // hide inactive campus tools before hiding inactive thinking.
           if (modesWidth() > available && showCampus && !widget.agentEnabled) {
@@ -385,7 +365,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
               width: 48,
               height: 48,
               child: _composerMoreMenu(
-                collapsedThinking: !showThinking,
+                collapsedThinking: widget.supportsThinking && !showThinking,
                 collapsedCampus: widget.agentAvailable && !showCampus,
               ),
             ),
@@ -406,15 +386,6 @@ class _GenAiComposerState extends State<GenAiComposer> {
                 onSelected: widget.sending ? null : widget.onAgentChanged,
               ),
           ];
-          final search = widget.netSearchEnabled
-              ? _modeChip(
-                  key: 'genai-active-search-toggle',
-                  label: '联网搜索',
-                  icon: Icons.travel_explore_outlined,
-                  selected: true,
-                  onSelected: widget.sending ? null : widget.onSearchChanged,
-                )
-              : null;
           final actions = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -504,12 +475,11 @@ class _GenAiComposerState extends State<GenAiComposer> {
               ),
             ],
           );
-          final modes = [...primary, if (search != null) search];
+          final modes = primary;
           final widestMode = [
             48.0,
             if (showThinking) thinkingWidth,
             if (showCampus) campusWidth,
-            if (search != null) searchWidth,
           ].reduce((a, b) => a > b ? a : b);
           if (available < widestMode) {
             // At very large text scales, keep active labels readable and let

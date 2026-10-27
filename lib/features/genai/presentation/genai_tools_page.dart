@@ -258,6 +258,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
           _conversations.removeWhere((item) => item.id == record.id);
           _conversations.add(record);
         }
+        _conversations.sort(GenAiConversationSummary.newestFirst);
         _more = data.hasMore;
         _page = page;
         _loadFailure = null;

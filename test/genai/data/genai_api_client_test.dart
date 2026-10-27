@@ -12,9 +12,25 @@ import 'package:techpie/features/genai/domain/genai_failure.dart';
 import '../support/fakes.dart';
 
 void main() {
-  test(
-      'chat serializes prior history separately and disables unverified search',
-      () {
+  test('vision upload expires authentication on HTTP 401 and closes response', () async {
+    var closed = false;
+    final api = GenAiApiClient(
+      transport: ScriptedTransport((_) async => response(status: 401, close: () => closed = true)),
+      signer: const GenAiRequestSigner('fixture'),
+    );
+    await expectLater(
+      api.uploadVisionImage(
+        'token',
+        fileName: 'test.png',
+        bytes: [1],
+        cancellation: GenAiCancellation(),
+      ),
+      throwsA(failure(GenAiFailureKind.authenticationRequired)),
+    );
+    expect(closed, isTrue);
+  });
+
+  test('chat serializes prior history separately and disables unverified search', () {
     final history = [
       const GenAiMessage(role: GenAiRole.user, content: 'earlier'),
     ];
@@ -60,25 +76,19 @@ void main() {
     );
   });
 
-  test(
-      'SSE handles every byte boundary, CRLF, BOM, comments and multiline data',
-      () async {
+  test('SSE handles every byte boundary, CRLF, BOM, comments and multiline data', () async {
     final bytes = utf8.encode(
       '\ufeff: heartbeat\r\nevent: message\r\ndata: 你好\r\ndata: 世界\r\n\r\n',
     );
-    final events = await const GenAiSseDecoder()
-        .decode(Stream.fromIterable(bytes.map((b) => [b])))
-        .toList();
+    final events =
+        await const GenAiSseDecoder().decode(Stream.fromIterable(bytes.map((b) => [b]))).toList();
     expect(events.single.data, '你好\n世界');
     expect(events.single.type, 'message');
   });
 
-  test('SSE discards unterminated data and bounds individual lines and events',
-      () async {
+  test('SSE discards unterminated data and bounds individual lines and events', () async {
     expect(
-      await const GenAiSseDecoder()
-          .decode(Stream.value(utf8.encode('data: [DONE]')))
-          .toList(),
+      await const GenAiSseDecoder().decode(Stream.value(utf8.encode('data: [DONE]'))).toList(),
       isEmpty,
     );
     await expectLater(
@@ -103,9 +113,7 @@ void main() {
     );
   });
 
-  test(
-      'profile request verifies upstream identity without sending a primary token',
-      () async {
+  test('profile request verifies upstream identity without sending a primary token', () async {
     final transport = ScriptedTransport((_) async => profileResponse());
     final api = GenAiApiClient(
       transport: transport,
@@ -125,9 +133,7 @@ void main() {
     );
   });
 
-  test(
-      'catalog is dynamic and rejects undocumented shapes rather than inventing models',
-      () async {
+  test('catalog is dynamic and rejects undocumented shapes rather than inventing models', () async {
     final transport = ScriptedTransport(
       (_) async => response(
         json: {
@@ -140,6 +146,7 @@ void main() {
                 'aiType': 'fixture',
                 'rootAiType': 'future-provider',
                 'payType': 'FREE',
+                'enableDeepThink': 1,
               },
             ],
           },
@@ -152,21 +159,25 @@ void main() {
     );
     final models = await api.listModels('token', GenAiCancellation());
     expect(models.single.rootAiType, 'future-provider');
+    expect(models.single.supportsThinking, isTrue);
+    expect(
+      const GenAiModel(name: 'Kimi-K3', aiType: 'kimi', rootAiType: 'kimi', payType: 'FREE')
+          .supportsThinking,
+      isFalse,
+    );
     expect(
       transport.requests.single.uri.queryParameters['showStatusList'],
       '2,3',
     );
-    transport.handle = (_) async =>
-        response(json: {'success': true, 'code': 200, 'result': <Object?>[]});
+    transport.handle =
+        (_) async => response(json: {'success': true, 'code': 200, 'result': <Object?>[]});
     await expectLater(
       api.listModels('token', GenAiCancellation()),
       throwsA(failure(GenAiFailureKind.protocol)),
     );
   });
 
-  test(
-      'POST emits reasoning and answer before response completion and closes once',
-      () async {
+  test('POST emits reasoning and answer before response completion and closes once', () async {
     final wire = StreamController<List<int>>();
     final observed = Completer<void>();
     var closed = 0;
@@ -182,9 +193,7 @@ void main() {
       signer: const GenAiRequestSigner('fixture'),
     );
     final events = <GenAiChatEvent>[];
-    final done = api
-        .streamChat(chatRequest(), 'token', GenAiCancellation())
-        .forEach((event) {
+    final done = api.streamChat(chatRequest(), 'token', GenAiCancellation()).forEach((event) {
       events.add(event);
       if (event is GenAiTextDelta && !observed.isCompleted) observed.complete();
     });
@@ -208,42 +217,33 @@ void main() {
     expect(jsonDecode(transport.requests.single.body!)['chatInfo'], '你好');
   });
 
-  test('DONE is terminal, but bare EOF and malformed data are failures',
-      () async {
+  test('DONE is terminal, but bare EOF and malformed data are failures', () async {
     final transport = ScriptedTransport(
-      (_) async =>
-          response(type: 'text/event-stream', text: 'data: [DONE]\n\n'),
+      (_) async => response(type: 'text/event-stream', text: 'data: [DONE]\n\n'),
     );
     final api = GenAiApiClient(
       transport: transport,
       signer: const GenAiRequestSigner('fixture'),
     );
     expect(
-      (await api
-              .streamChat(chatRequest(), 'token', GenAiCancellation())
-              .toList())
-          .single,
+      (await api.streamChat(chatRequest(), 'token', GenAiCancellation()).toList()).single,
       isA<GenAiChatFinished>(),
     );
     for (final text in [sseChunk(text: 'partial'), 'data: [DONE]']) {
-      transport.handle =
-          (_) async => response(type: 'text/event-stream', text: text);
+      transport.handle = (_) async => response(type: 'text/event-stream', text: text);
       await expectLater(
         api.streamChat(chatRequest(), 'token', GenAiCancellation()).toList(),
         throwsA(failure(GenAiFailureKind.interrupted)),
       );
     }
-    transport.handle = (_) async =>
-        response(type: 'text/event-stream', text: 'data: not-json\n\n');
+    transport.handle = (_) async => response(type: 'text/event-stream', text: 'data: not-json\n\n');
     await expectLater(
       api.streamChat(chatRequest(), 'token', GenAiCancellation()).toList(),
       throwsA(failure(GenAiFailureKind.protocol)),
     );
   });
 
-  test(
-      'HTTP and stream errors are sanitized; errors are never silently skipped',
-      () async {
+  test('HTTP and stream errors are sanitized; errors are never silently skipped', () async {
     final transport = ScriptedTransport(
       (_) async => response(status: 401, text: 'token/password/private text'),
     );
@@ -255,8 +255,8 @@ void main() {
       api.streamChat(chatRequest(), 'token', GenAiCancellation()).toList(),
       throwsA(failure(GenAiFailureKind.authenticationRequired)),
     );
-    transport.handle = (_) async =>
-        response(json: {'success': false, 'code': 401, 'message': 'secret'});
+    transport.handle =
+        (_) async => response(json: {'success': false, 'code': 401, 'message': 'secret'});
     await expectLater(
       api.streamChat(chatRequest(), 'token', GenAiCancellation()).toList(),
       throwsA(failure(GenAiFailureKind.authenticationRequired)),
@@ -275,8 +275,7 @@ void main() {
     );
   });
 
-  test('rejects insecure API origins, malformed tokens and oversized JSON',
-      () async {
+  test('rejects insecure API origins, malformed tokens and oversized JSON', () async {
     final transport = ScriptedTransport((_) async => profileResponse());
     expect(
       () => GenAiApiClient(
@@ -297,52 +296,7 @@ void main() {
     );
   });
 
-  test('searchWeb signs request and decodes citations', () async {
-    final transport = ScriptedTransport(
-      (_) async => response(
-        json: {
-          'success': true,
-          'code': 200,
-          'result': {
-            'count': 1,
-            'links': [
-              {
-                'num': 1,
-                'title': '上科大',
-                'link': 'https://www.shanghaitech.edu.cn',
-                'snippet': '上海科技大学门户',
-              },
-            ],
-          },
-        },
-      ),
-    );
-    final api = GenAiApiClient(
-      transport: transport,
-      signer: const GenAiRequestSigner('fixture'),
-    );
-    final req = GenAiChatRequest(
-      chatGroupId: 'group-1',
-      prompt: '上科大主页',
-      aiType: 'model-a',
-      rootAiType: 'root-a',
-      netGo: true,
-    );
-    final citations = await api.searchWeb('token', req, GenAiCancellation());
-    expect(citations.single.title, '上科大');
-    expect(citations.single.link, 'https://www.shanghaitech.edu.cn');
-    expect(citations.single.num, 1);
-    expect(transport.requests.single.headers.containsKey('X-Sign'), isTrue);
-    expect(
-      transport.requests.single.headers.containsKey('X-TIMESTAMP'),
-      isTrue,
-    );
-    expect(transport.requests.single.uri.path, '/htk/chat/net/search');
-  });
-
-  test(
-      'uploadVisionImage targets pic host with token and decodes uploaded image',
-      () async {
+  test('uploadVisionImage targets pic host with token and decodes uploaded image', () async {
     final transport = ScriptedTransport(
       (_) async => response(
         json: {
@@ -407,8 +361,7 @@ void main() {
     });
   });
 
-  test('recognizeAudio sends multipart audio and decodes transcription',
-      () async {
+  test('recognizeAudio sends multipart audio and decodes transcription', () async {
     final transport = ScriptedTransport(
       (_) async => response(
         json: {

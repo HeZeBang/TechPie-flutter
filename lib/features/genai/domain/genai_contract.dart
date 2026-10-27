@@ -1,15 +1,28 @@
+import 'dart:convert';
+
 import 'genai_context_usage.dart';
 import 'genai_failure.dart';
+import 'genai_remote_record.dart';
 
 enum GenAiRole { user, assistant, system }
 
 final class GenAiMessage {
-  const GenAiMessage({required this.role, required this.content});
+  const GenAiMessage({required this.role, required this.content, this.imageUrls = const []});
 
   final GenAiRole role;
   final String content;
 
-  Map<String, Object?> toJson() => {'role': role.name, 'content': content};
+  /// Optional message attachments supported by the school's web client.
+  /// Agent image selection also sets the primary request image, since providers
+  /// may ignore historical attachments.
+  final List<String> imageUrls;
+
+  Map<String, Object?> toJson() => {
+        'role': role.name,
+        'content': content,
+        if (imageUrls.isNotEmpty) 'imageUrl': imageUrls.first,
+        if (imageUrls.isNotEmpty) 'imageUrls': imageUrls,
+      };
 }
 
 /// Source-derived text-chat contract. History excludes the current prompt.
@@ -21,7 +34,6 @@ final class GenAiChatRequest {
     required this.rootAiType,
     List<GenAiMessage> history = const [],
     this.thinking = false,
-    this.netGo = false,
     List<String> fileIds = const [],
     this.contextCompacted = false,
     this.contextGoal,
@@ -29,16 +41,31 @@ final class GenAiChatRequest {
     this.imageUrl,
     List<String> imageUrls = const [],
     this.maxTokens,
+    this.record = const {},
+    this.agentControl = const {},
   })  : history = List.unmodifiable(history),
         fileIds = List.unmodifiable(fileIds),
         documentContents = Map.unmodifiable(documentContents),
         imageUrls = List.unmodifiable(imageUrls) {
-    if ([chatGroupId, prompt, aiType, rootAiType]
-            .any((s) => s.trim().isEmpty) ||
+    if ([chatGroupId, prompt, aiType, rootAiType].any((s) => s.trim().isEmpty) ||
         (maxTokens != null && maxTokens! <= 0)) {
       throw ArgumentError('Invalid GenAI chat request');
     }
   }
+
+  /// Host-authored metadata persisted together with this exchange.
+  final Map<String, Object?> record;
+  final Map<String, Object?> agentControl;
+  String get storedPrompt => record.isEmpty
+      ? (agentControl.isEmpty
+          ? prompt
+          : '$prompt\n<techpie-agent-control>\n${jsonEncode(agentControl)}\n</techpie-agent-control>')
+      : encodeGenAiRemoteRecord({
+          ...record,
+          'kind': 'exchange',
+          'input': prompt,
+          if (agentControl.isNotEmpty) 'agent_control': agentControl,
+        });
 
   final String chatGroupId;
   final String prompt;
@@ -46,7 +73,6 @@ final class GenAiChatRequest {
   final String rootAiType;
   final List<GenAiMessage> history;
   final bool thinking;
-  final bool netGo;
   final List<String> fileIds;
 
   /// Local budget metadata; never serialized into the upstream payload.
@@ -57,8 +83,26 @@ final class GenAiChatRequest {
   final List<String> imageUrls;
   final int? maxTokens;
 
+  GenAiChatRequest withRecord(Map<String, Object?> value) => GenAiChatRequest(
+        chatGroupId: chatGroupId,
+        prompt: prompt,
+        aiType: aiType,
+        rootAiType: rootAiType,
+        history: history,
+        thinking: thinking,
+        fileIds: fileIds,
+        documentContents: documentContents,
+        imageUrl: imageUrl,
+        imageUrls: imageUrls,
+        maxTokens: maxTokens,
+        contextGoal: contextGoal,
+        contextCompacted: contextCompacted,
+        record: value,
+        agentControl: agentControl,
+      );
+
   Map<String, Object?> toJson() => {
-        'chatInfo': prompt,
+        'chatInfo': storedPrompt,
         'messages': history.map((m) => m.toJson()).toList(),
         'chatGroupId': chatGroupId,
         'aiType': aiType,
@@ -66,7 +110,7 @@ final class GenAiChatRequest {
         'type': '3',
         'stream': true,
         'thinking': thinking,
-        'netGo': netGo,
+        'netGo': false,
         if (fileIds.isNotEmpty) 'fileIds': fileIds,
         if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
         if (imageUrls.isNotEmpty) 'imageUrls': imageUrls,
@@ -88,6 +132,7 @@ final class GenAiModel {
     required this.rootAiType,
     this.payType,
     this.status,
+    this.enableDeepThink = false,
   });
 
   final String name;
@@ -96,20 +141,8 @@ final class GenAiModel {
   final String? payType;
   final int? status;
   bool get isImage => status == 2;
-  bool get supportsThinking {
-    if (isImage) return false;
-    final lower = aiType.toLowerCase();
-    final nameLower = name.toLowerCase();
-    return lower.contains('deepseek') ||
-        lower.contains('glm') ||
-        lower.contains('kimi') ||
-        lower.contains('gpt-6') ||
-        lower.contains('demo') ||
-        nameLower.contains('deepseek') ||
-        nameLower.contains('glm') ||
-        nameLower.contains('kimi') ||
-        nameLower.contains('gpt-6');
-  }
+  final bool enableDeepThink;
+  bool get supportsThinking => !isImage && enableDeepThink;
 }
 
 enum GenAiFinishReason { stop, length, contentFilter, done, other }
@@ -165,9 +198,7 @@ Object? genAiEnvelope(Object? value) {
   final message = rawMessage is String ? rawMessage : '';
   if (code == 401 ||
       (code == 500 &&
-          (message.contains('Token失效') ||
-              message.contains('重新登录') ||
-              message.contains('登录已过期')))) {
+          (message.contains('Token失效') || message.contains('重新登录') || message.contains('登录已过期')))) {
     throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
   }
   if (json['success'] == false || (code is int && code != 0 && code != 200)) {

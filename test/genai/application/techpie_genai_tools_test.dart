@@ -179,6 +179,14 @@ void main() {
     expect((await run('get_week_schedule', {'week': 2}))['week'], 2);
   });
 
+  test('assignment tool returns verified results with unavailable platform metadata', () async {
+    assignments.failures = {'gradescope': 'Unavailable'};
+    final result = await run('get_assignments', {});
+    expect(result['partial'], isTrue);
+    expect(result['unavailable_platforms'], ['gradescope']);
+    expect(result['assignments'], isNotEmpty);
+  });
+
   test('assignments respect visible list completion override and inclusive campus date', () async {
     final result = await run('get_assignments', {'due_before': '2026-10-23'});
     final rows = result['assignments']! as List;
@@ -315,7 +323,9 @@ void main() {
     await expectLater(
       prepared.execute(),
       throwsA(
-        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'court_not_available'),
+        isA<GenAiAgentToolException>()
+            .having((error) => error.code, 'code', 'court_not_available')
+            .having((error) => error.effectNotDispatched, 'not dispatched', isTrue),
       ),
     );
     expect(gym.bookings, 0);
@@ -325,7 +335,9 @@ void main() {
     await expectLater(
       again.execute(),
       throwsA(
-        isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'profile_changed'),
+        isA<GenAiAgentToolException>()
+            .having((error) => error.code, 'code', 'profile_changed')
+            .having((error) => error.effectNotDispatched, 'not dispatched', isTrue),
       ),
     );
     expect(gym.bookings, 0);
@@ -556,8 +568,9 @@ class _Assignments implements AssignmentService {
   bool get loading => false;
   @override
   String? get error => null;
+  Map<String, String> failures = {};
   @override
-  Map<String, String> get platformErrors => {};
+  Map<String, String> get platformErrors => failures;
   @override
   List<Assignment> get visibleAssignments => [
         Assignment(

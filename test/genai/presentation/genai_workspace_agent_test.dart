@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_agent_runner.dart';
 import 'package:techpie/features/genai/application/genai_chat_service.dart';
-import 'package:techpie/features/genai/data/demo_genai_backend.dart';
+import 'package:techpie/features/genai/application/genai_workspace_controller.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
 import 'package:techpie/features/genai/domain/genai_contract.dart';
@@ -10,16 +10,22 @@ import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
 import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
 
+import '../support/journal_server.dart';
+
 void main() {
-  Future<void> pumpUntil(WidgetTester tester, bool Function() ready) async {
+  Future<void> pumpUntil(
+    WidgetTester tester,
+    bool Function() ready, {
+    String Function()? reason,
+  }) async {
     for (var i = 0; i < 120 && !ready(); i++) {
       await tester.pump(const Duration(milliseconds: 10));
     }
-    expect(ready(), isTrue);
+    expect(ready(), isTrue, reason: reason?.call());
     await tester.pump();
   }
 
-  Future<void> show(WidgetTester tester, GenAiDemo demo) async {
+  Future<void> show(WidgetTester tester, GenAiWorkspaceController controller) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -27,7 +33,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: GenAiWorkspace(
-          controller: demo.workspace,
+          controller: controller,
           demo: true,
           picker: _Picker(),
           login: (_) async => null,
@@ -53,7 +59,8 @@ void main() {
     'dispose',
   ]) {
     testWidgets('main chat agent approval $action guards side effects', (tester) async {
-      final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+      final server = JournalServer();
+      final demo = await JournalClient.create(server);
       addTearDown(demo.dispose);
       final scope = ValueNotifier(true);
       addTearDown(scope.dispose);
@@ -94,33 +101,24 @@ void main() {
                 ? const Duration(milliseconds: 200)
                 : const Duration(minutes: 4),
           ),
-          streamChat: (request, cancellation) async* {
+          streamChat: (request, cancellation) {
             requests.add(request);
-            yield GenAiTextDelta(
-              requests.length == 1
-                  ? encodeGenAiAgentCall(
-                      GenAiAgentToolCall(
-                        id: 'image-1',
-                        name: 'generate_image',
-                        arguments: const {},
-                      ),
-                      nonce: genAiAgentNonceFromSystem(
-                        request.history.first.content,
-                      )!,
-                    )
-                  : '任务已处理，请查看工具结果。',
-            );
-            yield const GenAiChatFinished(GenAiFinishReason.stop);
+            return demo.repository.streamChat(request, cancellation);
           },
         ),
       );
-      await show(tester, demo);
+      server.onGenerate = (body) => server.generations.length == 1
+          ? server.call(body, name: 'generate_image')
+          : server.finalAnswer(body, '任务已处理，请查看工具结果。');
+      await show(tester, demo.workspace);
       await tester.tap(find.byKey(const ValueKey('genai-agent-toggle')));
       await tester.pump();
       await send(tester, '画一张图');
       await pumpUntil(
         tester,
         () => demo.workspace.pendingAgentApproval != null,
+        reason: () =>
+            'phase=${demo.workspace.turns.lastOrNull?.phase} failure=${demo.workspace.turns.lastOrNull?.failure} requests=${requests.length} generations=${server.generations.length} events=${demo.workspace.turns.lastOrNull?.agentEvents.values.map((e) => e.result)}',
       );
       expect(find.byKey(const ValueKey('agent-approval')), findsOneWidget);
       expect(effects, 0);
@@ -202,20 +200,22 @@ void main() {
   }
 
   testWidgets('agent toggle shares the main conversation beside thinking', (tester) async {
-    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
+    final server = JournalServer();
+    final demo = await JournalClient.create(server);
+    server.onGenerate =
+        (body) => demo.workspace.agentEnabled ? server.finalAnswer(body, '已保留前面的上下文。') : 'Answer.';
     addTearDown(demo.dispose);
     final requests = <GenAiChatRequest>[];
     demo.workspace.configureAgent(
       runner: GenAiAgentRunner(
         tools: GenAiAgentToolRegistry([]),
-        streamChat: (request, cancellation) async* {
+        streamChat: (request, cancellation) {
           requests.add(request);
-          yield const GenAiTextDelta('已保留前面的上下文。');
-          yield const GenAiChatFinished(GenAiFinishReason.stop);
+          return demo.repository.streamChat(request, cancellation);
         },
       ),
     );
-    await show(tester, demo);
+    await show(tester, demo.workspace);
     final agent = find.byKey(const ValueKey('genai-agent-toggle'));
     final thinking = find.byKey(const ValueKey('genai-thinking-toggle'));
     expect(tester.getCenter(agent).dy, tester.getCenter(thinking).dy);
@@ -251,76 +251,7 @@ void main() {
       demo.workspace.turns.map((turn) => turn.isAgent),
       [false, true, false],
     );
-    expect(demo.workspace.turns.last.answer, contains('第 **3** 轮'));
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  testWidgets('agent search combination and attachment controls stay consistent', (tester) async {
-    final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
-    addTearDown(demo.dispose);
-    demo.workspace.configureAgent(
-      runner: GenAiAgentRunner(
-        tools: GenAiAgentToolRegistry([]),
-        streamChat: (request, cancellation) => const Stream.empty(),
-      ),
-    );
-    await show(tester, demo);
-    final search = find.byKey(const ValueKey('genai-search-toggle'));
-    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
-    await tester.pumpAndSettle();
-    await tester.tap(search);
-    await tester.pumpAndSettle();
-    expect(demo.workspace.netSearchEnabled, isTrue);
-    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('genai-agent-menu-toggle')));
-    await tester.pumpAndSettle();
-    expect(demo.workspace.agentEnabled, isTrue);
-    expect(demo.workspace.netSearchEnabled, isTrue);
-    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
-    await tester.pumpAndSettle();
-    for (final key in ['genai-upload-image', 'genai-upload-file']) {
-      expect(
-        tester.widget<PopupMenuItem<String>>(find.byKey(ValueKey(key))).enabled,
-        isTrue,
-      );
-    }
-    await tester.tap(search);
-    await tester.pumpAndSettle();
-    expect(demo.workspace.agentEnabled, isTrue);
-    expect(demo.workspace.netSearchEnabled, isFalse);
-    await tester.tap(find.byKey(const ValueKey('genai-agent-toggle')));
-    await tester.pumpAndSettle();
-    demo.workspace.setNetSearch(true);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
-    await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<PopupMenuItem<String>>(
-            find.byKey(const ValueKey('genai-upload-image')),
-          )
-          .enabled,
-      isTrue,
-    );
-    await tester.runAsync(
-      () => demo.workspace.addImageAttachment('reference.png', [1, 2, 3]),
-    );
-    await tester.pumpAndSettle();
-    expect(demo.workspace.attachments, hasLength(1));
-    await tester.tapAt(const Offset(1, 1));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
-    await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<PopupMenuItem<String>>(
-            find.byKey(const ValueKey('genai-agent-menu-toggle')),
-          )
-          .enabled,
-      isTrue,
-    );
+    expect(demo.workspace.turns.last.answer, 'Answer.');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

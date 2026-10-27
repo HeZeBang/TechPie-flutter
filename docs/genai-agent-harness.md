@@ -1,326 +1,181 @@
-# TechPie campus agent
+# GenAI chat and campus agent
 
-The GenAI workspace has an **校园工具** toggle beside **深度思考** in the main chat
-composer. Enable it to use campus tools in the same conversation, with the selected
-model, shared draft and existing transcript. In narrow layouts, inactive controls
-collapse into the + menu, with campus tools collapsing before thinking. Tool progress, results and approval
-cards appear inline. Successfully generated images appear directly beneath the
-tool result; tap an image to enlarge it. The harness shares the verified GenAI
-session and TechPie's existing service instances; it never takes a token from model output.
+The workspace uses the school GenAI conversation API as its durable history.
+TechPie retains only transient UI/execution state; there is no local conversation
+database, archive migration, background save queue, or competing server-copy view.
+Credentials still use the existing secure session store. Campus services continue
+to obtain IDS/CpDaily identity through TechPie's existing binding services.
 
-Campus tools, deep thinking, web search and document/image attachments can be used
-together. Turning agent mode off preserves attachments and the transcript and allows
-ordinary chat to continue. A completed agent answer remains available
-as context for ordinary chat, and switching back preserves the tool exchanges for
-agent follow-ups. Changing modes invalidates late picker and media callbacks.
+## Components
 
-The chat follows streamed output while the reader is near the latest message.
-Scrolling back pauses that behavior; **回到最新** resumes it. The stop button or
-Escape cancels the active generation and preserves any draft already in the
-composer. A stopped answer remains visibly incomplete. Stopping does not prove a
-remote tool side effect was cancelled; existing unknown-outcome warnings and
-mutation receipts still govern retries.
+| Component | Responsibility |
+| --- | --- |
+| `genai_workspace_controller.dart` | Current chat, attachments, modes, cancellation and account ownership |
+| `genai_remote_history.dart` | One server-history projection for display, export and model evidence |
+| `genai_agent_runner.dart` | Bounded sequential tool loop, validation, confirmation and duplicate prevention |
+| `genai_repository.dart` | Authenticated API operations, context preparation and read-back confirmation |
+| `genai_context_compactor.dart` | Source-attributed memory, context budgets and reusable boundaries |
+| `genai_agent_protocol.dart`, `genai_remote_record.dart` | Live decision framing and portable history records |
+| `techpie_genai_tools.dart` | Adapters to existing TechPie services; no parallel campus login implementation |
 
-A compact context indicator sits beside the microphone. It shows a conservative
-budget ring after preparation and a spinner while preparing or compacting.
-The tooltip and details dialog provide numerical estimates.
-Hover or focus reveals its full status, including compaction chunk progress;
-tapping opens the estimate explanation. This is separate from account usage and
-billing. These transient estimates are not stored as conversation evidence.
+Application paths are under `lib/features/genai/application`; protocols are in
+`domain`. `GenAiConversationArchive` is an immutable export/view DTO, not a store.
 
-## Platform boundary
+## Live agent protocol
 
-The supplied ShanghaiTech reference, sections 9–11, reports that
-`/htk/chat/start/chat` strips or rejects native `tools` definitions. The harness
-therefore uses a system prompt and a strict text protocol over the existing SSE
-transport. Requests use only `system`, `user`, and `assistant` roles, string content,
-`messages: []` when empty, and `stream: true`. Every model turn in a task uses the
-same `chatGroupId`; the client supplies its own bounded history.
-
-Every generation request begins `messages` with exactly one `role: "system"`
-message. It is rebuilt from the current campus-tools, thinking, web-search, and
-attachment capabilities. Agent requests append the current nonce protocol and
-only the currently enabled tool catalog to that same system message. Ordinary
-chat explicitly disables campus tools. These instructions are not stored as
-conversation turns or copied from remote logs, so toggles, retries, and reopened
-chats cannot preserve stale capability grants. The separate `thinking` and
-`netGo` flags still control backend behavior; prompt text does not replace them.
-
-Section 9 describes the server history endpoint as an asynchronous, append-only
-log of model request/response pairs. It is not the model context or a canonical
-conversation tree: retries can leave duplicate branches and the server cannot
-edit individual turns. TechPie therefore owns logical chat turns, tool receipts
-and active branches in a versioned local archive. Reopening a locally saved
-conversation uses that archive before consulting server logs. Titles can be
-renamed locally. The readable Markdown export includes visible prompts, answers,
-attachments and tool outcomes; it omits system instructions, execution nonces and
-internal bookkeeping. Synthetic images are labeled as local test images instead
-of being exported as misleading external image URLs.
-
-The reference's early 16k-context claim conflicts with its later DeepSeek and Kimi
-stress tests. These observations are not advertised as universal model guarantees.
-The current catalog supplies model identifiers; the UI preserves an explicitly
-selected model, labels paid/unknown-price models, and does not assume an unavailable
-alias exists. Thinking, when selected and supported by the existing model metadata,
-stays enabled for every model step. Streamed reasoning is displayed in the chronological activity view
-and archived, never parsed as an action or fed back as assistant context.
-
-When web search is enabled, the host injects a run-scoped `web_search(query)`
-capability into both the advertised catalog and the execution registry. The model
-may skip it, search once, or refine a query after inspecting results. All agent
-model requests use `netGo: false`; the search tool alone calls `/net/search` with
-an explicit query and empty history, without attachment fields. A bounded set of
-source URLs/snippets returns as untrusted typed tool data. Failures are structured
-tool results, allowing the model to recover or explain the limitation. The same
-run/tool time limits, cancellation and account guards apply. Disabling search
-removes execution permission, not merely its button.
-
-Document and image uploads also work in agent mode through the existing school
-RAG and vision fields (`fileIds`, `imageUrls`). These are supplied on every model
-step and later agent turns within the same logical conversation, including restored
-chats. Ordinary chat uses the same attachment context. New chats and history gaps
-clear it; retries are limited to the latest turn. Reading capability
-still depends on the selected school model and backend; enabling tools cannot add
-vision to a text-only model. Uploaded content is untrusted reference material,
-never permission to execute actions. The search tool does not automatically receive
-attachments or conversation history; models are instructed to use public queries.
-
-Agent reasoning (the provider's `reasoning_content`, never fabricated), tool states,
-and searches are recorded in chronological order in a collapsible process view.
-Contiguous reasoning chunks are coalesced by model step, and tool states update in
-place. These display records are separate from the nonce-aware executable transcript.
-Approvals remain visible outside the collapsed view. Saved chats preserve the
-ordered records; older archives without this information explicitly show that the
-original step order is unavailable instead of inventing one.
-
-Live Kimi-K3 verification on 2026-10-23 exposed two format deviations: native
-`tools/call` special tokens, and a copied `techpie-agent-history` call record.
-Neither is executable. The live response decoder now requests a bounded protocol
-repair instead of treating these as a successful final answer. Quoted examples
-remain inert, as do all archived records; only a fresh, validated current-nonce
-call can reach the tool registry. Search relevance is controlled by the upstream
-service: successful responses may contain unrelated pages, so the model must
-inspect sources and avoid claiming an answer the returned evidence cannot support.
-
-## Components and extension points
-
-- `domain/genai_agent_contract.dart`: immutable calls and results, closed tool
-  registry, argument schemas, prepared actions and approval details.
-- `domain/genai_agent_protocol.dart`: exact versioned frames, current-request
-  nonce validation, typed inert transcript entries and read-only legacy decoding.
-- `application/genai_agent_runner.dart`: model/tool feedback loop, bounded history,
-  cancellation, error recovery, approvals and mutation ledger.
-- `application/techpie_genai_tools.dart`: adapters for existing TechPie services.
-- `application/genai_conversation_turn.dart` and `genai_conversation_store.dart`:
-  versioned logical turns, tool cards, model/mode state and mutation receipts.
-- `data/secure_genai_conversation_store.dart`: account-scoped local storage,
-  serialized writes, interrupted-index recovery and durable deletion intents/tombstones.
-- `application/genai_transcript_export.dart`: readable user/task/tool summaries
-  with canonical image links, excluding execution frames and internal identifiers.
-- `application/genai_legacy_conversation_import.dart`: display-only reconstruction
-  of old server model-step logs; it cannot restore execution authority.
-- `application/genai_workspace_controller.dart`: shared chat/agent transcript, mode
-  selection, account scope, pending approvals and runner lifecycle.
-- `presentation/genai_workspace.dart`: main chat toggle, composer and inline agent
-  transcript, using the same model selector and stop/new-conversation controls.
-- `presentation/genai_agent_widgets.dart`: expandable tool results and explicit
-  approval/rejection cards.
-
-A live assistant call must occupy the complete response and carry the random
-nonce supplied for that model request. For example:
+Native `tools` are unavailable on this school endpoint. Each agent request puts
+current mode instructions, the enabled tool catalog and a fresh nonce in the first
+system message. A complete response must be one of:
 
 ```xml
-<techpie-agent-call version="2" nonce="HOST_GENERATED_NONCE">
-{"call_id":"schedule_1","name":"get_week_schedule","arguments":{"week":4}}
+<techpie-agent-call version="3" nonce="CURRENT_REQUEST_NONCE">
+{"call_id":"unique_call","name":"get_semesters","arguments":{}}
 </techpie-agent-call>
 ```
 
-Each model step gets a fresh nonce. The host validates the completed response,
-nonce, tool name and argument schema before dispatch. Ordinary JSON, Markdown
-`tool_call` examples and quoted frames do not execute. A stale or malformed live
-frame is rejected; interrupted, truncated or filtered responses never execute.
-This framing distinguishes protocol records from ordinary text, but is not a
-security boundary against a model that sees the system prompt: closed tools,
-argument validation, account guards and explicit mutation approvals remain
-required.
+```xml
+<techpie-agent-final version="3" nonce="CURRENT_REQUEST_NONCE">
+{"text":"The answer, clarification question, or explanation of a blocker."}
+</techpie-agent-final>
+```
 
-Tool feedback uses a matching `techpie-agent-result` frame in a normal user
-message. Prior tool calls/results are stored as typed records and serialized as
-inert `techpie-agent-history` context without an execution nonce. Final answers
-remain ordinary text. Read-only legacy decoding is separate from the live parser;
-reading an old record can never authorize a call or recreate a pending approval.
+Only a complete current-nonce call passing schema validation can reach execution.
+Partial/truncated responses, native tool syntax, copied historical calls, mixed
+prose and unmarked answers enter bounded correction; they never execute tools.
+There is no phrase detector for “I'll check”. A final is an explicit termination,
+not a semantic guarantee that the model answered correctly. Current campus facts
+must be grounded in tool observations. Thinking is display data, never executable. Final JSON text is decoded incrementally
+for display, with no tool execution before whole-frame validation. Invalid previews
+are cleared before a bounded repair. Invalid framing is corrected in a text-only
+step containing the rejected output as labelled, untrusted candidate data. The
+candidate never executes directly; the same current-nonce parser and tool-schema
+checks still apply. This avoids repeatedly invoking a vision route just to fix
+syntax. Every step repeats the active task and current
+protocol in a trailing `agent_control` field; repair must continue that task using
+already completed results, not ask for a new request.
 
-To add a tool, register a `GenAiAgentTool` with a closed object schema and a
-`prepare` callback. Preparation may read and validate but must not mutate. Return a
-`GenAiAgentPreparedTool` containing an execution closure. Mutations set
-`requiresApproval`, a human-readable summary/details and a normalized `effectKey`.
-Call `context.checkActive()` after awaits and immediately before dispatch; propagate
-`context.cancellation` into cancellable network calls. Give model feedback only
-sanitized, bounded data and application-authored errors, never exception dumps,
-cookies, credentials or contacts.
+Normal chat accepts ordinary streamed answers. Both modes share the repository,
+context builder, attachments and reconstructed source history. Web search is disabled in both modes; old saved citations remain readable.
 
-## Initial tools
+## Portable records and quota
 
-| Tool | Existing implementation | Behavior |
-| --- | --- | --- |
-| `get_current_time` | Device clock | UTC, device time and Shanghai campus time; no network. |
-| `get_semesters` | `ScheduleService` | Lists academic terms and selected term with freshness/provenance information. |
-| `get_week_schedule` | `ScheduleService`, custom courses | Teaching-week schedule; validates semester/week and does not silently switch the app's selected semester. |
-| `get_assignments` | `AssignmentService` | Visible assignments/exams, due-date and completion filters; respects hidden/completed overrides. |
-| `reserve_court` | `OaGymService` | Read availability, then prepare one concrete slot/court booking. Rechecks availability and saved booking profile after approval. |
-| `generate_image` | Existing GenAI repository | One PNG using discovered image models; defaults to low quality at 1024×1024, supports validated custom dimensions and shows quota implications. Successful images appear directly in chat with tap-to-enlarge and are also available in normal image history. |
+The school persists `chatInfo` and the answer, not the supplied `messages` context.
+The decoder strips only the known school upload-label prefix before parsing records;
+it never scans arbitrary document text for embedded records.
+Actual exchanges therefore put a versioned `<techpie-record version="1">` JSON
+record in `chatInfo`. The record contains the current input, step ID, turn identity,
+mode/model metadata and any changed recovery data. The original request and file
+text are recorded on the first step; continuations refer to its turn ID. Parent IDs
+make retries explicit. The latest appended path is displayed; other branches stay
+on the server and still contribute conservative mutation protection.
 
-The tool schemas are the authoritative argument reference. Academic reads fail
-closed when ownership/freshness cannot be established. Missing bindings, missing
-booking contact details, unsupported refreshes and unavailable court services are
-reported as errors with a next step; they are never represented as empty success.
-A booking uses the contact profile already saved in TechPie, without sending those
-contact fields to the model. The school availability API does not provide a price;
-approval explicitly says the price is unavailable instead of inventing one.
+Calls and results are paired by ID, not inferred merely from adjacent prose.
+Original user records and tool receipts become model evidence. Attachments retain
+remote identifiers, names, extracted text and image URLs. Successful image-tool
+results join the visual catalog immediately. Each run starts with the newest image;
+`inspect_image` selects an earlier catalog entry as the primary visual attachment.
+The school endpoint may ignore both multi-image arrays and historical attachments,
+so the runner sends the selected URL in both current-image fields. Before switching,
+the model records labelled observations in its assistant call arguments. Those notes
+are not promoted to tool facts; the tool receipt confirms selection only. This uses
+ordinary agent steps in the same conversation, with no auxiliary chats or hidden
+model calls. Reopened chats reconstruct the catalog from source attachments and
+successful image receipts. New generated images become the selected image. The decoder constructs
+ordered thinking/tool activity and the final answer. Version 2 and legacy server
+logs remain readable through a separate compatibility decoder. Recovered records
+never recreate approval dialogs or execute tools. Markers indicate structure,
+not cryptographic proof of authorship.
 
-## Lifecycle, limits and side effects
+There are no extra model calls just to save a receipt or checkpoint. Recovery
+metadata rides on the next normal exchange. Compaction sends only a small prefix
+boundary marker: summary answers are recovered directly from their existing
+extraction rows by source hash, then validated against original quotes. Mutation
+receipts use deltas rather than repeated ledger snapshots. Memory extraction
+itself can use bounded model calls in the same group.
+Renaming is draft metadata until the next real message, which the UI explains.
 
-Default limits are 12 model turns, two recoverable protocol errors,
-32,768 output characters and 6,000 tool-result characters. The run has a
-10-minute deadline; ordinary tool work has a 60-second deadline. A host-owned prepared
-action may request a longer execution timeout, bounded at six minutes, for image
-generation. These are configurable client resource limits, not model token claims.
-The repository now shares budgeted context compaction with ordinary chat. It
-separates the latest-message budget from the full context window, preserving
-the task goal, recent complete tool exchanges and source-checked memory while
-retaining the full archive. User records and tool receipts take factual precedence;
-one relevant older assistant artifact may be retained separately as unverified
-material for revision. See [context compaction](genai-api-contract.md#context-compaction)
-for accounting, checkpoint persistence, failure behavior and estimator limits.
+Opening and continuing always read server history. An absent completed turn
+blocks automatic continuation instead of silently dropping it or replaying the
+POST. Explicitly stopped or interrupted output is carried as inert history on the
+next real request, preserving partial output without replaying the old generation. Checking synchronization is read-only. History labels and ordering are
+derived from logical exchanges, excluding compaction housekeeping. Export uses
+the same projection as reopening. Account or conversation changes invalidate late
+reads and execution callbacks.
 
-Court bookings have an additional host-enforced limit: **one approval proposal
-per user message**, including rejected proposals. Different call IDs, courts,
-dates, player counts, or instructions to approve everything cannot increase this
-budget. Availability queries remain read-only; a booking targets one physical
-court and one time slot. The user must click **确认预约此场地** on the prepared
-court/date/time details. Approval applies only to that pending action and expires
-two minutes after preparation; the expiry is checked again immediately before
-submission, including after session renewal. Execution is single-use. When the
-adapter proves an approval expired before submission, its receipt is cleared
-durably so a new user message can request fresh confirmation; the current run
-still cannot propose another booking. Deduplication
-ignores player count and normalizes shared court aliases; older saved receipts
-are migrated so reopening a chat cannot reopen an already handled booking.
+## Tools and safety
 
-These safeguards constrain the agent in this client, not the gym API itself.
-They are not an account-wide or cross-device quota. A modified client or direct
-API caller still requires server-side authorization, quotas and idempotency.
-A new user message may propose another booking, but always requires new explicit
-confirmation. Timeout/unknown outcomes must be checked in booking history, never
-automatically resubmitted.
+Available campus adapters: `get_current_time`, `get_semesters`,
+`get_week_schedule`, `get_assignments`, `reserve_court`, `generate_image`,
+and the runner-owned read-only `inspect_image`.
+Documents, uploaded images, and successful generated-image receipts supply context
+across tool calls, follow-ups, and server-only recovery. Service failures return typed
+results; private service exceptions and credentials never enter model output.
 
-Account/session changes cancel active work, clear the visible private transcript
-and dismiss pending approvals. Archives remain isolated under their captured
-account scope. The run also captures connected third-party identities, so changing
-an assignment provider cannot mix accounts mid-task. Leaving the main chat cancels
-active execution while retaining the saved conversation. The shared stop button
-interrupts the run and keeps known tool outcomes, including uncertain outcomes
-that must be checked before retrying. New conversation starts a fresh logical
-conversation without deleting older archives.
+Reservations and paid image generation require a concrete host-prepared proposal
+and explicit user confirmation. Reservation limits, argument validation, identity
+checks and pre-dispatch availability checks remain enforced in code. No model
+prompt or historical approval grants permission. Reservation proposals remain limited to one confirmation per logical
+user request and retain physical court/time-slot identity across messages.
+Image operations use a host-created task scope plus normalized prompt, model,
+resolution, and quality. Retry branches preserve that scope; new user messages
+start a new scope. Within a task, a different image revision gets its own explicit
+confirmation, while an identical request reuses the earlier result. Declining
+an image stops further image proposals until a new user message, including after
+recovery. Earlier unknown outcomes are shown as warnings on new confirmations;
+they do not lock the entire image tool. The bounded agent loop still limits work.
 
-Reopening a local archive restores tool cards, generated images, selected model,
-mode and typed context. Previously active or awaiting-approval turns become
-interrupted; no request, approval or tool executes automatically. The archive is
-local to this installation and account scope; it is not a cross-device sync
-service. Storage errors must remain visible instead of silently replacing a local
-branch with the server's logging rows. A small write-ahead marker lets the next
-operation complete an interrupted record/index update without discarding deletion
-tombstones. Store instances share serialization within the running isolate; this
-is not cross-process or cross-device locking. Malformed authoritative records or
-indexes still report a storage error and preserve their original data.
 
-Generated-image results and image history now retain canonical campus CDN URLs;
-only the renderer resolves the active preview proxy. Answer and reasoning Markdown
-share the same trusted-image policy; arbitrary external images never load automatically. Older local archives migrate
-structured loopback/static image URLs in attachments, tool results and mutation
-receipts, leaving literal user/assistant text unchanged.
+Before an irreversible effect, the repository verifies that its model proposal
+is visible in remote history. This barrier uses GET requests, never a repeated
+model POST. If the proposal is not visible, execution fails closed. A result that
+has not reached the next saved exchange remains unknown after a crash. Unknown
+mutations are not automatically repeated; verify the underlying service status.
+Completed and denied receipts suppress duplicates within that action scope.
+An unknown outcome must never be copied onto unrelated actions or treated as
+evidence of an upstream task lock. Old reused receipts are not new dispatches.
+Exactly-once execution and cross-device mutual exclusion require upstream support and are not claimed here.
 
-When no local archive exists, adjacent matching call/result rows from older server
-logs are grouped into inert historical tasks. Versioned same-chat compaction
-rows are skipped before pairing, and protocol-repair feedback stays within its
-original task. Recorded tool receipts remain source evidence for later questions
-in both ordinary and agent modes, ahead of prior assistant answers. V1 code examples remain ordinary text
-unless a matching receipt establishes a tool chain. Namespaced V2 records are
-recognized explicitly. Missing/orphan results produce recovery notices and unknown
-outcomes; typed inert records never authorize execution. Imported
-server logs cannot recreate approvals or authoritative mutation receipts.
-Unreadable server rows remain explicit gaps in their original positions. A gap
-breaks tool-chain reconstruction, cannot be retried as a user request, and is
-exported as a missing-history notice rather than fabricated message content.
+Limits bound model rounds, correction attempts, output size, tool deadlines and
+whole-run duration. Account changes and cancellation are checked after every
+asynchronous boundary. A late result cannot populate a different account/chat.
 
-A session deletion records durable intent before the remote request. While the
-remote outcome is unresolved, that session stays hidden and unwritable even after
-restart. A confirmed remote rejection can restore the retained local archive;
-a confirmed deletion finalizes a tombstone. An ambiguous outcome is reported for
-manual verification and never causes an automatic repeat of the remote DELETE.
+## Context
 
-Approved mutations are durably recorded as an uncertain outcome before dispatch,
-using a normalized host-owned identity. A failed checkpoint prevents dispatch.
-Completed, denied and unknown receipts are retained and restored with that local
-conversation so retries do not repeat the same effect. A checkpoint after success
-records its result. Deletion tombstones prevent queued saves from resurrecting a
-removed conversation. Timeout/cancellation cannot prove that a server action was
-rolled back; users must check records before trying again. OA booking POSTs are not
-automatically replayed after authentication failure. This is duplicate protection
-within a retained local conversation, not durable exactly-once delivery across
-new conversations, deleted storage or devices. Remote services remain authoritative.
+The default model profile is 256k, with reserved output and safety headroom. There
+is no assumed 16k latest-message ceiling. Counts are conservative estimates, not
+provider billing tokens: ASCII is estimated at two characters per token and
+non-ASCII scalars individually. Gateway/body limits and model-specific tokenizers
+remain distinct from this policy. All metadata sent on the wire is budgeted too.
 
-Tool data is untrusted input for the model. The harness has no arbitrary code,
-shell, file-system or browser execution tool. UI approvals are generated from
-validated prepared actions, not from text supplied by the model. User tasks and
-relevant tool results are sent to the selected school model using the existing
-GenAI service. Confirmation stays on the prepared action rather than in a
-permanent composer caption.
+Compaction uses a trigger/target gap (200k / 136k by default), keeps whole exchanges
+and preserves original server records. A checkpoint identifies a covered prefix
+and validates it against source/model identity. Subsequent requests retrieve
+relevant evidence and reuse the boundary until effective context grows again.
+User records and tool observations outrank assistant answers. Failed extraction
+falls back to bounded original excerpts. The saved checkpoint is piggybacked onto
+the normal request, so a fresh installation can reuse it without local storage.
 
-## Verification and demo
+## Verification
 
-The full `lib/main.dart` app supports the existing debug fixture. The local demo
-recognizes the harness system marker and provides deterministic tool calls through
-the real runner and adapters. It is explicitly labeled local demo, not a live model
-benchmark. Image checks use the bundled `assets/genai/demo-campus.png` scene
-(a campus library, pond and red bicycle), labelled “本地测试图片”. Use this decoded
-picture in chat, zoom and image-history checks; an icon or empty panel is not a
-successful image-rendering check. The fixture's source prompt is recorded in
-`assets/genai/README.md`.
+Tests use synthetic transports and data. Keep coverage for strict framing,
+truncated streams, approval/cancellation races, unknown mutations, account changes,
+fresh-instance recovery, attachments across modes, branching and checkpoint reuse.
+Storage batching/migration tests were removed with the obsolete store.
 
-Example manual checks:
+Load the repository environment with the upstream Flutter SDK, then run:
 
-1. Connect the local demo account, enable **校园工具** beside **深度思考**, and ask
-   `整理本周课表和作业`. Verify four inline read-tool results and the final response.
-   Disable the toggle, send an ordinary chat message, and enable it again to
-   confirm the same conversation remains visible.
-2. Ask `生成一张校园图片`. Reject once and verify no image appears. Start a new conversation,
-   ask again, approve, and verify the image appears directly in chat. Tap it to
-   enlarge, then inspect the normal image history.
-3. Ask `预约羽毛球场`. The local demo must explain that real court availability is
-   unavailable and must not submit a reservation.
-4. Stop while awaiting approval, change an account, start a new conversation, or
-   leave the page. Confirm no pending action executes later.
-5. Enable search and thinking with campus tools; verify citations, reasoning and tool results. Keep campus tools enabled, add a document and image, and verify
-   both remain attached when sending an agent request. Check the toggle and composer
-   at a narrow phone width.
-6. Reopen a completed tool conversation and verify its original prompt, tool cards,
-   image previews and final answer remain in order. The debug demo deliberately
-   uses in-memory storage, so full reload clears its conversations; automatic
-   shared-store/secure-storage tests cover process restart. The normal runtime
-   persists through secure storage and needs a separate device restart check.
-   Reopen an interrupted task and confirm no pending approval or network action
-   resumes.
-7. Ask for a Markdown `tool_call` example or quote a stale V2 frame. Confirm it is
-   displayed as ordinary text and never invokes a tool.
+```sh
+flutter analyze --no-pub
+flutter test --no-pub test/genai
+flutter test --no-pub
+```
 
-The preview environment's real-login mode still has seeded campus services. Its
-academic tools refuse to present seeded coursework as real-account data. Real
-service calls require the ordinary TechPie service configuration and bindings.
-Unit/widget tests use synthetic data for protocol errors, bounded loops, approvals,
-duplicate actions, account races, timeout and late dispatch; no tests spend school
-quota or reserve real courts.
+The full debug fixture (`lib/main.dart`, `TECHPI_DEBUG_FIXTURE=true`) uses the same
+runtime against an in-memory fake server. It exercises UI and wire recovery
+without campus calls. Reloading that demo resets the fake server and login; real
+cross-device persistence must additionally be checked against school history.
 
-Run the automated regressions with `flutter test --no-pub test/genai` and the
-loopback contract checks with
-`python3 -m unittest discover -s test/tool -p genai_preview_proxy_test.py`.
+Older clients could assign fallback IDs to document-prefixed records. Recovery
+reconstructs those IDs from the original server row sequence and aliases them to
+the canonical exchanges, ignoring stale interrupted snapshots of those same rows.
+Unrelated missing parents still produce an explicit history gap.

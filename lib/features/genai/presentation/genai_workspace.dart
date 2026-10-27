@@ -607,7 +607,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 20),
                                 child: _notice(
-                                  '此对话尚未安全保存。请保留此页面，检查设备存储后重试。',
+                                  '服务器尚未确认完整记录。请保留此页面并检查同步状态。',
                                   action: TextButton(
                                     onPressed: () async {
                                       try {
@@ -616,7 +616,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                         // The persistent notice remains until a successful retry.
                                       }
                                     },
-                                    child: const Text('重新保存'),
+                                    child: const Text('检查同步'),
                                   ),
                                 ),
                               ),
@@ -966,7 +966,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                           ? '正在验证身份…'
                           : _state.sessions.owner == null
                               ? '使用现有 IDS 会话连接'
-                              : '连接校园 GenAI',
+                              : widget.demo
+                                  ? '连接本地演示'
+                                  : '使用校园账号连接',
                     ),
                     style: FilledButton.styleFrom(
                       backgroundColor: _accent,
@@ -988,18 +990,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                   TextButton(
                     onPressed: widget.onBindCampus,
                     child: const Text('绑定校园账号'),
-                  ),
-                if (widget.onCampusLogin != null && _state.sessions.owner != null)
-                  TextButton.icon(
-                    onPressed: _state.connecting ? null : widget.onCampusLogin,
-                    icon: const Icon(Icons.open_in_browser, size: 18),
-                    label: const Text('使用 TechPie IDS 登录'),
-                  ),
-                if ((_state.sessions.owner != null || widget.campusBound) &&
-                    widget.onBindCampus != null)
-                  TextButton(
-                    onPressed: widget.onBindCampus,
-                    child: const Text('管理校园账号'),
                   ),
                 if (_state.loginFailure != null)
                   Padding(
@@ -1521,9 +1511,9 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       keyboardOpen: MediaQuery.viewInsetsOf(context).bottom > 0,
       sending: _state.sending,
       thinkingEnabled: _state.thinkingEnabled,
+      supportsThinking: _state.selectedModel?.supportsThinking ?? false,
       agentAvailable: _state.agentAvailable,
       agentEnabled: _state.agentEnabled,
-      netSearchEnabled: _state.netSearchEnabled,
       recognizingAudio: _state.recognizingAudio,
       attachments: _state.attachments,
       hasPendingUploads: _state.hasPendingUploads,
@@ -1545,7 +1535,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
           _state.contextUsage == null ? null : GenAiContextStatus(usage: _state.contextUsage!),
       onThinkingChanged: _state.setThinking,
       onAgentChanged: _state.setAgentEnabled,
-      onSearchChanged: _state.setNetSearch,
       onMenuAction: (action) {
         if (!_isCurrent(scope) || _state.sending) return;
         switch (action) {
@@ -1553,8 +1542,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             _state.setThinking(!_state.thinkingEnabled);
           case 'campus':
             _state.setAgentEnabled(!_state.agentEnabled);
-          case 'search':
-            _state.setNetSearch(!_state.netSearchEnabled);
           case 'document':
             unawaited(_media.pickDocument());
           case 'image':

@@ -8,13 +8,11 @@ import '../../../services/auth_service.dart';
 import '../../../services/third_party_auth_service.dart';
 import '../application/campus_genai_session_issuer.dart';
 import '../application/genai_chat_service.dart';
-import '../application/genai_conversation_store.dart';
 import '../application/genai_repository.dart';
 import '../application/genai_session_service.dart';
 import '../application/genai_workspace_controller.dart';
 import '../data/genai_api_client.dart';
 import '../data/genai_request_signer.dart';
-import '../data/secure_genai_conversation_store.dart';
 import '../data/secure_genai_session_store.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_failure.dart';
@@ -30,7 +28,6 @@ final class GenAiRuntime {
     required ThirdPartyAuthService thirdPartyAuth,
     GenAiTransport? transport,
     GenAiSessionStore? store,
-    GenAiConversationStore? conversationStore,
     GenAiSessionIssuer? issuer,
     Uri? apiBase,
     this.isDemo = false,
@@ -61,10 +58,6 @@ final class GenAiRuntime {
       sessions: sessions,
       repository: repository,
       chat: chat,
-      conversationStore: conversationStore ??
-          (isDemo
-              ? MemoryGenAiConversationStore()
-              : SecureGenAiConversationStore()),
     );
     _auth.addListener(_syncOwner);
     _thirdPartyAuth.addListener(_syncOwner);
@@ -99,18 +92,15 @@ final class GenAiRuntime {
     if (boundStudentId.isNotEmpty && _resolvedStudentId != boundStudentId) {
       _resolvedStudentId = null;
     }
-    final studentId =
-        boundStudentId.isNotEmpty ? boundStudentId : _resolvedStudentId ?? '';
-    final owner = primary == null ||
-            primary.userId.trim().isEmpty ||
-            binding == null ||
-            studentId.isEmpty
-        ? null
-        : GenAiOwner(
-            primaryUserId: primary.userId,
-            studentId: studentId,
-            bindingId: binding.boundAt.toUtc().toIso8601String(),
-          );
+    final studentId = boundStudentId.isNotEmpty ? boundStudentId : _resolvedStudentId ?? '';
+    final owner =
+        primary == null || primary.userId.trim().isEmpty || binding == null || studentId.isEmpty
+            ? null
+            : GenAiOwner(
+                primaryUserId: primary.userId,
+                studentId: studentId,
+                bindingId: binding.boundAt.toUtc().toIso8601String(),
+              );
     if (owner == sessions.owner) return;
     chat.clear();
     // setOwner already exposes storage failures through sessions.lastFailure.
@@ -157,9 +147,7 @@ final class GenAiRuntime {
     final scope = _currentCampusScope();
     final binding = _thirdPartyAuth.cpdailyBinding;
     final issuer = _issuer;
-    if (scope == null ||
-        binding == null ||
-        issuer is! CampusGenAiSessionIssuer) {
+    if (scope == null || binding == null || issuer is! CampusGenAiSessionIssuer) {
       throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
     }
     final cancellation = GenAiCancellation();

@@ -11,6 +11,7 @@ import '../domain/genai_agent_contract.dart';
 import '../domain/genai_agent_protocol.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_failure.dart';
+import '../domain/genai_remote_record.dart';
 import '../domain/genai_session.dart';
 import '../platform/genai_transport.dart';
 import 'genai_api_client.dart';
@@ -31,8 +32,7 @@ final class DemoGenAiBackend implements GenAiTransport {
   final _history = <String, List<Map<String, Object?>>>{};
   final _images = <Map<String, Object?>>[];
 
-  GenAiResponse _ok(Object? result) =>
-      _json({'success': true, 'code': 200, 'result': result});
+  GenAiResponse _ok(Object? result) => _json({'success': true, 'code': 200, 'result': result});
 
   Map<String, Object?> _page(List<Object?> rows, Uri uri) {
     final page = int.tryParse(uri.queryParameters['pageNo'] ?? '') ?? 1;
@@ -77,6 +77,7 @@ final class DemoGenAiBackend implements GenAiTransport {
               'aiType': 'demo-general',
               'rootAiType': 'demo',
               'payType': 'FREE',
+              'enableDeepThink': 1,
               'status': 3,
             },
             {
@@ -84,6 +85,7 @@ final class DemoGenAiBackend implements GenAiTransport {
               'aiType': 'demo-code',
               'rootAiType': 'demo',
               'payType': 'FREE',
+              'enableDeepThink': 1,
               'status': 3,
             },
             {
@@ -157,9 +159,7 @@ final class DemoGenAiBackend implements GenAiTransport {
     }
     final data = body == null
         ? <String, dynamic>{}
-        : (body.startsWith('{')
-            ? jsonDecode(body) as Map<String, dynamic>
-            : <String, dynamic>{});
+        : (body.startsWith('{') ? jsonDecode(body) as Map<String, dynamic> : <String, dynamic>{});
     switch (uri.path) {
       case '/htk/ai/history/listByContentGroup':
         final rawQuery = uri.queryParameters['question'] ?? '';
@@ -171,9 +171,7 @@ final class DemoGenAiBackend implements GenAiTransport {
                 if (entry.value.isNotEmpty)
                   if (query.isEmpty ||
                       entry.value.any(
-                        (turn) => (turn['question'] as String? ?? '')
-                            .toLowerCase()
-                            .contains(query),
+                        (turn) => (turn['question'] as String? ?? '').toLowerCase().contains(query),
                       ))
                     {
                       'chatGroupId': entry.key,
@@ -269,7 +267,8 @@ final class DemoGenAiBackend implements GenAiTransport {
     Map<String, dynamic> request,
     GenAiCancellation cancellation,
   ) async* {
-    final prompt = request['chatInfo'] as String;
+    final storedPrompt = request['chatInfo'] as String;
+    final prompt = decodeGenAiRemoteRecord(storedPrompt)?['input'] as String? ?? storedPrompt;
     final history = request['messages'] as List<dynamic>;
     final turn = history.length ~/ 2 + 1;
     if (request['thinking'] == true) {
@@ -390,7 +389,8 @@ graph LR; A[Start] --> B[Done];
     }
     final groupId = request['chatGroupId'] as String;
     _history.putIfAbsent(groupId, () => []).add({
-      'question': prompt,
+      'question': storedPrompt,
+      'createTime': DateTime.now().toUtc().toIso8601String(),
       'imageUrl': (request['imageUrls'] as List<Object?>? ?? []).join(','),
       'answer': answer,
       'aiType': request['aiType'],
@@ -408,15 +408,12 @@ graph LR; A[Start] --> B[Done];
               entry['content'] is String &&
               (entry['content'] as String).startsWith(genAiAgentProtocolMarker),
         );
-    final nonce = systems.isEmpty
-        ? null
-        : genAiAgentNonceFromSystem(systems.first['content'] as String);
+    final nonce =
+        systems.isEmpty ? null : genAiAgentNonceFromSystem(systems.first['content'] as String);
     if (nonce == null) return null;
     final userMessages = <String>[
       for (final entry in history)
-        if (entry is Map &&
-            entry['role'] == 'user' &&
-            entry['content'] is String)
+        if (entry is Map && entry['role'] == 'user' && entry['content'] is String)
           entry['content'] as String,
       prompt,
     ];
@@ -434,10 +431,8 @@ graph LR; A[Start] --> B[Done];
       }
     }
     final lower = goal.toLowerCase();
-    final imageGoal =
-        RegExp('图片|图像|画一|画个|海报|image|picture|illustrat').hasMatch(lower);
-    final courtGoal =
-        RegExp('球场|场地|预约|羽毛球|乒乓|网球|匹克|court|reserve').hasMatch(lower);
+    final imageGoal = RegExp('图片|图像|画一|画个|海报|image|picture|illustrat').hasMatch(lower);
+    final courtGoal = RegExp('球场|场地|预约|羽毛球|乒乓|网球|匹克|court|reserve').hasMatch(lower);
     final searchAvailable = (systems.first['content'] as String)
         .split('AVAILABLE_TOOLS:')
         .last
@@ -470,7 +465,7 @@ graph LR; A[Start] --> B[Done];
         final explicitDate = RegExp(r'\d{4}-\d{2}-\d{2}').firstMatch(goal)?[0];
         final date = explicitDate ?? _agentDate(time);
         if (date == null) {
-          return '本地演示：当前时间工具未返回有效日期，尚未查询或预约场地。';
+          return encodeGenAiAgentFinal('本地演示：当前时间工具未返回有效日期，尚未查询或预约场地。', nonce: nonce);
         }
         arguments.addAll({
           'action': 'availability',
@@ -506,9 +501,7 @@ graph LR; A[Start] --> B[Done];
         if (name == 'generate_image') {
           final code = error is Map ? error['code'] : null;
           output.writeln(
-            code == 'approval_denied' || code == 'denied'
-                ? '已取消，未执行生图。'
-                : '未确认生成成功，请先查看图片历史。',
+            code == 'approval_denied' || code == 'denied' ? '已取消，未执行生图。' : '未确认生成成功，请先查看图片历史。',
           );
         }
       } else {
@@ -522,7 +515,7 @@ graph LR; A[Start] --> B[Done];
       output.writeln();
     }
     output.write('*本地确定性演示，未调用校园模型。*');
-    return output.toString();
+    return encodeGenAiAgentFinal(output.toString(), nonce: nonce);
   }
 
   String _agentSummary(String name, Map<dynamic, dynamic> result) {
@@ -553,9 +546,7 @@ graph LR; A[Start] --> B[Done];
         output.writeln('。');
         for (final course in rows.take(3)) {
           final day = course['weekday'];
-          final weekday = day is int && day >= 1 && day <= 7
-              ? '周${'一二三四五六日'[day - 1]} '
-              : '';
+          final weekday = day is int && day >= 1 && day <= 7 ? '周${'一二三四五六日'[day - 1]} ' : '';
           final start = course['start_time'];
           final end = course['end_time'];
           final time = start is String && end is String ? '$start–$end ' : '';
@@ -572,8 +563,7 @@ graph LR; A[Start] --> B[Done];
         output.writeln('。');
         for (final assignment in rows.take(3)) {
           final due = assignment['due'];
-          final deadline =
-              due is String ? ' · 截止 ${_agentCampusTime(due)}（上海）' : '';
+          final deadline = due is String ? ' · 截止 ${_agentCampusTime(due)}（上海）' : '';
           output.writeln(
             '- ${_agentText(assignment['title'], fallback: '未命名作业')}$deadline',
           );
@@ -583,9 +573,7 @@ graph LR; A[Start] --> B[Done];
         return output.toString().trimRight();
       case 'generate_image':
         final images = result['images'];
-        if (result['status'] != 'generated' ||
-            images is! List ||
-            images.isEmpty) {
+        if (result['status'] != 'generated' || images is! List || images.isEmpty) {
           return '工具未返回已确认的图片，请先查看图片历史。';
         }
         return '工具已返回 ${images.length} 张图片，已显示在聊天中，点击图片可放大查看。';
@@ -597,9 +585,8 @@ graph LR; A[Start] --> B[Done];
     }
   }
 
-  List<Map<dynamic, dynamic>> _agentRows(Object? value) => value is List
-      ? value.whereType<Map<dynamic, dynamic>>().toList()
-      : const [];
+  List<Map<dynamic, dynamic>> _agentRows(Object? value) =>
+      value is List ? value.whereType<Map<dynamic, dynamic>>().toList() : const [];
 
   String _agentText(Object? value, {required String fallback}) {
     if (value is! String || value.trim().isEmpty) return fallback;
@@ -618,8 +605,7 @@ graph LR; A[Start] --> B[Done];
         '${two(campus.hour)}:${two(campus.minute)}';
   }
 
-  Map<String, Object?>? _agentToolResponse(String text) =>
-      decodeGenAiAgentRecord(text)?.result;
+  Map<String, Object?>? _agentToolResponse(String text) => decodeGenAiAgentRecord(text)?.result;
 
   String? _agentDate(Object? value) {
     if (value is! Map) return null;
@@ -651,8 +637,7 @@ graph LR; A[Start] --> B[Done];
         _ => name,
       };
 
-  List<int> _event(Map<String, String> delta, {String? finish}) =>
-      utf8.encode('data: ${jsonEncode({
+  List<int> _event(Map<String, String> delta, {String? finish}) => utf8.encode('data: ${jsonEncode({
             'choices': [
               {
                 'index': 0,
@@ -674,8 +659,7 @@ graph LR; A[Start] --> B[Done];
 final class DemoGenAiSessionStore implements GenAiSessionStore {
   final _sessions = <String, GenAiSession>{};
   @override
-  Future<GenAiSession?> read(GenAiOwner owner) async =>
-      _sessions[owner.storageId];
+  Future<GenAiSession?> read(GenAiOwner owner) async => _sessions[owner.storageId];
   @override
   Future<void> write(GenAiSession session) async {
     _sessions[session.owner.storageId] = session;
@@ -703,8 +687,7 @@ final class GenAiDemo {
       transport: backend,
       signer: const GenAiRequestSigner('synthetic-signing-salt'),
     );
-    final sessions =
-        GenAiSessionService(api: api, store: DemoGenAiSessionStore());
+    final sessions = GenAiSessionService(api: api, store: DemoGenAiSessionStore());
     await sessions.setOwner(
       const GenAiOwner(
         primaryUserId: 'preview-primary',
@@ -713,8 +696,7 @@ final class GenAiDemo {
       ),
     );
     if (connected) {
-      await sessions
-          .connect(const GenAiCredential(token: DemoGenAiBackend.token));
+      await sessions.connect(const GenAiCredential(token: DemoGenAiBackend.token));
     }
     final repository = GenAiRepository(api: api, sessions: sessions);
     final chat = GenAiChatService(repository);

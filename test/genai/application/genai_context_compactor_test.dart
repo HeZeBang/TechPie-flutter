@@ -9,6 +9,7 @@ import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_context_usage.dart';
 import 'package:techpie/features/genai/domain/genai_contract.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
+import 'package:techpie/features/genai/domain/genai_remote_record.dart';
 
 const policy = GenAiContextPolicy(
   contextTokens: 20000,
@@ -34,15 +35,15 @@ List<GenAiMessage> sourceHistory() => [
       for (var i = 0; i < 12; i++) ...[
         GenAiMessage(
           role: GenAiRole.assistant,
-          content: 'Observation $i. ${'irrelevant telemetry ' * 35}',
+          content: 'Observation $i. ${'irrelevant telemetry ' * 70}',
         ),
         GenAiMessage(
           role: GenAiRole.user,
           content: i == 2
-              ? 'Budget: 49 CNY. Deadline: 2031-11-12 14:35 Asia/Shanghai. ${'detail ' * 50}'
+              ? 'Budget: 49 CNY. Deadline: 2031-11-12 14:35 Asia/Shanghai. ${'detail ' * 100}'
               : i == 4
-                  ? 'Correction: Budget is 73 CNY, not 49. Keep booking B-37 outcome UNKNOWN; do not retry. ${'detail ' * 50}'
-                  : 'Question $i: ${'detail ' * 50}',
+                  ? 'Correction: Budget is 73 CNY, not 49. Keep booking B-37 outcome UNKNOWN; do not retry. ${'detail ' * 100}'
+                  : 'Question $i: ${'detail ' * 100}',
         ),
       ],
     ];
@@ -69,7 +70,8 @@ Stream<GenAiChatEvent> summary(
   GenAiChatRequest request,
   GenAiCancellation c,
 ) async* {
-  expect(request.thinking || request.netGo, isFalse);
+  expect(request.thinking, isFalse);
+  expect(request.toJson()['netGo'], isFalse);
   expect(request.fileIds, isEmpty);
   final records = jsonDecode(request.history.last.content) as List;
   yield GenAiTextDelta(
@@ -89,6 +91,122 @@ Stream<GenAiChatEvent> summary(
 }
 
 void main() {
+  test('compaction and receipt decoration preserve current task and live protocol control',
+      () async {
+    const control = {
+      'current_task': 'Read the original budget',
+      'current_nonce': 'active_nonce_0123456789',
+    };
+    final input = GenAiChatRequest(
+      chatGroupId: 'long-agent-chat',
+      prompt: 'Latest tool result',
+      aiType: 'Kimi-k3',
+      rootAiType: 'xinference',
+      history: sourceHistory(),
+      agentControl: control,
+      record: const {'step_id': 'active_nonce_0123456789'},
+    );
+    final prepared =
+        await GenAiContextCompactor(policy: policy).prepare(input, GenAiCancellation(), summary);
+    expect(prepared.contextCompacted, true);
+    expect(prepared.agentControl, control);
+    final wire = prepared.withRecord({
+      ...prepared.record,
+      'context': {'boundary': 'saved'},
+    }).toJson();
+    expect(decodeGenAiRemoteRecord(wire['chatInfo']! as String)?['agent_control'], control);
+    expect(prepared.history.first.content, contains('Never repeat an unknown action'));
+    expect(wire['netGo'], false);
+  });
+
+  test('256k profile accepts a latest input well beyond 16k without compaction', () async {
+    final compactor = GenAiContextCompactor();
+    final input = request(const [], prompt: '原始记录。' * 8000);
+    final result = await compactor.prepare(input, GenAiCancellation(), (_, __) async* {
+      fail('An input within the context budget should not be summarized');
+    });
+    expect(result.prompt, input.prompt);
+    expect(result.contextCompacted, false);
+  });
+
+  for (final tools in [false, true]) {
+    test('checkpoint survives follow-ups and reopen without recompacting tools=$tools', () async {
+      var compactor = GenAiContextCompactor(policy: policy);
+      final history = sourceHistory();
+      var calls = 0;
+      Stream<GenAiChatEvent> tracked(GenAiChatRequest r, GenAiCancellation c) {
+        calls++;
+        return summary(r, c);
+      }
+
+      final first = await compactor.prepare(request(history), GenAiCancellation(), tracked);
+      expect(first.contextCompacted, isTrue);
+      final initialCalls = calls;
+      for (var i = 0; i < 3; i++) {
+        history.addAll([
+          GenAiMessage(role: GenAiRole.user, content: 'Follow-up $i'),
+          const GenAiMessage(role: GenAiRole.assistant, content: 'Short answer'),
+          if (tools) ...[
+            GenAiAgentHistoryEntry.call(
+              GenAiAgentToolCall(
+                id: 'time-$i',
+                name: 'get_current_time',
+                arguments: const {},
+              ),
+            ).message,
+            GenAiAgentHistoryEntry.result({
+              'call_id': 'time-$i',
+              'name': 'get_current_time',
+              'ok': true,
+              'result': {'utc': '2031-11-12T05:18:00Z'},
+            }).message,
+          ],
+        ]);
+        if (i == 2) {
+          compactor = GenAiContextCompactor(policy: policy)
+            ..restore('test-conversation', compactor.snapshot('test-conversation'));
+        }
+        final updates = <GenAiContextUsage>[];
+        final next = await compactor.prepare(
+          request(history),
+          GenAiCancellation(),
+          tracked,
+          onUsage: updates.add,
+        );
+        expect(next.contextCompacted, isFalse, reason: 'Follow-up $i must reuse the checkpoint');
+        expect(updates.any((u) => u.stage == GenAiContextStage.compacting), isFalse);
+        expect(calls, initialCalls);
+        expect(next.history.map((m) => m.content).join(), contains('73 CNY'));
+      }
+      history.addAll([
+        for (var i = 0; i < 8; i++) ...[
+          GenAiMessage(role: GenAiRole.user, content: 'New material $i: ${'detail ' * 100}'),
+          const GenAiMessage(role: GenAiRole.assistant, content: 'Noted'),
+        ],
+      ]);
+      final advanced = await compactor.prepare(request(history), GenAiCancellation(), tracked);
+      expect(advanced.contextCompacted, isTrue);
+      expect(calls, greaterThan(initialCalls));
+    });
+  }
+
+  test('failed extraction fallback is reused instead of retried on every follow-up', () async {
+    final compactor = GenAiContextCompactor(policy: policy);
+    final history = sourceHistory();
+    var calls = 0;
+    Stream<GenAiChatEvent> broken(GenAiChatRequest r, GenAiCancellation c) async* {
+      calls++;
+      throw const GenAiFailure(GenAiFailureKind.timeout);
+    }
+
+    await compactor.prepare(request(history), GenAiCancellation(), broken);
+    history.add(const GenAiMessage(role: GenAiRole.user, content: 'And the deadline?'));
+    final next = await compactor.prepare(request(history), GenAiCancellation(), broken);
+    expect(calls, 1);
+    expect(next.contextCompacted, isFalse, reason: 'Follow-up must reuse compacted history');
+    expect(next.history.map((m) => m.content).join(), contains('2031-11-12'));
+  });
+
   test('reports actual chunk progress before extraction and the enforced final budget', () async {
     final updates = <GenAiContextUsage>[];
     final started = Completer<void>();
@@ -164,7 +282,7 @@ void main() {
       updates.map((value) => value.stage),
       [GenAiContextStage.preparing, GenAiContextStage.ready],
     );
-    expect(updates.last.estimatedInputUnits, 6 + 32 + 3 + 12 + 6 + 64 + 4096);
+    expect(updates.last.estimatedInputUnits, 2 + 32 + 1 + 12 + 2 + 64 + 4096);
     expect(updates.last.allowedInputUnits, 20000 - 1000 - 1234);
     expect(updates.last.compacted, isFalse);
     expect(updates.last.totalChunks, 0);
@@ -439,15 +557,15 @@ void main() {
     final text = result.history.map((m) => m.content).join();
     expect(text, contains('outcome UNKNOWN'));
     expect(text, isNot(contains('charge 999')));
-    expect(compactor.snapshot('test-conversation'), isEmpty);
+    expect(compactor.snapshot('test-conversation').keys, ['_boundary']);
     expect(extractionCalls, 1);
   });
 
-  test('latest-message limit is independent from context and includes CJK bytes', () async {
+  test('configured latest-input budget accounts for CJK without byte-token confusion', () async {
     final compactor = GenAiContextCompactor(policy: policy);
     await expectLater(
       compactor.prepare(
-        request(const [], prompt: '中' * 1000),
+        request(const [], prompt: '中' * 3000),
         GenAiCancellation(),
         summary,
       ),
@@ -489,7 +607,7 @@ void main() {
     );
     await expectLater(
       compactor.prepare(
-        request(const [], files: ['big'], documents: {'big': 'a' * 20000}),
+        request(const [], files: ['big'], documents: {'big': 'a' * 40000}),
         GenAiCancellation(),
         summary,
       ),

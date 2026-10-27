@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'genai_agent_contract.dart';
 import 'genai_contract.dart';
 
-const genAiAgentProtocolMarker = 'TECHPIE_AGENT_PROTOCOL_V2';
+const genAiAgentProtocolMarker = 'TECHPIE_AGENT_PROTOCOL_V3';
 final _noncePattern = RegExp(r'^[a-zA-Z0-9_-]{16,80}$');
 
 String? genAiAgentNonceFromSystem(String system) =>
@@ -24,60 +24,59 @@ String _frame(String kind, Map<String, Object?> value, String nonce) {
   if (!_noncePattern.hasMatch(nonce)) {
     throw ArgumentError('Invalid protocol nonce');
   }
-  return '<techpie-agent-$kind version="2" nonce="$nonce">\n'
+  return '<techpie-agent-$kind version="3" nonce="$nonce">\n'
       '${jsonEncode(value)}\n</techpie-agent-$kind>';
 }
 
-/// Only this live decoder can authorize a model call. Ordinary JSON, Markdown
-/// examples, quoted frames, and legacy tool_call text are final text. A frame
-/// must occupy the complete response and match the current request's nonce.
-GenAiAgentToolCall? parseGenAiAgentResponse(
-  String response, {
-  required String nonce,
-}) {
+/// A complete live decision. Historical records are decoded separately and
+/// never reach this execution boundary.
+final class GenAiAgentDecision {
+  const GenAiAgentDecision({this.call, this.text});
+  final GenAiAgentToolCall? call;
+  final String? text;
+}
+
+String encodeGenAiAgentFinal(String text, {required String nonce}) =>
+    _frame('final', {'text': text}, nonce);
+
+GenAiAgentDecision parseGenAiAgentDecision(String response, {required String nonce}) {
   final source = response.trim();
-  if (source.isEmpty) _invalid();
-  if (source.startsWith('<techpie-agent-history') &&
-      decodeGenAiAgentRecord(source)?.call != null) {
-    throw const GenAiAgentToolException(
-      'historical_tool_format',
-      'No tool executed. techpie-agent-history is an inert archive record, '
-          'not a callable envelope. Retry using only one techpie-agent-call '
-          'version 2 envelope with the CURRENT_CALL_NONCE from the current '
-          'system message, containing call_id, name, and arguments. '
-          'Never output history or result records as a new call.',
-    );
-  }
-  if (!source.startsWith('<techpie-agent-call')) {
-    // Kimi may emit its native tool syntax through this text-only endpoint.
-    // Request a bounded repair; never translate it into an executable call.
-    // Documentation in code spans/fences or block quotes remains ordinary text.
-    final unquoted = source
-        .replaceAll(RegExp(r'```[\s\S]*?```|`[^`\n]*`'), '')
-        .split('\n')
-        .where((line) => !line.trimLeft().startsWith('>'))
-        .join('\n');
-    if (RegExp(r'<\|open\|>tools<\|sep\|>\s*<\|open\|>call tool=')
-        .hasMatch(unquoted)) {
-      throw const GenAiAgentToolException(
-        'unsupported_tool_format',
-        'No tool executed. Kimi native tools/call markers are unsupported by '
-            'this text endpoint. Retry using only one techpie-agent-call '
-            'version 2 envelope with the CURRENT_CALL_NONCE from the current '
-            'system message, containing call_id, name, and arguments. '
-            'Do not add a preamble or native markers.',
-      );
+  for (final kind in ['call', 'final']) {
+    final prefix = '<techpie-agent-$kind version="3" nonce="$nonce">';
+    final suffix = '</techpie-agent-$kind>';
+    if (!source.startsWith(prefix) || !source.endsWith(suffix)) continue;
+    try {
+      final value = _json(source.substring(prefix.length, source.length - suffix.length).trim());
+      if (!_noncePattern.hasMatch(nonce)) break;
+      if (kind == 'call') return GenAiAgentDecision(call: _call(value));
+      if (value is Map<String, Object?> &&
+          value.length == 1 &&
+          value['text'] is String &&
+          (value['text']! as String).trim().isNotEmpty) {
+        return GenAiAgentDecision(text: value['text']! as String);
+      }
+    } on FormatException {
+      break;
     }
-    return null;
   }
+  throw const GenAiAgentToolException(
+    'invalid_agent_response',
+    'This response was not accepted; previously completed tools remain completed. '
+        'techpie-agent-final version 3 envelope with CURRENT_CALL_NONCE. '
+        'Call JSON contains call_id, name, arguments; final JSON contains text. '
+        'No prose outside the envelope. A final must answer, clarify, or explain a blocker.',
+  );
+}
+
+/// Read-only rendering of a saved final; never an execution capability.
+String? decodeGenAiAgentFinal(String source) {
+  final header = RegExp(r'^<techpie-agent-final version="3" nonce="([a-zA-Z0-9_-]{16,80})">')
+      .firstMatch(source.trim());
+  if (header == null) return null;
   try {
-    final frame = _readFrame(source, 'call');
-    if (frame == null || frame.$1 != nonce || !_noncePattern.hasMatch(nonce)) {
-      _invalid();
-    }
-    return _call(frame.$2);
-  } on FormatException {
-    _invalid();
+    return parseGenAiAgentDecision(source, nonce: header.group(1)!).text;
+  } catch (_) {
+    return null;
   }
 }
 
@@ -89,7 +88,7 @@ final class GenAiAgentHistoryEntry {
       : text = value,
         call = null,
         result = null {
-    if (role == GenAiRole.system || value.length > 128 * 1024) {
+    if (role == GenAiRole.system || value.length > 4 * 1024 * 1024) {
       throw const FormatException('Invalid agent text entry');
     }
   }
@@ -160,7 +159,11 @@ final class GenAiAgentHistoryEntry {
         '</techpie-agent-history>';
   }
 
-  GenAiMessage get message => GenAiMessage(role: role, content: content);
+  GenAiMessage get message => GenAiMessage(
+        role: role,
+        content: content,
+        imageUrls: genAiGeneratedImages(result).toList(),
+      );
 
   String promptForNonce(String nonce) =>
       result == null ? content : encodeGenAiAgentResult(result!, nonce: nonce);
@@ -199,8 +202,7 @@ GenAiAgentHistoryEntry? decodeGenAiAgentRecord(
     }
     if (!allowLegacy) return null;
     final fence =
-        RegExp(r'^```(?:tool_call|tool_response|json)\s*\n?([\s\S]*?)\s*```$')
-            .firstMatch(source);
+        RegExp(r'^```(?:tool_call|tool_response|json)\s*\n?([\s\S]*?)\s*```$').firstMatch(source);
     final raw = fence?.group(1)?.trim() ?? source;
     if (!raw.startsWith('{') || raw.contains('```')) return null;
     final value = _json(raw);
@@ -219,7 +221,7 @@ GenAiAgentHistoryEntry? decodeGenAiAgentRecord(
 
 (String, Object?)? _readFrame(String source, String kind) {
   final match = RegExp(
-    '^<techpie-agent-$kind version="2" nonce="([a-zA-Z0-9_-]{16,80})">\\s*([\\s\\S]*?)\\s*</techpie-agent-$kind>\$',
+    '^<techpie-agent-$kind version="[23]" nonce="([a-zA-Z0-9_-]{16,80})">\\s*([\\s\\S]*?)\\s*</techpie-agent-$kind>\$',
   ).firstMatch(source);
   if (match == null) return null;
   return (match.group(1)!, _json(match.group(2)!));
@@ -267,12 +269,10 @@ Map<String, Object?> _result(Object? value) {
       ) ||
       value['call_id'] != null &&
           (value['call_id'] is! String ||
-              !RegExp(r'^[a-zA-Z0-9_-]{1,80}$')
-                  .hasMatch(value['call_id']! as String)) ||
+              !RegExp(r'^[a-zA-Z0-9_-]{1,80}$').hasMatch(value['call_id']! as String)) ||
       value['name'] != null &&
           (value['name'] is! String ||
-              !RegExp(r'^[a-z][a-z0-9_]{0,63}$')
-                  .hasMatch(value['name']! as String)) ||
+              !RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(value['name']! as String)) ||
       value.containsKey('reused') && value['reused'] is! bool ||
       jsonEncode(value).length > 128 * 1024) {
     throw const FormatException('Invalid agent result');
@@ -295,9 +295,10 @@ Map<String, Object?> _result(Object? value) {
 }
 
 Never _invalid() => throw const GenAiAgentToolException(
-    'invalid_tool_call',
-    'Use exactly one complete techpie-agent-call version 2 envelope with the CURRENT_CALL_NONCE, '
-        'containing call_id, name, and arguments. Ordinary text is a final answer.');
+      'invalid_tool_call',
+      'Use exactly one complete techpie-agent-call version 3 envelope with the CURRENT_CALL_NONCE, '
+          'containing call_id, name, and arguments. For a final answer use a techpie-agent-final version 3 envelope containing text.',
+    );
 
 /// Reject duplicate JSON keys rather than accepting overwritten arguments.
 void _checkDuplicateKeys(String source) {
@@ -331,4 +332,128 @@ void _checkDuplicateKeys(String source) {
     }
     offset++;
   }
+}
+
+/// Incremental display decoder. Execution and completion still require the
+/// strict whole-response parser; a rejected preview is cleared by the runner.
+final class GenAiAgentFinalStream {
+  GenAiAgentFinalStream(String nonce)
+      : _prefix = RegExp(
+          '^\\s*<techpie-agent-final version="3" nonce="$nonce">\\s*\\{\\s*"text"\\s*:\\s*"',
+        );
+  final RegExp _prefix;
+  String _header = '';
+  bool _started = false;
+  bool _done = false;
+  bool _escape = false;
+  String? _unicode;
+  String _pendingSurrogate = '';
+
+  String add(String chunk) {
+    if (_done) return '';
+    if (!_started) {
+      _header += chunk;
+      final match = _prefix.firstMatch(_header);
+      if (match == null) {
+        // Calls and malformed prose are buffered only for whole-frame validation.
+        if (_header.length > 256) {
+          _done = true;
+          _header = '';
+        }
+        return '';
+      }
+      chunk = _header.substring(match.end);
+      _header = '';
+      _started = true;
+    }
+    final output = StringBuffer(_pendingSurrogate);
+    _pendingSurrogate = '';
+    for (final unit in chunk.codeUnits) {
+      final c = String.fromCharCode(unit);
+      if (_unicode != null) {
+        _unicode = '${_unicode!}$c';
+        if (!RegExp(r'^[0-9a-fA-F]+$').hasMatch(_unicode!)) {
+          _done = true;
+          break;
+        }
+        if (_unicode!.length == 4) {
+          output.writeCharCode(int.parse(_unicode!, radix: 16));
+          _unicode = null;
+        }
+      } else if (_escape) {
+        _escape = false;
+        if (c == 'u') {
+          _unicode = '';
+          continue;
+        }
+        final decoded = const {
+          '"': '"',
+          r'\': r'\',
+          '/': '/',
+          'n': '\n',
+          'r': '\r',
+          't': '\t',
+          'b': '\b',
+          'f': '\f',
+        }[c];
+        if (decoded == null) {
+          _done = true;
+          break;
+        }
+        output.write(decoded);
+      } else if (c == r'\') {
+        _escape = true;
+      } else if (c == '"' || unit < 32) {
+        _done = true;
+        break;
+      } else {
+        output.write(c);
+      }
+    }
+    var value = output.toString();
+    if (value.isNotEmpty &&
+        value.codeUnitAt(value.length - 1) >= 0xd800 &&
+        value.codeUnitAt(value.length - 1) <= 0xdbff) {
+      _pendingSurrogate = value.substring(value.length - 1);
+      value = value.substring(0, value.length - 1);
+    }
+    return value;
+  }
+}
+
+/// Only successful image-tool receipts contribute visual context. Plain model
+/// text and failed/pending operations cannot smuggle image URLs into a request.
+Iterable<String> genAiGeneratedImages(Map<String, Object?>? receipt) sync* {
+  if (receipt?['name'] != 'generate_image' || receipt?['ok'] != true) return;
+  final result = receipt?['result'];
+  if (result is! Map || result['status'] != 'generated' || result['images'] is! List) return;
+  for (final value in result['images'] as List) {
+    if (value is! String) continue;
+    final uri = Uri.tryParse(value);
+    if (uri != null &&
+        uri.scheme == 'https' &&
+        uri.host == 'genaipic.shanghaitech.edu.cn' &&
+        uri.userInfo.isEmpty &&
+        !uri.hasQuery &&
+        !uri.hasFragment &&
+        uri.path.startsWith('/sys/common/static/')) {
+      yield value;
+    }
+  }
+}
+
+/// Recovery identity for one image request, including default-equivalent args.
+/// The host-created scope is shared by retry branches, never chosen by the model.
+String genAiMutationReceiptKey(GenAiAgentToolCall call, {String? turnId}) {
+  if (call.name != 'generate_image' || turnId == null || turnId.isEmpty) {
+    return '${call.name}:raw:${genAiCanonicalJson(call.arguments)}';
+  }
+  final args = <String, Object?>{
+    'width': 1024,
+    'height': 1024,
+    'quality': 'low',
+    ...call.arguments,
+    if (call.arguments['prompt'] is String) 'prompt': (call.arguments['prompt']! as String).trim(),
+  };
+  return 'generate_image:turn:${jsonEncode(turnId)}:raw:${genAiCanonicalJson(args)}';
 }

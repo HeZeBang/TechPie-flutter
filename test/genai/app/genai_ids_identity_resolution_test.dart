@@ -8,7 +8,6 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/genai/app/genai_runtime.dart';
 import 'package:techpie/features/genai/application/campus_genai_session_issuer.dart';
-import 'package:techpie/features/genai/application/genai_conversation_store.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
@@ -92,7 +91,6 @@ void main() {
       thirdPartyAuth: bindings,
       transport: transport,
       store: store,
-      conversationStore: MemoryGenAiConversationStore(),
       issuer: trustedIssuer
           ? CampusGenAiSessionIssuer(
               thirdPartyAuth: bindings,
@@ -122,8 +120,7 @@ void main() {
     );
   }
 
-  test('SMS binding resolves school identity through its IDS session',
-      () async {
+  test('SMS binding resolves school identity through its IDS session', () async {
     final f = await fixture();
     expect(f.runtime.sessions.owner, isNull);
     expect(f.transport.requests, isEmpty);
@@ -138,16 +135,13 @@ void main() {
     expect(f.bindings.cpdailyBinding?.raw, {'tgc': 'existing-ids-tgc'});
     expect(f.auth.session?.studentId, '20240001');
     expect(
-      f.transport.requests
-          .every((r) => r.headers['X-Access-Token'] == 'genai-token'),
+      f.transport.requests.every((r) => r.headers['X-Access-Token'] == 'genai-token'),
       isTrue,
     );
   });
 
   for (final discoveredId in [_studentId, '20241111']) {
-    test(
-        'SMS renewal identity $discoveredId must match the verified GenAI profile',
-        () async {
+    test('SMS renewal identity $discoveredId must match the verified GenAI profile', () async {
       var exchanges = 0;
       var renewals = 0;
       final f = await fixture(
@@ -173,8 +167,7 @@ void main() {
           return const GenAiCredential(token: 'genai-token');
         },
       );
-      await f.runtime.workspace
-          .connectUsing(f.runtime.connectUsingCampusSession);
+      await f.runtime.workspace.connectUsing(f.runtime.connectUsingCampusSession);
       if (discoveredId == _studentId) {
         expect(f.runtime.workspace.loginFailure, isNull);
         expect(f.runtime.sessions.session?.profile.username, _studentId);
@@ -193,8 +186,7 @@ void main() {
     });
   }
 
-  test('resolved identity survives IDS renewal and allows GenAI reconnect',
-      () async {
+  test('resolved identity survives IDS renewal and allows GenAI reconnect', () async {
     final f = await fixture();
     await f.runtime.connectUsingCampusSession();
     final owner = f.runtime.sessions.owner;
@@ -209,8 +201,7 @@ void main() {
     expect(f.store.writes, 2);
   });
 
-  test('rebinding clears the resolved owner and old GenAI credential',
-      () async {
+  test('rebinding clears the resolved owner and old GenAI credential', () async {
     final f = await fixture();
     await f.runtime.connectUsingCampusSession();
     await f.bindings.replaceAll([_binding(boundAt: DateTime(2026, 2))]);
@@ -224,8 +215,7 @@ void main() {
     );
   });
 
-  test('unbinding cancels identity resolution and rejects a late credential',
-      () async {
+  test('unbinding cancels identity resolution and rejects a late credential', () async {
     final result = Completer<GenAiCredential>();
     final started = Completer<void>();
     late GenAiCancellation cancellation;
@@ -255,8 +245,7 @@ void main() {
   for (final username in [_phone, _internalId, 'student@example.com']) {
     test('profile with non-school identity $username is rejected', () async {
       final f = await fixture(username: username);
-      await f.runtime.workspace
-          .connectUsing(f.runtime.connectUsingCampusSession);
+      await f.runtime.workspace.connectUsing(f.runtime.connectUsingCampusSession);
       expect(
         f.runtime.workspace.loginFailure,
         failure(GenAiFailureKind.identityMismatch),
@@ -266,8 +255,7 @@ void main() {
     });
   }
 
-  test('unexpected IDS exchange failures become a redacted login error',
-      () async {
+  test('unexpected IDS exchange failures become a redacted login error', () async {
     var attempts = 0;
     final f = await fixture(
       exchange: (_, __) async {
@@ -298,8 +286,7 @@ void main() {
     expect(f.store.writes, 1);
   });
 
-  test('unknown campus identity cannot be bootstrapped by a generic issuer',
-      () async {
+  test('unknown campus identity cannot be bootstrapped by a generic issuer', () async {
     final f = await fixture(trustedIssuer: false);
     await expectLater(
       f.runtime.connectUsingCampusSession(),

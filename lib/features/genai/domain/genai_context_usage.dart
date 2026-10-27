@@ -2,7 +2,7 @@
 enum GenAiContextStage { preparing, compacting, ready }
 
 /// Conservative local input accounting, not tokenizer or provider usage data.
-/// Text contributes UTF-8 bytes; messages, documents and images add the same
+/// Text uses a conservative token estimate; messages, documents and images add the same
 /// policy allowances enforced by the context compactor. The allowed input
 /// budget already excludes reserved output and safety headroom.
 final class GenAiContextUsage {

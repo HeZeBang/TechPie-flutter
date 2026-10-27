@@ -76,7 +76,10 @@ class _GenAiConversationMenuState extends State<GenAiConversationMenu> {
         );
         if (name == null || !current()) return;
         await workspace.renameConversation(conversation.id, name);
-        if (current()) widget.onChanged();
+        if (mounted && current()) {
+          widget.onChanged();
+          showAdaptiveFeedback(context: context, message: '名称将在下一条消息时同步');
+        }
       } else {
         final archive = await workspace.conversationForExport(
           conversation.id,
@@ -139,7 +142,11 @@ class _GenAiConversationMenuState extends State<GenAiConversationMenu> {
       if (mounted && current()) {
         showAdaptiveFeedback(
           context: context,
-          message: action == 'rename' ? '重命名失败，请重试' : '导出失败，请重试',
+          message: action == 'rename'
+              ? '重命名失败，请重试'
+              : action == 'remote'
+                  ? '无法读取服务器记录，请重试'
+                  : '导出失败，请重试',
         );
       }
     } finally {
@@ -178,8 +185,7 @@ class _RenameDialog extends StatefulWidget {
 
 class _RenameDialogState extends State<_RenameDialog> {
   late final _name = TextEditingController(text: widget.title);
-  bool get _valid =>
-      _name.text.trim().isNotEmpty && _name.text.trim().length <= 120;
+  bool get _valid => _name.text.trim().isNotEmpty && _name.text.trim().length <= 120;
   @override
   void dispose() {
     _name.dispose();

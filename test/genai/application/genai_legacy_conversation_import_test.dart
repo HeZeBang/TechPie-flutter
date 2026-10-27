@@ -17,12 +17,41 @@ Map<String, Object?> _result(String? id, String? name) => {
       'result': {'value': 'saved'},
     };
 
-String _legacyCall(GenAiAgentToolCall call) =>
-    '```tool_call\n${jsonEncode(call.toJson())}\n```';
-String _legacyResult(Map<String, Object?> result) =>
-    '```tool_response\n${jsonEncode(result)}\n```';
+String _legacyCall(GenAiAgentToolCall call) => '```tool_call\n${jsonEncode(call.toJson())}\n```';
+String _legacyResult(Map<String, Object?> result) => '```tool_response\n${jsonEncode(result)}\n```';
 
 void main() {
+  test('server-only recovery folds action-promise repair into the original tool turn', () {
+    const nonce = 'historicalNonce123456';
+    final turns = importGenAiLegacyConversation([
+      const GenAiSavedTurn(
+        prompt: 'which semester are we in?',
+        answer: "I'll check the current semester information for you.",
+      ),
+      GenAiSavedTurn(
+        prompt: encodeGenAiAgentResult(
+          {
+            'call_id': null,
+            'name': null,
+            'ok': false,
+            'error': {'code': 'unfinished_action', 'message': 'No tool executed.'},
+          },
+          nonce: nonce,
+        ),
+        answer: encodeGenAiAgentCall(_call('semester', 'get_semesters'), nonce: nonce),
+      ),
+      GenAiSavedTurn(
+        prompt: encodeGenAiAgentResult(_result('semester', 'get_semesters'), nonce: nonce),
+        answer: 'The returned semester is autumn.',
+      ),
+    ]);
+    expect(turns, hasLength(1));
+    expect(turns.single.prompt, 'which semester are we in?');
+    expect(turns.single.answer, 'The returned semester is autumn.');
+    expect(turns.single.phase, GenAiChatPhase.completed);
+    expect(turns.single.agentEvents.values.single.call!.name, 'get_semesters');
+  });
+
   test('unreadable server row breaks an otherwise matching tool chain', () {
     const nonce = 'historicalNonce123456';
     final turns = importGenAiLegacyConversation([
@@ -124,8 +153,7 @@ void main() {
     expect(turn.agentStatus, contains('勿重复执行'));
   });
 
-  test('V2 frames import as inert cards with no nonce or framing in bubbles',
-      () {
+  test('V2 frames import as inert cards with no nonce or framing in bubbles', () {
     const nonce = 'historicalNonce123456';
     final turns = importGenAiLegacyConversation([
       GenAiSavedTurn(
@@ -200,8 +228,7 @@ void main() {
     expect(turns.last.attachedImageUrls, hasLength(1));
   });
 
-  test('malformed protocol inside established chain is never a final bubble',
-      () {
+  test('malformed protocol inside established chain is never a final bubble', () {
     final turns = importGenAiLegacyConversation([
       GenAiSavedTurn(prompt: '查询时间', answer: _legacyCall(_call('time'))),
       GenAiSavedTurn(

@@ -13,15 +13,63 @@ import 'genai_chat_service.dart';
 final class GenAiConversationTurn {
   GenAiConversationTurn(
     this.prompt, {
+    this.id = '',
+    this.parentId,
+    this.actionScopeId,
     this.isAgent = false,
     this.isHistoryGap = false,
   });
+
+  String id;
+  String? parentId;
+
+  /// Retries share operation identity; a new user message starts a new scope.
+  String? actionScopeId;
+  Map<String, Object?> toRemoteInput() => {
+        'id': id,
+        'parentId': parentId,
+        'actionScopeId': actionScopeId ?? id,
+        'isAgent': isAgent,
+        if (attachedFileIds.isNotEmpty)
+          'files': [
+            for (var i = 0; i < attachedFileIds.length; i++)
+              {
+                'id': attachedFileIds[i],
+                'name': i < attachedFileNames.length ? attachedFileNames[i] : attachedFileIds[i],
+                'content': attachedFileContents[attachedFileIds[i]],
+              },
+          ],
+        if (attachedImageUrls.isNotEmpty) 'images': attachedImageUrls,
+        if (approvalBudget.isNotEmpty) 'approvalBudget': approvalBudget,
+      };
+
+  factory GenAiConversationTurn.fromRemoteInput(Map<String, Object?> value, String prompt) {
+    final turn = GenAiConversationTurn(
+      prompt,
+      id: value['id']! as String,
+      parentId: value['parentId'] as String?,
+      actionScopeId: value['actionScopeId'] as String?,
+      isAgent: value['isAgent']! as bool,
+    );
+    final files = (value['files'] as List? ?? const []).cast<Map<String, Object?>>();
+    turn.attachedFileIds = [for (final file in files) file['id']! as String];
+    turn.attachedFileNames = [for (final file in files) file['name']! as String];
+    turn.attachedFileContents = {
+      for (final file in files)
+        if (file['content'] is String) file['id']! as String: file['content']! as String,
+    };
+    turn.attachedImageUrls = (value['images'] as List? ?? const []).cast<String>();
+    turn.attachedImageUrl = turn.attachedImageUrls.firstOrNull;
+    turn.approvalBudget.addAll(Map<String, int>.from(value['approvalBudget'] as Map? ?? const {}));
+    return turn;
+  }
 
   final String prompt;
   final bool isAgent;
   final bool isHistoryGap;
   final agentEvents = <String, GenAiAgentEvent>{};
   final agentActivity = <GenAiAgentEvent>[];
+  final approvalBudget = <String, int>{};
 
   /// Display data only, never reused as executable model history.
   void recordAgentActivity(GenAiAgentEvent event) {
@@ -98,13 +146,27 @@ final class GenAiConversationTurn {
   GenAiFinishReason? finishReason;
 }
 
-/// Versioned local records contain data only. Restored preparation receipts
+/// Versioned export/recovery records contain data only. Restored preparation receipts
 /// have no executable capability and never recreate a pending approval.
 extension GenAiConversationTurnArchive on GenAiConversationTurn {
+  /// Interrupted output is carried once, without redundant transcripts or
+  /// binary previews. Canonical attachment URLs and tool receipts suffice.
+  Map<String, Object?> toInterruptedRecord() => {
+        ...toArchiveJson(),
+        'agentHistory': <Object?>[],
+        'agentTranscript': <Object?>[],
+        'attachedImageBytes': null,
+        'attachedImageBytesList': <Object?>[],
+      };
+
   Map<String, Object?> toArchiveJson() => {
         'kind': 'conversation_turn',
+        'id': id,
+        'parentId': parentId,
+        'actionScopeId': actionScopeId ?? id,
         'prompt': prompt,
         'isAgent': isAgent,
+        'approvalBudget': approvalBudget,
         'isHistoryGap': isHistoryGap,
         'answer': answer,
         'contextCompacted': contextCompacted,
@@ -167,6 +229,9 @@ GenAiConversationTurn genAiTurnFromArchive(Map<String, Object?> json) {
       savedPhase == GenAiChatPhase.preparing || savedPhase == GenAiChatPhase.streaming;
   final turn = GenAiConversationTurn(
     json['prompt']! as String,
+    id: json['id'] as String? ?? '',
+    parentId: json['parentId'] as String?,
+    actionScopeId: json['actionScopeId'] as String?,
     isAgent: json['isAgent']! as bool,
     isHistoryGap: json['isHistoryGap'] as bool? ?? false,
   )
@@ -215,9 +280,24 @@ GenAiConversationTurn genAiTurnFromArchive(Map<String, Object?> json) {
     ..finishReason = json['finishReason'] == null
         ? null
         : GenAiFinishReason.values.byName(json['finishReason']! as String);
+  final budget = Map<String, int>.from(json['approvalBudget'] as Map? ?? const {});
+  if (budget.values.any((count) => count < 0)) {
+    throw const FormatException('Invalid approval budget');
+  }
+  turn.approvalBudget.addAll(budget);
   for (final raw in json['agentEvents']! as List) {
     final entry = _agentEventFromArchive(_archiveMap(raw));
     if (entry.call == null) continue;
+    if (!json.containsKey('approvalBudget') &&
+        entry.call!.name == 'reserve_court' &&
+        entry.call!.arguments['action'] == 'book' &&
+        entry.kind != GenAiAgentEventKind.toolProposed) {
+      turn.approvalBudget['reserve_court'] = 1;
+    }
+    if (entry.call!.name == 'generate_image' &&
+        (entry.result?['error'] as Map?)?['code'] == 'approval_denied') {
+      turn.approvalBudget['generate_image:denied'] = 1;
+    }
     var key = entry.call!.id;
     var duplicate = 1;
     while (turn.agentEvents.containsKey(key)) {

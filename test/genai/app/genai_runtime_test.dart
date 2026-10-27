@@ -2,7 +2,6 @@ import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/genai/app/genai_runtime.dart';
-import 'package:techpie/features/genai/application/genai_conversation_store.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
@@ -22,9 +21,7 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
   });
 
-  test(
-      'wiring stays lazy and follows campus binding rather than the primary student id',
-      () async {
+  test('wiring stays lazy and follows campus binding rather than the primary student id', () async {
     final storage = StorageService(await SharedPreferences.getInstance());
     final logging = LoggingHttpClient(DebugLogger());
     final auth = AuthService(storage, logging, UniAuthService());
@@ -54,7 +51,6 @@ void main() {
       thirdPartyAuth: bindings,
       transport: transport,
       store: store,
-      conversationStore: MemoryGenAiConversationStore(),
     );
     addTearDown(runtime.dispose);
     expect(runtime.sessions.owner?.studentId, '20240001');

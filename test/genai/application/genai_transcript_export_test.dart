@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_chat_service.dart';
-import 'package:techpie/features/genai/application/genai_conversation_store.dart';
+import 'package:techpie/features/genai/application/genai_conversation_archive.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
 import 'package:techpie/features/genai/application/genai_transcript_export.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
@@ -8,8 +8,7 @@ import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
 import 'package:techpie/features/genai/domain/genai_contract.dart';
 
 void main() {
-  GenAiConversationArchive archive(GenAiConversationTurn turn) =>
-      GenAiConversationArchive(
+  GenAiConversationArchive archive(GenAiConversationTurn turn) => GenAiConversationArchive(
         id: 'fixture-conversation',
         title: '校园计划',
         updatedAt: DateTime(2026),
@@ -22,8 +21,7 @@ void main() {
         mutations: const {'version': 1, 'effects': <String, Object?>{}},
       );
 
-  test('readable snapshot retains real conversation and images, omits protocol',
-      () {
+  test('readable snapshot retains real conversation and images, omits protocol', () {
     final call = GenAiAgentToolCall(
       id: 'internal-call-id',
       name: 'generate_image',
@@ -78,9 +76,7 @@ void main() {
     }
   });
 
-  test(
-      'interrupted mutation exports uncertainty, not success or a hostile image',
-      () {
+  test('interrupted mutation exports uncertainty, not success or a hostile image', () {
     final call = GenAiAgentToolCall(
       id: 'pending',
       name: 'generate_image',
@@ -106,8 +102,7 @@ void main() {
   });
 
   GenAiConversationTurn withResults(Map<String, Map<String, Object?>> results) {
-    final turn = GenAiConversationTurn('校园记录', isAgent: true)
-      ..phase = GenAiChatPhase.completed;
+    final turn = GenAiConversationTurn('校园记录', isAgent: true)..phase = GenAiChatPhase.completed;
     for (final entry in results.entries) {
       final call = GenAiAgentToolCall(
         id: 'internal-${entry.key}',
@@ -124,8 +119,7 @@ void main() {
     return turn;
   }
 
-  test('academic results export useful labels without bookkeeping identifiers',
-      () {
+  test('academic results export useful labels without bookkeeping identifiers', () {
     final output = exportGenAiTranscript(
       archive(
         withResults({
@@ -248,9 +242,7 @@ void main() {
     expect(availability, isNot(contains('time_slot')));
   });
 
-  test(
-      'local images are labeled and proxied real images export canonical links',
-      () {
+  test('local images are labeled and proxied real images export canonical links', () {
     final local = exportGenAiTranscript(
       archive(
         withResults({

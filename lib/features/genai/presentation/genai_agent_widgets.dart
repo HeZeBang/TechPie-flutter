@@ -19,6 +19,7 @@ String genAiAgentToolName(String? name) => switch (name) {
       'get_assignments' => '查看作业',
       'reserve_court' => '处理场地预约',
       'generate_image' => '生成图片',
+      'inspect_image' => '查看图片',
       _ => name ?? '工具',
     };
 
@@ -332,7 +333,7 @@ class GenAiAgentToolCard extends StatelessWidget {
                         ],
                       ),
               ),
-            if ((complete || unknown) && call.name == 'generate_image')
+            if ((generated || unknown) && call.name == 'generate_image')
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: Align(
@@ -497,6 +498,7 @@ class GenAiAgentApprovalCard extends StatelessWidget {
         'quality': '质量',
         'count': '数量',
         'quota': '额度',
+        'previous_outcome': '此前操作',
         'date': '日期',
         'sport': '运动',
         'court': '场地',

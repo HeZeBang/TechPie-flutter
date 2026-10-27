@@ -13,8 +13,7 @@ import '../support/fakes.dart';
 
 void main() {
   for (final changedScope in ['account', 'binding']) {
-    testWidgets(
-        'rename updates search and export snapshots redact on $changedScope switch',
+    testWidgets('rename updates search and export snapshots redact on $changedScope switch',
         (tester) async {
       tester.view.physicalSize = const Size(900, 1000);
       tester.view.devicePixelRatio = 1;
@@ -46,6 +45,7 @@ void main() {
       }
 
       await send(original);
+      final originalId = demo.workspace.groupId;
       demo.workspace.newConversation();
       await send(other);
       final copies = <String>[];
@@ -75,8 +75,7 @@ void main() {
           of: find.text(title),
           matching: find.byType(ListTile),
         );
-        await tester
-            .tap(find.descendant(of: row, matching: find.byTooltip('对话操作')));
+        await tester.tap(find.descendant(of: row, matching: find.byTooltip('对话操作')));
         await tester.pumpAndSettle();
         await tester.tap(find.text(action));
         await tester.pumpAndSettle();
@@ -93,9 +92,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(renamed), findsOneWidget);
       expect(find.text(original), findsNothing);
+      // A title is synced by the next ordinary exchange, not a hidden model call.
+      await demo.workspace.openConversation(originalId, GenAiCancellation());
+      await send('Continue the original study notes');
       final search = find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField && widget.decoration?.labelText == '搜索对话',
+        (widget) => widget is TextField && widget.decoration?.labelText == '搜索对话',
       );
       await tester.enterText(search, renamed);
       await tester.pump(const Duration(milliseconds: 400));
@@ -111,8 +112,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('导出对话'));
       await tester.pumpAndSettle();
-      final snapshot =
-          tester.widget<SelectableText>(find.byType(SelectableText)).data!;
+      final snapshot = tester.widget<SelectableText>(find.byType(SelectableText)).data!;
       expect(snapshot, startsWith('# $renamed\n'));
       expect(snapshot, contains(original));
       expect(snapshot, isNot(contains(other)));
@@ -125,8 +125,7 @@ void main() {
           .widget<FilledButton>(
             find.ancestor(
               of: find.text('复制 Markdown'),
-              matching:
-                  find.byWidgetPredicate((widget) => widget is FilledButton),
+              matching: find.byWidgetPredicate((widget) => widget is FilledButton),
             ),
           )
           .onPressed!;
@@ -147,8 +146,7 @@ void main() {
             .widget<FilledButton>(
               find.ancestor(
                 of: find.text('复制 Markdown'),
-                matching:
-                    find.byWidgetPredicate((widget) => widget is FilledButton),
+                matching: find.byWidgetPredicate((widget) => widget is FilledButton),
               ),
             )
             .onPressed,
@@ -160,8 +158,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
-  testWidgets('a reused history row cannot rename a different conversation',
-      (tester) async {
+  testWidgets('a reused history row cannot rename a different conversation', (tester) async {
     final demo = await GenAiDemo.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     await demo.workspace.reloadModels();
@@ -220,10 +217,8 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
-    final firstRead =
-        demo.workspace.conversationForExport(firstId, GenAiCancellation());
-    final secondRead =
-        demo.workspace.conversationForExport(secondId, GenAiCancellation());
+    final firstRead = demo.workspace.conversationForExport(firstId, GenAiCancellation());
+    final secondRead = demo.workspace.conversationForExport(secondId, GenAiCancellation());
     await tester.pumpAndSettle();
     expect((await firstRead).title, 'First saved conversation');
     expect((await secondRead).title, 'Second saved conversation');

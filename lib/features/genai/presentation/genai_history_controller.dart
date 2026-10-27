@@ -9,8 +9,7 @@ import '../domain/genai_platform_contract.dart';
 
 /// Search, pagination, and request lifetime for the workspace history sidebar.
 class GenAiHistoryController extends ChangeNotifier {
-  GenAiHistoryController(GenAiWorkspaceController workspace)
-      : _workspace = workspace {
+  GenAiHistoryController(GenAiWorkspaceController workspace) : _workspace = workspace {
     _rememberWorkspace();
     _workspace.addListener(_workspaceChanged);
     if (_workspace.connected) unawaited(load());
@@ -33,8 +32,7 @@ class GenAiHistoryController extends ChangeNotifier {
   late String _groupId;
   late bool _wasSending;
 
-  List<GenAiConversationSummary> get conversations =>
-      List.unmodifiable(_conversations);
+  List<GenAiConversationSummary> get conversations => List.unmodifiable(_conversations);
   bool get loading => _loadingHistory;
   bool get hasMore => _hasMoreHistory;
   GenAiFailure? get failure => _historyFailure;
@@ -72,12 +70,10 @@ class GenAiHistoryController extends ChangeNotifier {
         _sessionRevision != _workspace.sessions.revision) {
       _reset();
     }
-    final historyChanged =
-        _groupId != _workspace.groupId || (_wasSending && !_workspace.sending);
+    final historyChanged = _groupId != _workspace.groupId || (_wasSending && !_workspace.sending);
     _rememberWorkspace();
     if (_workspace.connected &&
-        (!_historyRequested ||
-            (historyChanged && !(_searchTimer?.isActive ?? false)))) {
+        (!_historyRequested || (historyChanged && !(_searchTimer?.isActive ?? false)))) {
       unawaited(load());
     }
   }
@@ -129,15 +125,15 @@ class GenAiHistoryController extends ChangeNotifier {
           _conversations.removeWhere((item) => item.id == record.id);
           _conversations.add(record);
         }
+        _conversations.sort(GenAiConversationSummary.newestFirst);
         _hasMoreHistory = result.hasMore;
         _historyPage = page;
       });
     } catch (error) {
       if (!_disposed && !cancellation.isCancelled) {
         _update(
-          () => _historyFailure = error is GenAiFailure
-              ? error
-              : const GenAiFailure(GenAiFailureKind.transport),
+          () => _historyFailure =
+              error is GenAiFailure ? error : const GenAiFailure(GenAiFailureKind.transport),
         );
       }
     } finally {

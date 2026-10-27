@@ -26,9 +26,7 @@ import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 
 void main() {
-  testWidgets(
-      'GenAI opens from TechPie Home, connects and returns to the shell',
-      (tester) async {
+  testWidgets('GenAI opens from TechPie Home, connects and returns to the shell', (tester) async {
     tester.view.physicalSize = const Size(1100, 1200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -45,9 +43,7 @@ void main() {
     await bindings.initialize();
     final schedule = ScheduleService(storage, http, auth, bindings);
     await schedule.loadCachedData();
-    final assignments =
-        AssignmentService(storage, http, auth, bindings, schedule)
-          ..loadCached();
+    final assignments = AssignmentService(storage, http, auth, bindings, schedule)..loadCached();
     await tester.pumpWidget(
       TechPieApp(
         preview: true,
@@ -77,15 +73,13 @@ void main() {
     await tester.tap(find.text('校园 GenAI'));
     await tester.pumpAndSettle();
     expect(find.byType(GenAiPage), findsOneWidget);
-    final workspace =
-        tester.widget<GenAiWorkspace>(find.byType(GenAiWorkspace));
-    final runtime = ServiceProvider.of(tester.element(find.byType(GenAiPage)))
-        .genAiRuntime!;
+    final workspace = tester.widget<GenAiWorkspace>(find.byType(GenAiWorkspace));
+    final runtime = ServiceProvider.of(tester.element(find.byType(GenAiPage))).genAiRuntime!;
     expect(workspace.controller.sessions, same(runtime.sessions));
     expect(runtime.sessions.owner?.studentId, '20240001');
     expect(runtime.sessions.session, isNull);
 
-    await tester.tap(find.text('连接校园 GenAI'));
+    await tester.tap(find.text('连接本地演示'));
     // The underlying connect button stays busy while its dialog is open.
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('使用演示账号连接'));
@@ -114,10 +108,11 @@ void main() {
     expect(reopened.controller.turns.single.answer, isNotEmpty);
     await reopened.controller.disconnect();
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('GenAI 账户'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('使用 TechPie IDS 登录'));
     await tester.pumpAndSettle();
-    final login =
-        tester.widget<ThirdPartyBindPage>(find.byType(ThirdPartyBindPage));
+    final login = tester.widget<ThirdPartyBindPage>(find.byType(ThirdPartyBindPage));
     expect(login.platform, ThirdPartyPlatform.cpdaily);
     expect(runtime.sessions.owner?.studentId, '20240001');
     expect(runtime.sessions.session, isNull);
@@ -138,13 +133,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('genai-connect')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    final genaiLogin =
-        tester.widget<GenAiLoginPage>(find.byType(GenAiLoginPage));
+    final genaiLogin = tester.widget<GenAiLoginPage>(find.byType(GenAiLoginPage));
     expect(genaiLogin.campusSession?.node, same(bindings.cpdailyNode));
     expect(
       genaiLogin.campusSession!.cookies.any(
-        (cookie) =>
-            cookie.name == 'CASTGC' && cookie.value == 'existing-ids-tgc',
+        (cookie) => cookie.name == 'CASTGC' && cookie.value == 'existing-ids-tgc',
       ),
       isTrue,
     );
@@ -184,17 +177,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final production =
-        ServiceProvider.of(tester.element(find.byType(GenAiPage)))
-            .genAiRuntime!;
+    final production = ServiceProvider.of(tester.element(find.byType(GenAiPage))).genAiRuntime!;
     expect(production.isDemo, isFalse);
     expect(production.sessions.canIssue, isTrue);
     expect(production.sessions.owner, isNull);
     expect(find.text('使用现有 IDS 会话连接'), findsOneWidget);
     expect(
-      tester
-          .widget<FilledButton>(find.byKey(const ValueKey('genai-connect')))
-          .onPressed,
+      tester.widget<FilledButton>(find.byKey(const ValueKey('genai-connect'))).onPressed,
       isNotNull,
     );
     await tester.pumpWidget(const SizedBox.shrink());

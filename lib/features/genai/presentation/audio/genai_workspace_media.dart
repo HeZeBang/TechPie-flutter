@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../application/genai_workspace_controller.dart';
+import '../../domain/genai_document_upload.dart';
 import '../picker/genai_picker.dart';
 import 'genai_audio_player.dart';
 import 'genai_audio_recorder.dart';
@@ -60,11 +61,8 @@ class GenAiWorkspaceMedia extends ChangeNotifier {
   int? get playingTtsTurnIndex => _playingTtsTurnIndex;
   bool get loadingTts => _loadingTts;
 
-  _MediaScope get _scope => (
-        _workspace,
-        _workspace.sessions.revision,
-        _workspace.conversationRevision
-      );
+  _MediaScope get _scope =>
+      (_workspace, _workspace.sessions.revision, _workspace.conversationRevision);
   bool _isCurrent(_MediaScope scope) => !_disposed && scope == _scope;
 
   void _update(VoidCallback update) {
@@ -115,10 +113,8 @@ class GenAiWorkspaceMedia extends ChangeNotifier {
       _loadingTts = true;
     });
     try {
-      final cleanText = text
-          .replaceAll(RegExp(r'```[\s\S]*?```'), '')
-          .replaceAll(RegExp(r'[#*`_~]'), '')
-          .trim();
+      final cleanText =
+          text.replaceAll(RegExp(r'```[\s\S]*?```'), '').replaceAll(RegExp(r'[#*`_~]'), '').trim();
       final wavBytes = await scope.$1.synthesizeSpeech(
         cleanText.length > 500 ? cleanText.substring(0, 500) : cleanText,
       );
@@ -143,9 +139,9 @@ class GenAiWorkspaceMedia extends ChangeNotifier {
       final file = await _picker.pickDocument();
       if (file == null || !_isCurrent(scope)) return;
       await scope.$1.addDocumentAttachment(file.name, file.bytes);
-    } catch (_) {
+    } catch (error) {
       if (!_disposed && _isCurrent(scope)) {
-        onMessage('无法选择文档');
+        onMessage(error is GenAiDocumentUploadException ? error.message : '无法选择文档');
       }
     }
   }

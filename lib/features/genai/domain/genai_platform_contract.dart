@@ -44,8 +44,7 @@ GenAiPageResult<T> genAiPage<T>(
   return GenAiPageResult(
     List.unmodifiable(items),
     page: page,
-    hasMore:
-        total == null ? records.length >= pageSize : page * pageSize < total,
+    hasMore: total == null ? records.length >= pageSize : page * pageSize < total,
   );
 }
 
@@ -73,14 +72,21 @@ final class GenAiConversationSummary {
   // Sanitize only an actual leading protocol frame, preserving quoted examples.
   static String _displayTitle(String title) => isGenAiContextExtraction(title)
       ? '对话（已整理上下文）'
-      : RegExp(r'^<techpie-agent-(?:call|result|history)(?:\s|>)')
-              .hasMatch(title.trimLeft())
+      : RegExp(r'^<techpie-agent-(?:call|result|history)(?:\s|>)').hasMatch(title.trimLeft())
           ? '校园工具对话'
           : title;
 
   final String id;
   final String title;
   final String time;
+
+  static int newestFirst(GenAiConversationSummary a, GenAiConversationSummary b) {
+    final epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    final order = (DateTime.tryParse(b.time) ?? epoch).compareTo(
+      DateTime.tryParse(a.time) ?? epoch,
+    );
+    return order != 0 ? order : a.id.compareTo(b.id);
+  }
 }
 
 final class GenAiSavedTurn {
@@ -91,6 +97,7 @@ final class GenAiSavedTurn {
     this.reasoning = '',
     this.imageUrls = const [],
     this.isHistoryGap = false,
+    this.createdAt,
   });
   factory GenAiSavedTurn.fromJson(Map<String, dynamic> json) {
     if ((json['question'] != null && json['question'] is! String) ||
@@ -110,6 +117,7 @@ final class GenAiSavedTurn {
       answer = answer.substring(match.end);
     }
     return GenAiSavedTurn(
+      createdAt: DateTime.tryParse(genAiOptionalText(json, 'createTime')),
       prompt: genAiOptionalText(json, 'question'),
       answer: answer,
       reasoning: thoughts.join('\n'),
@@ -153,6 +161,7 @@ final class GenAiSavedTurn {
   /// An unreadable server row stays in sequence so adjacent agent records
   /// cannot be joined across a missing step. It contains no model/user text.
   final bool isHistoryGap;
+  final DateTime? createdAt;
 }
 
 Uri genAiImageUri(String value, {String? baseOrigin}) {
@@ -264,8 +273,7 @@ final class GenAiImageRequest {
         'count': '1',
         'style': 'vivid',
         'outputFormat': 'png',
-        'imageBase64':
-            referenceImages.length == 1 ? referenceImages.single.dataUrl : null,
+        'imageBase64': referenceImages.length == 1 ? referenceImages.single.dataUrl : null,
         'imageBase64List': referenceImages.length > 1
             ? [for (final image in referenceImages) image.dataUrl]
             : null,
@@ -290,8 +298,7 @@ final class GenAiQuota {
     required this.used,
     required this.remaining,
   });
-  factory GenAiQuota.fromJson(String name, Map<String, dynamic> json) =>
-      GenAiQuota(
+  factory GenAiQuota.fromJson(String name, Map<String, dynamic> json) => GenAiQuota(
         name: name,
         total: _number(json, 'total'),
         used: _number(json, 'used'),
@@ -341,19 +348,15 @@ final class GenAiUsageOrder {
     required this.outputTokens,
     required this.imageTokens,
   });
-  factory GenAiUsageOrder.fromJson(Map<String, dynamic> json) =>
-      GenAiUsageOrder(
+  factory GenAiUsageOrder.fromJson(Map<String, dynamic> json) => GenAiUsageOrder(
         model: genAiOptionalText(json, 'modelName').isEmpty
             ? genAiOptionalText(json, 'modelCode')
             : genAiOptionalText(json, 'modelName'),
         time: genAiOptionalText(json, 'orderTime'),
         used: _number(json, 'totalUsed'),
-        inputTokens:
-            json['inputTokens'] == null ? 0 : _number(json, 'inputTokens'),
-        outputTokens:
-            json['outputTokens'] == null ? 0 : _number(json, 'outputTokens'),
-        imageTokens:
-            json['imageTokens'] == null ? 0 : _number(json, 'imageTokens'),
+        inputTokens: json['inputTokens'] == null ? 0 : _number(json, 'inputTokens'),
+        outputTokens: json['outputTokens'] == null ? 0 : _number(json, 'outputTokens'),
+        imageTokens: json['imageTokens'] == null ? 0 : _number(json, 'imageTokens'),
       );
   final String model;
   final String time;
@@ -371,11 +374,8 @@ final class GenAiWebSearchCitation {
     required this.snippet,
   });
 
-  factory GenAiWebSearchCitation.fromJson(Map<String, dynamic> json) =>
-      GenAiWebSearchCitation(
-        num: json['num'] is int
-            ? json['num'] as int
-            : int.tryParse('${json['num']}') ?? 0,
+  factory GenAiWebSearchCitation.fromJson(Map<String, dynamic> json) => GenAiWebSearchCitation(
+        num: json['num'] is int ? json['num'] as int : int.tryParse('${json['num']}') ?? 0,
         title: genAiOptionalText(json, 'title'),
         link: genAiOptionalText(json, 'link'),
         snippet: genAiOptionalText(json, 'snippet'),
@@ -423,8 +423,7 @@ final class GenAiUploadedImage {
     this.height,
   });
 
-  factory GenAiUploadedImage.fromJson(Map<String, dynamic> json) =>
-      GenAiUploadedImage(
+  factory GenAiUploadedImage.fromJson(Map<String, dynamic> json) => GenAiUploadedImage(
         url: genAiRequiredString(json, 'url'),
         width: (json['width'] as num?)?.toInt(),
         height: (json['height'] as num?)?.toInt(),
