@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-/// A bundled picture for local-only demo results, visibly labelled as test data.
+/// Reuses the app icon for demo results without shipping a separate test fixture.
 class GenAiDemoImage extends StatelessWidget {
   const GenAiDemoImage({super.key, this.fit = BoxFit.contain});
 
-  static const assetName = 'assets/genai/demo-campus.png';
+  static const assetName = 'assets/icon/icon.png';
   final BoxFit fit;
 
   @override
@@ -16,7 +16,7 @@ class GenAiDemoImage extends StatelessWidget {
             Image.asset(
               assetName,
               fit: fit,
-              semanticLabel: '校园场景测试图片',
+              semanticLabel: '本地演示占位图',
               errorBuilder: (_, __, ___) => const Center(
                 child: Text('本地测试图片加载失败'),
               ),
