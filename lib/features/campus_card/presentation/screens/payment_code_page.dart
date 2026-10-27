@@ -1574,7 +1574,7 @@ final class _PaymentSuccess extends ConsumerWidget {
             Text(
               result == null
                   ? '支付成功'
-                  : formatMoneyFen(result!.amount.value),
+                  : formatMoneyFen(result!.amount.value, fixedDecimals: true),
               style: const TextStyle(
                 color: GpTokens.campusRed,
                 fontSize: 35,
