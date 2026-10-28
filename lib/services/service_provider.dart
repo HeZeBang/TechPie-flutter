@@ -7,6 +7,7 @@ import 'debug_logger.dart';
 import 'ecard_bind_service.dart';
 import 'ecard_widget_service.dart';
 import 'egate_app_service.dart';
+import 'genai_api_service.dart';
 import 'oa_gym_service.dart';
 import 'schedule_service.dart';
 import 'storage_service.dart';
@@ -32,6 +33,7 @@ class ServiceProvider extends InheritedWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final GenaiApiService? genaiApiService;
 
   const ServiceProvider({
     super.key,
@@ -50,6 +52,7 @@ class ServiceProvider extends InheritedWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.genaiApiService,
     required super.child,
   });
 
@@ -76,5 +79,6 @@ class ServiceProvider extends InheritedWidget {
       updateService != oldWidget.updateService ||
       campusCardService != oldWidget.campusCardService ||
       ecardBindService != oldWidget.ecardBindService ||
-      ecardWidgetService != oldWidget.ecardWidgetService;
+      ecardWidgetService != oldWidget.ecardWidgetService ||
+      genaiApiService != oldWidget.genaiApiService;
 }
