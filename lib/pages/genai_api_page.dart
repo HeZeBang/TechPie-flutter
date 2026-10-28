@@ -152,6 +152,7 @@ class _GenaiApiPageState extends State<GenaiApiPage> {
                         leading: Icon(
                             service.loggedIn ? Icons.check_circle_outline : Icons.person_outline,),
                         title: Text(service.loggedIn ? '已登录 GenAI' : '登录 GenAI'),
+                        subtitle: const Text('保存账号密码，每 2 小时自动登录'),
                         trailing: editable
                             ? TextButton(
                                 onPressed: () => unawaited(

@@ -111,6 +111,7 @@ Future<void> _realMain(SharedPreferences prefs, {bool startGenaiApi = false}) as
   // instead of the logging one the API services share.
   final updateService = UpdateService();
   final genaiApiService = GenaiApiService(storageService);
+  unawaited(genaiApiService.initialize());
   if (startGenaiApi) unawaited(genaiApiService.start());
 
   authService.onLogout = () async {

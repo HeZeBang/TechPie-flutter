@@ -11,11 +11,13 @@ class GenaiGateway {
     Uri? upstream,
     HttpClient Function()? clientFactory,
     this.onDiagnostic,
+    this.tokenProvider,
     this.heartbeatInterval = const Duration(seconds: 5),
   })  : upstream = upstream ?? Uri.parse('https://genai.shanghaitech.edu.cn'),
         _clientFactory = clientFactory ?? HttpClient.new;
 
   final void Function(Map<String, Object?>)? onDiagnostic;
+  Future<String> Function()? tokenProvider;
   final Uri upstream;
   final HttpClient Function() _clientFactory;
   final Duration heartbeatInterval;
@@ -48,6 +50,8 @@ class GenaiGateway {
     }
   }
 
+  void updateGenaiToken(String token) => _genaiToken = token;
+
   Future<void> stop() async {
     final server = _server;
     _server = null;
@@ -70,9 +74,11 @@ class GenaiGateway {
   }
 
   Future<HttpClientResponse> _upstream(String path, {Object? body, HttpClient? client}) async {
+    final provider = tokenProvider;
+    final token = provider == null ? _genaiToken : await provider();
     final uri = upstream.resolve(path);
     final request = await (client ?? _client!).openUrl(body == null ? 'GET' : 'POST', uri);
-    request.headers.set('X-Access-Token', _genaiToken);
+    request.headers.set('X-Access-Token', token);
     request.headers.set('Origin', 'https://genai.shanghaitech.edu.cn');
     request.headers.set('Referer', 'https://genai.shanghaitech.edu.cn/dialogue');
     request.headers.set(HttpHeaders.acceptHeader, 'application/json, text/event-stream');

@@ -19,6 +19,7 @@ import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import '../models/user_session.dart';
 import '../utils/secure_storage.dart';
+import 'genai/genai_session.dart';
 
 class StorageService {
   static const _sessionKey = 'user_session';
@@ -214,9 +215,26 @@ class StorageService {
   Future<void> setGenaiApiHost(String value) => _prefs.setString(_genaiApiHostKey, value);
   int get genaiApiPort => _prefs.getInt(_genaiApiPortKey) ?? 5000;
   Future<void> setGenaiApiPort(int value) => _prefs.setInt(_genaiApiPortKey, value);
-  Future<String?> loadGenaiToken() => _secure.read(key: 'genai_upstream_token');
-  Future<void> saveGenaiToken(String value) => _secure.write(key: 'genai_upstream_token', value: value);
-  Future<void> clearGenaiToken() => _secure.delete(key: 'genai_upstream_token');
+  Future<GenaiSession?> loadGenaiSession() async {
+    final raw = await _secure.read(key: 'genai_session');
+    if (raw == null) return null;
+    try {
+      return GenaiSession.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
+  }
+
+  Future<void> saveGenaiSession(GenaiSession session) =>
+      _secure.write(key: 'genai_session', value: jsonEncode(session.toJson()));
+
+  Future<void> clearGenaiSession() async {
+    await _secure.delete(key: 'genai_session');
+    await _secure.delete(key: 'genai_upstream_token');
+  }
+
   Future<String?> loadGenaiApiToken() => _secure.read(key: 'genai_local_api_token');
   Future<void> saveGenaiApiToken(String value) => _secure.write(key: 'genai_local_api_token', value: value);
 
