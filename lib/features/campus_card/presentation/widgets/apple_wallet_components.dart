@@ -455,7 +455,6 @@ final class AppleSegmentedControl extends StatelessWidget {
       width: double.infinity,
       child: CupertinoSlidingSegmentedControl<int>(
         groupValue: selectedIndex,
-        backgroundColor: c.surfaceDisabled,
         thumbColor: c.surface,
         children: {
           for (var index = 0; index < labels.length; index++)
