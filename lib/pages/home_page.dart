@@ -381,7 +381,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _handleFeatureTap(Feature feature) {
-    if (!ServiceProvider.of(context).authService.isLoggedIn) {
+    if (feature.id != 'genai_api' &&
+        !ServiceProvider.of(context).authService.isLoggedIn) {
       unawaited(presentLoginPage(context));
       return;
     }

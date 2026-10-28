@@ -33,6 +33,8 @@ class StorageService {
   static const _syncMasterKeyKey = 'sync_master_key'; // secure storage
   static const _deviceIdKey = 'device_id';
   static const _maskPersonalInfoKey = 'mask_personal_info';
+  static const _genaiApiPortKey = 'genai_api_port';
+  static const _genaiApiHostKey = 'genai_api_host';
 
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
@@ -207,6 +209,16 @@ class StorageService {
       !kReleaseMode && (_prefs.getBool(_useLocalhostKey) ?? false);
   Future<void> setUseLocalhost(bool value) =>
       _prefs.setBool(_useLocalhostKey, value);
+
+  String get genaiApiHost => _prefs.getString(_genaiApiHostKey) ?? '127.0.0.1';
+  Future<void> setGenaiApiHost(String value) => _prefs.setString(_genaiApiHostKey, value);
+  int get genaiApiPort => _prefs.getInt(_genaiApiPortKey) ?? 5000;
+  Future<void> setGenaiApiPort(int value) => _prefs.setInt(_genaiApiPortKey, value);
+  Future<String?> loadGenaiToken() => _secure.read(key: 'genai_upstream_token');
+  Future<void> saveGenaiToken(String value) => _secure.write(key: 'genai_upstream_token', value: value);
+  Future<void> clearGenaiToken() => _secure.delete(key: 'genai_upstream_token');
+  Future<String?> loadGenaiApiToken() => _secure.read(key: 'genai_local_api_token');
+  Future<void> saveGenaiApiToken(String value) => _secure.write(key: 'genai_local_api_token', value: value);
 
   // Cloud-sync settings. The master-password-derived key is the one sensitive
   // piece — it lives in secure storage, never in SharedPreferences.

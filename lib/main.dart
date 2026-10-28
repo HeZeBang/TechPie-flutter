@@ -17,6 +17,7 @@ import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
+import 'services/genai_api_service.dart';
 import 'services/http_client.dart';
 import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
@@ -56,10 +57,10 @@ void main(List<String> args) async {
   // }
 
   final prefs = await SharedPreferences.getInstance();
-  await _realMain(prefs);
+  await _realMain(prefs, startGenaiApi: args.contains('--genai-api'));
 }
 
-Future<void> _realMain(SharedPreferences prefs) async {
+Future<void> _realMain(SharedPreferences prefs, {bool startGenaiApi = false}) async {
   final storageService = StorageService(prefs);
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
   final httpClient = LoggingHttpClient(debugLogger);
@@ -109,6 +110,8 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // It talks to GitHub rather than our backend, so it keeps its own client
   // instead of the logging one the API services share.
   final updateService = UpdateService();
+  final genaiApiService = GenaiApiService(storageService);
+  if (startGenaiApi) unawaited(genaiApiService.start());
 
   authService.onLogout = () async {
     // Third-party bindings persist across logouts — they will be used by the
@@ -183,6 +186,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       campusCardService: campusCardService,
       ecardBindService: ecardBindService,
       ecardWidgetService: ecardWidgetService,
+      genaiApiService: genaiApiService,
     ),
   );
 
@@ -311,6 +315,7 @@ class TechPieApp extends StatefulWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final GenaiApiService? genaiApiService;
 
   const TechPieApp({
     super.key,
@@ -329,6 +334,7 @@ class TechPieApp extends StatefulWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.genaiApiService,
   });
 
   @override
@@ -367,6 +373,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.ecardWidgetService?.clearOpenPayHandler();
     widget.campusCardService.dispose();
+    widget.genaiApiService?.dispose();
     super.dispose();
   }
 
@@ -450,6 +457,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        genaiApiService: widget.genaiApiService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
