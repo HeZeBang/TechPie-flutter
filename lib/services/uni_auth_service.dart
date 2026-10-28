@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:casdoor_flutter_sdk/casdoor_flutter_sdk.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../pages/macos_casdoor_auth_page.dart';
@@ -69,7 +70,13 @@ class UniAuthService extends ChangeNotifier {
 
   bool get loading => _loading;
 
-  UniAuthService({DebugLogger? logger}) : _logger = logger;
+  UniAuthService({DebugLogger? logger, String proxyUrl = ''})
+      : _logger = logger,
+        _proxyUrl = proxyUrl;
+
+  String _proxyUrl;
+  String get proxyUrl => _proxyUrl;
+  void setProxyUrl(String value) => _proxyUrl = value.trim();
 
   final DebugLogger? _logger;
 
@@ -142,6 +149,17 @@ class UniAuthService extends ChangeNotifier {
         callbackUrl = await _showOhosLogin(navigator, casdoor);
       } else if (defaultTargetPlatform == TargetPlatform.macOS) {
         callbackUrl = await _showMacosLogin(navigator, casdoor);
+      } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+        try {
+          callbackUrl = await const MethodChannel('techpie/uni_auth')
+              .invokeMethod<String>('authenticate', <String, String>{
+                'url': casdoor.getSigninUrl().toString(),
+                'proxy': proxyUrl,
+              }) ?? '';
+        } on PlatformException catch (error) {
+          if (error.code == 'CANCELLED') throw CasdoorAuthCancelledException();
+          rethrow;
+        }
       } else {
         callbackUrl = await casdoor.showFullscreen(context);
       }

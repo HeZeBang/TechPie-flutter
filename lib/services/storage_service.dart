@@ -33,6 +33,8 @@ class StorageService {
   static const _syncMasterKeyKey = 'sync_master_key'; // secure storage
   static const _deviceIdKey = 'device_id';
   static const _maskPersonalInfoKey = 'mask_personal_info';
+  static const _proxyUrlKey = 'app_proxy_url';
+  static const _proxyEnabledKey = 'app_proxy_enabled';
 
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
@@ -202,6 +204,11 @@ class StorageService {
   bool get maskPersonalInfo => _prefs.getBool(_maskPersonalInfoKey) ?? true;
   Future<void> setMaskPersonalInfo(bool value) =>
       _prefs.setBool(_maskPersonalInfoKey, value);
+
+  String get appProxyUrl => _prefs.getString(_proxyUrlKey) ?? '';
+  Future<void> setAppProxyUrl(String value) => _prefs.setString(_proxyUrlKey, value);
+  bool get appProxyEnabled => _prefs.getBool(_proxyEnabledKey) ?? false;
+  Future<void> setAppProxyEnabled(bool value) => _prefs.setBool(_proxyEnabledKey, value);
 
   bool get useLocalhost =>
       !kReleaseMode && (_prefs.getBool(_useLocalhostKey) ?? false);
