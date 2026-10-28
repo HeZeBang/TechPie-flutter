@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../../application/campus_network_status.dart';
 import '../../core/async_mutex.dart';
 import '../../core/errors/app_failure.dart';
 import '../../domain/models/card_models.dart';
@@ -19,11 +20,14 @@ final class EcardCardRepository implements CacheFirstCardRepository, CardSnapsho
     required SecureCardCache cache,
     required LocalSecurityPurge purgeLocalSecurityState,
     required VerifiedCardIdSerialReader verifiedIdSerialReader,
+    CampusNetworkStatus? networkStatus,
   })  : _cache = cache,
+        _networkStatus = networkStatus,
         _purgeLocalSecurityState = purgeLocalSecurityState,
         _verifiedIdSerialReader = verifiedIdSerialReader;
 
   final EcardTransport _client;
+  final CampusNetworkStatus? _networkStatus;
   final SecureCardCache _cache;
   final LocalSecurityPurge _purgeLocalSecurityState;
   final VerifiedCardIdSerialReader _verifiedIdSerialReader;
@@ -191,15 +195,20 @@ final class EcardCardRepository implements CacheFirstCardRepository, CardSnapsho
       final displayCardNumber = id;
       Uint8List? avatar;
       if (id.isNotEmpty) {
-        final avatarFlag = requireObjectMap(
+        Future<Map<String, Object?>> readAvatarFlag() async => requireObjectMap(
           await _client.get('/home/userImageIsexists', {'idserial': id}),
           context: 'AVATAR_FLAG',
         );
+        final avatarFlag = await (_networkStatus?.track(
+          '/home/userImageIsexists', readAvatarFlag,
+        ) ?? readAvatarFlag());
         if (avatarFlag['photoIsOrNot'] == true) {
+          Future<List<int>> downloadAvatar() => _client.download(
+            '/repair/showImage?filename=${Uri.encodeQueryComponent('$id.jpg')}',
+          );
           avatar = Uint8List.fromList(
-            await _client.download(
-              '/repair/showImage?filename=${Uri.encodeQueryComponent('$id.jpg')}',
-            ),
+            await (_networkStatus?.track('/repair/showImage', downloadAvatar) ??
+                downloadAvatar()),
           );
         }
       }
@@ -310,7 +319,11 @@ final class EcardCardRepository implements CacheFirstCardRepository, CardSnapsho
     await _purgeLocalSecurityState();
   }
 
-  Future<Map<String, Object?>> _account() async {
+  Future<Map<String, Object?>> _account() =>
+      _networkStatus?.track('/myaccount/openMyAccountApp', _requestAccount) ??
+          _requestAccount();
+
+  Future<Map<String, Object?>> _requestAccount() async {
     final response = requireObjectMap(
       await _client.post('/myaccount/openMyAccountApp', const {}),
       context: 'ACCOUNT',

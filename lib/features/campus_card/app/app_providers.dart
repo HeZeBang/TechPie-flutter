@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../application/account_history_refresh.dart';
+import '../application/campus_network_status.dart';
 import '../application/payment_code_controller.dart';
 import '../application/scan_payment_controller.dart';
 import '../core/async_mutex.dart';
@@ -32,6 +33,21 @@ import 'app_runtime.dart';
 final appRuntimeProvider = Provider<AppRuntime>(
   (ref) =>
       throw StateError('AppRuntime must be overridden at the application root'),
+);
+
+final campusNetworkStatusProvider = Provider<CampusNetworkStatus>((ref) {
+  final runtime = ref.watch(appRuntimeProvider);
+  final status = runtime.networkStatus ??
+      CampusNetworkStatus(connectivity: runtime.connectivity);
+  status.start();
+  if (runtime.networkStatus == null) {
+    ref.onDispose(() => unawaited(status.dispose()));
+  }
+  return status;
+});
+
+final campusNetworkStateProvider = StreamProvider<PaymentConnectionState>(
+  (ref) => ref.watch(campusNetworkStatusProvider).states,
 );
 
 /// Supplied by TechPie so the feature can open TechPie's Account settings for
@@ -216,6 +232,12 @@ final class AuthController extends AsyncNotifier<AuthSnapshot> {
     ref.invalidate(offlineAuthorizationProvider);
     if (resetOfflineMode) {
       unawaited(ref.read(manualOfflineModeProvider.notifier).setEnabled(false));
+      final networkStatus = ref.read(appRuntimeProvider).networkStatus;
+      if (networkStatus != null) {
+        networkStatus.reset();
+      } else if (ref.exists(campusNetworkStatusProvider)) {
+        ref.read(campusNetworkStatusProvider).reset();
+      }
     }
     ref.invalidate(paymentCodeControllerProvider);
     // A same-account cookie replacement must not reset an in-flight scan to

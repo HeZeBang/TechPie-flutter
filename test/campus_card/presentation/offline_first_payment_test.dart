@@ -326,6 +326,9 @@ void main() {
     final h = await _Harness.create(offlineCodeFirst: false);
     h.credentials.readGate = Completer<void>();
     await h.mount(tester);
+    final indicator = find.byKey(const Key('payment-online-status-indicator'));
+    final icon = tester.widget<Image>(find.descendant(of: indicator, matching: find.byType(Image)));
+    expect((icon.image as AssetImage).assetName, GeekPayAssets.online);
     await tester.tap(find.descendant(
       of: find.byKey(const Key('payment-online-status-indicator')),
       matching: find.byType(GestureDetector),

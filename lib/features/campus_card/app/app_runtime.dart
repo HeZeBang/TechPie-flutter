@@ -1,3 +1,4 @@
+import '../application/campus_network_status.dart';
 import '../application/offline_payment_service.dart';
 import '../application/payment_code_controller.dart';
 import '../application/scan_payment_controller.dart';
@@ -25,6 +26,7 @@ final class AppRuntime {
     required this.lifecycle,
     required this.feedback,
     this.scanner,
+    this.networkStatus,
     this.disposeRuntime,
   });
 
@@ -42,6 +44,7 @@ final class AppRuntime {
   final AppLifecyclePort lifecycle;
   final FeedbackPort feedback;
   final ScannerPort? scanner;
+  final CampusNetworkStatus? networkStatus;
   final Future<void> Function()? disposeRuntime;
 
   PaymentCodeExperienceController createPaymentCodeController() =>

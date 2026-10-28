@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../application/campus_network_status.dart';
 import '../application/offline_payment_service.dart';
 import '../core/config/app_environment.dart';
 import '../data/api/decrypted_http_trace.dart';
@@ -54,6 +55,7 @@ AppRuntime buildRealRuntime(
   }
 
   final connectivity = SystemConnectivityPort();
+  final networkStatus = CampusNetworkStatus(connectivity: connectivity);
   final brightness = SystemBrightnessPort();
   final lifecycle = FlutterAppLifecyclePort();
   final feedback = SystemFeedbackPort();
@@ -92,6 +94,7 @@ AppRuntime buildRealRuntime(
   transactions = EcardTransactionHistoryRepository(
     client,
     subjectReader: readSubjectId,
+    networkStatus: networkStatus,
   );
   final offline = OfflinePaymentService(
     credentials: offlineCredentials,
@@ -105,6 +108,7 @@ AppRuntime buildRealRuntime(
   );
   final cards = EcardCardRepository(
     client,
+    networkStatus: networkStatus,
     purgeLocalSecurityState: auth.signOut,
     cache: cardCache,
     verifiedIdSerialReader: sessionStore.readVerifiedIdSerial,
@@ -114,7 +118,8 @@ AppRuntime buildRealRuntime(
     capabilities: AppCapabilities.forEnvironment(environment),
     auth: auth,
     cards: cards,
-    paymentCodes: EcardPaymentCodeRepository(client, onBalance: cards.acceptCodeBalance),
+    paymentCodes: EcardPaymentCodeRepository(client, onBalance: cards.acceptCodeBalance,
+        networkStatus: networkStatus,),
     scanPayments: EcardScanPaymentRepository(client),
     transactions: transactions,
     securitySettings: EcardSecuritySettingsRepository(client),
@@ -123,8 +128,10 @@ AppRuntime buildRealRuntime(
     connectivity: connectivity,
     lifecycle: lifecycle,
     feedback: feedback,
+    networkStatus: networkStatus,
     scanner: scanner,
     disposeRuntime: () async {
+      await networkStatus.dispose();
       await scanner?.dispose();
       await lifecycle.dispose();
       client.dispose();
