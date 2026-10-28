@@ -91,3 +91,14 @@ owns the indicator, reader and lifecycle. GSettings stores card visibility and
 position. KDE keeps its reader/model in `backend` and presentation in QML.
 This version targets an unpacked native bundle; Flatpak/Snap integration is
 outside its scope.
+
+## Desktop card stacking regression
+
+The GNOME card ignores minimized or hidden window actors when choosing its
+stacking position. It restores that position before painting, after Mutter has
+finished updating the window stack, so DING's transparent desktop window cannot
+cover its buttons after applications are minimized.
+
+```bash
+node --experimental-vm-modules --test linux/widgets/tests/desktop-stacking.test.mjs
+```

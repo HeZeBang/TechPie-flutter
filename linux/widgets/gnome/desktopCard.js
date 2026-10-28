@@ -36,8 +36,8 @@ export class DesktopCard {
             [Main.layoutManager, Main.layoutManager.connect('monitors-changed', () => this._position())],
             [global.display, global.display.connect('workareas-changed', () => this._position())],
             [global.display, global.display.connect('in-fullscreen-changed', () => this._position())],
-            [global.display, global.display.connect('restacked', () => this._restack())],
-            [this._windowGroup, this._windowGroup.connect('child-added', () => this._restack())],
+            [global.display, global.display.connect('restacked', () => this._queueRestack())],
+            [this._windowGroup, this._windowGroup.connect('child-added', () => this._queueRestack())],
         ];
         this._header.connect('button-press-event', (_actor, event) => {
             if (event.get_button() !== 1) return Clutter.EVENT_PROPAGATE;
@@ -65,8 +65,20 @@ export class DesktopCard {
             settings.set_double('position-y', y);
             return Clutter.EVENT_STOP;
         });
-        this._restack();
+        this._queueRestack();
         this._position();
+    }
+
+    _queueRestack() {
+        if (this._restackLater || this._destroyed) return;
+        // Mutter may still synchronize window actors after display::restacked.
+        // Move the card only after that work, immediately before painting.
+        this._restackLater = global.compositor.get_laters().add(
+            Meta.LaterType.BEFORE_REDRAW, () => {
+                this._restackLater = 0;
+                if (!this._destroyed) this._restack();
+                return false;
+            });
     }
 
     _restack() {
@@ -74,7 +86,10 @@ export class DesktopCard {
         // receives pointer events. Place the card above it, below normal apps.
         const sibling = this._windowGroup.get_children().find(child => {
             const window = child.get_meta_window?.();
-            return window && window.get_window_type() !== Meta.WindowType.DESKTOP;
+            // Minimized/off-workspace actors can precede the desktop actor.
+            // They must not anchor the card underneath the desktop window.
+            return child.visible && child.mapped && window &&
+                window.get_window_type() !== Meta.WindowType.DESKTOP;
         });
         if (sibling) this._windowGroup.set_child_below_sibling(this.actor, sibling);
         else this._windowGroup.set_child_above_sibling(this.actor, null);
@@ -98,6 +113,7 @@ export class DesktopCard {
     }
 
     _position() {
+        this._queueRestack();
         this._endDrag();
         const bounds = this._bounds();
         this.actor.visible = Boolean(bounds && this._settings.get_boolean('desktop-visible') &&
@@ -135,6 +151,11 @@ export class DesktopCard {
     }
 
     destroy() {
+        this._destroyed = true;
+        if (this._restackLater) {
+            global.compositor.get_laters().remove(this._restackLater);
+            this._restackLater = 0;
+        }
         this._endDrag();
         for (const [object, signal] of this._signals) object.disconnect(signal);
         Main.layoutManager.untrackChrome(this.actor);
