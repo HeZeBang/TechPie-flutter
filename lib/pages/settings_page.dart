@@ -409,6 +409,20 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // General section
             _sectionHeader(theme, 'General'),
+            if (sp.deadlineWidgetService != null)
+              _AdaptiveSwitchTile(
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.widgets_outlined),
+                title: 'Deadline widgets',
+                subtitle: 'Share task titles and dates with your desktop. '
+                    'Widgets use cached data while TechPie is closed.',
+                value: storage.deadlineWidgetsEnabled,
+                onChanged: (value) async {
+                  await storage.setDeadlineWidgetsEnabled(value);
+                  await sp.deadlineWidgetService!.setEnabled(value);
+                  if (mounted) setState(() {});
+                },
+              ),
             _AdaptiveSwitchTile(
               usesIosLiquidGlass: useIosChrome,
               secondary: const Icon(Icons.visibility_off_outlined),
