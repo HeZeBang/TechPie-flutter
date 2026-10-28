@@ -96,3 +96,23 @@ dist/
 
 # Local agent/editor state (omp)
 .omp/
+
+# Local notes and verification tools produced during watch development
+/android/WEAR_ENGINE.md
+/harmonyos_watch/README.md
+/harmonyos_watch/docs/
+/scripts/check-android-16kb.py
+
+# Local Huawei service credentials
+/android/app/agconnect-services.json
+
+# Local platform operation audit logs
+/.local/
+
+# Local HarmonyOS watch development artifacts
+/harmonyos_watch/README.md
+/harmonyos_watch/docs/
+/harmonyos_watch/.gitignore
+/harmonyos_watch/build-profile.json5
+
+/outputs/

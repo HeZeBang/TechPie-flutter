@@ -61,3 +61,11 @@ jobs:
 
       - name: Test
         run: flutter test
+
+      - name: Set up Node for watch checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test watch protocol and signing
+        run: node --test harmonyos_watch/scripts/*.test.cjs harmonyos_watch/scripts/*.test.mjs
