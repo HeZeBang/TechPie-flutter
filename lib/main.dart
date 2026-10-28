@@ -27,6 +27,10 @@ import 'services/theme_service.dart';
 import 'services/third_party_auth_service.dart';
 import 'services/uni_auth_service.dart';
 import 'services/update_service.dart';
+import 'services/wear/android_wear_transport.dart';
+import 'services/wear/techpie_wear_data_source.dart';
+import 'services/wear/wear_engine_service.dart';
+import 'services/wear/wear_protocol.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
 import 'widgets/update_dialogs.dart';
@@ -98,6 +102,18 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService,
     scheduleService,
   );
+  final wearEngineService = isAndroid()
+      ? WearEngineService(
+          transport: AndroidWearTransport(),
+          metadata: PreferencesWearMetadata(prefs),
+          source: TechPieWearDataSource(
+            auth: authService,
+            accounts: thirdPartyAuthService,
+            assignments: assignmentService,
+            campusCard: campusCardService,
+          ),
+        )
+      : null;
   final syncService = SyncService(
     authService,
     thirdPartyAuthService,
@@ -183,6 +199,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       campusCardService: campusCardService,
       ecardBindService: ecardBindService,
       ecardWidgetService: ecardWidgetService,
+      wearEngineService: wearEngineService,
     ),
   );
 
@@ -199,6 +216,29 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // pass does not pay for it. Nothing session-related happens here: a request
   // that needs a session issues one itself.
   campusCardService.prepare();
+  if (wearEngineService != null) {
+    void accountChanged() => unawaited(wearEngineService.reconcileAccount());
+    void deadlinesChanged() {
+      if (wearEngineService.ready &&
+          !assignmentService.loading &&
+          (wearEngineService.getStatus()['capabilities'] as List)
+              .contains('ddl.display')) {
+        unawaited(
+          wearEngineService.refresh(resources: ['ddl']).catchError(
+            (Object error) {
+              if (error is! WearFailure) throw error;
+            },
+          ),
+        );
+      }
+    }
+
+    authService.addListener(accountChanged);
+    thirdPartyAuthService.addListener(accountChanged);
+    campusCardService.addListener(accountChanged);
+    assignmentService.addListener(deadlinesChanged);
+    unawaited(wearEngineService.reconcileAccount());
+  }
 
   // -- Background: renew tokens first (main SSO session + third-party in
   // parallel — they touch independent state), then fan out fetches that
@@ -311,6 +351,7 @@ class TechPieApp extends StatefulWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final WearEngineService? wearEngineService;
 
   const TechPieApp({
     super.key,
@@ -329,6 +370,7 @@ class TechPieApp extends StatefulWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.wearEngineService,
   });
 
   @override
@@ -367,6 +409,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.ecardWidgetService?.clearOpenPayHandler();
     widget.campusCardService.dispose();
+    widget.wearEngineService?.dispose();
     super.dispose();
   }
 
@@ -450,6 +493,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        wearEngineService: widget.wearEngineService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,

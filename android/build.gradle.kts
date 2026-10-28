@@ -1,8 +1,22 @@
+buildscript {
+    repositories {
+        maven(url = "https://maven.aliyun.com/repository/google")
+        maven(url = "https://maven.aliyun.com/repository/central")
+        maven(url = "https://developer.huawei.com/repo/")
+    }
+    dependencies {
+        // Keep AGConnect's buildscript AGP lookup aligned with settings.gradle.kts.
+        classpath("com.android.tools.build:gradle:8.11.1")
+        classpath("com.huawei.agconnect:agcp:1.9.3.301")
+    }
+}
+
 allprojects {
     repositories {
         maven(url = "https://maven.aliyun.com/repository/google")
         maven(url = "https://maven.aliyun.com/repository/central")
         maven(url = "https://maven.aliyun.com/repository/public")
+        maven(url = "https://developer.huawei.com/repo/")
         // google()
         // mavenCentral()
     }
