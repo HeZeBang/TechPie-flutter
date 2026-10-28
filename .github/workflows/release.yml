@@ -122,6 +122,17 @@ jobs:
           flutter analyze --no-pub
           flutter test
 
+
+      - name: Set up Node for feedback checks
+        if: steps.plan.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test feedback recovery
+        if: steps.plan.outputs.skip == 'false'
+        run: node --test web/feedback/test/*.test.mjs
+
   tag:
     name: Tag the release
     needs: plan
