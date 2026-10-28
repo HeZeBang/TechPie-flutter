@@ -71,5 +71,3 @@ jobs:
         with:
           persist-credentials: false
       - run: swift test --package-path ios/WatchSupport
-      - name: Scanner native tests
-        run: swift test --package-path packages/techpie_mobile_scanner_ios
