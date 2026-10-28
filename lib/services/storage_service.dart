@@ -33,6 +33,10 @@ class StorageService {
   static const _syncMasterKeyKey = 'sync_master_key'; // secure storage
   static const _deviceIdKey = 'device_id';
   static const _maskPersonalInfoKey = 'mask_personal_info';
+  static const _proxyUrlKey = 'app_proxy_url';
+  static const _proxyEnabledKey = 'app_proxy_enabled';
+  static const _genaiApiPortKey = 'genai_api_port';
+  static const _genaiApiHostKey = 'genai_api_host';
 
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
@@ -203,10 +207,25 @@ class StorageService {
   Future<void> setMaskPersonalInfo(bool value) =>
       _prefs.setBool(_maskPersonalInfoKey, value);
 
+  String get appProxyUrl => _prefs.getString(_proxyUrlKey) ?? '';
+  Future<void> setAppProxyUrl(String value) => _prefs.setString(_proxyUrlKey, value);
+  bool get appProxyEnabled => _prefs.getBool(_proxyEnabledKey) ?? false;
+  Future<void> setAppProxyEnabled(bool value) => _prefs.setBool(_proxyEnabledKey, value);
+
   bool get useLocalhost =>
       !kReleaseMode && (_prefs.getBool(_useLocalhostKey) ?? false);
   Future<void> setUseLocalhost(bool value) =>
       _prefs.setBool(_useLocalhostKey, value);
+
+  String get genaiApiHost => _prefs.getString(_genaiApiHostKey) ?? '127.0.0.1';
+  Future<void> setGenaiApiHost(String value) => _prefs.setString(_genaiApiHostKey, value);
+  int get genaiApiPort => _prefs.getInt(_genaiApiPortKey) ?? 5000;
+  Future<void> setGenaiApiPort(int value) => _prefs.setInt(_genaiApiPortKey, value);
+  Future<String?> loadGenaiToken() => _secure.read(key: 'genai_upstream_token');
+  Future<void> saveGenaiToken(String value) => _secure.write(key: 'genai_upstream_token', value: value);
+  Future<void> clearGenaiToken() => _secure.delete(key: 'genai_upstream_token');
+  Future<String?> loadGenaiApiToken() => _secure.read(key: 'genai_local_api_token');
+  Future<void> saveGenaiApiToken(String value) => _secure.write(key: 'genai_local_api_token', value: value);
 
   // Cloud-sync settings. The master-password-derived key is the one sensitive
   // piece — it lives in secure storage, never in SharedPreferences.
@@ -314,6 +333,14 @@ class StorageService {
 
   // Assignments cache (non-sensitive — stored as JSON in SharedPreferences)
   static const _assignmentsKey = 'cached_assignments';
+
+  bool get hasCachedAssignments => _prefs.containsKey(_assignmentsKey);
+
+  bool get deadlineWidgetsEnabled => _prefs.getBool('deadline_widgets_enabled') ?? false;
+
+  Future<void> setDeadlineWidgetsEnabled(bool enabled) async {
+    await _prefs.setBool('deadline_widgets_enabled', enabled);
+  }
 
   Future<void> saveCachedAssignments(List<Map<String, dynamic>> items) =>
       _prefs.setString(_assignmentsKey, jsonEncode(items));

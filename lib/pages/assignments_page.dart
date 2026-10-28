@@ -18,6 +18,7 @@ import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/swipeable_card.dart';
 import 'hidden_assignments_page.dart';
+import 'third_party_accounts_page.dart';
 
 class AssignmentsPage extends StatefulWidget {
   const AssignmentsPage({super.key});
@@ -415,6 +416,8 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
 
   Widget _emptyState(BuildContext context, AssignmentService service) {
     final theme = Theme.of(context);
+    final hasSources = ServiceProvider.of(context)
+        .thirdPartyAuthService.boundPlatforms.isNotEmpty;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -425,7 +428,25 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             color: theme.colorScheme.onSurfaceVariant,
           ),
           const SizedBox(height: 16),
-          Text('No upcoming deadlines', style: theme.textTheme.titleMedium),
+          Text(
+            !hasSources ? '连接课程平台以获取Deadlines' : service.loading
+                ? '正在同步截止日期…' : !service.hasCachedData
+                    ? '尚未成功同步截止日期' : 'No upcoming deadlines',
+            style: theme.textTheme.titleMedium,
+          ),
+          if (!hasSources) ...[
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              icon: const Icon(Icons.link),
+              label: const Text('连接课程平台'),
+              onPressed: () => unawaited(
+                pushAdaptivePage<void>(
+                  context,
+                  builder: (_) => const ThirdPartyAccountsPage(),
+                ),
+              ),
+            ),
+          ],
           if (service.error != null) ...[
             const SizedBox(height: 8),
             Padding(

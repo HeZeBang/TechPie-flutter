@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 3.16)
+project(techpie_deadline_widgets LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_AUTOMOC ON)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Qml)
+set(KDE_PACKAGE "${CMAKE_CURRENT_BINARY_DIR}/kde")
+file(COPY kde/metadata.json kde/contents DESTINATION "${KDE_PACKAGE}")
+add_library(techpiedeadlines MODULE kde/backend/plugin.cpp kde/backend/deadline_model.cpp)
+target_link_libraries(techpiedeadlines PRIVATE Qt6::Core Qt6::Gui Qt6::Qml)
+set_target_properties(techpiedeadlines PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${KDE_PACKAGE}/contents/ui/backend")

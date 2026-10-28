@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/main.dart';
 import 'package:techpie/pages/debug_log_page.dart';
+import 'package:techpie/pages/settings_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -95,8 +96,8 @@ void main() {
       find.text('View Logs').hitTestable(),
       200,
       scrollable: find
-          .ancestor(
-            of: find.text('View Logs'),
+          .descendant(
+            of: find.byType(SettingsPage),
             matching: find.byType(Scrollable),
           )
           .first,

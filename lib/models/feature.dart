@@ -5,6 +5,7 @@ import '../pages/campus_card_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
+import '../pages/genai_api_page.dart';
 import '../widgets/adaptive_page_navigation.dart';
 
 enum FeatureMode {
@@ -39,6 +40,16 @@ class Feature {
 }
 
 final featureEntries = <Feature>[
+  Feature(
+    id: 'genai_api',
+    description: 'GenAI API',
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const GenaiApiPage(),
+    ),
+    icon: const Icon(Icons.auto_awesome_outlined),
+  ),
   Feature(
     id: 'elrc_recordings',
     description: '课程录播',

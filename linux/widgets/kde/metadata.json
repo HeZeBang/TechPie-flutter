@@ -1,0 +1,14 @@
+{
+  "KPlugin": {
+    "Id": "club.geekpie.techpie.deadlines",
+    "Name": "TechPie Deadlines",
+    "Description": "Upcoming assignments and exams from TechPie",
+    "Icon": "view-calendar-tasks",
+    "Version": "1.0",
+    "Authors": [{"Name": "TechPie contributors"}],
+    "Category": "Date and Time"
+  },
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "X-Plasma-FormFactors": ["desktop", "horizontal", "vertical"]
+}
