@@ -91,7 +91,7 @@ final class DecryptedHttpTraceInterceptor extends Interceptor {
       'path': options.uri.path,
       'statusCode': response.statusCode,
       'durationMicros': _durationMicros(options),
-      if (options.extra[prepMicrosKey] case final prepMicros?)
+      if (options.extra[prepMicrosKey] case final prepMicros)
         'prepMicros': prepMicros,
       'headers': response.headers.map,
       'payload': decodedResponse,
@@ -118,7 +118,7 @@ final class DecryptedHttpTraceInterceptor extends Interceptor {
       'path': options.uri.path,
       'statusCode': response?.statusCode,
       'durationMicros': _durationMicros(options),
-      if (options.extra[prepMicrosKey] case final prepMicros?)
+      if (options.extra[prepMicrosKey] case final prepMicros)
         'prepMicros': prepMicros,
       'dioExceptionType': err.type.name,
       'message': err.message,
