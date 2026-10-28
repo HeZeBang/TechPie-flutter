@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../application/account_history_refresh.dart';
 import '../application/payment_code_controller.dart';
 import '../application/scan_payment_controller.dart';
+import '../core/async_mutex.dart';
 import '../core/config/debug_mode_controller.dart';
 import '../core/config/debug_mode_features.dart';
 import '../core/config/offline_authorization_banner_controller.dart';
@@ -212,7 +214,9 @@ final class AuthController extends AsyncNotifier<AuthSnapshot> {
     ref.invalidate(transactionDetailProvider);
     ref.invalidate(transactionFeedProvider);
     ref.invalidate(offlineAuthorizationProvider);
-    if (resetOfflineMode) ref.invalidate(manualOfflineModeProvider);
+    if (resetOfflineMode) {
+      unawaited(ref.read(manualOfflineModeProvider.notifier).setEnabled(false));
+    }
     ref.invalidate(paymentCodeControllerProvider);
     // A same-account cookie replacement must not reset an in-flight scan to
     // idle: that would restart the camera and could submit the code again.
@@ -308,8 +312,10 @@ final class CardController extends AsyncNotifier<CampusCard?> {
     CampusCard card,
   ) async {
     try {
+      await ref.read(manualOfflineModeProvider.notifier).restored;
+      if (ref.read(manualOfflineModeProvider)) return;
       final current = await runtime.offlinePayments.status(card.id);
-      if (current.authorization != null) {
+      if (current.authorization != null && !ref.read(manualOfflineModeProvider)) {
         await runtime.offlinePayments.renew(card.id, force: true);
       }
     } catch (_) {
@@ -507,10 +513,33 @@ final manualOfflineModeProvider =
 );
 
 final class ManualOfflineModeController extends Notifier<bool> {
-  @override
-  bool build() => false;
+  static const preferenceKey = 'geekpay.manual_offline_mode';
+  final _writes = AsyncMutex();
+  late Future<SharedPreferences> _preferences;
+  late Future<void> restored;
+  int _revision = 0;
 
-  void setEnabled(bool enabled) => state = enabled;
+  @override
+  bool build() {
+    final revision = ++_revision;
+    _preferences = SharedPreferences.getInstance();
+    restored = _preferences.then((preferences) {
+      if (revision == _revision) {
+        state = preferences.getBool(preferenceKey) ?? false;
+      }
+    });
+    ref.onDispose(() => _revision++);
+    return false;
+  }
+
+  Future<void> setEnabled(bool enabled) {
+    ++_revision;
+    state = enabled;
+    final preferences = _preferences;
+    return _writes.protect(() async {
+      await (await preferences).setBool(preferenceKey, enabled);
+    });
+  }
 }
 
 final offlineAuthorizationProvider = AsyncNotifierProvider.family<
@@ -534,6 +563,8 @@ final class OfflineAuthorizationController
     });
     final service = ref.watch(appRuntimeProvider).offlinePayments;
     final view = await service.status(cardId);
+    if (generation != _generation) return view;
+    await ref.read(manualOfflineModeProvider.notifier).restored;
     if (generation != _generation) return view;
     _scheduleAutomaticRenewal(view);
     if (_shouldRenewAutomatically(view) && !_manualOffline) {
@@ -603,6 +634,8 @@ final class OfflineAuthorizationController
 
   Future<void> maintain({bool force = true}) async {
     final generation = _generation;
+    await ref.read(manualOfflineModeProvider.notifier).restored;
+    if (generation != _generation || _manualOffline) return;
     final service = ref.read(appRuntimeProvider).offlinePayments;
     try {
       await service.renew(arg, force: force);

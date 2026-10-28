@@ -46,7 +46,7 @@ void main() {
       await container
           .read(offlineAuthorizationBannerDismissedProvider.notifier)
           .dismiss();
-      container.read(manualOfflineModeProvider.notifier).setEnabled(true);
+      await container.read(manualOfflineModeProvider.notifier).setEnabled(true);
 
       await container.read(authControllerProvider.notifier).signOut();
 

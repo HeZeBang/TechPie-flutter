@@ -132,7 +132,7 @@ void main() {
     final container = ProviderScope.containerOf(
       tester.element(find.byKey(const Key('payment-code-page'))),
     );
-    container.read(manualOfflineModeProvider.notifier).setEnabled(true);
+    await container.read(manualOfflineModeProvider.notifier).setEnabled(true);
     await tester.pump(const Duration(seconds: 1));
     expect(
       (base.feedback as InMemoryFeedbackPort)
