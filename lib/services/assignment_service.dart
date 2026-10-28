@@ -212,8 +212,8 @@ class AssignmentService extends ChangeNotifier {
 
   Future<void> setCompleted(Assignment a, bool completed) async {
     _overrides.completed[AssignmentOverrides.keyFor(a)] = completed;
-    await _persistOverrides();
     notifyListeners();
+    await _persistOverrides();
   }
 
   Future<void> toggleCompleted(Assignment a) async {
@@ -223,8 +223,8 @@ class AssignmentService extends ChangeNotifier {
 
   Future<void> clearCompletionOverride(Assignment a) async {
     _overrides.completed.remove(AssignmentOverrides.keyFor(a));
-    await _persistOverrides();
     notifyListeners();
+    await _persistOverrides();
   }
 
   Future<void> resetOverrides(Iterable<String> keys) async {
@@ -233,20 +233,20 @@ class AssignmentService extends ChangeNotifier {
       if (_overrides.completed.remove(k) != null) changed = true;
     }
     if (!changed) return;
-    await _persistOverrides();
     notifyListeners();
+    await _persistOverrides();
   }
 
   Future<void> hide(Assignment a) async {
     _overrides.hidden.add(AssignmentOverrides.keyFor(a));
-    await _persistOverrides();
     notifyListeners();
+    await _persistOverrides();
   }
 
   Future<void> unhide(String key) async {
     if (_overrides.hidden.remove(key)) {
-      await _persistOverrides();
       notifyListeners();
+      await _persistOverrides();
     }
   }
 
