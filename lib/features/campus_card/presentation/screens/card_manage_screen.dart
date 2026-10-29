@@ -258,7 +258,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
                   20,
                   ApplePinnedHeaderLayout.contentTop(context),
                   20,
-                  20,
+                  ApplePinnedHeaderLayout.contentBottom(context, 20),
                 ),
                 child: GpStateView.error(
                   error,
@@ -287,7 +287,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
                       20,
                       ApplePinnedHeaderLayout.contentTop(context),
                       20,
-                      52,
+                      ApplePinnedHeaderLayout.contentBottom(context, 52),
                     ),
                     sliver: SliverMainAxisGroup(
                       slivers: [

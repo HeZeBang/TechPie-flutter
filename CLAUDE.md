@@ -72,7 +72,7 @@ CASTGC must never be read off `AuthService.session`. Always go through `ThirdPar
 
 Responsive shell: `DesktopShell` (sidebar, >=600px; collapsible >=960px) or `MobileShell` (bottom nav). Page transitions use `FadeThroughTransition`.
 
-On iOS each tab owns its own `Navigator`, so `pushAdaptivePage` lands inside the selected tab and the tab bar stays on screen; tapping the selected tab pops it to its root, then scrolls it to the top. Anything that must cover the tab bar goes to the root navigator: `pushAdaptivePage(..., rootNavigator: true)` for full-screen features (campus card, ELRC player), `useRootNavigator: true` for `showModalBottomSheet`. A page pushed inside a tab sits under the bar, so its bottom padding comes from `AppShellMetrics.bottomContentPaddingOf` (or a bottom `SafeArea` for a WebView).
+On iOS each tab owns its own `Navigator`, so `pushAdaptivePage` lands inside the selected tab and the tab bar stays on screen; tapping the selected tab pops it to its root, then scrolls it to the top. Anything that must cover the tab bar goes to the root navigator: `pushAdaptivePage(..., rootNavigator: true)` for full-screen features (campus card, ELRC player), `useRootNavigator: true` for `showModalBottomSheet`. The bar is part of the safe area, as in a `UITabBarController`: `MobileShell` sets `MediaQuery.padding.bottom` to the height it covers, so content may scroll under it but must end above it. A scroll view with an explicit `padding:` has to add that itself — `AppShellMetrics.bottomContentPaddingOf` in TechPie pages, `ApplePinnedHeaderLayout.contentBottom` in the campus card feature, a bottom `SafeArea` around a WebView.
 
 ### Platform adaptation (`lib/utils/platform.dart`)
 

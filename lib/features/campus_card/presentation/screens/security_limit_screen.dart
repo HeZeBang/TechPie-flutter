@@ -119,7 +119,7 @@ class _SecurityLimitScreenState extends ConsumerState<SecurityLimitScreen> {
               20,
               ApplePinnedHeaderLayout.contentTop(context),
               20,
-              52,
+              ApplePinnedHeaderLayout.contentBottom(context, 52),
             ),
             children: [
               switch (limits) {

@@ -771,7 +771,12 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 52),
+                padding: EdgeInsets.fromLTRB(
+                  18,
+                  0,
+                  18,
+                  ApplePinnedHeaderLayout.contentBottom(context),
+                ),
                 sliver: switch (transactions) {
                   AsyncData(:final value) => TransactionList(
                       items: value.items

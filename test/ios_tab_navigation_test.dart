@@ -104,6 +104,13 @@ void main() {
 
       expect(find.byKey(detail), findsOneWidget);
       expect(find.byType(CNTabBar), findsOneWidget);
+      // The bar is part of the pushed page's safe area, as a tab bar
+      // controller's is for its children: exactly the 49pt it covers (the test
+      // view has no home indicator), not the transparent headroom above it.
+      expect(
+        MediaQuery.paddingOf(tester.element(find.byKey(detail))).bottom,
+        49,
+      );
 
       // Another tab is one tap away, and the detail waits in its own tab.
       selectTab(tester, 0);

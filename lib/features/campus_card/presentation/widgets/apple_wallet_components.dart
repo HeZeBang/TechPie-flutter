@@ -227,6 +227,14 @@ final class ApplePinnedHeaderLayout extends StatelessWidget {
   static double contentTop(BuildContext context) =>
       78.0 + (isIos() ? 0.0 : MediaQuery.viewPaddingOf(context).top);
 
+  /// The bottom inset of a page's scrollable content: [margin] above whatever
+  /// the host's safe area covers at the bottom — the home indicator, or the
+  /// tab bar when the page sits inside a tab. This is how UIKit insets a scroll
+  /// view by its safe area: content still scrolls under the bar, but the last
+  /// row settles clear of it instead of behind it.
+  static double contentBottom(BuildContext context, [double margin = 52]) =>
+      MediaQuery.paddingOf(context).bottom + margin;
+
   /// The measure of the page body on a wide window. The bar is not part of it:
   /// it spans whatever the host gives the page, which is what makes an eCard
   /// page look like the rest of TechPie.

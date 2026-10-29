@@ -33,7 +33,23 @@ class MobileShell extends StatelessWidget {
       bottomObstruction: bottomObstruction,
       child: Scaffold(
         extendBody: true,
-        body: child,
+        // The bar is part of the safe area, as it is for a UITabBarController's
+        // children: every page in a tab — pushed ones too — reads it from
+        // MediaQuery, so SafeArea and default list padding keep the last row
+        // clear of it. Scaffold would report the bar's whole view, including
+        // the transparent headroom above the glass capsule; this is the part
+        // it actually covers.
+        body: Builder(
+          builder: (context) {
+            final media = MediaQuery.of(context);
+            return MediaQuery(
+              data: media.copyWith(
+                padding: media.padding.copyWith(bottom: bottomObstruction),
+              ),
+              child: child,
+            );
+          },
+        ),
         bottomNavigationBar: usesIosChrome
             ? IosNativeTabBar(
                 selectedIndex: selectedIndex,
