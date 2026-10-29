@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/campus_card/app/app_providers.dart';
@@ -7,6 +10,8 @@ import 'package:techpie/features/campus_card/app/app_runtime.dart';
 import 'package:techpie/features/campus_card/app/demo_runtime_factory.dart';
 import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/features/campus_card/domain/models/auth_models.dart';
+import 'package:techpie/features/campus_card/presentation/app/shell.dart';
+import 'package:techpie/features/campus_card/presentation/scanner/scanner_modal.dart';
 import 'package:techpie/main.dart';
 import 'package:techpie/models/feature.dart';
 import 'package:techpie/pages/campus_card_page.dart';
@@ -85,6 +90,71 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets(
+    'scanner covers the shell while retaining the campus-card scope',
+    (tester) async {
+      appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
+      await pumpApp(tester);
+      final context = tester.element(find.byKey(const Key('payment-code-page')));
+      final container = ProviderScope.containerOf(context);
+      final theme = Theme.of(context);
+      final root = Navigator.of(context, rootNavigator: true);
+      final scanner = runtime.scanner as InMemoryScannerPort;
+
+      final closed = openGpScanner(context);
+      await tester.pumpAndSettle();
+      final scannerContext = tester.element(find.byType(ScannerModal));
+      expect(Navigator.of(scannerContext), same(root));
+      expect(ProviderScope.containerOf(scannerContext), same(container));
+      expect(Theme.of(scannerContext), theme);
+      expect(scanner.running, isTrue);
+      expect(
+        tester.getRect(find.byType(ScannerModal)).contains(
+          tester.getCenter(find.byType(CNTabBar)),
+        ),
+        isTrue,
+      );
+
+      tester.widget<ScannerModal>(find.byType(ScannerModal)).onClose();
+      await tester.pumpAndSettle();
+      await closed;
+      expect(scanner.running, isFalse);
+      expect(root.canPop(), isFalse);
+      expect(find.byType(CNTabBar), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 500));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'a campus-card inner sheet activates and releases native modal protection',
+    (tester) async {
+      appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
+      await pumpApp(tester);
+      final context = tester.element(find.byKey(const Key('payment-code-page')));
+      final navigator = Navigator.of(context);
+      expect(navigator, isNot(same(Navigator.of(context, rootNavigator: true))));
+      final depth = CNTabBarRouteObserver.anyModalDepth.value;
+      unawaited(
+        CNBottomSheet.show<void>(
+          context: context,
+          useRootNavigator: false,
+          builder: (_) => const SizedBox(height: 200),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(CNTabBarRouteObserver.anyModalDepth.value, depth + 1);
+      expect(CNTabBarRouteObserver.topModalRect.value, isNotNull);
+
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(CNTabBarRouteObserver.anyModalDepth.value, depth);
+      expect(CNTabBarRouteObserver.topModalRect.value, isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
   testWidgets(
     'a tap that arrives before the shell exists still opens the code',
