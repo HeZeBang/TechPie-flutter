@@ -217,8 +217,14 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
         controls
             .add(SizedBox(width: first.placementGroup == visible[i - 1].placementGroup ? 4 : 12));
       }
-      controls
-          .add(end - i > 1 ? _group(context, visible.sublist(i, end)) : _action(context, first));
+      final group = visible.sublist(i, end);
+      // Different actions must not inherit a previous native button's image.
+      controls.add(
+        KeyedSubtree(
+          key: ValueKey(group.map((item) => item.id).join('/')),
+          child: group.length > 1 ? _group(context, group) : _action(context, first),
+        ),
+      );
       i = end;
     }
     return ConstrainedBox(

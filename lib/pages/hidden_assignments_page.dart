@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../models/assignment.dart';
@@ -107,14 +108,6 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                   ],
                   trailingItems: [
                     IosNativeNavigationBarItem(
-                      id: 'restore',
-                      sfSymbol: 'arrow.uturn.backward',
-                      enabled: _selected.isNotEmpty,
-                      hidden: !_selectionMode,
-                      accessibilityLabel: '恢复',
-                      placementGroup: 'selection-actions',
-                    ),
-                    IosNativeNavigationBarItem(
                       id: 'toggleSelection',
                       title: _selectionMode ? '完成' : '选择',
                       role: _selectionMode
@@ -132,10 +125,6 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                       case 'toggleSelectAll':
                         if (hiddenKeys.isNotEmpty) {
                           _toggleSelectAll(hiddenKeys);
-                        }
-                      case 'restore':
-                        if (_selected.isNotEmpty) {
-                          _restoreSelected();
                         }
                       case 'toggleSelection':
                         _selectionMode
@@ -181,6 +170,31 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                       ),
                   ],
                 ),
+          bottomNavigationBar: isIos() && _selectionMode
+              ? SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        CNButton(
+                          label: '恢复',
+                          semanticLabel: '恢复所选事项',
+                          enabled: _selected.isNotEmpty,
+                          onPressed: _selected.isEmpty ? null : _restoreSelected,
+                          tint: theme.colorScheme.primary,
+                          config: const CNButtonConfig(
+                            style: CNButtonStyle.glass,
+                            minHeight: 44,
+                            shrinkWrap: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : null,
           body: hiddenKeys.isEmpty
               ? Padding(
                   padding: EdgeInsets.only(top: topPad),
@@ -231,6 +245,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
 
         return ListTile(
           selected: selected,
+          selectedColor: isIos() ? theme.colorScheme.onSurface : null,
           selectedTileColor: theme.colorScheme.primaryContainer.withValues(
             alpha: 0.22,
           ),
@@ -249,6 +264,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                 : '${a.kind.label} · ${a.platform.toUpperCase()} · ${a.course}',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
+            style: isIos() ? TextStyle(color: theme.colorScheme.onSurfaceVariant) : null,
           ),
           onTap: _selectionMode ? () => _toggleSelection(key) : null,
           onLongPress: _selectionMode
