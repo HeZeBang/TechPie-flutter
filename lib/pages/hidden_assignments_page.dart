@@ -12,6 +12,7 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/app_shell/app_shell_tab_bar.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
@@ -303,7 +304,14 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
       for (final a in service.assignments) AssignmentOverrides.keyFor(a): a,
     };
     return ListView.separated(
-      padding: EdgeInsets.only(top: topPad),
+      padding: EdgeInsets.only(
+        top: topPad,
+        // The offstage selection toolbar makes Scaffold strip body padding
+        // even while the shell tab bar is visible.
+        bottom: isIos() && !_selectionMode
+            ? AppShellMetrics.bottomContentPaddingOf(context, margin: 0)
+            : 0,
+      ),
       itemCount: hiddenKeys.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, i) {

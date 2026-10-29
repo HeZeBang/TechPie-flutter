@@ -8,6 +8,7 @@ import 'package:techpie/features/campus_card/app/app_runtime.dart';
 import 'package:techpie/features/campus_card/app/demo_runtime_factory.dart';
 import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/main.dart';
+import 'package:techpie/pages/hidden_assignments_page.dart';
 import 'package:techpie/pages/settings_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
@@ -18,6 +19,7 @@ import 'package:techpie/services/egate_app_service.dart';
 import 'package:techpie/services/http_client.dart';
 import 'package:techpie/services/oa_gym_service.dart';
 import 'package:techpie/services/schedule_service.dart';
+import 'package:techpie/services/service_provider.dart';
 import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/sync_service.dart';
 import 'package:techpie/services/theme_service.dart';
@@ -25,6 +27,7 @@ import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/widgets/adaptive_page_navigation.dart';
+import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
 /// On iOS the tab bar is the app's top level: a page pushed from a tab stays
 /// inside that tab, under the bar, so another tab is always one tap away and
@@ -85,6 +88,59 @@ void main() {
 
   void selectTab(WidgetTester tester, int index) =>
       tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(index);
+
+  testWidgets(
+    'ignored items can scroll above the tab bar and the selection toolbar',
+    (tester) async {
+      await pumpApp(tester);
+      selectTab(tester, 3);
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(SettingsPage));
+      ServiceProvider.of(context).assignmentService.overrides.hidden.addAll(
+        List.generate(30, (index) => 'hidden-$index'),
+      );
+      unawaited(
+        pushAdaptivePage<void>(
+          context,
+          builder: (_) => const HiddenAssignmentsPage(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.descendant(
+        of: find.byType(HiddenAssignmentsPage),
+        matching: find.byType(ListView),
+      );
+      await tester.drag(list, const Offset(0, -4000));
+      await tester.pumpAndSettle();
+      final lastRow = find.ancestor(
+        of: find.text('hidden-29'),
+        matching: find.byType(ListTile),
+      );
+      expect(tester.getBottomLeft(lastRow).dy, lessThanOrEqualTo(874 - 49));
+
+      tester.widget<IosNativeNavigationBar>(
+        find.byType(IosNativeNavigationBar),
+      ).onItemPressed!('select');
+      await tester.pumpAndSettle();
+      expect(tester.widget<ListView>(list).padding, EdgeInsets.zero);
+      await tester.drag(list, const Offset(0, -400));
+      await tester.pumpAndSettle();
+      final restore = find.byWidgetPredicate(
+        (widget) => widget is CNButton && widget.label == '恢复',
+      );
+      expect(
+        tester.getBottomLeft(lastRow).dy,
+        lessThanOrEqualTo(tester.getTopLeft(restore).dy),
+      );
+      tester.widget<IosNativeNavigationBar>(
+        find.byType(IosNativeNavigationBar),
+      ).onItemPressed!('done');
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 500));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
   testWidgets(
     'a pushed page keeps the tab bar, and each tab keeps its own stack',
