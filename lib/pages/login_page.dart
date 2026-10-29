@@ -102,7 +102,7 @@ class _LoginPageState extends State<LoginPage> {
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
                 decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
+                  color: isIos() ? theme.scaffoldBackgroundColor : colorScheme.primaryContainer,
                   borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(28),
                     bottomRight: Radius.circular(28),
@@ -113,13 +113,13 @@ class _LoginPageState extends State<LoginPage> {
                     Icon(
                       Icons.school_rounded,
                       size: 64,
-                      color: colorScheme.onPrimaryContainer,
+                      color: isIos() ? colorScheme.primary : colorScheme.onPrimaryContainer,
                     ),
                     const SizedBox(height: 16),
                     Text(
                       copy.brandName,
                       style: theme.textTheme.headlineMedium?.copyWith(
-                        color: colorScheme.onPrimaryContainer,
+                        color: isIos() ? colorScheme.onSurface : colorScheme.onPrimaryContainer,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -127,7 +127,8 @@ class _LoginPageState extends State<LoginPage> {
                     Text(
                       copy.subtitle,
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onPrimaryContainer,
+                        color:
+                            isIos() ? colorScheme.onSurfaceVariant : colorScheme.onPrimaryContainer,
                       ),
                     ),
                   ],
