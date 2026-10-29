@@ -425,10 +425,12 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
 /// Hiding by removing (or by Offstage) is what made a navigation bar flash when
 /// it switched modes: a platform view that leaves the scene has to be created,
 /// or composited back in, on the frame it is shown, and that frame the slot is
-/// empty. Here a hidden child stays in the scene, clipped to a zero-size box
-/// (a near-zero opacity was tried and still left a visible trace of the glass).
-/// The widget types are the same in both states, so the child's element — and
-/// its native view — survives the toggle.
+/// empty. Here a hidden child stays in the scene at zero size. It has to be the
+/// child itself that shrinks, not just a clip around it: UIKit hit-tests native
+/// views by frame and ignores Flutter's clips, so a full-size hidden button
+/// left over its neighbour swallowed the neighbour's taps. The widget types are
+/// the same in both states, so the child's element — and its native view —
+/// survives the toggle.
 class _HideableSlot extends StatelessWidget {
   const _HideableSlot({required this.hidden, required this.child});
 
@@ -438,9 +440,9 @@ class _HideableSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ClipRect(
         clipBehavior: hidden ? Clip.hardEdge : Clip.none,
-        child: Align(
-          widthFactor: hidden ? 0 : 1,
-          heightFactor: hidden ? 0 : 1,
+        child: SizedBox(
+          width: hidden ? 0 : null,
+          height: hidden ? 0 : null,
           child: IgnorePointer(
             ignoring: hidden,
             child: ExcludeSemantics(excluding: hidden, child: child),

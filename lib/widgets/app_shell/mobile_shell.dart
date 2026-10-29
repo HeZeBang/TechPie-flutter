@@ -77,12 +77,14 @@ class _MobileShellState extends State<MobileShell> {
           },
         ),
         // Collapsed rather than removed while hidden, so the native tab bar is
-        // not recreated — and does not flash — when it comes back.
+        // not recreated — and does not flash — when it comes back. The bar
+        // itself shrinks to zero height, not just a clip around it: UIKit
+        // hit-tests native views by frame and ignores Flutter's clips, so a
+        // full-size hidden bar would swallow taps on the page's toolbar.
         bottomNavigationBar: ClipRect(
           clipBehavior: tabBarHidden ? Clip.hardEdge : Clip.none,
-          child: Align(
-            alignment: Alignment.topCenter,
-            heightFactor: tabBarHidden ? 0 : 1,
+          child: SizedBox(
+            height: tabBarHidden ? 0 : null,
             child: IgnorePointer(
               ignoring: tabBarHidden,
               child: ExcludeSemantics(
