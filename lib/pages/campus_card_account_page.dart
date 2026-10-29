@@ -199,6 +199,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
               SizedBox(width: 200, child: IgnorePointer(ignoring: isBusy(), child: AdaptiveSelect(
                 value: _channel.method,
                 width: 200,
+                accessibilityLabel: 'OPENID 渠道',
                 options: [for (final channel in EcardOpenIdChannel.values)
                   AdaptiveSelectOption(value: channel.method, label: channel.label),],
                 onChanged: (value) {

@@ -213,9 +213,7 @@ class _GenericWebViewPageState extends State<GenericWebViewPage>
 
   @override
   Widget build(BuildContext context) {
-    final appBar = hostNavBarVisible
-        ? AppBar(title: Text(hostPageTitle ?? widget.title), centerTitle: true)
-        : null;
+    final appBar = buildHostNavigationBar(widget.title);
     if (isDesktopWebView) {
       return Scaffold(
         appBar: appBar,
@@ -229,9 +227,15 @@ class _GenericWebViewPageState extends State<GenericWebViewPage>
 
     return Scaffold(
       appBar: appBar,
-      body: _error == null
-          ? WebViewWidget(controller: _controller)
-          : Center(child: Text(_error!)),
+      // Bottom only: inside a tab the page sits above the tab bar.
+      body: SafeArea(
+        top: false,
+        left: false,
+        right: false,
+        child: _error == null
+            ? WebViewWidget(controller: _controller)
+            : Center(child: Text(_error!)),
+      ),
     );
   }
 }

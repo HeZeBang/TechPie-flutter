@@ -95,6 +95,9 @@ class _PeriodWheelsState extends State<_PeriodWheels> {
                           return '第 ${period.number} 节  ${start ? period.startTime : period.endTime}';
                         },
                         onChanged: (i) => _select(i, start),
+                        // One selection band across both wheels.
+                        capStartEdge: start,
+                        capEndEdge: !start,
                       ),
                     ),
                   ],

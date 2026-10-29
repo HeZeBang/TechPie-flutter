@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -771,7 +772,12 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 52),
+                padding: EdgeInsets.fromLTRB(
+                  18,
+                  0,
+                  18,
+                  ApplePinnedHeaderLayout.contentBottom(context),
+                ),
                 sliver: switch (transactions) {
                   AsyncData(:final value) => TransactionList(
                       items: value.items
@@ -865,14 +871,20 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
     final latency = payment.requestLatency == null
         ? '--'
         : '${payment.requestLatency!.inMilliseconds} ms';
-    final selected = await showModalBottomSheet<bool>(
+    final selected = await CNBottomSheet.show<bool>(
       context: context,
       useRootNavigator: false,
       isScrollControlled: true,
       useSafeArea: true,
-      showDragHandle: true,
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+      // A fixed-height sheet: iOS shows no grabber on one.
+      showDragHandle: Theme.of(context).platform != TargetPlatform.iOS,
+      builder: (sheetContext) => ApplePinnedHeaderLayout.sheetInsets(sheetContext, Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          Theme.of(context).platform == TargetPlatform.iOS ? 24 : 0,
+          20,
+          28,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -907,7 +919,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
             ),
           ],
         ),
-      ),
+      ),),
     );
     if (selected != null && mounted) await _setOfflineMode(card, selected);
   }
