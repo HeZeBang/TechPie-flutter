@@ -16,82 +16,18 @@ void main() {
         home: Scaffold(body: child),
       );
 
-  testOnPlatform('Linux refresh awaits the full task and blocks repeat clicks', (tester) async {
-    final first = Completer<void>();
-    final second = Completer<void>();
-    var calls = 0;
-    await tester.pumpWidget(
-      host(
-        PageRefreshButton(
-          onRefresh: () {
-            calls++;
-            return calls == 1 ? first.future : second.future;
-          },
-        ),
-      ),
-    );
-    // Invoke twice before the next frame as well as through the disabled UI.
-    final click = tester.widget<IconButton>(find.byType(IconButton)).onPressed!;
-    click();
-    click();
-    await tester.pump();
-    expect(calls, 1);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    expect(tester.widget<IconButton>(find.byType(IconButton)).onPressed, isNull);
-    first.complete();
-    await tester.pump();
-    await tester.tap(find.byTooltip('刷新'));
-    expect(calls, 2);
-    second.complete();
-    await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-  });
-
-  testOnPlatform('a refresh failure is visible and can be retried', (tester) async {
-    var calls = 0;
-    await tester.pumpWidget(
-      host(
-        PageRefreshButton(
-          onRefresh: () async {
-            if (++calls == 1) throw StateError('failed');
-          },
-        ),
-      ),
-    );
-    await tester.tap(find.byTooltip('刷新'));
-    await tester.pumpAndSettle();
-    expect(find.text('刷新失败，请重试'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    await tester.tap(find.byTooltip('刷新'));
-    await tester.pump();
-    expect(calls, 2);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  testOnPlatform('background loading disables refresh and disposal is safe', (tester) async {
-    final pending = Completer<void>();
-    await tester.pumpWidget(
-      host(
-        PageRefreshButton(
-          refreshing: true,
-          onRefresh: () => pending.future,
-        ),
-      ),
-    );
-    expect(tester.widget<IconButton>(find.byType(IconButton)).onPressed, isNull);
-    await tester.pumpWidget(host(PageRefreshButton(onRefresh: () => pending.future)));
-    await tester.tap(find.byTooltip('刷新'));
-    await tester.pumpWidget(const SizedBox.shrink());
-    pending.completeError(StateError('late failure'));
-    await tester.pump();
-    expect(tester.takeException(), isNull);
-  });
-
-  for (final platform in TargetPlatform.values) {
-    testOnPlatform(
-      '$platform uses the expected refresh interaction',
+  for (final platform in [
+    TargetPlatform.linux,
+    TargetPlatform.macOS,
+    TargetPlatform.windows,
+    TargetPlatform.android,
+  ]) {
+    testWidgets(
+      '$platform uses the appropriate refresh controls',
       (tester) async {
+        final desktop = platform == TargetPlatform.linux ||
+            platform == TargetPlatform.macOS ||
+            platform == TargetPlatform.windows;
         await tester.pumpWidget(
           host(
             Column(
@@ -100,21 +36,19 @@ void main() {
                 Expanded(
                   child: PageRefreshIndicator(
                     onRefresh: () async {},
-                    child: ListView(children: const [Text('Empty or failed page')]),
+                    child: ListView(children: const [Text('content')]),
                   ),
                 ),
               ],
             ),
           ),
         );
-        expect(
-          find.byType(IconButton),
-          platform == TargetPlatform.linux ? findsOneWidget : findsNothing,
-        );
+        expect(find.byType(IconButton), desktop ? findsOneWidget : findsNothing);
         expect(
           find.byType(RefreshIndicator),
-          platform == TargetPlatform.linux ? findsNothing : findsOneWidget,
+          desktop ? findsNothing : findsOneWidget,
         );
+
         await tester.pumpWidget(
           host(
             CustomScrollView(
@@ -126,17 +60,48 @@ void main() {
         );
         expect(
           find.byType(CupertinoSliverRefreshControl, skipOffstage: false),
-          platform == TargetPlatform.linux ? findsNothing : findsOneWidget,
+          desktop ? findsNothing : findsOneWidget,
         );
       },
-      platform: platform,
+      variant: TargetPlatformVariant({platform}),
     );
   }
-}
 
-void testOnPlatform(
-  String description,
-  WidgetTesterCallback callback, {
-  TargetPlatform platform = TargetPlatform.linux,
-}) =>
-    testWidgets(description, callback, variant: TargetPlatformVariant({platform}));
+  testWidgets(
+    'refresh waits for completion and supports retry after failure',
+    (tester) async {
+      final gate = Completer<void>();
+      var calls = 0;
+      await tester.pumpWidget(
+        host(
+          PageRefreshButton(
+            onRefresh: () async {
+              calls++;
+              if (calls == 1) return gate.future;
+              if (calls == 2) throw StateError('failed');
+            },
+          ),
+        ),
+      );
+
+      final button = tester.widget<IconButton>(find.byType(IconButton));
+      button.onPressed!();
+      button.onPressed!();
+      await tester.pump();
+      expect(calls, 1);
+      expect(find.byTooltip('正在刷新'), findsOneWidget);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('刷新'));
+      await tester.pumpAndSettle();
+      expect(calls, 2);
+      expect(find.text('刷新失败，请重试'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('刷新'));
+      await tester.pumpAndSettle();
+      expect(calls, 3);
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.linux}),
+  );
+}

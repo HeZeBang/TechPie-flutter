@@ -248,7 +248,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
       key: const Key('card-manage-page'),
       body: AppleWalletPage(
         child: ApplePinnedHeaderLayout(
-          refreshAction: isLinux() && _segment == 1 && card != null
+          refreshAction: isDesktop() && _segment == 1 && card != null
               ? PageRefreshButton(onRefresh: _refreshActivity)
               : null,
           leading: CampusCardHeaderAction(

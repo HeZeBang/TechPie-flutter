@@ -123,7 +123,8 @@ final class AppleWalletPage extends StatelessWidget {
       ColoredBox(color: context.gpColors.bg, child: child);
 }
 
-/// Pull-to-refresh control positioned below the pinned eCard header.
+/// Pull-to-refresh control for touch platforms, positioned below the pinned
+/// eCard header. Native desktop uses the header refresh action instead.
 final class EcardSliverRefreshControl extends StatelessWidget {
   const EcardSliverRefreshControl({super.key, required this.onRefresh});
 
@@ -131,7 +132,7 @@ final class EcardSliverRefreshControl extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isLinux()) {
+    if (isDesktop()) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
     final color = context.gpColors.textSecondary;

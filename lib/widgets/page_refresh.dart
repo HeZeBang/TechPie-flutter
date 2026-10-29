@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../utils/platform.dart';
 import 'adaptive_feedback.dart';
 
-/// A mouse-accessible refresh action for native Linux pages.
+/// A mouse-accessible refresh action for native desktop pages.
 ///
 /// Owns the pending operation so every page awaits its entire refresh before
 /// allowing another click. Existing background loads can also disable it.
@@ -46,7 +46,7 @@ class _PageRefreshButtonState extends State<PageRefreshButton> {
 
   @override
   Widget build(BuildContext context) {
-    if (!isLinux()) return const SizedBox.shrink();
+    if (!isDesktop()) return const SizedBox.shrink();
     final busy = _pending || widget.refreshing;
     return IconButton(
       tooltip: busy ? '正在刷新' : '刷新',
@@ -64,18 +64,25 @@ class _PageRefreshButtonState extends State<PageRefreshButton> {
   }
 }
 
-/// Linux uses the page action; all other platforms retain their pull gesture.
+/// Desktop uses the page action; other platforms retain their pull gesture.
 class PageRefreshIndicator extends StatelessWidget {
   const PageRefreshIndicator({
     super.key,
     required this.onRefresh,
     required this.child,
+    this.notificationPredicate = defaultScrollNotificationPredicate,
   });
 
   final Future<void> Function() onRefresh;
   final Widget child;
+  final ScrollNotificationPredicate notificationPredicate;
 
   @override
-  Widget build(BuildContext context) =>
-      isLinux() ? child : RefreshIndicator(onRefresh: onRefresh, child: child);
+  Widget build(BuildContext context) => isDesktop()
+      ? child
+      : RefreshIndicator(
+          onRefresh: onRefresh,
+          notificationPredicate: notificationPredicate,
+          child: child,
+        );
 }

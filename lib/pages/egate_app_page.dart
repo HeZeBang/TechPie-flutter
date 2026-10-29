@@ -171,7 +171,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
           : BlurredAppBar(
               title: const Text('校园签到'),
               actions: [
-                if (isLinux())
+                if (isDesktop())
                   ListenableBuilder(
                     listenable: Listenable.merge([auth, tpAuth]),
                     builder: (context, _) => PageRefreshButton(

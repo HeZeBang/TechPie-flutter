@@ -239,7 +239,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     return BlurredAppBar(
       title: const Text('Deadlines'),
       actions: [
-        if (isLinux())
+        if (isDesktop())
           PageRefreshButton(
             onRefresh: () => _refresh(service),
             refreshing: service.loading,

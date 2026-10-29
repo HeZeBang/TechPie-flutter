@@ -599,7 +599,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
       body: AppleWalletPage(
         child: ApplePinnedHeaderLayout(
           title: '付款码',
-          refreshAction: isLinux()
+          refreshAction: isDesktop()
               ? PageRefreshButton(onRefresh: _refreshAll)
               : null,
           leading: CampusCardHeaderAction(
