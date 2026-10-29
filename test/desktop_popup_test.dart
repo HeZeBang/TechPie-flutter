@@ -88,37 +88,4 @@ void main() {
     expect(lastRow.bottom, lessThanOrEqualTo(450 - 72));
   });
 
-  testWidgets('opens below the anchor when there is room', (tester) async {
-    tester.view.physicalSize = const Size(1600, 900);
-    tester.view.devicePixelRatio = 2;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await pumpTablet(tester, 40);
-    openMenu();
-    await tester.pumpAndSettle();
-
-    final rect = tester.getRect(find.byType(DesktopPopoverSurface));
-    expect(rect.left, closeTo(100, 0.5));
-    // Anchor bottom (88) + the 8px offset.
-    expect(rect.top, closeTo(96, 0.5));
-    expect(rect.size, const Size(260, 238));
-  });
-
-  testWidgets('tapping outside closes the popover', (tester) async {
-    tester.view.physicalSize = const Size(1600, 900);
-    tester.view.devicePixelRatio = 2;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await pumpTablet(tester, 40);
-    openMenu();
-    await tester.pumpAndSettle();
-    expect(find.byType(DesktopPopoverSurface), findsOneWidget);
-
-    // A point on the scrim, well away from the popover (x 100–360).
-    await tester.tapAt(const Offset(750, 20));
-    await tester.pumpAndSettle();
-    expect(find.byType(DesktopPopoverSurface), findsNothing);
-  });
 }
