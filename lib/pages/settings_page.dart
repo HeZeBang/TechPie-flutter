@@ -561,30 +561,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const Divider(height: 1),
-                for (final mode in AppThemeMode.values)
-                  DesktopMenuRow(
-                    leading: Icon(mode.icon, size: 20),
-                    title: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            mode.label,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ),
-                        if (themeService.mode == mode)
-                          Icon(
-                            Icons.check,
-                            size: 20,
-                            color: theme.colorScheme.primary,
-                          ),
-                      ],
-                    ),
-                    onTap: () {
-                      unawaited(themeService.setMode(mode));
-                      close();
-                    },
-                  ),
+                _ThemeModeOptions(
+                  themeService: themeService,
+                  desktop: true,
+                  onSelected: (mode) {
+                    unawaited(themeService.setMode(mode));
+                    close();
+                  },
+                ),
               ],
             ),
           );
@@ -608,21 +592,13 @@ class _SettingsPageState extends State<SettingsPage> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              for (final mode in AppThemeMode.values)
-                ListTile(
-                  leading: Icon(mode.icon),
-                  title: Text(mode.label),
-                  trailing: themeService.mode == mode
-                      ? Icon(
-                          Icons.check,
-                          color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () {
-                    unawaited(themeService.setMode(mode));
-                    Navigator.pop(context);
-                  },
-                ),
+              _ThemeModeOptions(
+                themeService: themeService,
+                onSelected: (mode) {
+                  unawaited(themeService.setMode(mode));
+                  Navigator.pop(context);
+                },
+              ),
               const SizedBox(height: 8),
             ],
           ),
@@ -753,6 +729,63 @@ class _SettingsPageState extends State<SettingsPage> {
   String _shortTime(DateTime t) {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+  }
+}
+
+class _ThemeModeOptions extends StatelessWidget {
+  const _ThemeModeOptions({
+    required this.themeService,
+    required this.onSelected,
+    this.desktop = false,
+  });
+
+  final ThemeService themeService;
+  final ValueChanged<AppThemeMode> onSelected;
+  final bool desktop;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final mode in AppThemeMode.values)
+          if (desktop)
+            DesktopMenuRow(
+              leading: Icon(mode.icon, size: 20),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      mode.label,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  if (themeService.mode == mode)
+                    Icon(
+                      Icons.check,
+                      size: 20,
+                      color: theme.colorScheme.primary,
+                    ),
+                ],
+              ),
+              onTap: () => onSelected(mode),
+            )
+          else
+            ListTile(
+              leading: Icon(mode.icon),
+              title: Text(mode.label),
+              trailing: themeService.mode == mode
+                  ? Icon(
+                      Icons.check,
+                      color: theme.colorScheme.primary,
+                    )
+                  : null,
+              onTap: () => onSelected(mode),
+            ),
+      ],
+    );
   }
 }
 
