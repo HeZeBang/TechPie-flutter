@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -782,7 +783,12 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 52),
+                padding: EdgeInsets.fromLTRB(
+                  18,
+                  0,
+                  18,
+                  ApplePinnedHeaderLayout.contentBottom(context),
+                ),
                 sliver: switch (transactions) {
                   AsyncData(:final value) => TransactionList(
                       items: value.items
@@ -858,72 +864,82 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
   }
 
   Future<void> _showStatusSheet({required CampusCard card}) async {
-    final selected = await showModalBottomSheet<bool>(
+    final selected = await CNBottomSheet.show<bool>(
       context: context,
       useRootNavigator: false,
       isScrollControlled: true,
       useSafeArea: true,
-      showDragHandle: true,
-      builder: (sheetContext) => Consumer(
-        builder: (context, ref, _) {
-          final payment = ref.watch(paymentCodeControllerProvider);
-          final networkState = ref.watch(campusNetworkStateProvider).valueOrNull ??
-              _networkStatus.state;
-          final manualOffline = ref.watch(manualOfflineModeProvider);
-          final authorization = ref
-              .watch(offlineAuthorizationProvider(card.id))
-              .valueOrNull
-              ?.state;
-          final canToggleOffline =
-              manualOffline ||
-              authorization == OfflineAuthorizationState.active ||
-              authorization == OfflineAuthorizationState.renewalDue;
-          final stateLabel = switch (networkState) {
-            PaymentConnectionState.disconnected => '网络已断开',
-            PaymentConnectionState.apiError => '服务响应异常或响应较慢',
-            _ => '网络正常',
-          };
-          final latency = payment.requestLatency == null
-              ? '--'
-              : '${payment.requestLatency!.inMilliseconds} ms';
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppleSection(
-                  children: [
-                    AppleListRow(label: '在线状态', value: stateLabel),
-                    AppleListRow(label: '当前延迟', value: latency),
-                    AppleListRow(
-                      label: '离线付款码',
-                      verticalPadding: 4,
-                      trailing: Switch.adaptive(
-                        // The switch is the user's mode, not "an offline code happens
-                        // to be on screen". An unavailable grant only blocks turning
-                        // the mode on; turning it off remains available.
-                        value: manualOffline,
-                        onChanged: canToggleOffline
-                            ? (value) => Navigator.pop(sheetContext, value)
-                            : null,
+      // A fixed-height sheet: iOS shows no grabber on one.
+      showDragHandle: Theme.of(context).platform != TargetPlatform.iOS,
+      builder: (sheetContext) => ApplePinnedHeaderLayout.sheetInsets(
+        sheetContext,
+        Consumer(
+          builder: (context, ref, _) {
+            final payment = ref.watch(paymentCodeControllerProvider);
+            final networkState =
+                ref.watch(campusNetworkStateProvider).valueOrNull ??
+                _networkStatus.state;
+            final manualOffline = ref.watch(manualOfflineModeProvider);
+            final authorization = ref
+                .watch(offlineAuthorizationProvider(card.id))
+                .valueOrNull
+                ?.state;
+            final canToggleOffline =
+                manualOffline ||
+                authorization == OfflineAuthorizationState.active ||
+                authorization == OfflineAuthorizationState.renewalDue;
+            final stateLabel = switch (networkState) {
+              PaymentConnectionState.disconnected => '网络已断开',
+              PaymentConnectionState.apiError => '服务响应异常或响应较慢',
+              _ => '网络正常',
+            };
+            final latency = payment.requestLatency == null
+                ? '--'
+                : '${payment.requestLatency!.inMilliseconds} ms';
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                Theme.of(context).platform == TargetPlatform.iOS ? 24 : 0,
+                20,
+                28,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppleSection(
+                    children: [
+                      AppleListRow(label: '在线状态', value: stateLabel),
+                      AppleListRow(label: '当前延迟', value: latency),
+                      AppleListRow(
+                        label: '离线付款码',
+                        verticalPadding: 4,
+                        trailing: Switch.adaptive(
+                          // The switch is the user's mode, not "an offline code happens
+                          // to be on screen". An unavailable grant only blocks turning
+                          // the mode on; turning it off remains available.
+                          value: manualOffline,
+                          onChanged: canToggleOffline
+                              ? (value) => Navigator.pop(sheetContext, value)
+                              : null,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  !canToggleOffline
-                      ? '没有可用的离线授权：请先开通或联网续期，之后才能使用离线码。'
-                      : manualOffline
-                      ? '离线模式：只用本机生成的付款码，本地即时刷新，不请求在线付款码。'
-                      : '开启后只用本机生成的离线码（每次刷新消耗一次授权次数）。关闭或重启 App 后会保留设置。',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: context.gpColors.textSecondary),
-                ),
-              ],
-            ),
-          );
-        },
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    !canToggleOffline
+                        ? '没有可用的离线授权：请先开通或联网续期，之后才能使用离线码。'
+                        : manualOffline
+                        ? '离线模式：只用本机生成的付款码，本地即时刷新，不请求在线付款码。'
+                        : '开启后只用本机生成的离线码（每次刷新消耗一次授权次数）。关闭或重启 App 后会保留设置。',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: context.gpColors.textSecondary),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
     if (selected != null && mounted) await _setOfflineMode(card, selected);

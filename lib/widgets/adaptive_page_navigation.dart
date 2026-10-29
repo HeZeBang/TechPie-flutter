@@ -7,12 +7,19 @@ import '../utils/platform.dart';
 ///
 /// iOS intentionally uses Flutter's [CupertinoPageRoute] for standard
 /// push/pop geometry, edge-swipe interaction, and reduced-motion behavior.
+///
+/// A page lands in the nearest stack — on iOS that is the selected tab's, so
+/// the tab bar stays. [rootNavigator] is for a page that takes over the whole
+/// app instead (a self-contained feature, a full-screen player), which is the
+/// only place a page may cover the tab bar.
 Future<T?> pushAdaptivePage<T>(
   BuildContext context, {
   required WidgetBuilder builder,
   RouteSettings? settings,
+  bool rootNavigator = false,
 }) =>
-    Navigator.of(context).push<T>(adaptivePageRoute<T>(
+    Navigator.of(context, rootNavigator: rootNavigator)
+        .push<T>(adaptivePageRoute<T>(
       builder: builder,
       settings: settings,
     ),);

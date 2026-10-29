@@ -1,8 +1,6 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-
-const MethodChannel _platformChannel = MethodChannel('techpie/platform');
 
 const double iosMinimumInteractiveDimension = 44;
 
@@ -12,17 +10,12 @@ bool _supportsIosLiquidGlass = false;
 Future<void> initializePlatformCapabilities() async {
   if (!isIos()) return;
 
-  try {
-    final majorVersion = await _platformChannel.invokeMethod<int>(
-      'iosMajorVersion',
-    );
-    _supportsIosLiquidGlass = (majorVersion ?? 0) >= 26;
-  } on PlatformException {
-    _supportsIosLiquidGlass = false;
-  } on MissingPluginException {
-    _supportsIosLiquidGlass = false;
-  }
+  _supportsIosLiquidGlass = (PlatformVersion.iosVersion ?? 0) >= 26;
 }
+
+/// Tests run with no native runtime to ask; this picks the chrome they see.
+@visibleForTesting
+set debugUsesIosLiquidGlass(bool value) => _supportsIosLiquidGlass = value;
 
 /// Check if the current platform is iOS and not web.
 bool isIos() => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;

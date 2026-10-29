@@ -1,4 +1,4 @@
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../utils/platform.dart';
@@ -30,29 +30,16 @@ class AdaptiveSegmentedControl extends StatelessWidget {
       );
     }
 
+    // UISegmentedControl, stretched to the row like the sliding control it
+    // replaces; CNSegmentedControl falls back to Flutter before iOS 26.
     return SizedBox(
       height: iosMinimumInteractiveDimension,
       width: double.infinity,
       child: Center(
-        child: SizedBox(
-          width: double.infinity,
-          child: CupertinoSlidingSegmentedControl<int>(
-            groupValue: value,
-            children: {
-              for (var index = 0; index < segments.length; index++)
-                index: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    segments[index],
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            },
-            onValueChanged: (selection) {
-              if (selection != null) onChanged(selection);
-            },
-          ),
+        child: CNSegmentedControl(
+          labels: segments,
+          selectedIndex: value.clamp(0, segments.length - 1),
+          onValueChanged: onChanged,
         ),
       ),
     );

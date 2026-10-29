@@ -1,13 +1,16 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../utils/platform.dart';
 import 'adaptive_select.dart';
+import 'schedule_picker_sheet.dart';
 
-/// [AdaptiveSelect]'s multi-choice sibling: the same field, opening a list of
-/// checkboxes. The choice is applied on 确定, so 取消 means what it says.
+/// [AdaptiveSelect]'s multi-choice sibling: the same field, opening a list to
+/// choose from (checkboxes on Android, trailing checkmarks on iOS). The choice
+/// is applied on 确定, so 取消 means what it says.
 class AdaptiveMultiSelect extends StatelessWidget {
   const AdaptiveMultiSelect({
     super.key,
@@ -126,10 +129,12 @@ class AdaptiveMultiSelect extends StatelessWidget {
   }
 
   Future<void> _showOptions(BuildContext context) async {
+    if (isIos()) return _showIosOptions(context);
     var pending = {...values};
 
-    final confirmed = await showModalBottomSheet<Set<String>>(
+    final confirmed = await CNBottomSheet.show<Set<String>>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) {
@@ -196,6 +201,50 @@ class AdaptiveMultiSelect extends StatelessWidget {
       },
     );
 
+    if (confirmed != null) onChanged(confirmed);
+  }
+
+  /// iOS: an inset-grouped list whose chosen rows carry a trailing ✓ — what
+  /// Clock's Repeat and Reminders' custom repeat do — in the shared sheet.
+  Future<void> _showIosOptions(BuildContext context) async {
+    final pending = {...values};
+    final confirmed = await showSchedulePickerSheet<Set<String>>(
+      context: context,
+      title: title ?? placeholder,
+      selection: () => pending,
+      grouped: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+          ),
+          child: SingleChildScrollView(
+            child: CupertinoListSection.insetGrouped(
+              margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              children: [
+                for (final option in options)
+                  Semantics(
+                    selected: pending.contains(option.value),
+                    child: CupertinoListTile(
+                      title: Text(option.label),
+                      trailing: pending.contains(option.value)
+                          ? Icon(
+                              CupertinoIcons.checkmark_alt,
+                              color: Theme.of(context).colorScheme.primary,
+                            )
+                          : null,
+                      onTap: () => setSheetState(() {
+                        if (!pending.remove(option.value)) pending.add(option.value);
+                      }),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
     if (confirmed != null) onChanged(confirmed);
   }
 }

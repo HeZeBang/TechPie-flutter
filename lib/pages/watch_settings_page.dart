@@ -7,6 +7,7 @@ import '../services/watch_sync_service.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_switch.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class WatchSettingsPage extends StatefulWidget {
@@ -139,7 +140,12 @@ class WatchSettingsContent extends StatelessWidget {
           final summary = _summary();
           final statusColor = summary.warning ? colors.error : colors.primary;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              AppShellMetrics.bottomContentPaddingOf(context, margin: 32),
+            ),
             children: [
               DecoratedBox(
                 decoration: BoxDecoration(
