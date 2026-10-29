@@ -1,8 +1,5 @@
-import 'dart:async';
-import 'dart:convert';
-
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 class IosNativeSelectOption {
   const IosNativeSelectOption({
@@ -15,11 +12,10 @@ class IosNativeSelectOption {
   final String label;
   final String? sfSymbol;
 
-  Map<String, Object?> toMap() =>
-      {'value': value, 'label': label, 'sfSymbol': sfSymbol};
+  Map<String, Object?> toMap() => {'value': value, 'label': label, 'sfSymbol': sfSymbol};
 }
 
-class IosNativeSelect extends StatefulWidget {
+class IosNativeSelect extends StatelessWidget {
   const IosNativeSelect({
     super.key,
     required this.options,
@@ -36,87 +32,30 @@ class IosNativeSelect extends StatefulWidget {
   final String? value;
 
   @override
-  State<IosNativeSelect> createState() => _IosNativeSelectState();
-}
-
-class _IosNativeSelectState extends State<IosNativeSelect> {
-  MethodChannel? _channel;
-  Brightness _brightness = Brightness.light;
-
-  Map<String, Object?> _selectionConfiguration(IosNativeSelect widget) => {
-        'value': widget.value,
-        'placeholder': widget.placeholder,
-        'accessibilityLabel': widget.accessibilityLabel,
-        'options': widget.options.map((option) => option.toMap()).toList(),
-      };
-
-  Map<String, Object?> get _configuration => {
-        ..._selectionConfiguration(widget),
-        'brightness': _brightness.name,
-      };
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final brightness = Theme.of(context).brightness;
-    if (_brightness == brightness) return;
-    _brightness = brightness;
-    final channel = _channel;
-    if (channel != null) unawaited(_updateConfiguration(channel));
-  }
-
-  @override
-  void didUpdateWidget(covariant IosNativeSelect oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final channel = _channel;
-    if (channel != null &&
-        jsonEncode(_selectionConfiguration(oldWidget)) !=
-            jsonEncode(_selectionConfiguration(widget))) {
-      unawaited(_updateConfiguration(channel));
-    }
-  }
-
-  @override
-  void dispose() {
-    _channel?.setMethodCallHandler(null);
-    _channel = null;
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => UiKitView(
-        viewType: _viewType,
-        layoutDirection: Directionality.of(context),
-        creationParams: _configuration,
-        creationParamsCodec: const StandardMessageCodec(),
-        onPlatformViewCreated: _onPlatformViewCreated,
-      );
-
-  Future<void> _updateConfiguration(MethodChannel channel) async {
-    try {
-      await channel.invokeMethod<void>('updateConfiguration', _configuration);
-    } on PlatformException {
-      // The platform view may be tearing down.
-    } on MissingPluginException {
-      // The platform view may not be wired yet.
-    }
-  }
-
-  void _onPlatformViewCreated(int viewId) {
-    final channel = MethodChannel('$_viewType/$viewId');
-    _channel?.setMethodCallHandler(null);
-    _channel = channel;
-    channel.setMethodCallHandler((call) async {
-      if (call.method != 'onChanged' || call.arguments is! Map) return;
-      final arguments = call.arguments as Map<Object?, Object?>;
-      final value = arguments['value'];
-      if (value is String &&
-          widget.options.any((option) => option.value == value)) {
-        widget.onChanged(value);
-      }
-    });
-    unawaited(_updateConfiguration(channel));
+  Widget build(BuildContext context) {
+    final selected = options.where((option) => option.value == value).firstOrNull;
+    return IgnorePointer(
+      ignoring: options.isEmpty,
+      child: CNPopupMenuButton(
+        buttonLabel: selected?.label ?? placeholder,
+        semanticLabel: accessibilityLabel,
+        height: 44,
+        buttonStyle: CNButtonStyle.glass,
+        tint: Theme.of(context).colorScheme.onSurface,
+        items: [
+          for (final option in options)
+            CNPopupMenuItem(
+              label: option.label,
+              icon: option.sfSymbol == null ? null : CNSymbol(option.sfSymbol!),
+              checked: option.value == value,
+            ),
+        ],
+        onSelected: (index) {
+          if (index >= 0 && index < options.length) {
+            onChanged(options[index].value);
+          }
+        },
+      ),
+    );
   }
 }
-
-const _viewType = 'techpie/native_select';

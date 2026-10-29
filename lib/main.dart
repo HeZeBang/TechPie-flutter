@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:desktop_webview_window/desktop_webview_window.dart'
     show runWebViewTitleBarWidget;
 import 'package:dynamic_color/dynamic_color.dart';
@@ -453,7 +454,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
-          navigatorObservers: [FeedbackRouteObserver()],
+          navigatorObservers: [FeedbackRouteObserver(), CNTabBarRouteObserver()],
           builder: (context, child) => AdaptiveFeedbackHost(
             key: adaptiveFeedbackHostKey,
             child: child ?? const SizedBox.shrink(),

@@ -22,86 +22,12 @@ final class NativeGlassPresenterPlugin: NSObject, FlutterPlugin {
 
   func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
-    case "showAlert":
-      guard let arguments = call.arguments as? [String: Any] else {
-        result(
-          FlutterError(
-            code: "bad_args",
-            message: "Expected a dictionary of alert arguments.",
-            details: nil
-          )
-        )
-        return
-      }
-
-      showAlert(arguments: arguments, result: result)
     case "presentLoginSheet":
       let arguments = call.arguments as? [String: Any] ?? [:]
       presentLoginSheet(arguments: arguments, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
-  }
-
-  private func showAlert(arguments: [String: Any], result: @escaping FlutterResult) {
-    guard
-      let title = arguments["title"] as? String,
-      let message = arguments["message"] as? String,
-      let rawActions = arguments["actions"] as? [[String: Any]],
-      let presenter = topViewController()
-    else {
-      result(
-        FlutterError(
-          code: "bad_args",
-          message: "Missing title, message, actions, or presenter.",
-          details: nil
-        )
-      )
-      return
-    }
-
-    let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-    var preferredAction: UIAlertAction?
-    var didComplete = false
-
-    func complete(_ value: Any?) {
-      guard !didComplete else { return }
-      didComplete = true
-      result(value)
-    }
-
-    for (index, actionData) in rawActions.enumerated() {
-      guard let label = actionData["label"] as? String, !label.isEmpty else {
-        continue
-      }
-
-      let isDestructive = actionData["isDestructive"] as? Bool ?? false
-      let isDefault = actionData["isDefault"] as? Bool ?? false
-      let style: UIAlertAction.Style = isDestructive ? .destructive : .default
-
-      let action = UIAlertAction(title: label, style: style) { _ in
-        complete(index)
-      }
-
-      if isDefault {
-        preferredAction = action
-      }
-
-      alert.addAction(action)
-    }
-
-    if alert.actions.isEmpty {
-      alert.addAction(
-        UIAlertAction(title: "OK", style: .default) { _ in
-          complete(nil)
-        })
-    }
-
-    if let preferredAction {
-      alert.preferredAction = preferredAction
-    }
-
-    presenter.present(alert, animated: true)
   }
 
   private func presentLoginSheet(

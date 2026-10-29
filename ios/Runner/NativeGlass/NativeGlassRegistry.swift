@@ -27,10 +27,7 @@ enum NativeGlassRegistry {
       NativeNavigationBarFactory(messenger: messenger),
       withId: NativeNavigationBarPlatformView.viewType
     )
-    registrar.register(
-      NativeSelectFactory(messenger: messenger),
-      withId: NativeSelectPlatformView.viewType
-    )
+
 
     NativeGlassPresenterPlugin.register(with: registrar)
     IcsFilePresenterPlugin.register(with: registrar)

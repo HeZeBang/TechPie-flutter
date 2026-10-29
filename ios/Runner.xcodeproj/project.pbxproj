@@ -20,7 +20,6 @@
 		5A0010142F1A000100000001 /* NativeGlassPresenterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010132F1A000100000001 /* NativeGlassPresenterPlugin.swift */; };
 		5A0010152F1A000100000001 /* IcsFilePresenterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010162F1A000100000001 /* IcsFilePresenterPlugin.swift */; };
 		5A0010182F1A000100000001 /* NativeNavigationBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010172F1A000100000001 /* NativeNavigationBar.swift */; };
-		5A0010202F1A000100000001 /* NativeSelect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010192F1A000100000001 /* NativeSelect.swift */; };
 		674C1E9FBF132F0F79A1B9EB /* EcardBindTunnelPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A57A3E0C7844F433A2F16B /* EcardBindTunnelPlugin.swift */; };
 		6BFBE954DB868241E9E9810B /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 052EF181B45C1F8AB028A91F /* Pods_Runner.framework */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
@@ -134,7 +133,6 @@
 		5A0010132F1A000100000001 /* NativeGlassPresenterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassPresenterPlugin.swift; sourceTree = "<group>"; };
 		5A0010162F1A000100000001 /* IcsFilePresenterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IcsFilePresenterPlugin.swift; sourceTree = "<group>"; };
 		5A0010172F1A000100000001 /* NativeNavigationBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNavigationBar.swift; sourceTree = "<group>"; };
-		5A0010192F1A000100000001 /* NativeSelect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSelect.swift; sourceTree = "<group>"; };
 		66FA21E796749A1D7DF0A728 /* widget-background.png */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = image.png; name = "widget-background.png"; path = "../assets/campus_card/images/widget-background.png"; sourceTree = SOURCE_ROOT; };
 		6B0AD00AB3D979A68E9ABE84 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		71A57A3E0C7844F433A2F16B /* EcardBindTunnelPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EcardBindTunnelPlugin.swift; sourceTree = "<group>"; };
@@ -279,7 +277,6 @@
 				5A0010132F1A000100000001 /* NativeGlassPresenterPlugin.swift */,
 				5A0010162F1A000100000001 /* IcsFilePresenterPlugin.swift */,
 				5A0010172F1A000100000001 /* NativeNavigationBar.swift */,
-				5A0010192F1A000100000001 /* NativeSelect.swift */,
 			);
 			path = NativeGlass;
 			sourceTree = "<group>";
@@ -538,7 +535,7 @@
 			);
 			mainGroup = 97C146E51CF9000F007C117D;
 			packageReferences = (
-				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
+				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */,
 				176602B46FEB2E278959CE63 /* XCLocalSwiftPackageReference "WatchSupport" */,
 			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
@@ -613,13 +610,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -728,7 +721,6 @@
 				5A0010142F1A000100000001 /* NativeGlassPresenterPlugin.swift in Sources */,
 				5A0010152F1A000100000001 /* IcsFilePresenterPlugin.swift in Sources */,
 				5A0010182F1A000100000001 /* NativeNavigationBar.swift in Sources */,
-				5A0010202F1A000100000001 /* NativeSelect.swift in Sources */,
 				5A0010052F1A000100000001 /* NativeGlassTabBarView.swift in Sources */,
 				5A0010032F1A000100000001 /* NativeGlassRegistry.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
@@ -1444,7 +1436,7 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = WatchSupport;
 		};
-		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */ = {
+		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage;
 		};
