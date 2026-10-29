@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1641,61 +1642,100 @@ class _CourseBlock extends StatelessWidget {
           children: [
             CourseDetailContent(course: course, compact: compact, padding: EdgeInsets.zero),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: [
-                TextButton.icon(
-                  onPressed: deleting
-                      ? null
-                      : () {
-                          close();
-                          onEditCustomCourse(course);
-                        },
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('编辑'),
-                ),
-                TextButton.icon(
-                  style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
-                  onPressed: deleting
-                      ? null
-                      : () async {
-                          setPreviewState(() => deleting = true);
-                          try {
-                            final confirmed = await showAdaptiveAlertDialog<bool>(
-                              context: context,
-                              title: '删除这节课？',
-                              message: '将删除自定义课程“${course.name}”及其所有重复安排。',
-                              actions: const [
-                                AdaptiveAlertAction(label: '取消', value: false),
-                                AdaptiveAlertAction(label: '删除', value: true, isDestructive: true),
-                              ],
-                            );
-                            if (confirmed != true || !context.mounted) return;
-                            final existing = schedule.findCustomCourse(course.customId!);
-                            if (existing != null) {
-                              final semesterId = existing.semesterId.isEmpty
-                                  ? schedule.selectedSemesterId
-                                  : existing.semesterId;
-                              if (semesterId == null) return;
-                              await schedule.deleteCustomCourse(semesterId, existing.id);
-                            }
-                            if (context.mounted) close();
-                          } catch (_) {
-                            if (context.mounted) {
-                              showAdaptiveFeedback(
-                                context: context,
-                                message: '删除失败，请重试',
-                                style: AdaptiveFeedbackStyle.error,
-                              );
-                            }
-                          } finally {
-                            if (context.mounted) setPreviewState(() => deleting = false);
-                          }
-                        },
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('删除'),
-                ),
-              ],
+            Builder(
+              builder: (context) {
+                void edit() {
+                  close();
+                  onEditCustomCourse(course);
+                }
+
+                Future<void> delete() async {
+                  setPreviewState(() => deleting = true);
+                  try {
+                    final confirmed = await showAdaptiveAlertDialog<bool>(
+                      context: context,
+                      title: '删除这节课？',
+                      message: '将删除自定义课程“${course.name}”及其所有重复安排。',
+                      actions: const [
+                        AdaptiveAlertAction(label: '取消', value: false),
+                        AdaptiveAlertAction(label: '删除', value: true, isDestructive: true),
+                      ],
+                    );
+                    if (confirmed != true || !context.mounted) return;
+                    final existing = schedule.findCustomCourse(course.customId!);
+                    if (existing != null) {
+                      final semesterId = existing.semesterId.isEmpty
+                          ? schedule.selectedSemesterId
+                          : existing.semesterId;
+                      if (semesterId == null) return;
+                      await schedule.deleteCustomCourse(semesterId, existing.id);
+                    }
+                    if (context.mounted) close();
+                  } catch (_) {
+                    if (context.mounted) {
+                      showAdaptiveFeedback(
+                        context: context,
+                        message: '删除失败，请重试',
+                        style: AdaptiveFeedbackStyle.error,
+                      );
+                    }
+                  } finally {
+                    if (context.mounted) setPreviewState(() => deleting = false);
+                  }
+                }
+
+                if (isIos()) {
+                  // Plain system buttons with SF glyphs; delete in the
+                  // destructive red, as in Calendar's event detail.
+                  final red = CupertinoColors.systemRed.resolveFrom(context);
+                  return Row(
+                    children: [
+                      CupertinoButton(
+                        padding: const EdgeInsetsDirectional.only(end: 20),
+                        onPressed: deleting ? null : edit,
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.pencil, size: 20),
+                            SizedBox(width: 6),
+                            Text('编辑'),
+                          ],
+                        ),
+                      ),
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: deleting ? null : delete,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.delete, size: 20, color: red),
+                            const SizedBox(width: 6),
+                            Text('删除', style: TextStyle(color: red)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return Wrap(
+                  spacing: 8,
+                  children: [
+                    TextButton.icon(
+                      onPressed: deleting ? null : edit,
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('编辑'),
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: Theme.of(context).colorScheme.error,
+                      ),
+                      onPressed: deleting ? null : delete,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      label: const Text('删除'),
+                    ),
+                  ],
+                );
+              },
             ),
           ],
         ),

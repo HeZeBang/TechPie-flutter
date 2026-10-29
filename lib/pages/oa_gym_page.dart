@@ -247,6 +247,7 @@ class _BookingTabState extends State<_BookingTab> {
         : DateTime(now.year, now.month, now.day + 1);
     final picked = await showAdaptiveDatePicker(
       context: context,
+      title: '预约日期',
       initialDate: _date,
       firstDate: DateTime(now.year, now.month, now.day),
       lastDate: maxDate,
@@ -700,6 +701,7 @@ class _SearchTabState extends State<_SearchTab> {
   Future<void> _pickStartDate() async {
     final picked = await showAdaptiveDatePicker(
       context: context,
+      title: '开始日期',
       initialDate: _startDate,
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now().add(const Duration(days: 30)),
@@ -716,6 +718,7 @@ class _SearchTabState extends State<_SearchTab> {
   Future<void> _pickEndDate() async {
     final picked = await showAdaptiveDatePicker(
       context: context,
+      title: '结束日期',
       initialDate: _endDate,
       firstDate: _startDate,
       lastDate: DateTime.now().add(const Duration(days: 30)),
