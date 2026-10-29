@@ -676,6 +676,8 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                 value: value,
                 placeholder: placeholder,
                 width: double.infinity,
+                // A display field: tapping opens the period wheel sheet.
+                useIosNativeMenu: false,
                 onChanged: (_) {},
               ),
             ),
@@ -742,6 +744,8 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
           value: value,
           placeholder: placeholder,
           width: double.infinity,
+          // A display field: tapping opens the semester wheel sheet.
+          useIosNativeMenu: false,
           onChanged: onChanged,
         ),
       ),

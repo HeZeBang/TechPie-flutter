@@ -360,13 +360,12 @@ class _SettingsPageState extends State<SettingsPage> {
               ListTile(
                 leading: Icon(themeService.mode.icon),
                 title: const Text('Theme'),
-                subtitle: Text(themeService.mode.label),
+                // The menu button shows the value; a subtitle would repeat it.
                 trailing: AdaptiveSelect(
                   value: themeService.mode.name,
                   placeholder: 'Choose theme',
                   accessibilityLabel: 'Theme',
-                  useIosNativeMenu: true,
-                  width: 156,
+                  shrinkWrap: true,
                   options: [
                     for (final mode in AppThemeMode.values)
                       AdaptiveSelectOption(

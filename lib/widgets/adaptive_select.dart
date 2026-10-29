@@ -25,7 +25,8 @@ class AdaptiveSelect extends StatelessWidget {
     this.placeholder = 'Select',
     this.width = 150,
     this.height = iosMinimumInteractiveDimension,
-    this.useIosNativeMenu = false,
+    this.useIosNativeMenu = true,
+    this.shrinkWrap = false,
     this.accessibilityLabel,
   });
 
@@ -35,7 +36,13 @@ class AdaptiveSelect extends StatelessWidget {
   final String placeholder;
   final double width;
   final double height;
+  /// On iOS, a native pull-down menu (UIMenu). Off for a field that only
+  /// displays a value and presents its own picker when tapped.
   final bool useIosNativeMenu;
+
+  /// iOS native menu only: size the button to its label, as a value control
+  /// in a list row is, instead of [width].
+  final bool shrinkWrap;
   final String? accessibilityLabel;
 
   @override
@@ -50,9 +57,10 @@ class AdaptiveSelect extends StatelessWidget {
         : height;
     if (useIosNativeMenu) {
       return SizedBox(
-        width: effectiveWidth,
+        width: shrinkWrap ? null : effectiveWidth,
         height: effectiveHeight,
         child: IosNativeSelect(
+          shrinkWrap: shrinkWrap,
           value: value,
           placeholder: placeholder,
           accessibilityLabel: accessibilityLabel ?? placeholder,

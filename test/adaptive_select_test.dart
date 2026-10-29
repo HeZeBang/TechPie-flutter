@@ -8,7 +8,7 @@ import 'package:techpie/widgets/adaptive_select.dart';
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  testWidgets('iOS select presents a native action sheet', (
+  testWidgets('an iOS display field presents a native action sheet', (
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -31,6 +31,7 @@ void main() {
         home: Scaffold(
           body: AdaptiveSelect(
             value: 'system',
+            useIosNativeMenu: false,
             options: const [
               AdaptiveSelectOption(value: 'system', label: 'System'),
               AdaptiveSelectOption(value: 'dark', label: 'Dark'),
@@ -77,6 +78,8 @@ void main() {
     );
     var menu = tester.widget<CNPopupMenuButton>(find.byType(CNPopupMenuButton));
     expect(menu.semanticLabel, 'Theme');
+    // The list reads top to bottom wherever the menu opens.
+    expect(menu.preserveTopToBottomOrder, isTrue);
     expect((menu.items.first as CNPopupMenuItem).checked, true);
     menu.onSelected(-1);
     menu.onSelected(99);

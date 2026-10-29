@@ -21,6 +21,7 @@ class IosNativeSelect extends StatelessWidget {
     required this.placeholder,
     required this.accessibilityLabel,
     this.value,
+    this.shrinkWrap = false,
   });
 
   final List<IosNativeSelectOption> options;
@@ -28,6 +29,9 @@ class IosNativeSelect extends StatelessWidget {
   final String placeholder;
   final String accessibilityLabel;
   final String? value;
+
+  /// Size the button to its label instead of the width it is given.
+  final bool shrinkWrap;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +42,10 @@ class IosNativeSelect extends StatelessWidget {
         buttonLabel: selected?.label ?? placeholder,
         semanticLabel: accessibilityLabel,
         height: 44,
+        shrinkWrap: shrinkWrap,
+        // UIMenu otherwise reverses its items when it opens upwards, so the
+        // same list would read in two orders depending on where it sits.
+        preserveTopToBottomOrder: true,
         buttonStyle: CNButtonStyle.glass,
         tint: Theme.of(context).colorScheme.onSurface,
         items: [
