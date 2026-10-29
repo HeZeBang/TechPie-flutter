@@ -43,6 +43,11 @@ void main() {
   });
 
   Future<void> pumpApp(WidgetTester tester) async {
+    // A portrait phone, where the tab bar can tell a tap on the selected tab.
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
     final logger = DebugLogger();
@@ -112,7 +117,7 @@ void main() {
       // report a reselect, so this is a real tap on the item, not the plugin's
       // callback.
       final bar = tester.getRect(find.byType(CNTabBar));
-      await tester.tapAt(Offset(bar.left + bar.width * 7 / 8, bar.center.dy));
+      await tester.tapAt(Offset(bar.left + bar.width * 7 / 8, bar.top + 24));
       await tester.pumpAndSettle();
       expect(find.byKey(detail), findsNothing);
       expect(find.byType(SettingsPage), findsOneWidget);

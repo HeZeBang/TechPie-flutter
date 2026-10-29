@@ -46,7 +46,7 @@ All services are created in `main.dart`, wired together manually (no DI framewor
 
 Key services:
 - **AuthService** — primary account ONLY: GeekPie Uni-Auth (Casdoor) SSO login via `UniAuthService`, SSO token refresh, logout cascade. Owns the SSO identity session (`UserSession` with `geekpieToken`/`geekpieRefreshToken`). It deliberately knows nothing about CASTGC/CpDaily — `UserSession` has no `tgc`/`cookies`/`sessionToken`/`tenantId` fields.
-- **UniAuthService** — Casdoor OAuth: `login()`/`loginSdkOnly()` exchange an authorization code for an `SsoTokens` bundle (access + refresh + expiry); `refresh()` rotates them.
+- **UniAuthService** — Casdoor OAuth: `login()` exchanges an authorization code for an `SsoTokens` bundle (access + refresh + expiry); `refresh()` rotates them. iOS, Android, macOS and OHOS sign in through the shared in-app `UniAuthWebViewPage` on the root navigator; Windows/Linux/web use the SDK's own flow. Login entries call `startUniAuthLogin()` (`lib/widgets/uni_auth_login.dart`), which shares one in-flight login.
 - **ScheduleService** — semester list, course table, term-begin date; CpDaily cookies from the eGate binding (`ThirdPartyAuthService.egateCookies()`); auto-retries with `renewEgateBinding()` on 401
 - **AssignmentService** — aggregates deadlines from Blackboard + exam table (both via the eGate binding's CpDaily session), Gradescope, and Hydro (third-party tokens); merges per-platform results so a single platform failure doesn't wipe others
 - **ThirdPartyAuthService** — bind/unbind/auto-renew for Gradescope, Hydro, **and eGate**. The eGate binding (`ThirdPartyPlatform.egate`) is the SINGLE source of CASTGC / CpDaily session in the app: `hasEgateBinding`, `egateBinding`, `egateCookies()` (always appends `CASTGC=<tgc>`), `egateStudentId`, `renewEgateBinding()` (renews via `/api/auth/renew` and persists back). Every campus-system feature (schedule, blackboard, exam, oa-gym, ecourse/student-leave webviews) reads its CpDaily session through these accessors, never from `AuthService.session`.
@@ -72,9 +72,11 @@ CASTGC must never be read off `AuthService.session`. Always go through `ThirdPar
 
 Responsive shell: `DesktopShell` (sidebar, >=600px; collapsible >=960px) or `MobileShell` (bottom nav). Page transitions use `FadeThroughTransition`.
 
+On iOS each tab owns its own `Navigator`, so `pushAdaptivePage` lands inside the selected tab and the tab bar stays on screen; tapping the selected tab pops it to its root, then scrolls it to the top. Anything that must cover the tab bar goes to the root navigator: `pushAdaptivePage(..., rootNavigator: true)` for full-screen features (campus card, ELRC player), `useRootNavigator: true` for `showModalBottomSheet`. A page pushed inside a tab sits under the bar, so its bottom padding comes from `AppShellMetrics.bottomContentPaddingOf` (or a bottom `SafeArea` for a WebView).
+
 ### Platform adaptation (`lib/utils/platform.dart`)
 
-iOS Liquid Glass (iOS 26+) vs legacy iOS chrome is detected at boot via a MethodChannel (`techpie/platform`). Helper functions `isIos()`, `usesIosLiquidGlass()`, `usesLegacyIosChrome()` gate UI branches throughout the app.
+iOS Liquid Glass (iOS 26+) vs legacy iOS chrome is detected at boot from `cupertino_native_better`'s `PlatformVersion.iosVersion`. Helper functions `isIos()`, `usesIosLiquidGlass()`, `usesLegacyIosChrome()` gate UI branches throughout the app.
 
 ### Features / WebView (`lib/models/feature.dart`)
 

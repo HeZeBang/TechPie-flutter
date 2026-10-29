@@ -68,16 +68,28 @@ class _UniAuthWebViewPageState extends State<UniAuthWebViewPage> {
   NavigationDecision _handleNavigation(NavigationRequest request) {
     final uri = Uri.tryParse(request.url);
     final callback = widget.callbackUri;
-    if (uri?.scheme != callback.scheme) return NavigationDecision.navigate;
-    if (!_completed &&
-        mounted &&
-        request.isMainFrame &&
-        uri?.host == callback.host &&
-        uri?.path == callback.path) {
+    if (uri == null || uri.scheme != callback.scheme) {
+      return NavigationDecision.navigate;
+    }
+    if (_completed || !mounted || !request.isMainFrame) {
+      return NavigationDecision.prevent;
+    }
+    if (uri.host == callback.host && _samePath(uri.path, callback.path)) {
       _completed = true;
       Navigator.of(context).pop(request.url);
+    } else {
+      // Our scheme, but not the callback this login asked for. The WebView
+      // cannot follow it, so say so and offer the retry rather than leave the
+      // provider page sitting there with nothing left to happen.
+      setState(() => _error = '认证回调无效，请重试');
     }
     return NavigationDecision.prevent;
+  }
+
+  /// `techpie://auth-callback` and `techpie://auth-callback/` are one callback.
+  static bool _samePath(String a, String b) {
+    String trim(String path) => path.endsWith('/') ? path.substring(0, path.length - 1) : path;
+    return trim(a) == trim(b);
   }
 
   @override

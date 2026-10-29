@@ -55,8 +55,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('only the exact main-frame callback completes once; failures can retry',
-      (tester) async {
+  testWidgets('only the main-frame callback completes once; failures can retry', (tester) async {
     String? result;
     await tester.pumpWidget(
       MaterialApp(
@@ -98,15 +97,31 @@ void main() {
       ),
       NavigationDecision.navigate,
     );
-    for (final request in [
-      const NavigationRequest(url: 'techpie://other?code=wrong', isMainFrame: true),
-      const NavigationRequest(url: 'techpie://auth-callback?code=subframe', isMainFrame: false),
-    ]) {
-      expect(await delegate.navigate!(request), NavigationDecision.prevent);
-      expect(result, isNull);
-      expect(find.byType(UniAuthWebViewPage), findsOneWidget);
-    }
-    const callback = NavigationRequest(url: 'techpie://auth-callback?code=ok', isMainFrame: true);
+    const subframe = NavigationRequest(
+      url: 'techpie://auth-callback?code=subframe',
+      isMainFrame: false,
+    );
+    expect(await delegate.navigate!(subframe), NavigationDecision.prevent);
+    await tester.pumpAndSettle();
+    expect(result, isNull);
+    expect(find.byType(UniAuthWebViewPage), findsOneWidget);
+
+    // Our scheme on another host is not the callback: it does not complete,
+    // and the page says so instead of sitting on a dead provider page.
+    const wrong = NavigationRequest(url: 'techpie://other?code=wrong', isMainFrame: true);
+    expect(await delegate.navigate!(wrong), NavigationDecision.prevent);
+    await tester.pumpAndSettle();
+    expect(result, isNull);
+    expect(find.text('认证回调无效，请重试'), findsOneWidget);
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(find.text('认证回调无效，请重试'), findsNothing);
+
+    // A trailing slash is the same callback.
+    const callback = NavigationRequest(
+      url: 'techpie://auth-callback/?code=ok',
+      isMainFrame: true,
+    );
     expect(await delegate.navigate!(callback), NavigationDecision.prevent);
     expect(await delegate.navigate!(callback), NavigationDecision.prevent);
     await tester.pumpAndSettle();

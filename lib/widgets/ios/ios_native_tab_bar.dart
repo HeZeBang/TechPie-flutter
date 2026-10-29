@@ -35,10 +35,19 @@ class IosNativeTabBar extends StatefulWidget {
   final ValueChanged<int> onSelected;
   final List<IosNativeTabBarItem> items;
 
-  /// How far the Liquid Glass capsule sits in from each side of the bar; the
-  /// items share the width between those insets equally. The legacy bar spans
-  /// the full width.
+  /// Where a portrait phone's tab bar draws its items, measured on iOS 26: the
+  /// Liquid Glass capsule sits [liquidGlassHorizontalInset] in from each side
+  /// and [liquidGlassTop] below the top of the view, is
+  /// [liquidGlassCapsuleHeight] tall, and splits its width equally between the
+  /// items. The legacy bar spans the full width with 49pt-tall items.
   static const double liquidGlassHorizontalInset = 21;
+  static const double liquidGlassTop = 14;
+  static const double liquidGlassCapsuleHeight = 61;
+  static const double legacyItemHeight = 49;
+
+  /// Wider than this (landscape, iPad) UITabBar centres compact items instead
+  /// of splitting the width, so where an item is cannot be known from here.
+  static const double maxEqualSplitWidth = 500;
 
   @override
   State<IosNativeTabBar> createState() => _IosNativeTabBarState();
@@ -56,13 +65,23 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     widget.onSelected(index);
   }
 
-  /// The tab under [x], measured across this bar's width.
-  int? _indexAt(double x, double width) {
-    final inset =
-        usesIosLiquidGlass() ? IosNativeTabBar.liquidGlassHorizontalInset : 0.0;
+  /// The tab drawn under [position], or null where no item is known to be —
+  /// outside the bar's visible band, or in a layout whose item frames this
+  /// cannot derive. Null means "not a tap on the selected tab", which is the
+  /// safe answer: a wrong guess would pop a tab the user did not tap.
+  int? _indexAt(Offset position, double width) {
+    if (width > IosNativeTabBar.maxEqualSplitWidth) return null;
+    final glass = usesIosLiquidGlass();
+    final top = glass ? IosNativeTabBar.liquidGlassTop : 0.0;
+    final bottom =
+        top + (glass ? IosNativeTabBar.liquidGlassCapsuleHeight : IosNativeTabBar.legacyItemHeight);
+    if (position.dy < top || position.dy >= bottom) return null;
+    final inset = glass ? IosNativeTabBar.liquidGlassHorizontalInset : 0.0;
     final span = width - inset * 2;
-    if (span <= 0 || x < inset || x > width - inset) return null;
-    return ((x - inset) / span * widget.items.length)
+    if (span <= 0 || position.dx < inset || position.dx >= width - inset) {
+      return null;
+    }
+    return ((position.dx - inset) / span * widget.items.length)
         .floor()
         .clamp(0, widget.items.length - 1);
   }
@@ -83,10 +102,8 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     final down = _downPosition!;
     _clearPointer();
     if ((event.localPosition - down).distance > kTouchSlop) return;
-    final index = _indexAt(event.localPosition.dx, width);
-    if (index != null &&
-        index == _selected &&
-        _indexAt(down.dx, width) == index) {
+    final index = _indexAt(event.localPosition, width);
+    if (index != null && index == _selected && _indexAt(down, width) == index) {
       _select(index);
     }
   }
@@ -109,9 +126,7 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
         child: CNTabBar(
           // CNTabBar 1.8.1 places UITabBar 14pt below its container's top.
           // Reserve that headroom so the bar itself keeps its original height.
-          height: 49 +
-              MediaQuery.viewPaddingOf(context).bottom +
-              (nativeGlass ? 14 : 0),
+          height: 49 + MediaQuery.viewPaddingOf(context).bottom + (nativeGlass ? 14 : 0),
           // The native adapter treats zero as an unspecified symbol size,
           // matching UIImage(systemName:) in the previous implementation. The
           // Flutter fallback needs an explicit, nonzero icon size.
