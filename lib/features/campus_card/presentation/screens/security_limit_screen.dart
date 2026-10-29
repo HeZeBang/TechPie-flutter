@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -72,7 +73,7 @@ class _SecurityLimitScreenState extends ConsumerState<SecurityLimitScreen> {
     required MoneyFen perDay,
     required bool needsPassword,
   }) =>
-      showModalBottomSheet<_LimitEdit>(
+      CNBottomSheet.show<_LimitEdit>(
         context: context,
         useRootNavigator: false,
         isScrollControlled: true,

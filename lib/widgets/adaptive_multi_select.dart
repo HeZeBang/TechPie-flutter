@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -128,7 +129,7 @@ class AdaptiveMultiSelect extends StatelessWidget {
   Future<void> _showOptions(BuildContext context) async {
     var pending = {...values};
 
-    final confirmed = await showModalBottomSheet<Set<String>>(
+    final confirmed = await CNBottomSheet.show<Set<String>>(
       context: context,
       useRootNavigator: true,
       showDragHandle: true,

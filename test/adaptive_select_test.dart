@@ -1,18 +1,30 @@
 import 'package:cupertino_native_better/cupertino_native_better.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/widgets/adaptive_select.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  testWidgets('iOS select uses a composited Cupertino action sheet', (
+  testWidgets('iOS select presents a native action sheet', (
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     String? selectedValue;
+    Map<Object?, Object?>? payload;
+    const channel = MethodChannel('cn_action_sheet');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      payload = call.arguments as Map<Object?, Object?>;
+      return 1;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -29,13 +41,15 @@ void main() {
       ),
     );
 
-    expect(find.byType(UiKitView), findsNothing);
     await tester.tap(find.text('System'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(CupertinoActionSheet), findsOneWidget);
-    await tester.tap(find.text('Dark'));
-    await tester.pumpAndSettle();
+    final actions = (payload!['actions'] as List).cast<Map<Object?, Object?>>();
+    expect(actions.map((action) => action['label']), ['System', 'Dark']);
+    // The current option is the disabled one: choosing it would change nothing.
+    expect(actions.map((action) => action['enabled']), [false, true]);
+    expect(payload!['cancelLabel'], '取消');
+    expect(payload!['anchorRect'], isNotNull);
     expect(selectedValue, 'dark');
     debugDefaultTargetPlatformOverride = null;
   });

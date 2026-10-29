@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -262,7 +263,7 @@ class _SchedulePageState extends State<SchedulePage> {
     final isInTerm = _schedule.isTodayInTerm;
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
         useRootNavigator: true,
         showDragHandle: true,
@@ -1727,7 +1728,7 @@ class _CourseBlock extends StatelessWidget {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
         useRootNavigator: true,
         showDragHandle: true,

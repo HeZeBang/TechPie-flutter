@@ -1,3 +1,4 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:techpie/utils/platform.dart';
@@ -141,37 +142,28 @@ class AdaptiveSelect extends StatelessWidget {
     );
   }
 
-  Future<void> _showOptions(BuildContext context) {
-    return showCupertinoModalPopup<void>(
+  /// The field keeps its look; choosing presents a native UIAlertController
+  /// action sheet (a popover from the field on iPad). The current option is
+  /// shown disabled, which is how the sheet marks it: choosing it again would
+  /// change nothing.
+  Future<void> _showOptions(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox?;
+    final anchor = box != null && box.hasSize
+        ? box.localToGlobal(Offset.zero) & box.size
+        : null;
+    final selected = await CNActionSheet.show<String>(
       context: context,
-      builder: (sheetContext) => CupertinoActionSheet(
-        actions: [
-          for (final option in options)
-            CupertinoActionSheetAction(
-              isDefaultAction: option.value == value,
-              onPressed: () {
-                Navigator.of(sheetContext).pop();
-                onChanged(option.value);
-              },
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 24,
-                    child: option.value == value
-                        ? const Icon(CupertinoIcons.check_mark, size: 18)
-                        : null,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(option.label)),
-                ],
-              ),
-            ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.of(sheetContext).pop(),
-          child: const Text('取消'),
-        ),
-      ),
+      anchorRect: anchor,
+      cancelLabel: '取消',
+      actions: [
+        for (final option in options)
+          CNActionSheetAction<String>(
+            label: option.label,
+            value: option.value,
+            enabled: option.value != value,
+          ),
+      ],
     );
+    if (selected != null) onChanged(selected);
   }
 }

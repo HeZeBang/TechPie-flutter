@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../models/oa_gym.dart';
@@ -110,18 +110,11 @@ class _OaGymPageState extends State<OaGymPage>
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                       child: isIos()
-                          ? CupertinoSlidingSegmentedControl<int>(
-                              groupValue: _selectedTab,
-                              children: const {
-                                0: Text('预约'),
-                                1: Text('查询'),
-                                2: Text('个人信息'),
-                              },
-                              onValueChanged: (value) {
-                                if (value != null) {
-                                  _tabController.animateTo(value);
-                                }
-                              },
+                          ? CNSegmentedControl(
+                              labels: const ['预约', '查询', '个人信息'],
+                              selectedIndex: _selectedTab,
+                              shrinkWrap: true,
+                              onValueChanged: _tabController.animateTo,
                             )
                           : Card.outlined(
                               clipBehavior: Clip.antiAlias,

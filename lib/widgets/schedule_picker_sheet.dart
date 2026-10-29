@@ -1,3 +1,4 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,7 +14,7 @@ Future<T?> showSchedulePickerSheet<T>({
   required WidgetBuilder builder,
 }) {
   FocusManager.instance.primaryFocus?.unfocus();
-  return showModalBottomSheet<T>(
+  return CNBottomSheet.show<T>(
     context: context,
     useRootNavigator: true,
     showDragHandle: true,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -870,7 +871,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
     final latency = payment.requestLatency == null
         ? '--'
         : '${payment.requestLatency!.inMilliseconds} ms';
-    final selected = await showModalBottomSheet<bool>(
+    final selected = await CNBottomSheet.show<bool>(
       context: context,
       useRootNavigator: false,
       isScrollControlled: true,

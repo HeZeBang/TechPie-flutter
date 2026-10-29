@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -594,7 +595,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
         useRootNavigator: true,
         builder: (context) => SafeArea(
@@ -694,7 +695,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
         useRootNavigator: true,
         builder: (context) => SafeArea(

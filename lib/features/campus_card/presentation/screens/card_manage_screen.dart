@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -154,7 +155,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
     var start = _range?.start ?? DateTime(now.year, now.month, 1);
     var end = _range?.end ?? now;
     var editingStart = true;
-    return showModalBottomSheet<_DateRangeSelection>(
+    return CNBottomSheet.show<_DateRangeSelection>(
       context: context,
       useRootNavigator: false,
       useSafeArea: true,

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -595,7 +596,7 @@ Future<void> _showAccountDetailSheet(
   String? cookieText,
 }) {
   final theme = Theme.of(context);
-  return showModalBottomSheet<void>(
+  return CNBottomSheet.show<void>(
     context: context,
     useRootNavigator: true,
     showDragHandle: true,
