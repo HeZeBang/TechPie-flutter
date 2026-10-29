@@ -48,6 +48,53 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('genai-send')));
   }
 
+  testWidgets('committed edit closes its dialog before requesting external-action approval',
+      (tester) async {
+    final server = JournalServer();
+    var effects = 0;
+    final demo = await JournalClient.create(
+      server,
+      tools: [
+        GenAiAgentTool(
+          name: 'generate_image',
+          description: 'Test image tool',
+          parameters: {'type': 'object', 'properties': <String, Object?>{}},
+          prepare: (_, __) async => GenAiAgentPreparedTool(
+            requiresApproval: true,
+            effectKey: 'image',
+            execute: () async => {'completed': ++effects},
+          ),
+        ),
+      ],
+    );
+    addTearDown(demo.dispose);
+    demo.workspace.setAgentEnabled(true);
+    server.onGenerate = (body) => server.finalAnswer(body, 'Original.');
+    await show(tester, demo.workspace);
+    await send(tester, 'original');
+    await pumpUntil(tester, () => !demo.workspace.sending);
+    await tester.pumpAndSettle();
+    server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+        ? server.call(body, name: 'generate_image')
+        : server.finalAnswer(body, 'Done.');
+    final menu = find.byKey(ValueKey('genai-turn-menu-${demo.workspace.turns.single.id}'));
+    await tester.ensureVisible(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('编辑并重新发送'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('重新发送'));
+    await pumpUntil(tester, () => demo.workspace.pendingAgentApproval != null);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byKey(const ValueKey('agent-approval')), findsOneWidget);
+    expect(effects, 0);
+    demo.workspace.resolveAgentApproval(false);
+    await pumpUntil(tester, () => !demo.workspace.sending);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final action in [
     'approve',
     'reject',
@@ -94,7 +141,7 @@ void main() {
         scope: () => scope.value,
         scopeChanges: scope,
         runner: GenAiAgentRunner(
-          tools: registry,
+          tools: () => registry,
           limits: GenAiAgentLimits(
             runTimeout: action == 'timeout'
                 ? const Duration(milliseconds: 200)
@@ -207,7 +254,7 @@ void main() {
     final requests = <GenAiChatRequest>[];
     demo.workspace.configureAgent(
       runner: GenAiAgentRunner(
-        tools: GenAiAgentToolRegistry([]),
+        tools: () => GenAiAgentToolRegistry([]),
         streamChat: (request, cancellation) {
           requests.add(request);
           return demo.repository.streamChat(request, cancellation);

@@ -35,6 +35,8 @@ final class GenAiChatRequest {
     List<String> fileIds = const [],
     this.contextCompacted = false,
     this.contextGoal,
+    this.stepContext,
+    this.requestGuide,
     Map<String, String> documentContents = const {},
     this.imageUrl,
     List<String> imageUrls = const [],
@@ -67,6 +69,16 @@ final class GenAiChatRequest {
   /// Local budget metadata; never serialized into the upstream payload.
   final Map<String, String> documentContents;
   final String? contextGoal;
+
+  /// Reconstructible per-step data, sent after history but never archived or summarized.
+  final String? stepContext;
+  GenAiMessage? get stepMessage =>
+      stepContext == null ? null : GenAiMessage(role: GenAiRole.user, content: stepContext!);
+
+  /// Host instructions immediately before chatInfo, outside durable history.
+  final String? requestGuide;
+  GenAiMessage? get guideMessage =>
+      requestGuide == null ? null : GenAiMessage(role: GenAiRole.system, content: requestGuide!);
   final bool contextCompacted;
   final String? imageUrl;
   final List<String> imageUrls;
@@ -85,13 +97,19 @@ final class GenAiChatRequest {
         imageUrls: imageUrls,
         maxTokens: maxTokens,
         contextGoal: contextGoal,
+        stepContext: stepContext,
+        requestGuide: requestGuide,
         contextCompacted: contextCompacted,
         record: value,
       );
 
   Map<String, Object?> toJson() => {
         'chatInfo': storedPrompt,
-        'messages': history.map((m) => m.toJson()).toList(),
+        'messages': [
+          ...history.map((m) => m.toJson()),
+          if (stepMessage case final message?) message.toJson(),
+          if (guideMessage case final message?) message.toJson(),
+        ],
         'chatGroupId': chatGroupId,
         'aiType': aiType,
         'rootAiType': rootAiType,

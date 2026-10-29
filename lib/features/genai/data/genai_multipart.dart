@@ -17,14 +17,19 @@ final class GenAiMultipartData {
     required List<int> fileBytes,
     String fileContentType = 'application/octet-stream',
   }) {
-    final boundary =
-        '----TechPieBoundary${DateTime.now().microsecondsSinceEpoch}';
+    String parameter(String value) =>
+        value.replaceAll('\r', '%0D').replaceAll('\n', '%0A').replaceAll('"', '%22');
+    if (fileContentType.contains('\r') || fileContentType.contains('\n')) {
+      throw ArgumentError.value(fileContentType, 'fileContentType', 'Invalid MIME type');
+    }
+    final safeFileName = fileName.split(RegExp(r'[/\\]')).last;
+    final boundary = '----TechPieBoundary${DateTime.now().microsecondsSinceEpoch}';
     final builder = BytesBuilder();
     for (final entry in fields.entries) {
       builder.add(utf8.encode('--$boundary\r\n'));
       builder.add(
         utf8.encode(
-          'Content-Disposition: form-data; name="${entry.key}"\r\n\r\n',
+          'Content-Disposition: form-data; name="${parameter(entry.key)}"\r\n\r\n',
         ),
       );
       builder.add(utf8.encode('${entry.value}\r\n'));
@@ -32,7 +37,7 @@ final class GenAiMultipartData {
     builder.add(utf8.encode('--$boundary\r\n'));
     builder.add(
       utf8.encode(
-        'Content-Disposition: form-data; name="$fileFieldName"; filename="$fileName"\r\n',
+        'Content-Disposition: form-data; name="${parameter(fileFieldName)}"; filename="${parameter(safeFileName)}"\r\n',
       ),
     );
     builder.add(utf8.encode('Content-Type: $fileContentType\r\n\r\n'));

@@ -93,6 +93,7 @@ final class GenAiSavedTurn {
   const GenAiSavedTurn({
     required this.prompt,
     required this.answer,
+    this.recordId,
     this.aiType = '',
     this.reasoning = '',
     this.imageUrls = const [],
@@ -117,6 +118,7 @@ final class GenAiSavedTurn {
       answer = answer.substring(match.end);
     }
     return GenAiSavedTurn(
+      recordId: json['id']?.toString(),
       createdAt: DateTime.tryParse(genAiOptionalText(json, 'createTime')),
       prompt: genAiOptionalText(json, 'question'),
       answer: answer,
@@ -153,6 +155,9 @@ final class GenAiSavedTurn {
 
   /// Canonical CDN URLs, never local preview proxy URLs.
   final List<String> imageUrls;
+
+  /// Server ai_history ID, distinct from logical turn and conversation IDs.
+  final String? recordId;
   final String prompt;
   final String answer;
   final String aiType;

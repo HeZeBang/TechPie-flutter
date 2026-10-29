@@ -36,7 +36,7 @@ Future<TestGenAiWorkspace> _show(
   addTearDown(demo.dispose);
   demo.workspace.configureAgent(
     runner: GenAiAgentRunner(
-      tools: GenAiAgentToolRegistry([]),
+      tools: () => GenAiAgentToolRegistry([]),
       streamChat: (_, __) async* {
         yield const GenAiTextDelta('本地布局测试');
         yield const GenAiChatFinished(GenAiFinishReason.stop);

@@ -225,7 +225,7 @@ class GenAiHistorySidebar extends StatelessWidget {
                             child: InkWell(
                               borderRadius:
                                   BorderRadius.circular(DesktopSidebarTokens.navItemRadius),
-                              onTap: sending || isActive ? null : () => onOpen(item),
+                              onTap: sending ? null : () => onOpen(item),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 10,

@@ -44,6 +44,7 @@ URLs and raw upstream errors from logs.
 | Vision upload | Image host `/sys/common/upload`; canonical campus CDN URL |
 | Generation | JSON `chat/start/chat`, `aiSecType: "1"`, `count: "1"`, PNG, size/quality and optional references |
 | Usage | Signed `ai-api-gateway/my/summary` and `ai-trade-order/my/list` |
+| Message deletion | `GET ai/history/delete/batch?ids=...`; comma-separated server row `id` values, not logical turn IDs |
 | Deletion | `GET ai/history/delete/groupId?id=...` or `DELETE ai-image-history/delete?id=...`; explicit confirmation |
 
 JSON envelopes require successful status/code; image generation also accepts its
@@ -51,7 +52,8 @@ raw response variant. Authentication expiry, rejection, transport, protocol and
 storage failures remain distinguishable and sanitized. The signing salt is public
 protocol configuration (`TECHPI_GENAI_SIGNING_SALT` override), never an account secret.
 
-One host-built system message precedes prior context. Both modes use the catalog's
+Host instructions precede prior context; agent requests also append a concise
+protocol guide immediately before the current input. Both modes use the catalog's
 `enableDeepThink` capability and selected thinking flag, and force `netGo: false`.
 There is no search preflight/tool; historical citations remain readable.
 
@@ -110,3 +112,6 @@ The browser transport test needs an explicit local fixture: run
 `python3 test/genai/support/stream_fixture.py --port 18765`, then
 `flutter test --no-pub --platform chrome --dart-define=GENAI_TEST_ORIGIN=http://127.0.0.1:18765 test/genai/platform/http_genai_transport_browser_test.dart`.
 Synthetic tests do not establish current school-service availability.
+
+The vision upload gateway token can be overridden at build time with
+`--dart-define=TECHPI_GENAI_VISION_TOKEN=...`; existing installations require an update.

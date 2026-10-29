@@ -16,16 +16,46 @@ import 'package:techpie/features/genai/platform/http_genai_transport.dart';
 import '../support/fakes.dart';
 
 void main() {
-  test('native POST delivers answer before the server releases completion',
-      () async {
+  test('chat tolerates prefill after headers but cancellation still closes the stream', () async {
+    final client = _PendingClient();
+    final source = StreamController<List<int>>();
+    final transport = HttpGenAiTransport(
+      createClient: () => client,
+      idleTimeout: const Duration(milliseconds: 5),
+      chatIdleTimeout: const Duration(milliseconds: 200),
+    );
+    addTearDown(transport.dispose);
+    final cancellation = GenAiCancellation();
+    final pending = transport.send(
+      method: 'POST',
+      uri: Uri.https('example.invalid', '/htk/chat/start/chat'),
+      cancellation: cancellation,
+      headers: {'Accept': 'text/event-stream'},
+    );
+    client.gate.complete(http.StreamedResponse(source.stream, 200));
+    final response = await pending;
+    final iterator = StreamIterator(response.bytes);
+    final first = iterator.moveNext();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    source.add([1]);
+    expect(await first, true);
+    final stopped = expectLater(iterator.moveNext(), throwsA(failure(GenAiFailureKind.cancelled)));
+    cancellation.cancel();
+    source.add([2]);
+    await stopped;
+    expect(client.closed, true);
+    await iterator.cancel();
+    await source.close();
+  });
+
+  test('native POST delivers answer before the server releases completion', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final release = Completer<void>();
     final received = Completer<String>();
     final served = Completer<void>();
     final subscription = server.listen((request) async {
       received.complete(await utf8.decoder.bind(request).join());
-      request.response.headers.contentType =
-          ContentType('text', 'event-stream', charset: 'utf-8');
+      request.response.headers.contentType = ContentType('text', 'event-stream', charset: 'utf-8');
       request.response.bufferOutput = false;
       request.response.write(sseChunk(text: '你好'));
       await request.response.flush();
@@ -47,9 +77,8 @@ void main() {
     );
     final partial = Completer<void>();
     final events = <GenAiChatEvent>[];
-    final streaming = api
-        .streamChat(chatRequest(), 'synthetic-token', GenAiCancellation())
-        .forEach((event) {
+    final streaming =
+        api.streamChat(chatRequest(), 'synthetic-token', GenAiCancellation()).forEach((event) {
       events.add(event);
       if (event is GenAiTextDelta) partial.complete();
     });
@@ -62,9 +91,7 @@ void main() {
     expect(events.whereType<GenAiChatFinished>().length, 1);
   });
 
-  test(
-      'cancellation before headers returns promptly and closes only that client',
-      () async {
+  test('cancellation before headers returns promptly and closes only that client', () async {
     final client = _PendingClient();
     final cancellation = GenAiCancellation();
     final transport = HttpGenAiTransport(createClient: () => client);
@@ -74,8 +101,7 @@ void main() {
       uri: Uri.https('example.invalid', '/chat'),
       cancellation: cancellation,
     );
-    final expectation =
-        expectLater(pending, throwsA(failure(GenAiFailureKind.cancelled)));
+    final expectation = expectLater(pending, throwsA(failure(GenAiFailureKind.cancelled)));
     cancellation.cancel();
     await expectation;
     expect(client.closed, isTrue);
@@ -85,8 +111,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   });
 
-  test('header timeout aborts the pending connection and sanitizes its failure',
-      () async {
+  test('header timeout aborts the pending connection and sanitizes its failure', () async {
     final client = _PendingClient();
     final transport = HttpGenAiTransport(
       createClient: () => client,
@@ -105,8 +130,7 @@ void main() {
     client.gate.completeError(http.ClientException('secret'));
   });
 
-  test(
-      'image generation requests receive dedicated image timeout and ignore short header timeout',
+  test('image generation requests receive dedicated image timeout and ignore short header timeout',
       () async {
     final client = _PendingClient();
     final transport = HttpGenAiTransport(
@@ -145,9 +169,7 @@ void main() {
     client.gate.completeError(http.ClientException('done'));
   });
 
-  test(
-      'slow vision headers survive the short metadata budget and remain cancellable',
-      () async {
+  test('slow vision headers survive the short metadata budget and remain cancellable', () async {
     final clients = <_PendingClient>[];
     final transport = HttpGenAiTransport(
       createClient: () {
@@ -168,8 +190,7 @@ void main() {
       body: '{"imageUrl":"https://example.invalid/red.png"}',
     );
     final timer = Timer(const Duration(milliseconds: 40), () {
-      clients.first.gate
-          .complete(http.StreamedResponse(const Stream.empty(), 200));
+      clients.first.gate.complete(http.StreamedResponse(const Stream.empty(), 200));
     });
     addTearDown(timer.cancel);
     final result = await pending;
@@ -181,16 +202,14 @@ void main() {
       cancellation: cancellation,
       headers: {'Accept': 'text/event-stream'},
     );
-    final expectation =
-        expectLater(stopped, throwsA(failure(GenAiFailureKind.cancelled)));
+    final expectation = expectLater(stopped, throwsA(failure(GenAiFailureKind.cancelled)));
     cancellation.cancel();
     await expectation;
     expect(clients.last.closed, isTrue);
     clients.last.gate.completeError(http.ClientException('cancelled'));
   });
 
-  test('redirects cannot forward GenAI credentials to another origin',
-      () async {
+  test('redirects cannot forward GenAI credentials to another origin', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final paths = <String>[];
     final subscription = server.listen((request) async {

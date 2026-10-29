@@ -20,10 +20,13 @@ final class FakeGenAiServer implements GenAiTransport {
 
   final Duration chunkDelay;
   bool failUpload = false;
+  String? imageRejection;
+  bool loseDeleteResponse = false;
   static const token = 'test-token';
   static const studentId = '20240001';
   final _operations = <GenAiCancellation>{};
   int _uploadSequence = 0;
+  int _recordSequence = 0;
   final _history = <String, List<Map<String, Object?>>>{};
   final _images = <Map<String, Object?>>[];
 
@@ -160,6 +163,14 @@ final class FakeGenAiServer implements GenAiTransport {
         );
       case '/htk/ai/history/getByChatGroupId':
         return _ok(_history[uri.queryParameters['chatGroupId']] ?? <Object>[]);
+      case '/htk/ai/history/delete/batch':
+        if (method != 'GET') return _json({'success': false, 'code': 405});
+        final ids = uri.queryParameters['ids']!.split(',').toSet();
+        for (final rows in _history.values) {
+          rows.removeWhere((row) => ids.contains(row['id']));
+        }
+        if (loseDeleteResponse) throw const GenAiFailure(GenAiFailureKind.transport);
+        return _ok(null);
       case '/htk/ai/history/delete/groupId':
         _history.remove(uri.queryParameters['id'] ?? data['id']);
         return _ok(null);
@@ -180,6 +191,9 @@ final class FakeGenAiServer implements GenAiTransport {
         return _ok(_page([], uri));
     }
     if (uri.path == '/htk/chat/start/chat' && data['aiType'] == 'test-image') {
+      if (imageRejection != null) {
+        return _json({'success': false, 'code': 500, 'message': imageRejection});
+      }
       final path = 'test-images/image-${_images.length + 1}.png';
       _images.add({
         'id': 'preview-image-${_images.length + 1}',
@@ -270,6 +284,7 @@ final class FakeGenAiServer implements GenAiTransport {
     }
     final groupId = request['chatGroupId'] as String;
     _history.putIfAbsent(groupId, () => []).add({
+      'id': 'record-${++_recordSequence}',
       'question': storedPrompt,
       'createTime': DateTime.now().toUtc().toIso8601String(),
       'imageUrl': (request['imageUrls'] as List<Object?>? ?? []).join(','),

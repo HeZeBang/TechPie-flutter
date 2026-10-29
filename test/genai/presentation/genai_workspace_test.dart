@@ -10,9 +10,48 @@ import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 
 import '../support/fakes.dart';
+import '../support/journal_server.dart';
 import '../support/workspace_server.dart';
 
 void main() {
+  testWidgets('reopening variable-height history starts at the latest message', (tester) async {
+    final server = JournalServer();
+    server.rows['long'] = List.generate(
+      18,
+      (i) => {
+        'id': 'row-$i',
+        'question': i == 17
+            ? 'Final saved question'
+            : List.filled(100 + i * 13, 'Archive line $i').join('\n'),
+        'answer': i == 17 ? 'Latest saved reply' : 'Archived reply $i',
+        'aiType': 'Kimi-k3',
+      },
+    );
+    final client = await JournalClient.create(server);
+    addTearDown(client.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GenAiWorkspace(
+          controller: client.workspace,
+          login: (_) async => const GenAiCredential(token: FakeGenAiServer.token),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final opening = client.workspace.openConversation('long', GenAiCancellation());
+    await tester.pumpAndSettle();
+    await opening;
+    await tester.pumpAndSettle();
+    expect(find.text('Latest saved reply'), findsOneWidget);
+    expect(
+      tester
+          .getRect(find.text('Latest saved reply'))
+          .overlaps(tester.getRect(find.byKey(const ValueKey('genai-thread')))),
+      true,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   Future<TestGenAiWorkspace> show(
     WidgetTester tester, {
     Size size = const Size(1200, 900),
@@ -52,6 +91,127 @@ void main() {
     await tester.pumpAndSettle();
     return demo;
   }
+
+  for (final size in [const Size(390, 844), const Size(1280, 900)]) {
+    testWidgets('message actions confirm, cancel and recover on $size', (tester) async {
+      final demo = await show(tester, size: size, delay: Duration.zero);
+      for (final prompt in ['first', 'second']) {
+        final sending = demo.workspace.send(prompt);
+        await tester.pumpAndSettle();
+        await sending;
+      }
+      final group = demo.workspace.groupId;
+      final target = demo.workspace.turns.last.id;
+      final menu = find.byKey(ValueKey('genai-turn-menu-$target'));
+      await tester.ensureVisible(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除此轮及后续'));
+      await tester.pumpAndSettle();
+      expect(find.text('将永久删除 1 轮对话及其工具记录，所有设备同步生效。'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(demo.workspace.turns, hasLength(2));
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑并重新发送'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)),
+        'edited',
+      );
+      await tester.tap(find.text('重新发送'));
+      await tester.pumpAndSettle();
+      expect(demo.workspace.turns.map((t) => t.prompt), ['first', 'edited']);
+      demo.workspace.newConversation();
+      final opening = demo.workspace.openConversation(group, GenAiCancellation());
+      await tester.pumpAndSettle();
+      await opening;
+      expect(demo.workspace.turns.map((t) => t.prompt), ['first', 'edited']);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final checkSync in [true, false]) {
+    testWidgets(
+        'uncertain deletion recovers via ${checkSync ? 'sync button' : 'current history item'}',
+        (tester) async {
+      final demo = await show(
+        tester,
+        size: checkSync ? const Size(390, 844) : const Size(1280, 900),
+        delay: Duration.zero,
+      );
+      for (final prompt in ['recovery retained', 'recovery removed']) {
+        final sending = demo.workspace.send(prompt);
+        await tester.pumpAndSettle();
+        await sending;
+      }
+      final group = demo.workspace.groupId;
+      demo.backend.loseDeleteResponse = true;
+      final menu = find.byKey(ValueKey('genai-turn-menu-${demo.workspace.turns.last.id}'));
+      await tester.ensureVisible(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除此轮及后续'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确认'));
+      await tester.pumpAndSettle();
+      expect(demo.workspace.archiveFailure, isNotNull);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(demo.workspace.turns, hasLength(2));
+      await tester.enterText(find.byKey(const ValueKey('genai-prompt')), 'unsent draft');
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('genai-send')));
+      await tester.pumpAndSettle();
+      expect(find.text('unsent draft'), findsOneWidget);
+      expect(demo.workspace.turns, hasLength(2));
+      if (checkSync) {
+        await tester.tap(find.text('检查同步'));
+      } else {
+        await tester.tap(find.byTooltip('刷新历史'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('recovery retained').first);
+      }
+      await tester.pumpAndSettle();
+      expect(demo.workspace.groupId, group);
+      expect(demo.workspace.archiveFailure, isNull);
+      expect(demo.workspace.turns.single.prompt, 'recovery retained');
+      expect(find.text('检查同步'), findsNothing);
+      expect(find.text('unsent draft'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('failed keyboard edit retains replacement and separate composer attachments',
+      (tester) async {
+    final demo = await show(tester, delay: Duration.zero);
+    final sending = demo.workspace.send('original');
+    await tester.pumpAndSettle();
+    await sending;
+    await demo.workspace.addImageAttachment('draft.png', [1, 2, 3]);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('genai-prompt')), 'composer draft');
+    demo.backend.loseDeleteResponse = true;
+    await tester.tap(find.byKey(ValueKey('genai-turn-menu-${demo.workspace.turns.single.id}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('编辑并重新发送'));
+    await tester.pumpAndSettle();
+    final editor = find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField));
+    await tester.enterText(editor, 'valuable replacement');
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(demo.workspace.archiveFailure, isNotNull);
+    expect(find.text('valuable replacement'), findsOneWidget);
+    expect(find.text('composer draft'), findsOneWidget);
+    expect(demo.workspace.attachments.single.name, 'draft.png');
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+  });
 
   testWidgets('reopening saved vision chat builds network thumbnails and image viewer',
       (tester) async {
@@ -228,18 +388,18 @@ void main() {
 
     final next = demo.workspace.send('Another Markdown example');
     await tester.pump(const Duration(milliseconds: 80));
-    scroll.jumpTo(0);
+    scroll.jumpTo(200);
     for (var step = 0; step < 500 && demo.workspace.sending; step++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(demo.workspace.sending, isFalse);
     await next;
     await tester.pumpAndSettle();
-    expect(scroll.offset, 0);
+    expect(scroll.offset, 200);
     expect(find.byKey(const ValueKey('genai-scroll-latest')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('genai-scroll-latest')));
     await tester.pumpAndSettle();
-    expect(scroll.position.extentAfter, lessThan(1));
+    expect(scroll.position.extentBefore, lessThan(1));
     expect(find.byKey(const ValueKey('genai-scroll-latest')), findsNothing);
     expect(find.byKey(const ValueKey('genai-context-status')), findsOneWidget);
     expect(tester.takeException(), isNull);

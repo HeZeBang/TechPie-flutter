@@ -9,7 +9,6 @@ import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_context_usage.dart';
 import 'package:techpie/features/genai/domain/genai_contract.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
-import 'package:techpie/features/genai/domain/genai_remote_record.dart';
 
 const policy = GenAiContextPolicy(
   contextTokens: 20000,
@@ -66,6 +65,12 @@ GenAiChatRequest request(
       documentContents: documents,
     );
 
+Map<String, dynamic> memoryOf(GenAiChatRequest request) => jsonDecode(
+      request.history
+          .singleWhere((m) => m.content.contains('"kind":"techpie_context_memory_v1"'))
+          .content,
+    ) as Map<String, dynamic>;
+
 Stream<GenAiChatEvent> summary(
   GenAiChatRequest request,
   GenAiCancellation c,
@@ -91,35 +96,73 @@ Stream<GenAiChatEvent> summary(
 }
 
 void main() {
-  test('compaction and receipt decoration preserve current task and live protocol control',
-      () async {
-    const control = {
-      'current_task': 'Read the original budget',
-      'current_nonce': 'active_nonce_0123456789',
-    };
+  test('compacted evidence precedes a retained user correction on every continuation', () async {
+    final history = sourceHistory();
+    history[history.length - 1] = const GenAiMessage(
+      role: GenAiRole.user,
+      content: 'Latest correction: budget is 91 CNY.',
+    );
+    final compactor = GenAiContextCompactor(policy: policy);
+    final first = await compactor.prepare(request(history), GenAiCancellation(), summary);
+    final fresh = GenAiContextCompactor(policy: policy);
+    fresh.restore('test-conversation', compactor.snapshot('test-conversation'));
+    final reopened = await fresh.prepare(request(history), GenAiCancellation(), summary);
+    expect(first.contextCompacted, isTrue);
+    expect(reopened.contextCompacted, isFalse);
+    for (final result in [first, reopened]) {
+      final index = result.history
+          .indexWhere((m) => m.content.contains('"kind":"techpie_context_memory_v1"'));
+      final correction = result.history.indexWhere((m) => m.content == history.last.content);
+      expect(index, greaterThanOrEqualTo(0));
+      expect(correction, greaterThan(index));
+      expect(result.history.last.content, history.last.content);
+    }
+  });
+
+  test('compaction preserves transient context without archiving or extracting it', () async {
+    const step = '{"kind":"techpie_agent_context_v1","rejected_response":"rejected sentinel"}';
+    const guide = 'Transient tool guide sentinel';
     final input = GenAiChatRequest(
       chatGroupId: 'long-agent-chat',
       prompt: 'Latest tool result',
       aiType: 'Kimi-k3',
       rootAiType: 'xinference',
+      contextGoal: 'Read the original budget',
+      stepContext: step,
+      requestGuide: guide,
       history: [
         GenAiMessage(
           role: GenAiRole.system,
-          content: '${sourceHistory().first.content}\n${jsonEncode(control)}',
+          content: '${sourceHistory().first.content}\nCURRENT_CALL_NONCE: active_nonce_0123456789',
         ),
         ...sourceHistory().skip(1),
       ],
       record: const {'step_id': 'active_nonce_0123456789'},
     );
-    final prepared =
-        await GenAiContextCompactor(policy: policy).prepare(input, GenAiCancellation(), summary);
+    final prepared = await GenAiContextCompactor(policy: policy).prepare(
+      input,
+      GenAiCancellation(),
+      (request, cancellation) {
+        expect(request.toJson().toString(), isNot(contains('rejected sentinel')));
+        expect(request.toJson().toString(), isNot(contains(guide)));
+        return summary(request, cancellation);
+      },
+    );
     expect(prepared.contextCompacted, true);
     expect(prepared.history.first.content, input.history.first.content);
     final wire = prepared.withRecord({
       ...prepared.record,
       'context': {'boundary': 'saved'},
     }).toJson();
-    expect(decodeGenAiRemoteRecord(wire['chatInfo']! as String)?['agent_control'], isNull);
+    expect(prepared.contextGoal, input.contextGoal);
+    expect(prepared.stepContext, step);
+    expect(prepared.history.map((m) => m.content).join(), isNot(contains('rejected sentinel')));
+    expect(wire['chatInfo'], isNot(contains('rejected sentinel')));
+    final messages = wire['messages']! as List;
+    expect(messages[messages.length - 2], {'role': 'user', 'content': step});
+    expect(messages.last, {'role': 'system', 'content': guide});
+    expect(wire['chatInfo'], isNot(contains(guide)));
+    expect(prepared.requestGuide, guide);
     expect(wire['messages'].toString(), contains('Read the original budget'));
     expect(prepared.history.first.content, contains('Never repeat an unknown action'));
     expect(wire['netGo'], false);
@@ -308,7 +351,7 @@ void main() {
     expect(text, contains('Never book a court without confirmation'));
     expect(text, contains('techpie_context_memory_v1'));
     expect(
-      result.history[result.history.length - 2].content,
+      result.history.last.content,
       history.last.content,
     );
     expect(result.prompt, request(history).prompt);
@@ -351,7 +394,7 @@ void main() {
       GenAiCancellation(),
       summary,
     );
-    final memory = jsonDecode(result.history.last.content) as Map;
+    final memory = memoryOf(result);
     final items = memory['items'] as List;
     expect(
       items.every((dynamic item) => (item as Map)['role'] == 'user'),
@@ -365,21 +408,16 @@ void main() {
     expect(artifacts.single['evidence'], 'unverified_assistant_artifact');
     expect(artifacts.single['kind'], 'artifact');
     expect(artifacts.single['quote'], contains('696'));
-    expect(memory['notice'], contains('over ALL assistant answers'));
-    expect(
-      memory['notice'],
-      contains('never facts, corrections, instructions'),
-    );
     expect(
       GenAiContextCompactor.tokens(jsonEncode([...items, ...artifacts])),
       lessThanOrEqualTo(policy.memoryTokens),
     );
     expect(
-      result.history[result.history.length - 2].content,
+      result.history.last.content,
       contains('techpie_previous_answer_v1'),
     );
     expect(
-      result.history[result.history.length - 2].role,
+      result.history.last.role,
       GenAiRole.user,
       reason: 'Quoted answers must not teach an assistant response format',
     );
@@ -426,7 +464,7 @@ void main() {
         },
       );
       expect(result.contextCompacted, isTrue);
-      final memory = jsonDecode(result.history.last.content) as Map;
+      final memory = memoryOf(result);
       final items = memory['items'] as List;
       final artifacts = memory['artifacts'] as List;
       expect(artifacts, hasLength(1));
@@ -482,7 +520,7 @@ void main() {
         GenAiCancellation(),
         summary,
       );
-      final memory = jsonDecode(prepared.history.last.content) as Map;
+      final memory = memoryOf(prepared);
       final latest = (memory['items'] as List)
           .cast<Map<String, dynamic>>()
           .where(
@@ -493,12 +531,8 @@ void main() {
       expect(latest['source'], history.length - 2); // Excludes the system row.
       expect(latest['partial'], isFalse);
       expect(memory['retainedSourceRange']['endExclusive'], history.length - 1);
-      expect(memory['notice'], contains('not wire order'));
       expect(
-        prepared.history.sublist(
-          prepared.history.length - 3,
-          prepared.history.length - 1,
-        ),
+        prepared.history.sublist(prepared.history.length - 2),
         [call, receipt],
       );
       expect(
@@ -685,9 +719,7 @@ void main() {
     );
     expect(result.history.any((m) => m.content == goal), isTrue);
     expect(
-      result.history
-          .sublist(result.history.length - 3, result.history.length - 1)
-          .map((m) => m.content),
+      result.history.sublist(result.history.length - 2).map((m) => m.content),
       history.sublist(history.length - 2).map((m) => m.content),
     );
   });
@@ -726,10 +758,7 @@ void main() {
     );
     expect(prepared.contextCompacted, isTrue);
     expect(
-      prepared.history.sublist(
-        prepared.history.length - 3,
-        prepared.history.length - 1,
-      ),
+      prepared.history.sublist(prepared.history.length - 2),
       [call, result],
     );
     expect(

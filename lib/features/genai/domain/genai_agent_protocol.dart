@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'genai_agent_contract.dart';
 import 'genai_contract.dart';
 
-const genAiAgentProtocolMarker = 'TECHPIE_AGENT_PROTOCOL_V3';
+const genAiAgentProtocolMarker = 'TECHPIE_AGENT_PROTOCOL_V4';
 final _noncePattern = RegExp(r'^[a-zA-Z0-9_-]{16,80}$');
 
 String? genAiAgentNonceFromSystem(String system) =>
@@ -36,45 +36,108 @@ final class GenAiAgentDecision {
   final String? text;
 }
 
+/// Version 4 removes model-authored call IDs and JSON escaping of final prose.
 String encodeGenAiAgentFinal(String text, {required String nonce}) =>
-    _frame('final', {'text': text}, nonce);
+    '<techpie-final nonce="$nonce">\n$text\n</techpie-final>';
 
-GenAiAgentDecision parseGenAiAgentDecision(String response, {required String nonce}) {
-  final source = response.trim();
-  for (final kind in ['call', 'final']) {
-    final prefix = '<techpie-agent-$kind version="3" nonce="$nonce">';
-    final suffix = '</techpie-agent-$kind>';
-    if (!source.startsWith(prefix) || !source.endsWith(suffix)) continue;
-    try {
-      final value = _json(source.substring(prefix.length, source.length - suffix.length).trim());
-      if (!_noncePattern.hasMatch(nonce)) break;
-      if (kind == 'call') return GenAiAgentDecision(call: _call(value));
-      if (value is Map<String, Object?> &&
-          value.length == 1 &&
-          value['text'] is String &&
-          (value['text']! as String).trim().isNotEmpty) {
-        return GenAiAgentDecision(text: value['text']! as String);
-      }
-    } on FormatException {
-      break;
+String encodeGenAiCompactCall(
+  String name,
+  Map<String, Object?> arguments, {
+  required String nonce,
+}) =>
+    '<techpie-call nonce="$nonce">\n'
+    '${jsonEncode({'name': name, 'arguments': arguments})}\n</techpie-call>';
+
+/// Accept only an entire frame, optionally wrapped in one Markdown fence.
+/// Formatting normalization never searches prose for executable snippets.
+String _unfence(String source) {
+  final text = source.trim();
+  final fence = RegExp(r'^```(?:xml|json|text)?[ \t]*\r?\n([\s\S]*)\r?\n```$').firstMatch(text);
+  return fence == null ? text : fence.group(1)!.trim();
+}
+
+({String kind, String nonce, String body, bool legacy})? _decisionFrame(String source) {
+  final match = RegExp(
+    r'^<(techpie-(?:agent-)?(?:call|final))\s+([^<>]+)>([\s\S]*)</\1\s*>$',
+  ).firstMatch(_unfence(source));
+  if (match == null) return null;
+  final tag = match.group(1)!;
+  final attributes = match.group(2)!;
+  final values = <String, String>{};
+  final attribute = RegExp(r'''([a-z_]+)\s*=\s*(["'])([^"']*)\2''');
+  var end = 0;
+  for (final item in attribute.allMatches(attributes)) {
+    if (attributes.substring(end, item.start).trim().isNotEmpty ||
+        values.containsKey(item.group(1))) {
+      return null;
     }
+    values[item.group(1)!] = item.group(3)!;
+    end = item.end;
   }
-  throw const GenAiAgentToolException(
-    'invalid_agent_response',
-    'This response was not accepted; previously completed tools remain completed. '
-        'techpie-agent-final version 3 envelope with CURRENT_CALL_NONCE. '
-        'Call JSON contains call_id, name, arguments; final JSON contains text. '
-        'No prose outside the envelope. A final must answer, clarify, or explain a blocker.',
+  final legacy = tag.startsWith('techpie-agent-');
+  if (attributes.substring(end).trim().isNotEmpty ||
+      values.length != (legacy ? 2 : 1) ||
+      legacy && values['version'] != '3' ||
+      !_noncePattern.hasMatch(values['nonce'] ?? '')) {
+    return null;
+  }
+  return (
+    kind: tag.endsWith('-call') ? 'call' : 'final',
+    nonce: values['nonce']!,
+    body: match.group(3)!.trim(),
+    legacy: legacy
   );
 }
 
-/// Read-only rendering of a saved final; never an execution capability.
-String? decodeGenAiAgentFinal(String source) {
-  final header = RegExp(r'^<techpie-agent-final version="3" nonce="([a-zA-Z0-9_-]{16,80})">')
-      .firstMatch(source.trim());
-  if (header == null) return null;
+GenAiAgentDecision parseGenAiAgentDecision(String response, {required String nonce}) {
+  final frame = _decisionFrame(response);
+  if (frame == null || frame.nonce != nonce) {
+    throw const GenAiAgentToolException(
+        'invalid_agent_response',
+        'Expected one complete current-nonce call or final frame; no surrounding prose. '
+            'Previously completed tools remain completed.');
+  }
+  if (frame.kind == 'final' && !frame.legacy) {
+    if (frame.body.isEmpty) {
+      throw const GenAiAgentToolException('empty_answer', 'The final answer is empty.');
+    }
+    return GenAiAgentDecision(text: frame.body);
+  }
+  Object? value;
   try {
-    return parseGenAiAgentDecision(source, nonce: header.group(1)!).text;
+    value = _json(frame.body);
+  } on FormatException {
+    throw const GenAiAgentToolException(
+      'invalid_json',
+      'Invalid JSON body. Use double-quoted keys and strings, with no trailing commas.',
+    );
+  }
+  if (frame.kind == 'call') {
+    if (!frame.legacy) {
+      if (value is! Map<String, Object?> ||
+          value.length != 2 ||
+          !value.keys.toSet().containsAll({'name', 'arguments'})) {
+        _invalid();
+      }
+      value = {'call_id': nonce, ...value};
+    }
+    return GenAiAgentDecision(call: _call(value));
+  }
+  if (value is Map<String, Object?> &&
+      value.length == 1 &&
+      value['text'] is String &&
+      (value['text']! as String).trim().isNotEmpty) {
+    return GenAiAgentDecision(text: value['text']! as String);
+  }
+  throw const GenAiAgentToolException('invalid_final', 'Expected a nonempty final answer.');
+}
+
+/// Read-only rendering of saved finals, including previous protocol versions.
+String? decodeGenAiAgentFinal(String source) {
+  final frame = _decisionFrame(source);
+  if (frame?.kind != 'final') return null;
+  try {
+    return parseGenAiAgentDecision(source, nonce: frame!.nonce).text;
   } catch (_) {
     return null;
   }
@@ -153,10 +216,9 @@ final class GenAiAgentHistoryEntry {
   /// Inert context serialization contains no current execution nonce.
   String get content {
     if (text != null) return text!;
-    final json = toJson();
-    return '<techpie-agent-history version="2">\n'
-        '${jsonEncode({'kind': json['kind'], 'value': json['value']})}\n'
-        '</techpie-agent-history>';
+    return '<techpie-history>\n'
+        '${jsonEncode(call != null ? {'call': call!.toJson()} : {'result': result})}\n'
+        '</techpie-history>';
   }
 
   GenAiMessage get message => GenAiMessage(
@@ -178,6 +240,23 @@ GenAiAgentHistoryEntry? decodeGenAiAgentRecord(
   final source = text.trim();
   if (source.length > 128 * 1024) return null;
   try {
+    final compact =
+        RegExp(r'^<techpie-history>\s*([\s\S]*?)\s*</techpie-history>$').firstMatch(source);
+    if (compact != null) {
+      final value = _json(compact.group(1)!);
+      if (value is! Map<String, Object?> || value.length != 1) return null;
+      if (value.containsKey('call')) return GenAiAgentHistoryEntry.call(_call(value['call']));
+      if (value.containsKey('result')) {
+        return GenAiAgentHistoryEntry.result(_result(value['result']));
+      }
+      return null;
+    }
+    final decision = _decisionFrame(source);
+    if (decision?.kind == 'call') {
+      return GenAiAgentHistoryEntry.call(
+        parseGenAiAgentDecision(source, nonce: decision!.nonce).call!,
+      );
+    }
     final history = RegExp(
       r'^<techpie-agent-history version="2">\s*([\s\S]*?)\s*</techpie-agent-history>$',
     ).firstMatch(source);
@@ -296,8 +375,7 @@ Map<String, Object?> _result(Object? value) {
 
 Never _invalid() => throw const GenAiAgentToolException(
       'invalid_tool_call',
-      'Use exactly one complete techpie-agent-call version 3 envelope with the CURRENT_CALL_NONCE, '
-          'containing call_id, name, and arguments. For a final answer use a techpie-agent-final version 3 envelope containing text.',
+      'Call body must contain only name (a listed tool) and arguments (a JSON object). ',
     );
 
 /// Reject duplicate JSON keys rather than accepting overwritten arguments.
@@ -334,10 +412,60 @@ void _checkDuplicateKeys(String source) {
   }
 }
 
+/// Stream ordinary Markdown while withholding a possibly split closing tag.
+/// Only whole-response validation commits the answer or authorizes execution.
+final class GenAiAgentFinalStream {
+  GenAiAgentFinalStream(this.nonce) : _legacy = _LegacyFinalStream(nonce);
+  final String nonce;
+  final _LegacyFinalStream _legacy;
+  String _buffer = '';
+  bool _started = false;
+  bool _done = false;
+  bool _old = false;
+
+  String add(String chunk) {
+    if (_old) return _legacy.add(chunk);
+    if (_done) return '';
+    _buffer += chunk;
+    if (!_started) {
+      if (_buffer.trimLeft().startsWith('<techpie-agent-final')) {
+        _old = true;
+        return _legacy.add(_buffer);
+      }
+      final end = _buffer.indexOf('>');
+      if (end < 0) {
+        if (_buffer.length > 256) _done = true;
+        return '';
+      }
+      final header = _buffer.substring(0, end + 1);
+      final frame = _decisionFrame('$header.</techpie-final>');
+      if (frame == null || frame.kind != 'final' || frame.nonce != nonce || frame.legacy) {
+        _done = true;
+        return '';
+      }
+      _started = true;
+      _buffer = _buffer.substring(end + 1);
+    }
+    const suffix = '</techpie-final>';
+    final end = _buffer.indexOf(suffix);
+    if (end >= 0) {
+      _done = true;
+      return _buffer.substring(0, end);
+    }
+    var keep = 0;
+    for (var i = 1; i < suffix.length && i <= _buffer.length; i++) {
+      if (_buffer.endsWith(suffix.substring(0, i))) keep = i;
+    }
+    final text = _buffer.substring(0, _buffer.length - keep);
+    _buffer = _buffer.substring(_buffer.length - keep);
+    return text;
+  }
+}
+
 /// Incremental display decoder. Execution and completion still require the
 /// strict whole-response parser; a rejected preview is cleared by the runner.
-final class GenAiAgentFinalStream {
-  GenAiAgentFinalStream(String nonce)
+final class _LegacyFinalStream {
+  _LegacyFinalStream(String nonce)
       : _prefix = RegExp(
           '^\\s*<techpie-agent-final version="3" nonce="$nonce">\\s*\\{\\s*"text"\\s*:\\s*"',
         );

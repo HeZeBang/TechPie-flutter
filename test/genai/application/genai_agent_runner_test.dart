@@ -18,8 +18,7 @@ const objectSchema = <String, Object?>{
 const testNonce = 'synthetic_nonce_0123456789';
 
 Map<String, dynamic> currentControl(GenAiChatRequest request) =>
-    jsonDecode(request.history.first.content.split('CURRENT_REQUEST:\n').last)
-        as Map<String, dynamic>;
+    jsonDecode(request.stepContext ?? '{}') as Map<String, dynamic>;
 
 GenAiAgentRunner testRunner({
   required GenAiAgentToolRegistry tools,
@@ -27,7 +26,7 @@ GenAiAgentRunner testRunner({
   GenAiAgentLimits limits = const GenAiAgentLimits(),
 }) =>
     GenAiAgentRunner(
-      tools: tools,
+      tools: () => tools,
       limits: limits,
       streamChat: (request, cancellation) => streamChat(request, cancellation).map(
         (event) => event is GenAiTextDelta
@@ -117,6 +116,79 @@ Future<List<GenAiAgentEvent>> run(
         .toList();
 
 void main() {
+  test('compact frames normalize wrapping but reject ambiguous or stale calls', () {
+    final compact = encodeGenAiCompactCall('read_data', {}, nonce: testNonce);
+    for (final input in [
+      compact,
+      '```xml\n$compact\n```',
+      compact.replaceFirst('nonce="$testNonce"', "nonce = '$testNonce' "),
+      call('legacy')
+          .replaceFirst('version="3" nonce="$testNonce"', "nonce='$testNonce' version = '3'"),
+    ]) {
+      final decision = parseGenAiAgentDecision(input, nonce: testNonce);
+      expect(decision.call!.name, 'read_data');
+      expect(decodeGenAiAgentRecord(input)!.call!.id, decision.call!.id);
+    }
+    expect(parseGenAiAgentDecision(compact, nonce: testNonce).call!.id, testNonce);
+    for (final input in [
+      'Example: $compact',
+      '$compact\n$compact',
+      compact.replaceFirst(testNonce, 'old_nonce_0123456789'),
+      compact.replaceFirst('"arguments":{}', '"arguments":{"x":1,"x":2}'),
+      compact.replaceFirst('"arguments":{}', '"arguments":{},"call_id":"invented"'),
+      compact.replaceFirst('nonce=', 'extra="yes" nonce='),
+    ]) {
+      expect(
+        () => parseGenAiAgentDecision(input, nonce: testNonce),
+        throwsA(isA<GenAiAgentToolException>()),
+      );
+    }
+  });
+
+  test('raw final streams Markdown and split closing markers without JSON escaping', () {
+    const text = '```dart\nprint("hi");\n```\nPath: C:\\temp\n🌳 <tag> and </techpie-fi';
+    final frame = encodeGenAiAgentFinal(text, nonce: testNonce);
+    final stream = GenAiAgentFinalStream(testNonce);
+    final output = frame.codeUnits.map((c) => stream.add(String.fromCharCode(c))).join();
+    expect(output.trim(), text);
+    expect(parseGenAiAgentDecision(frame, nonce: testNonce).text, text);
+    expect(decodeGenAiAgentFinal(frame), text);
+    expect(decodeGenAiAgentFinal('```xml\n$frame\n```'), text);
+  });
+
+  test('targeted repair resets after valid decisions and leaves a clean trajectory', () async {
+    var requests = 0;
+    var executions = 0;
+    final runner = testRunner(
+      limits: const GenAiAgentLimits(maxTurns: 3, maxProtocolErrors: 1),
+      tools: GenAiAgentToolRegistry([tool(execute: (_) async => ++executions)]),
+      streamChat: (r, _) {
+        requests++;
+        final wire = r.toJson()['messages']! as List;
+        expect((wire.last as Map)['role'], 'system');
+        expect((wire.last as Map)['content'], r.requestGuide);
+        expect(r.storedPrompt, isNot(contains('Return exactly one complete response')));
+        expect(
+          r.history.skip(1).map((m) => m.content).join(),
+          isNot(contains('invalid_agent_response')),
+        );
+        if (requests.isOdd) return answer('I will check it.', raw: true);
+        expect(currentControl(r)['rejected_response'], 'I will check it.');
+        expect(r.prompt, contains('No tool executed from this response'));
+        if (requests < 6) {
+          return answer(encodeGenAiCompactCall('read_data', {}, nonce: testNonce), raw: true);
+        }
+        expect(executions, 2);
+        return answer('Both lookups completed.');
+      },
+    );
+    final events = await run(runner);
+    expect(requests, 6);
+    expect(events.where((e) => e.kind == GenAiAgentEventKind.protocolError), hasLength(3));
+    expect(events.last.kind, GenAiAgentEventKind.completed);
+    expect(events.last.history.map((m) => m.content).join(), isNot(contains('I will check it.')));
+  });
+
   test('distinct revisions get separate approvals; exact replay and post-denial calls do not',
       () async {
     var executions = 0;
@@ -447,22 +519,33 @@ void main() {
       ]),
       streamChat: (r, _) {
         expect(
-          currentControl(r)['current_task'],
+          r.contextGoal,
           'Create and describe the campus picture',
         );
-        expect(r.storedPrompt, isNot(contains('agent_control')));
+        expect(r.history.first.content, isNot(contains(r.contextGoal!)));
+        expect(currentControl(r)['current_task'], requests == 0 ? isNull : r.contextGoal);
+        expect(
+          currentControl(r)['current_step'],
+          genAiAgentNonceFromSystem(r.history.first.content),
+        );
+        expect(r.storedPrompt, isNot(contains('techpie_agent_context_v1')));
         expect(genAiAgentNonceFromSystem(r.history.first.content), isNotNull);
-        if (++requests == 1) return answer(call('image', name: 'generate_image'));
+        if (++requests == 1) {
+          expect(r.history.first.content, isNot(contains('"name":"inspect_image"')));
+          return answer(call('image', name: 'generate_image'));
+        }
         expect(executions, 1);
         if (requests == 2) {
           expect(r.imageUrls, contains(image));
+          expect(r.history.first.content, contains('"name":"inspect_image"'));
           return answer('The picture is ready.', raw: true);
         }
         expect(r.imageUrl, isNull);
         expect(r.imageUrls, isEmpty);
         expect(r.history.every((m) => m.imageUrls.isEmpty), true);
-        expect(currentControl(r)['format_repair'], 'The picture is ready.');
-        expect(r.prompt, contains('previously completed tools remain completed'));
+        expect(currentControl(r)['rejected_response'], 'The picture is ready.');
+        expect(r.history.first.content, isNot(contains('The picture is ready.')));
+        expect(r.prompt, contains('Previously completed tools remain completed'));
         expect(r.history.any((m) => m.content == 'The picture is ready.'), false);
         expect(r.history.map((m) => m.content).join(), contains('"status":"generated"'));
         return answer('Created the requested campus picture.');
@@ -475,12 +558,69 @@ void main() {
     expect(events.last.text, 'Created the requested campus picture.');
   });
 
+  test('text-only repair can select an image and refresh the tool catalog', () async {
+    const image = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/repair.png';
+    var step = 0;
+    var executed = 0;
+    final runner = GenAiAgentRunner(
+      tools: () => GenAiAgentToolRegistry([
+        if (step > 0) tool(execute: (_) async => ++executed),
+      ]),
+      streamChat: (r, _) async* {
+        final nonce = genAiAgentNonceFromSystem(r.history.first.content)!;
+        step++;
+        if (step == 1) {
+          expect(r.history.first.content, isNot(contains('"name":"read_data"')));
+          yield const GenAiTextDelta('I will inspect the image.');
+        } else if (step == 2) {
+          expect(r.imageUrls, isEmpty);
+          expect(r.history.first.content, contains('"name":"read_data"'));
+          yield GenAiTextDelta(
+            encodeGenAiAgentCall(
+              GenAiAgentToolCall(
+                id: 'select',
+                name: 'inspect_image',
+                arguments: {'image_id': 'image_1'},
+              ),
+              nonce: nonce,
+            ),
+          );
+        } else if (step == 3) {
+          expect(r.imageUrls, [image]);
+          expect(r.prompt, contains('"status":"selected"'));
+          yield GenAiTextDelta(
+            encodeGenAiAgentCall(
+              GenAiAgentToolCall(id: 'read', name: 'read_data', arguments: {}),
+              nonce: nonce,
+            ),
+          );
+        } else {
+          expect(executed, 1);
+          yield GenAiTextDelta(encodeGenAiAgentFinal('Inspected and read.', nonce: nonce));
+        }
+        yield const GenAiChatFinished(GenAiFinishReason.stop);
+      },
+    );
+    final events = await run(
+      runner,
+      input: GenAiChatRequest(
+        chatGroupId: 'agent-test',
+        prompt: 'Inspect this image and read the data.',
+        aiType: 'demo',
+        rootAiType: 'demo',
+        imageUrls: const [image],
+      ),
+    );
+    expect(step, 4);
+    expect(events.last.kind, GenAiAgentEventKind.completed);
+  });
+
   test('final answer streams before completion and decodes split JSON escapes', () async {
     final gate = Completer<void>();
     final partial = Completer<void>();
     final events = <GenAiAgentEvent>[];
     final runner = GenAiAgentRunner(
-      tools: GenAiAgentToolRegistry([]),
+      tools: () => GenAiAgentToolRegistry([]),
       streamChat: (r, _) async* {
         final nonce = genAiAgentNonceFromSystem(r.history.first.content)!;
         final frame = '<techpie-agent-final version="3" nonce="$nonce">'
@@ -537,7 +677,7 @@ void main() {
             case 2:
               expect(executed, 0);
               expect(nonce, isNot(firstNonce));
-              expect(r.prompt, contains('previously completed tools remain completed'));
+              expect(r.prompt, contains('Previously completed tools remain completed'));
               expect(r.history.where((e) => e.role == GenAiRole.system), hasLength(1));
               return answer(call('verified'));
             default:
@@ -855,7 +995,7 @@ void main() {
       '```tool_call\n{"call_id":"one","name":"read_data","arguments":{}}\n```',
       '```json\n{"message":"ordinary JSON"}\n```',
       'The tool_call format is documented here.',
-      '```xml\n${call('example')}\n```',
+      'Example only:\n```xml\n${call('example')}\n```',
       '> ${call('example')}',
       '<|open|>call tool="read_data"',
     ]) {
@@ -900,7 +1040,9 @@ void main() {
         if (turns == 2) {
           expect(executed, 0);
           expect(r.prompt, contains('invalid_agent_response'));
-          expect(r.prompt, contains('previously completed tools remain completed'));
+          expect(r.prompt, contains('Previously completed tools remain completed'));
+          expect(r.stepContext, isNot(contains('<|')));
+          expect(r.history.map((m) => m.content).join(), isNot(contains(native)));
           return answer(call('corrected'));
         }
         expect(executed, 1);
@@ -1627,7 +1769,7 @@ void main() {
       hasLength(3),
     );
     final secondHistory = requests[1].history.skip(1).map((message) => message.content).join('\n');
-    expect(secondHistory, contains('<techpie-agent-history version="2">'));
+    expect(secondHistory, contains('<techpie-history>'));
     expect(secondHistory, isNot(contains(firstNonce!)));
     expect(
       runner.transcriptForConversation('agent-test').where((entry) => entry.call != null),
@@ -1714,7 +1856,7 @@ void main() {
         ),
       ],
     );
-    expect(sent!.history[2].content, contains('<techpie-agent-history'));
+    expect(sent!.history[2].content, contains('<techpie-history'));
     expect(sent!.history[2].content, isNot(contains('nonce=')));
     await run(
       runner,

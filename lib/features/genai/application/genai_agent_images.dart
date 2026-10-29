@@ -32,29 +32,27 @@ final class GenAiAgentImages {
           for (var i = 0; i < _urls.length; i++) {'id': 'image_${i + 1}', 'url': _urls[i]},
         ],
         'visible_image': currentId,
-        'instruction': 'Only visible_image is attached for actual vision. Other URLs are a '
-            'catalog, not visible pictures. Call inspect_image to view an earlier image. '
-            'Before switching, record what you actually see in observation, or state that '
-            'it is unreadable. Those notes are assistant observations, not verified tool '
-            'facts. Compare them with the next image; never substitute old answers or '
-            'generation prompts for visual inspection. New generated images become visible.',
       };
 
-  GenAiAgentTool get inspectionTool => GenAiAgentTool(
+  GenAiAgentTool inspectionTool({required bool imageAttached}) => GenAiAgentTool(
         name: 'inspect_image',
-        description: 'View an existing conversation image on the next model step. '
-            'Use image_context IDs; cannot fetch arbitrary URLs or generate images. '
-            'For comparison, first record a concise visual observation of visible_image '
-            'in the call arguments, then select another image. After viewing it, compare '
-            'against those labelled observations or switch again if detail is missing.',
+        description: 'Select an image_context ID to view on the next step. Only visible_image '
+            'is attached for vision; other URLs are a catalog. New images become visible '
+            'after generation. Compare actual observations, not generation prompts. '
+            '${imageAttached ? 'Before switching, record your observation of visible_image (or that it is unreadable). These are assistant notes, not verified tool facts.' : 'No image is attached on this step; select one to inspect it next.'}',
         parameters: {
           'type': 'object',
           'properties': {
             'image_id': {'type': 'string', 'maxLength': 40},
-            'observed_image_id': {'type': 'string', 'maxLength': 40},
-            'observation': {'type': 'string', 'minLength': 1, 'maxLength': 2400},
+            if (imageAttached) ...{
+              'observed_image_id': {'type': 'string', 'maxLength': 40},
+              'observation': {'type': 'string', 'minLength': 1, 'maxLength': 2400},
+            },
           },
-          'required': ['image_id', 'observed_image_id', 'observation'],
+          'required': [
+            'image_id',
+            if (imageAttached) ...['observed_image_id', 'observation'],
+          ],
           'additionalProperties': false,
         },
         prepare: (args, context) async => GenAiAgentPreparedTool(
@@ -68,11 +66,11 @@ final class GenAiAgentImages {
                 )
                 .firstOrNull
                 ?.key;
-            if (index == null || args['observed_image_id'] != currentId) {
+            if (index == null || imageAttached && args['observed_image_id'] != currentId) {
               throw const GenAiAgentToolException(
                 'invalid_image_selection',
-                'Use an image_id from image_context and label the observation with '
-                    'the current visible_image. No image has been changed.',
+                'Use an image_id from image_context and, when an image is attached, label '
+                    'the observation with visible_image. No image has been changed.',
               );
             }
             _current = _urls[index];
@@ -80,8 +78,6 @@ final class GenAiAgentImages {
               'status': 'selected',
               'image_id': currentId,
               'url': current,
-              'instruction': 'Inspect the attached image now. Selection itself is not '
-                  'evidence of its contents. Earlier observation arguments are assistant notes.',
             };
           },
         ),

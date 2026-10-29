@@ -13,6 +13,7 @@ String genAiFailureText(GenAiFailure failure) => switch (failure.kind) {
       GenAiFailureKind.rejected => '平台未接受本次请求，请检查账号权限或稍后重试。',
       GenAiFailureKind.interrupted => '连接已中断，已保留收到的内容。',
       GenAiFailureKind.storage => '无法访问安全存储，请重试。',
+      GenAiFailureKind.historyChanged => '对话记录已变化或尚未同步，请重新打开对话后再操作。',
       GenAiFailureKind.busy => '请等待当前回复完成，或先停止生成。',
       GenAiFailureKind.messageTooLarge => '本条消息过长，请拆分发送；已有对话已保留。',
       GenAiFailureKind.contextTooLarge => '上下文或附件超过安全容量，请缩小附件或问题范围；完整历史已保留。',

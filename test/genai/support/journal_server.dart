@@ -26,6 +26,7 @@ class JournalServer {
   bool hideHistory = false;
   int deletes = 0;
   int summaries = 0;
+  int _recordSequence = 0;
   bool failDelete = false;
   late final transport = ScriptedTransport((request) async {
     final path = request.uri.path;
@@ -51,6 +52,15 @@ class JournalServer {
           },
         },
       );
+    }
+    if (path.endsWith('/delete/batch')) {
+      deletes++;
+      if (failDelete) return response(status: 500, json: {});
+      final ids = request.uri.queryParameters['ids']!.split(',').toSet();
+      for (final history in rows.values) {
+        history.removeWhere((row) => ids.contains(row['id']));
+      }
+      return response(json: {'success': true, 'code': 200});
     }
     if (path.endsWith('/delete/groupId')) {
       deletes++;
@@ -114,6 +124,7 @@ class JournalServer {
       }
       request.cancellation.throwIfCancelled();
       (rows[body['chatGroupId'] as String] ??= []).add({
+        'id': 'record-${++_recordSequence}',
         'question': (body['fileIds'] is List && (body['fileIds'] as List).isNotEmpty)
             ? '【上传文件：notes.txt】\n$prompt'
             : prompt,
@@ -178,7 +189,7 @@ class JournalClient {
     workspace.configureAgent(
       runner: GenAiAgentRunner(
         streamChat: repository.streamChat,
-        tools: GenAiAgentToolRegistry(tools),
+        tools: () => GenAiAgentToolRegistry(tools),
       ),
     );
     await workspace.reloadModels();

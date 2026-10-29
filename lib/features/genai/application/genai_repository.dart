@@ -140,6 +140,16 @@ final class GenAiRepository {
     GenAiCancellation c,
   ) =>
       _authorized(c, (s) => _api.loadConversation(s.credential.token, id, c));
+  Future<void> deleteMessages(List<String> ids, GenAiCancellation c) =>
+      _authorized(c, (s) => _api.deleteMessages(s.credential.token, ids, c));
+
+  void forgetConversationContext(String id) {
+    restoreContext(id, const {});
+    _lastSteps.remove(id);
+    _confirmedSteps.remove(id);
+    _recordedMemory.remove(id);
+  }
+
   Future<void> deleteConversation(String id, GenAiCancellation c) =>
       _authorized(c, (s) => _api.deleteConversation(s.credential.token, id, c));
   Future<List<Uri>> generateImage(

@@ -113,8 +113,23 @@ class GenAiWorkspaceMedia extends ChangeNotifier {
       _loadingTts = true;
     });
     try {
-      final cleanText =
-          text.replaceAll(RegExp(r'```[\s\S]*?```'), '').replaceAll(RegExp(r'[#*`_~]'), '').trim();
+      final cleanText = text
+          .replaceAll(RegExp(r'```[\s\S]*?```|~~~[\s\S]*?~~~'), '')
+          .replaceAll(RegExp(r'\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]'), '')
+          .replaceAll(RegExp(r'\$(?!\s)[^\$\n]+\$|\\\([^\n]*?\\\)'), '')
+          .replaceAllMapped(RegExp(r'!?\[([^\]]*)\]\([^\s]*?\)'), (m) => m[1]!)
+          .replaceAll(RegExp(r'https?://\S+'), '')
+          .replaceAll(RegExp(r'^\s*([-*_])(?:\s*\1){2,}\s*$', multiLine: true), '')
+          .replaceAll(RegExp(r'[#*`_~]'), '')
+          .trim();
+      if (cleanText.isEmpty) {
+        _update(() {
+          _playingTtsTurnIndex = null;
+          _loadingTts = false;
+        });
+        onMessage('没有可供语音播报的文本内容');
+        return;
+      }
       final wavBytes = await scope.$1.synthesizeSpeech(
         cleanText.length > 500 ? cleanText.substring(0, 500) : cleanText,
       );

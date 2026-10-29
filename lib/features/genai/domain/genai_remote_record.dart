@@ -9,7 +9,10 @@ const _close = '</techpie-record>';
 /// Defaults and redundant identities are omitted on the wire, not in the
 /// application model. Keep descriptive keys and opaque user/tool payloads.
 String encodeGenAiRemoteRecord(Map<String, Object?> record) {
-  final compact = Map<String, Object?>.from(record)..remove('kind');
+  final compact = Map<String, Object?>.from(record)
+    ..remove('kind')
+    ..remove('rootAiType')
+    ..remove('thinking');
   final source = compact['turn'];
   if (source is Map && source['kind'] != 'conversation_turn') {
     final turn = Map<String, Object?>.from(source);
@@ -24,7 +27,6 @@ String encodeGenAiRemoteRecord(Map<String, Object?> record) {
   }
   // Mode comes from the original turn, including continuation steps.
   if (source != null || compact['turn_id'] != null) compact.remove('agent');
-  if (compact['thinking'] == false) compact.remove('thinking');
   if (compact['search'] == false) compact.remove('search');
   final mutations = compact['mutations'];
   if (mutations is Map && mutations['effects'] is Map && (mutations['effects'] as Map).isEmpty) {

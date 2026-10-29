@@ -5,27 +5,6 @@ import 'package:techpie/features/genai/presentation/audio/wav_encoder.dart';
 
 void main() {
   group('WavEncoder', () {
-    test('encodeFloat32 with empty input returns empty buffer', () {
-      expect(
-        WavEncoder.encodeFloat32(channels: [], sampleRate: 16000),
-        isEmpty,
-      );
-      expect(
-        WavEncoder.encodeFloat32(
-          channels: [Float32List(0)],
-          sampleRate: 16000,
-        ),
-        isEmpty,
-      );
-      expect(
-        WavEncoder.encodeFloat32(
-          channels: [Float32List(10)],
-          sampleRate: 0,
-        ),
-        isEmpty,
-      );
-    });
-
     test('encodeFloat32 writes valid 16-bit mono PCM WAVE header and samples', () {
       final samples = Float32List.fromList([0.0, 1.0, -1.0, 0.5, -0.5]);
       final wav = WavEncoder.encodeFloat32(

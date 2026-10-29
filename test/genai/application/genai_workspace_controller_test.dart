@@ -33,6 +33,7 @@ void main() {
   late GenAiChatService chat;
   late GenAiWorkspaceController workspace;
   late Map<String, List<Map<String, Object?>>> saved;
+  var recordSequence = 0;
 
   GenAiResponse models({bool paidOnly = false}) => response(
         json: {
@@ -60,6 +61,7 @@ void main() {
 
   setUp(() async {
     saved = {};
+    recordSequence = 0;
     transport = ScriptedTransport((r) async {
       if (r.uri.path.endsWith('/list')) return models();
       if (r.uri.path.endsWith('/getByChatGroupId')) {
@@ -71,9 +73,18 @@ void main() {
           },
         );
       }
+      if (r.uri.path.endsWith('/delete/batch')) {
+        expect(r.method, 'GET');
+        final ids = r.uri.queryParameters['ids']!.split(',').toSet();
+        for (final rows in saved.values) {
+          rows.removeWhere((row) => ids.contains(row['id']));
+        }
+        return response(json: {'success': true, 'code': 200, 'result': null});
+      }
       if (r.method == 'POST') {
         final body = jsonDecode(r.body!) as Map<String, dynamic>;
         (saved[body['chatGroupId'] as String] ??= []).add({
+          'id': 'record-${++recordSequence}',
           'question': body['chatInfo'],
           'answer': 'answer',
           'aiType': body['aiType'],
@@ -98,6 +109,179 @@ void main() {
     workspace.dispose();
     chat.dispose();
     sessions.dispose();
+  });
+
+  test('edit deletes the suffix, preserves attachments, and survives server-only reopening',
+      () async {
+    await workspace.send('keep');
+    await workspace.send('replace');
+    await workspace.send('discard');
+    final group = workspace.groupId;
+    final target = workspace.turns[1].id;
+    // Simulate attachments saved with the original turn (no re-upload on edit).
+    final row = saved[group]![1];
+    final record = decodeGenAiRemoteRecord(row['question']! as String)!;
+    final source = Map<String, Object?>.from(record['turn']! as Map);
+    source['files'] = [
+      {'id': 'file-1', 'name': 'notes.txt', 'content': 'source facts'},
+    ];
+    source['images'] = ['https://genaipic.shanghaitech.edu.cn/sys/common/static/test.png'];
+    record['turn'] = source;
+    row['question'] = encodeGenAiRemoteRecord(record);
+    await workspace.openConversation(group, GenAiCancellation());
+    await workspace.changeTurn(target, replacement: 'corrected');
+    expect(workspace.turns.map((t) => t.prompt), ['keep', 'corrected']);
+    final edited = workspace.turns.last;
+    expect(edited.attachedFileContents, {'file-1': 'source facts'});
+    expect(edited.attachedImageUrls, hasLength(1));
+    final request = jsonDecode(transport.requests.lastWhere((r) => r.method == 'POST').body!);
+    expect(jsonEncode(request['messages']), isNot(contains('discard')));
+    expect(request['fileIds'], contains('file-1'));
+    workspace.newConversation();
+    await workspace.openConversation(group, GenAiCancellation());
+    expect(workspace.turns.map((t) => t.prompt), ['keep', 'corrected']);
+    expect(workspace.turns.last.attachedFileContents, {'file-1': 'source facts'});
+    await workspace.changeTurn(workspace.turns.first.id, keepTurn: true);
+    expect(workspace.turns.single.prompt, 'keep');
+    await workspace.changeTurn(workspace.turns.single.id);
+    expect(workspace.turns, isEmpty);
+    expect(saved[group], isEmpty);
+    await workspace.send('fresh');
+    expect(workspace.groupId, group);
+    expect(workspace.turns.single.prompt, 'fresh');
+  });
+
+  for (final checkSync in [true, false]) {
+    test('uncertain deletion recovers through ${checkSync ? 'check sync' : 'reopening'}', () async {
+      await workspace.send('keep');
+      await workspace.send('remove');
+      final group = workspace.groupId;
+      final original = transport.handle;
+      transport.handle = (r) async {
+        if (r.uri.path.endsWith('/delete/batch')) {
+          await original(r); // The server committed, but the response was lost.
+          throw const GenAiFailure(GenAiFailureKind.transport);
+        }
+        return original(r);
+      };
+      await expectLater(
+        workspace.changeTurn(workspace.turns.last.id, replacement: 'edit'),
+        throwsA(failure(GenAiFailureKind.transport)),
+      );
+      final posts = transport.requests.where((r) => r.method == 'POST').length;
+      await workspace.send('must wait');
+      expect(transport.requests.where((r) => r.method == 'POST'), hasLength(posts));
+      expect(workspace.archiveFailure?.kind, GenAiFailureKind.historyChanged);
+
+      // A failed recovery must not clear the safety gate or discard local turns.
+      transport.handle = (r) async {
+        if (r.uri.path.endsWith('/getByChatGroupId')) {
+          throw const GenAiFailure(GenAiFailureKind.transport);
+        }
+        return original(r);
+      };
+      await workspace.retrySaveConversations();
+      expect(workspace.turns.map((t) => t.prompt), ['keep', 'remove']);
+      expect(workspace.archiveFailure, isNotNull);
+      await workspace.send('still must wait');
+      expect(transport.requests.where((r) => r.method == 'POST'), hasLength(posts));
+
+      transport.handle = original;
+      if (checkSync) {
+        await workspace.retrySaveConversations();
+      } else {
+        expect(await workspace.openConversation(group, GenAiCancellation()), isTrue);
+      }
+      expect(workspace.groupId, group);
+      expect(workspace.archiveFailure, isNull);
+      expect(workspace.turns.single.prompt, 'keep');
+      expect(transport.requests.where((r) => r.uri.path.endsWith('/delete/batch')), hasLength(1));
+      expect(transport.requests.where((r) => r.method == 'POST'), hasLength(posts));
+      await workspace.send('continue');
+      expect(workspace.turns.map((t) => t.prompt), ['keep', 'continue']);
+      final request = jsonDecode(transport.requests.lastWhere((r) => r.method == 'POST').body!);
+      expect(jsonEncode(request['messages']), isNot(contains('remove')));
+    });
+  }
+
+  test('concurrent server changes and account switching cannot delete or resend stale turns',
+      () async {
+    await workspace.send('first');
+    await workspace.send('second');
+    final group = workspace.groupId;
+    saved[group]!.last['answer'] = 'changed elsewhere';
+    await expectLater(
+      workspace.changeTurn(workspace.turns.last.id),
+      throwsA(failure(GenAiFailureKind.historyChanged)),
+    );
+    expect(transport.requests.where((r) => r.uri.path.endsWith('/delete/batch')), isEmpty);
+    await workspace.openConversation(group, GenAiCancellation());
+    final original = transport.handle;
+    final gate = Completer<void>();
+    final started = Completer<void>();
+    transport.handle = (r) async {
+      if (r.uri.path.endsWith('/delete/batch')) {
+        started.complete();
+        await gate.future;
+      }
+      return original(r);
+    };
+    final editing = workspace.changeTurn(workspace.turns.last.id, replacement: 'do not send');
+    final failed = expectLater(editing, throwsA(isA<GenAiFailure>()));
+    await started.future;
+    final posts = transport.requests.where((r) => r.method == 'POST').length;
+    await sessions.setOwner(ownerB);
+    gate.complete();
+    await failed;
+    expect(workspace.turns, isEmpty);
+    expect(transport.requests.where((r) => r.method == 'POST'), hasLength(posts));
+  });
+
+  test('history restores catalog routing without restoring thinking preference', () async {
+    final original = transport.handle;
+    transport.handle = (r) async {
+      if (r.uri.path.endsWith('/list')) {
+        return response(
+          json: {
+            'success': true,
+            'code': 200,
+            'result': {
+              'records': [
+                {
+                  'aiName': 'Free',
+                  'aiType': 'free',
+                  'rootAiType': 'current-router',
+                  'payType': 'FREE',
+                  'enableDeepThink': 1,
+                },
+              ],
+            },
+          },
+        );
+      }
+      return original(r);
+    };
+    await workspace.reloadModels();
+    workspace.setThinking(true);
+    await workspace.send('remember');
+    final group = workspace.groupId;
+    final body = jsonDecode(transport.requests.lastWhere((r) => r.method == 'POST').body!);
+    expect(body['thinking'], true);
+    expect(body['rootAiType'], 'current-router');
+    final record = decodeGenAiRemoteRecord(body['chatInfo'] as String)!;
+    expect(record.containsKey('thinking'), false);
+    expect(record.containsKey('rootAiType'), false);
+    // A legacy stored toggle must not override the user's current preference.
+    record['thinking'] = true;
+    saved[group]!.single['question'] =
+        '<techpie-record version="2">\n${jsonEncode(record)}\n</techpie-record>';
+    workspace.setThinking(false);
+    await workspace.openConversation(group, GenAiCancellation());
+    expect(workspace.thinkingEnabled, false);
+    expect(workspace.selectedModel?.rootAiType, 'current-router');
+    workspace.setThinking(true);
+    await workspace.openConversation(group, GenAiCancellation());
+    expect(workspace.thinkingEnabled, true);
   });
 
   test('refresh preserves an explicitly selected model when it is still available', () async {

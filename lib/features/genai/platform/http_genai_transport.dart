@@ -12,7 +12,8 @@ final class HttpGenAiTransport implements GenAiTransport {
   HttpGenAiTransport({
     http.Client Function()? createClient,
     this.headerTimeout = const Duration(seconds: 20),
-    this.chatHeaderTimeout = const Duration(seconds: 90),
+    this.chatHeaderTimeout = const Duration(minutes: 3),
+    this.chatIdleTimeout = const Duration(minutes: 3),
     this.idleTimeout = const Duration(seconds: 60),
     this.imageTimeout = const Duration(minutes: 5),
   }) : _createClient = createClient ?? http.Client.new;
@@ -21,6 +22,8 @@ final class HttpGenAiTransport implements GenAiTransport {
   final Duration headerTimeout;
   // Vision preprocessing and reasoning can delay the first SSE headers.
   final Duration chatHeaderTimeout;
+  // Some gateways flush headers before long-context prefill/reasoning starts.
+  final Duration chatIdleTimeout;
   final Duration idleTimeout;
   final Duration imageTimeout;
   final _active = <void Function()>{};
@@ -65,8 +68,7 @@ final class HttpGenAiTransport implements GenAiTransport {
       } else if (body != null) {
         request.body = body;
       }
-      final accept =
-          headers['Accept'] ?? headers['accept'] ?? headers['ACCEPT'] ?? '';
+      final accept = headers['Accept'] ?? headers['accept'] ?? headers['ACCEPT'] ?? '';
       final isChat = uri.path.endsWith('/chat/start/chat');
       final timeoutDuration = !isChat
           ? headerTimeout
@@ -80,7 +82,12 @@ final class HttpGenAiTransport implements GenAiTransport {
       return GenAiResponse(
         statusCode: response.statusCode,
         headers: response.headers,
-        bytes: _read(response.stream, cancellation, close),
+        bytes: _read(
+          response.stream,
+          cancellation,
+          close,
+          isChat && accept.contains('text/event-stream') ? chatIdleTimeout : idleTimeout,
+        ),
         close: close,
       );
     } catch (error) {
@@ -93,9 +100,10 @@ final class HttpGenAiTransport implements GenAiTransport {
     Stream<List<int>> source,
     GenAiCancellation cancellation,
     void Function() close,
+    Duration timeout,
   ) async* {
     try {
-      await for (final bytes in source.timeout(idleTimeout)) {
+      await for (final bytes in source.timeout(timeout)) {
         cancellation.throwIfCancelled();
         yield bytes;
       }
@@ -111,9 +119,7 @@ final class HttpGenAiTransport implements GenAiTransport {
     cancellation.throwIfCancelled();
     if (error is GenAiFailure) return error;
     return GenAiFailure(
-      error is TimeoutException
-          ? GenAiFailureKind.timeout
-          : GenAiFailureKind.transport,
+      error is TimeoutException ? GenAiFailureKind.timeout : GenAiFailureKind.transport,
     );
   }
 

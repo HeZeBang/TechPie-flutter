@@ -203,6 +203,7 @@ void main() {
     final rows = result['assignments']! as List;
     expect(rows, hasLength(1));
     expect(rows.single, containsPair('id', 'todo'));
+    expect(rows.single, containsPair('due', '2026-10-23T23:00:00.000+08:00'));
     expect(jsonEncode(result), isNot(contains('token=private')));
     expect(
       (await run(
@@ -421,6 +422,40 @@ void main() {
       (await demo.workspace.repository.listImages(GenAiCancellation())).records,
       hasLength(1),
     );
+  });
+
+  test('image quota refusal clears pending effect but generic errors remain uncertain', () async {
+    for (final message in ['账户额度不足', '系统内部错误']) {
+      demo.backend.imageRejection = message;
+      final prepared = await prepare('generate_image', {'prompt': 'A red square'});
+      final refused = message == '账户额度不足';
+      await expectLater(
+        prepared.execute(),
+        throwsA(
+          isA<GenAiAgentToolException>()
+              .having((e) => e.code, 'code', refused ? 'rejected' : 'outcome_unknown')
+              .having((e) => e.effectNotDispatched, 'not dispatched', refused),
+        ),
+      );
+    }
+  });
+
+  test('afternoon availability accepts a whole-day query but past bookings are rejected', () async {
+    now = DateTime.utc(2026, 10, 22, 6);
+    final result = await run('reserve_court', {
+      'action': 'availability',
+      'sport': 'tennis',
+      'date': '2026-10-22',
+      'time_slot': 1,
+      'end_slot': 11,
+    });
+    expect(result['status'], 'availability');
+    expect(gym.checks, 1);
+    await expectLater(
+      prepare('reserve_court', {...book, 'date': '2026-10-22', 'time_slot': 1}),
+      throwsA(isA<GenAiAgentToolException>().having((e) => e.code, 'code', 'invalid_arguments')),
+    );
+    expect(gym.bookings, 0);
   });
 
   test('cancelled image approval cannot dispatch generation', () async {

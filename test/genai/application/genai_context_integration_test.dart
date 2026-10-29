@@ -30,6 +30,35 @@ const policy = GenAiContextPolicy(
 );
 
 void main() {
+  test('editing compacted history removes discarded evidence from fresh-client context', () async {
+    final server = JournalServer();
+    final client = await JournalClient.create(server, policy: policy);
+    addTearDown(client.dispose);
+    for (var i = 0; i < 10; i++) {
+      await client.workspace.send(
+        '${i < 2 ? 'keep' : 'REMOVED-SECRET'} $i.\n${'source evidence ' * 700}',
+      );
+    }
+    expect(server.summaries, greaterThan(0));
+    final group = client.workspace.groupId;
+    await client.workspace.changeTurn(client.workspace.turns[2].id, replacement: 'replacement');
+    expect(client.workspace.turns, hasLength(3));
+    expect(server.rows[group].toString(), isNot(contains('REMOVED-SECRET')));
+    for (final agent in [false, true]) {
+      final fresh = await JournalClient.create(server, policy: policy);
+      addTearDown(fresh.dispose);
+      await fresh.workspace.openConversation(group, GenAiCancellation());
+      fresh.workspace.setAgentEnabled(agent);
+      server.onGenerate = (body) {
+        expect(body.toString(), isNot(contains('REMOVED-SECRET')));
+        expect(body['messages'].toString(), contains('keep'));
+        return agent ? server.finalAnswer(body, 'kept facts') : 'kept facts';
+      };
+      await fresh.workspace.send('What is retained?');
+      expect(fresh.workspace.turns.last.phase, GenAiChatPhase.completed);
+    }
+  });
+
   test('compaction piggybacks on real exchanges and survives fresh clients in both modes',
       () async {
     final server = JournalServer();

@@ -40,7 +40,7 @@ void main() {
         if (agent) {
           demo.workspace.configureAgent(
             runner: GenAiAgentRunner(
-              tools: GenAiAgentToolRegistry([]),
+              tools: () => GenAiAgentToolRegistry([]),
               streamChat: (_, __) async* {
                 yield const GenAiTextDelta('Image response');
                 yield const GenAiChatFinished(GenAiFinishReason.stop);

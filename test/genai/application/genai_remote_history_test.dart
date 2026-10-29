@@ -160,7 +160,7 @@ void main() {
       'mutations': {'version': 1, 'effects': <String, Object?>{}},
       'approvalBudget': {'reserve_court': 1},
       'agent': true,
-      'thinking': false,
+      'thinking': true,
       'search': false,
       'rootAiType': 'xinference',
     });
@@ -180,11 +180,12 @@ void main() {
     expect((archive.mutations['effects']! as Map)[effectKey], receipt);
     expect(archive.agentEnabled, true);
     expect(archive.modelAiType, 'Kimi-k3');
-    expect(archive.modelRootAiType, 'xinference');
+    expect(archive.modelRootAiType, isNull);
     final record = decodeGenAiRemoteRecord(compact)!;
     expect(record.keys, isNot(contains('mutations')));
     expect(record.keys, isNot(contains('agent')));
     expect(record.keys, isNot(contains('thinking')));
+    expect(record.keys, isNot(contains('rootAiType')));
     expect('booking-314'.allMatches(compact), hasLength(1));
   });
 

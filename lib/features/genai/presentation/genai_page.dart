@@ -44,7 +44,7 @@ class _GenAiPageState extends State<GenAiPage> {
           workspace: workspace,
           auth: services.authService,
           thirdPartyAuth: services.thirdPartyAuthService,
-        ).createRegistry(),
+        ).createRegistry,
       ),
       scope: () {
         final accounts = [

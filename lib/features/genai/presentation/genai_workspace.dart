@@ -29,6 +29,7 @@ import 'genai_image.dart';
 import 'genai_theme.dart';
 import 'genai_thinking_view.dart';
 import 'genai_tools_page.dart';
+import 'genai_turn_edit_dialog.dart';
 import 'genai_web_search_view.dart';
 import 'markdown/genai_markdown.dart';
 import 'picker/genai_picker.dart';
@@ -218,7 +219,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   }
 
   void _scrolled() {
-    final following = _scroll.position.extentAfter < 120;
+    final following = _scroll.position.extentBefore < 120;
     if (following != _followingLatest && mounted) {
       setState(() => _followingLatest = following);
     }
@@ -239,7 +240,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       if (followingOnly && (!_followingLatest || revision != _scrollRevision)) {
         return;
       }
-      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      _scroll.jumpTo(_scroll.position.minScrollExtent);
     });
   }
 
@@ -284,7 +285,8 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
 
   Future<void> _openConversation(GenAiConversationSummary item) async {
     if (_state.sending) return;
-    if (item.id == _state.groupId) {
+    final sameConversation = item.id == _state.groupId;
+    if (sameConversation && _state.archiveFailure == null) {
       setState(() => _showImages = false);
       return;
     }
@@ -301,7 +303,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       final opened = await controller.openConversation(item.id, cancellation);
       if (!opened || !current() || controller.groupId != item.id) return;
       setState(() => _showImages = false);
-      _draft.clear();
+      if (!sameConversation) _draft.clear();
       _scrollToEnd();
     } catch (_) {
       if (mounted && current()) {
@@ -444,12 +446,54 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
         ? (_state.attachments.any((a) => a.isImage) ? '请分析这张图片' : '请分析上传的文档')
         : raw;
     if (text.trim().isEmpty) return;
-    _draft.clear();
+    final scope = _scope;
     _inputFocus.requestFocus();
-    final sending = _state.send(text);
+    final sending = _state.send(
+      text,
+      onAccepted: () {
+        if (_isCurrent(scope) && retry == null && _draft.text == raw) _draft.clear();
+      },
+    );
     _scrollToEnd();
     await sending;
     if (mounted) unawaited(_history.load());
+  }
+
+  Future<void> _changeTurn(int index, String action) async {
+    if (_state.sending || index >= _state.turns.length) return;
+    final scope = _scope;
+    final controller = _state;
+    final turn = controller.turns[index];
+    final keep = action == 'revert';
+    final removed = controller.turns.skip(index + (keep ? 1 : 0)).toList();
+    if (removed.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => GenAiTurnEditDialog(
+        prompt: turn.prompt,
+        action: action,
+        hasComposerDraft: _draft.text.isNotEmpty || controller.attachments.isNotEmpty,
+        onSubmit: (result, onCommitted) async {
+          if (!_isCurrent(scope)) return;
+          try {
+            await controller.changeTurn(
+              turn.id,
+              keepTurn: keep,
+              replacement: action == 'edit' ? result : null,
+              onCommitted: onCommitted,
+            );
+          } finally {
+            if (mounted && identical(_state, controller)) unawaited(_history.load());
+          }
+        },
+        removedTurns: removed.length,
+        hasExternalActions: removed.any(
+          (t) => t.agentEvents.values.any(
+            (e) => e.call?.name == 'generate_image' || e.call?.name == 'reserve_court',
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _retryTurn(int index) async {
@@ -1038,9 +1082,18 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   Widget _thread() => ListView.builder(
         key: const ValueKey('genai-thread'),
         controller: _scroll,
+        // The latest edge is always zero, even before older variable-height
+        // messages are laid out. Never chase an estimated maxScrollExtent.
+        reverse: true,
         padding: const EdgeInsets.fromLTRB(24, 32, 24, 12),
         itemCount: _state.turns.length,
-        itemBuilder: (context, index) {
+        findChildIndexCallback: (key) {
+          if (key is! ValueKey<String>) return null;
+          final index = _state.turns.indexWhere((turn) => turn.id == key.value);
+          return index < 0 ? null : _state.turns.length - 1 - index;
+        },
+        itemBuilder: (context, reverseIndex) {
+          final index = _state.turns.length - 1 - reverseIndex;
           final turn = _state.turns[index];
           if (turn.isHistoryGap) {
             return Padding(
@@ -1059,6 +1112,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             GenAiChatPhase.needsLogin,
           ].contains(turn.phase);
           return Align(
+            key: ValueKey(turn.id),
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 800),
@@ -1251,6 +1305,19 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                     _copy(turn.prompt, '已复制内容'),
                                   ),
                                 ),
+                                PopupMenuButton<String>(
+                                  key: ValueKey('genai-turn-menu-${turn.id}'),
+                                  tooltip: '消息操作',
+                                  enabled: !_state.sending && !turn.isHistoryGap,
+                                  icon: Icon(Icons.more_horiz, size: 18, color: _muted),
+                                  onSelected: (action) => unawaited(_changeTurn(index, action)),
+                                  itemBuilder: (_) => [
+                                    const PopupMenuItem(value: 'edit', child: Text('编辑并重新发送')),
+                                    if (index < _state.turns.length - 1)
+                                      const PopupMenuItem(value: 'revert', child: Text('回退到此处')),
+                                    const PopupMenuItem(value: 'delete', child: Text('删除此轮及后续')),
+                                  ],
+                                ),
                               ],
                             ),
                           ),
@@ -1364,10 +1431,10 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                               Padding(
                                 padding: const EdgeInsets.only(top: 12),
                                 child: Text(
-                                  turn.isAgent && turn.agentStatus.isNotEmpty
-                                      ? turn.agentStatus
-                                      : turn.failure != null
-                                          ? genAiFailureText(turn.failure!)
+                                  turn.failure != null
+                                      ? genAiFailureText(turn.failure!)
+                                      : turn.isAgent && turn.agentStatus.isNotEmpty
+                                          ? turn.agentStatus
                                           : '已停止',
                                   style: TextStyle(
                                     color: _muted,

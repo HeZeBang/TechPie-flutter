@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_chat_service.dart';
@@ -38,6 +39,146 @@ Future<void> until(bool Function() ready) async {
 }
 
 void main() {
+  test('new task after a timed-out tool turn has its own control on every step', () async {
+    final server = JournalServer();
+    var executions = 0;
+    final client = await JournalClient.create(
+      server,
+      tools: [
+        testTool(execute: () async => {'semester': ++executions}),
+      ],
+    );
+    addTearDown(client.dispose);
+    client.workspace.setAgentEnabled(true);
+    server.onGenerate = (body) {
+      if (decodeGenAiAgentRecord(server.input(body))?.result == null) return server.call(body);
+      throw const GenAiFailure(GenAiFailureKind.timeout);
+    };
+    await client.workspace.send('Old task: read and compare semesters');
+    expect(executions, 1);
+    expect(client.workspace.turns.last.failure?.kind, GenAiFailureKind.timeout);
+    var steps = 0;
+    server.onGenerate = (body) {
+      final messages = body['messages'] as List<dynamic>;
+      expect((messages.last as Map)['role'], 'system');
+      final control =
+          jsonDecode((messages[messages.length - 2] as Map)['content'] as String) as Map;
+      expect(control['current_task'], steps == 0 ? isNull : 'Only read the new semester');
+      expect(
+        control['current_step'],
+        genAiAgentNonceFromSystem((messages.first as Map)['content'] as String),
+      );
+      expect(messages.toString(), contains('techpie_turn_end'));
+      steps++;
+      return decodeGenAiAgentRecord(server.input(body))?.result == null
+          ? encodeGenAiCompactCall(
+              'get_semesters',
+              {},
+              nonce: genAiAgentNonceFromSystem((messages.first as Map)['content'] as String)!,
+            )
+          : server.finalAnswer(body, 'New semester $executions');
+    };
+    await client.workspace.send('Only read the new semester');
+    expect(steps, 2);
+    expect(executions, 2);
+    expect(client.workspace.turns.last.answer, 'New semester 2');
+    final fresh = await JournalClient.create(server, tools: [testTool()]);
+    addTearDown(fresh.dispose);
+    await fresh.workspace.openConversation(client.workspace.groupId, GenAiCancellation());
+    expect(fresh.workspace.turns.last.prompt, 'Only read the new semester');
+    expect(fresh.workspace.turns.last.answer, 'New semester 2');
+  });
+
+  test('edited agent turns run the full loop and recover on a fresh client in both modes',
+      () async {
+    final server = JournalServer();
+    var executions = 0;
+    final tool = testTool(execute: () async => {'semester': ++executions});
+    final client = await JournalClient.create(server, tools: [tool]);
+    addTearDown(client.dispose);
+    client.workspace.setAgentEnabled(true);
+    server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+        ? server.call(body)
+        : server.finalAnswer(body, 'Semester $executions.');
+    await client.workspace.send('original question');
+    final group = client.workspace.groupId;
+    final target = client.workspace.turns.single.id;
+    await client.workspace.send('discarded followup');
+    await client.workspace.changeTurn(target, replacement: 'edited question');
+    expect(executions, 3);
+    expect(client.workspace.turns.single.answer, 'Semester 3.');
+    expect(server.rows[group], hasLength(2)); // Proposal plus receipt/final, no bookkeeping POST.
+    for (final agent in [true, false]) {
+      final fresh = await JournalClient.create(server, tools: [tool]);
+      addTearDown(fresh.dispose);
+      await fresh.workspace.openConversation(group, GenAiCancellation());
+      expect(fresh.workspace.turns.first.prompt, 'edited question');
+      expect(fresh.workspace.turns.first.agentEvents.values.single.result!['ok'], true);
+      fresh.workspace.setAgentEnabled(agent);
+      server.onGenerate = (body) {
+        expect(body['messages'].toString(), contains('semester'));
+        expect(body['messages'].toString(), isNot(contains('discarded followup')));
+        expect(body['messages'].toString(), isNot(contains('original question')));
+        return agent ? server.finalAnswer(body, 'Recall 3.') : 'Recall 3.';
+      };
+      await fresh.workspace.send('follow up');
+      expect(fresh.workspace.turns.last.phase, GenAiChatPhase.completed);
+    }
+    expect(executions, 3); // Recovery never replays a tool.
+  });
+
+  for (final name in ['generate_image', 'reserve_court']) {
+    test('explicit $name edit renews approval while keeping external receipts recoverable',
+        () async {
+      final server = JournalServer();
+      var executions = 0;
+      var slot = 'first';
+      final tool = GenAiAgentTool(
+        name: name,
+        description: 'Test mutation',
+        parameters: {'type': 'object', 'properties': <String, Object?>{}},
+        maxApprovalsPerRun: name == 'reserve_court' ? 1 : null,
+        prepare: (_, __) async => GenAiAgentPreparedTool(
+          requiresApproval: true,
+          effectKey: slot,
+          execute: () async => {'completed': ++executions},
+        ),
+      );
+      final client = await JournalClient.create(server, tools: [tool]);
+      addTearDown(client.dispose);
+      client.workspace.setAgentEnabled(true);
+      server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+          ? encodeGenAiCompactCall(name, {}, nonce: server.nonce(body))
+          : server.finalAnswer(body, 'Done.');
+      final sending = client.workspace.send('original');
+      await until(() => client.workspace.pendingAgentApproval != null);
+      client.workspace.resolveAgentApproval(name != 'generate_image');
+      await sending;
+      final group = client.workspace.groupId;
+      final original = client.workspace.turns.single;
+      slot = 'second';
+      final editing = client.workspace.changeTurn(original.id, replacement: 'revised');
+      await until(() => client.workspace.pendingAgentApproval != null);
+      client.workspace.resolveAgentApproval(true);
+      await editing;
+      expect(
+        client.workspace.turns.single.actionScopeId,
+        isNot(original.actionScopeId ?? original.id),
+      );
+      expect(executions, name == 'generate_image' ? 1 : 2);
+      final fresh = await JournalClient.create(server, tools: [tool]);
+      addTearDown(fresh.dispose);
+      await fresh.workspace.openConversation(group, GenAiCancellation());
+      expect(fresh.workspace.turns.single.prompt, 'revised');
+      if (name == 'reserve_court') {
+        slot = 'first';
+        await fresh.workspace.send('same previously booked court');
+        expect(fresh.workspace.pendingAgentApproval, isNull);
+        expect(executions, 2); // Old receipt survives deletion and a fresh client.
+      }
+    });
+  }
+
   for (final cancel in [false, true]) {
     test('live mutation stays running until completion or cancellation: cancel=$cancel', () async {
       final server = JournalServer();
@@ -160,7 +301,6 @@ void main() {
     expect(recovered.answer, 'Semester 3; number 5837.');
     expect(recovered.attachedFileContents['doc-1'], contains('5837'));
     expect(recovered.agentEvents.values.single.result!['ok'], true);
-    expect(b.workspace.thinkingEnabled, true);
     expect(b.workspace.agentEnabled, true);
     b.workspace.setAgentEnabled(false);
     server.onGenerate = (_) => 'It is 5837.';

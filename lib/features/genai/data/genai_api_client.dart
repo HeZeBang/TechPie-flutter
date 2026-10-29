@@ -149,11 +149,41 @@ final class GenAiApiClient {
         // Preserve the missing position: skipping it can join unrelated tool
         // calls/results and incorrectly present an incomplete task as complete.
         turns.add(
-          const GenAiSavedTurn(prompt: '', answer: '', isHistoryGap: true),
+          GenAiSavedTurn(
+            prompt: '',
+            answer: '',
+            isHistoryGap: true,
+            recordId: row is Map ? row['id']?.toString() : null,
+          ),
         );
       }
     }
     return List.unmodifiable(turns);
+  }
+
+  Future<void> deleteMessages(
+    String token,
+    List<String> ids,
+    GenAiCancellation cancellation,
+  ) async {
+    if (ids.any((id) => id.isEmpty || id.contains(','))) {
+      throw const GenAiFailure(GenAiFailureKind.protocol);
+    }
+    // Bound GET URL length. Delete newest batches first so a partial failure
+    // leaves a prefix rather than dangling continuations where possible.
+    for (var end = ids.length; end > 0;) {
+      final start = (end - 50).clamp(0, end);
+      await _get(
+        'ai/history/delete/batch',
+        token,
+        {
+          'ids': ids.sublist(start, end).join(','),
+          '_t': '${_now().millisecondsSinceEpoch}',
+        },
+        cancellation,
+      );
+      end = start;
+    }
   }
 
   Future<void> deleteConversation(
@@ -328,7 +358,10 @@ final class GenAiApiClient {
       headers: {
         'x-access-token': token,
         'X-Access-Token': token,
-        'token': '2ea38f293adb4abca21132feba61eaa3',
+        'token': const String.fromEnvironment(
+          'TECHPI_GENAI_VISION_TOKEN',
+          defaultValue: '2ea38f293adb4abca21132feba61eaa3',
+        ),
         'tenant-id': '0',
         'Accept': 'application/json, text/plain, */*',
         'Content-Type': multipart.contentType,
@@ -501,7 +534,18 @@ final class GenAiApiClient {
         if (image['success'] == false ||
             image['code'] == 401 ||
             (image['code'] is int && image['code'] != 0 && image['code'] != 200)) {
-          genAiEnvelope(image);
+          try {
+            genAiEnvelope(image);
+          } on GenAiFailure catch (failure) {
+            // Generic business errors can arrive after dispatch. Only recognized
+            // quota validation responses prove that generation was refused.
+            final message = image['message'] ?? image['errMsg'];
+            if (failure.kind == GenAiFailureKind.rejected &&
+                const {'账户额度不足', '额度不足', '余额不足'}.contains(message)) {
+              throw const GenAiFailure(GenAiFailureKind.rejected, effectNotDispatched: true);
+            }
+            rethrow;
+          }
         }
         // The image API also returns {success: true, data: [...]} without the
         // Jeecg envelope's code/result fields; the official image UI accepts it.

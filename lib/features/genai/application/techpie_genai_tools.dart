@@ -50,8 +50,7 @@ final class TechPieGenAiTools {
               final utc = _now().toUtc();
               return {
                 'utc': utc.toIso8601String(),
-                'campus_time':
-                    '${utc.add(const Duration(hours: 8)).toIso8601String().replaceFirst('Z', '')}+08:00',
+                'campus_time': _campusTimestamp(utc),
                 'campus_timezone': 'Asia/Shanghai',
                 'device_time': _now().toIso8601String(),
                 'source': 'device_clock',
@@ -136,29 +135,30 @@ final class TechPieGenAiTools {
           ),
           prepare: _prepareCourt,
         ),
-        GenAiAgentTool(
-          name: 'generate_image',
-          description: 'Generate one PNG through the existing GenAI image '
-              'service after user approval; may consume school quota. Optional '
-              'model must match a currently available image model. Defaults: '
-              '1024x1024, low quality. Custom dimensions must contain '
-              '655360..8294400 pixels. Returns image URLs, not invented images. '
-              'Available image model IDs: ${workspace.imageModels.map((m) => m.aiType).join(', ')}. '
-              'Omit model to use the current first available image model.',
-          parameters: _schema(
-            {
-              'prompt': _string(max: 6000),
-              'model': _string(max: 120),
-              'width': _integer(1, 8294400),
-              'height': _integer(1, 8294400),
-              'quality': _enum(['low', 'medium', 'high']),
-            },
-            required: [
-              'prompt',
-            ],
+        if (workspace.imageModels.isNotEmpty)
+          GenAiAgentTool(
+            name: 'generate_image',
+            description: 'Generate one PNG through the existing GenAI image '
+                'service after user approval; may consume school quota. Optional '
+                'model must match a currently available image model. Defaults: '
+                '1024x1024, low quality. Custom dimensions must contain '
+                '655360..8294400 pixels. Returns image URLs, not invented images. '
+                'Available image model IDs: ${workspace.imageModels.map((m) => m.aiType).join(', ')}. '
+                'Omit model to use the current first available image model.',
+            parameters: _schema(
+              {
+                'prompt': _string(max: 6000),
+                'model': _string(max: 120),
+                'width': _integer(1, 8294400),
+                'height': _integer(1, 8294400),
+                'quality': _enum(['low', 'medium', 'high']),
+              },
+              required: [
+                'prompt',
+              ],
+            ),
+            prepare: _prepareImage,
           ),
-          prepare: _prepareImage,
-        ),
       ]);
 
   String get _scope => jsonEncode([
@@ -403,7 +403,7 @@ final class TechPieGenAiTools {
             'title': _bounded(assignment.title),
             'course': _bounded(assignment.course),
             'kind': assignment.kind.id,
-            'due': assignment.due.toUtc().toIso8601String(),
+            'due': _campusTimestamp(assignment.due),
             'completed': assignments.isCompleted(assignment),
             if (assignment case ExamAssignment(:final location)) 'location': _bounded(location),
           },
@@ -460,10 +460,10 @@ final class TechPieGenAiTools {
       }
     }
 
-    validateStart();
+    if (book) validateStart();
     Future<List<OaAvailability>> availability() async {
       guard();
-      validateStart();
+      if (book) validateStart();
       try {
         final result = await context.cancellation.race(
           gym.checkAvailability(
@@ -713,6 +713,13 @@ final class TechPieGenAiTools {
               failure.kind == GenAiFailureKind.authenticationRequired) {
             rethrow;
           }
+          if (failure.effectNotDispatched) {
+            throw const GenAiAgentToolException(
+              'rejected',
+              '校园生图额度不足，本次请求未执行。',
+              effectNotDispatched: true,
+            );
+          }
           throw const GenAiAgentToolException(
             'outcome_unknown',
             '未能确认生图结果；平台可能已扣除额度。请先查看图片历史，不要自动重试。',
@@ -784,3 +791,6 @@ List<Map<String, Object?>> _boundedRows(
   }
   return result;
 }
+
+String _campusTimestamp(DateTime value) =>
+    '${value.toUtc().add(const Duration(hours: 8)).toIso8601String().replaceFirst('Z', '')}+08:00';

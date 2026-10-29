@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_mermaid/flutter_mermaid.dart';
 
 import 'genai_code_font.dart';
@@ -17,18 +21,56 @@ class GenAiMermaidView extends StatefulWidget {
 }
 
 class _GenAiMermaidViewState extends State<GenAiMermaidView> {
-  final TransformationController _transformController = TransformationController();
+  final _canvasKey = GlobalKey<_MermaidCanvasState>();
   bool _showCode = false;
   String? _renderError;
 
-  @override
-  void dispose() {
-    _transformController.dispose();
-    super.dispose();
-  }
-
-  void _resetZoom() {
-    _transformController.value = Matrix4.identity();
+  Future<void> _openFullscreen() async {
+    final canvasKey = GlobalKey<_MermaidCanvasState>();
+    await Navigator.of(context, rootNavigator: true).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).pop(),
+          },
+          child: Focus(
+            autofocus: true,
+            child: Scaffold(
+              appBar: AppBar(
+                leading: const CloseButton(),
+                title: const Text('Mermaid'),
+                actions: [
+                  IconButton(
+                    tooltip: '缩小',
+                    onPressed: () => canvasKey.currentState?.zoom(.8),
+                    icon: const Icon(Icons.remove),
+                  ),
+                  IconButton(
+                    tooltip: '放大',
+                    onPressed: () => canvasKey.currentState?.zoom(1.25),
+                    icon: const Icon(Icons.add),
+                  ),
+                  IconButton(
+                    tooltip: '适应窗口',
+                    onPressed: () => canvasKey.currentState?.fit(),
+                    icon: const Icon(Icons.fit_screen),
+                  ),
+                ],
+              ),
+              body: SafeArea(
+                child: _MermaidCanvas(
+                  key: canvasKey,
+                  code: widget.code,
+                  fullscreen: true,
+                  initialView: _canvasKey.currentState?.view,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -36,46 +78,7 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.code != widget.code) {
       _renderError = null;
-      _resetZoom();
     }
-  }
-
-  String _detectDiagramType(String code) {
-    for (final line in code.split('\n')) {
-      final trimmed = line.trim().toLowerCase();
-      if (trimmed.isEmpty || trimmed.startsWith('%%')) {
-        continue;
-      }
-      if (trimmed.startsWith('graph') || trimmed.startsWith('flowchart')) {
-        return '流程图';
-      }
-      if (trimmed.startsWith('sequencediagram')) {
-        return '时序图';
-      }
-      if (trimmed.startsWith('classdiagram')) {
-        return '类图';
-      }
-      if (trimmed.startsWith('statediagram')) {
-        return '状态图';
-      }
-      if (trimmed.startsWith('pie')) {
-        return '饼图';
-      }
-      if (trimmed.startsWith('gantt')) {
-        return '甘特图';
-      }
-      if (trimmed.startsWith('timeline')) {
-        return '时间线';
-      }
-      if (trimmed.startsWith('kanban')) {
-        return '看板';
-      }
-      if (trimmed.startsWith('gitgraph')) {
-        return 'Git 图';
-      }
-      break;
-    }
-    return 'Mermaid 图表';
   }
 
   @override
@@ -86,7 +89,6 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
         isDark ? Colors.white.withValues(alpha: .08) : Colors.black.withValues(alpha: .06);
     final cardBg =
         isDark ? Colors.white.withValues(alpha: .03) : Colors.black.withValues(alpha: .02);
-    final diagramType = _detectDiagramType(widget.code);
 
     return Container(
       width: double.infinity,
@@ -119,72 +121,30 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
                   color: theme.colorScheme.primary,
                 ),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Row(
-                    children: [
-                      const Flexible(
-                        child: Text(
-                          'Mermaid 图表',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary.withValues(alpha: .12),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          diagramType,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                    ],
+                const Expanded(
+                  child: Text(
+                    'Mermaid 图表',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                 ),
-                if (!_showCode && _renderError == null)
-                  Tooltip(
-                    message: '重置视角',
-                    child: InkWell(
-                      onTap: _resetZoom,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: Icon(
-                          Icons.restart_alt_rounded,
-                          size: 16,
-                          color: theme.hintColor,
-                        ),
-                      ),
-                    ),
+                if (!_showCode && _renderError == null) ...[
+                  IconButton(
+                    tooltip: '适应窗口',
+                    onPressed: () => _canvasKey.currentState?.fit(),
+                    icon: const Icon(Icons.fit_screen, size: 20),
                   ),
-                Tooltip(
-                  message: _showCode ? '切换到图表' : '查看源码',
-                  child: InkWell(
-                    onTap: () => setState(() => _showCode = !_showCode),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Icon(
-                        _showCode ? Icons.schema_outlined : Icons.code_rounded,
-                        size: 16,
-                        color: theme.hintColor,
-                      ),
-                    ),
+                  IconButton(
+                    tooltip: '全屏查看',
+                    onPressed: _openFullscreen,
+                    icon: const Icon(Icons.fullscreen, size: 22),
                   ),
+                ],
+                IconButton(
+                  tooltip: _showCode ? '切换到图表' : '查看源码',
+                  onPressed: () => setState(() => _showCode = !_showCode),
+                  icon: Icon(_showCode ? Icons.schema_outlined : Icons.code_rounded, size: 20),
                 ),
                 GenAiCopyButton(
                   text: widget.code,
@@ -240,47 +200,235 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
           ] else
             ClipRRect(
               borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
-              child: Container(
-                constraints: const BoxConstraints(
-                  minHeight: 140,
-                  maxHeight: 380,
-                ),
-                padding: const EdgeInsets.all(12),
-                child: InteractiveViewer(
-                  transformationController: _transformController,
-                  boundaryMargin: const EdgeInsets.all(40),
-                  minScale: 0.5,
-                  maxScale: 3.5,
-                  clipBehavior: Clip.hardEdge,
-                  child: Center(
-                    child: MermaidDiagram(
-                      code: normalizeMermaid(widget.code),
-                      style: isDark ? MermaidStyle.dark() : const MermaidStyle(),
-                      onError: (error) {
-                        if (mounted) {
-                          setState(() => _renderError = error);
-                        }
-                      },
-                      errorBuilder: (context, error) {
-                        return Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Text(
-                            '无法渲染图表: $error',
-                            style: TextStyle(
-                              color: theme.colorScheme.error,
-                              fontSize: 12,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
+              child: _MermaidCanvas(
+                key: _canvasKey,
+                code: widget.code,
+                onError: (error) {
+                  if (_renderError != error) setState(() => _renderError = error);
+                },
               ),
             ),
         ],
       ),
     );
+  }
+}
+
+/// Preserve the renderer's natural canvas: viewport constraints must never
+/// truncate nodes before the user can pan to them.
+class _MermaidCanvas extends StatefulWidget {
+  const _MermaidCanvas({
+    super.key,
+    required this.code,
+    this.fullscreen = false,
+    this.onError,
+    this.initialView,
+  });
+
+  final String code;
+  final bool fullscreen;
+  final ValueChanged<String>? onError;
+  final (double, Offset)? initialView;
+
+  @override
+  State<_MermaidCanvas> createState() => _MermaidCanvasState();
+}
+
+class _MermaidCanvasState extends State<_MermaidCanvas> {
+  final _transform = TransformationController();
+  Size _naturalSize = Size.zero;
+  Size _viewport = Size.zero;
+
+  (double, Offset) get view => (
+        _transform.value.getMaxScaleOnAxis(),
+        _transform.toScene(_viewport.center(Offset.zero)),
+      );
+
+  void _restoreView((double, Offset) view) {
+    final scale = view.$1.clamp(_fitScale, 8.0);
+    final center = _viewport.center(Offset.zero);
+    _transform.value = Matrix4.identity()
+      ..translateByDouble(center.dx - view.$2.dx * scale, center.dy - view.$2.dy * scale, 0, 1)
+      ..scaleByDouble(scale, scale, scale, 1);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _transform.addListener(_constrainPan);
+  }
+
+  // Clamp every transform, including pinch/wheel zoom, button zoom and inertia.
+  // Small axes stay centered; large axes can move only between their edges.
+  void _constrainPan() {
+    if (_naturalSize.isEmpty || _viewport.isEmpty) return;
+    final matrix = _transform.value;
+    final scale = matrix.getMaxScaleOnAxis();
+    double clampAxis(double offset, double content, double viewport) {
+      final remaining = viewport - content * scale;
+      return remaining >= 0 ? remaining / 2 : offset.clamp(remaining, 0.0);
+    }
+
+    final x = clampAxis(matrix.entry(0, 3), _naturalSize.width, _viewport.width);
+    final y = clampAxis(matrix.entry(1, 3), _naturalSize.height, _viewport.height);
+    if (x == matrix.entry(0, 3) && y == matrix.entry(1, 3)) return;
+    _transform.value = matrix.clone()
+      ..setEntry(0, 3, x)
+      ..setEntry(1, 3, y);
+  }
+
+  @override
+  void dispose() {
+    _transform.removeListener(_constrainPan);
+    _transform.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_MermaidCanvas oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.code != widget.code) {
+      _naturalSize = Size.zero;
+      _viewport = Size.zero;
+    }
+  }
+
+  double get _fitScale => _naturalSize.isEmpty || _viewport.isEmpty
+      ? 1
+      : math.min(
+          1,
+          math.min(_viewport.width / _naturalSize.width, _viewport.height / _naturalSize.height),
+        );
+
+  double _readingScale(double width) =>
+      _naturalSize.isEmpty ? 1 : (width / _naturalSize.width).clamp(.65, 1.0);
+
+  void _position(double scale, {bool centerVertically = false}) {
+    final x = math.max(0.0, (_viewport.width - _naturalSize.width * scale) / 2);
+    final y = centerVertically
+        ? math.max(0.0, (_viewport.height - _naturalSize.height * scale) / 2)
+        : 0.0;
+    _transform.value = Matrix4.identity()
+      ..translateByDouble(x, y, 0, 1)
+      ..scaleByDouble(scale, scale, scale, 1);
+  }
+
+  void fit() => _position(_fitScale, centerVertically: true);
+
+  void zoom(double factor) {
+    final center = _viewport.center(Offset.zero);
+    final scene = _transform.toScene(center);
+    final scale = (_transform.value.getMaxScaleOnAxis() * factor).clamp(_fitScale, 8.0);
+    _transform.value = Matrix4.identity()
+      ..translateByDouble(center.dx - scene.dx * scale, center.dy - scene.dy * scale, 0, 1)
+      ..scaleByDouble(scale, scale, scale, 1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final maxHeight = (MediaQuery.sizeOf(context).height * .65).clamp(240.0, 720.0);
+        final height = widget.fullscreen
+            ? constraints.maxHeight
+            : (_naturalSize.height * _readingScale(width)).clamp(180.0, maxHeight);
+        final viewport = Size(width, height);
+        if (_viewport != viewport) {
+          final previous = _viewport.isEmpty ? widget.initialView : view;
+          _viewport = viewport;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || _viewport != viewport) return;
+            if (previous == null) {
+              _position(_readingScale(viewport.width));
+            } else {
+              _restoreView(previous);
+            }
+          });
+        }
+        return SizedBox(
+          height: height,
+          child: InteractiveViewer(
+            transformationController: _transform,
+            constrained: false,
+            alignment: Alignment.topLeft,
+            // Flutter's finite boundary also imposes a minimum cover scale,
+            // preventing fit-to-window for tall/wide diagrams. Clamp pan per
+            // axis in the controller instead, while retaining independent zoom.
+            boundaryMargin: const EdgeInsets.all(double.infinity),
+            minScale: _fitScale,
+            maxScale: 8,
+            child: _CanvasSizeObserver(
+              key: ValueKey(widget.code),
+              onSize: (size) {
+                if (_naturalSize == size) return;
+                setState(() {
+                  _naturalSize = size;
+                  _viewport = Size.zero;
+                });
+              },
+              // Leave room for arrowheads and curved return edges painted
+              // just outside the renderer's node bounds.
+              child: ColoredBox(
+                color: Color((dark ? MermaidStyle.dark() : const MermaidStyle()).backgroundColor),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: MermaidDiagram(
+                    code: normalizeMermaid(widget.code),
+                    enableResponsive: false,
+                    style: dark ? MermaidStyle.dark() : const MermaidStyle(),
+                    onError: (error) {
+                      final code = widget.code;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted && widget.code == code) widget.onError?.call(error);
+                      });
+                    },
+                    errorBuilder: (context, error) => Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        '无法渲染图表',
+                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CanvasSizeObserver extends SingleChildRenderObjectWidget {
+  const _CanvasSizeObserver({super.key, required this.onSize, required super.child});
+  final ValueChanged<Size> onSize;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _CanvasSizeRenderBox(onSize);
+
+  @override
+  void updateRenderObject(BuildContext context, covariant _CanvasSizeRenderBox renderObject) {
+    renderObject.onSize = onSize;
+  }
+}
+
+class _CanvasSizeRenderBox extends RenderProxyBox {
+  _CanvasSizeRenderBox(this.onSize);
+  ValueChanged<Size> onSize;
+  Size? _lastSize;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (_lastSize == size) return;
+    _lastSize = size;
+    final measured = size;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (attached) onSize(measured);
+    });
   }
 }
 

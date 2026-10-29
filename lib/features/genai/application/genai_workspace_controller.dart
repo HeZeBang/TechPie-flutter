@@ -17,6 +17,7 @@ import 'genai_agent_runner.dart';
 import 'genai_chat_service.dart';
 import 'genai_conversation_archive.dart';
 import 'genai_conversation_turn.dart';
+import 'genai_history_edit.dart';
 import 'genai_image_studio_controller.dart';
 import 'genai_remote_history.dart';
 import 'genai_repository.dart';
@@ -135,6 +136,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   final _interruptedTurns = <String, Map<String, Object?>>{};
   final _uncertainDeletions = <String, String>{};
   GenAiCancellation? _refreshOperation;
+  GenAiCancellation? _historyEditOperation;
+  final _unverifiedHistoryEdits = <String>{};
   GenAiFailure? _recoveryFailure;
   Map<String, Object?> _restoredMutations = const {
     'version': 1,
@@ -158,7 +161,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       _uncertainDeletions.values.where((scope) => scope == _archiveScope).length;
   bool get connecting => _connecting;
   bool get loadingModels => _loadingModels;
-  bool get sending => _active != null || _refreshOperation != null;
+  bool get sending => _active != null || _refreshOperation != null || _historyEditOperation != null;
   bool get connected => sessions.session != null;
   bool get thinkingEnabled => _thinkingEnabled && (_selectedModel?.supportsThinking ?? false);
   bool get agentAvailable => _agentRunner != null;
@@ -528,6 +531,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       _owner = sessions.owner;
       _draftTitles.clear();
       _uncertainDeletions.clear();
+      _unverifiedHistoryEdits.clear();
       newConversation();
       _loginFailure = null;
       _agentRunner?.clear();
@@ -693,15 +697,14 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _ledgerNeedsRestore = true;
     if (restoreModes) {
       _agentEnabled = archive.agentEnabled;
-      _thinkingEnabled = archive.thinkingEnabled;
-      _selectedModel = models
-              .where(
-                (m) =>
-                    m.aiType == archive.modelAiType &&
-                    (archive.modelRootAiType == null || m.rootAiType == archive.modelRootAiType),
-              )
-              .firstOrNull ??
-          _selectedModel;
+      final candidates = models
+          .where(
+            (m) =>
+                m.aiType == archive.modelAiType &&
+                (archive.modelRootAiType == null || m.rootAiType == archive.modelRootAiType),
+          )
+          .toList();
+      _selectedModel = candidates.length == 1 ? candidates.single : null;
     }
   }
 
@@ -716,6 +719,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     newConversation();
     _groupId = id;
     _applyRemote(remote.archive);
+    _unverifiedHistoryEdits.remove(id);
     _notify();
     return true;
   }
@@ -723,8 +727,14 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   /// Refresh the authoritative path before continuing, without discarding an
   /// unsaved exchange after a dropped connection. The user can explicitly open
   /// server history or start a new chat in that case.
-  Future<bool> _refreshBeforeSend() async {
-    if (_turns.isEmpty) return true;
+  Future<bool> _refreshBeforeSend({bool reconcileHistoryEdit = false}) async {
+    final historyEdited = _unverifiedHistoryEdits.contains(_groupId);
+    if (historyEdited && !reconcileHistoryEdit) {
+      _recoveryFailure = const GenAiFailure(GenAiFailureKind.historyChanged);
+      _notify();
+      return false;
+    }
+    if (_turns.isEmpty && !historyEdited) return true;
     final operation = GenAiCancellation();
     final generation = _generation;
     _refreshOperation = operation;
@@ -732,6 +742,19 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     try {
       final remote = await _readConversation(_groupId, operation);
       if (generation != _generation || operation.isCancelled) return false;
+      if (historyEdited) {
+        // An explicit recovery accepts the current server path, including a
+        // partially applied deletion. Never merge stale turns or replay DELETE.
+        _interruptedTurns.clear();
+        _agentRunner?.clearConversation(_groupId);
+        _repository.forgetConversationContext(_groupId);
+        _chat.clear();
+        _applyRemote(remote.archive, restoreModes: false);
+        _unverifiedHistoryEdits.remove(_groupId);
+        _recoveryFailure = null;
+        _conversationRevision++;
+        return true;
+      }
       final recovered = remote.archive.restoreTurns();
       final missing = _turns.where((t) => !recovered.any((r) => r.id == t.id)).toList();
       if (missing.any((t) => t.phase == GenAiChatPhase.completed)) {
@@ -779,17 +802,15 @@ final class GenAiWorkspaceController extends ChangeNotifier {
 
   Future<void> retrySaveConversations() async {
     // This action reconciles existing server data; it never resends a POST.
-    if (!sending) await _refreshBeforeSend();
+    if (!sending) await _refreshBeforeSend(reconcileHistoryEdit: true);
   }
 
-  Map<String, Object?> _recordFor(GenAiConversationTurn turn, GenAiModel model) => {
+  Map<String, Object?> _recordFor(GenAiConversationTurn turn) => {
         'step_id': createGroupId(),
         'turn': turn.toRemoteInput(),
         if (_interruptedTurns.isNotEmpty) 'interrupted': _interruptedTurns.values.toList(),
         'agent': turn.isAgent,
-        'thinking': thinkingEnabled,
         'search': false,
-        'rootAiType': model.rootAiType,
         if (_titleOverride != null) 'title': _titleOverride,
       };
 
@@ -799,7 +820,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> send(String prompt) async {
+  Future<void> send(String prompt, {VoidCallback? onAccepted}) async {
     _agentScopeChanged();
     final model = _selectedModel;
     final generation = _generation;
@@ -817,7 +838,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         revision != _archiveRevision) {
       return;
     }
-    if (_turns.isNotEmpty && !await _refreshBeforeSend()) return;
+    if ((_turns.isNotEmpty || _unverifiedHistoryEdits.contains(_groupId)) &&
+        !await _refreshBeforeSend()) {
+      return;
+    }
     if (hasFailedUploads) {
       return;
     }
@@ -857,15 +881,138 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       ..attachedImageBytesList = attachedImageBytesList;
     _attachments.clear();
     if (turn.isAgent) {
-      await _executeAgentTurn(turn, model);
+      await _executeAgentTurn(turn, model, onAccepted: onAccepted);
     } else {
-      await _executeSendTurn(turn, model);
+      await _executeSendTurn(turn, model, onAccepted: onAccepted);
+    }
+  }
+
+  /// Permanent suffix editing. UI confirmation must describe the complete
+  /// turn(s), including tool activity, that will be removed from school history.
+  Future<void> changeTurn(
+    String turnId, {
+    bool keepTurn = false,
+    String? replacement,
+    VoidCallback? onCommitted,
+  }) async {
+    if (_disposed || sending || hasPendingUploads) {
+      throw const GenAiFailure(GenAiFailureKind.busy);
+    }
+    final model = _selectedModel;
+    final target = _turns.where((turn) => turn.id == turnId).firstOrNull;
+    if (target == null ||
+        target.isHistoryGap ||
+        replacement != null &&
+            (replacement.trim().isEmpty || model == null || target.isAgent && !agentAvailable)) {
+      throw const GenAiFailure(GenAiFailureKind.historyChanged);
+    }
+    final operation = GenAiCancellation();
+    final group = _groupId;
+    final generation = _generation;
+    final scope = _archiveScope;
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    _historyEditOperation = operation;
+    _conversationLoad++; // Invalidate a history open already awaiting its GET.
+    _notify();
+    void check() {
+      _checkArchiveScope(scope, revision, operation);
+      if (_groupId != group || generation != _generation) {
+        throw const GenAiFailure(GenAiFailureKind.cancelled);
+      }
+    }
+
+    String visible(List<GenAiConversationTurn> turns) => jsonEncode([
+          for (final turn in turns)
+            {
+              'id': turn.id,
+              'prompt': turn.prompt,
+              'answer': turn.answer,
+              'evidence': [for (final entry in turn.evidenceEntries) entry.message.content],
+            },
+        ]);
+    try {
+      if (_agentDrain != null) await operation.race(_agentDrain!);
+      check();
+      final rows = await _repository.loadConversation(group, operation);
+      check();
+      final before = decodeGenAiConversation(group, rows).archive;
+      if (visible(before.restoreTurns()) != visible(_turns)) {
+        throw const GenAiFailure(GenAiFailureKind.historyChanged);
+      }
+      final plan = GenAiHistoryEdit.plan(group, rows, turnId, keepTurn: keepTurn);
+      if (plan.removedIds.isEmpty) return;
+      _unverifiedHistoryEdits.add(group);
+      await _repository.deleteMessages(plan.removedIds, operation);
+      check();
+      final remaining = await _repository.loadConversation(group, operation);
+      check();
+      // The endpoint has no transaction/revision token. Verify the actual
+      // server prefix, including content, before allowing edit-and-resend.
+      String signature(List<GenAiSavedTurn> values) => jsonEncode([
+            for (final row in values) [row.recordId, row.prompt, row.answer, row.reasoning],
+          ]);
+      if (signature(remaining) != signature(plan.retained)) {
+        throw const GenAiFailure(GenAiFailureKind.historyChanged);
+      }
+      _interruptedTurns.clear();
+      _agentRunner?.clearConversation(group);
+      _repository.forgetConversationContext(group);
+      _chat.clear();
+      _applyRemote(decodeGenAiConversation(group, remaining).archive, restoreModes: false);
+      _unverifiedHistoryEdits.remove(group);
+      _recoveryFailure = null;
+      _conversationRevision++;
+      onCommitted?.call(); // Release the editor before streaming or tool approval.
+      if (replacement != null) {
+        // An explicit edit is a new request, unlike a retry. Carry external
+        // outcomes into its first normal record, but not old approval denials.
+        // Deleting conversation text cannot undo an already submitted action.
+        _restoredMutations = {
+          'version': 1,
+          'effects': {
+            for (final entry in (before.mutations['effects']! as Map<String, Object?>).entries)
+              if (entry.value case {'ok': true} || {'error': {'code': 'outcome_unknown'}})
+                entry.key: entry.value,
+          },
+        };
+        final edited = GenAiConversationTurn(
+          replacement.trim(),
+          id: createGroupId(),
+          parentId: _turns.lastOrNull?.id,
+          isAgent: target.isAgent,
+        )
+          ..attachedFileIds = List.of(target.attachedFileIds)
+          ..attachedFileNames = List.of(target.attachedFileNames)
+          ..attachedFileContents = Map.of(target.attachedFileContents)
+          ..attachedImageUrls = List.of(target.attachedImageUrls)
+          ..attachedImageUrl = target.attachedImageUrl
+          ..attachedImageBytes = target.attachedImageBytes
+          ..attachedImageBytesList = List.of(target.attachedImageBytesList)
+          ..thinkingStartTime = DateTime.now();
+        if (edited.isAgent) {
+          await _executeAgentTurn(edited, model!, priorMutations: _restoredMutations);
+        } else {
+          await _executeSendTurn(edited, model!);
+        }
+      }
+    } on GenAiFailure catch (error) {
+      // Ambiguous/partial deletion is reconciled by explicitly reopening the
+      // server history. Never send the stale local transcript or replay DELETE.
+      if (!_disposed && _groupId == group && _archiveRevision == revision) {
+        _recoveryFailure = error;
+      }
+      rethrow;
+    } finally {
+      if (identical(_historyEditOperation, operation)) _historyEditOperation = null;
+      operation.cancel();
+      _notify();
     }
   }
 
   Future<void> retryTurn(int index) async {
     // A stale retry must not truncate later exchanges or cancel their work.
-    // Editing an earlier turn needs an explicit branch, which this UI lacks.
+    // Earlier edits use changeTurn with explicit destructive confirmation.
     if (index < 0 || index != _turns.length - 1 || _turns[index].isHistoryGap) {
       return;
     }
@@ -923,6 +1070,16 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         history.clear();
       } else if (turn.phase == GenAiChatPhase.completed || turn.agentEvents.isNotEmpty) {
         history.addAll(turn.evidenceEntries);
+        if (turn.isAgent) {
+          // An interrupted tool result must not look like feedback awaiting
+          // continuation when the user has started a different task.
+          history.add(
+            GenAiAgentHistoryEntry.text(
+              GenAiRole.assistant,
+              jsonEncode({'kind': 'techpie_turn_end', 'status': turn.phase.name}),
+            ),
+          );
+        }
       }
     }
     return history;
@@ -974,8 +1131,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
 
   Future<void> _executeAgentTurn(
     GenAiConversationTurn turn,
-    GenAiModel model,
-  ) async {
+    GenAiModel model, {
+    Map<String, Object?>? priorMutations,
+    VoidCallback? onAccepted,
+  }) async {
     final thinking = _thinkingEnabled && model.supportsThinking;
     final runner = _agentRunner;
     if (runner == null) return;
@@ -990,6 +1149,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _agentOperation = operation;
     _turns.add(turn);
     _active = turn;
+    onAccepted?.call();
     turn.agentStatus = '正在处理';
     _notify();
     bool owned() =>
@@ -1025,7 +1185,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         request: GenAiChatRequest(
           chatGroupId: groupId,
           prompt: turn.prompt,
-          record: _recordFor(turn, model),
+          record: {
+            ..._recordFor(turn),
+            if (priorMutations != null) 'mutations': priorMutations,
+          },
           aiType: model.aiType,
           rootAiType: model.rootAiType,
           history: const [],
@@ -1034,7 +1197,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           documentContents: attachments.documentContents,
           imageUrls: attachments.imageUrls,
           imageUrl: attachments.imageUrls.lastOrNull,
-          maxTokens: 2048,
         ),
         cancellation: operation,
         isCurrent: current,
@@ -1197,8 +1359,9 @@ final class GenAiWorkspaceController extends ChangeNotifier {
 
   Future<void> _executeSendTurn(
     GenAiConversationTurn turn,
-    GenAiModel model,
-  ) async {
+    GenAiModel model, {
+    VoidCallback? onAccepted,
+  }) async {
     final history = <GenAiMessage>[];
     final attachments = _conversationAttachments([..._turns, turn]);
     for (final previous in _turns) {
@@ -1217,6 +1380,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _sendOperation = operation;
     _turns.add(turn);
     _active = turn;
+    onAccepted?.call();
     _notify();
 
     try {
@@ -1232,7 +1396,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         GenAiChatRequest(
           chatGroupId: groupId,
           prompt: turn.prompt,
-          record: _recordFor(turn, model),
+          record: _recordFor(turn),
           aiType: model.aiType,
           rootAiType: model.rootAiType,
           history: [
@@ -1240,7 +1404,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
               role: GenAiRole.system,
               content: genAiSystemPrompt(
                 campusTools: false,
-                thinking: thinking,
                 documents: attachments.fileIds.isNotEmpty,
                 images: attachments.imageUrls.isNotEmpty,
               ),
@@ -1281,6 +1444,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   }
 
   void stop() {
+    _historyEditOperation?.cancel();
     _refreshOperation?.cancel();
     _refreshOperation = null;
     _agentOperation?.cancel();

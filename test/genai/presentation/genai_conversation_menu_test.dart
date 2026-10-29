@@ -25,7 +25,7 @@ void main() {
       addTearDown(demo.dispose);
       demo.workspace.configureAgent(
         runner: GenAiAgentRunner(
-          tools: GenAiAgentToolRegistry(const []),
+          tools: () => GenAiAgentToolRegistry(const []),
           streamChat: demo.workspace.repository.streamChat,
         ),
         scope: () => binding.value,
