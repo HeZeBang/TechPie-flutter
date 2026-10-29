@@ -79,7 +79,9 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
     if (largeTitleMode) {
       return hasSubtitle ? 112.0 : 96.0;
     }
-    return hasSubtitle ? 56.0 : 44.0;
+    // Keep 44pt touch targets inside the bar, with room for glass edges and
+    // shadows instead of placing them directly against the page content.
+    return hasSubtitle ? 76.0 : 64.0;
   }
 
   /// Scrollable counterpart: Cupertino owns the title transition, while the
@@ -170,11 +172,11 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
       child: SizedBox(
         height: _barHeight,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: largeTitleMode ? 0 : 8),
           child: Column(
             children: [
               SizedBox(
-                height: largeTitleMode ? 44 : _barHeight,
+                height: largeTitleMode ? 44 : _barHeight - 16,
                 child: NavigationToolbar(
                   centerMiddle: true,
                   middleSpacing: 8,
@@ -200,6 +202,25 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
 
   Widget _actions(BuildContext context, List<IosNativeNavigationBarItem> items) {
     final visible = items.where((item) => !item.hidden).toList();
+    final controls = <Widget>[];
+    for (var i = 0; i < visible.length;) {
+      final first = visible[i];
+      var end = i + 1;
+      if (_canGroup(first)) {
+        while (end < visible.length &&
+            _canGroup(visible[end]) &&
+            visible[end].placementGroup == first.placementGroup) {
+          end++;
+        }
+      }
+      if (controls.isNotEmpty) {
+        controls
+            .add(SizedBox(width: first.placementGroup == visible[i - 1].placementGroup ? 4 : 12));
+      }
+      controls
+          .add(end - i > 1 ? _group(context, visible.sublist(i, end)) : _action(context, first));
+      i = end;
+    }
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxWidth: MediaQuery.sizeOf(context).width * 0.4,
@@ -208,17 +229,63 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
         scrollDirection: Axis.horizontal,
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < visible.length; i++) ...[
-              if (i > 0)
-                SizedBox(
-                  width: visible[i].placementGroup == visible[i - 1].placementGroup ? 4 : 12,
-                ),
-              _action(context, visible[i]),
-            ],
-          ],
+          children: controls,
         ),
       ),
+    );
+  }
+
+  bool _canGroup(IosNativeNavigationBarItem item) =>
+      item.placementGroup != null &&
+      item.sfSymbol != null &&
+      (item.title == null || item.title!.isEmpty) &&
+      item.menuItems.isEmpty &&
+      item.role == IosNativeNavigationBarItemRole.normal;
+
+  Widget _group(BuildContext context, List<IosNativeNavigationBarItem> items) {
+    final tint = Theme.of(context).colorScheme.primary;
+    return Stack(
+      children: [
+        ExcludeSemantics(
+          child: CNGlassButtonGroup(
+            spacing: 0,
+            buttons: [
+              for (final item in items)
+                CNButtonData.icon(
+                  icon: CNSymbol(item.sfSymbol!, size: 20, color: tint),
+                  tint: tint,
+                  enabled: item.enabled,
+                  onPressed: item.enabled ? () => onItemPressed?.call(item.id) : null,
+                  config: CNButtonDataConfig(
+                    width: 44,
+                    minHeight: 44,
+                    padding: const EdgeInsets.all(12),
+                    glassEffectUnionId: item.placementGroup,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        // The group's API has no semantic labels. Give each action its own
+        // accessible target while native views keep handling pointer events.
+        Positioned.fill(
+          child: Row(
+            children: [
+              for (final item in items)
+                SizedBox(
+                  width: 44,
+                  child: Semantics(
+                    button: true,
+                    enabled: item.enabled,
+                    label: item.accessibilityLabel ?? item.id,
+                    onTap: item.enabled ? () => onItemPressed?.call(item.id) : null,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

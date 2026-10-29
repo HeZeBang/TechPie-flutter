@@ -1,3 +1,4 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -449,7 +450,21 @@ void main() {
     expect(bar.leadingItems.single.sfSymbol, 'chevron.left');
     expect(bar.trailingItems.map((item) => item.id), ['info', 'scan']);
     expect(bar.trailingItems.last.enabled, isFalse);
-    bar.onItemPressed!('info');
+    final groupFinder = find.byType(CNGlassButtonGroup);
+    final group = tester.widget<CNGlassButtonGroup>(groupFinder);
+    expect(group.buttons.map((button) => button.icon!.name), ['info.circle', 'qrcode.viewfinder']);
+    expect(group.buttons.map((button) => button.config.glassEffectUnionId).toSet(), {'trailing-main'});
+    expect(group.buttons.last.enabled, isFalse);
+    expect(group.buttons.last.onPressed, isNull);
+    final headerRect = tester.getRect(find.byType(IosNativeNavigationBar));
+    final groupRect = tester.getRect(groupFinder);
+    expect(groupRect.top - headerRect.top, greaterThanOrEqualTo(8));
+    expect(headerRect.bottom - groupRect.bottom, greaterThanOrEqualTo(8));
+    final infoSemantics = tester.widgetList<Semantics>(find.byType(Semantics)).singleWhere(
+          (widget) => widget.properties.label == 'Card details',
+        );
+    expect(infoSemantics.properties.onTap, isNotNull);
+    group.buttons.first.onPressed!();
     expect(infoPressed, isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = null;

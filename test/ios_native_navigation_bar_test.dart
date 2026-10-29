@@ -48,6 +48,10 @@ void main() {
     expect(back.semanticLabel, '返回 Deadlines');
     expect(back.icon!.size, 20);
     expect(back.icon!.color, back.tint);
+    final barRect = tester.getRect(find.byType(IosNativeNavigationBar));
+    final backRect = tester.getRect(find.byWidget(back));
+    expect(backRect.top - barRect.top, greaterThanOrEqualTo(8));
+    expect(barRect.bottom - backRect.bottom, greaterThanOrEqualTo(8));
     expect(buttons.every((button) => button.config.glassEffectUnionId == null), isTrue);
     back.onPressed!();
     expect(taps, ['back']);
