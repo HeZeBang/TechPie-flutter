@@ -1771,13 +1771,14 @@ class _CourseBlock extends StatelessWidget {
       CNBottomSheet.show<void>(
         context: context,
         useRootNavigator: true,
-        showDragHandle: true,
+        // A fixed-height sheet: iOS shows no grabber on one.
+        showDragHandle: !isIos(),
         builder: (context) {
           return _detailContent(
             context,
             schedule: schedule,
             close: () => Navigator.pop(context),
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+            padding: EdgeInsets.fromLTRB(24, isIos() ? 28 : 0, 24, 32),
           );
         },
       ),

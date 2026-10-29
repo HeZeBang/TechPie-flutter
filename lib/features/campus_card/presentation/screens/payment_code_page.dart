@@ -876,9 +876,15 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
       useRootNavigator: false,
       isScrollControlled: true,
       useSafeArea: true,
-      showDragHandle: true,
+      // A fixed-height sheet: iOS shows no grabber on one.
+      showDragHandle: Theme.of(context).platform != TargetPlatform.iOS,
       builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          Theme.of(context).platform == TargetPlatform.iOS ? 24 : 0,
+          20,
+          28,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

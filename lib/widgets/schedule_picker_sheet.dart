@@ -26,7 +26,9 @@ Future<T?> showSchedulePickerSheet<T>({
   return CNBottomSheet.show<T>(
     context: context,
     useRootNavigator: true,
-    showDragHandle: true,
+    // iOS shows a grabber only on a sheet that resizes between detents; this
+    // one has a single height, so it is dismissed by swiping or ✕ alone.
+    showDragHandle: !ios,
     isScrollControlled: isScrollControlled,
     backgroundColor: ios
         ? (grouped
@@ -37,12 +39,12 @@ Future<T?> showSchedulePickerSheet<T>({
     builder: (context) => SafeArea(
       top: false,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(ios ? 0 : 8, 0, ios ? 0 : 8, 8),
+        padding: EdgeInsets.fromLTRB(ios ? 0 : 8, ios ? 16 : 0, ios ? 0 : 8, 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ios
-                ? _IosSheetHeader(
+                ? IosSheetHeader(
                     title: title,
                     onCancel: () => Navigator.pop(context),
                     onConfirm: () => Navigator.pop(context, selection()),
@@ -77,37 +79,42 @@ Future<T?> showSchedulePickerSheet<T>({
   );
 }
 
-/// The toolbar of an iOS 26 sheet: glass circular ✕ and ✓, title between.
-class _IosSheetHeader extends StatelessWidget {
-  const _IosSheetHeader({
+/// The toolbar of an iOS 26 sheet: a glass circular ✕, the title, and — for a
+/// sheet that confirms a choice — a prominent ✓. A sheet that only shows
+/// something passes no [onConfirm] and gets its ✕ on the trailing side.
+class IosSheetHeader extends StatelessWidget {
+  const IosSheetHeader({
+    super.key,
     required this.title,
     required this.onCancel,
-    required this.onConfirm,
+    this.onConfirm,
   });
 
   final String title;
   final VoidCallback onCancel;
-  final VoidCallback onConfirm;
+  final VoidCallback? onConfirm;
 
   @override
   Widget build(BuildContext context) {
     final tint = Theme.of(context).colorScheme.primary;
     final label = CupertinoColors.label.resolveFrom(context);
+    final close = CNButton.icon(
+      icon: CNSymbol('xmark', size: 17, color: label),
+      semanticLabel: onConfirm == null ? '关闭' : '取消',
+      onPressed: onCancel,
+      tint: label,
+      config: const CNButtonConfig(
+        style: CNButtonStyle.glass,
+        width: 44,
+        minHeight: 44,
+      ),
+    );
+    final confirm = onConfirm;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Row(
         children: [
-          CNButton.icon(
-            icon: CNSymbol('xmark', size: 17, color: label),
-            semanticLabel: '取消',
-            onPressed: onCancel,
-            tint: label,
-            config: const CNButtonConfig(
-              style: CNButtonStyle.glass,
-              width: 44,
-              minHeight: 44,
-            ),
-          ),
+          if (confirm != null) close else const SizedBox(width: 44),
           Expanded(
             child: Text(
               title,
@@ -121,17 +128,20 @@ class _IosSheetHeader extends StatelessWidget {
               ),
             ),
           ),
-          CNButton.icon(
-            icon: const CNSymbol('checkmark', size: 17, color: CupertinoColors.white),
-            semanticLabel: '确定',
-            onPressed: onConfirm,
-            tint: tint,
-            config: const CNButtonConfig(
-              style: CNButtonStyle.prominentGlass,
-              width: 44,
-              minHeight: 44,
+          if (confirm == null)
+            close
+          else
+            CNButton.icon(
+              icon: const CNSymbol('checkmark', size: 17, color: CupertinoColors.white),
+              semanticLabel: '确定',
+              onPressed: confirm,
+              tint: tint,
+              config: const CNButtonConfig(
+                style: CNButtonStyle.prominentGlass,
+                width: 44,
+                minHeight: 44,
+              ),
             ),
-          ),
         ],
       ),
     );

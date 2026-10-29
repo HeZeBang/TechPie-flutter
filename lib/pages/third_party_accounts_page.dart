@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +18,7 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/schedule_picker_sheet.dart';
 import 'campus_card_account_page.dart';
 import 'third_party_bind_page.dart';
 
@@ -595,6 +597,17 @@ Future<void> _showAccountDetailSheet(
   VoidCallback? onProbe,
   String? cookieText,
 }) {
+  if (isIos()) {
+    return _showIosAccountDetailSheet(
+      context,
+      title: title,
+      rows: rows,
+      onRefresh: onRefresh,
+      onUnbind: onUnbind,
+      onProbe: onProbe,
+      cookieText: cookieText,
+    );
+  }
   final theme = Theme.of(context);
   return CNBottomSheet.show<void>(
     context: context,
@@ -722,6 +735,112 @@ Future<void> _showAccountDetailSheet(
                     ),
                   ],
                 ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// iOS: the account's details as an inset-grouped list of label/value rows,
+/// and its actions as a second group of tappable rows — unbinding last, in the
+/// destructive red — under a sheet toolbar with a ✕ to close. No grabber: the
+/// sheet has one height.
+Future<void> _showIosAccountDetailSheet(
+  BuildContext context, {
+  required String title,
+  required List<MapEntry<String, String>> rows,
+  required VoidCallback onRefresh,
+  VoidCallback? onUnbind,
+  VoidCallback? onProbe,
+  String? cookieText,
+}) {
+  return CNBottomSheet.show<void>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(context),
+    builder: (sheetContext) {
+      final secondary = CupertinoColors.secondaryLabel.resolveFrom(sheetContext);
+      final red = CupertinoColors.systemRed.resolveFrom(sheetContext);
+      final tint = Theme.of(sheetContext).colorScheme.primary;
+      void run(VoidCallback action) {
+        Navigator.pop(sheetContext);
+        action();
+      }
+
+      Widget actionRow(IconData icon, String label, Color color, VoidCallback action) =>
+          CupertinoListTile(
+            leading: Icon(icon, color: color),
+            title: Text(label, style: TextStyle(color: color)),
+            onTap: () => run(action),
+          );
+
+      return SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 16),
+              IosSheetHeader(title: title, onCancel: () => Navigator.pop(sheetContext)),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      CupertinoListSection.insetGrouped(
+                        children: [
+                          for (final row in rows)
+                            if (row.value.isNotEmpty)
+                              CupertinoListTile(
+                                title: Text(row.key),
+                                additionalInfo: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: MediaQuery.sizeOf(sheetContext).width * 0.5,
+                                  ),
+                                  child: Text(
+                                    row.value,
+                                    textAlign: TextAlign.end,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                          if (cookieText != null && cookieText.isNotEmpty)
+                            CupertinoListTile(
+                              title: const Text('Cookie'),
+                              subtitle: Text(
+                                cookieText,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontFamily: 'monospace', color: secondary),
+                              ),
+                              trailing: Icon(CupertinoIcons.doc_on_doc, color: tint, size: 20),
+                              onTap: () {
+                                unawaited(Clipboard.setData(ClipboardData(text: cookieText)));
+                                showAdaptiveFeedback(
+                                  context: sheetContext,
+                                  message: 'Cookie 已复制',
+                                  style: AdaptiveFeedbackStyle.success,
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                      CupertinoListSection.insetGrouped(
+                        children: [
+                          actionRow(CupertinoIcons.arrow_clockwise, '立即刷新', tint, onRefresh),
+                          if (onProbe != null)
+                            actionRow(CupertinoIcons.heart, '检测', tint, onProbe),
+                          if (onUnbind != null)
+                            actionRow(CupertinoIcons.link, '解绑', red, onUnbind),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
