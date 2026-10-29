@@ -37,6 +37,7 @@ dependencies:
   crypto: 3.0.7
   cryptography: ^2.9.0
   cupertino_icons: ^1.0.8
+  cupertino_native_better: 1.8.1
   desktop_webview_window: any
   dio: ^5.8.0
   dynamic_color: ">=1.7.0 <1.8.0"
@@ -56,7 +57,7 @@ dependencies:
       path: packages/image_picker/image_picker
       ref: br_image_picker-v1.1.2_ohos
   intl: ^0.20.2
-  mobile_scanner: ^6.0.10
+  mobile_scanner: ^7.0.1
   open_filex: ^4.5.0
   package_info_plus: ^8.0.2
   path_provider: ^2.1.5
@@ -94,17 +95,12 @@ dependency_overrides:
       path: packages/image_picker/image_picker_ohos
       ref: br_image_picker-v1.1.2_ohos
   mobile_scanner:
-    # HeZeBang/mobile_scanner_ohos: the OHOS fork of mobile_scanner 6.0.10 plus
-    # TechPie's patches — the preview freezes on its last frame, and every start
-    # reports the preview's first frame. Pinned by commit, so a release always
-    # builds the source it was tested against; the patches and the reasoning are
-    # in that repository's history. dfdb43e reports the first frame from the
-    # analyzer instead of hijacking the SurfaceTexture frame listener, which had
-    # frozen the Android preview; 4067152 requests a clear preview resolution;
-    # 83e7071 corrects the scan-window geometry and reports the preview size.
+    # mobile_scanner 7.0.1 with OHOS support and TechPie's preview/Android
+    # patches, plus the iPhone 17 pixel-format fix. Apple's Vision backend
+    # supports arm64 iOS simulators. Pin the merged upstream commit.
     git:
       url: https://github.com/HeZeBang/mobile_scanner_ohos.git
-      ref: 83e7071204dd07dd84763f0e1b6d1f977b97fd7c
+      ref: 76f6f441ccd82d4c5942c2e79ff25e0719cc90dd
   package_info_plus:
     git:
       url: https://gitee.com/openharmony-sig/flutter_plus_plugins.git
@@ -155,6 +151,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_test:
     sdk: flutter
+  webview_flutter_platform_interface: ^2.13.1
 
 flutter_launcher_icons:
   image_path: "assets/icon/icon.png"

@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:techpie/utils/platform.dart';
+import 'package:techpie/widgets/page_refresh.dart';
 
 import '../../app/app_providers.dart';
 import '../../application/confirmed_disconnect_feedback.dart';
@@ -140,7 +143,10 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
     super.didChangeDependencies();
     // Navigator's Overlay disables this mode below opaque routes, including
     // routes in the host navigator. Non-opaque status sheets stay visible.
-    _visible = TickerMode.of(context);
+    // `valuesOf` supersedes `of` (deprecated after v3.35): it reports whether
+    // tickers run in this subtree. Force-frame requests are a separate signal
+    // and not what visibility means here.
+    _visible = TickerMode.valuesOf(context).enabled;
     _updateActivity(defer: true);
   }
 
@@ -593,6 +599,9 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
       body: AppleWalletPage(
         child: ApplePinnedHeaderLayout(
           title: '付款码',
+          refreshAction: isDesktop()
+              ? PageRefreshButton(onRefresh: _refreshAll)
+              : null,
           leading: CampusCardHeaderAction(
             id: 'back',
             sfSymbol: 'chevron.left',
@@ -768,7 +777,12 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 52),
+                padding: EdgeInsets.fromLTRB(
+                  18,
+                  0,
+                  18,
+                  ApplePinnedHeaderLayout.contentBottom(context),
+                ),
                 sliver: switch (transactions) {
                   AsyncData(:final value) => TransactionList(
                       items: value.items
@@ -862,14 +876,20 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
     final latency = payment.requestLatency == null
         ? '--'
         : '${payment.requestLatency!.inMilliseconds} ms';
-    final selected = await showModalBottomSheet<bool>(
+    final selected = await CNBottomSheet.show<bool>(
       context: context,
       useRootNavigator: false,
       isScrollControlled: true,
       useSafeArea: true,
-      showDragHandle: true,
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+      // A fixed-height sheet: iOS shows no grabber on one.
+      showDragHandle: Theme.of(context).platform != TargetPlatform.iOS,
+      builder: (sheetContext) => ApplePinnedHeaderLayout.sheetInsets(sheetContext, Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          Theme.of(context).platform == TargetPlatform.iOS ? 24 : 0,
+          20,
+          28,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -904,7 +924,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
             ),
           ],
         ),
-      ),
+      ),),
     );
     if (selected != null && mounted) await _setOfflineMode(card, selected);
   }

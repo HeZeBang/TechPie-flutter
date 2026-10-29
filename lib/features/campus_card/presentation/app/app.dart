@@ -1,3 +1,4 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,6 +37,7 @@ class CampusCardFeature extends ConsumerStatefulWidget {
 
 class _CampusCardFeatureState extends ConsumerState<CampusCardFeature> {
   final _navigatorKey = GlobalKey<NavigatorState>();
+  final _nativeChromeObserver = CNTabBarRouteObserver();
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +62,7 @@ class _CampusCardFeatureState extends ConsumerState<CampusCardFeature> {
           onPopWithResult: (_) => _navigatorKey.currentState?.pop(),
           child: Navigator(
             key: _navigatorKey,
+            observers: [_nativeChromeObserver],
             onGenerateRoute: (settings) => adaptivePageRoute<Object?>(
               settings: settings,
               builder: (_) => const _PaymentTargetHost(child: _EntryGate()),

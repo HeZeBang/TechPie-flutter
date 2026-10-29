@@ -1,53 +1,202 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/course_table.dart';
+import '../utils/platform.dart';
 
-/// Shared shell extracted from the timetable's semester picker.
-/// Edits remain pending until the user confirms; dismissing returns null.
+/// A confirm-or-cancel sheet for a pending choice — the app's pickers (wheels,
+/// dates, times, multi-select lists) all present through it. Edits remain
+/// pending until the user confirms; dismissing returns null.
+///
+/// On iOS it is laid out like an iOS 26 sheet: a glass ✕ leading, the title
+/// centred, a prominent ✓ trailing, on the system background ([grouped] for a
+/// list of rows, plain for a wheel). Elsewhere it keeps text buttons.
 Future<T?> showSchedulePickerSheet<T>({
   required BuildContext context,
   required String title,
   required T Function() selection,
   required WidgetBuilder builder,
+  bool grouped = false,
+  bool isScrollControlled = false,
 }) {
   FocusManager.instance.primaryFocus?.unfocus();
-  return showModalBottomSheet<T>(
+  final ios = isIos();
+  return CNBottomSheet.show<T>(
     context: context,
-    showDragHandle: true,
+    useRootNavigator: true,
+    // iOS shows a grabber only on a sheet that resizes between detents; this
+    // one has a single height, so it is dismissed by swiping or ✕ alone.
+    showDragHandle: !ios,
+    isScrollControlled: isScrollControlled,
+    backgroundColor: ios
+        ? (grouped
+                ? CupertinoColors.systemGroupedBackground
+                : CupertinoColors.systemBackground)
+            .resolveFrom(context)
+        : null,
     builder: (context) => SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        padding: EdgeInsets.fromLTRB(ios ? 0 : 8, ios ? 16 : 0, ios ? 0 : 8, 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Row(
-                children: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-                  Expanded(
-                    child: Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleMedium,
+            ios
+                ? IosSheetHeader(
+                    title: title,
+                    onCancel: () => Navigator.pop(context),
+                    onConfirm: () => Navigator.pop(context, selection()),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('取消'),
+                        ),
+                        Expanded(
+                          child: Text(
+                            title,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, selection()),
+                          child: const Text('确定'),
+                        ),
+                      ],
                     ),
                   ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, selection()),
-                    child: const Text('确定'),
-                  ),
-                ],
-              ),
-            ),
             Flexible(child: builder(context)),
           ],
         ),
       ),
     ),
   );
+}
+
+/// The toolbar of an iOS 26 sheet: a glass circular ✕, the title, and — for a
+/// sheet that confirms a choice — a prominent ✓. A sheet that only shows
+/// something passes no [onConfirm] and gets its ✕ on the trailing side.
+class IosSheetHeader extends StatelessWidget {
+  const IosSheetHeader({
+    super.key,
+    required this.title,
+    required this.onCancel,
+    this.onConfirm,
+  });
+
+  final String title;
+  final VoidCallback onCancel;
+  final VoidCallback? onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = Theme.of(context).colorScheme.primary;
+    final label = CupertinoColors.label.resolveFrom(context);
+    if (!usesIosLiquidGlass()) return _buildLegacy(tint, label);
+    final close = CNButton.icon(
+      icon: CNSymbol('xmark', size: 17, color: label),
+      semanticLabel: onConfirm == null ? '关闭' : '取消',
+      onPressed: onCancel,
+      tint: label,
+      config: const CNButtonConfig(
+        style: CNButtonStyle.glass,
+        width: 44,
+        minHeight: 44,
+      ),
+    );
+    final confirm = onConfirm;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Row(
+        children: [
+          if (confirm != null) close else const SizedBox(width: 44),
+          Expanded(
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: label,
+              ),
+            ),
+          ),
+          if (confirm == null)
+            close
+          else
+            CNButton.icon(
+              icon: const CNSymbol('checkmark', size: 17, color: CupertinoColors.white),
+              semanticLabel: '确定',
+              onPressed: confirm,
+              tint: tint,
+              config: const CNButtonConfig(
+                style: CNButtonStyle.prominentGlass,
+                width: 44,
+                minHeight: 44,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Before iOS 26 a sheet's toolbar is text buttons — 取消 and a bold 完成 —
+  /// as UIKit draws them there; the glass icon buttons are iOS 26 chrome, and
+  /// the library would draw their symbols as native views that take the tap.
+  Widget _buildLegacy(Color tint, Color label) {
+    Widget button(String text, VoidCallback onPressed, {bool bold = false}) => CupertinoButton(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: const Size.square(iosMinimumInteractiveDimension),
+          onPressed: onPressed,
+          child: Text(
+            text,
+            style: TextStyle(
+              color: tint,
+              fontSize: 17,
+              fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        );
+    final confirm = onConfirm;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 72,
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: confirm == null ? null : button('取消', onCancel),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: label),
+            ),
+          ),
+          SizedBox(
+            width: 72,
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: button('完成', confirm ?? onCancel, bold: true),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 Future<String?> showSemesterPickerSheet({
@@ -188,6 +337,7 @@ class _SemesterWheelPickerState extends State<SemesterWheelPicker> {
               itemCount: _years.length,
               labelBuilder: (i) => _years[i],
               onChanged: _onYearChanged,
+              capEndEdge: false,
             ),
           ),
           Expanded(
@@ -197,6 +347,7 @@ class _SemesterWheelPickerState extends State<SemesterWheelPicker> {
               itemCount: _termsForYear.length,
               labelBuilder: (i) => '${semesterTermDisplayName(_termsForYear[i].key)}学期',
               onChanged: _onTermChanged,
+              capStartEdge: false,
             ),
           ),
         ],
@@ -212,6 +363,8 @@ class SchedulePickerWheel extends StatelessWidget {
     required this.itemCount,
     required this.labelBuilder,
     required this.onChanged,
+    this.capStartEdge = true,
+    this.capEndEdge = true,
   });
 
   final FixedExtentScrollController controller;
@@ -219,22 +372,37 @@ class SchedulePickerWheel extends StatelessWidget {
   final String Function(int) labelBuilder;
   final ValueChanged<int> onChanged;
 
+  /// Whether the selection band rounds off at this wheel's leading / trailing
+  /// edge. Wheels set side by side clear the edges they share, so the band
+  /// runs across them as one, the way UIPickerView draws it.
+  final bool capStartEdge;
+  final bool capEndEdge;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final ios = isIos();
     return CupertinoPicker(
       scrollController: controller,
-      itemExtent: 40,
+      itemExtent: ios ? 32 : 40,
       onSelectedItemChanged: onChanged,
-      selectionOverlay: Container(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(8),
-        ),
-      ),
+      selectionOverlay: ios
+          ? CupertinoPickerDefaultSelectionOverlay(
+              capStartEdge: capStartEdge,
+              capEndEdge: capEndEdge,
+            )
+          : Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
       children: [
         for (var i = 0; i < itemCount; i++)
-          Center(child: Text(labelBuilder(i), style: theme.textTheme.bodyLarge)),
+          Center(
+            // On iOS the picker's own text style (the system wheel font).
+            child: Text(labelBuilder(i), style: ios ? null : theme.textTheme.bodyLarge),
+          ),
       ],
     );
   }

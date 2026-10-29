@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../models/oa_gym.dart';
@@ -14,7 +14,7 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
-import 'login_page.dart';
+import '../widgets/uni_auth_login.dart';
 import 'third_party_accounts_page.dart';
 
 class OaGymPage extends StatefulWidget {
@@ -54,7 +54,7 @@ class _OaGymPageState extends State<OaGymPage>
       await _openThirdPartyAccounts();
       return;
     }
-    await presentLoginPage(context);
+    await startUniAuthLogin(context);
     if (!mounted) return;
     setState(() {});
   }
@@ -110,18 +110,11 @@ class _OaGymPageState extends State<OaGymPage>
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                       child: isIos()
-                          ? CupertinoSlidingSegmentedControl<int>(
-                              groupValue: _selectedTab,
-                              children: const {
-                                0: Text('预约'),
-                                1: Text('查询'),
-                                2: Text('个人信息'),
-                              },
-                              onValueChanged: (value) {
-                                if (value != null) {
-                                  _tabController.animateTo(value);
-                                }
-                              },
+                          ? CNSegmentedControl(
+                              labels: const ['预约', '查询', '个人信息'],
+                              selectedIndex: _selectedTab,
+                              shrinkWrap: true,
+                              onValueChanged: _tabController.animateTo,
                             )
                           : Card.outlined(
                               clipBehavior: Clip.antiAlias,
@@ -254,6 +247,7 @@ class _BookingTabState extends State<_BookingTab> {
         : DateTime(now.year, now.month, now.day + 1);
     final picked = await showAdaptiveDatePicker(
       context: context,
+      title: '预约日期',
       initialDate: _date,
       firstDate: DateTime(now.year, now.month, now.day),
       lastDate: maxDate,
@@ -707,6 +701,7 @@ class _SearchTabState extends State<_SearchTab> {
   Future<void> _pickStartDate() async {
     final picked = await showAdaptiveDatePicker(
       context: context,
+      title: '开始日期',
       initialDate: _startDate,
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now().add(const Duration(days: 30)),
@@ -723,6 +718,7 @@ class _SearchTabState extends State<_SearchTab> {
   Future<void> _pickEndDate() async {
     final picked = await showAdaptiveDatePicker(
       context: context,
+      title: '结束日期',
       initialDate: _endDate,
       firstDate: _startDate,
       lastDate: DateTime.now().add(const Duration(days: 30)),

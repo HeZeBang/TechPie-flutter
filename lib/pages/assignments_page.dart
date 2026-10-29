@@ -12,10 +12,12 @@ import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/page_refresh.dart';
 import '../widgets/swipeable_card.dart';
 import 'hidden_assignments_page.dart';
 
@@ -28,10 +30,48 @@ class AssignmentsPage extends StatefulWidget {
 
 class _AssignmentsPageState extends State<AssignmentsPage> {
   bool _pastCollapsed = true;
+  bool _completedCollapsed = true;
   bool _selectionMode = false;
   bool _showAssignments = true;
   bool _showExams = true;
   final Set<String> _selected = {};
+  Timer? _countdownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCountdownTimer();
+  }
+
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ignore: deprecated_member_use
+    final isVisible = TickerMode.of(context);
+    if (isVisible) {
+      if (_countdownTimer == null || !_countdownTimer!.isActive) {
+        _startCountdownTimer();
+      }
+    } else {
+      _countdownTimer?.cancel();
+      _countdownTimer = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
 
   void _exitSelection() {
     setState(() {
@@ -115,7 +155,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       builder: (context, _) {
         final allVisible = assignmentService.visibleAssignments;
         final visible = _filterAssignments(allVisible);
-        return Scaffold(
+        return AdaptiveNavigationScaffold(
           extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
           appBar: _selectionMode
               ? _buildSelectionAppBar(context, assignmentService, visible)
@@ -199,6 +239,11 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     return BlurredAppBar(
       title: const Text('Deadlines'),
       actions: [
+        if (isDesktop())
+          PageRefreshButton(
+            onRefresh: () => _refresh(service),
+            refreshing: service.loading,
+          ),
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert),
           onSelected: (v) {
@@ -289,7 +334,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
         leadingItems: const [
           IosNativeNavigationBarItem(
             id: 'cancelSelection',
-            title: 'Cancel',
+            title: '取消',
             accessibilityLabel: '退出多选',
             placementGroup: 'leading-main',
           ),
@@ -297,7 +342,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
         trailingItems: [
           IosNativeNavigationBarItem(
             id: 'toggleSelectAll',
-            title: allSelected ? 'Deselect All' : 'Select All',
+            title: allSelected ? '全不选' : '全选',
             enabled: visible.isNotEmpty,
             accessibilityLabel: allSelected ? '全不选' : '全选',
             placementGroup: 'selection-actions',
@@ -387,7 +432,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
           SizedBox(height: topInset),
           banner,
           Expanded(
-            child: RefreshIndicator(
+            child: PageRefreshIndicator(
               onRefresh: () async => _refresh(service),
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -451,12 +496,34 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   ) {
     final theme = Theme.of(context);
     final now = DateTime.now();
-    final past = sorted.where((a) => a.due.isBefore(now)).toList();
-    final upcoming = sorted.where((a) => !a.due.isBefore(now)).toList();
+
+    final uncompleted = sorted.where((a) => !service.isCompleted(a)).toList();
+    final completed = sorted.where((a) => service.isCompleted(a)).toList()
+      ..sort((a, b) => b.effectiveDue.compareTo(a.effectiveDue));
+
+    final overdue = uncompleted
+        .where((a) => a.effectiveDue.isBefore(now))
+        .toList()
+      ..sort((a, b) => a.effectiveDue.compareTo(b.effectiveDue));
+    final upcoming = uncompleted
+        .where((a) => !a.effectiveDue.isBefore(now))
+        .toList()
+      ..sort((a, b) {
+        final targetA =
+            (a.effectiveLateDue != null && a.due.isBefore(now))
+                ? a.effectiveLateDue!
+                : a.due;
+        final targetB =
+            (b.effectiveLateDue != null && b.due.isBefore(now))
+                ? b.effectiveLateDue!
+                : b.due;
+        return targetA.compareTo(targetB);
+      });
+
     final todayLabel = DateFormat('yyyy-MM-dd EEE').format(now);
     final itemLabel = _filteredItemLabel;
 
-    return RefreshIndicator(
+    return PageRefreshIndicator(
       onRefresh: () async => _refresh(service),
       child: ListView(
         padding: EdgeInsets.fromLTRB(
@@ -466,53 +533,45 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
           AppShellMetrics.bottomContentPaddingOf(context),
         ),
         children: [
-          InkWell(
-            onTap: () => setState(() => _pastCollapsed = !_pastCollapsed),
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    _pastCollapsed ? Icons.chevron_right : Icons.expand_more,
-                    size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '已过期 (${past.length})',
-                    style: theme.textTheme.labelLarge?.copyWith(
+          if (overdue.isNotEmpty) ...[
+            InkWell(
+              onTap: () => setState(() => _pastCollapsed = !_pastCollapsed),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      _pastCollapsed ? Icons.chevron_right : Icons.expand_more,
+                      size: 20,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    _pastCollapsed ? '展开' : '折叠',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (!_pastCollapsed)
-            past.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(32, 8, 16, 16),
-                    child: Text(
-                      '没有已过期的 $itemLabel',
-                      style: theme.textTheme.bodySmall?.copyWith(
+                    const SizedBox(width: 4),
+                    Text(
+                      '已逾期 (${overdue.length})',
+                      style: theme.textTheme.labelLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                  )
-                : Column(
-                    children: past
-                        .map((a) => _buildItem(context, service, a))
-                        .toList(),
-                  ),
-          const SizedBox(height: 4),
+                    const Spacer(),
+                    Text(
+                      _pastCollapsed ? '展开' : '折叠',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (!_pastCollapsed)
+              Column(
+                children: overdue
+                    .map((a) => _buildItem(context, service, a))
+                    .toList(),
+              ),
+            const SizedBox(height: 4),
+          ],
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
@@ -537,7 +596,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
                 child: Text(
-                  '没有未来的 $itemLabel',
+                  '没有未完成的 $itemLabel',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -546,6 +605,52 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             )
           else
             ...upcoming.map((a) => _buildItem(context, service, a)),
+          if (completed.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: () =>
+                  setState(() => _completedCollapsed = !_completedCollapsed),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      _completedCollapsed
+                          ? Icons.chevron_right
+                          : Icons.expand_more,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(
+                      Icons.check_circle_outline,
+                      size: 16,
+                      color: Colors.green,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '已完成 (${completed.length})',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _completedCollapsed ? '展开' : '折叠',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (!_completedCollapsed) ...[
+              const SizedBox(height: 8),
+              ...completed.map((a) => _buildItem(context, service, a)),
+            ],
+          ],
         ],
       ),
     );
@@ -774,6 +879,26 @@ class _DeadlineKindChip extends StatelessWidget {
   }
 }
 
+String _formatRemainingTime(
+  DateTime due,
+  DateTime now, {
+  String prefix = 'Remain',
+}) {
+  final diff = due.difference(now);
+  if (diff.isNegative || diff.inSeconds <= 0) {
+    return 'Overdue';
+  }
+  final days = diff.inDays;
+  final hours = (diff.inHours % 24).toString().padLeft(2, '0');
+  final minutes = (diff.inMinutes % 60).toString().padLeft(2, '0');
+  final seconds = (diff.inSeconds % 60).toString().padLeft(2, '0');
+  if (days > 0) {
+    return '$prefix: ${days}d $hours:$minutes:$seconds';
+  }
+  return '$prefix: $hours:$minutes:$seconds';
+}
+
+
 class _AssignmentCard extends StatelessWidget {
   final Assignment assignment;
   final bool completed;
@@ -797,15 +922,23 @@ class _AssignmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final now = DateTime.now();
-    final isPast = assignment.due.isBefore(now);
+    final lateDue = assignment.effectiveLateDue;
+    final finalDue = assignment.effectiveDue;
+    final isPast = finalDue.isBefore(now);
+    final isLateWindow = !completed &&
+        lateDue != null &&
+        assignment.due.isBefore(now) &&
+        !isPast;
 
     final formatter = DateFormat('MM/dd HH:mm');
-    final dueString = formatter.format(assignment.due);
+    final displayDue = isLateWindow ? lateDue : assignment.due;
+    final dueLabel = isLateWindow ? 'Late Due: ' : 'Due: ';
+    final dueString = formatter.format(displayDue);
 
     Color statusColor() {
       if (completed) return Colors.green;
-      if (isPast) return Colors.red;
-      final hoursLeft = assignment.due.difference(now).inHours;
+      if (isPast || isLateWindow) return Colors.red;
+      final hoursLeft = displayDue.difference(now).inHours;
       if (hoursLeft < 24) return Colors.orange;
       return theme.colorScheme.primary;
     }
@@ -925,18 +1058,22 @@ class _AssignmentCard extends StatelessWidget {
                   Icon(
                     Icons.access_time,
                     size: 16,
-                    color: isPast && !completed
-                        ? Colors.red
-                        : theme.colorScheme.onSurfaceVariant,
+                    color: completed
+                        ? theme.colorScheme.onSurfaceVariant
+                        : (isPast || isLateWindow
+                            ? Colors.red
+                            : theme.colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    'Due: $dueString',
+                    '$dueLabel$dueString',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: isPast && !completed
-                          ? Colors.red
-                          : theme.colorScheme.onSurfaceVariant,
-                      fontWeight: isPast && !completed
+                      color: completed
+                          ? theme.colorScheme.onSurfaceVariant
+                          : (isPast || isLateWindow
+                              ? Colors.red
+                              : theme.colorScheme.onSurfaceVariant),
+                      fontWeight: (isPast || isLateWindow) && !completed
                           ? FontWeight.bold
                           : FontWeight.normal,
                     ),
@@ -975,7 +1112,41 @@ class _AssignmentCard extends StatelessWidget {
                               ),
                             ],
                           )
-                        : const SizedBox.shrink(key: ValueKey('not')),
+                        : (isPast
+                            ? Text(
+                                'Overdue',
+                                key: const ValueKey('overdue'),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : (isLateWindow
+                                ? Text(
+                                    _formatRemainingTime(
+                                      lateDue,
+                                      now,
+                                      prefix: 'Late',
+                                    ),
+                                    key: const ValueKey('late_remain'),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  )
+                                : Text(
+                                    _formatRemainingTime(assignment.due, now),
+                                    key: const ValueKey('remain'),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ))),
                   ),
                 ],
               ),

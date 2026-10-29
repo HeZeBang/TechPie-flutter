@@ -303,7 +303,7 @@ class _CardEnterAnimationState extends State<CardEnterAnimation>
     if (_started) return;
     _started = true;
     if (!(MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
-      _ctrl.forward();
+      unawaited(_ctrl.forward());
     }
   }
 

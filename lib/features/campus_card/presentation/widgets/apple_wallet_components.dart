@@ -123,7 +123,8 @@ final class AppleWalletPage extends StatelessWidget {
       ColoredBox(color: context.gpColors.bg, child: child);
 }
 
-/// Pull-to-refresh control positioned below the pinned eCard header.
+/// Pull-to-refresh control for touch platforms, positioned below the pinned
+/// eCard header. Native desktop uses the header refresh action instead.
 final class EcardSliverRefreshControl extends StatelessWidget {
   const EcardSliverRefreshControl({super.key, required this.onRefresh});
 
@@ -131,6 +132,9 @@ final class EcardSliverRefreshControl extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isDesktop()) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
     final color = context.gpColors.textSecondary;
     return CupertinoSliverRefreshControl(
       onRefresh: onRefresh,
@@ -218,6 +222,7 @@ final class ApplePinnedHeaderLayout extends StatelessWidget {
     this.leading,
     this.title,
     this.actions = const [],
+    this.refreshAction,
   });
 
   /// The top offset of a page's scrollable content: the header's height plus the
@@ -226,6 +231,28 @@ final class ApplePinnedHeaderLayout extends StatelessWidget {
   /// screen edge instead of clipping at it.
   static double contentTop(BuildContext context) =>
       78.0 + (isIos() ? 0.0 : MediaQuery.viewPaddingOf(context).top);
+
+  /// The bottom inset of a page's scrollable content: [margin] above whatever
+  /// the host's safe area covers at the bottom — the home indicator, or the
+  /// tab bar when the page sits inside a tab. This is how UIKit insets a scroll
+  /// view by its safe area: content still scrolls under the bar, but the last
+  /// row settles clear of it instead of behind it.
+  static double contentBottom(BuildContext context, [double margin = 52]) =>
+      MediaQuery.paddingOf(context).bottom + margin;
+
+  /// Wraps a bottom sheet opened on the feature's own navigator. The feature
+  /// sits inside a tab, so the safe area it inherits counts the tab bar — but
+  /// the tab bar hides while a sheet is up, and the sheet runs to the screen
+  /// edge. Its content should clear the home indicator only.
+  static Widget sheetInsets(BuildContext context, Widget child) {
+    final media = MediaQuery.of(context);
+    return MediaQuery(
+      data: media.copyWith(
+        padding: media.padding.copyWith(bottom: media.viewPadding.bottom),
+      ),
+      child: child,
+    );
+  }
 
   /// The measure of the page body on a wide window. The bar is not part of it:
   /// it spans whatever the host gives the page, which is what makes an eCard
@@ -236,6 +263,7 @@ final class ApplePinnedHeaderLayout extends StatelessWidget {
   final CampusCardHeaderAction? leading;
   final String? title;
   final List<CampusCardHeaderAction> actions;
+  final Widget? refreshAction;
 
   @override
   Widget build(BuildContext context) {
@@ -256,7 +284,10 @@ final class ApplePinnedHeaderLayout extends StatelessWidget {
             automaticallyImplyLeading: false,
             leading: leading == null ? null : _materialButton(leading!),
             title: Text(resolvedTitle),
-            actions: actions.map(_materialButton).toList(),
+            actions: [
+              if (refreshAction != null) refreshAction!,
+              ...actions.map(_materialButton),
+            ],
           );
     if (isIos()) {
       return SafeArea(
@@ -290,7 +321,7 @@ final class ApplePinnedHeaderLayout extends StatelessWidget {
         // UIKit lays out trailing items from the trailing edge inward.
         trailingItems: [
           for (final action in actions.reversed)
-            _nativeItem(action, 'trailing-${action.id}'),
+            _nativeItem(action, 'trailing-main'),
         ],
         onItemPressed: (id) {
           if (id == leading?.id) {
@@ -906,7 +937,7 @@ class _AnimatedSuccessCheckState extends State<AnimatedSuccessCheck>
         TweenSequenceItem(tween: Tween(begin: 1.07, end: 1), weight: 28),
       ],
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
-    _controller.forward();
+    unawaited(_controller.forward());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(widget.feedback?.play(FeedbackEvent.paymentSuccess));

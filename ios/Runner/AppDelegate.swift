@@ -47,14 +47,14 @@ import WidgetKit
 
     guard
       let registrar = flutterViewController.registrar(
-        forPlugin: "TechPieNativeGlassRegistry"
+        forPlugin: "TechPiePlatformPlugins"
       )
     else {
-      assertionFailure("Failed to create registrar for TechPieNativeGlassRegistry")
+      assertionFailure("Failed to create registrar for TechPiePlatformPlugins")
       return false
     }
 
-    NativeGlassRegistry.registerAll(with: registrar)
+    IcsFilePresenterPlugin.register(with: registrar)
     ecardFeedback = EcardFeedback(registrar: registrar)
     ecardBindTunnel = EcardBindTunnelPlugin(messenger: registrar.messenger())
     watchBridge = WatchConnectivityBridge(registrar: registrar)

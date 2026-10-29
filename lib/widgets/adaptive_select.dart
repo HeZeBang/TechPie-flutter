@@ -24,7 +24,8 @@ class AdaptiveSelect extends StatelessWidget {
     this.placeholder = 'Select',
     this.width = 150,
     this.height = iosMinimumInteractiveDimension,
-    this.useIosNativeMenu = false,
+    this.useIosNativeMenu = true,
+    this.shrinkWrap = false,
     this.accessibilityLabel,
   });
 
@@ -34,7 +35,14 @@ class AdaptiveSelect extends StatelessWidget {
   final String placeholder;
   final double width;
   final double height;
+  /// On iOS, a native pull-down menu (UIMenu). Off, the select is only a
+  /// field showing the value: the caller wraps it in its own tap target and
+  /// presents its own picker (the course editor's wheel sheets do).
   final bool useIosNativeMenu;
+
+  /// iOS native menu only: size the button to its label, as a value control
+  /// in a list row is, instead of [width].
+  final bool shrinkWrap;
   final String? accessibilityLabel;
 
   @override
@@ -49,9 +57,10 @@ class AdaptiveSelect extends StatelessWidget {
         : height;
     if (useIosNativeMenu) {
       return SizedBox(
-        width: effectiveWidth,
+        width: shrinkWrap ? null : effectiveWidth,
         height: effectiveHeight,
         child: IosNativeSelect(
+          shrinkWrap: shrinkWrap,
           value: value,
           placeholder: placeholder,
           accessibilityLabel: accessibilityLabel ?? placeholder,
@@ -80,11 +89,8 @@ class AdaptiveSelect extends StatelessWidget {
           color: CupertinoColors.secondarySystemFill.resolveFrom(context),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: CupertinoButton(
-          minSize: iosMinimumInteractiveDimension,
+        child: Padding(
           padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 10, 0),
-          borderRadius: BorderRadius.circular(10),
-          onPressed: options.isEmpty ? null : () async => _showOptions(context),
           child: Row(
             children: [
               Expanded(
@@ -136,40 +142,6 @@ class AdaptiveSelect extends StatelessWidget {
               if (selection != null) onChanged(selection);
             },
           ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showOptions(BuildContext context) {
-    return showCupertinoModalPopup<void>(
-      context: context,
-      builder: (sheetContext) => CupertinoActionSheet(
-        actions: [
-          for (final option in options)
-            CupertinoActionSheetAction(
-              isDefaultAction: option.value == value,
-              onPressed: () {
-                Navigator.of(sheetContext).pop();
-                onChanged(option.value);
-              },
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 24,
-                    child: option.value == value
-                        ? const Icon(CupertinoIcons.check_mark, size: 18)
-                        : null,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(option.label)),
-                ],
-              ),
-            ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.of(sheetContext).pop(),
-          child: const Text('取消'),
         ),
       ),
     );
