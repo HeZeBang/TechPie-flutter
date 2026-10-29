@@ -82,6 +82,56 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
     return hasSubtitle ? 56.0 : 44.0;
   }
 
+  /// Scrollable counterpart: Cupertino owns the title transition, while the
+  /// toolbar keeps using the native button and menu adapters below.
+  Widget buildSliver(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
+    return CupertinoSliverNavigationBar(
+      automaticallyImplyLeading: false,
+      automaticallyImplyTitle: false,
+      alwaysShowMiddle: false,
+      // Platform views must stay in one toolbar, not be copied into a Hero.
+      transitionBetweenRoutes: false,
+      border: null,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.9),
+      largeTitle: Text(title, style: TextStyle(color: scheme.onSurface)),
+      middle: hasSubtitle
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  subtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                ),
+              ],
+            )
+          : Text(title, style: TextStyle(color: scheme.onSurface)),
+      leading: leadingItems.any((item) => !item.hidden) ? _actions(context, leadingItems) : null,
+      trailing: trailingItems.any((item) => !item.hidden) ? _actions(context, trailingItems) : null,
+      bottom: hasSubtitle
+          ? PreferredSize(
+              preferredSize: const Size.fromHeight(26),
+              child: Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 15, color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!isIos()) return AppBar(title: Text(title));

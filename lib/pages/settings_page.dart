@@ -17,6 +17,7 @@ import '../utils/product_version.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_confirmation_button.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_switch.dart';
@@ -176,7 +177,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ? 0.0
         : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
 
-    return Scaffold(
+    return AdaptiveNavigationScaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
           ? const IosNativeNavigationBar(

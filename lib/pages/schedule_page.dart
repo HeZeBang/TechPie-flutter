@@ -21,6 +21,7 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
@@ -539,7 +540,7 @@ class _SchedulePageState extends State<SchedulePage> {
     final useIosChrome = isIos();
     final useLegacyIosChrome = usesLegacyIosChrome();
 
-    return Scaffold(
+    return AdaptiveNavigationScaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
           ? IosNativeNavigationBar(
@@ -759,6 +760,8 @@ class _SchedulePageState extends State<SchedulePage> {
               )
             : RefreshIndicator(
                 onRefresh: _refresh,
+                notificationPredicate: (notification) =>
+                    notification.metrics.axis == Axis.vertical && notification.depth <= 1,
                 child: useIosChrome
                     ? PageView.builder(
                         controller: _weekPageController,

@@ -18,6 +18,7 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
@@ -280,7 +281,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ? 16.0
         : 16 + adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
 
-    return Scaffold(
+    return AdaptiveNavigationScaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
           ? const IosNativeNavigationBar(title: 'Home', largeTitleMode: true)

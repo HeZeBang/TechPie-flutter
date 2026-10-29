@@ -12,6 +12,7 @@ import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
@@ -153,7 +154,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       builder: (context, _) {
         final allVisible = assignmentService.visibleAssignments;
         final visible = _filterAssignments(allVisible);
-        return Scaffold(
+        return AdaptiveNavigationScaffold(
           extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
           appBar: _selectionMode
               ? _buildSelectionAppBar(context, assignmentService, visible)
