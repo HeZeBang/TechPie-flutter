@@ -1,8 +1,10 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/pages/login_page.dart';
+import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -41,13 +43,33 @@ void main() {
             ? isA<CupertinoPageRoute<void>>()
             : isA<MaterialPageRoute<void>>(),
       );
-      expect(find.byType(AppBar), findsOneWidget);
+      expect(
+        find.byType(platform == TargetPlatform.iOS ? IosNativeNavigationBar : AppBar),
+        findsOneWidget,
+      );
       expect(find.text('TechPie'), findsOneWidget);
       expect(find.text('登录以访问校园服务'), findsOneWidget);
-      expect(find.widgetWithText(FilledButton, '通过 GeekPie Uni-Auth 登录'), findsOneWidget);
+      if (platform == TargetPlatform.iOS) {
+        final login = tester.widgetList<CNButton>(find.byType(CNButton)).singleWhere(
+              (button) => button.semanticLabel == '通过 GeekPie Uni-Auth 登录',
+            );
+        expect(login.config.style, CNButtonStyle.prominentGlass);
+        expect(login.enabled, isTrue);
+        expect(login.onPressed, isNotNull);
+      } else {
+        expect(find.widgetWithText(FilledButton, '通过 GeekPie Uni-Auth 登录'), findsOneWidget);
+      }
       expect(returned, isFalse);
       expect(tester.takeException(), isNull);
-      await tester.pageBack();
+      if (platform == TargetPlatform.iOS) {
+        // Native platform-view taps are delivered through this callback.
+        final back = tester.widgetList<CNButton>(find.byType(CNButton)).singleWhere(
+              (button) => button.semanticLabel == '返回',
+            );
+        back.onPressed!();
+      } else {
+        await tester.pageBack();
+      }
       await tester.pumpAndSettle();
       expect(returned, isTrue);
       expect(find.text('Open login'), findsOneWidget);

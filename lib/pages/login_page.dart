@@ -1,8 +1,10 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -72,12 +74,25 @@ class _LoginPageState extends State<LoginPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(copy.pageTitle),
-        backgroundColor: colorScheme.primaryContainer,
-        foregroundColor: colorScheme.onPrimaryContainer,
-        elevation: 0,
-      ),
+      appBar: isIos()
+          ? IosNativeNavigationBar(
+              title: copy.pageTitle,
+              leadingItems: [
+                if (Navigator.canPop(context))
+                  const IosNativeNavigationBarItem(
+                    id: 'back',
+                    sfSymbol: 'chevron.left',
+                    accessibilityLabel: '返回',
+                  ),
+              ],
+              onItemPressed: (_) => maybePopAdaptivePage<void>(context),
+            )
+          : AppBar(
+              title: Text(copy.pageTitle),
+              backgroundColor: colorScheme.primaryContainer,
+              foregroundColor: colorScheme.onPrimaryContainer,
+              elevation: 0,
+            ),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
@@ -130,20 +145,33 @@ class _LoginPageState extends State<LoginPage> {
                       _InlineFormFeedback(message: _inlineMessage!),
                       const SizedBox(height: 16),
                     ],
-                    FilledButton.icon(
-                      onPressed: _loading ? null : _geekpieLogin,
-                      icon: _loading
-                          ? const SizedBox(
-                              height: 18,
-                              width: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.login),
-                      label: const Text('通过 GeekPie Uni-Auth 登录'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(56),
+                    if (isIos())
+                      CNButton(
+                        label: _loading ? '正在登录…' : '通过 GeekPie Uni-Auth 登录',
+                        onPressed: _loading ? null : _geekpieLogin,
+                        enabled: !_loading,
+                        semanticLabel: _loading ? '正在登录，请稍候' : '通过 GeekPie Uni-Auth 登录',
+                        tint: colorScheme.primary,
+                        config: const CNButtonConfig(
+                          style: CNButtonStyle.prominentGlass,
+                          minHeight: 56,
+                        ),
+                      )
+                    else
+                      FilledButton.icon(
+                        onPressed: _loading ? null : _geekpieLogin,
+                        icon: _loading
+                            ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.login),
+                        label: const Text('通过 GeekPie Uni-Auth 登录'),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(56),
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
