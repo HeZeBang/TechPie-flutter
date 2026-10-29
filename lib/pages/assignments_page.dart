@@ -16,6 +16,7 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/page_refresh.dart';
 import '../widgets/swipeable_card.dart';
 import 'hidden_assignments_page.dart';
 
@@ -237,6 +238,11 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     return BlurredAppBar(
       title: const Text('Deadlines'),
       actions: [
+        if (isLinux())
+          PageRefreshButton(
+            onRefresh: () => _refresh(service),
+            refreshing: service.loading,
+          ),
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert),
           onSelected: (v) {
@@ -425,7 +431,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
           SizedBox(height: topInset),
           banner,
           Expanded(
-            child: RefreshIndicator(
+            child: PageRefreshIndicator(
               onRefresh: () async => _refresh(service),
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -516,7 +522,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     final todayLabel = DateFormat('yyyy-MM-dd EEE').format(now);
     final itemLabel = _filteredItemLabel;
 
-    return RefreshIndicator(
+    return PageRefreshIndicator(
       onRefresh: () async => _refresh(service),
       child: ListView(
         padding: EdgeInsets.fromLTRB(

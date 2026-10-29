@@ -8,6 +8,7 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/page_refresh.dart';
 import '../widgets/scanner/scan_page.dart';
 import 'login_page.dart';
 import 'third_party_accounts_page.dart';
@@ -167,7 +168,20 @@ class _EgateAppPageState extends State<EgateAppPage> {
                 }
               },
             )
-          : const BlurredAppBar(title: Text('校园签到')),
+          : BlurredAppBar(
+              title: const Text('校园签到'),
+              actions: [
+                if (isLinux())
+                  ListenableBuilder(
+                    listenable: Listenable.merge([auth, tpAuth]),
+                    builder: (context, _) => PageRefreshButton(
+                      onRefresh: () => _refresh(service),
+                      enabled: auth.isLoggedIn && tpAuth.hasCpdailyBinding,
+                      refreshing: _loading,
+                    ),
+                  ),
+              ],
+            ),
       body: ListenableBuilder(
         listenable: Listenable.merge([auth, tpAuth]),
         builder: (context, _) {
@@ -225,7 +239,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
             });
           }
 
-          return RefreshIndicator(
+          return PageRefreshIndicator(
             onRefresh: () async => _refresh(service),
             child: ListView(
               padding: EdgeInsets.fromLTRB(16, topInset + 16, 16, 120),
