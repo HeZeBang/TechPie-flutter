@@ -353,21 +353,31 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_checkForUpdatesQuietly());
-    widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
+    _attachEcardWidgetService(widget.ecardWidgetService);
+  }
+
+  void _attachEcardWidgetService(EcardWidgetService? service) {
+    service?.setOpenPayHandler(_openEcardPayCode);
+    service?.onRevealPaymentTarget = appShellCampusCardRevealRequests.request;
+  }
+
+  void _detachEcardWidgetService(EcardWidgetService? service) {
+    service?.clearOpenPayHandler();
+    service?.onRevealPaymentTarget = null;
   }
 
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
-    oldWidget.ecardWidgetService?.clearOpenPayHandler();
-    widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
+    _detachEcardWidgetService(oldWidget.ecardWidgetService);
+    _attachEcardWidgetService(widget.ecardWidgetService);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    widget.ecardWidgetService?.clearOpenPayHandler();
+    _detachEcardWidgetService(widget.ecardWidgetService);
     widget.campusCardService.dispose();
     super.dispose();
   }
@@ -412,9 +422,8 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   }
 
   Future<void> _openEcardPayCode() async {
-    // The shell performs the push: it knows whether the entry belongs inside the
-    // selected destination's stack or on the root navigator, and it is still
-    // there after a cold start.
+    // The shell performs the push: it knows which stack the entry belongs in —
+    // the Home tab's on iOS — and it is still there after a cold start.
     appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
   }
 
