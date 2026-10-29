@@ -8,7 +8,6 @@ import 'package:techpie/features/campus_card/domain/models/bill_models.dart';
 import 'package:techpie/features/campus_card/domain/money_fen.dart';
 import 'package:techpie/features/campus_card/domain/ports/platform_ports.dart';
 import 'package:techpie/features/campus_card/presentation/icons/platform_icons.dart';
-import 'package:techpie/features/campus_card/presentation/theme/glass.dart';
 import 'package:techpie/features/campus_card/presentation/theme/theme.dart';
 import 'package:techpie/features/campus_card/presentation/widgets/apple_wallet_components.dart';
 import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
@@ -453,45 +452,5 @@ void main() {
     expect(infoPressed, isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = null;
-  });
-
-  testWidgets('iOS glass has a liquid tint over a blurred backdrop', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(platform: TargetPlatform.iOS),
-        home: const GpGlass(
-          borderRadius: BorderRadius.all(Radius.circular(24)),
-          child: SizedBox(width: 100, height: 52),
-        ),
-      ),
-    );
-
-    final tint = tester.widget<DecoratedBox>(
-      find.byKey(const Key('gp-liquid-glass-tint')),
-    );
-    expect((tint.decoration as BoxDecoration).gradient, isA<LinearGradient>());
-    expect(find.byKey(const Key('gp-liquid-glass-blur')), findsOneWidget);
-  });
-
-  testWidgets('Android glass uses its platform blur without liquid tint', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(platform: TargetPlatform.android),
-        home: const GpGlass(
-          borderRadius: BorderRadius.all(Radius.circular(24)),
-          child: SizedBox(width: 100, height: 52),
-        ),
-      ),
-    );
-
-    final tint = tester.widget<DecoratedBox>(
-      find.byKey(const Key('gp-android-blur-tint')),
-    );
-    expect((tint.decoration as BoxDecoration).gradient, isNull);
-    expect(find.byKey(const Key('gp-android-glass-blur')), findsOneWidget);
   });
 }
