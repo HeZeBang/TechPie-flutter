@@ -13,7 +13,6 @@ import 'package:techpie/features/campus_card/data/storage/secure_offline_credent
 import 'package:techpie/features/campus_card/domain/models/auth_models.dart';
 import 'package:techpie/features/campus_card/domain/models/card_models.dart';
 import 'package:techpie/features/campus_card/domain/models/offline_models.dart';
-import 'package:techpie/features/campus_card/domain/models/profile_models.dart';
 import 'package:techpie/features/campus_card/domain/money_fen.dart';
 import 'package:techpie/features/campus_card/domain/ports/auth_port.dart';
 import 'package:techpie/features/campus_card/domain/ports/card_ports.dart';
@@ -340,8 +339,6 @@ final class _Cards implements CacheFirstCardRepository {
   Future<CampusCard?> refreshCard() => pending?.future ?? Future.value(card);
   @override
   Future<CampusCard?> currentCard() async => card;
-  @override
-  Future<UserProfile> profile() => throw UnimplementedError();
   @override
   Future<BindCardResult> bind(BindCardCommand command) =>
       throw UnimplementedError();

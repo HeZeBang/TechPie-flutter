@@ -16,7 +16,6 @@ import 'package:techpie/features/campus_card/domain/models/auth_models.dart';
 import 'package:techpie/features/campus_card/domain/models/bill_models.dart';
 import 'package:techpie/features/campus_card/domain/models/card_models.dart';
 import 'package:techpie/features/campus_card/domain/models/payment_models.dart';
-import 'package:techpie/features/campus_card/domain/models/profile_models.dart';
 import 'package:techpie/features/campus_card/domain/money_fen.dart';
 import 'package:techpie/features/campus_card/domain/ports/bill_ports.dart';
 import 'package:techpie/features/campus_card/domain/ports/card_ports.dart';
@@ -557,9 +556,6 @@ final class _PaymentRefreshCards implements CacheFirstCardRepository, CardSnapsh
     return pending == null ? card(2500) : await pending!.future;
   }
 
-  @override
-  Future<UserProfile> profile() async => const UserProfile(
-      displayName: '示例用户', maskedCardNumber: '****0001', positionName: '学生',);
   @override
   Future<BindCardResult> bind(BindCardCommand command) =>
       throw UnimplementedError();

@@ -1,11 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/campus_card/application/campus_network_status.dart';
 import 'package:techpie/features/campus_card/core/errors/app_failure.dart';
 import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/features/campus_card/data/repositories/ecard_card_repository.dart';
 import 'package:techpie/features/campus_card/data/storage/secure_card_cache.dart';
 import 'package:techpie/features/campus_card/domain/models/card_models.dart';
-import 'package:techpie/features/campus_card/domain/models/payment_models.dart';
 import 'package:techpie/features/campus_card/domain/money_fen.dart';
 
 import '../support/fake_ecard_transport.dart';
@@ -93,11 +91,8 @@ void main() {
     await onlineRepository.refreshCard();
 
     final offline = FakeEcardTransport();
-    final network = CampusNetworkStatus(connectivity: InMemoryConnectivityPort());
-    addTearDown(network.dispose);
     final offlineRepository = EcardCardRepository(
       offline,
-      networkStatus: network,
       cache: cache,
       purgeLocalSecurityState: () async {},
       verifiedIdSerialReader: () async => verifiedIdSerial,
@@ -108,13 +103,6 @@ void main() {
     expect(cached.balance, const MoneyFen(5123));
     expect(cached.offlineCodeAllowed, isTrue);
     expect(offline.requests, isEmpty);
-
-    offline.enqueue('POST', '/myaccount/openMyAccountApp', Future<Object?>.error(
-      const AppFailure(FailureKind.network, 'synthetic network error'),
-    ),);
-    final profile = await offlineRepository.profile();
-    expect(profile.displayName, '缓存用户');
-    expect(network.state, PaymentConnectionState.apiError);
 
     subject = 'different-subject';
     expect(await cache.read(), isNull);

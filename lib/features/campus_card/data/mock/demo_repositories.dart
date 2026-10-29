@@ -5,7 +5,6 @@ import '../../domain/models/bill_models.dart';
 import '../../domain/models/card_models.dart';
 import '../../domain/models/offline_models.dart';
 import '../../domain/models/payment_models.dart';
-import '../../domain/models/profile_models.dart';
 import '../../domain/models/scan_models.dart';
 import '../../domain/models/security_models.dart';
 import '../../domain/money_fen.dart';
@@ -149,13 +148,6 @@ final class DemoCardRepository implements CardRepository {
       offlineCodeAllowed: true,
     );
   }
-
-  @override
-  Future<UserProfile> profile() async => const UserProfile(
-        displayName: '极客同学',
-        maskedCardNumber: '••••0001',
-        positionName: '学生',
-      );
 
   @override
   Future<BindCardResult> bind(BindCardCommand command) async {

@@ -20,7 +20,6 @@ import '../domain/models/bill_models.dart';
 import '../domain/models/card_models.dart';
 import '../domain/models/offline_models.dart';
 import '../domain/models/payment_models.dart';
-import '../domain/models/profile_models.dart';
 import '../domain/models/scan_models.dart';
 import '../domain/models/security_models.dart';
 import '../domain/money_fen.dart';
@@ -226,7 +225,6 @@ final class AuthController extends AsyncNotifier<AuthSnapshot> {
   void _invalidateAccountProviders({bool resetOfflineMode = true}) {
     ref.invalidate(accountHistoryRefreshProvider);
     ref.invalidate(cardControllerProvider);
-    ref.invalidate(profileControllerProvider);
     ref.invalidate(transactionDetailProvider);
     ref.invalidate(transactionFeedProvider);
     ref.invalidate(offlineAuthorizationProvider);
@@ -407,32 +405,6 @@ final class CardController extends AsyncNotifier<CampusCard?> {
     }
     if (snapshotRevision == _snapshotRevision) state = result;
     _throwAsyncError(result);
-  }
-}
-
-final profileControllerProvider =
-    AsyncNotifierProvider<ProfileController, UserProfile>(
-  ProfileController.new,
-);
-
-final class ProfileController extends AsyncNotifier<UserProfile> {
-  int _generation = 0;
-
-  @override
-  Future<UserProfile> build() {
-    _generation++;
-    ref.onDispose(() => _generation++);
-    return ref.watch(appRuntimeProvider).cards.profile();
-  }
-
-  Future<void> refresh() async {
-    final generation = _generation;
-    state = const AsyncLoading();
-    final next =
-        await AsyncValue.guard(ref.read(appRuntimeProvider).cards.profile);
-    if (generation != _generation) return;
-    state = next;
-    _throwAsyncError(state);
   }
 }
 
@@ -862,7 +834,6 @@ final class ScanPaymentNotifier extends AutoDisposeNotifier<ScanFlowState> {
     // Start while success is displayed; closing the scanner does not cancel
     // account refreshes or turn a confirmed payment into a failure.
     final cardRefresh = ref.read(cardControllerProvider.notifier).refresh();
-    ref.invalidate(profileControllerProvider);
     ref.invalidate(transactionDetailProvider);
     final historyRefresh =
         ref.read(accountHistoryRefreshProvider).refresh(fresh: true);
