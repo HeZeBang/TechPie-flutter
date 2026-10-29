@@ -1,7 +1,13 @@
 PODS:
+  - connectivity_plus (0.0.1):
+    - FlutterMacOS
+  - cupertino_native_better (0.0.1):
+    - FlutterMacOS
   - desktop_webview_window (0.0.1):
     - FlutterMacOS
   - dynamic_color (0.0.2):
+    - FlutterMacOS
+  - file_selector_macos (0.0.1):
     - FlutterMacOS
   - flutter_inappwebview_macos (0.0.1):
     - FlutterMacOS
@@ -9,11 +15,16 @@ PODS:
   - flutter_secure_storage_macos (6.1.3):
     - FlutterMacOS
   - FlutterMacOS (1.0.0)
+  - mobile_scanner (7.0.0):
+    - Flutter
+    - FlutterMacOS
   - OrderedSet (6.0.3)
   - package_info_plus (0.0.1):
     - FlutterMacOS
   - path_provider_foundation (0.0.1):
     - Flutter
+    - FlutterMacOS
+  - screen_brightness_macos (0.1.0):
     - FlutterMacOS
   - shared_preferences_foundation (0.0.1):
     - Flutter
@@ -25,13 +36,18 @@ PODS:
     - FlutterMacOS
 
 DEPENDENCIES:
+  - connectivity_plus (from `Flutter/ephemeral/.symlinks/plugins/connectivity_plus/macos`)
+  - cupertino_native_better (from `Flutter/ephemeral/.symlinks/plugins/cupertino_native_better/macos`)
   - desktop_webview_window (from `Flutter/ephemeral/.symlinks/plugins/desktop_webview_window/macos`)
   - dynamic_color (from `Flutter/ephemeral/.symlinks/plugins/dynamic_color/macos`)
+  - file_selector_macos (from `Flutter/ephemeral/.symlinks/plugins/file_selector_macos/macos`)
   - flutter_inappwebview_macos (from `Flutter/ephemeral/.symlinks/plugins/flutter_inappwebview_macos/macos`)
   - flutter_secure_storage_macos (from `Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_macos/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
+  - mobile_scanner (from `Flutter/ephemeral/.symlinks/plugins/mobile_scanner/darwin`)
   - package_info_plus (from `Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos`)
   - path_provider_foundation (from `Flutter/ephemeral/.symlinks/plugins/path_provider_foundation/darwin`)
+  - screen_brightness_macos (from `Flutter/ephemeral/.symlinks/plugins/screen_brightness_macos/macos`)
   - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
   - url_launcher_macos (from `Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos`)
   - webview_flutter_wkwebview (from `Flutter/ephemeral/.symlinks/plugins/webview_flutter_wkwebview/darwin`)
@@ -41,20 +57,30 @@ SPEC REPOS:
     - OrderedSet
 
 EXTERNAL SOURCES:
+  connectivity_plus:
+    :path: Flutter/ephemeral/.symlinks/plugins/connectivity_plus/macos
+  cupertino_native_better:
+    :path: Flutter/ephemeral/.symlinks/plugins/cupertino_native_better/macos
   desktop_webview_window:
     :path: Flutter/ephemeral/.symlinks/plugins/desktop_webview_window/macos
   dynamic_color:
     :path: Flutter/ephemeral/.symlinks/plugins/dynamic_color/macos
+  file_selector_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/file_selector_macos/macos
   flutter_inappwebview_macos:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_inappwebview_macos/macos
   flutter_secure_storage_macos:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_macos/macos
   FlutterMacOS:
     :path: Flutter/ephemeral
+  mobile_scanner:
+    :path: Flutter/ephemeral/.symlinks/plugins/mobile_scanner/darwin
   package_info_plus:
     :path: Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos
   path_provider_foundation:
     :path: Flutter/ephemeral/.symlinks/plugins/path_provider_foundation/darwin
+  screen_brightness_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/screen_brightness_macos/macos
   shared_preferences_foundation:
     :path: Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin
   url_launcher_macos:
@@ -63,18 +89,23 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/webview_flutter_wkwebview/darwin
 
 SPEC CHECKSUMS:
+  connectivity_plus: 4adf20a405e25b42b9c9f87feff8f4b6fde18a4e
+  cupertino_native_better: f3d095ef3139e3feb549a3140f6288255e5e56a3
   desktop_webview_window: 7e37af677d6d19294cb433d9b1d878ef78dffa4d
   dynamic_color: b820c000cc68df65e7ba7ff177cb98404ce56651
+  file_selector_macos: 6280b52b459ae6c590af5d78fc35c7267a3c4b31
   flutter_inappwebview_macos: c2d68649f9f8f1831bfcd98d73fd6256366d9d1d
   flutter_secure_storage_macos: 7f45e30f838cf2659862a4e4e3ee1c347c2b3b54
-  FlutterMacOS: 8f6f14fa908a6fb3fba0cd85dbd81ec4b251fb24
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
   OrderedSet: e539b66b644ff081c73a262d24ad552a69be3a94
   package_info_plus: 122abb51244f66eead59ce7c9c200d6b53111779
   path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
+  screen_brightness_macos: 09aa40f72b71c5dc51d72eba86938da580f6dab8
   shared_preferences_foundation: 9e1978ff2562383bd5676f64ec4e9aa8fa06a6f7
   url_launcher_macos: 0fba8ddabfc33ce0a9afe7c5fef5aab3d8d2d673
   webview_flutter_wkwebview: 1821ceac936eba6f7984d89a9f3bcb4dea99ebb2
 
-PODFILE CHECKSUM: 54d867c82ac51cbd61b565781b9fada492027009
+PODFILE CHECKSUM: 346bfb2deb41d4a6ebd6f6799f92188bde2d246f
 
-COCOAPODS: 1.16.2
+COCOAPODS: 1.17.0
