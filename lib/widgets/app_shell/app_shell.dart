@@ -20,9 +20,9 @@ import 'mobile_shell.dart';
 /// shortcut, a `techpie://ecard/pay` link — that has not been shown yet.
 ///
 /// The shell owns the push because the shell is what knows where the page
-/// belongs: inside the selected destination's stack on a wide window, on the
-/// root navigator on a phone. A value set before the shell mounts waits for it,
-/// which is what a cold start needs.
+/// belongs: inside the selected tab on iOS or the destination on a wide
+/// window, and on the root navigator otherwise. A value set before the shell
+/// mounts waits for it, which is what a cold start needs.
 final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
 
 class AppShell extends StatefulWidget {
@@ -121,10 +121,10 @@ class _AppShellState extends State<AppShell> {
     final entry = appShellPendingEcardEntry.value;
     if (entry == null || !mounted) return;
     appShellPendingEcardEntry.value = null;
-    // Inside the selected destination's stack on a wide window (the sidebar
-    // stays), on the root navigator on a phone — the same place any other page
-    // goes.
-    final nested = _contentNavigatorKeys[_selectedIndex]?.currentContext;
+    // Use the selected tab on iOS, including cold-start widget/deep-link entries.
+    final nested = isIos()
+        ? _tabNavigatorKeys[_selectedIndex]?.currentContext
+        : _contentNavigatorKeys[_selectedIndex]?.currentContext;
     unawaited(
       pushAdaptivePage<void>(
         nested ?? context,

@@ -1,3 +1,4 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,7 +8,9 @@ import 'package:techpie/features/campus_card/app/demo_runtime_factory.dart';
 import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/features/campus_card/domain/models/auth_models.dart';
 import 'package:techpie/main.dart';
+import 'package:techpie/models/feature.dart';
 import 'package:techpie/pages/campus_card_page.dart';
+import 'package:techpie/pages/home_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -83,23 +86,28 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('a tap that arrives before the shell exists still opens the code', (
-    tester,
-  ) async {
-    // The widget was tapped while TechPie was still starting: main can only
-    // record the intent, and the shell has to honour it once it mounts.
-    appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
+  testWidgets(
+    'a tap that arrives before the shell exists still opens the code',
+    (
+      tester,
+    ) async {
+      // The widget was tapped while TechPie was still starting: main can only
+      // record the intent, and the shell has to honour it once it mounts.
+      appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
 
-    await pumpApp(tester);
+      await pumpApp(tester);
 
-    expect(find.byKey(const Key('payment-code-page')), findsOneWidget);
-    expect(find.byType(CampusCardPage), findsOneWidget);
-    expect(
-      appShellPendingEcardEntry.value,
-      isNull,
-      reason: 'the intent is consumed once, not replayed on every rebuild',
-    );
-  });
+      expect(find.byKey(const Key('payment-code-page')), findsOneWidget);
+      expect(find.byType(CampusCardPage), findsOneWidget);
+      expect(find.byType(CNTabBar), findsOneWidget);
+      expect(
+        appShellPendingEcardEntry.value,
+        isNull,
+        reason: 'the intent is consumed once, not replayed on every rebuild',
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
   testWidgets('a tap opens the code over the destination the user is on', (
     tester,
@@ -137,4 +145,30 @@ void main() {
     expect(find.byType(CampusCardPage), findsNothing);
     expect(find.text('Settings'), findsWidgets);
   });
+
+  testWidgets(
+    'campus-card feature stays in its tab when switching away and back',
+    (tester) async {
+      await pumpApp(tester);
+      featureEntries.singleWhere((feature) => feature.id == 'campus_card').nativeEntry!(
+        tester.element(find.byType(HomePage)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('payment-code-page')), findsOneWidget);
+      expect(find.byType(CNTabBar), findsOneWidget);
+
+      tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(3);
+      await tester.pumpAndSettle();
+      expect(find.byType(CampusCardPage), findsNothing);
+      tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(0);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('payment-code-page')), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(CampusCardPage), findsNothing);
+      expect(find.byType(HomePage), findsOneWidget);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 }
