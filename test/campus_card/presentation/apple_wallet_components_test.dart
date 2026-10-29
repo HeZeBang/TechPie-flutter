@@ -461,6 +461,8 @@ void main() {
     group.buttons.first.onPressed!();
     expect(infoPressed, isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
+    // CNIcon's startup guard leaves a 500ms timer on the Linux fallback path.
+    await tester.pump(const Duration(milliseconds: 500));
     debugDefaultTargetPlatformOverride = null;
   });
 
