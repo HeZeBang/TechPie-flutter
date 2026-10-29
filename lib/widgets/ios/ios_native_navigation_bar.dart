@@ -1,8 +1,6 @@
-import 'dart:async';
-import 'dart:convert';
-
+import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:techpie/utils/platform.dart';
 
 enum IosNativeNavigationBarItemRole { normal, done, destructive }
@@ -29,20 +27,6 @@ class IosNativeNavigationBarItem {
   final String? accessibilityLabel;
   final String? placementGroup;
   final List<IosNativeNavigationBarMenuItem> menuItems;
-
-  Map<String, Object?> toMap() {
-    return <String, Object?>{
-      'id': id,
-      'title': title,
-      'sfSymbol': sfSymbol,
-      'role': role.name,
-      'enabled': enabled,
-      'hidden': hidden,
-      'accessibilityLabel': accessibilityLabel,
-      'placementGroup': placementGroup,
-      'menuItems': menuItems.map((item) => item.toMap()).toList(),
-    };
-  }
 }
 
 class IosNativeNavigationBarMenuItem {
@@ -63,22 +47,9 @@ class IosNativeNavigationBarMenuItem {
   final bool destructive;
   final bool displayInline;
   final List<IosNativeNavigationBarMenuItem> children;
-
-  Map<String, Object?> toMap() {
-    return <String, Object?>{
-      'value': value,
-      'title': title,
-      'sfSymbol': sfSymbol,
-      'checked': checked,
-      'destructive': destructive,
-      'displayInline': displayInline,
-      'children': children.map((item) => item.toMap()).toList(),
-    };
-  }
 }
 
-class IosNativeNavigationBar extends StatefulWidget
-    implements PreferredSizeWidget {
+class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWidget {
   const IosNativeNavigationBar({
     super.key,
     required this.title,
@@ -106,124 +77,193 @@ class IosNativeNavigationBar extends StatefulWidget
   double get _barHeight {
     final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
     if (largeTitleMode) {
-      return hasSubtitle && usesIosLiquidGlass() ? 112.0 : 96.0;
+      return hasSubtitle ? 112.0 : 96.0;
     }
     return hasSubtitle ? 56.0 : 44.0;
   }
 
   @override
-  State<IosNativeNavigationBar> createState() => _IosNativeNavigationBarState();
-}
-
-class _IosNativeNavigationBarState extends State<IosNativeNavigationBar> {
-  MethodChannel? _channel;
-  Brightness _brightness = Brightness.light;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final brightness = Theme.of(context).brightness;
-    if (_brightness == brightness) return;
-    _brightness = brightness;
-    final channel = _channel;
-    if (channel != null) unawaited(_sendConfigurationUpdate(channel));
-  }
-
-  @override
-  void didUpdateWidget(covariant IosNativeNavigationBar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final channel = _channel;
-    if (channel == null || !_configurationChanged(oldWidget)) return;
-    unawaited(_sendConfigurationUpdate(channel));
-  }
-
-  @override
-  void dispose() {
-    _channel?.setMethodCallHandler(null);
-    _channel = null;
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (!isIos()) return AppBar(title: Text(widget.title));
-
+    if (!isIos()) return AppBar(title: Text(title));
+    final scheme = Theme.of(context).colorScheme;
+    final titleWidget = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: largeTitleMode ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      children: [
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: largeTitleMode ? 34 : 17,
+            height: 1.15,
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurface,
+          ),
+        ),
+        if (subtitle != null && subtitle!.isNotEmpty)
+          Text(
+            subtitle!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: largeTitleMode ? 15 : 12,
+              height: 1.15,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+      ],
+    );
     return SafeArea(
       bottom: false,
       child: SizedBox(
-        height: widget._barHeight,
-        child: UiKitView(
-          viewType: _viewType,
-          layoutDirection: Directionality.of(context),
-          creationParams: _configuration,
-          creationParamsCodec: const StandardMessageCodec(),
-          onPlatformViewCreated: _onPlatformViewCreated,
+        height: _barHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              SizedBox(
+                height: largeTitleMode ? 44 : _barHeight,
+                child: Row(
+                  children: [
+                    _actions(context, leadingItems),
+                    Expanded(child: largeTitleMode ? const SizedBox() : titleWidget),
+                    _actions(context, trailingItems),
+                  ],
+                ),
+              ),
+              if (largeTitleMode)
+                Expanded(
+                  child: Align(alignment: AlignmentDirectional.centerStart, child: titleWidget),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  bool _configurationChanged(IosNativeNavigationBar oldWidget) {
-    return _signature(oldWidget) != _signature(widget);
+  Widget _actions(BuildContext context, List<IosNativeNavigationBarItem> items) {
+    final visible = items.where((item) => !item.hidden).toList();
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.4,
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < visible.length; i++) ...[
+              if (i > 0)
+                SizedBox(
+                  width: visible[i].placementGroup == visible[i - 1].placementGroup ? 4 : 12,
+                ),
+              _action(context, visible[i]),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
-  Object _signature(IosNativeNavigationBar widget) {
-    return jsonEncode(<String, Object?>{
-      'title': widget.title,
-      'subtitle': widget.subtitle,
-      'leadingItems': widget.leadingItems.map((item) => item.toMap()).toList(),
-      'trailingItems':
-          widget.trailingItems.map((item) => item.toMap()).toList(),
-      'selectionMode': widget.selectionMode,
-      'largeTitleMode': widget.largeTitleMode,
-    });
-  }
-
-  Map<String, Object?> get _configuration => <String, Object?>{
-        'brightness': _brightness.name,
-        'title': widget.title,
-        'subtitle': widget.subtitle,
-        'leadingItems':
-            widget.leadingItems.map((item) => item.toMap()).toList(),
-        'trailingItems':
-            widget.trailingItems.map((item) => item.toMap()).toList(),
-        'selectionMode': widget.selectionMode,
-        'largeTitleMode': widget.largeTitleMode,
-      };
-
-  Future<void> _sendConfigurationUpdate(MethodChannel channel) async {
-    try {
-      await channel.invokeMethod<void>('updateConfiguration', _configuration);
-    } on PlatformException {
-      // Platform view may be tearing down.
-    } on MissingPluginException {
-      // Platform view may not be wired yet.
-    }
-  }
-
-  void _onPlatformViewCreated(int viewId) {
-    final channel = MethodChannel('$_channelPrefix/$viewId');
-    _channel?.setMethodCallHandler(null);
-    _channel = channel;
-    unawaited(_sendConfigurationUpdate(channel));
-
-    channel.setMethodCallHandler((call) async {
-      final arguments = call.arguments as Map<Object?, Object?>?;
-      switch (call.method) {
-        case 'onItemPressed':
-          final id = arguments?['id'] as String?;
-          if (id != null) widget.onItemPressed?.call(id);
-        case 'onMenuSelected':
-          final id = arguments?['id'] as String?;
-          final value = arguments?['value'] as String?;
-          if (id != null && value != null) {
-            widget.onMenuSelected?.call(id, value);
+  Widget _action(BuildContext context, IosNativeNavigationBarItem item) {
+    final tint = item.role == IosNativeNavigationBarItemRole.destructive
+        ? CupertinoColors.systemRed.resolveFrom(context)
+        : Theme.of(context).colorScheme.primary;
+    final label = item.accessibilityLabel ?? item.title ?? item.id;
+    if (item.menuItems.isNotEmpty) {
+      // Inline UIMenu sections map to dividers. Named submenus retain their
+      // hierarchy in the label because CNPopupMenuButton has a flat API.
+      final entries = <CNPopupMenuEntry>[];
+      final values = <String?>[];
+      void addItems(List<IosNativeNavigationBarMenuItem> items, String prefix) {
+        for (final entry in items) {
+          if (entry.children.isNotEmpty) {
+            if (entries.isNotEmpty && entries.last is! CNPopupMenuDivider) {
+              entries.add(const CNPopupMenuDivider());
+              values.add(null);
+            }
+            addItems(
+              entry.children,
+              entry.displayInline || entry.title.isEmpty ? prefix : '$prefix${entry.title} › ',
+            );
+          } else {
+            entries.add(
+              CNPopupMenuItem(
+                label: '$prefix${entry.title}',
+                icon: entry.sfSymbol == null ? null : CNSymbol(entry.sfSymbol!),
+                checked: entry.checked,
+                isDestructive: entry.destructive,
+              ),
+            );
+            values.add(entry.value);
           }
+        }
       }
-      return null;
-    });
+
+      addItems(item.menuItems, '');
+      void select(int index) {
+        if (item.enabled && index >= 0 && index < values.length && values[index] != null) {
+          onMenuSelected?.call(item.id, values[index]!);
+        }
+      }
+
+      final menu = item.sfSymbol != null
+          ? CNPopupMenuButton.icon(
+              buttonIcon: CNSymbol(item.sfSymbol!),
+              semanticLabel: label,
+              items: entries,
+              onSelected: select,
+              tint: tint,
+            )
+          : CNPopupMenuButton(
+              buttonLabel: item.title ?? label,
+              semanticLabel: label,
+              items: entries,
+              onSelected: select,
+              height: 44,
+              shrinkWrap: true,
+              buttonStyle: CNButtonStyle.glass,
+              tint: tint,
+            );
+      return IgnorePointer(
+        ignoring: !item.enabled,
+        child: Opacity(opacity: item.enabled ? 1 : 0.4, child: menu),
+      );
+    }
+    final config = CNButtonConfig(
+      style: item.role == IosNativeNavigationBarItemRole.done
+          ? CNButtonStyle.prominentGlass
+          : CNButtonStyle.glass,
+      minHeight: 44,
+      shrinkWrap: true,
+      glassEffectUnionId: item.placementGroup,
+    );
+    final callback = item.enabled ? () => onItemPressed?.call(item.id) : null;
+    if (item.title != null && item.title!.isNotEmpty) {
+      return CNButton(
+        label: item.title!,
+        icon: item.sfSymbol == null ? null : CNSymbol(item.sfSymbol!),
+        semanticLabel: label,
+        onPressed: callback,
+        enabled: item.enabled,
+        tint: tint,
+        config: config,
+      );
+    }
+    return CNButton.icon(
+      icon: CNSymbol(item.sfSymbol ?? 'ellipsis'),
+      semanticLabel: label,
+      onPressed: callback,
+      enabled: item.enabled,
+      tint: tint,
+      config: CNButtonConfig(
+        style: config.style,
+        width: 44,
+        minHeight: 44,
+        glassEffectUnionId: item.placementGroup,
+      ),
+    );
   }
 }
-
-const _viewType = 'techpie/native_navigation_bar';
-const _channelPrefix = 'techpie/native_navigation_bar';

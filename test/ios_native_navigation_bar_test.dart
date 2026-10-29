@@ -1,102 +1,110 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  testWidgets('iOS header is backed by the native navigation bar', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('header preserves subtitle, grouped menu values and disabled actions',
+      (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-
+    final selected = <String>[];
+    final taps = <String>[];
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
         home: Scaffold(
           appBar: IosNativeNavigationBar(
-            title: 'Cloud sync',
-            leadingItems: [
+            title: 'Schedule',
+            subtitle: '2026 秋季',
+            largeTitleMode: true,
+            leadingItems: const [
+              IosNativeNavigationBarItem(id: 'back', title: 'Back', enabled: false),
+              IosNativeNavigationBarItem(id: 'hidden', title: 'Hidden', hidden: true),
+            ],
+            trailingItems: const [
               IosNativeNavigationBarItem(
-                id: 'back',
-                title: 'Settings',
-                sfSymbol: 'chevron.left',
-                accessibilityLabel: '返回 Settings',
+                id: 'more',
+                sfSymbol: 'ellipsis',
+                accessibilityLabel: '更多操作',
+                menuItems: [
+                  IosNativeNavigationBarMenuItem(
+                    value: 'saturday',
+                    title: 'Saturday',
+                    checked: true,
+                  ),
+                  IosNativeNavigationBarMenuItem(
+                    value: 'section',
+                    title: '',
+                    displayInline: true,
+                    children: [
+                      IosNativeNavigationBarMenuItem(value: 'export', title: 'Export'),
+                    ],
+                  ),
+                ],
               ),
             ],
+            onItemPressed: taps.add,
+            onMenuSelected: (id, value) => selected.add('$id:$value'),
           ),
-          body: SizedBox(),
         ),
       ),
     );
-
-    final platformView = tester.widget<UiKitView>(find.byType(UiKitView));
-    expect(platformView.viewType, 'techpie/native_navigation_bar');
-    expect(platformView.creationParams, {
-      'brightness': 'light',
-      'title': 'Cloud sync',
-      'subtitle': null,
-      'leadingItems': [
-        {
-          'id': 'back',
-          'title': 'Settings',
-          'sfSymbol': 'chevron.left',
-          'role': 'normal',
-          'enabled': true,
-          'hidden': false,
-          'accessibilityLabel': '返回 Settings',
-          'placementGroup': null,
-          'menuItems': <Object?>[],
-        },
-      ],
-      'trailingItems': <Object?>[],
-      'selectionMode': false,
-      'largeTitleMode': false,
-    });
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('2026 秋季'), findsOneWidget);
+    final button = tester.widget<CNButton>(find.byType(CNButton));
+    expect(button.enabled, false);
+    expect(button.onPressed, null);
+    expect(taps, isEmpty);
+    final menu = tester.widget<CNPopupMenuButton>(find.byType(CNPopupMenuButton));
+    expect(menu.semanticLabel, '更多操作');
+    expect((menu.items.first as CNPopupMenuItem).checked, true);
+    expect(menu.items[1], isA<CNPopupMenuDivider>());
+    menu.onSelected(1);
+    menu.onSelected(99);
+    menu.onSelected(2);
+    expect(selected, ['more:export']);
+    expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
-  testWidgets('native header follows app theme changes without recreation',
-      (tester) async {
+
+  testWidgets('compact header fits narrow windows and follows app theme', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    final theme = ValueNotifier(ThemeData.light());
-    addTearDown(theme.dispose);
-    final updates = <Map<Object?, Object?>>[];
-    const channel = MethodChannel('techpie/native_navigation_bar/987');
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      channel,
-      (call) async {
-        updates.add(call.arguments as Map<Object?, Object?>);
-        return null;
-      },
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null),
-    );
-    const page = Scaffold(
-      appBar: IosNativeNavigationBar(title: 'Settings'),
-    );
-    await tester.pumpWidget(
-      ValueListenableBuilder<ThemeData>(
-        valueListenable: theme,
-        builder: (_, value, child) => MaterialApp(theme: value, home: child),
-        child: page,
-      ),
-    );
-    final platformView = tester.widget<UiKitView>(find.byType(UiKitView));
-    platformView.onPlatformViewCreated!(987);
-    await tester.pump();
-    expect(updates.last['brightness'], 'light');
-    for (final value in [
-      ThemeData.dark(),
-      ThemeData.dark().copyWith(scaffoldBackgroundColor: Colors.black),
-      ThemeData.light(),
-    ]) {
-      theme.value = value;
-      await tester.pumpAndSettle();
-      expect(updates.last['brightness'], value.brightness.name);
-      expect(find.byType(UiKitView), findsOneWidget);
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    for (final theme in [ThemeData.light(), ThemeData.dark()]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: const Scaffold(
+            appBar: IosNativeNavigationBar(
+              title: 'Long account settings title',
+              subtitle: 'Subtitle',
+              leadingItems: [
+                IosNativeNavigationBarItem(
+                  id: 'back',
+                  title: '返回 Settings',
+                  sfSymbol: 'chevron.left',
+                ),
+              ],
+              trailingItems: [
+                IosNativeNavigationBarItem(
+                  id: 'save',
+                  title: 'Save',
+                  role: IosNativeNavigationBarItemRole.done,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      final title = tester.widget<Text>(find.text('Long account settings title'));
+      expect(title.style!.color, theme.colorScheme.onSurface);
+      expect(tester.takeException(), isNull);
     }
     debugDefaultTargetPlatformOverride = null;
   });

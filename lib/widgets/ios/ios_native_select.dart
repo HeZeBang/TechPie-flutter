@@ -11,8 +11,6 @@ class IosNativeSelectOption {
   final String value;
   final String label;
   final String? sfSymbol;
-
-  Map<String, Object?> toMap() => {'value': value, 'label': label, 'sfSymbol': sfSymbol};
 }
 
 class IosNativeSelect extends StatelessWidget {

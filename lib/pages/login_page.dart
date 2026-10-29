@@ -1,14 +1,10 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
-import '../services/auth_service.dart';
-import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
-import '../services/uni_auth_service.dart';
 import '../utils/platform.dart';
-import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 
@@ -37,72 +33,14 @@ const _loginPageCopy = _LoginPageCopy(
   subtitle: '登录以访问校园服务',
 );
 
-const MethodChannel _nativeGlassPresenterChannel = MethodChannel(
-  'techpie/native_glass_presenter',
-);
-
 Future<void> presentLoginPage(BuildContext context) async {
   if (isIos() && usesIosLiquidGlass()) {
-    final sp = ServiceProvider.of(context);
-    await _presentNativeLoginSheet(
-      authService: sp.authService,
-      uniAuthService: sp.uniAuthService,
-      scheduleService: sp.scheduleService,
+    await CNBottomSheet.showCupertino<void>(
+      context: context,
+      pageBuilder: (_) => const LoginPage(),
     );
-    return;
-  }
-
-  if (context.mounted) {
-    await pushAdaptivePage<void>(
-      context,
-      builder: (_) => const LoginPage(),
-    );
-  }
-}
-
-Future<void> _presentNativeLoginSheet({
-  required AuthService authService,
-  required UniAuthService uniAuthService,
-  required ScheduleService scheduleService,
-}) async {
-  _nativeGlassPresenterChannel.setMethodCallHandler((call) async {
-    Future<Map<String, Object?>> runAction(
-      Future<void> Function() action,
-    ) async {
-      try {
-        await action();
-        return const <String, Object?>{'ok': true};
-      } catch (error) {
-        return <String, Object?>{'ok': false, 'message': '$error'};
-      }
-    }
-
-    switch (call.method) {
-      case 'nativeLoginSheet.geekpieLogin':
-        return runAction(() async {
-          // The SDK manages its own WebView — no BuildContext needed.
-          final tokens = await uniAuthService.loginSdkOnly();
-          await authService.geekpieLogin(tokens);
-          scheduleService.requestFetch(force: true);
-        });
-      default:
-        throw MissingPluginException(
-          'Unknown login sheet action ${call.method}',
-        );
-    }
-  });
-
-  try {
-    await _nativeGlassPresenterChannel.invokeMethod<void>(
-      'presentLoginSheet',
-      <String, Object?>{
-        'pageTitle': _loginPageCopy.pageTitle,
-        'brandName': _loginPageCopy.brandName,
-        'subtitle': _loginPageCopy.subtitle,
-      },
-    );
-  } finally {
-    _nativeGlassPresenterChannel.setMethodCallHandler(null);
+  } else if (context.mounted) {
+    await pushAdaptivePage<void>(context, builder: (_) => const LoginPage());
   }
 }
 
@@ -118,10 +56,13 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       final sp = ServiceProvider.of(context);
-      final tokens = await sp.uniAuthService.login(context);
+      final login = isIos() && usesIosLiquidGlass()
+          ? sp.uniAuthService.loginSdkOnly()
+          : sp.uniAuthService.login(context);
+      final tokens = await login;
       await sp.authService.geekpieLogin(tokens);
+      sp.scheduleService.requestFetch(force: true);
       if (mounted) {
-        sp.scheduleService.requestFetch(force: true);
         Navigator.pop(context);
       }
     } catch (e) {
@@ -264,15 +205,16 @@ class _LoginPageState extends State<LoginPage> {
               _IosInlineFeedback(message: _inlineMessage!),
               const SizedBox(height: 16),
             ],
-            AdaptiveButton(
+            CNButton(
+              label: _loading ? '正在登录…' : '通过 GeekPie Uni-Auth 登录',
               onPressed: _loading ? null : _geekpieLogin,
-              icon: Icons.login,
-              sfSymbol: 'person.crop.circle.badge.plus',
-              label: '通过 GeekPie Uni-Auth 登录',
-              role: AdaptiveButtonRole.prominent,
-              loading: _loading,
-              height: liquidGlass ? 56 : 52,
-              accessibilityLabel: '通过 GeekPie Uni-Auth 登录',
+              enabled: !_loading,
+              semanticLabel: _loading ? '正在登录，请稍候' : '通过 GeekPie Uni-Auth 登录',
+              tint: theme.colorScheme.primary,
+              config: CNButtonConfig(
+                style: CNButtonStyle.prominentGlass,
+                minHeight: liquidGlass ? 56 : 52,
+              ),
             ),
           ],
         ),

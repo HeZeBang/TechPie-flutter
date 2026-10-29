@@ -157,7 +157,7 @@ class UniAuthService extends ChangeNotifier {
   }
 
   /// Open the GeekPie Uni-Auth login using a system browser (no BuildContext).
-  /// Used by the native iOS liquid glass login sheet.
+  /// Used by the iOS login sheet so authentication can outlive the sheet.
   Future<SsoTokens> loginSdkOnly() async {
     _loading = true;
     notifyListeners();
