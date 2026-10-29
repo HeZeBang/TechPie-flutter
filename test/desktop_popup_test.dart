@@ -59,6 +59,7 @@ void main() {
       width: 260,
       placement: DesktopPopoverPlacement.belowEnd,
       offset: const Offset(0, 8),
+      scrollable: true,
       builder: (context, close) => _themeLikeMenu(),
     );
   }
@@ -66,26 +67,35 @@ void main() {
   testWidgets('flips above the anchor when it does not fit below (#139)', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.physicalSize = const Size(1600, 640);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    // Anchor bottom at y=428: below it there is only the nav bar (72px) and a
-    // margin, far less than the menu's 238px.
-    await pumpTablet(tester, 380);
+    // Anchor bottom at y=298: below it there is only the nav bar (72px) and a
+    // margin, far less than the menu's 238px. The constrained menu remains
+    // scrollable so every option is still available in this short landscape
+    // window.
+    await pumpTablet(tester, 250);
     openMenu();
     await tester.pumpAndSettle();
 
-    final rect = tester.getRect(find.byType(DesktopPopoverSurface));
-    // The whole menu is on screen and above the nav bar (top edge at y=378).
-    expect(rect.top, greaterThanOrEqualTo(16));
-    expect(rect.bottom, lessThanOrEqualTo(450 - 72));
+    final viewport = tester.getRect(find.byType(SingleChildScrollView).last);
+    // The scroll viewport is on screen and above the nav bar.
+    expect(viewport.top, greaterThanOrEqualTo(16));
+    expect(viewport.bottom, lessThanOrEqualTo(320 - 72));
     // It opened above the anchor instead of below it.
-    expect(rect.bottom, lessThan(380));
-    // Every row is visible — before the fix the last rows ran off screen.
+    expect(viewport.bottom, lessThan(250));
+    // Every row remains available — before the fix the last rows ran off screen.
+    expect(viewport.height, lessThanOrEqualTo(320 - 72 - 32));
+    expect(find.text('Row 3'), findsOneWidget);
+    await tester.drag(
+      find.byType(SingleChildScrollView).last,
+      const Offset(0, -100),
+    );
+    await tester.pump();
     final lastRow = tester.getRect(find.text('Row 3'));
-    expect(lastRow.bottom, lessThanOrEqualTo(450 - 72));
+    expect(lastRow.bottom, lessThanOrEqualTo(viewport.bottom));
   });
 
 }

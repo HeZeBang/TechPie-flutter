@@ -546,6 +546,7 @@ class _SettingsPageState extends State<SettingsPage> {
         width: 260,
         placement: DesktopPopoverPlacement.belowEnd,
         offset: const Offset(0, 8),
+        scrollable: true,
         builder: (context, close) {
           final theme = Theme.of(context);
           return DesktopPopoverSurface(

@@ -17,6 +17,7 @@ void showDesktopPopover({
   double width = 260,
   DesktopPopoverPlacement placement = DesktopPopoverPlacement.belowEnd,
   Offset offset = const Offset(8, 8),
+  bool scrollable = false,
 }) {
   final overlay = Overlay.of(anchorContext, rootOverlay: true);
   final anchorBox = anchorContext.findRenderObject() as RenderBox?;
@@ -39,6 +40,10 @@ void showDesktopPopover({
   const margin = 16.0;
   // Lowest y a popover's top edge may take so its content stays above the bar.
   final bottomLimit = screenSize.height - bottomObstruction - margin;
+  final maxContentHeight = math.max(
+    margin,
+    screenSize.height - bottomObstruction - margin * 2,
+  );
 
   /// Where a popover of [size] belongs: the requested placement, flipped to
   /// the other side of the anchor when it does not fit there, and clamped as
@@ -108,16 +113,26 @@ void showDesktopPopover({
             left: position.dx,
             top: position.dy,
             width: width,
-            child: KeyedSubtree(
-              key: contentKey,
-              child: IgnorePointer(
-                ignoring: measuredSize == null,
-                child: Opacity(
-                  opacity: measuredSize == null ? 0 : 1,
-                  child: Theme(
-                    data: theme,
-                    child: Builder(
-                      builder: (context) => builder(context, close),
+            child: ConstrainedBox(
+              constraints: scrollable
+                  ? BoxConstraints(maxHeight: maxContentHeight)
+                  : const BoxConstraints(),
+              child: KeyedSubtree(
+                key: contentKey,
+                child: IgnorePointer(
+                  ignoring: measuredSize == null,
+                  child: Opacity(
+                    opacity: measuredSize == null ? 0 : 1,
+                    child: Theme(
+                      data: theme,
+                      child: Builder(
+                        builder: (context) {
+                          final content = builder(context, close);
+                          return scrollable
+                              ? SingleChildScrollView(child: content)
+                              : content;
+                        },
+                      ),
                     ),
                   ),
                 ),
