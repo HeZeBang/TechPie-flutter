@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../utils/platform.dart';
 import 'sf_symbol_glyphs.dart';
@@ -57,6 +60,68 @@ class IosNativeTabBar extends StatefulWidget {
 class _IosNativeTabBarState extends State<IosNativeTabBar> {
   int? _downPointer;
   Offset? _downPosition;
+
+  /// The launch screen stays up until the native bar can be drawn, at most
+  /// this long. Without the hold a cold start shows CNTabBar's stand-ins
+  /// first: its Flutter CupertinoTabBar while it prepares the native view
+  /// (500ms of it in a debug build), then an empty band while UIKit creates
+  /// that view, and only then the Liquid Glass bar — three different bars in
+  /// the first second.
+  static const _firstFrameHoldLimit = Duration(seconds: 2);
+  static bool _firstFrameHoldTaken = false;
+  bool _holdingFirstFrame = false;
+  Timer? _firstFrameHoldTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    final binding = WidgetsBinding.instance;
+    if (usesIosLiquidGlass() &&
+        !_firstFrameHoldTaken &&
+        !binding.firstFrameRasterized) {
+      _firstFrameHoldTaken = true;
+      _holdingFirstFrame = true;
+      binding.deferFirstFrame();
+      _firstFrameHoldTimer = Timer(_firstFrameHoldLimit, _releaseFirstFrame);
+      binding.addPostFrameCallback(_checkNativeBarReady);
+    }
+  }
+
+  @override
+  void dispose() {
+    _releaseFirstFrame();
+    super.dispose();
+  }
+
+  /// UiKitView lays out an empty box until UIKit has created its view, so a
+  /// RenderUiKitView below the bar means the next frame shows the real bar.
+  void _checkNativeBarReady(Duration _) {
+    if (!_holdingFirstFrame || !mounted) return;
+    var ready = false;
+    void visit(Element element) {
+      if (ready) return;
+      if (element.renderObject is RenderUiKitView) {
+        ready = true;
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    (context as Element).visitChildElements(visit);
+    if (ready) {
+      _releaseFirstFrame();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback(_checkNativeBarReady);
+    }
+  }
+
+  void _releaseFirstFrame() {
+    _firstFrameHoldTimer?.cancel();
+    _firstFrameHoldTimer = null;
+    if (!_holdingFirstFrame) return;
+    _holdingFirstFrame = false;
+    WidgetsBinding.instance.allowFirstFrame();
+  }
 
   int get _selected => widget.selectedIndex.clamp(0, widget.items.length - 1);
 
