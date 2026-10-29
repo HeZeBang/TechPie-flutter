@@ -98,6 +98,7 @@ class IosSheetHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final tint = Theme.of(context).colorScheme.primary;
     final label = CupertinoColors.label.resolveFrom(context);
+    if (!usesIosLiquidGlass()) return _buildLegacy(tint, label);
     final close = CNButton.icon(
       icon: CNSymbol('xmark', size: 17, color: label),
       semanticLabel: onConfirm == null ? '关闭' : '取消',
@@ -142,6 +143,56 @@ class IosSheetHeader extends StatelessWidget {
                 minHeight: 44,
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// Before iOS 26 a sheet's toolbar is text buttons — 取消 and a bold 完成 —
+  /// as UIKit draws them there; the glass icon buttons are iOS 26 chrome, and
+  /// the library would draw their symbols as native views that take the tap.
+  Widget _buildLegacy(Color tint, Color label) {
+    Widget button(String text, VoidCallback onPressed, {bool bold = false}) => CupertinoButton(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: const Size.square(iosMinimumInteractiveDimension),
+          onPressed: onPressed,
+          child: Text(
+            text,
+            style: TextStyle(
+              color: tint,
+              fontSize: 17,
+              fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        );
+    final confirm = onConfirm;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 72,
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: confirm == null ? null : button('取消', onCancel),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: label),
+            ),
+          ),
+          SizedBox(
+            width: 72,
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: button('完成', confirm ?? onCancel, bold: true),
+            ),
+          ),
         ],
       ),
     );

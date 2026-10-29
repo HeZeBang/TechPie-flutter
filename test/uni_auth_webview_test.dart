@@ -5,9 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/pages/uni_auth_webview_page.dart';
 import 'package:techpie/services/uni_auth_service.dart';
+import 'package:techpie/utils/platform.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 void main() {
+  // These cover the iOS 26 chrome; the pre-26 fallback has its own tests.
+  setUp(() => debugUsesIosLiquidGlass = true);
+  tearDown(() => debugUsesIosLiquidGlass = false);
   late _Browser browser;
   setUp(() {
     browser = _Browser();

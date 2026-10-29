@@ -3,6 +3,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:techpie/utils/platform.dart';
 
+import 'sf_symbol_glyphs.dart';
+
 enum IosNativeNavigationBarItemRole { normal, done, destructive }
 
 class IosNativeNavigationBarItem {
@@ -259,6 +261,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
   }
 
   bool _canGroup(IosNativeNavigationBarItem item) =>
+      usesIosLiquidGlass() &&
       item.placementGroup != null &&
       item.sfSymbol != null &&
       (item.title == null || item.title!.isEmpty) &&
@@ -313,6 +316,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
   }
 
   Widget _action(BuildContext context, IosNativeNavigationBarItem item) {
+    if (!usesIosLiquidGlass()) return _legacyAction(context, item);
     final tint = item.role == IosNativeNavigationBarItemRole.destructive
         ? CupertinoColors.systemRed.resolveFrom(context)
         : Theme.of(context).colorScheme.primary;
@@ -416,6 +420,100 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
         minHeight: 44,
       ),
     );
+  }
+}
+
+extension on IosNativeNavigationBar {
+  /// Before iOS 26: a plain bar button, drawn by Flutter. The library's
+  /// fallback still renders SF Symbols as native views, which take the tap and
+  /// leave only the edges of an icon button responsive.
+  Widget _legacyAction(BuildContext context, IosNativeNavigationBarItem item) {
+    final tint = item.role == IosNativeNavigationBarItemRole.destructive
+        ? CupertinoColors.systemRed.resolveFrom(context)
+        : Theme.of(context).colorScheme.primary;
+    final label = item.accessibilityLabel ?? item.title ?? item.id;
+    final isBack = item.sfSymbol == 'chevron.left';
+    final title = item.title;
+    final showTitle = !isBack && title != null && title.isNotEmpty;
+    final onPressed = !item.enabled
+        ? null
+        : item.menuItems.isNotEmpty
+            ? () => _showLegacyMenu(context, item)
+            : () => onItemPressed?.call(item.id);
+    return Semantics(
+      button: true,
+      enabled: item.enabled,
+      label: label,
+      excludeSemantics: true,
+      child: CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size.square(iosMinimumInteractiveDimension),
+        onPressed: onPressed,
+        child: showTitle
+            ? Text(
+                title,
+                style: TextStyle(
+                  color: tint,
+                  fontSize: 17,
+                  fontWeight: item.role == IosNativeNavigationBarItemRole.done
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                ),
+              )
+            : Icon(
+                cupertinoGlyphFor(item.sfSymbol ?? 'ellipsis'),
+                color: tint,
+                size: isBack ? 28 : 24,
+              ),
+      ),
+    );
+  }
+
+  /// Before iOS 26: a pull-down menu becomes an action sheet, the way those
+  /// releases present a short list of choices from a bar button.
+  Future<void> _showLegacyMenu(BuildContext context, IosNativeNavigationBarItem item) async {
+    final leaves = <(String, IosNativeNavigationBarMenuItem)>[];
+    void collect(List<IosNativeNavigationBarMenuItem> entries, String prefix) {
+      for (final entry in entries) {
+        if (entry.children.isNotEmpty) {
+          collect(
+            entry.children,
+            entry.displayInline || entry.title.isEmpty ? prefix : '$prefix${entry.title} › ',
+          );
+        } else {
+          leaves.add(('$prefix${entry.title}', entry));
+        }
+      }
+    }
+
+    collect(item.menuItems, '');
+    final value = await showCupertinoModalPopup<String>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        actions: [
+          for (final (label, entry) in leaves)
+            CupertinoActionSheetAction(
+              isDestructiveAction: entry.destructive,
+              onPressed: () => Navigator.of(sheetContext).pop(entry.value),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (entry.checked) ...[
+                    const Icon(CupertinoIcons.checkmark, size: 18),
+                    const SizedBox(width: 8),
+                  ],
+                  Flexible(child: Text(label)),
+                ],
+              ),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.of(sheetContext).pop(),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+    if (value != null) onMenuSelected?.call(item.id, value);
   }
 }
 

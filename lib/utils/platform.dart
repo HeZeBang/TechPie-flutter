@@ -13,6 +13,10 @@ Future<void> initializePlatformCapabilities() async {
   _supportsIosLiquidGlass = (PlatformVersion.iosVersion ?? 0) >= 26;
 }
 
+/// Tests run with no native runtime to ask; this picks the chrome they see.
+@visibleForTesting
+set debugUsesIosLiquidGlass(bool value) => _supportsIosLiquidGlass = value;
+
 /// Check if the current platform is iOS and not web.
 bool isIos() => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 

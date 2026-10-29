@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../utils/platform.dart';
+import 'sf_symbol_glyphs.dart';
 
 class IosNativeTabBarItem {
   const IosNativeTabBarItem({
@@ -139,6 +140,12 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
                 label: item.label,
                 icon: CNSymbol(item.sfSymbol),
                 activeIcon: CNSymbol(item.selectedSfSymbol),
+                // Before iOS 26 the bar is Flutter's CupertinoTabBar, which
+                // prefers these over the symbols: Flutter glyphs, not native
+                // icon views that would take the tap. See cupertinoGlyphFor.
+                customIcon: nativeGlass ? null : cupertinoGlyphFor(item.sfSymbol),
+                activeCustomIcon:
+                    nativeGlass ? null : cupertinoGlyphFor(item.selectedSfSymbol),
               ),
           ],
           // A reselect is the Listener's to report; taking it from here too

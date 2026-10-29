@@ -4,10 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/adaptive_navigation_scaffold.dart';
 import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
 void main() {
+  // These cover the iOS 26 chrome; the pre-26 fallback has its own tests.
+  setUp(() => debugUsesIosLiquidGlass = true);
+  tearDown(() => debugUsesIosLiquidGlass = false);
   setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.iOS);
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 

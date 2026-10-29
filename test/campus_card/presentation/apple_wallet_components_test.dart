@@ -12,9 +12,13 @@ import 'package:techpie/features/campus_card/presentation/icons/platform_icons.d
 import 'package:techpie/features/campus_card/presentation/theme/glass.dart';
 import 'package:techpie/features/campus_card/presentation/theme/theme.dart';
 import 'package:techpie/features/campus_card/presentation/widgets/apple_wallet_components.dart';
+import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
 void main() {
+  // These cover the iOS 26 chrome; the pre-26 fallback has its own tests.
+  setUp(() => debugUsesIosLiquidGlass = true);
+  tearDown(() => debugUsesIosLiquidGlass = false);
   testWidgets('list rows expose their tap action to accessibility',
       (tester) async {
     final handle = tester.ensureSemantics();
