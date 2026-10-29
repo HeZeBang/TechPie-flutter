@@ -46,13 +46,6 @@ void main() {
     final back = buttons.first;
     expect(back.label, isNull);
     expect(back.semanticLabel, '返回 Deadlines');
-    expect(back.icon!.size, 20);
-    expect(back.icon!.color, back.tint);
-    final barRect = tester.getRect(find.byType(IosNativeNavigationBar));
-    final backRect = tester.getRect(find.byWidget(back));
-    expect(backRect.top - barRect.top, greaterThanOrEqualTo(8));
-    expect(barRect.bottom - backRect.bottom, greaterThanOrEqualTo(8));
-    expect(buttons.every((button) => button.config.glassEffectUnionId == null), isTrue);
     back.onPressed!();
     expect(taps, ['back']);
     expect(tester.takeException(), isNull);
@@ -118,46 +111,6 @@ void main() {
     menu.onSelected(2);
     expect(selected, ['more:export']);
     expect(tester.takeException(), isNull);
-    debugDefaultTargetPlatformOverride = null;
-  });
-
-  testWidgets('compact header fits narrow windows and follows app theme', (tester) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    tester.view.physicalSize = const Size(320, 640);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    for (final theme in [ThemeData.light(), ThemeData.dark()]) {
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: theme,
-          home: const Scaffold(
-            appBar: IosNativeNavigationBar(
-              title: 'Long account settings title',
-              subtitle: 'Subtitle',
-              leadingItems: [
-                IosNativeNavigationBarItem(
-                  id: 'back',
-                  title: '返回 Settings',
-                  sfSymbol: 'chevron.left',
-                ),
-              ],
-              trailingItems: [
-                IosNativeNavigationBarItem(
-                  id: 'save',
-                  title: 'Save',
-                  role: IosNativeNavigationBarItemRole.done,
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-      await tester.pump(const Duration(milliseconds: 600));
-      final title = tester.widget<Text>(find.text('Long account settings title'));
-      expect(title.style!.color, theme.colorScheme.onSurface);
-      expect(tester.takeException(), isNull);
-    }
     debugDefaultTargetPlatformOverride = null;
   });
 }

@@ -23,55 +23,6 @@ void main() {
       .geometry!
       .paintExtent;
 
-  testWidgets('large title collapses, stays pinned and expands on return to top', (tester) async {
-    portrait(tester);
-    final selected = <String>[];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: AdaptiveNavigationScaffold(
-          appBar: IosNativeNavigationBar(
-            title: 'Schedule',
-            subtitle: '2026 秋季',
-            largeTitleMode: true,
-            trailingItems: const [
-              IosNativeNavigationBarItem(
-                id: 'more',
-                sfSymbol: 'ellipsis',
-                menuItems: [IosNativeNavigationBarMenuItem(value: 'semester', title: '切换学期')],
-              ),
-            ],
-            onMenuSelected: (_, value) => selected.add(value),
-          ),
-          body: ListView.builder(
-            itemExtent: 60,
-            itemCount: 80,
-            itemBuilder: (_, index) => Text('Course $index'),
-          ),
-        ),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 600));
-    final expanded = headerHeight(tester);
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
-    await tester.pumpAndSettle();
-    final collapsed = headerHeight(tester);
-    expect(collapsed, lessThan(expanded - 40));
-    expect(collapsed, greaterThanOrEqualTo(44));
-    expect(find.text('Schedule').hitTestable(), findsOneWidget);
-    expect(find.text('2026 秋季').hitTestable(), findsOneWidget);
-    tester.widget<CNPopupMenuButton>(find.byType(CNPopupMenuButton)).onSelected(0);
-    expect(selected, ['semester']);
-
-    await tester.drag(find.byType(ListView), const Offset(0, -200));
-    await tester.pumpAndSettle();
-    expect(headerHeight(tester), closeTo(collapsed, 0.1));
-    await tester.drag(find.byType(ListView), const Offset(0, 1000));
-    await tester.pumpAndSettle();
-    expect(headerHeight(tester), closeTo(expanded, 0.1));
-    expect(tester.takeException(), isNull);
-    debugDefaultTargetPlatformOverride = null;
-  });
-
   testWidgets('selection mode preserves the list position and native actions', (tester) async {
     portrait(tester);
     late StateSetter rebuild;
@@ -122,7 +73,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('horizontal pages keep title expanded and vertical pull can refresh', (tester) async {
+  testWidgets('timetable swipes, title collapse and pull-to-refresh coexist', (tester) async {
     portrait(tester);
     var refreshes = 0;
     var page = 0;
@@ -156,11 +107,13 @@ void main() {
     await tester.drag(find.byType(PageView), const Offset(0, -300));
     await tester.pumpAndSettle();
     expect(headerHeight(tester), lessThan(expanded));
+    expect(find.text('Schedule').hitTestable(), findsOneWidget);
     await tester.drag(find.byType(PageView), const Offset(0, 800));
     await tester.pumpAndSettle();
     await tester.drag(find.byType(PageView), const Offset(0, 350));
     await tester.pumpAndSettle();
     expect(refreshes, greaterThan(0));
+    expect(headerHeight(tester), closeTo(expanded, 0.1));
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });

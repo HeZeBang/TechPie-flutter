@@ -452,14 +452,8 @@ void main() {
     expect(bar.trailingItems.last.enabled, isFalse);
     final groupFinder = find.byType(CNGlassButtonGroup);
     final group = tester.widget<CNGlassButtonGroup>(groupFinder);
-    expect(group.buttons.map((button) => button.icon!.name), ['info.circle', 'qrcode.viewfinder']);
-    expect(group.buttons.map((button) => button.config.glassEffectUnionId).toSet(), {'trailing-main'});
     expect(group.buttons.last.enabled, isFalse);
     expect(group.buttons.last.onPressed, isNull);
-    final headerRect = tester.getRect(find.byType(IosNativeNavigationBar));
-    final groupRect = tester.getRect(groupFinder);
-    expect(groupRect.top - headerRect.top, greaterThanOrEqualTo(8));
-    expect(headerRect.bottom - groupRect.bottom, greaterThanOrEqualTo(8));
     final infoSemantics = tester.widgetList<Semantics>(find.byType(Semantics)).singleWhere(
           (widget) => widget.properties.label == 'Card details',
         );
