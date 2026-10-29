@@ -407,8 +407,10 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     }
     if (release == null || !mounted) return;
 
+    final dialogContext = _navigatorKey.currentState?.overlay?.context;
+    if (dialogContext == null || !dialogContext.mounted) return;
     _promptedThisLaunch = true;
-    await showUpdateAvailableDialog(context, release);
+    await showUpdateAvailableDialog(dialogContext, release);
   }
 
   Future<void> _openEcardPayCode() async {
