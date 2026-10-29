@@ -9,7 +9,9 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({super.key, this.presentedAsSheet = false});
+
+  final bool presentedAsSheet;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -37,7 +39,7 @@ Future<void> presentLoginPage(BuildContext context) async {
   if (isIos() && usesIosLiquidGlass()) {
     await CNBottomSheet.showCupertino<void>(
       context: context,
-      pageBuilder: (_) => const LoginPage(),
+      pageBuilder: (_) => const LoginPage(presentedAsSheet: true),
     );
   } else if (context.mounted) {
     await pushAdaptivePage<void>(context, builder: (_) => const LoginPage());
@@ -179,7 +181,7 @@ class _LoginPageState extends State<LoginPage> {
       appBar: IosNativeNavigationBar(
         title: copy.pageTitle,
         leadingItems: [
-          if (canPop)
+          if (canPop && !widget.presentedAsSheet)
             const IosNativeNavigationBarItem(
               id: 'back',
               title: '返回',
@@ -187,8 +189,16 @@ class _LoginPageState extends State<LoginPage> {
               accessibilityLabel: '返回',
             ),
         ],
+        trailingItems: [
+          if (canPop && widget.presentedAsSheet)
+            const IosNativeNavigationBarItem(
+              id: 'close',
+              sfSymbol: 'xmark',
+              accessibilityLabel: '关闭登录',
+            ),
+        ],
         onItemPressed: (id) {
-          if (id == 'back') {
+          if (id == 'back' || id == 'close') {
             unawaited(maybePopAdaptivePage<void>(context));
           }
         },
@@ -197,10 +207,10 @@ class _LoginPageState extends State<LoginPage> {
         top: false,
         child: ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.fromLTRB(20, liquidGlass ? 4 : 12, 20, 28),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
           children: [
             _IosLoginHeader(copy: copy, liquidGlass: liquidGlass),
-            SizedBox(height: liquidGlass ? 40 : 36),
+            const SizedBox(height: 24),
             if (_inlineMessage != null) ...[
               _IosInlineFeedback(message: _inlineMessage!),
               const SizedBox(height: 16),

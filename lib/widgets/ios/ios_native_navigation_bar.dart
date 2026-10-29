@@ -144,6 +144,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
           title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
+          textAlign: largeTitleMode ? TextAlign.start : TextAlign.center,
           style: TextStyle(
             fontSize: largeTitleMode ? 34 : 17,
             height: 1.15,
@@ -174,12 +175,16 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
             children: [
               SizedBox(
                 height: largeTitleMode ? 44 : _barHeight,
-                child: Row(
-                  children: [
-                    _actions(context, leadingItems),
-                    Expanded(child: largeTitleMode ? const SizedBox() : titleWidget),
-                    _actions(context, trailingItems),
-                  ],
+                child: NavigationToolbar(
+                  centerMiddle: true,
+                  middleSpacing: 8,
+                  leading: leadingItems.any((item) => !item.hidden)
+                      ? _actions(context, leadingItems)
+                      : null,
+                  middle: largeTitleMode ? null : titleWidget,
+                  trailing: trailingItems.any((item) => !item.hidden)
+                      ? _actions(context, trailingItems)
+                      : null,
                 ),
               ),
               if (largeTitleMode)
@@ -261,7 +266,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
 
       final menu = item.sfSymbol != null
           ? CNPopupMenuButton.icon(
-              buttonIcon: CNSymbol(item.sfSymbol!),
+              buttonIcon: CNSymbol(item.sfSymbol!, size: 20, color: tint),
               semanticLabel: label,
               items: entries,
               onSelected: select,
@@ -288,13 +293,18 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
           : CNButtonStyle.glass,
       minHeight: 44,
       shrinkWrap: true,
-      glassEffectUnionId: item.placementGroup,
+      // These are separate platform views, not a shared glass group. Passing
+      // a union ID selects the package's SwiftUI path, whose intrinsic width
+      // is hardcoded to 80pt and truncates longer toolbar labels.
     );
     final callback = item.enabled ? () => onItemPressed?.call(item.id) : null;
-    if (item.title != null && item.title!.isNotEmpty) {
+    // Use a compact back chevron; the previous page's name remains available
+    // to VoiceOver without squeezing the title or becoming an ellipsis.
+    final isBack = item.sfSymbol == 'chevron.left';
+    if (!isBack && item.title != null && item.title!.isNotEmpty) {
       return CNButton(
         label: item.title!,
-        icon: item.sfSymbol == null ? null : CNSymbol(item.sfSymbol!),
+        icon: item.sfSymbol == null ? null : CNSymbol(item.sfSymbol!, size: 20, color: tint),
         semanticLabel: label,
         onPressed: callback,
         enabled: item.enabled,
@@ -303,7 +313,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
       );
     }
     return CNButton.icon(
-      icon: CNSymbol(item.sfSymbol ?? 'ellipsis'),
+      icon: CNSymbol(item.sfSymbol ?? 'ellipsis', size: 20, color: tint),
       semanticLabel: label,
       onPressed: callback,
       enabled: item.enabled,
@@ -312,7 +322,6 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
         style: config.style,
         width: 44,
         minHeight: 44,
-        glassEffectUnionId: item.placementGroup,
       ),
     );
   }

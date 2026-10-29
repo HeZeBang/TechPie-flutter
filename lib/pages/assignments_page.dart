@@ -328,7 +328,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
         leadingItems: const [
           IosNativeNavigationBarItem(
             id: 'cancelSelection',
-            title: 'Cancel',
+            title: '取消',
             accessibilityLabel: '退出多选',
             placementGroup: 'leading-main',
           ),
@@ -336,7 +336,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
         trailingItems: [
           IosNativeNavigationBarItem(
             id: 'toggleSelectAll',
-            title: allSelected ? 'Deselect All' : 'Select All',
+            title: allSelected ? '全不选' : '全选',
             enabled: visible.isNotEmpty,
             accessibilityLabel: allSelected ? '全不选' : '全选',
             placementGroup: 'selection-actions',

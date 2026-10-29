@@ -98,7 +98,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                     ),
                     IosNativeNavigationBarItem(
                       id: 'toggleSelectAll',
-                      title: selectedAll ? 'Deselect All' : 'Select All',
+                      title: selectedAll ? '全不选' : '全选',
                       enabled: hiddenKeys.isNotEmpty,
                       hidden: !_selectionMode,
                       accessibilityLabel: selectedAll ? '全不选' : '全选',
@@ -116,7 +116,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                     ),
                     IosNativeNavigationBarItem(
                       id: 'toggleSelection',
-                      title: _selectionMode ? 'Done' : 'Select',
+                      title: _selectionMode ? '完成' : '选择',
                       role: _selectionMode
                           ? IosNativeNavigationBarItemRole.done
                           : IosNativeNavigationBarItemRole.normal,
