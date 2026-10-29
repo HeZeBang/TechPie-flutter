@@ -144,9 +144,7 @@ class _DebugWebViewPageState extends State<DebugWebViewPage>
             ),
           ];
     return Scaffold(
-      appBar: hostNavBarVisible
-          ? AppBar(title: Text(hostPageTitle ?? 'Debug WebView'), centerTitle: true)
-          : null,
+      appBar: buildHostNavigationBar('Debug WebView'),
       body: isDesktopWebView
           ? Column(children: [urlRow, ...bridgeText, const Text('Desktop WebView opened in separate window')])
           : Column(children: [urlRow, ...bridgeText, Expanded(child: WebViewWidget(controller: _controller))]),

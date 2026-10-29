@@ -8,7 +8,9 @@ import '../services/auth_service.dart';
 import '../services/elrc_client.dart';
 import '../services/service_provider.dart';
 import '../services/third_party_auth_service.dart';
+import '../utils/platform.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'campus_session_handle.dart';
 import 'elrc_player_page.dart';
 
@@ -681,28 +683,64 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
           if (!didPop) _showCourses();
         },
         child: Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: _selectedCourse == null,
-            leading: _selectedCourse == null
-                ? null
-                : IconButton(
-                    onPressed: _busy ? null : _showCourses,
-                    icon: const Icon(Icons.arrow_back),
-                  ),
-            title: Text(_webVisible ? '登录课程录播' : '课程录播'),
-            actions: [
-              if (!_webVisible && !_starting)
-                IconButton(
-                  tooltip: '刷新',
-                  onPressed: _busy
+          appBar: isIos()
+              ? IosNativeNavigationBar(
+                  title: _webVisible ? '登录课程录播' : '课程录播',
+                  leadingItems: [
+                    IosNativeNavigationBarItem(
+                      id: 'back',
+                      sfSymbol: 'chevron.left',
+                      accessibilityLabel: '返回',
+                      enabled: _selectedCourse == null || !_busy,
+                    ),
+                  ],
+                  trailingItems: [
+                    if (!_webVisible && !_starting)
+                      IosNativeNavigationBarItem(
+                        id: 'refresh',
+                        sfSymbol: 'arrow.clockwise',
+                        accessibilityLabel: '刷新',
+                        enabled: !_busy,
+                      ),
+                  ],
+                  onItemPressed: (id) {
+                    if (id == 'back') {
+                      if (_selectedCourse != null) {
+                        _showCourses();
+                      } else {
+                        unawaited(Navigator.of(context).maybePop());
+                      }
+                    } else if (id == 'refresh') {
+                      if (_selectedCourse == null) {
+                        _retryCourses();
+                      } else {
+                        _retryLessons(_selectedCourse!);
+                      }
+                    }
+                  },
+                )
+              : AppBar(
+                  automaticallyImplyLeading: _selectedCourse == null,
+                  leading: _selectedCourse == null
                       ? null
-                      : _selectedCourse == null
-                          ? _retryCourses
-                          : () => _retryLessons(_selectedCourse!),
-                  icon: const Icon(Icons.refresh),
+                      : IconButton(
+                          onPressed: _busy ? null : _showCourses,
+                          icon: const Icon(Icons.arrow_back),
+                        ),
+                  title: Text(_webVisible ? '登录课程录播' : '课程录播'),
+                  actions: [
+                    if (!_webVisible && !_starting)
+                      IconButton(
+                        tooltip: '刷新',
+                        onPressed: _busy
+                            ? null
+                            : _selectedCourse == null
+                                ? _retryCourses
+                                : () => _retryLessons(_selectedCourse!),
+                        icon: const Icon(Icons.refresh),
+                      ),
+                  ],
                 ),
-            ],
-          ),
           body: SafeArea(
             child: Stack(
               children: [

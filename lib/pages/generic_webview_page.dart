@@ -213,9 +213,7 @@ class _GenericWebViewPageState extends State<GenericWebViewPage>
 
   @override
   Widget build(BuildContext context) {
-    final appBar = hostNavBarVisible
-        ? AppBar(title: Text(hostPageTitle ?? widget.title), centerTitle: true)
-        : null;
+    final appBar = buildHostNavigationBar(widget.title);
     if (isDesktopWebView) {
       return Scaffold(
         appBar: appBar,
