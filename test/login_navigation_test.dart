@@ -1,4 +1,4 @@
-import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,36 +7,53 @@ import 'package:techpie/pages/login_page.dart';
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  testWidgets('login sheet uses a centered title and a working close action', (tester) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) => TextButton(
-            onPressed: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => const LoginPage(presentedAsSheet: true)),
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('$platform opens the shared login page and returns to its caller', (tester) async {
+      debugDefaultTargetPlatformOverride = platform;
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var returned = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.3)),
+            child: child!,
+          ),
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                await presentLoginPage(context);
+                returned = true;
+              },
+              child: const Text('Open login'),
             ),
-            child: const Text('Open login'),
           ),
         ),
-      ),
-    );
-    await tester.tap(find.text('Open login'));
-    await tester.pumpAndSettle();
-    expect(tester.getCenter(find.text('登录')).dx, closeTo(195, 0.1));
-    final buttons = tester.widgetList<CNButton>(find.byType(CNButton));
-    expect(buttons.any((button) => button.icon?.name == 'chevron.left'), isFalse);
-    final close = buttons.singleWhere((button) => button.semanticLabel == '关闭登录');
-    expect(close.icon!.name, 'xmark');
-    close.onPressed!();
-    await tester.pumpAndSettle();
-    expect(find.text('Open login'), findsOneWidget);
-    expect(find.byType(LoginPage), findsNothing);
-    expect(tester.takeException(), isNull);
-    debugDefaultTargetPlatformOverride = null;
-  });
+      );
+      await tester.tap(find.text('Open login'));
+      await tester.pumpAndSettle();
+      final route = ModalRoute.of(tester.element(find.byType(LoginPage)));
+      expect(
+        route,
+        platform == TargetPlatform.iOS
+            ? isA<CupertinoPageRoute<void>>()
+            : isA<MaterialPageRoute<void>>(),
+      );
+      expect(find.byType(AppBar), findsOneWidget);
+      expect(find.text('TechPie'), findsOneWidget);
+      expect(find.text('登录以访问校园服务'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '通过 GeekPie Uni-Auth 登录'), findsOneWidget);
+      expect(returned, isFalse);
+      expect(tester.takeException(), isNull);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(returned, isTrue);
+      expect(find.text('Open login'), findsOneWidget);
+      expect(find.byType(LoginPage), findsNothing);
+      expect(tester.takeException(), isNull);
+      debugDefaultTargetPlatformOverride = null;
+    });
+  }
 }

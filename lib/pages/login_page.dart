@@ -1,17 +1,11 @@
-import 'dart:async';
-
-import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_page_navigation.dart';
-import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, this.presentedAsSheet = false});
-
-  final bool presentedAsSheet;
+  const LoginPage({super.key});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -36,12 +30,7 @@ const _loginPageCopy = _LoginPageCopy(
 );
 
 Future<void> presentLoginPage(BuildContext context) async {
-  if (isIos() && usesIosLiquidGlass()) {
-    await CNBottomSheet.showCupertino<void>(
-      context: context,
-      pageBuilder: (_) => const LoginPage(presentedAsSheet: true),
-    );
-  } else if (context.mounted) {
+  if (context.mounted) {
     await pushAdaptivePage<void>(context, builder: (_) => const LoginPage());
   }
 }
@@ -79,18 +68,12 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     const copy = _loginPageCopy;
-    if (isIos()) {
-      return _buildIosLoginPage(context, copy);
-    }
-    return _buildMaterialLoginPage(context, copy);
-  }
-
-  Widget _buildMaterialLoginPage(BuildContext context, _LoginPageCopy copy) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
       appBar: AppBar(
+        title: Text(copy.pageTitle),
         backgroundColor: colorScheme.primaryContainer,
         foregroundColor: colorScheme.onPrimaryContainer,
         elevation: 0,
@@ -166,153 +149,6 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIosLoginPage(BuildContext context, _LoginPageCopy copy) {
-    final theme = Theme.of(context);
-    final canPop = Navigator.canPop(context);
-    final liquidGlass = usesIosLiquidGlass();
-
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: IosNativeNavigationBar(
-        title: copy.pageTitle,
-        leadingItems: [
-          if (canPop && !widget.presentedAsSheet)
-            const IosNativeNavigationBarItem(
-              id: 'back',
-              title: '返回',
-              sfSymbol: 'chevron.left',
-              accessibilityLabel: '返回',
-            ),
-        ],
-        trailingItems: [
-          if (canPop && widget.presentedAsSheet)
-            const IosNativeNavigationBarItem(
-              id: 'close',
-              sfSymbol: 'xmark',
-              accessibilityLabel: '关闭登录',
-            ),
-        ],
-        onItemPressed: (id) {
-          if (id == 'back' || id == 'close') {
-            unawaited(maybePopAdaptivePage<void>(context));
-          }
-        },
-      ),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-          children: [
-            _IosLoginHeader(copy: copy, liquidGlass: liquidGlass),
-            const SizedBox(height: 24),
-            if (_inlineMessage != null) ...[
-              _IosInlineFeedback(message: _inlineMessage!),
-              const SizedBox(height: 16),
-            ],
-            CNButton(
-              label: _loading ? '正在登录…' : '通过 GeekPie Uni-Auth 登录',
-              onPressed: _loading ? null : _geekpieLogin,
-              enabled: !_loading,
-              semanticLabel: _loading ? '正在登录，请稍候' : '通过 GeekPie Uni-Auth 登录',
-              tint: theme.colorScheme.primary,
-              config: CNButtonConfig(
-                style: CNButtonStyle.prominentGlass,
-                minHeight: liquidGlass ? 56 : 52,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _IosLoginHeader extends StatelessWidget {
-  const _IosLoginHeader({
-    required this.copy,
-    required this.liquidGlass,
-  });
-
-  final _LoginPageCopy copy;
-  final bool liquidGlass;
-
-  @override
-  Widget build(BuildContext context) {
-    final labelColor = Theme.of(context).colorScheme.onSurfaceVariant;
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 2,
-        right: 2,
-        top: liquidGlass ? 0 : 2,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            copy.brandName,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            copy.subtitle,
-            style: TextStyle(
-              color: labelColor,
-              fontSize: liquidGlass ? 17 : 15,
-              height: 1.25,
-              letterSpacing: 0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _IosInlineFeedback extends StatelessWidget {
-  const _IosInlineFeedback({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final red = scheme.error;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: red.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(13),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.error_outline, size: 18, color: red),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  color: red,
-                  fontSize: 14,
-                  height: 1.25,
-                  letterSpacing: 0,
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );
