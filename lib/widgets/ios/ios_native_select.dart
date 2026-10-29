@@ -44,7 +44,8 @@ class IosNativeSelect extends StatelessWidget {
           for (final option in options)
             CNPopupMenuItem(
               label: option.label,
-              icon: option.sfSymbol == null ? null : CNSymbol(option.sfSymbol!),
+              // Match UIMenu's default size on both creation and updates.
+              icon: option.sfSymbol == null ? null : CNSymbol(option.sfSymbol!, size: 0),
               checked: option.value == value,
             ),
         ],

@@ -247,7 +247,9 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
             entries.add(
               CNPopupMenuItem(
                 label: '$prefix${entry.title}',
-                icon: entry.sfSymbol == null ? null : CNSymbol(entry.sfSymbol!),
+                // Zero leaves sizing to UIMenu. The package otherwise starts
+                // at 24pt, then drops sizes on updates containing null entries.
+                icon: entry.sfSymbol == null ? null : CNSymbol(entry.sfSymbol!, size: 0),
                 checked: entry.checked,
                 isDestructive: entry.destructive,
               ),
