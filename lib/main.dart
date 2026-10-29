@@ -338,6 +338,7 @@ class TechPieApp extends StatefulWidget {
 
 class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
+  final _nativeChromeObserver = CNTabBarRouteObserver();
 
   /// The silent check runs at launch and whenever the app comes back to the
   /// foreground, but not more often than this: a resume is not a reason to hit
@@ -454,7 +455,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
-          navigatorObservers: [FeedbackRouteObserver(), CNTabBarRouteObserver()],
+          navigatorObservers: [FeedbackRouteObserver(), _nativeChromeObserver],
           builder: (context, child) => AdaptiveFeedbackHost(
             key: adaptiveFeedbackHostKey,
             child: child ?? const SizedBox.shrink(),

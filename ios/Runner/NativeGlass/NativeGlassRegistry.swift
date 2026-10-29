@@ -20,10 +20,6 @@ enum NativeGlassRegistry {
     }
 
     registrar.register(
-      NativeGlassTabBarFactory(messenger: messenger),
-      withId: NativeGlassTabBarPlatformView.viewType
-    )
-    registrar.register(
       NativeNavigationBarFactory(messenger: messenger),
       withId: NativeNavigationBarPlatformView.viewType
     )

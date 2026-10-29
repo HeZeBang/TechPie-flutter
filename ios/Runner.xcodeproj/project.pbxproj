@@ -16,7 +16,6 @@
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		552EDBFB593EF05BFDF5D371 /* TechPieWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D2C4C3D10C634BB53BF3F9A6 /* TechPieWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5A0010032F1A000100000001 /* NativeGlassRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010022F1A000100000001 /* NativeGlassRegistry.swift */; };
-		5A0010052F1A000100000001 /* NativeGlassTabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010042F1A000100000001 /* NativeGlassTabBarView.swift */; };
 		5A0010142F1A000100000001 /* NativeGlassPresenterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010132F1A000100000001 /* NativeGlassPresenterPlugin.swift */; };
 		5A0010152F1A000100000001 /* IcsFilePresenterPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010162F1A000100000001 /* IcsFilePresenterPlugin.swift */; };
 		5A0010182F1A000100000001 /* NativeNavigationBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0010172F1A000100000001 /* NativeNavigationBar.swift */; };
@@ -129,7 +128,6 @@
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		3B7035B6F9EF034B7C94942F /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5A0010022F1A000100000001 /* NativeGlassRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassRegistry.swift; sourceTree = "<group>"; };
-		5A0010042F1A000100000001 /* NativeGlassTabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassTabBarView.swift; sourceTree = "<group>"; };
 		5A0010132F1A000100000001 /* NativeGlassPresenterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlassPresenterPlugin.swift; sourceTree = "<group>"; };
 		5A0010162F1A000100000001 /* IcsFilePresenterPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IcsFilePresenterPlugin.swift; sourceTree = "<group>"; };
 		5A0010172F1A000100000001 /* NativeNavigationBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNavigationBar.swift; sourceTree = "<group>"; };
@@ -273,7 +271,6 @@
 			isa = PBXGroup;
 			children = (
 				5A0010022F1A000100000001 /* NativeGlassRegistry.swift */,
-				5A0010042F1A000100000001 /* NativeGlassTabBarView.swift */,
 				5A0010132F1A000100000001 /* NativeGlassPresenterPlugin.swift */,
 				5A0010162F1A000100000001 /* IcsFilePresenterPlugin.swift */,
 				5A0010172F1A000100000001 /* NativeNavigationBar.swift */,
@@ -721,7 +718,6 @@
 				5A0010142F1A000100000001 /* NativeGlassPresenterPlugin.swift in Sources */,
 				5A0010152F1A000100000001 /* IcsFilePresenterPlugin.swift in Sources */,
 				5A0010182F1A000100000001 /* NativeNavigationBar.swift in Sources */,
-				5A0010052F1A000100000001 /* NativeGlassTabBarView.swift in Sources */,
 				5A0010032F1A000100000001 /* NativeGlassRegistry.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				B4A6C8E0F2A41122B3C4D5E7 /* SceneDelegate.swift in Sources */,
