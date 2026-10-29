@@ -31,27 +31,64 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
   /// On iOS the selection toolbar takes the tab bar's place, as it does in
   /// Photos, Files and Mail, instead of stacking a second bar above it.
   AppShellTabBarHold? _tabBarHold;
+  AssignmentService? _service;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final service = ServiceProvider.of(context).assignmentService;
+    if (!identical(service, _service)) {
+      _service?.removeListener(_onServiceChanged);
+      _service = service..addListener(_onServiceChanged);
+    }
+    // Also reruns when a page is pushed over this one or popped off it.
+    _syncTabBarHold();
+  }
 
   @override
   void dispose() {
+    _service?.removeListener(_onServiceChanged);
     _tabBarHold?.release();
     super.dispose();
   }
 
+  /// Holds the tab bar's place only while selecting *and* on screen: a page
+  /// pushed over this one (a deep link into the same tab) gets the bar back,
+  /// and selection resumes with it hidden again when the user returns.
+  void _syncTabBarHold() {
+    final wants = isIos() && _selectionMode && (ModalRoute.isCurrentOf(context) ?? true);
+    if (wants) {
+      _tabBarHold ??= AppShellTabBar.maybeOf(context)?.hide();
+    } else {
+      _tabBarHold?.release();
+      _tabBarHold = null;
+    }
+  }
+
+  /// Everything was restored (here or elsewhere): nothing left to select.
+  void _onServiceChanged() {
+    final hidden = _service!.overrides.hidden;
+    if (!_selectionMode) return;
+    if (hidden.isEmpty) {
+      _exitSelectionMode();
+    } else if (_selected.any((key) => !hidden.contains(key))) {
+      setState(() => _selected.removeWhere((key) => !hidden.contains(key)));
+    }
+  }
+
   void _enterSelectionMode() {
-    if (isIos()) _tabBarHold ??= AppShellTabBar.maybeOf(context)?.hide();
     setState(() {
       _selectionMode = true;
     });
+    _syncTabBarHold();
   }
 
   void _exitSelectionMode() {
-    _tabBarHold?.release();
-    _tabBarHold = null;
     setState(() {
       _selectionMode = false;
       _selected.clear();
     });
+    _syncTabBarHold();
   }
 
   void _toggleSelection(String key) {
@@ -107,12 +144,6 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
         final hiddenKeys = service.overrides.hidden.toList();
         final selectedAll =
             hiddenKeys.isNotEmpty && _selected.length == hiddenKeys.length;
-        if (_selectionMode && hiddenKeys.isEmpty) {
-          // Everything was restored from elsewhere: nothing left to select.
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && _selectionMode) _exitSelectionMode();
-          });
-        }
 
         return Scaffold(
           extendBodyBehindAppBar: !isIos() && !useLegacyIosChrome,
@@ -328,7 +359,6 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
         }
         return ListTile(
           selected: selected,
-          selectedColor: isIos() ? theme.colorScheme.onSurface : null,
           selectedTileColor: theme.colorScheme.primaryContainer.withValues(
             alpha: 0.22,
           ),
@@ -347,7 +377,6 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                 : '${a.kind.label} · ${a.platform.toUpperCase()} · ${a.course}',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: isIos() ? TextStyle(color: theme.colorScheme.onSurfaceVariant) : null,
           ),
           onTap: _selectionMode ? () => _toggleSelection(key) : null,
           onLongPress: _selectionMode

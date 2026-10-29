@@ -78,12 +78,12 @@ class _SecurityLimitScreenState extends ConsumerState<SecurityLimitScreen> {
         useRootNavigator: false,
         isScrollControlled: true,
         useSafeArea: true,
-        builder: (sheetContext) => _LimitEditorSheet(
+        builder: (sheetContext) => ApplePinnedHeaderLayout.sheetInsets(sheetContext, _LimitEditorSheet(
           title: title,
           perTransaction: perTransaction,
           perDay: perDay,
           needsPassword: needsPassword,
-        ),
+        ),),
       );
 
   Future<void> _showMessage(String message) => showAdaptiveDialog<void>(

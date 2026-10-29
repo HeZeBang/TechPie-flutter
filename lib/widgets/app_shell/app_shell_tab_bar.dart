@@ -14,17 +14,38 @@ class AppShellTabBarController extends ChangeNotifier {
   /// Whether some page is standing in for the tab bar.
   bool get hidden => _holds > 0;
 
-  /// Hides the tab bar until the returned hold is released.
+  /// Hides the tab bar until the returned hold is released. Safe to call
+  /// while the tree is building (didChangeDependencies): the shell rebuilds
+  /// on the next frame then.
   AppShellTabBarHold hide() {
     _holds++;
-    if (_holds == 1) notifyListeners();
+    if (_holds == 1) _notify();
     return AppShellTabBarHold._(this);
   }
 
   void _release() {
     if (_holds == 0) return;
     _holds--;
-    if (_holds == 0) notifyListeners();
+    if (_holds == 0) _notify();
+  }
+
+  void _notify() {
+    if (SchedulerBinding.instance.schedulerPhase != SchedulerPhase.persistentCallbacks) {
+      notifyListeners();
+      return;
+    }
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!_disposed) notifyListeners();
+    });
+    SchedulerBinding.instance.scheduleFrame();
+  }
+
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
 
@@ -38,16 +59,7 @@ class AppShellTabBarHold {
     final controller = _controller;
     if (controller == null) return;
     _controller = null;
-    // A page usually lets go from an event handler, where the shell can
-    // rebuild in the same frame. From dispose (the page was popped) the tree
-    // is locked, so the bar comes back on the next frame instead.
-    if (SchedulerBinding.instance.schedulerPhase ==
-        SchedulerPhase.persistentCallbacks) {
-      SchedulerBinding.instance.addPostFrameCallback((_) => controller._release());
-      SchedulerBinding.instance.scheduleFrame();
-    } else {
-      controller._release();
-    }
+    controller._release();
   }
 }
 

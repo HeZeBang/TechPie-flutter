@@ -1,4 +1,3 @@
-import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:techpie/utils/platform.dart';
@@ -36,8 +35,9 @@ class AdaptiveSelect extends StatelessWidget {
   final String placeholder;
   final double width;
   final double height;
-  /// On iOS, a native pull-down menu (UIMenu). Off for a field that only
-  /// displays a value and presents its own picker when tapped.
+  /// On iOS, a native pull-down menu (UIMenu). Off, the select is only a
+  /// field showing the value: the caller wraps it in its own tap target and
+  /// presents its own picker (the course editor's wheel sheets do).
   final bool useIosNativeMenu;
 
   /// iOS native menu only: size the button to its label, as a value control
@@ -89,11 +89,8 @@ class AdaptiveSelect extends StatelessWidget {
           color: CupertinoColors.secondarySystemFill.resolveFrom(context),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: CupertinoButton(
-          minimumSize: const Size.square(iosMinimumInteractiveDimension),
+        child: Padding(
           padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 10, 0),
-          borderRadius: BorderRadius.circular(10),
-          onPressed: options.isEmpty ? null : () async => _showOptions(context),
           child: Row(
             children: [
               Expanded(
@@ -148,30 +145,5 @@ class AdaptiveSelect extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  /// The field keeps its look; choosing presents a native UIAlertController
-  /// action sheet (a popover from the field on iPad). The current option is
-  /// shown disabled, which is how the sheet marks it: choosing it again would
-  /// change nothing.
-  Future<void> _showOptions(BuildContext context) async {
-    final box = context.findRenderObject() as RenderBox?;
-    final anchor = box != null && box.hasSize
-        ? box.localToGlobal(Offset.zero) & box.size
-        : null;
-    final selected = await CNActionSheet.show<String>(
-      context: context,
-      anchorRect: anchor,
-      cancelLabel: '取消',
-      actions: [
-        for (final option in options)
-          CNActionSheetAction<String>(
-            label: option.label,
-            value: option.value,
-            enabled: option.value != value,
-          ),
-      ],
-    );
-    if (selected != null) onChanged(selected);
   }
 }

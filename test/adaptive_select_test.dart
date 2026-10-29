@@ -1,57 +1,33 @@
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/widgets/adaptive_select.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  testWidgets('an iOS display field presents a native action sheet', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('an iOS display field only shows the value', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    String? selectedValue;
-    Map<Object?, Object?>? payload;
-    const channel = MethodChannel('cn_action_sheet');
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
-      call,
-    ) async {
-      payload = call.arguments as Map<Object?, Object?>;
-      return 1;
-    });
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null),
-    );
-
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: AdaptiveSelect(
-            value: 'system',
+            value: 'dark',
             useIosNativeMenu: false,
             options: const [
               AdaptiveSelectOption(value: 'system', label: 'System'),
               AdaptiveSelectOption(value: 'dark', label: 'Dark'),
             ],
-            onChanged: (value) => selectedValue = value,
+            onChanged: (_) {},
           ),
         ),
       ),
     );
-
-    await tester.tap(find.text('System'));
-    await tester.pumpAndSettle();
-
-    final actions = (payload!['actions'] as List).cast<Map<Object?, Object?>>();
-    expect(actions.map((action) => action['label']), ['System', 'Dark']);
-    // The current option is the disabled one: choosing it would change nothing.
-    expect(actions.map((action) => action['enabled']), [false, true]);
-    expect(payload!['cancelLabel'], '取消');
-    expect(payload!['anchorRect'], isNotNull);
-    expect(selectedValue, 'dark');
+    expect(find.text('Dark'), findsOneWidget);
+    // The caller owns the tap; the field itself presents nothing.
+    expect(find.byType(CNPopupMenuButton), findsNothing);
+    expect(find.byType(GestureDetector), findsNothing);
     debugDefaultTargetPlatformOverride = null;
   });
 

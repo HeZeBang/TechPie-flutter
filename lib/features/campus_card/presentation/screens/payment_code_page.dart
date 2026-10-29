@@ -878,7 +878,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
       useSafeArea: true,
       // A fixed-height sheet: iOS shows no grabber on one.
       showDragHandle: Theme.of(context).platform != TargetPlatform.iOS,
-      builder: (sheetContext) => Padding(
+      builder: (sheetContext) => ApplePinnedHeaderLayout.sheetInsets(sheetContext, Padding(
         padding: EdgeInsets.fromLTRB(
           20,
           Theme.of(context).platform == TargetPlatform.iOS ? 24 : 0,
@@ -919,7 +919,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
             ),
           ],
         ),
-      ),
+      ),),
     );
     if (selected != null && mounted) await _setOfflineMode(card, selected);
   }

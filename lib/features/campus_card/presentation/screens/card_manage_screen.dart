@@ -159,7 +159,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
       context: context,
       useRootNavigator: false,
       useSafeArea: true,
-      builder: (sheetContext) => StatefulBuilder(
+      builder: (sheetContext) => ApplePinnedHeaderLayout.sheetInsets(sheetContext, StatefulBuilder(
         builder: (context, setSheetState) => SizedBox(
           height: 390,
           child: Column(
@@ -232,7 +232,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
             ],
           ),
         ),
-      ),
+      ),),
     );
   }
 

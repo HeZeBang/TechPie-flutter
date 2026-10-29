@@ -8,6 +8,8 @@ import 'package:techpie/features/campus_card/app/app_runtime.dart';
 import 'package:techpie/features/campus_card/app/demo_runtime_factory.dart';
 import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/main.dart';
+import 'package:techpie/models/assignment.dart';
+import 'package:techpie/pages/assignments_page.dart';
 import 'package:techpie/pages/hidden_assignments_page.dart';
 import 'package:techpie/pages/settings_page.dart';
 import 'package:techpie/services/assignment_service.dart';
@@ -35,6 +37,7 @@ import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 /// tab unwinds its stack, as UITabBarController does.
 void main() {
   late AppRuntime runtime;
+  late AssignmentService assignmentService;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -61,6 +64,7 @@ void main() {
     final tpAuth = ThirdPartyAuthService(storage, http);
     final schedule = ScheduleService(storage, http, auth, tpAuth);
     final assignments = AssignmentService(storage, http, auth, tpAuth, schedule);
+    assignmentService = assignments;
 
     await tester.pumpWidget(
       TechPieApp(
@@ -207,6 +211,58 @@ void main() {
 
       expect(find.byKey(modal), findsOneWidget);
       expect(find.byType(CNTabBar), findsNothing);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'selecting hides the tab bar only while the selecting page is on screen',
+    (tester) async {
+      await pumpApp(tester);
+      await assignmentService.hide(
+        Assignment(
+          id: 'hw1',
+          platform: 'gradescope',
+          title: 'Homework 1',
+          course: 'CS101',
+          due: DateTime(2030),
+        ),
+      );
+      selectTab(tester, 2);
+      await tester.pumpAndSettle();
+      unawaited(
+        pushAdaptivePage<void>(
+          tester.element(find.byType(AssignmentsPage)),
+          builder: (_) => const HiddenAssignmentsPage(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final barHeight = tester.getSize(find.byType(CNTabBar)).height;
+      expect(barHeight, greaterThan(0));
+
+      final bar = tester.widget<IosNativeNavigationBar>(find.byType(IosNativeNavigationBar).last);
+      bar.onItemPressed!('select');
+      await tester.pumpAndSettle();
+      expect(find.text('选择项目'), findsOneWidget);
+      expect(tester.getSize(find.byType(CNTabBar)).height, 0);
+
+      // Something pushed into the same tab (a deep link) gets the bar back…
+      const covering = Key('covering');
+      unawaited(
+        pushAdaptivePage<void>(
+          tester.element(find.byType(HiddenAssignmentsPage)),
+          builder: (_) => const Scaffold(key: covering),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(CNTabBar)).height, barHeight);
+
+      // …and selection resumes with it hidden again on the way back.
+      Navigator.of(tester.element(find.byKey(covering))).pop();
+      await tester.pumpAndSettle();
+      expect(find.text('选择项目'), findsOneWidget);
+      expect(tester.getSize(find.byType(CNTabBar)).height, 0);
+      expect(tester.takeException(), isNull);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
