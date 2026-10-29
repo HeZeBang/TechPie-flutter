@@ -10,7 +10,7 @@ import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import '../widgets/scanner/scan_page.dart';
-import 'login_page.dart';
+import '../widgets/uni_auth_login.dart';
 import 'third_party_accounts_page.dart';
 
 /// "校园签到" — queries the egate-app (xshdapp) sign-in announcement +
@@ -34,7 +34,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
   Future<void> _handleLogin() async {
     final sp = ServiceProvider.of(context);
     final alreadyLoggedIn = sp.authService.isLoggedIn;
-    await presentLoginPage(context);
+    await startUniAuthLogin(context);
     if (!mounted) return;
     if (alreadyLoggedIn && sp.authService.isLoggedIn) {
       unawaited(_openThirdPartyAccounts());

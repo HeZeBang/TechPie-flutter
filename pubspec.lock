@@ -145,6 +145,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.0.8"
+  cupertino_native_better:
+    dependency: "direct main"
+    description:
+      name: cupertino_native_better
+      sha256: "7546f2f5c5dfd17c77605e288e932a7da4f6bf51f9733bb366cada4727a211ed"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.8.1"
   dbus:
     dependency: transitive
     description:
@@ -1098,7 +1106,7 @@ packages:
     source: git
     version: "4.7.0"
   webview_flutter_platform_interface:
-    dependency: "direct overridden"
+    dependency: "direct dev"
     description:
       path: webview_flutter_platform_interface
       ref: main
@@ -1148,5 +1156,5 @@ packages:
     source: hosted
     version: "3.1.4"
 sdks:
-  dart: ">=3.9.0-0 <4.0.0"
+  dart: ">=3.9.0 <4.0.0"
   flutter: ">=3.27.4-ohos-1.0.5"

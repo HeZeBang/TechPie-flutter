@@ -38,7 +38,7 @@ final class LoginScreen extends ConsumerWidget {
               24,
               ApplePinnedHeaderLayout.contentTop(context) + 36,
               24,
-              36,
+              ApplePinnedHeaderLayout.contentBottom(context, 36),
             ),
             children: [
               Center(

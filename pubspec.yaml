@@ -37,6 +37,7 @@ dependencies:
   crypto: 3.0.7
   cryptography: ^2.9.0
   cupertino_icons: ^1.0.8
+  cupertino_native_better: 1.8.1
   desktop_webview_window: any
   dio: ^5.8.0
   dynamic_color: ">=1.7.0 <1.8.0"
@@ -150,6 +151,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_test:
     sdk: flutter
+  webview_flutter_platform_interface: ^2.13.1
 
 flutter_launcher_icons:
   image_path: "assets/icon/icon.png"

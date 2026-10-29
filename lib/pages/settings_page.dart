@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -17,6 +18,7 @@ import '../utils/product_version.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_confirmation_button.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_switch.dart';
@@ -24,11 +26,11 @@ import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/uni_auth_login.dart';
 import '../widgets/update_dialogs.dart';
 import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
-import 'login_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'watch_settings_page.dart';
@@ -176,7 +178,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ? 0.0
         : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
 
-    return Scaffold(
+    return AdaptiveNavigationScaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
           ? const IosNativeNavigationBar(
@@ -300,7 +302,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   label: '通过 GeekPie Uni-Auth 登录',
                   role: AdaptiveButtonRole.prominent,
                   accessibilityLabel: '登录 TechPie',
-                  onPressed: () => unawaited(presentLoginPage(context)),
+                  onPressed: () => unawaited(startUniAuthLogin(context)),
                 ),
               )
             else
@@ -308,7 +310,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 leading: const Icon(Icons.login),
                 title: const Text('Login'),
                 subtitle: const Text('通过 GeekPie Uni-Auth 登录'),
-                onTap: () => unawaited(presentLoginPage(context)),
+                onTap: () => unawaited(startUniAuthLogin(context)),
               ),
             // Bindings are configured independently of the primary account, so
             // this row sits outside the signed-in block (it replaces the old
@@ -358,13 +360,12 @@ class _SettingsPageState extends State<SettingsPage> {
               ListTile(
                 leading: Icon(themeService.mode.icon),
                 title: const Text('Theme'),
-                subtitle: Text(themeService.mode.label),
+                // The menu button shows the value; a subtitle would repeat it.
                 trailing: AdaptiveSelect(
                   value: themeService.mode.name,
                   placeholder: 'Choose theme',
                   accessibilityLabel: 'Theme',
-                  useIosNativeMenu: true,
-                  width: 156,
+                  shrinkWrap: true,
                   options: [
                     for (final mode in AppThemeMode.values)
                       AdaptiveSelectOption(
@@ -593,8 +594,9 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
+        useRootNavigator: true,
         builder: (context) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -692,8 +694,9 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
+        useRootNavigator: true,
         builder: (context) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
