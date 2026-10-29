@@ -106,15 +106,24 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                       placementGroup: 'leading-main',
                     ),
                   ],
+                  // Two items rather than one that restyles: each keeps its
+                  // own native button, so switching modes only swaps which
+                  // one is shown.
                   trailingItems: [
                     IosNativeNavigationBarItem(
-                      id: 'toggleSelection',
-                      title: _selectionMode ? '完成' : '选择',
-                      role: _selectionMode
-                          ? IosNativeNavigationBarItemRole.done
-                          : IosNativeNavigationBarItemRole.normal,
-                      enabled: _selectionMode || hiddenKeys.isNotEmpty,
-                      accessibilityLabel: _selectionMode ? '完成' : '选择',
+                      id: 'select',
+                      title: '选择',
+                      enabled: hiddenKeys.isNotEmpty,
+                      hidden: _selectionMode,
+                      accessibilityLabel: '选择',
+                      placementGroup: 'selection-actions',
+                    ),
+                    IosNativeNavigationBarItem(
+                      id: 'done',
+                      title: '完成',
+                      role: IosNativeNavigationBarItemRole.done,
+                      hidden: !_selectionMode,
+                      accessibilityLabel: '完成',
                       placementGroup: 'selection-actions',
                     ),
                   ],
@@ -126,10 +135,10 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                         if (hiddenKeys.isNotEmpty) {
                           _toggleSelectAll(hiddenKeys);
                         }
-                      case 'toggleSelection':
-                        _selectionMode
-                            ? _exitSelectionMode()
-                            : _enterSelectionMode();
+                      case 'select':
+                        _enterSelectionMode();
+                      case 'done':
+                        _exitSelectionMode();
                     }
                   },
                 )
@@ -170,27 +179,32 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                       ),
                   ],
                 ),
-          bottomNavigationBar: isIos() && _selectionMode
-              ? SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        CNButton(
-                          label: '恢复',
-                          semanticLabel: '恢复所选事项',
-                          enabled: _selected.isNotEmpty,
-                          onPressed: _selected.isEmpty ? null : _restoreSelected,
-                          tint: theme.colorScheme.primary,
-                          config: const CNButtonConfig(
-                            style: CNButtonStyle.glass,
-                            minHeight: 44,
-                            shrinkWrap: true,
+          // Mounted for the page's life and offstage outside selection, so
+          // its native button is not created on the frame selection starts.
+          bottomNavigationBar: isIos()
+              ? Offstage(
+                  offstage: !_selectionMode,
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          CNButton(
+                            label: '恢复',
+                            semanticLabel: '恢复所选事项',
+                            enabled: _selected.isNotEmpty,
+                            onPressed: _selected.isEmpty ? null : _restoreSelected,
+                            tint: theme.colorScheme.primary,
+                            config: const CNButtonConfig(
+                              style: CNButtonStyle.glass,
+                              minHeight: 44,
+                              shrinkWrap: true,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 )

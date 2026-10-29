@@ -98,8 +98,16 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.text('2026 秋季'), findsOneWidget);
-    final button = tester.widget<CNButton>(find.byType(CNButton));
+    final buttons = tester.widgetList<CNButton>(find.byType(CNButton));
+    final button = buttons.singleWhere((button) => button.label == 'Back');
     expect(button.enabled, false);
+    // A hidden item stays mounted, so its native view exists when it is shown,
+    // but nothing can reach it while hidden.
+    final hidden = find.byWidgetPredicate(
+      (widget) => widget is CNButton && widget.label == 'Hidden',
+    );
+    expect(hidden, findsOneWidget);
+    expect(hidden.hitTestable(), findsNothing);
     expect(button.onPressed, null);
     expect(taps, isEmpty);
     final menu = tester.widget<CNPopupMenuButton>(find.byType(CNPopupMenuButton));

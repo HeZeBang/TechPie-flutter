@@ -112,8 +112,8 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
               ],
             )
           : Text(title, style: TextStyle(color: scheme.onSurface)),
-      leading: leadingItems.any((item) => !item.hidden) ? _actions(context, leadingItems) : null,
-      trailing: trailingItems.any((item) => !item.hidden) ? _actions(context, trailingItems) : null,
+      leading: leadingItems.isNotEmpty ? _actions(context, leadingItems) : null,
+      trailing: trailingItems.isNotEmpty ? _actions(context, trailingItems) : null,
       bottom: hasSubtitle
           ? PreferredSize(
               preferredSize: const Size.fromHeight(26),
@@ -180,11 +180,11 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
                 child: NavigationToolbar(
                   centerMiddle: true,
                   middleSpacing: 8,
-                  leading: leadingItems.any((item) => !item.hidden)
+                  leading: leadingItems.isNotEmpty
                       ? _actions(context, leadingItems)
                       : null,
                   middle: largeTitleMode ? null : titleWidget,
-                  trailing: trailingItems.any((item) => !item.hidden)
+                  trailing: trailingItems.isNotEmpty
                       ? _actions(context, trailingItems)
                       : null,
                 ),
@@ -201,30 +201,47 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
   }
 
   Widget _actions(BuildContext context, List<IosNativeNavigationBarItem> items) {
-    final visible = items.where((item) => !item.hidden).toList();
     final controls = <Widget>[];
-    for (var i = 0; i < visible.length;) {
-      final first = visible[i];
+    IosNativeNavigationBarItem? previousVisible;
+    for (var i = 0; i < items.length;) {
+      final first = items[i];
+      if (first.hidden) {
+        // Same key and same slot widget as when it is shown, in the same Row,
+        // so toggling `hidden` keeps the element — and its native view.
+        controls.add(
+          KeyedSubtree(
+            key: ValueKey(first.id),
+            child: _HideableSlot(hidden: true, child: _action(context, first)),
+          ),
+        );
+        i++;
+        continue;
+      }
       var end = i + 1;
       if (_canGroup(first)) {
-        while (end < visible.length &&
-            _canGroup(visible[end]) &&
-            visible[end].placementGroup == first.placementGroup) {
+        while (end < items.length &&
+            !items[end].hidden &&
+            _canGroup(items[end]) &&
+            items[end].placementGroup == first.placementGroup) {
           end++;
         }
       }
-      if (controls.isNotEmpty) {
-        controls
-            .add(SizedBox(width: first.placementGroup == visible[i - 1].placementGroup ? 4 : 12));
+      if (previousVisible != null) {
+        controls.add(
+          SizedBox(width: first.placementGroup == previousVisible.placementGroup ? 4 : 12),
+        );
       }
-      final group = visible.sublist(i, end);
+      final group = items.sublist(i, end);
       // Different actions must not inherit a previous native button's image.
       controls.add(
         KeyedSubtree(
           key: ValueKey(group.map((item) => item.id).join('/')),
-          child: group.length > 1 ? _group(context, group) : _action(context, first),
+          child: group.length > 1
+              ? _group(context, group)
+              : _HideableSlot(hidden: false, child: _action(context, first)),
         ),
       );
+      previousVisible = items[end - 1];
       i = end;
     }
     return ConstrainedBox(
@@ -400,4 +417,34 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
       ),
     );
   }
+}
+
+/// Shows its child, or keeps it mounted and composited while taking no space,
+/// touches or semantics and drawing none of it.
+///
+/// Hiding by removing (or by Offstage) is what made a navigation bar flash when
+/// it switched modes: a platform view that leaves the scene has to be created,
+/// or composited back in, on the frame it is shown, and that frame the slot is
+/// empty. Here a hidden child stays in the scene, clipped to a zero-size box
+/// (a near-zero opacity was tried and still left a visible trace of the glass).
+/// The widget types are the same in both states, so the child's element — and
+/// its native view — survives the toggle.
+class _HideableSlot extends StatelessWidget {
+  const _HideableSlot({required this.hidden, required this.child});
+
+  final bool hidden;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ClipRect(
+        clipBehavior: hidden ? Clip.hardEdge : Clip.none,
+        child: Align(
+          widthFactor: hidden ? 0 : 1,
+          heightFactor: hidden ? 0 : 1,
+          child: IgnorePointer(
+            ignoring: hidden,
+            child: ExcludeSemantics(excluding: hidden, child: child),
+          ),
+        ),
+      );
 }
