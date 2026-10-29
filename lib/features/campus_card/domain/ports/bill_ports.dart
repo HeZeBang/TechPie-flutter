@@ -1,10 +1,5 @@
 import '../models/bill_models.dart';
 
-abstract interface class BillSummaryRepository {
-  Future<List<String>> availableMonths();
-  Future<BillSummary> summary(String month);
-}
-
 abstract interface class TransactionHistoryPort {
   Future<TransactionPage> timeline({
     required String month,
