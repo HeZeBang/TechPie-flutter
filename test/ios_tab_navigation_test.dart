@@ -108,8 +108,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(detail), findsOneWidget);
 
-      // Tapping the selected tab returns it to its root.
-      selectTab(tester, 3);
+      // Tapping the selected tab returns it to its root. UITabBar does not
+      // report a reselect, so this is a real tap on the item, not the plugin's
+      // callback.
+      final bar = tester.getRect(find.byType(CNTabBar));
+      await tester.tapAt(Offset(bar.left + bar.width * 7 / 8, bar.center.dy));
       await tester.pumpAndSettle();
       expect(find.byKey(detail), findsNothing);
       expect(find.byType(SettingsPage), findsOneWidget);
