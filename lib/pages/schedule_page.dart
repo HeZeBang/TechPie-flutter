@@ -31,8 +31,8 @@ import '../widgets/desktop_popup.dart';
 import '../widgets/desktop_select_popover.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/schedule_picker_sheet.dart';
+import '../widgets/uni_auth_login.dart';
 import 'custom_course_editor_page.dart';
-import 'login_page.dart';
 import 'third_party_accounts_page.dart';
 
 /// What an empty week actually is, given what the timetable knows about itself.
@@ -750,7 +750,7 @@ class _SchedulePageState extends State<SchedulePage> {
                             ),
                           );
                         } else {
-                          unawaited(presentLoginPage(context));
+                          unawaited(startUniAuthLogin(context));
                         }
                       },
                       accessibilityLabel: auth.isLoggedIn ? '绑定 eGate 账号' : '登录 TechPie',

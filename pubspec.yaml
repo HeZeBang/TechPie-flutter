@@ -151,6 +151,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_test:
     sdk: flutter
+  webview_flutter_platform_interface: ^2.13.1
 
 flutter_launcher_icons:
   image_path: "assets/icon/icon.png"

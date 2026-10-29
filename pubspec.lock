@@ -1106,7 +1106,7 @@ packages:
     source: git
     version: "4.7.0"
   webview_flutter_platform_interface:
-    dependency: "direct overridden"
+    dependency: "direct dev"
     description:
       path: webview_flutter_platform_interface
       ref: main

@@ -25,11 +25,11 @@ import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/uni_auth_login.dart';
 import '../widgets/update_dialogs.dart';
 import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
-import 'login_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'watch_settings_page.dart';
@@ -301,7 +301,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   label: '通过 GeekPie Uni-Auth 登录',
                   role: AdaptiveButtonRole.prominent,
                   accessibilityLabel: '登录 TechPie',
-                  onPressed: () => unawaited(presentLoginPage(context)),
+                  onPressed: () => unawaited(startUniAuthLogin(context)),
                 ),
               )
             else
@@ -309,7 +309,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 leading: const Icon(Icons.login),
                 title: const Text('Login'),
                 subtitle: const Text('通过 GeekPie Uni-Auth 登录'),
-                onTap: () => unawaited(presentLoginPage(context)),
+                onTap: () => unawaited(startUniAuthLogin(context)),
               ),
             // Bindings are configured independently of the primary account, so
             // this row sits outside the signed-in block (it replaces the old

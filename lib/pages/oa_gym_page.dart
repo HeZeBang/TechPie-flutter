@@ -14,7 +14,7 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
-import 'login_page.dart';
+import '../widgets/uni_auth_login.dart';
 import 'third_party_accounts_page.dart';
 
 class OaGymPage extends StatefulWidget {
@@ -54,7 +54,7 @@ class _OaGymPageState extends State<OaGymPage>
       await _openThirdPartyAccounts();
       return;
     }
-    await presentLoginPage(context);
+    await startUniAuthLogin(context);
     if (!mounted) return;
     setState(() {});
   }
