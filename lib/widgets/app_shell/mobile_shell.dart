@@ -4,9 +4,10 @@ import '../../utils/platform.dart';
 import '../ios/ios_native_tab_bar.dart';
 import 'app_destination.dart';
 import 'app_shell_metrics.dart';
+import 'app_shell_tab_bar.dart';
 import 'tg_bottom_nav_bar.dart';
 
-class MobileShell extends StatelessWidget {
+class MobileShell extends StatefulWidget {
   final List<AppDestination> destinations;
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
@@ -21,13 +22,38 @@ class MobileShell extends StatelessWidget {
   });
 
   @override
+  State<MobileShell> createState() => _MobileShellState();
+}
+
+class _MobileShellState extends State<MobileShell> {
+  final _tabBar = AppShellTabBarController();
+
+  @override
+  void dispose() {
+    _tabBar.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    return AppShellTabBar(
+      controller: _tabBar,
+      child: ListenableBuilder(
+        listenable: _tabBar,
+        builder: (context, _) => _buildShell(context, tabBarHidden: _tabBar.hidden),
+      ),
+    );
+  }
+
+  Widget _buildShell(BuildContext context, {required bool tabBarHidden}) {
     final usesIosChrome = isIos();
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    final bottomObstruction = (usesIosChrome
-            ? 49.0
-            : TgBottomNavBar.barHeight + TgBottomNavBar.margin * 2) +
-        bottomInset;
+    // While a page stands in for the bar it covers nothing, so the page's own
+    // toolbar sits on the home indicator's safe area, where the bar was.
+    final bottomObstruction = tabBarHidden
+        ? bottomInset
+        : (usesIosChrome ? 49.0 : TgBottomNavBar.barHeight + TgBottomNavBar.margin * 2) +
+            bottomInset;
 
     return AppShellMetrics(
       bottomObstruction: bottomObstruction,
@@ -46,23 +72,38 @@ class MobileShell extends StatelessWidget {
               data: media.copyWith(
                 padding: media.padding.copyWith(bottom: bottomObstruction),
               ),
-              child: child,
+              child: widget.child,
             );
           },
         ),
-        bottomNavigationBar: usesIosChrome
-            ? IosNativeTabBar(
-                selectedIndex: selectedIndex,
-                items: destinations
-                    .map((item) => item.toIosNativeTabBarItem())
-                    .toList(),
-                onSelected: onDestinationSelected,
-              )
-            : TgBottomNavBar(
-                destinations: destinations,
-                selectedIndex: selectedIndex,
-                onDestinationSelected: onDestinationSelected,
+        // Collapsed rather than removed while hidden, so the native tab bar is
+        // not recreated — and does not flash — when it comes back.
+        bottomNavigationBar: ClipRect(
+          clipBehavior: tabBarHidden ? Clip.hardEdge : Clip.none,
+          child: Align(
+            alignment: Alignment.topCenter,
+            heightFactor: tabBarHidden ? 0 : 1,
+            child: IgnorePointer(
+              ignoring: tabBarHidden,
+              child: ExcludeSemantics(
+                excluding: tabBarHidden,
+                child: usesIosChrome
+                    ? IosNativeTabBar(
+                        selectedIndex: widget.selectedIndex,
+                        items: widget.destinations
+                            .map((item) => item.toIosNativeTabBarItem())
+                            .toList(),
+                        onSelected: widget.onDestinationSelected,
+                      )
+                    : TgBottomNavBar(
+                        destinations: widget.destinations,
+                        selectedIndex: widget.selectedIndex,
+                        onDestinationSelected: widget.onDestinationSelected,
+                      ),
               ),
+            ),
+          ),
+        ),
       ),
     );
   }

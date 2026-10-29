@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../models/assignment.dart';
@@ -11,6 +12,7 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/app_shell/app_shell_tab_bar.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 
@@ -25,13 +27,26 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
   bool _selectionMode = false;
   final Set<String> _selected = {};
 
+  /// On iOS the selection toolbar takes the tab bar's place, as it does in
+  /// Photos, Files and Mail, instead of stacking a second bar above it.
+  AppShellTabBarHold? _tabBarHold;
+
+  @override
+  void dispose() {
+    _tabBarHold?.release();
+    super.dispose();
+  }
+
   void _enterSelectionMode() {
+    if (isIos()) _tabBarHold ??= AppShellTabBar.maybeOf(context)?.hide();
     setState(() {
       _selectionMode = true;
     });
   }
 
   void _exitSelectionMode() {
+    _tabBarHold?.release();
+    _tabBarHold = null;
     setState(() {
       _selectionMode = false;
       _selected.clear();
@@ -59,11 +74,22 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
 
   void _restoreSelected() {
     final service = ServiceProvider.of(context).assignmentService;
+    final count = _selected.length;
     for (final key in _selected.toList()) {
       unawaited(service.unhide(key));
     }
     _exitSelectionMode();
+    showAdaptiveFeedback(
+      context: context,
+      message: '已恢复 $count 项',
+      style: AdaptiveFeedbackStyle.success,
+    );
   }
+
+  /// The selection title, in the words iOS uses: nothing chosen yet reads as
+  /// an instruction, not as "0 selected".
+  String get _selectionTitle =>
+      _selected.isEmpty ? '选择项目' : '已选择 ${_selected.length} 项';
 
   @override
   Widget build(BuildContext context) {
@@ -80,13 +106,18 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
         final hiddenKeys = service.overrides.hidden.toList();
         final selectedAll =
             hiddenKeys.isNotEmpty && _selected.length == hiddenKeys.length;
+        if (_selectionMode && hiddenKeys.isEmpty) {
+          // Everything was restored from elsewhere: nothing left to select.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _selectionMode) _exitSelectionMode();
+          });
+        }
 
         return Scaffold(
           extendBodyBehindAppBar: !isIos() && !useLegacyIosChrome,
           appBar: isIos()
               ? IosNativeNavigationBar(
-                  title:
-                      _selectionMode ? '已选择 ${_selected.length} 个' : '已忽略的事项',
+                  title: _selectionMode ? _selectionTitle : '已忽略的事项',
                   selectionMode: _selectionMode,
                   leadingItems: [
                     IosNativeNavigationBarItem(
@@ -99,10 +130,10 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                     ),
                     IosNativeNavigationBarItem(
                       id: 'toggleSelectAll',
-                      title: selectedAll ? '全不选' : '全选',
+                      title: selectedAll ? '取消全选' : '全选',
                       enabled: hiddenKeys.isNotEmpty,
                       hidden: !_selectionMode,
-                      accessibilityLabel: selectedAll ? '全不选' : '全选',
+                      accessibilityLabel: selectedAll ? '取消全选' : '全选',
                       placementGroup: 'leading-main',
                     ),
                   ],
@@ -145,12 +176,12 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
               : BlurredAppBar(
                   centerTitle: false,
                   title: Text(
-                    _selectionMode ? '已选择 ${_selected.length} 个' : '已忽略的事项',
+                    _selectionMode ? _selectionTitle : '已忽略的事项',
                   ),
                   actions: [
                     if (_selectionMode)
                       IconButton(
-                        tooltip: selectedAll ? '全不选' : '全选',
+                        tooltip: selectedAll ? '取消全选' : '全选',
                         icon: Icon(
                           selectedAll ? Icons.deselect : Icons.select_all,
                         ),
@@ -179,6 +210,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                       ),
                   ],
                 ),
+          // The selection toolbar, where the tab bar was while selecting.
           // Mounted for the page's life and offstage outside selection, so
           // its native button is not created on the frame selection starts.
           bottomNavigationBar: isIos()
@@ -212,18 +244,40 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
           body: hiddenKeys.isEmpty
               ? Padding(
                   padding: EdgeInsets.only(top: topPad),
-                  child: Center(
-                    child: Text(
-                      '没有被忽略的事项',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
+                  child: _buildEmptyState(theme),
                 )
               : _buildList(context, service, hiddenKeys, theme, topPad),
         );
       },
+    );
+  }
+
+  /// An empty list says what the page is for, the way ContentUnavailableView
+  /// does: a symbol, a title and one line of explanation.
+  Widget _buildEmptyState(ThemeData theme) {
+    final secondary = theme.colorScheme.onSurfaceVariant;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isIos() ? CupertinoIcons.eye_slash : Icons.visibility_off_outlined,
+              size: 48,
+              color: secondary,
+            ),
+            const SizedBox(height: 12),
+            Text('没有被忽略的事项', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(
+              '在 Deadlines 中忽略的事项会出现在这里，随时可以恢复。',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(color: secondary),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -257,6 +311,13 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
         final a = lookup[key];
         final selected = _selected.contains(key);
 
+        final title = a?.title ?? key;
+        final subtitle = a == null
+            ? '(已无缓存数据)'
+            : '${a.kind.label} · ${a.platform.toUpperCase()} · ${a.course}';
+        if (isIos()) {
+          return _buildIosRow(context, theme, key, title, subtitle, selected);
+        }
         return ListTile(
           selected: selected,
           selectedColor: isIos() ? theme.colorScheme.onSurface : null,
@@ -284,10 +345,8 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
           onLongPress: _selectionMode
               ? null
               : () {
-                  setState(() {
-                    _selectionMode = true;
-                    _selected.add(key);
-                  });
+                  _enterSelectionMode();
+                  _toggleSelection(key);
                 },
           trailing: _selectionMode
               ? null
@@ -301,6 +360,94 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                 ),
         );
       },
+    );
+  }
+
+  /// A row the way a UIKit list draws one: selection circles that come in with
+  /// selection mode, no tint on a selected row, and the row's own action behind
+  /// a swipe and a long-press menu rather than a permanent button.
+  Widget _buildIosRow(
+    BuildContext context,
+    ThemeData theme,
+    String key,
+    String title,
+    String subtitle,
+    bool selected,
+  ) {
+    final secondary = CupertinoColors.secondaryLabel.resolveFrom(context);
+    final tile = Material(
+      color: theme.scaffoldBackgroundColor,
+      child: ListTile(
+        leading: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: _selectionMode
+              ? Icon(
+                  selected
+                      ? CupertinoIcons.checkmark_circle_fill
+                      : CupertinoIcons.circle,
+                  key: ValueKey(selected),
+                  size: 24,
+                  color: selected
+                      ? theme.colorScheme.primary
+                      : CupertinoColors.systemGrey3.resolveFrom(context),
+                )
+              : Icon(
+                  CupertinoIcons.eye_slash,
+                  key: const ValueKey('hidden'),
+                  color: secondary,
+                ),
+        ),
+        title: Text(title),
+        subtitle: Text(
+          subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: secondary),
+        ),
+        onTap: _selectionMode ? () => _toggleSelection(key) : null,
+      ),
+    );
+    if (_selectionMode) {
+      return Semantics(selected: selected, child: tile);
+    }
+    return Dismissible(
+      key: ValueKey('restore:$key'),
+      direction: DismissDirection.endToStart,
+      background: ColoredBox(
+        color: theme.colorScheme.primary,
+        child: const Align(
+          alignment: AlignmentDirectional.centerEnd,
+          child: Padding(
+            padding: EdgeInsetsDirectional.only(end: 24),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(CupertinoIcons.arrow_uturn_left, color: Colors.white),
+                SizedBox(width: 6),
+                Text('恢复', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ),
+      ),
+      // Restoring removes the key from the hidden set synchronously, so the
+      // row has left the list by the time Dismissible checks for it.
+      onDismissed: (_) => unawaited(_restoreOne(key)),
+      child: CupertinoContextMenu(
+        actions: [
+          CupertinoContextMenuAction(
+            trailingIcon: CupertinoIcons.arrow_uturn_left,
+            onPressed: () {
+              Navigator.of(context, rootNavigator: true).pop();
+              unawaited(_restoreOne(key));
+            },
+            child: const Text('恢复'),
+          ),
+        ],
+        // The menu's preview lays its child out unconstrained; the row spans
+        // the list, so give it that width explicitly.
+        child: SizedBox(width: MediaQuery.sizeOf(context).width, child: tile),
+      ),
     );
   }
 }
