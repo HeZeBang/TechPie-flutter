@@ -15,6 +15,7 @@ Future<T?> showSchedulePickerSheet<T>({
   FocusManager.instance.primaryFocus?.unfocus();
   return showModalBottomSheet<T>(
     context: context,
+    useRootNavigator: true,
     showDragHandle: true,
     builder: (context) => SafeArea(
       top: false,

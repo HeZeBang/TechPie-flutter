@@ -69,8 +69,11 @@ final featureEntries = <Feature>[
     id: 'campus_card',
     description: '校园卡',
     mode: FeatureMode.native,
+    // The campus card is a self-contained feature with its own page stack,
+    // presented over the whole app rather than inside a tab.
     nativeEntry: (context) => pushAdaptivePage<void>(
       context,
+      rootNavigator: true,
       builder: (_) => const CampusCardPage(
         entry: CampusCardEntry.paymentCode,
       ),

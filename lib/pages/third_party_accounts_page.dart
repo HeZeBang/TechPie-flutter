@@ -597,6 +597,7 @@ Future<void> _showAccountDetailSheet(
   final theme = Theme.of(context);
   return showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
     showDragHandle: true,
     builder: (sheetContext) {
       return SafeArea(

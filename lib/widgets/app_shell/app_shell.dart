@@ -48,6 +48,15 @@ class _AppShellState extends State<AppShell> {
   /// rebuilt when the destination changes, and two live navigators must not
   /// share one GlobalKey.
   final _contentNavigatorKeys = <int, GlobalKey<NavigatorState>>{};
+
+  /// On iOS each tab owns its page stack, so the tab bar stays on screen as
+  /// the user drills in and switching tabs returns to where that tab was —
+  /// what UITabBarController does. Each stack needs its own hero controller,
+  /// and its root its own primary scroll controller, so a second tap on the
+  /// tab can scroll that tab, and only that tab, back to the top.
+  final _tabNavigatorKeys = <int, GlobalKey<NavigatorState>>{};
+  final _tabHeroControllers = <int, HeroController>{};
+  final _tabScrollControllers = <int, ScrollController>{};
   static const List<AppDestination> _destinations = [
     AppDestination(
       label: 'Home',
@@ -98,6 +107,12 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     appShellPendingEcardEntry.removeListener(_showPendingEcardEntry);
+    for (final controller in _tabHeroControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _tabScrollControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -119,9 +134,37 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _onDestinationSelected(int index) {
-    if (index == _selectedIndex) return;
+    if (index == _selectedIndex) {
+      _returnToTabRoot(index);
+      return;
+    }
     _previousSelectedIndex = _selectedIndex;
     setState(() => _selectedIndex = index);
+  }
+
+  /// A tap on the selected tab first unwinds that tab's stack, and on its root
+  /// scrolls back to the top — the system tab bar's behaviour.
+  void _returnToTabRoot(int index) {
+    final navigator = _tabNavigatorKeys[index]?.currentState;
+    if (navigator == null) return;
+    if (navigator.canPop()) {
+      navigator.popUntil((route) => route.isFirst);
+      return;
+    }
+    final controller = _tabScrollControllers[index];
+    if (controller == null) return;
+    final animate = !MediaQuery.disableAnimationsOf(context);
+    for (final position in controller.positions) {
+      if (animate) {
+        unawaited(position.animateTo(
+          position.minScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        ),);
+      } else {
+        position.jumpTo(position.minScrollExtent);
+      }
+    }
   }
 
   void _onSidebarToggleCollapsed() {
@@ -134,7 +177,46 @@ class _AppShellState extends State<AppShell> {
       previousSelectedIndex: _previousSelectedIndex,
       preserveVisitedPages: isIos(),
       animationsEnabled: !MediaQuery.disableAnimationsOf(context),
-      pages: _destinations.map((destination) => destination.page).toList(),
+      pages: [
+        for (var index = 0; index < _destinations.length; index++)
+          isIos()
+              ? _buildTabNavigator(index, _destinations[index].page)
+              : _destinations[index].page,
+      ],
+    );
+  }
+
+  Widget _buildTabNavigator(int index, Widget page) {
+    final navigatorKey = _tabNavigatorKeys.putIfAbsent(
+      index,
+      GlobalKey<NavigatorState>.new,
+    );
+    final scrollController = _tabScrollControllers.putIfAbsent(
+      index,
+      ScrollController.new,
+    );
+
+    // Only the selected tab answers a system back: an offstage tab with pages
+    // of its own must not pop behind the user's back.
+    return NavigatorPopHandler(
+      enabled: index == _selectedIndex,
+      onPopWithResult: (_) => navigatorKey.currentState?.pop(),
+      child: HeroControllerScope(
+        controller: _tabHeroControllers.putIfAbsent(
+          index,
+          MaterialApp.createMaterialHeroController,
+        ),
+        child: Navigator(
+          key: navigatorKey,
+          onGenerateRoute: (settings) => adaptivePageRoute<void>(
+            settings: settings,
+            builder: (context) => PrimaryScrollController(
+              controller: scrollController,
+              child: page,
+            ),
+          ),
+        ),
+      ),
     );
   }
 

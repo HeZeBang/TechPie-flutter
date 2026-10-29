@@ -483,8 +483,10 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       final sources = await client.sources(course, lesson);
       if (!mounted || request != _request) return;
       setState(() => _busy = false);
+      // Playback is immersive, so it covers the tab bar.
       await pushAdaptivePage<void>(
         context,
+        rootNavigator: true,
         builder: (_) => ElrcPlayerPage(
           courseName: course.name,
           lessonTitle: lesson.title,

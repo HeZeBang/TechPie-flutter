@@ -131,7 +131,8 @@ class UniAuthService extends ChangeNotifier {
   /// Requires a BuildContext for the full-screen presentation. Returns the
   /// full token bundle (access + refresh + expiry).
   Future<SsoTokens> login(BuildContext context) async {
-    final navigator = Navigator.of(context);
+    // Sign-in is a modal step over the whole app, never a page inside a tab.
+    final navigator = Navigator.of(context, rootNavigator: true);
     _loading = true;
     notifyListeners();
     try {

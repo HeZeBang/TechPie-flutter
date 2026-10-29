@@ -596,6 +596,7 @@ class _SettingsPageState extends State<SettingsPage> {
     unawaited(
       showModalBottomSheet<void>(
         context: context,
+        useRootNavigator: true,
         builder: (context) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -695,6 +696,7 @@ class _SettingsPageState extends State<SettingsPage> {
     unawaited(
       showModalBottomSheet<void>(
         context: context,
+        useRootNavigator: true,
         builder: (context) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,

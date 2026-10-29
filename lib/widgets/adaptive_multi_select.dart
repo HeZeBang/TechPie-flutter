@@ -130,6 +130,7 @@ class AdaptiveMultiSelect extends StatelessWidget {
 
     final confirmed = await showModalBottomSheet<Set<String>>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) {

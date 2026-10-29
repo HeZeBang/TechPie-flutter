@@ -264,6 +264,7 @@ class _SchedulePageState extends State<SchedulePage> {
     unawaited(
       showModalBottomSheet<void>(
         context: context,
+        useRootNavigator: true,
         showDragHandle: true,
         builder: (context) {
           final sheetTheme = Theme.of(context);
@@ -1728,6 +1729,7 @@ class _CourseBlock extends StatelessWidget {
     unawaited(
       showModalBottomSheet<void>(
         context: context,
+        useRootNavigator: true,
         showDragHandle: true,
         builder: (context) {
           return _detailContent(

@@ -229,9 +229,15 @@ class _GenericWebViewPageState extends State<GenericWebViewPage>
 
     return Scaffold(
       appBar: appBar,
-      body: _error == null
-          ? WebViewWidget(controller: _controller)
-          : Center(child: Text(_error!)),
+      // Bottom only: inside a tab the page sits above the tab bar.
+      body: SafeArea(
+        top: false,
+        left: false,
+        right: false,
+        child: _error == null
+            ? WebViewWidget(controller: _controller)
+            : Center(child: Text(_error!)),
+      ),
     );
   }
 }
