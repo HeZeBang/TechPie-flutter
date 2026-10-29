@@ -422,6 +422,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     // The shell performs the push: it knows whether the entry belongs inside the
     // selected destination's stack or on the root navigator, and it is still
     // there after a cold start.
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
     appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
   }
 
