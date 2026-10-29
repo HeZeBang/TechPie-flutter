@@ -123,7 +123,8 @@ final class AppleWalletPage extends StatelessWidget {
       ColoredBox(color: context.gpColors.bg, child: child);
 }
 
-/// Pull-to-refresh control positioned below the pinned eCard header.
+/// Pull-to-refresh control for touch platforms, positioned below the pinned
+/// eCard header. Native desktop uses the header refresh action instead.
 final class EcardSliverRefreshControl extends StatelessWidget {
   const EcardSliverRefreshControl({super.key, required this.onRefresh});
 
@@ -131,6 +132,9 @@ final class EcardSliverRefreshControl extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isDesktop()) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
     final color = context.gpColors.textSecondary;
     return CupertinoSliverRefreshControl(
       onRefresh: onRefresh,
@@ -218,6 +222,7 @@ final class ApplePinnedHeaderLayout extends StatelessWidget {
     this.leading,
     this.title,
     this.actions = const [],
+    this.refreshAction,
   });
 
   /// The top offset of a page's scrollable content: the header's height plus the
@@ -258,6 +263,7 @@ final class ApplePinnedHeaderLayout extends StatelessWidget {
   final CampusCardHeaderAction? leading;
   final String? title;
   final List<CampusCardHeaderAction> actions;
+  final Widget? refreshAction;
 
   @override
   Widget build(BuildContext context) {
@@ -278,7 +284,10 @@ final class ApplePinnedHeaderLayout extends StatelessWidget {
             automaticallyImplyLeading: false,
             leading: leading == null ? null : _materialButton(leading!),
             title: Text(resolvedTitle),
-            actions: actions.map(_materialButton).toList(),
+            actions: [
+              if (refreshAction != null) refreshAction!,
+              ...actions.map(_materialButton),
+            ],
           );
     if (isIos()) {
       return SafeArea(
