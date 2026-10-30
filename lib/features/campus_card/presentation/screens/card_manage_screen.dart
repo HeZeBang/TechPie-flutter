@@ -311,7 +311,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
                             ),
                             const SizedBox(height: 22),
                             Text(
-                              '上海科技大学 eCard',
+                              '校园卡',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: context.gpColors.textPrimary,
