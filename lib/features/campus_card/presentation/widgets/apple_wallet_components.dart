@@ -429,7 +429,7 @@ final class CampusWalletCard extends StatelessWidget {
 
     return Semantics(
       button: onTap != null,
-      label: '上海科技大学 eCard',
+      label: '校园卡',
       child: ExcludeSemantics(
         child: DecoratedBox(
           decoration: BoxDecoration(
