@@ -94,7 +94,9 @@ void main() {
         // The trace is the one place allowed to log; its own gate is covered by
         // test/campus_card_http_trace_test.dart.
         .where(
-          (file) => !file.path.endsWith('data/api/decrypted_http_trace.dart'),
+          (file) => !file.path
+              .replaceAll('\\', '/')
+              .endsWith('data/api/decrypted_http_trace.dart'),
         )) {
       expect(
         file.readAsStringSync(),
