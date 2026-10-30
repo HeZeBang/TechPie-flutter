@@ -29,6 +29,16 @@ bool usesLegacyIosChrome() => isIos() && !_supportsIosLiquidGlass;
 /// Height for the app's top chrome, matching roomier iOS 26 toolbar controls.
 double adaptiveTopBarHeight() => usesIosLiquidGlass() ? 64.0 : kToolbarHeight;
 
+/// Check if the current platform is native Linux, independently of window size.
+bool isLinux() => !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
+
+/// Check if the current platform is a native desktop target.
+bool isDesktop() =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows);
+
 /// Check if the current platform is Android and not web.
 bool isAndroid() => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 

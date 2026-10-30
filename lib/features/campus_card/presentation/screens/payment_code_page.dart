@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:techpie/utils/platform.dart';
+import 'package:techpie/widgets/page_refresh.dart';
 
 import '../../app/app_providers.dart';
 import '../../application/campus_network_status.dart';
@@ -611,6 +613,9 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
       body: AppleWalletPage(
         child: ApplePinnedHeaderLayout(
           title: '付款码',
+          refreshAction: isDesktop()
+              ? PageRefreshButton(onRefresh: _refreshAll)
+              : null,
           leading: CampusCardHeaderAction(
             id: 'back',
             sfSymbol: 'chevron.left',

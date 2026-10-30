@@ -407,7 +407,7 @@ void main() {
       }
       expect(find.byKey(const Key('card-manage-page')), findsOneWidget);
       expect(find.text('OPENID'), findsNothing);
-      expect(find.text('上海科技大学 eCard'), findsOneWidget);
+      expect(find.text('校园卡'), findsOneWidget);
       expect(find.text('退出登录'), findsNothing);
 
       auth.expire();

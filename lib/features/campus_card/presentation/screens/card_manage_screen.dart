@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:techpie/utils/platform.dart';
+import 'package:techpie/widgets/page_refresh.dart';
 
 import '../../app/app_providers.dart';
 import '../../domain/models/card_models.dart';
@@ -245,6 +247,9 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
       key: const Key('card-manage-page'),
       body: AppleWalletPage(
         child: ApplePinnedHeaderLayout(
+          refreshAction: isDesktop() && _segment == 1 && card != null
+              ? PageRefreshButton(onRefresh: _refreshActivity)
+              : null,
           leading: CampusCardHeaderAction(
             id: 'back',
             sfSymbol: 'chevron.left',
@@ -305,7 +310,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
                             ),
                             const SizedBox(height: 22),
                             Text(
-                              '上海科技大学 eCard',
+                              '校园卡',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: context.gpColors.textPrimary,
