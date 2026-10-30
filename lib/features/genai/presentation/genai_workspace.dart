@@ -33,6 +33,7 @@ import 'genai_turn_edit_dialog.dart';
 import 'genai_web_search_view.dart';
 import 'markdown/genai_markdown.dart';
 import 'picker/genai_picker.dart';
+import 'visuals/genai_visual_syntax.dart';
 
 typedef GenAiLoginAction = Future<GenAiCredential?> Function(
   BuildContext context,
@@ -456,7 +457,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     );
     _scrollToEnd();
     await sending;
-    if (mounted) unawaited(_history.load());
   }
 
   Future<void> _changeTurn(int index, String action) async {
@@ -503,7 +503,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     final sending = _state.retryTurn(index);
     _scrollToEnd();
     await sending;
-    if (mounted) unawaited(_history.load());
   }
 
   Future<void> _copy(String text, [String message = '已复制回复']) async {
@@ -579,21 +578,25 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                 return Row(
                   children: [
                     if (wide)
-                      GenAiHistorySidebar(
-                        history: _history,
-                        connected: _state.connected,
-                        sending: _state.sending,
-                        activeId: _showImages ? '' : _state.groupId,
-                        actions: _chatActions(labels: true),
-                        accountMenu: _accountMenu(),
-                        onOpen: (item) => unawaited(_openConversation(item)),
-                        menuBuilder: (item) => GenAiConversationMenu(
-                          key: ValueKey(item.id),
-                          workspace: _state,
-                          conversation: item,
-                          enabled: !_state.sending,
-                          onChanged: () => unawaited(_history.load()),
-                          onDelete: () => unawaited(_deleteConversation(item.id)),
+                      Semantics(
+                        container: true,
+                        explicitChildNodes: true,
+                        child: GenAiHistorySidebar(
+                          history: _history,
+                          connected: _state.connected,
+                          sending: _state.sending,
+                          activeId: _showImages ? '' : _state.groupId,
+                          actions: _chatActions(labels: true),
+                          accountMenu: _accountMenu(),
+                          onOpen: (item) => unawaited(_openConversation(item)),
+                          menuBuilder: (item) => GenAiConversationMenu(
+                            key: ValueKey(item.id),
+                            workspace: _state,
+                            conversation: item,
+                            enabled: !_state.sending,
+                            onChanged: () => unawaited(_history.load()),
+                            onDelete: () => unawaited(_deleteConversation(item.id)),
+                          ),
                         ),
                       ),
                     Expanded(
@@ -842,60 +845,71 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             _state.connected ? _state.sessions.session!.profile.username : '尚未连接',
           ),
         ),
+        const PopupMenuDivider(),
         if (_state.connected)
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'usage',
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.bar_chart),
-              title: Text('用量统计'),
-            ),
+            child: _accountMenuItem(Icons.bar_chart_outlined, '用量统计'),
           ),
         if (widget.onBindCampus != null)
-          const PopupMenuItem(value: 'campus', child: Text('管理校园账号')),
+          PopupMenuItem(
+            value: 'campus',
+            child: _accountMenuItem(Icons.manage_accounts_outlined, '管理校园账号'),
+          ),
         if (_state.connected)
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'disconnect',
-            child: Text('断开 GenAI'),
+            child: _accountMenuItem(Icons.logout, '断开 GenAI'),
           )
         else
           PopupMenuItem(
             value: 'connect',
             enabled: _state.sessions.owner != null,
-            child: const Text('连接 GenAI'),
+            child: _accountMenuItem(Icons.login, '连接 GenAI'),
           ),
       ],
     );
   }
 
-  Widget _modelSelector() => ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 250),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<GenAiModel>(
-            key: const ValueKey('genai-model'),
-            borderRadius: BorderRadius.circular(12),
-            isExpanded: true,
-            value: _state.selectedModel,
-            hint: Text(_state.loadingModels ? '正在加载模型…' : '选择模型'),
-            icon: Icon(Icons.keyboard_arrow_down_rounded, color: _muted, size: 18),
-            items: _state.models
-                .where((model) => !model.isImage)
-                .map(
-                  (model) => DropdownMenuItem(
-                    value: model,
-                    child: Text(
-                      '${model.name}${model.payType == 'FREE' ? '' : model.payType == 'PAID' ? ' · 付费' : ' · 费用未知'}',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                      overflow: TextOverflow.ellipsis,
+  Widget _accountMenuItem(IconData icon, String label) => Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 12),
+          Flexible(child: Text(label)),
+        ],
+      );
+
+  Widget _modelSelector() => Semantics(
+        container: true,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 250),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<GenAiModel>(
+              key: const ValueKey('genai-model'),
+              borderRadius: BorderRadius.circular(12),
+              isExpanded: true,
+              value: _state.selectedModel,
+              hint: Text(_state.loadingModels ? '正在加载模型…' : '选择模型'),
+              icon: Icon(Icons.keyboard_arrow_down_rounded, color: _muted, size: 18),
+              items: _state.models
+                  .where((model) => !model.isImage)
+                  .map(
+                    (model) => DropdownMenuItem(
+                      value: model,
+                      child: Text(
+                        '${model.name}${model.payType == 'FREE' ? '' : model.payType == 'PAID' ? ' · 付费' : ' · 费用未知'}',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                )
-                .toList(),
-            onChanged: _state.sending
-                ? null
-                : (model) {
-                    if (model != null) _state.selectModel(model);
-                  },
+                  )
+                  .toList(),
+              onChanged: _state.sending
+                  ? null
+                  : (model) {
+                      if (model != null) _state.selectModel(model);
+                    },
+            ),
           ),
         ),
       );
@@ -1079,22 +1093,53 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
         ],
       );
 
-  Widget _thread() => ListView.builder(
+  Widget _markdownImage(Uri uri, String? title, String? alt) => GenAiMarkdownImage(
+        uri: uri,
+        title: title,
+        alt: alt,
+        imageDisplayUri: _state.repository.imageDisplayUri,
+      );
+
+  final _visualCounts = <String, (String, int)>{};
+
+  (String, int)? _latestVisual(List<GenAiConversationTurn> turns) {
+    final ids = turns.map((turn) => turn.id).toSet();
+    _visualCounts.removeWhere((id, _) => !ids.contains(id));
+    for (final turn in turns.reversed) {
+      var cached = _visualCounts[turn.id];
+      if (cached == null || cached.$1 != turn.answer) {
+        cached = (turn.answer, GenAiVisualSyntax.countComplete(turn.answer));
+        _visualCounts[turn.id] = cached;
+      }
+      if (cached.$2 > 0) return (turn.id, cached.$2);
+    }
+    return null;
+  }
+
+  Widget _thread() {
+    // The controller returns a defensive copy. Take it once per frame, rather
+    // than copying the entire history for every visible row and key lookup.
+    final turns = _state.turns;
+    return _threadWithVisuals(turns, _latestVisual(turns));
+  }
+
+  Widget _threadWithVisuals(List<GenAiConversationTurn> turns, (String, int)? latestVisual) =>
+      ListView.builder(
         key: const ValueKey('genai-thread'),
         controller: _scroll,
         // The latest edge is always zero, even before older variable-height
         // messages are laid out. Never chase an estimated maxScrollExtent.
         reverse: true,
         padding: const EdgeInsets.fromLTRB(24, 32, 24, 12),
-        itemCount: _state.turns.length,
+        itemCount: turns.length,
         findChildIndexCallback: (key) {
           if (key is! ValueKey<String>) return null;
-          final index = _state.turns.indexWhere((turn) => turn.id == key.value);
-          return index < 0 ? null : _state.turns.length - 1 - index;
+          final index = turns.indexWhere((turn) => turn.id == key.value);
+          return index < 0 ? null : turns.length - 1 - index;
         },
         itemBuilder: (context, reverseIndex) {
-          final index = _state.turns.length - 1 - reverseIndex;
-          final turn = _state.turns[index];
+          final index = turns.length - 1 - reverseIndex;
+          final turn = turns[index];
           if (turn.isHistoryGap) {
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1272,11 +1317,14 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                       ],
                                     ),
                                   ),
-                                SelectableText(
-                                  turn.prompt,
-                                  style: const TextStyle(
-                                    fontSize: 15.5,
-                                    height: 1.7,
+                                Semantics(
+                                  container: true,
+                                  child: SelectableText(
+                                    turn.prompt,
+                                    style: const TextStyle(
+                                      fontSize: 15.5,
+                                      height: 1.7,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -1313,7 +1361,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   onSelected: (action) => unawaited(_changeTurn(index, action)),
                                   itemBuilder: (_) => [
                                     const PopupMenuItem(value: 'edit', child: Text('编辑并重新发送')),
-                                    if (index < _state.turns.length - 1)
+                                    if (index < turns.length - 1)
                                       const PopupMenuItem(value: 'revert', child: Text('回退到此处')),
                                     const PopupMenuItem(value: 'delete', child: Text('删除此轮及后续')),
                                   ],
@@ -1328,6 +1376,8 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                       padding: const EdgeInsets.only(top: 4),
                       child: Semantics(
                         container: true,
+                        // Keep selectable text semantics from covering embedded visuals.
+                        explicitChildNodes: true,
                         label: turn.isAgent ? '校园工具回复' : 'AI 回复',
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1345,14 +1395,13 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   legacyReasoning: turn.reasoning,
                                   legacyCitations: turn.citations,
                                   onOpenLink: (url) => unawaited(_openLink(url)),
-                                  running: _state.sending && index == _state.turns.length - 1,
+                                  running: _state.sending && index == turns.length - 1,
                                   stopped: incomplete,
                                   imageDisplayUri: _state.repository.imageDisplayUri,
                                   onOpenImages:
                                       _state.sending ? null : () => unawaited(_openTools(1)),
                                 ),
-                              if (_state.pendingAgentApproval != null &&
-                                  index == _state.turns.length - 1)
+                              if (_state.pendingAgentApproval != null && index == turns.length - 1)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 12),
                                   child: Builder(
@@ -1407,24 +1456,14 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                   ),
                                 ],
                               ),
-                            if (turn.contextCompacted)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Text(
-                                  '已整理较早的上下文 · 完整记录已保留',
-                                  style: TextStyle(color: _muted, fontSize: 11),
-                                ),
-                              ),
                             if (turn.answer.isNotEmpty)
                               GenAiMarkdown(
                                 data: turn.answer,
                                 selectable: true,
-                                imageBuilder: (uri, title, alt) => GenAiMarkdownImage(
-                                  uri: uri,
-                                  title: title,
-                                  alt: alt,
-                                  imageDisplayUri: _state.repository.imageDisplayUri,
-                                ),
+                                interactiveVisuals: true,
+                                latestVisual: latestVisual,
+                                visualAnswerId: turn.id,
+                                imageBuilder: _markdownImage,
                                 onTapLink: (_, href, __) => unawaited(_openLink(href)),
                               ),
                             if (incomplete)
@@ -1507,7 +1546,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                                     ),
                                 ],
                                 if (incomplete &&
-                                    index == _state.turns.length - 1 &&
+                                    index == turns.length - 1 &&
                                     !turn.isHistoryGap &&
                                     _state.connected)
                                   TextButton.icon(

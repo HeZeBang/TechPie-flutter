@@ -5,6 +5,7 @@ import '../domain/genai_cancellation.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_session.dart';
 import '../platform/genai_login_policy.dart';
+import 'genai_http_failure.dart';
 
 /// Per-exchange cookie jar. CASTGC never leaves IDS; redirect callbacks are
 /// intercepted before a token-bearing landing URL is requested.
@@ -60,11 +61,9 @@ final class NativeGenAiIdsExchange {
             final path = cookie.path ?? '/';
             final pathMatches = uri.path == path ||
                 (uri.path.startsWith(path) &&
-                    (path.endsWith('/') ||
-                        uri.path.substring(path.length).startsWith('/')));
+                    (path.endsWith('/') || uri.path.substring(path.length).startsWith('/')));
             return pathMatches &&
-                (cookie.name != 'CASTGC' ||
-                    uri.host == 'ids.shanghaitech.edu.cn') &&
+                (cookie.name != 'CASTGC' || uri.host == 'ids.shanghaitech.edu.cn') &&
                 cookie.maxAge != 0 &&
                 (cookie.expires == null || cookie.expires!.isAfter(now));
           }),
@@ -72,11 +71,22 @@ final class NativeGenAiIdsExchange {
         final response = await cancellation.race(
           request.close().timeout(const Duration(seconds: 30)),
         );
+        var inspectedError = false;
         try {
+          if (response.statusCode >= 400) {
+            inspectedError = true;
+            await checkGenAiHttpStatus(
+              statusCode: response.statusCode,
+              contentType: uri.host == 'genai.shanghaitech.edu.cn'
+                  ? response.headers.value(HttpHeaders.contentTypeHeader)
+                  : null,
+              bytes: response,
+              cancellation: cancellation,
+            );
+          }
           final current = jar.putIfAbsent(uri.host, () => []);
           for (final cookie in response.cookies) {
-            if (cookie.name == 'CASTGC' &&
-                uri.host != 'ids.shanghaitech.edu.cn') {
+            if (cookie.name == 'CASTGC' && uri.host != 'ids.shanghaitech.edu.cn') {
               continue;
             }
             current.removeWhere(
@@ -85,15 +95,14 @@ final class NativeGenAiIdsExchange {
             current.add(cookie);
           }
           final location = response.headers.value(HttpHeaders.locationHeader);
-          if (!const [301, 302, 303, 307, 308].contains(response.statusCode) ||
-              location == null) {
+          if (!const [301, 302, 303, 307, 308].contains(response.statusCode) || location == null) {
             throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
           }
           uri = uri.resolve(location);
         } finally {
           // Bodies are not needed for a CAS redirect. Cancelling the stream
           // releases the response without retaining login HTML or credentials.
-          await response.listen((_) {}).cancel();
+          if (!inspectedError) await response.listen((_) {}).cancel();
         }
       }
       throw const GenAiFailure(GenAiFailureKind.authenticationRequired);

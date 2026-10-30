@@ -175,7 +175,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
           ),
         ),
     ];
-    const tooltip = '添加附件';
+    const tooltip = '更多选项';
     final icon = Icon(Icons.add, size: 20, color: _muted);
     // Flutter's popup route does not avoid viewInsets. A scrollable sheet
     // keeps every action reachable while the software keyboard is visible.
@@ -430,11 +430,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
                                 Icons.mic_none,
                                 size: 18,
                                 color: _muted,
-                                semanticLabel: !widget.supportsRecording
-                                    ? '选择音频文件'
-                                    : widget.supportsAudio
-                                        ? '麦克风录音，长按选择音频文件'
-                                        : '麦克风录音',
+                                semanticLabel: !widget.supportsRecording ? '选择音频文件' : '录音',
                               ),
                     onPressed: widget.sending || widget.recognizingAudio
                         ? null
@@ -570,98 +566,108 @@ class _GenAiComposerState extends State<GenAiComposer> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  SizedBox(
-                                    height: 44,
-                                    child: ListView.separated(
-                                      scrollDirection: Axis.horizontal,
-                                      itemCount: widget.attachments.length,
-                                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                                      itemBuilder: (context, i) {
-                                        final att = widget.attachments[i];
-                                        final isError = att.error != null;
-                                        return Container(
-                                          padding: EdgeInsets.fromLTRB(
-                                            att.isImage ? 5 : 8,
-                                            4,
-                                            8,
-                                            4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: isError
-                                                ? _theme.colorScheme.errorContainer
-                                                    .withValues(alpha: .35)
-                                                : _accent.withValues(alpha: .08),
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: Border.all(
-                                              color: isError
-                                                  ? _theme.colorScheme.error.withValues(alpha: .5)
-                                                  : _accent.withValues(alpha: .2),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) => SizedBox(
+                                      height: 50,
+                                      child: ListView.separated(
+                                        scrollDirection: Axis.horizontal,
+                                        itemCount: widget.attachments.length,
+                                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                                        itemBuilder: (context, i) {
+                                          final att = widget.attachments[i];
+                                          final isError = att.error != null;
+                                          return Container(
+                                            constraints:
+                                                BoxConstraints(maxWidth: constraints.maxWidth),
+                                            padding: EdgeInsets.fromLTRB(
+                                              att.isImage ? 5 : 8,
+                                              0,
+                                              0,
+                                              0,
                                             ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              _buildAttachmentThumbnail(att, context),
-                                              const SizedBox(width: 8),
-                                              ConstrainedBox(
-                                                constraints: BoxConstraints(
-                                                  maxWidth: isError ? 180 : 140,
-                                                ),
-                                                child: Tooltip(
-                                                  message: att.error ?? att.name,
-                                                  child: Text(
-                                                    att.name,
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w500,
-                                                      color: isError
-                                                          ? _theme.colorScheme.error
-                                                          : _accent,
+                                            decoration: BoxDecoration(
+                                              color: isError
+                                                  ? _theme.colorScheme.errorContainer
+                                                      .withValues(alpha: .35)
+                                                  : _accent.withValues(alpha: .08),
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: isError
+                                                    ? _theme.colorScheme.error.withValues(alpha: .5)
+                                                    : _accent.withValues(alpha: .2),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                _buildAttachmentThumbnail(att, context),
+                                                const SizedBox(width: 8),
+                                                Flexible(
+                                                  child: ConstrainedBox(
+                                                    constraints: BoxConstraints(
+                                                      maxWidth: isError ? 180 : 140,
+                                                    ),
+                                                    child: Tooltip(
+                                                      message: att.error ?? att.name,
+                                                      child: Text(
+                                                        att.name,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.w500,
+                                                          color: isError
+                                                              ? _theme.colorScheme.error
+                                                              : _accent,
+                                                        ),
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
-                                              ),
-                                              if (isError) ...[
-                                                const SizedBox(width: 4),
-                                                InkWell(
-                                                  key: ValueKey(
-                                                    'genai-retry-attachment-${att.id}',
-                                                  ),
-                                                  onTap: () => widget.onRetryAttachment(att.id),
-                                                  borderRadius: BorderRadius.circular(10),
-                                                  child: Tooltip(
-                                                    message: '重新上传',
-                                                    child: Icon(
+                                                if (isError) ...[
+                                                  const SizedBox(width: 4),
+                                                  IconButton(
+                                                    key: ValueKey(
+                                                      'genai-retry-attachment-${att.id}',
+                                                    ),
+                                                    tooltip: '重新上传',
+                                                    onPressed: () =>
+                                                        widget.onRetryAttachment(att.id),
+                                                    constraints: const BoxConstraints.tightFor(
+                                                      width: 48,
+                                                      height: 48,
+                                                    ),
+                                                    icon: Icon(
                                                       Icons.refresh_rounded,
-                                                      size: 14,
+                                                      size: 18,
                                                       color: _theme.colorScheme.error,
                                                     ),
                                                   ),
-                                                ),
-                                              ],
-                                              const SizedBox(width: 4),
-                                              InkWell(
-                                                key: ValueKey(
-                                                  'genai-remove-attachment-${att.id}',
-                                                ),
-                                                onTap: () => widget.onRemoveAttachment(att.id),
-                                                borderRadius: BorderRadius.circular(10),
-                                                child: Tooltip(
-                                                  message: '移除附件',
-                                                  child: Icon(
+                                                ],
+                                                const SizedBox(width: 4),
+                                                IconButton(
+                                                  key: ValueKey(
+                                                    'genai-remove-attachment-${att.id}',
+                                                  ),
+                                                  tooltip: '移除附件',
+                                                  onPressed: () =>
+                                                      widget.onRemoveAttachment(att.id),
+                                                  constraints: const BoxConstraints.tightFor(
+                                                    width: 48,
+                                                    height: 48,
+                                                  ),
+                                                  icon: Icon(
                                                     Icons.close,
-                                                    size: 13,
+                                                    size: 18,
                                                     color:
                                                         isError ? _theme.colorScheme.error : _muted,
                                                   ),
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      },
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
                                     ),
                                   ),
                                   if (widget.hasFailedUploads) ...[
@@ -696,7 +702,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
                                   !HardwareKeyboard.instance.isShiftPressed &&
                                   !(widget.draft.value.composing.isValid &&
                                       !widget.draft.value.composing.isCollapsed)) {
-                                widget.onSend();
+                                if (!widget.sending && _canSend) widget.onSend();
                                 return KeyEventResult.handled;
                               }
                               return KeyEventResult.ignored;

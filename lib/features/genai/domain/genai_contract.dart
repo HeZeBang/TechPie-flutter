@@ -34,6 +34,7 @@ final class GenAiChatRequest {
     this.thinking = false,
     List<String> fileIds = const [],
     this.contextCompacted = false,
+    this.historyRetrieval = false,
     this.contextGoal,
     this.stepContext,
     this.requestGuide,
@@ -79,6 +80,10 @@ final class GenAiChatRequest {
   final String? requestGuide;
   GenAiMessage? get guideMessage =>
       requestGuide == null ? null : GenAiMessage(role: GenAiRole.system, content: requestGuide!);
+
+  /// Run-local capability: omitted history can be read through retrieval tools.
+  /// Never sent as an upstream option or persisted as an authorization flag.
+  final bool historyRetrieval;
   final bool contextCompacted;
   final String? imageUrl;
   final List<String> imageUrls;
@@ -100,6 +105,7 @@ final class GenAiChatRequest {
         stepContext: stepContext,
         requestGuide: requestGuide,
         contextCompacted: contextCompacted,
+        historyRetrieval: historyRetrieval,
         record: value,
       );
 

@@ -4,6 +4,7 @@ import '../domain/genai_failure.dart';
 
 String genAiFailureText(GenAiFailure failure) => switch (failure.kind) {
       GenAiFailureKind.authenticationRequired => '登录已过期，请重新连接 GenAI。',
+      GenAiFailureKind.campusNetworkRequired => 'GenAI 仅支持校内访问，请连接校园网或学校 VPN 后重试。',
       GenAiFailureKind.identityMismatch => 'GenAI 账号与当前绑定的校园账号不一致，请使用对应的学校账号登录。',
       GenAiFailureKind.accountChanged => '账号已切换，请重新开始对话。',
       GenAiFailureKind.cancelled => '已停止',

@@ -159,6 +159,44 @@ void main() {
     });
   }
 
+  testWidgets('send and retry completion each keep one uncancelled history refresh',
+      (tester) async {
+    await show(tester);
+    requests.single.$2.complete(history('initial'));
+    await tester.pumpAndSettle();
+    final original = transport.handle;
+    transport.handle = (request) async => request.method == 'POST'
+        ? response(type: 'text/event-stream', text: sseChunk(text: 'partial answer'))
+        : original(request);
+    await tester.enterText(find.byKey(const ValueKey('genai-prompt')), 'A question');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('genai-send')));
+
+    Future<void> expectRefresh(int count) async {
+      for (var step = 0; step < 30 && workspace.sending; step++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      await tester.pump();
+      expect(workspace.sending, isFalse);
+      expect(requests, hasLength(count));
+      expect(
+        transport.requests
+            .lastWhere((request) => request.uri.path.endsWith('/listByContentGroup'))
+            .cancellation
+            .isCancelled,
+        isFalse,
+      );
+      requests.last.$2.complete(history('refresh $count'));
+      await tester.pumpAndSettle();
+    }
+
+    await expectRefresh(2);
+    await tester.tap(find.byKey(const ValueKey('genai-retry-0')));
+    await expectRefresh(3);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('history failure is visible and only retries on user request', (tester) async {
     await show(tester);
     requests.single.$2.completeError(const GenAiFailure(GenAiFailureKind.transport));

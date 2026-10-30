@@ -101,7 +101,7 @@ class _GenAiImageGalleryState extends State<GenAiImageGallery> {
                     onTap: () => widget.onOpen(record),
                     child: Semantics(
                       button: true,
-                      label: '查看图片：$prompt',
+                      label: '查看图片',
                       onTap: () => widget.onOpen(record),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,

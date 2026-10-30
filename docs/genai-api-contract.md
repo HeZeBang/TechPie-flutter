@@ -52,6 +52,11 @@ raw response variant. Authentication expiry, rejection, transport, protocol and
 storage failures remain distinguishable and sanitized. The signing salt is public
 protocol configuration (`TECHPI_GENAI_SIGNING_SALT` override), never an account secret.
 
+An HTTP 404 HTML response displaying `该服务暂不开放外网访问，仅支持校内访问`
+means the campus ingress blocked the request: preserve the login and ask the user
+to connect to the campus network or university VPN. Ordinary 404s remain request
+failures; HTTP 401 remains authentication expiry. Never replay a generation POST.
+
 Host instructions precede prior context; agent requests also append a concise
 protocol guide immediately before the current input. Both modes use the catalog's
 `enableDeepThink` capability and selected thinking flag, and force `netGo: false`.

@@ -468,7 +468,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                   title: Text(const ['会话记录', '图片创作', '用量统计'][_tab]),
                   actions: [_refreshButton()],
                 ),
-                body: _content(),
+                body: SafeArea(top: false, child: _content()),
               ),
       );
 
@@ -591,6 +591,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
         ),
         Expanded(
           child: ListView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             children: [
               if (_conversations.isEmpty && !_busy && !_searching && _loadFailure == null)
                 Padding(
@@ -1054,18 +1055,12 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     final models = _workspace.imageModels;
     return CustomScrollView(
       controller: _studioScroll,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
         SliverPadding(
           padding: const EdgeInsets.all(20),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              if (!widget.embedded) ...[
-                const Text(
-                  '描述你想创作的图片',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 16),
-              ],
               if (models.isEmpty)
                 const Text('当前模型目录没有可用的生图模型。')
               else
@@ -1073,7 +1068,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                   key: const ValueKey('genai-image-model'),
                   initialValue: _imageModel,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: '生图模型'),
+                  decoration: const InputDecoration(labelText: '模型'),
                   items: models
                       .map(
                         (m) => DropdownMenuItem(
@@ -1137,9 +1132,9 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                   child: Text(genAiFailureText(failure)),
                 ),
               const SizedBox(height: 28),
-              const Text(
+              Text(
                 '图片历史',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
               if (_loadFailure != null) _loadError(),
@@ -1183,8 +1178,6 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
               Icon(Icons.photo_library_outlined, size: 32, color: colors.onSurfaceVariant),
               const SizedBox(height: 12),
               const Text('没有图片记录'),
-              const SizedBox(height: 4),
-              Text('从一段描述开始，你的作品会保存在这里。', style: TextStyle(color: colors.onSurfaceVariant)),
             ],
           ),
         ),
@@ -1292,7 +1285,12 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                                             .toString(),
                                       ),
                                       link: uri,
-                                      child: SizedBox.expand(child: _image(uri)),
+                                      child: InteractiveViewer(
+                                        key: ValueKey(uri),
+                                        minScale: 1,
+                                        maxScale: 5,
+                                        child: SizedBox.expand(child: _image(uri)),
+                                      ),
                                     ),
                             ),
                             if (record.images.length > 1)
@@ -1463,13 +1461,14 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
   Widget _statistics() => ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const Text(
+          Text(
             '账号额度',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
-          const Text(
-            '以下数据来自学校平台。额度与 Token 分开显示，结算可能延迟。',
+          Text(
+            '学校平台数据 · 结算可能延迟',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           for (final quota in _usage?.quotas ?? <GenAiQuota>[])
             Card(
@@ -1483,29 +1482,58 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      '剩余 ${quota.remaining}    已用 ${quota.used}    总额 ${quota.total}',
+                    Wrap(
+                      spacing: 20,
+                      runSpacing: 8,
+                      children: [
+                        Text('剩余 ${quota.remaining}'),
+                        Text('已用 ${quota.used}'),
+                        Text('总额 ${quota.total}'),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
           const SizedBox(height: 24),
-          const Text(
+          Text(
             '消费明细',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.titleMedium,
           ),
           if (_orders.isEmpty && !_loading && _loadFailure == null)
             const Padding(padding: EdgeInsets.all(20), child: Text('没有消费记录')),
           for (final order in _orders)
             Card(
-              child: ListTile(
-                title: Text(order.model),
-                subtitle: Text(
-                  '${order.time}\n输入 ${order.inputTokens} · 输出 ${order.outputTokens} · 图片 ${order.imageTokens} Token',
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      spacing: 16,
+                      runSpacing: 4,
+                      children: [
+                        Text(order.model, style: Theme.of(context).textTheme.titleSmall),
+                        Text('${order.used} 额度'),
+                      ],
+                    ),
+                    if (order.time.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(order.time, style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 16,
+                      runSpacing: 4,
+                      children: [
+                        Text('输入 ${order.inputTokens} Token'),
+                        Text('输出 ${order.outputTokens} Token'),
+                        Text('图片 ${order.imageTokens} Token'),
+                      ],
+                    ),
+                  ],
                 ),
-                trailing: Text('${order.used} 额度'),
-                isThreeLine: true,
               ),
             ),
           _loadMore(),

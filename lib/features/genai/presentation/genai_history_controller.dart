@@ -17,7 +17,7 @@ class GenAiHistoryController extends ChangeNotifier {
 
   GenAiWorkspaceController _workspace;
   final searchController = TextEditingController();
-  final _conversations = <GenAiConversationSummary>[];
+  List<GenAiConversationSummary> _conversations = const [];
   Timer? _searchTimer;
   GenAiCancellation? _historyCancellation;
   GenAiFailure? _historyFailure;
@@ -29,10 +29,9 @@ class GenAiHistoryController extends ChangeNotifier {
   bool _disposed = false;
   late Object? _accountScope;
   late int _sessionRevision;
-  late String _groupId;
-  late bool _wasSending;
+  late int _finishedTurnRevision;
 
-  List<GenAiConversationSummary> get conversations => List.unmodifiable(_conversations);
+  List<GenAiConversationSummary> get conversations => _conversations;
   bool get loading => _loadingHistory;
   bool get hasMore => _hasMoreHistory;
   GenAiFailure? get failure => _historyFailure;
@@ -47,8 +46,7 @@ class GenAiHistoryController extends ChangeNotifier {
   void _rememberWorkspace() {
     _accountScope = _workspace.accountScope;
     _sessionRevision = _workspace.sessions.revision;
-    _groupId = _workspace.groupId;
-    _wasSending = _workspace.sending;
+    _finishedTurnRevision = _workspace.finishedTurnRevision;
   }
 
   void bindWorkspace(GenAiWorkspaceController workspace) {
@@ -70,7 +68,7 @@ class GenAiHistoryController extends ChangeNotifier {
         _sessionRevision != _workspace.sessions.revision) {
       _reset();
     }
-    final historyChanged = _groupId != _workspace.groupId || (_wasSending && !_workspace.sending);
+    final historyChanged = _finishedTurnRevision != _workspace.finishedTurnRevision;
     _rememberWorkspace();
     if (_workspace.connected &&
         (!_historyRequested || (historyChanged && !(_searchTimer?.isActive ?? false)))) {
@@ -79,7 +77,9 @@ class GenAiHistoryController extends ChangeNotifier {
   }
 
   void remove(String id) {
-    _update(() => _conversations.removeWhere((item) => item.id == id));
+    _update(() {
+      _conversations = List.unmodifiable(_conversations.where((item) => item.id != id));
+    });
   }
 
   void _reset() {
@@ -88,7 +88,7 @@ class GenAiHistoryController extends ChangeNotifier {
     _searchTimer?.cancel();
     searchController.clear();
     _sidebarQuery = '';
-    _conversations.clear();
+    _conversations = const [];
     _historyPage = 1;
     _hasMoreHistory = false;
     _loadingHistory = false;
@@ -108,7 +108,7 @@ class GenAiHistoryController extends ChangeNotifier {
       _loadingHistory = true;
       _historyFailure = null;
       if (!more) {
-        if (_sidebarQuery != targetQuery) _conversations.clear();
+        if (_sidebarQuery != targetQuery) _conversations = const [];
         _sidebarQuery = targetQuery;
       }
     });
@@ -119,22 +119,20 @@ class GenAiHistoryController extends ChangeNotifier {
         query: targetQuery,
       );
       if (_disposed || cancellation.isCancelled) return;
-      _update(() {
-        if (!more) _conversations.clear();
-        for (final record in result.records) {
-          _conversations.removeWhere((item) => item.id == record.id);
-          _conversations.add(record);
-        }
-        _conversations.sort(GenAiConversationSummary.newestFirst);
-        _hasMoreHistory = result.hasMore;
-        _historyPage = page;
-      });
+      final byId = {
+        if (more)
+          for (final item in _conversations) item.id: item,
+        for (final item in result.records) item.id: item,
+      };
+      _conversations = List.unmodifiable(
+        byId.values.toList()..sort(GenAiConversationSummary.newestFirst),
+      );
+      _hasMoreHistory = result.hasMore;
+      _historyPage = page;
     } catch (error) {
       if (!_disposed && !cancellation.isCancelled) {
-        _update(
-          () => _historyFailure =
-              error is GenAiFailure ? error : const GenAiFailure(GenAiFailureKind.transport),
-        );
+        _historyFailure =
+            error is GenAiFailure ? error : const GenAiFailure(GenAiFailureKind.transport);
       }
     } finally {
       if (identical(_historyCancellation, cancellation)) {

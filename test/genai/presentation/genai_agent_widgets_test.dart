@@ -31,15 +31,15 @@ void main() {
           ),
         );
     await show(true);
-    expect(find.text('正在修正工具请求'), findsOneWidget);
+    expect(find.text('正在重试请求'), findsOneWidget);
     await show(false);
-    expect(find.text('正在修正工具请求'), findsNothing);
-    expect(find.text('工具请求格式不匹配，已请求重试'), findsOneWidget);
+    expect(find.text('正在重试请求'), findsNothing);
+    expect(find.text('请求格式有误'), findsOneWidget);
     await show(false, id: 'restored');
     await tester.tap(find.byKey(const ValueKey('agent-tool-activity-heading')));
     await tester.pumpAndSettle();
-    expect(find.text('正在修正工具请求'), findsNothing);
-    expect(find.text('工具请求格式不匹配，已请求重试'), findsOneWidget);
+    expect(find.text('正在重试请求'), findsNothing);
+    expect(find.text('请求格式有误'), findsOneWidget);
   });
 
   testWidgets('tool activity keeps collapse choice through updates and isolates turns',
@@ -289,7 +289,7 @@ void main() {
     expect(find.text('结果待核实 · 请先查看记录'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('agent-tool-image-1')));
     await tester.pumpAndSettle();
-    expect(find.text('已复用之前的结果，没有重复执行。'), findsOneWidget);
+    expect(find.text('复用已有结果'), findsOneWidget);
     expect(find.text('Verify status before retrying.'), findsOneWidget);
     expect(find.textContaining('outcome_unknown'), findsNothing);
     await tester.tap(find.text('技术详情'));

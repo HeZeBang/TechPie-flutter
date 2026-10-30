@@ -6,6 +6,7 @@ import '../domain/genai_document_upload.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
 import '../platform/genai_transport.dart';
+import 'genai_http_failure.dart';
 import 'genai_multipart.dart';
 import 'genai_request_signer.dart';
 import 'genai_sse_decoder.dart';
@@ -268,7 +269,7 @@ final class GenAiApiClient {
       },
     );
     try {
-      _checkStatus(response.statusCode);
+      await _checkStatus(response, cancellation);
       final value = await _readJson(response);
       cancellation.throwIfCancelled();
       genAiEnvelope(value);
@@ -312,7 +313,7 @@ final class GenAiApiClient {
       bodyBytes: multipart.bytes,
     );
     try {
-      _checkStatus(response.statusCode);
+      await _checkStatus(response, cancellation);
       final value = await _readJson(response);
       cancellation.throwIfCancelled();
       return GenAiUploadedFile.fromJson(genAiObject(genAiEnvelope(value)));
@@ -369,7 +370,7 @@ final class GenAiApiClient {
       bodyBytes: multipart.bytes,
     );
     try {
-      _checkStatus(response.statusCode);
+      await _checkStatus(response, cancellation);
       final value = await _readJson(response);
       cancellation.throwIfCancelled();
       return GenAiUploadedImage.fromJson(genAiObject(genAiEnvelope(value)));
@@ -406,7 +407,7 @@ final class GenAiApiClient {
       }),
     );
     try {
-      _checkStatus(response.statusCode);
+      await _checkStatus(response, cancellation);
       final contentType = response.headers['content-type']?.split(';').first.trim().toLowerCase();
       if (contentType != null && contentType.startsWith('audio/')) {
         final bytes = <int>[];
@@ -452,7 +453,7 @@ final class GenAiApiClient {
       bodyBytes: multipart.bytes,
     );
     try {
-      _checkStatus(response.statusCode);
+      await _checkStatus(response, cancellation);
       final value = await _readJson(response);
       cancellation.throwIfCancelled();
       final envelope = genAiObject(genAiEnvelope(value));
@@ -526,7 +527,7 @@ final class GenAiApiClient {
       body: wireBody == null ? null : jsonEncode(wireBody),
     );
     try {
-      _checkStatus(response.statusCode);
+      await _checkStatus(response, cancellation);
       final value = await _readJson(response);
       cancellation.throwIfCancelled();
       if (raw) {
@@ -576,7 +577,7 @@ final class GenAiApiClient {
       },
     );
     try {
-      _checkStatus(response.statusCode);
+      await _checkStatus(response, cancellation);
       final value = await _readJson(response);
       cancellation.throwIfCancelled();
       return genAiEnvelope(value);
@@ -604,7 +605,7 @@ final class GenAiApiClient {
       body: jsonEncode(request.toJson()),
     );
     try {
-      _checkStatus(response.statusCode);
+      await _checkStatus(response, cancellation);
       final contentType = response.headers['content-type']?.split(';').first.trim().toLowerCase();
       if (contentType != 'text/event-stream') {
         // Some business/auth failures arrive as a JSON envelope with HTTP 200.
@@ -694,17 +695,13 @@ final class GenAiApiClient {
     }
   }
 
-  void _checkStatus(int status) {
-    if (status == 401) {
-      throw GenAiFailure(
-        GenAiFailureKind.authenticationRequired,
-        statusCode: status,
+  Future<void> _checkStatus(GenAiResponse response, GenAiCancellation cancellation) =>
+      checkGenAiHttpStatus(
+        statusCode: response.statusCode,
+        contentType: response.headers['content-type'],
+        bytes: response.bytes,
+        cancellation: cancellation,
       );
-    }
-    if (status < 200 || status >= 300) {
-      throw GenAiFailure(GenAiFailureKind.rejected, statusCode: status);
-    }
-  }
 
   void _validateToken(String token) {
     if (token.isEmpty || !RegExp(r'^[A-Za-z0-9._~-]+$').hasMatch(token)) {

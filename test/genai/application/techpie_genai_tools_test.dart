@@ -424,6 +424,25 @@ void main() {
     );
   });
 
+  test('campus image restriction reports network guidance and a confirmed unexecuted effect',
+      () async {
+    demo.backend.campusImageRestriction = true;
+    final session = demo.sessions.session;
+    final prepared = await prepare('generate_image', {'prompt': 'A red square'});
+    await expectLater(
+      prepared.execute(),
+      throwsA(
+        isA<GenAiAgentToolException>()
+            .having((error) => error.code, 'code', 'campus_network_required')
+            .having((error) => error.message, 'guidance', contains('校园网或学校 VPN'))
+            .having((error) => error.message, 'not a quota refusal', isNot(contains('额度不足')))
+            .having((error) => error.effectNotDispatched, 'not dispatched', isTrue),
+      ),
+    );
+    expect(demo.sessions.session, same(session));
+    expect((await demo.workspace.repository.listImages(GenAiCancellation())).records, isEmpty);
+  });
+
   test('image quota refusal clears pending effect but generic errors remain uncertain', () async {
     for (final message in ['账户额度不足', '系统内部错误']) {
       demo.backend.imageRejection = message;

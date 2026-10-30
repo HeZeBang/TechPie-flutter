@@ -714,6 +714,13 @@ final class TechPieGenAiTools {
             rethrow;
           }
           if (failure.effectNotDispatched) {
+            if (failure.kind == GenAiFailureKind.campusNetworkRequired) {
+              throw const GenAiAgentToolException(
+                'campus_network_required',
+                'GenAI 仅支持校内访问，请连接校园网或学校 VPN 后重试。本次生图请求未执行。',
+                effectNotDispatched: true,
+              );
+            }
             throw const GenAiAgentToolException(
               'rejected',
               '校园生图额度不足，本次请求未执行。',

@@ -1,5 +1,6 @@
 enum GenAiFailureKind {
   authenticationRequired,
+  campusNetworkRequired,
   identityMismatch,
   accountChanged,
   cancelled,

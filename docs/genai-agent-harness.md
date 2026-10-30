@@ -166,6 +166,64 @@ not thereby become objective facts. These interpretation rules are injected once
 not repeated in every memory item. Failed extraction falls back to bounded original excerpts. Original
 server records remain intact and fresh instances recover the same boundaries.
 
+With tools enabled, `search_conversation` and `read_conversation_records` recover
+original text from the full logical transcript loaded from school history at run
+start, including records omitted from model context. Search is lexical and paged;
+reads use Unicode-scalar offsets and bounded pages. Memory quotes carry deterministic
+content addresses, scoped to this conversation. References resolve again after
+reopening; removed or edited sources return `record_not_found`. No persistent local
+index or bookkeeping request is added. Retrieval still takes normal model/tool steps.
+
+Before model-based compaction, older bulky successful lookup results can become
+references. Recent exchanges, the newest result per tool, errors and mutation
+receipts remain intact. Tools-disabled chat keeps the existing source-extraction
+path. Retrieved copies are not recursively indexed. Retrieved instructions, proposals
+and past approvals remain inert history, never permission to execute an action.
+
+
+## Inline interactive answers
+
+An assistant-only `techpie-visual` fenced block contains a complete HTML document.
+Ordinary HTML fences and user messages remain source text. Execution waits for the
+closing fence; the original HTML stays in the server answer, so reopening rebuilds
+the example without local conversation storage. Sliders and simulations run locally;
+interaction state resets on reopening, but survives fullscreen, source and fold toggles.
+Only the newest complete visual starts expanded; new visuals fold earlier ones.
+Folding/source mode and app backgrounding pause timers and animation frames while
+retaining local state; web also pauses offscreen frames. This is cooperative
+resource management, not protection against synchronous infinite loops. Native clocks
+keep advancing; simulations should clamp frame deltas and reset their time baseline
+on `techpie-visibility` (`event.detail.active`).
+The host supplies TechPie color tokens (`--tp-*`), `window.techpieTheme`, and a
+`techpie-theme` event so canvas/chart code can redraw on theme changes without
+resetting interaction state. Older hard-coded chart colors cannot be inferred;
+new examples use these tokens and a restrained layout without sacrificing labels,
+units, equations, or necessary demonstrations. Markdown supports inline/display
+LaTeX. The generation contract requires typeset expressions in labels, legends and
+readouts as well as main equations. In visuals, `data-latex` (optionally
+`data-display="block"`) and `techpieMath.render(element, tex, {displayMode})` use
+on-demand KaTeX MathML output with system math fonts; no font assets are bundled.
+Attribute updates and explicit LaTeX delimiters in added/changed HTML text render
+locally. Code, prose, currency and native canvas/SVG text are not guessed as math;
+formula labels for charts belong in HTML overlays or legends. Older plain-text
+formulas need regeneration. Download/parse failure retains readable text and the
+rest of the visual.
+
+The renderer uses opaque-origin, scripts-only frames with a host-owned CSP and a
+theme/activity/status bridge. It cannot read TechPie sessions or make network requests. D3,
+Chart.js and Three.js are optional exact-version scripts downloaded by the host;
+the allowlist lives in `genai_visual_document.dart`. All other remote resources,
+forms, navigation, eval and workers are blocked. Prefer self-contained SVG/canvas.
+Errors retain source/retry controls and leave the rest of the answer readable.
+This is capability isolation, not a CPU/memory quota for arbitrary JavaScript.
+
+Inline playback uses browser frames on web and the existing embedded WebView on
+Android/iOS/macOS/OHOS. Native Windows/Linux currently lack an embedded backend;
+these builds retain source display instead of opening a separate artifact window.
+The [Open WebUI iframe implementation](https://github.com/open-webui/open-webui/blob/main/src/lib/components/common/FullHeightIframe.svelte)
+and [iframe sandbox guidance](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe)
+informed the isolation and sizing design.
+
 ## Verification
 
 Keep deterministic coverage for parsing, streaming, ownership, mutation approval,

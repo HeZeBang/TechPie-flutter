@@ -21,6 +21,7 @@ final class FakeGenAiServer implements GenAiTransport {
   final Duration chunkDelay;
   bool failUpload = false;
   String? imageRejection;
+  bool campusImageRestriction = false;
   bool loseDeleteResponse = false;
   static const token = 'test-token';
   static const studentId = '20240001';
@@ -191,6 +192,14 @@ final class FakeGenAiServer implements GenAiTransport {
         return _ok(_page([], uri));
     }
     if (uri.path == '/htk/chat/start/chat' && data['aiType'] == 'test-image') {
+      if (campusImageRestriction) {
+        return GenAiResponse(
+          statusCode: 404,
+          headers: const {'Content-Type': 'text/html'},
+          bytes: Stream.value(utf8.encode('<html>该服务暂不开放外网访问，仅支持校内访问</html>')),
+          close: () {},
+        );
+      }
       if (imageRejection != null) {
         return _json({'success': false, 'code': 500, 'message': imageRejection});
       }

@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import '../domain/genai_agent_protocol.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_context_record.dart';
+import '../domain/genai_context_source.dart';
 import '../domain/genai_context_usage.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
@@ -182,6 +183,8 @@ final class GenAiContextCompactor {
     int inputSize(List<GenAiMessage> messages) =>
         fixed + messages.fold<int>(0, (n, m) => n + messageTokens(m));
     final originalSize = inputSize(history);
+    final workingHistory = request.historyRetrieval ? _pruneResults(history) : history;
+    final workingSize = inputSize(workingHistory);
     var completedChunks = 0;
     var totalChunks = 0;
     void report(
@@ -218,13 +221,13 @@ final class GenAiContextCompactor {
     }
 
     report(GenAiContextStage.preparing);
-    if (originalSize <= policy.triggerTokens && originalSize <= hard) {
-      return ready(history, originalSize);
+    if (workingSize <= policy.triggerTokens && workingSize <= hard) {
+      return ready(workingHistory, workingSize);
     }
     GenAiChatRequest noRoomForMemory() {
       // Crossing the proactive threshold is not itself an overflow. A short
       // conversation with a large document may have nothing useful to compact.
-      if (originalSize <= hard) return ready(history, originalSize);
+      if (workingSize <= hard) return ready(workingHistory, workingSize);
       throw const GenAiFailure(GenAiFailureKind.contextTooLarge);
     }
 
@@ -424,8 +427,15 @@ final class GenAiContextCompactor {
     }
     // Assistant summaries never enter the factual index. Retrieve authored
     // material separately from original text, with no factual authority.
-    items.removeWhere((item) => item['role'] == 'assistant');
-    durable.removeWhere((item) => item['role'] == 'assistant');
+    bool secondaryEvidence(Map<String, Object?> item) =>
+        item['role'] == 'assistant' ||
+        genAiHistoryToolNames.contains(
+          decodeGenAiAgentRecord(source[item['source']! as int].content)?.result?['name'],
+        );
+    // Retrieval results can quote assistant claims. Re-extract the original
+    // source instead of promoting that copied text into tool-backed evidence.
+    items.removeWhere(secondaryEvidence);
+    durable.removeWhere(secondaryEvidence);
     final query = _terms(retrievalQuery);
     items.sort((a, b) {
       final rank = _rank(b, query).compareTo(_rank(a, query));
@@ -437,7 +447,16 @@ final class GenAiContextCompactor {
       0,
       reusing ? previousMemoryLimit : policy.memoryTokens,
     );
+    final sourceReferences = <int, String>{};
     bool select(Map<String, Object?> item, int limit) {
+      if (request.historyRetrieval) {
+        final index = item['source']! as int;
+        item = {
+          ...item,
+          'record_id':
+              sourceReferences.putIfAbsent(index, () => genAiContextSourceId(source[index])),
+        };
+      }
       final identity = '${item['source']}:${item['quote']}';
       if (seen.contains(identity)) return false;
       final candidate = [...selected, item];
@@ -457,7 +476,9 @@ final class GenAiContextCompactor {
       if (source[i].role != GenAiRole.user) continue;
       final result = decodeGenAiAgentRecord(source[i].content)?.result;
       final name = result?['name'];
-      if (name is String && name.isNotEmpty) latestResults[name] = i;
+      if (name is String && name.isNotEmpty && !genAiHistoryToolNames.contains(name)) {
+        latestResults[name] = i;
+      }
     }
     final latestSources = latestResults.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
@@ -539,7 +560,8 @@ final class GenAiContextCompactor {
       memory,
       ...tail.map(contextMessage),
     ];
-    final resultSize = inputSize(result);
+    final wire = request.historyRetrieval ? _pruneResults(result) : result;
+    final resultSize = inputSize(wire);
     // Advance the validated boundary only when the effective wire context has
     // grown past the trigger, not merely because the full archive remains large.
     if (reusing && (resultSize > policy.triggerTokens || resultSize > hard)) {
@@ -562,7 +584,49 @@ final class GenAiContextCompactor {
     while (_cache.length > 16) {
       _cache.remove(_cache.keys.first);
     }
-    return ready(result, resultSize, compacted: !reusing);
+    return ready(wire, resultSize, compacted: !reusing);
+  }
+
+  List<GenAiMessage> _pruneResults(List<GenAiMessage> history) {
+    const replaceable = {
+      'get_current_time',
+      'get_semesters',
+      'get_week_schedule',
+      'get_assignments',
+      ...genAiHistoryToolNames,
+    };
+    final latest = <String, int>{};
+    for (var i = 0; i < history.length; i++) {
+      final name = decodeGenAiAgentRecord(history[i].content)?.result?['name'];
+      if (name is String) latest[name] = i;
+    }
+    final projected = <GenAiMessage>[];
+    for (var i = 0; i < history.length; i++) {
+      final message = history[i];
+      final result = decodeGenAiAgentRecord(message.content)?.result;
+      final name = result?['name'];
+      if (i >= history.length - policy.recentMessages ||
+          message.content.length < 2000 ||
+          result?['ok'] != true ||
+          !replaceable.contains(name) ||
+          latest[name] == i) {
+        projected.add(message);
+        continue;
+      }
+      // Keep errors, mutations and the newest observation intact. The tool
+      // result itself remains in server history; only its wire body is omitted.
+      projected.add(
+        GenAiAgentHistoryEntry.result({
+          ...result!,
+          'result': {
+            'kind': 'techpie_tool_result_reference_v1',
+            if (!genAiHistoryToolNames.contains(name)) 'record_id': genAiContextSourceId(message),
+            'omitted': true,
+          },
+        }).message,
+      );
+    }
+    return projected;
   }
 
   Future<String> _summarize(
@@ -805,6 +869,7 @@ final class GenAiContextCompactor {
         fileIds: input.fileIds,
         documentContents: input.documentContents,
         contextGoal: input.contextGoal,
+        historyRetrieval: input.historyRetrieval,
         stepContext: input.stepContext,
         requestGuide: input.requestGuide,
         contextCompacted: compacted,

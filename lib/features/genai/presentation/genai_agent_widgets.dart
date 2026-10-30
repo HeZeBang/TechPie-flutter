@@ -14,6 +14,8 @@ import 'genai_web_search_view.dart';
 String genAiAgentToolName(String? name) => switch (name) {
       'web_search' => '联网搜索',
       'get_current_time' => '查看当前时间',
+      'search_conversation' => '查找对话记录',
+      'read_conversation_records' => '读取对话记录',
       'get_semesters' => '查看学期',
       'get_week_schedule' => '查看课表',
       'get_assignments' => '查看作业',
@@ -87,7 +89,7 @@ class GenAiAgentToolActivity extends StatelessWidget {
             color: running ? colors.primary : colors.onSurfaceVariant,
           ),
           title: Text(
-            '处理过程 · ${events.length} 次工具调用$status',
+            '处理过程${events.isEmpty ? '' : ' · ${events.length} 次工具调用'}$status',
             key: const ValueKey('agent-tool-activity-heading'),
             style: theme.textTheme.bodySmall?.copyWith(
               color: running ? colors.primary : colors.onSurfaceVariant,
@@ -148,7 +150,7 @@ class GenAiAgentToolActivity extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.all(8),
         child: Text(
-          running && identical(event, activity.lastOrNull) ? '正在修正工具请求' : '工具请求格式不匹配，已请求重试',
+          running && identical(event, activity.lastOrNull) ? '正在重试请求' : '请求格式有误',
           style: const TextStyle(fontSize: 12),
         ),
       );
@@ -277,7 +279,7 @@ class GenAiAgentToolCard extends StatelessWidget {
                     padding: EdgeInsets.only(bottom: 8),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: Text('已复用之前的结果，没有重复执行。'),
+                      child: Text('复用已有结果'),
                     ),
                   ),
                 if (summary.isNotEmpty)

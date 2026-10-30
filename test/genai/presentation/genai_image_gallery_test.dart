@@ -80,8 +80,11 @@ void main() {
     final semantics = tester.ensureSemantics();
     await tester.pump();
     final imageNode = tester.getSemantics(
-      find.byWidgetPredicate(
-        (widget) => widget is Semantics && widget.properties.label == '查看图片：Gallery image 0',
+      find.descendant(
+        of: tile(0),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Semantics && widget.properties.label == '查看图片',
+        ),
       ),
     );
     expect(imageNode.getSemanticsData().hasAction(ui.SemanticsAction.tap), isTrue);

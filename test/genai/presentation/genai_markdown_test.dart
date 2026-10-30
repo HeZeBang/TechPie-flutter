@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_mermaid/flutter_mermaid.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,6 +25,131 @@ void main() {
       ),
     );
   }
+
+  testWidgets('streaming a new reply reuses the rendered widgets of older replies', (tester) async {
+    final history = List.generate(
+      12,
+      (index) => 'Reply $index with **formatted text** and inline \$x^2\$.\n\n'
+          '```dart\nfinal answer = $index;\n```\n\n'
+          '- First item\n- Second item',
+    );
+    Widget conversation(String stream, {int latestVisual = 1}) => buildApp(
+          Column(
+            children: [
+              for (var index = 0; index < history.length; index++)
+                GenAiMarkdown(
+                  key: ValueKey(index),
+                  data: history[index],
+                  latestVisual: ('streaming', latestVisual),
+                ),
+              GenAiMarkdown(data: stream),
+            ],
+          ),
+        );
+    await tester.pumpWidget(conversation('Starting'));
+    final originalBlocks = tester
+        .widgetList<GenAiStandardCodeBlock>(
+          find.byType(GenAiStandardCodeBlock),
+        )
+        .toList();
+    expect(originalBlocks, hasLength(history.length));
+
+    for (var chunk = 1; chunk <= 6; chunk++) {
+      await tester.pumpWidget(conversation('Streaming chunk $chunk', latestVisual: chunk));
+      final currentBlocks = tester
+          .widgetList<GenAiStandardCodeBlock>(
+            find.byType(GenAiStandardCodeBlock),
+          )
+          .toList();
+      for (var index = 0; index < originalBlocks.length; index++) {
+        expect(
+          identical(currentBlocks[index], originalBlocks[index]),
+          isTrue,
+          reason: 'Streaming must not rebuild the Markdown of completed reply $index.',
+        );
+      }
+      expect(find.text('Streaming chunk $chunk'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('cached Markdown uses the latest link callback without rebuilding content',
+      (tester) async {
+    final tapped = <String>[];
+    Widget content(String callback) => buildApp(
+          GenAiMarkdown(
+            data: '[Open docs](https://example.com)\n\n```dart\nfinal value = 1;\n```',
+            selectable: false,
+            onTapLink: (_, href, __) => tapped.add('$callback:$href'),
+          ),
+        );
+    await tester.pumpWidget(content('first'));
+    final original = tester.widget<GenAiStandardCodeBlock>(find.byType(GenAiStandardCodeBlock));
+    await tester.tap(find.text('Open docs', findRichText: true));
+    await tester.pumpWidget(content('second'));
+    await tester.tap(find.text('Open docs', findRichText: true));
+    expect(tapped, ['first:https://example.com', 'second:https://example.com']);
+    expect(
+      identical(
+        tester.widget<GenAiStandardCodeBlock>(find.byType(GenAiStandardCodeBlock)),
+        original,
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets('cached document refreshes typography and streamed reference definitions',
+      (tester) async {
+    final tapped = <String?>[];
+    Widget content(String data, Color color) => buildApp(
+          Builder(
+            builder: (context) => GenAiMarkdown(
+              data: data,
+              selectable: false,
+              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                p: TextStyle(color: color),
+              ),
+              onTapLink: (_, href, __) => tapped.add(href),
+            ),
+          ),
+        );
+    const data = 'Paragraph\n\n[Open docs][guide]';
+    Color? paragraphColor() => tester
+        .widget<RichText>(find.text('Paragraph', findRichText: true))
+        .text
+        .getSpanForPosition(const TextPosition(offset: 0))
+        ?.style
+        ?.color;
+    await tester.pumpWidget(content(data, Colors.red));
+    expect(paragraphColor(), Colors.red);
+    await tester.pumpWidget(content(data, Colors.blue));
+    expect(paragraphColor(), Colors.blue);
+    await tester.pumpWidget(content('$data\n\n[guide]: https://example.com', Colors.blue));
+    await tester.tap(find.text('Open docs', findRichText: true));
+    expect(tapped, ['https://example.com']);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('unchanged Markdown refreshes visual mode and attachment rendering', (tester) async {
+    const data = '![attachment](https://example.com/image.png)\n\n'
+        '```techpie-visual\n<p>Still streaming';
+    Widget content(bool visual, String label) => buildApp(
+          GenAiMarkdown(
+            data: data,
+            interactiveVisuals: visual,
+            imageBuilder: (_, __, ___) => Text(label),
+          ),
+        );
+    await tester.pumpWidget(content(false, 'first renderer'));
+    expect(find.text('first renderer'), findsOneWidget);
+    expect(find.text('正在生成交互示例…'), findsNothing);
+    await tester.pumpWidget(content(true, 'replacement renderer'));
+    expect(find.text('first renderer'), findsNothing);
+    expect(find.text('replacement renderer'), findsOneWidget);
+    expect(find.text('正在生成交互示例…'), findsOneWidget);
+    await tester.pumpWidget(content(false, 'replacement renderer'));
+    expect(find.text('正在生成交互示例…'), findsNothing);
+  });
 
   testWidgets('empty streamed task items render and tear down safely', (tester) async {
     for (final input in ['- [x] ', '- [ ] ', '> - [x] ', '1. [x] ']) {

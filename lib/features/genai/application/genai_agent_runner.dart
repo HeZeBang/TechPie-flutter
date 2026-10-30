@@ -8,6 +8,7 @@ import '../domain/genai_cancellation.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
 import 'genai_agent_images.dart';
+import 'genai_conversation_retrieval.dart';
 import 'genai_system_prompt.dart';
 
 typedef GenAiAgentChatStream = Stream<GenAiChatEvent> Function(
@@ -162,6 +163,7 @@ final class GenAiAgentRunner {
               (message) => GenAiAgentHistoryEntry.text(message.role, message.content),
             )
             .toList();
+    final retrieval = GenAiConversationRetrieval(() => history.map((entry) => entry.message));
     var promptEntry = GenAiAgentHistoryEntry.text(GenAiRole.user, request.prompt);
     _running = true;
     final timer = Timer(
@@ -225,6 +227,7 @@ final class GenAiAgentRunner {
         final activeTools = GenAiAgentToolRegistry([
           ...tools().tools,
           ...additionalTools,
+          if (history.isNotEmpty) ...retrieval.tools,
           if (images.current != null) images.inspectionTool(imageAttached: !repairing),
         ]);
         final system = _systemPrompt(
@@ -289,6 +292,7 @@ final class GenAiAgentRunner {
             fileIds: request.fileIds,
             documentContents: request.documentContents,
             contextGoal: request.prompt,
+            historyRetrieval: true,
             // Repeat the active task after historical evidence on continuation steps.
             // It is transient control data, never another archived user turn.
             stepContext: jsonEncode({

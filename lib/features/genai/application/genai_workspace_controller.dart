@@ -119,6 +119,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   int _generation = 0;
   int _conversationLoad = 0;
   int _conversationRevision = 0;
+  int _finishedTurnRevision = 0;
   GenAiCancellation? _sendOperation;
   GenAiAgentRunner? _agentRunner;
   Object? Function()? _agentScope;
@@ -176,6 +177,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
 
   /// Changes even when reopening the same saved conversation.
   int get conversationRevision => _conversationRevision;
+
+  /// A generated turn settled (including retry, failure or stop). Navigation
+  /// and the read before sending do not change the server's conversation list.
+  int get finishedTurnRevision => _finishedTurnRevision;
   String get title => _titleOverride ?? (_turns.isEmpty ? '新的对话' : _turns.first.prompt);
 
   void toggleThinking() {
@@ -621,20 +626,34 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _checkArchiveScope(scope, revision, cancellation);
     // The server title/time may describe a tool continuation or housekeeping
     // exchange. Derive both from logical user turns, not last-open timestamps.
-    final summaries = <GenAiConversationSummary>[];
-    for (final item in remote.records) {
-      final history = await _readConversation(item.id, cancellation);
-      final summary = history.archive.summary;
-      summaries.add(
-        GenAiConversationSummary(
-          id: item.id,
-          title: _draftTitles[item.id] ?? (history.archive.isEmpty ? item.title : summary.title),
-          time: history.archive.isEmpty ? item.time : summary.time,
-        ),
-      );
+    final summaries = List<GenAiConversationSummary?>.filled(remote.records.length, null);
+    var next = 0;
+    var failed = false;
+    Future<void> readSummaries() async {
+      try {
+        while (!failed && next < remote.records.length) {
+          _checkArchiveScope(scope, revision, cancellation);
+          final index = next++;
+          final item = remote.records[index];
+          final history = await _readConversation(item.id, cancellation);
+          summaries[index] = GenAiConversationSummary(
+            id: item.id,
+            title: _draftTitles[item.id] ?? (history.isEmpty ? item.title : history.summary.title),
+            time: history.isEmpty ? item.time : history.summary.time,
+          );
+        }
+      } catch (_) {
+        failed = true;
+        rethrow;
+      }
     }
+
+    // Keep a page from waiting on twenty serial round trips without flooding
+    // the campus service. Every worker retains the same cancellation/owner guard.
+    await Future.wait(List.generate(min(4, remote.records.length), (_) => readSummaries()));
+    _checkArchiveScope(scope, revision, cancellation);
     return GenAiPageResult(
-      summaries..sort(GenAiConversationSummary.newestFirst),
+      summaries.cast<GenAiConversationSummary>()..sort(GenAiConversationSummary.newestFirst),
       page: page,
       hasMore: remote.hasMore,
     );
@@ -1315,7 +1334,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         resolveAgentApproval(false);
         _agentOperation = null;
       }
-      if (generation == _generation && identical(_active, turn)) _active = null;
+      if (generation == _generation && identical(_active, turn)) {
+        _active = null;
+        _finishedTurnRevision++;
+      }
       drained.complete();
       if (identical(_agentDrain, drained.future)) _agentDrain = null;
       _notify();
@@ -1420,7 +1442,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     } finally {
       operation.cancel();
       if (identical(_sendOperation, operation)) _sendOperation = null;
-      if (generation == _generation && identical(_active, turn)) _active = null;
+      if (generation == _generation && identical(_active, turn)) {
+        _active = null;
+        _finishedTurnRevision++;
+      }
       _notify();
     }
   }
@@ -1454,6 +1479,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _sendOperation = null;
     _chat.stop();
     if (_active case final turn?) {
+      _finishedTurnRevision++;
       turn.contextUsage = null;
       turn.isAgentThinking = false;
       turn.phase = GenAiChatPhase.cancelled;

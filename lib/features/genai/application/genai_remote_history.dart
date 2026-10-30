@@ -14,8 +14,15 @@ import 'genai_legacy_conversation_import.dart';
 /// A disposable projection of GenAI's append-only history. No local archive is
 /// consulted. Historical tool records only inform context and prevent replay.
 final class GenAiRemoteHistory {
-  GenAiRemoteHistory(this.archive);
-  final GenAiConversationArchive archive;
+  GenAiRemoteHistory._(this.summary, this.isEmpty, this._createArchive);
+
+  final GenAiConversationSummary summary;
+  final bool isEmpty;
+  final GenAiConversationArchive Function() _createArchive;
+
+  // Listing titles does not need to serialize and freeze every message, tool
+  // receipt and attachment. Build that immutable snapshot only for a reader.
+  late final GenAiConversationArchive archive = _createArchive();
 }
 
 GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows) {
@@ -234,10 +241,17 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
     leaf = turn.parentId;
   }
   final ordered = path.reversed.toList();
-  return GenAiRemoteHistory(
-    GenAiConversationArchive(
+  final resolvedTitle = title ?? ordered.firstOrNull?.prompt ?? '新的对话';
+  return GenAiRemoteHistory._(
+    GenAiConversationSummary(
       id: id,
-      title: title ?? ordered.firstOrNull?.prompt ?? '新的对话',
+      title: resolvedTitle,
+      time: lastMessage.toLocal().toIso8601String(),
+    ),
+    ordered.isEmpty,
+    () => GenAiConversationArchive(
+      id: id,
+      title: resolvedTitle,
       updatedAt: lastMessage,
       lastMessageAt: lastMessage,
       turns: ordered,

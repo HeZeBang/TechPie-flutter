@@ -6,6 +6,8 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../genai_image.dart';
+import '../visuals/genai_visual_syntax.dart';
+import '../visuals/genai_visual_view.dart';
 import 'genai_code_block.dart';
 import 'genai_code_font.dart';
 import 'genai_latex.dart';
@@ -23,6 +25,9 @@ class GenAiMarkdown extends StatelessWidget {
     super.key,
     required this.data,
     this.selectable = true,
+    this.interactiveVisuals = false,
+    this.latestVisual,
+    this.visualAnswerId = '',
     this.styleSheet,
     this.imageBuilder,
     this.onTapLink,
@@ -30,6 +35,9 @@ class GenAiMarkdown extends StatelessWidget {
 
   final String data;
   final bool selectable;
+  final bool interactiveVisuals;
+  final (String, int)? latestVisual;
+  final String visualAnswerId;
   final MarkdownStyleSheet? styleSheet;
   final MarkdownImageBuilder? imageBuilder;
   final MarkdownTapLinkCallback? onTapLink;
@@ -175,26 +183,26 @@ class GenAiMarkdown extends StatelessWidget {
       codeblockPadding: EdgeInsets.zero,
     );
 
-    return _GenAiMarkdownBody(
-      data: preprocessLatexBlocks(data),
-      selectable: selectable,
-      extensionSet: md.ExtensionSet.gitHubWeb,
-      inlineSyntaxes: [LatexInlineSyntax()],
-      builders: {
-        'latex-inline': GenAiLatexInlineBuilder(),
-        'pre': GenAiPreBuilder(),
-      },
-      styleSheet: effectiveStyleSheet,
-      imageBuilder: imageBuilder ??
-          (uri, title, alt) => GenAiMarkdownImage(
-                uri: uri,
-                title: title,
-                alt: alt,
-              ),
-      onTapLink: onTapLink,
+    return GenAiVisualScope(
+      latest: latestVisual,
+      answerId: visualAnswerId,
+      child: _GenAiMarkdownBody(
+        data: data,
+        selectable: selectable,
+        interactiveVisuals: interactiveVisuals,
+        styleSheet: effectiveStyleSheet,
+        imageBuilder: imageBuilder ?? _buildMarkdownImage,
+        onTapLink: onTapLink,
+      ),
     );
   }
 }
+
+Widget _buildMarkdownImage(Uri uri, String? title, String? alt) => GenAiMarkdownImage(
+      uri: uri,
+      title: title,
+      alt: alt,
+    );
 
 class _GenAiMarkdownBody extends StatefulWidget {
   const _GenAiMarkdownBody({
@@ -203,9 +211,7 @@ class _GenAiMarkdownBody extends StatefulWidget {
     required this.styleSheet,
     this.imageBuilder,
     this.onTapLink,
-    this.builders = const <String, MarkdownElementBuilder>{},
-    this.inlineSyntaxes = const <md.InlineSyntax>[],
-    this.extensionSet,
+    required this.interactiveVisuals,
   });
 
   final String data;
@@ -213,31 +219,37 @@ class _GenAiMarkdownBody extends StatefulWidget {
   final MarkdownStyleSheet styleSheet;
   final MarkdownImageBuilder? imageBuilder;
   final MarkdownTapLinkCallback? onTapLink;
-  final Map<String, MarkdownElementBuilder> builders;
-  final List<md.InlineSyntax> inlineSyntaxes;
-  final md.ExtensionSet? extensionSet;
+  final bool interactiveVisuals;
 
   @override
   State<_GenAiMarkdownBody> createState() => _GenAiMarkdownBodyState();
 }
 
 class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody> implements MarkdownBuilderDelegate {
-  List<Widget>? _children;
+  List<md.Node>? _astNodes;
+  Widget? _content;
+  bool _needsBuild = true;
   final List<GestureRecognizer> _recognizers = <GestureRecognizer>[];
 
   @override
   void didChangeDependencies() {
-    _parseMarkdown();
     super.didChangeDependencies();
+    _needsBuild = true;
   }
 
   @override
   void didUpdateWidget(_GenAiMarkdownBody oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.data != oldWidget.data ||
+        widget.interactiveVisuals != oldWidget.interactiveVisuals) {
+      _astNodes = null;
+    }
+    if (widget.data != oldWidget.data ||
         widget.styleSheet != oldWidget.styleSheet ||
-        widget.selectable != oldWidget.selectable) {
-      _parseMarkdown();
+        widget.selectable != oldWidget.selectable ||
+        widget.interactiveVisuals != oldWidget.interactiveVisuals ||
+        widget.imageBuilder != oldWidget.imageBuilder) {
+      _needsBuild = true;
     }
   }
 
@@ -258,16 +270,15 @@ class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody> implements Markd
     }
   }
 
-  void _parseMarkdown() {
-    _disposeRecognizers();
-
+  List<md.Node> _parseMarkdown() {
     final document = md.Document(
-      inlineSyntaxes: widget.inlineSyntaxes,
-      extensionSet: widget.extensionSet ?? md.ExtensionSet.gitHubWeb,
+      inlineSyntaxes: [LatexInlineSyntax()],
+      blockSyntaxes: [if (widget.interactiveVisuals) GenAiVisualSyntax()],
+      extensionSet: md.ExtensionSet.gitHubWeb,
       encodeHtml: false,
     );
 
-    final lines = const LineSplitter().convert(widget.data);
+    final lines = const LineSplitter().convert(preprocessLatexBlocks(widget.data));
     final astNodes = document.parseLines(lines);
     void normalizeTaskItems(List<md.Node> nodes) {
       for (final node in nodes.whereType<md.Element>()) {
@@ -286,6 +297,15 @@ class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody> implements Markd
     }
 
     normalizeTaskItems(astNodes);
+    var visualIndex = 0;
+    for (final visual in GenAiVisualSyntax.elements(astNodes)) {
+      visual.attributes['index'] = '${++visualIndex}';
+    }
+    return astNodes;
+  }
+
+  void _buildMarkdown() {
+    _disposeRecognizers();
 
     final builder = MarkdownBuilder(
       delegate: this,
@@ -295,24 +315,37 @@ class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody> implements Markd
       imageBuilder: widget.imageBuilder,
       checkboxBuilder: null,
       bulletBuilder: null,
-      builders: widget.builders,
+      builders: {
+        'latex-inline': GenAiLatexInlineBuilder(),
+        'pre': GenAiPreBuilder(),
+        if (widget.interactiveVisuals) 'techpie-visual': GenAiVisualBuilder(),
+      },
       paddingBuilders: const <String, MarkdownPaddingBuilder>{},
       fitContent: true,
       listItemCrossAxisAlignment: MarkdownListItemCrossAxisAlignment.baseline,
     );
 
     try {
-      _children = builder.build(astNodes);
+      // A theme or image resolver change needs new widgets, but the parsed
+      // document only depends on the source and the enabled block syntax.
+      final children = builder.build(_astNodes ??= _parseMarkdown());
+      _content = switch (children.length) {
+        0 => const SizedBox.shrink(),
+        1 => children.single,
+        _ => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+      };
     } catch (_) {
       // Incomplete model output must not tear down the chat's element tree.
       _disposeRecognizers();
-      _children = [
-        Text(
-          widget.data,
-          key: const ValueKey('genai-markdown-fallback'),
-          style: widget.styleSheet.p,
-        ),
-      ];
+      _content = Text(
+        widget.data,
+        key: const ValueKey('genai-markdown-fallback'),
+        style: widget.styleSheet.p,
+      );
     }
   }
 
@@ -336,17 +369,10 @@ class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody> implements Markd
 
   @override
   Widget build(BuildContext context) {
-    final children = _children;
-    if (children == null || children.isEmpty) {
-      return const SizedBox.shrink();
+    if (_needsBuild) {
+      _needsBuild = false;
+      _buildMarkdown();
     }
-    if (children.length == 1) {
-      return children.single;
-    }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: children,
-    );
+    return _content!;
   }
 }

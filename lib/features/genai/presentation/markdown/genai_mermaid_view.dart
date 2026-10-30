@@ -39,7 +39,7 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
             child: Scaffold(
               appBar: AppBar(
                 leading: const CloseButton(),
-                title: const Text('Mermaid'),
+                title: const Text('Mermaid 图表', maxLines: 1, overflow: TextOverflow.ellipsis),
                 actions: [
                   IconButton(
                     tooltip: '缩小',
@@ -103,7 +103,7 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
         children: [
           // Header
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
@@ -113,45 +113,58 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
                 ),
               ),
             ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.account_tree_outlined,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Mermaid 图表',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                if (!_showCode && _renderError == null) ...[
-                  IconButton(
-                    tooltip: '适应窗口',
-                    onPressed: () => _canvasKey.currentState?.fit(),
-                    icon: const Icon(Icons.fit_screen, size: 20),
-                  ),
-                  IconButton(
-                    tooltip: '全屏查看',
-                    onPressed: _openFullscreen,
-                    icon: const Icon(Icons.fullscreen, size: 22),
-                  ),
-                ],
-                IconButton(
-                  tooltip: _showCode ? '切换到图表' : '查看源码',
-                  onPressed: () => setState(() => _showCode = !_showCode),
-                  icon: Icon(_showCode ? Icons.schema_outlined : Icons.code_rounded, size: 20),
-                ),
-                GenAiCopyButton(
-                  text: widget.code,
-                  tooltip: '复制代码',
-                  showLabel: false,
-                ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final title = Row(
+                  children: [
+                    Icon(Icons.account_tree_outlined, size: 16, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Mermaid 图表',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                );
+                final actions = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!_showCode && _renderError == null) ...[
+                      IconButton(
+                        tooltip: '适应窗口',
+                        onPressed: () => _canvasKey.currentState?.fit(),
+                        icon: const Icon(Icons.fit_screen, size: 20),
+                      ),
+                      IconButton(
+                        tooltip: '全屏查看',
+                        onPressed: _openFullscreen,
+                        icon: const Icon(Icons.fullscreen, size: 20),
+                      ),
+                    ],
+                    IconButton(
+                      tooltip: _showCode ? '切换到图表' : '查看源码',
+                      onPressed: () => setState(() => _showCode = !_showCode),
+                      icon: Icon(_showCode ? Icons.schema_outlined : Icons.code_rounded, size: 20),
+                    ),
+                    GenAiCopyButton(text: widget.code, tooltip: '复制源码'),
+                  ],
+                );
+                final compact =
+                    constraints.maxWidth < 332 * MediaQuery.textScalerOf(context).scale(13) / 13;
+                return compact && !_showCode && _renderError == null
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          title,
+                          const SizedBox(height: 4),
+                          Align(alignment: Alignment.centerRight, child: actions),
+                        ],
+                      )
+                    : Row(children: [Expanded(child: title), actions]);
+              },
             ),
           ),
 

@@ -364,7 +364,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
@@ -382,9 +382,12 @@ class _GenAiChartViewState extends State<GenAiChartView> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Flexible(
+                Tooltip(
+                  message: title,
                   child: Text(
                     title,
                     maxLines: 1,
@@ -395,7 +398,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(height: 3),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
@@ -415,20 +418,10 @@ class _GenAiChartViewState extends State<GenAiChartView> {
             ),
           ),
           if (showToggle)
-            Tooltip(
-              message: _showCode ? '切换到图表' : '查看数据代码',
-              child: InkWell(
-                onTap: () => setState(() => _showCode = !_showCode),
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Icon(
-                    _showCode ? Icons.bar_chart_rounded : Icons.code_rounded,
-                    size: 16,
-                    color: theme.hintColor,
-                  ),
-                ),
-              ),
+            IconButton(
+              tooltip: _showCode ? '切换到图表' : '查看数据',
+              onPressed: () => setState(() => _showCode = !_showCode),
+              icon: Icon(_showCode ? Icons.bar_chart_rounded : Icons.code_rounded, size: 20),
             ),
           GenAiCopyButton(
             text: widget.code,
@@ -739,11 +732,13 @@ class _GenAiChartViewState extends State<GenAiChartView> {
           ),
         ),
         const SizedBox(width: 5),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            color: theme.textTheme.bodySmall?.color,
+        Flexible(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: theme.textTheme.bodySmall?.color,
+            ),
           ),
         ),
       ],

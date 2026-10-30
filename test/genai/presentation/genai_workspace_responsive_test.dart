@@ -95,6 +95,37 @@ Future<void> _reachable(
 }
 
 void main() {
+  testWidgets('selectable text and model controls cannot cover the chat with semantics',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      for (final size in [const Size(390, 844), const Size(1280, 900)]) {
+        final demo = await _show(tester, size: size);
+        final sent = demo.workspace.send('布局检查');
+        await tester.pumpAndSettle();
+        await sent;
+        final prompt = tester.getSemantics(find.widgetWithText(SelectableText, '布局检查'));
+        expect(prompt.rect.height, lessThan(100));
+        final model = tester.getSemantics(find.byKey(const ValueKey('genai-model')));
+        expect(model.rect.width, lessThan(size.width));
+        expect(model.rect.height, lessThan(100));
+        final answer = tester.getSemantics(
+          find.byWidgetPredicate(
+            (widget) => widget is Semantics && widget.properties.label == 'AI 回复',
+          ),
+        );
+        expect(answer.getSemanticsData().flagsCollection.isTextField, isFalse);
+        if (size.width > 960) {
+          final search = tester.getSemantics(find.byType(TextField).first);
+          expect(search.rect.width, lessThanOrEqualTo(240));
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    } finally {
+      semantics.dispose();
+    }
+  });
+
   testWidgets('workspace follows live TechPie theme changes including AMOLED', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final themes = ThemeService(StorageService(await SharedPreferences.getInstance()));

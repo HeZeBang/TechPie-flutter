@@ -7,6 +7,7 @@ import 'package:techpie/features/genai/application/genai_context_compactor.dart'
 import 'package:techpie/features/genai/application/genai_repository.dart';
 import 'package:techpie/features/genai/application/genai_session_service.dart';
 import 'package:techpie/features/genai/data/genai_api_client.dart';
+import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_context_record.dart';
 import 'package:techpie/features/genai/domain/genai_context_usage.dart';
@@ -30,6 +31,83 @@ const policy = GenAiContextPolicy(
 );
 
 void main() {
+  test('fresh agent retrieves full compacted sources, and deletion revokes old references',
+      () async {
+    final server = JournalServer();
+    final first = await JournalClient.create(server, policy: policy);
+    addTearDown(first.dispose);
+    final original = 'archive-key-573: ${'ordinary source ' * 500} exact-value=5837';
+    for (var i = 0; i < 10; i++) {
+      await first.workspace.send(i == 2 ? original : 'Record $i.\n${'source evidence ' * 700}');
+    }
+    expect(server.summaries, greaterThan(0));
+    final group = first.workspace.groupId;
+    final fresh = await JournalClient.create(server, policy: policy);
+    addTearDown(fresh.dispose);
+    await fresh.workspace.openConversation(group, GenAiCancellation());
+    fresh.workspace.setAgentEnabled(true);
+    String? recordId;
+    var stage = 0;
+    server.onGenerate = (body) {
+      final nonce = server.nonce(body);
+      if (stage++ == 0) {
+        expect(body['messages'].toString(), contains('record_id'));
+        return encodeGenAiCompactCall(
+          'search_conversation',
+          {'query': 'archive-key-573'},
+          nonce: nonce,
+        );
+      }
+      final receipt = decodeGenAiAgentRecord(server.input(body))!.result!;
+      expect(receipt['ok'], true);
+      final result = receipt['result'] as Map;
+      if (stage == 2) {
+        final match = (result['matches'] as List).first as Map;
+        recordId = match['record_id'] as String;
+        return encodeGenAiCompactCall(
+          'read_conversation_records',
+          {
+            'record_id': recordId,
+            'offset': original.length - 100,
+          },
+          nonce: nonce,
+        );
+      }
+      expect(result['text'], endsWith('exact-value=5837'));
+      return server.finalAnswer(body, '5837');
+    };
+    await fresh.workspace.send('Find the exact original value from the archived record.');
+    expect(fresh.workspace.turns.last.phase, GenAiChatPhase.completed);
+    expect(fresh.workspace.turns.last.answer, '5837');
+    expect(stage, 3);
+    final reopened = await JournalClient.create(server, policy: policy);
+    addTearDown(reopened.dispose);
+    await reopened.workspace.openConversation(group, GenAiCancellation());
+    expect(reopened.workspace.turns.last.agentEvents, hasLength(2));
+    // Removing that source suffix must also remove access from a fresh instance.
+    server.onGenerate = (_) => 'Replacement';
+    await reopened.workspace.changeTurn(reopened.workspace.turns[2].id, replacement: 'new record');
+    final edited = await JournalClient.create(server, policy: policy);
+    addTearDown(edited.dispose);
+    await edited.workspace.openConversation(group, GenAiCancellation());
+    edited.workspace.setAgentEnabled(true);
+    var calls = 0;
+    server.onGenerate = (body) {
+      if (calls++ == 0) {
+        return encodeGenAiCompactCall(
+          'read_conversation_records',
+          {'record_id': recordId},
+          nonce: server.nonce(body),
+        );
+      }
+      final receipt = decodeGenAiAgentRecord(server.input(body))!.result!;
+      expect((receipt['error'] as Map)['code'], 'record_not_found');
+      return server.finalAnswer(body, 'Record removed');
+    };
+    await edited.workspace.send('Try the old reference.');
+    expect(edited.workspace.turns.last.answer, 'Record removed');
+  });
+
   test('editing compacted history removes discarded evidence from fresh-client context', () async {
     final server = JournalServer();
     final client = await JournalClient.create(server, policy: policy);
