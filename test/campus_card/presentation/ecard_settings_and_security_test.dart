@@ -8,7 +8,6 @@ import 'package:techpie/features/campus_card/app/app_runtime.dart';
 import 'package:techpie/features/campus_card/app/demo_runtime_factory.dart';
 import 'package:techpie/features/campus_card/core/config/app_environment.dart';
 import 'package:techpie/features/campus_card/core/config/payment_code_preferences.dart';
-import 'package:techpie/features/campus_card/presentation/screens/me_screen.dart';
 import 'package:techpie/features/campus_card/presentation/screens/security_limit_screen.dart';
 import 'package:techpie/features/campus_card/presentation/screens/settings_screen.dart';
 import 'package:techpie/features/campus_card/presentation/theme/theme.dart';
@@ -88,17 +87,6 @@ void main() {
         tester.getSize(rows.at(index)).height,
     ];
     expect(heights.toSet(), hasLength(1));
-  });
-
-  testWidgets('profile uses a tail-four mask and never renders internal id', (
-    tester,
-  ) async {
-    final runtime = await productionLike();
-    addTearDown(runtime.dispose);
-    await pumpScreen(tester, runtime, const MeScreen());
-
-    expect(find.text('••••\u00A00001'), findsOneWidget);
-    expect(find.textContaining('DEMO-CARD-0001'), findsNothing);
   });
 
   testWidgets('the maximum brightness switch defaults off and saves the choice',

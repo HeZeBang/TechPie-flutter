@@ -38,6 +38,32 @@ class CampusCardFeature extends ConsumerStatefulWidget {
 class _CampusCardFeatureState extends ConsumerState<CampusCardFeature> {
   final _navigatorKey = GlobalKey<NavigatorState>();
   final _nativeChromeObserver = CNTabBarRouteObserver();
+  void Function()? _unregister;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Observe visibility above the feature's Navigator: inner pages can reuse
+    // this target, but a kept-alive tab must not intercept taps while hidden.
+    _unregister?.call();
+    _unregister = TickerMode.valuesOf(context).enabled
+        ? ref.read(homeWidgetPortProvider)?.registerPaymentTarget(_openPay)
+        : null;
+  }
+
+  @override
+  void dispose() {
+    _unregister?.call();
+    super.dispose();
+  }
+
+  Future<void> _openPay() async {
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true)
+        .popUntil((route) => route is! PopupRoute);
+    await goToCampusCardPay(_navigatorKey.currentContext!, ref);
+    await WidgetsBinding.instance.endOfFrame;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +91,7 @@ class _CampusCardFeatureState extends ConsumerState<CampusCardFeature> {
             observers: [_nativeChromeObserver],
             onGenerateRoute: (settings) => adaptivePageRoute<Object?>(
               settings: settings,
-              builder: (_) => const _PaymentTargetHost(child: _EntryGate()),
+              builder: (_) => const _EntryGate(),
             ),
           ),
         ),
@@ -119,48 +145,4 @@ final class _EntryGate extends ConsumerWidget {
       _ => const SessionRestoreScreen(),
     };
   }
-}
-
-/// Registers the feature as the home-entry tap target while it is open, so a
-/// widget/shortcut tap routes the already-open feature to its pay page instead
-/// of the host mounting a second copy of it.
-///
-/// This must live *inside* the feature's own [Navigator]: its handler hands its
-/// [BuildContext] to [goToCampusCardPay], and a context above this Navigator
-/// would make that call pop the host shell's stack instead of the feature's.
-final class _PaymentTargetHost extends ConsumerStatefulWidget {
-  const _PaymentTargetHost({required this.child});
-
-  final Widget child;
-
-  @override
-  ConsumerState<_PaymentTargetHost> createState() => _PaymentTargetHostState();
-}
-
-final class _PaymentTargetHostState extends ConsumerState<_PaymentTargetHost> {
-  void Function()? _unregister;
-
-  @override
-  void initState() {
-    super.initState();
-    _unregister =
-        ref.read(homeWidgetPortProvider)?.registerPaymentTarget(_openPay);
-  }
-
-  @override
-  void dispose() {
-    _unregister?.call();
-    super.dispose();
-  }
-
-  Future<void> _openPay() async {
-    if (!mounted) return;
-    // Back to the feature's pay page when it opened there, pushed above the
-    // first page otherwise — and a no-op when the pay page is already showing.
-    await goToCampusCardPay(context, ref);
-    await WidgetsBinding.instance.endOfFrame;
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.child;
 }

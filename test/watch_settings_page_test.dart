@@ -96,6 +96,19 @@ void main() {
     expect(find.text('手表已确认同步'), findsNothing);
   });
 
+  testWidgets('acknowledged online authorization remains usable without an offline grant', (tester) async {
+    native['onlineReady'] = true;
+    native.remove('watchExpiresAt');
+    await sync.refreshStatus();
+    await mount(tester);
+    expect(find.text('在线码可独立获取；离线码尚未授权'), findsOneWidget);
+    expect(find.text('待同步离线授权'), findsNothing);
+    native['watchExpiresAt'] = DateTime.utc(2000, 1, 1).millisecondsSinceEpoch / 1000;
+    await sync.refreshStatus();
+    await tester.pumpAndSettle();
+    expect(find.text('在线码可独立获取；离线授权已到期'), findsOneWidget);
+  });
+
   test(
       'repeated status reads are deduplicated and old receipts do not erase failures',
       () async {

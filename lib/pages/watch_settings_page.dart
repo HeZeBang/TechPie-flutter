@@ -86,7 +86,7 @@ class WatchSettingsContent extends StatelessWidget {
         title: '未开启',
         detail: sync.message == '已取消授权，手表连接后会清除校园卡'
             ? '取消授权将在手表连接后生效'
-            : '开启后，手表可离线展示校园卡消费码',
+            : '开启后，手表会保存校园卡 OPENID，可独立获取在线码或使用离线码',
         icon: Icons.watch_outlined,
         warning: false
       );
@@ -100,7 +100,11 @@ class WatchSettingsContent extends StatelessWidget {
       );
     }
     final expires = sync.status['watchExpiresAt'];
+    final onlineReady = sync.status['onlineReady'] == true;
     if (expires is! num) {
+      if (onlineReady) {
+        return (title: '已同步', detail: '在线码可独立获取；离线码尚未授权', icon: Icons.wifi, warning: false);
+      }
       return (
         title: '待同步离线授权',
         detail: '请先在手机校园卡中开通或续期，再更新同步',
@@ -109,6 +113,9 @@ class WatchSettingsContent extends StatelessWidget {
       );
     }
     if (expires * 1000 <= DateTime.now().millisecondsSinceEpoch) {
+      if (onlineReady) {
+        return (title: '已同步', detail: '在线码可独立获取；离线授权已到期', icon: Icons.wifi, warning: false);
+      }
       return (
         title: '离线授权已到期',
         detail: '点击下方按钮更新授权',
@@ -118,7 +125,7 @@ class WatchSettingsContent extends StatelessWidget {
     }
     return (
       title: '已同步',
-      detail: '离线使用至 ${_date(expires)}',
+      detail: '${onlineReady ? '在线码可独立获取；' : ''}离线使用至 ${_date(expires)}',
       icon: Icons.check_circle_outline,
       warning: false
     );

@@ -1,11 +1,29 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:techpie/features/campus_card/app/app_providers.dart';
 import 'package:techpie/features/campus_card/core/config/payment_code_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('manual offline choice survives restart until explicitly disabled', () async {
+    var container = ProviderContainer();
+    await container.read(manualOfflineModeProvider.notifier).setEnabled(true);
+    container.dispose();
+
+    container = ProviderContainer();
+    await container.read(manualOfflineModeProvider.notifier).restored;
+    expect(container.read(manualOfflineModeProvider), isTrue);
+    await container.read(manualOfflineModeProvider.notifier).setEnabled(false);
+    container.dispose();
+
+    container = ProviderContainer();
+    addTearDown(container.dispose);
+    await container.read(manualOfflineModeProvider.notifier).restored;
+    expect(container.read(manualOfflineModeProvider), isFalse);
+  });
 
   test('maximum pay code brightness defaults to disabled', () async {
     final container = ProviderContainer();

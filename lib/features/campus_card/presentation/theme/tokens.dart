@@ -14,17 +14,6 @@ abstract final class GpTokens {
   static const groupedFillLight = Color(0xFFFFFFFF);
   static const groupedFillDark = Color(0xFF1C1C1E);
 
-  // Glass (navigation & control layers only).
-  static const glassOpacity = 0.72;
-  static const glassBlurSigma = 24.0;
-  static const glassTintLight = Color(0x14FFFFFF);
-  static const glassTintDark = Color(0x0FFFFFFF);
-  static const glassHighlightOpacity = 0.14;
-  static const glassBorderOpacity = 0.09;
-  static const glassFallbackHighlightOpacity = 0.06;
-  static const glassFallbackLight = Color(0xFFFAFBFC);
-  static const glassScrimBehindNav = Color(0x0A000000);
-
   // Spacing (4dp base grid).
   static const space0 = 0.0;
   static const space1 = 4.0;
@@ -52,14 +41,6 @@ abstract final class GpTokens {
           offset: const Offset(0, 1),
           blurRadius: 4,
           color: const Color(0xFF000000).withValues(alpha: 0.08),
-        ),
-      ];
-
-  static List<BoxShadow> elevation2(bool dark) => [
-        BoxShadow(
-          offset: const Offset(0, 4),
-          blurRadius: 16,
-          color: const Color(0xFF000000).withValues(alpha: dark ? 0.22 : 0.10),
         ),
       ];
 

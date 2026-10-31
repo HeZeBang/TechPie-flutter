@@ -131,6 +131,24 @@ void main() {
     );
   });
 
+  test('unsupported tunnel still rejects DNS pointing at the bind service', () async {
+    tunnel.current = EcardBindHijackStatus.unsupported;
+    final service = EcardBindService(
+      hijack: tunnel,
+      resolve: (_) async => [EcardBindHijackService.targetIp],
+    );
+    addTearDown(service.dispose);
+
+    await expectLater(
+      service.prepareCampusConnection(),
+      throwsA(
+        isA<AppFailure>()
+            .having((failure) => failure.code, 'code', 'ECARD_BIND_DNS_NOT_RESTORED'),
+      ),
+    );
+    expect(tunnel.stopCalls, 0);
+  });
+
   test('redeem returns the OPENID with the channel the code was issued for', () async {
     final service = serviceIssuing(userType: '18');
 

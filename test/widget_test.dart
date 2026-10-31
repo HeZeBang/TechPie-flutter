@@ -1,5 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/main.dart';
 import 'package:techpie/services/assignment_service.dart';
@@ -196,6 +201,43 @@ void main() {
     expect(tester.widget<AdaptiveSelect>(find.byType(AdaptiveSelect).last).value, 'alipay_openid');
     expect(find.textContaining('Cloud sync'), findsOneWidget);
   });
+  testWidgets('startup update uses a localized navigator', (tester) async {
+    PackageInfo.setMockInitialValues(appName: 'TechPie', packageName: 'club.geekpie.techpie',
+      version: '1.0.1', buildNumber: '12', buildSignature: 'synthetic',);
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    final logger = DebugLogger();
+    final client = LoggingHttpClient(logger);
+    final uniAuth = UniAuthService();
+    final auth = AuthService(storage, client, uniAuth);
+    final tpAuth = ThirdPartyAuthService(storage, client);
+    final schedule = ScheduleService(storage, client, auth, tpAuth);
+    final updates = UpdateService(
+      client: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'tag_name': 'v1.0.2+13', 'name': 'v1.0.2', 'body': 'Synthetic release notes',
+          }),
+          200,
+        ),
+      ),
+    );
+    await tester.pumpWidget(TechPieApp(
+      authService: auth, debugLogger: logger, storageService: storage,
+      themeService: ThemeService(storage), scheduleService: schedule,
+      assignmentService: AssignmentService(storage, client, auth, tpAuth, schedule),
+      thirdPartyAuthService: tpAuth, oaGymService: OaGymService(auth, storage, tpAuth),
+      egateAppService: EgateAppService(auth, storage, tpAuth), uniAuthService: uniAuth,
+      syncService: SyncService(auth, tpAuth, storage), updateService: updates,
+      campusCardService: CampusCardService(), ecardBindService: EcardBindService(),
+    ),);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('发现新版本 v1.0.2'), findsOneWidget);
+    await tester.tap(find.text('以后再说'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android),);
 }
 
 class _StatefulDestination extends StatefulWidget {

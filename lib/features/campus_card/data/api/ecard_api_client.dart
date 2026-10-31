@@ -82,14 +82,6 @@ abstract interface class EcardTransport {
     Map<String, Object?> data, {
     bool includeOpenId = true,
   });
-
-  Future<List<int>> download(String path);
-
-  Future<Object?> getPlain(
-    String path,
-    Map<String, Object?> query, {
-    bool includeOpenId = false,
-  });
 }
 
 final class EcardApiClient implements EcardTransport {
@@ -172,8 +164,6 @@ final class EcardApiClient implements EcardTransport {
   // HTTP method alone is insufficient: some upstream GET endpoints mutate data.
   static const _replayableReads = {
     '/myaccount/openMyAccountApp',
-    '/home/userImageIsexists',
-    '/repair/showImage',
     '/selftrade/queryCardSelfTradeList',
     '/virtualcard/openQrcodePwdModify',
     '/virtualcard/openQrcodeQuotaModify',
@@ -195,18 +185,6 @@ final class EcardApiClient implements EcardTransport {
   }) =>
       _execute('POST', path, data, includeOpenId: includeOpenId);
 
-  @override
-  Future<Object?> getPlain(
-    String path,
-    Map<String, Object?> query, {
-    bool includeOpenId = false,
-  }) =>
-      _execute('GET', path, query, includeOpenId: includeOpenId, plain: true);
-
-  @override
-  Future<List<int>> download(String path) async =>
-      (await _execute('GET', path, const {}, bytes: true))! as List<int>;
-
   Future<void> _assertSession(EcardSession expected) async {
     final current = await _sessionReader();
     if (current == null || !current.sameSession(expected)) {
@@ -219,8 +197,6 @@ final class EcardApiClient implements EcardTransport {
     String path,
     Map<String, Object?> data, {
     bool includeOpenId = true,
-    bool plain = false,
-    bool bytes = false,
     PaymentRequestContext? permission,
   }) async {
     final frozenData = Map<String, Object?>.unmodifiable(data);
@@ -240,8 +216,6 @@ final class EcardApiClient implements EcardTransport {
         return await _executeOnce(method, path, frozenData,
             scope: scope,
             includeOpenId: includeOpenId,
-            plain: plain,
-            bytes: bytes,
             permission: permission,);
       } on AppFailure catch (failure) {
         if (accountRevision != _accountRevisionReader?.call()) {
@@ -273,8 +247,6 @@ final class EcardApiClient implements EcardTransport {
     Map<String, Object?> data, {
     required _RequestScope scope,
     bool includeOpenId = true,
-    bool plain = false,
-    bool bytes = false,
     PaymentRequestContext? permission,
   }) async {
     data = Map<String, Object?>.unmodifiable(data);
@@ -369,14 +341,12 @@ final class EcardApiClient implements EcardTransport {
           data: method == 'POST'
               ? {'datajson': _cipher.encodeRequest(request)}
               : null,
-          queryParameters: method != 'POST' && !bytes
-              ? plain
-                  ? request
-                  : {'datajson': _cipher.encodeRequest(request)}
+          queryParameters: method != 'POST'
+              ? {'datajson': _cipher.encodeRequest(request)}
               : null,
           options: Options(
             method: method,
-            responseType: bytes ? ResponseType.bytes : ResponseType.json,
+            responseType: ResponseType.json,
             headers: {
               'cookie': session.sessionCookie,
               'orgid': session.orgId,
@@ -388,7 +358,6 @@ final class EcardApiClient implements EcardTransport {
           ),
         );
         await _assertSession(session);
-        if (bytes) return response.data;
         final decoded = _decode(response.data);
         try {
           _validateIdentityFields(decoded, identity);

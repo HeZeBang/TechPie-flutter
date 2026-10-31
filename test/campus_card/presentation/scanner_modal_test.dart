@@ -16,11 +16,11 @@ import 'package:techpie/features/campus_card/domain/ports/payment_ports.dart';
 import 'package:techpie/features/campus_card/domain/ports/platform_ports.dart'
     as ports;
 import 'package:techpie/features/campus_card/presentation/scanner/scan_result_content.dart';
-import 'package:techpie/features/campus_card/presentation/scanner/scanner_geometry.dart';
 import 'package:techpie/features/campus_card/presentation/scanner/scanner_modal.dart';
 import 'package:techpie/features/campus_card/presentation/scanner/six_digit_password_panel.dart';
 import 'package:techpie/widgets/scanner/scan_overlay.dart';
 import 'package:techpie/widgets/scanner/scan_page.dart';
+import 'package:techpie/widgets/scanner/scanner_geometry.dart';
 
 import '../support/fake_ecard_transport.dart';
 import '../support/scan_password_challenge.dart';

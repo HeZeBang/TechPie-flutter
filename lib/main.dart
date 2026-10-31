@@ -407,10 +407,12 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     }
     if (release == null || !mounted) return;
 
-    // This State sits above the MaterialApp, so its own context has no
-    // MaterialLocalizations and no navigator to put a dialog on; ask the app's
-    // navigator instead.
-    final dialogContext = _navigatorKey.currentContext;
+    var dialogContext = _navigatorKey.currentState?.overlay?.context;
+    if (dialogContext == null) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      dialogContext = _navigatorKey.currentState?.overlay?.context;
+    }
     if (dialogContext == null || !dialogContext.mounted) return;
     _promptedThisLaunch = true;
     await showUpdateAvailableDialog(dialogContext, release);
@@ -420,6 +422,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     // The shell performs the push: it knows whether the entry belongs inside the
     // selected destination's stack or on the root navigator, and it is still
     // there after a cold start.
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
     appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
   }
 
