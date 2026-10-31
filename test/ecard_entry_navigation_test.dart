@@ -241,4 +241,47 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
+  testWidgets(
+    'a widget tap opens the code in the Home tab, whatever tab was showing',
+    (tester) async {
+      await pumpApp(tester);
+      tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(3);
+      await tester.pumpAndSettle();
+      expect(tester.widget<CNTabBar>(find.byType(CNTabBar)).currentIndex, 3);
+
+      appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<CNTabBar>(find.byType(CNTabBar)).currentIndex, 0);
+      expect(find.byKey(const Key('payment-code-page')), findsOneWidget);
+
+      // One back lands on Home, where the feature grid would have opened it.
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(CampusCardPage), findsNothing);
+      expect(find.byType(HomePage), findsOneWidget);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'a widget tap brings an open campus card forward instead of a second one',
+    (tester) async {
+      await pumpApp(tester);
+      featureEntries.singleWhere((feature) => feature.id == 'campus_card').nativeEntry!(
+        tester.element(find.byType(HomePage)),
+      );
+      await tester.pumpAndSettle();
+      tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(3);
+      await tester.pumpAndSettle();
+      expect(find.byType(CampusCardPage), findsNothing);
+
+      appShellCampusCardRevealRequests.request();
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<CNTabBar>(find.byType(CNTabBar)).currentIndex, 0);
+      expect(find.byType(CampusCardPage), findsOneWidget);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 }

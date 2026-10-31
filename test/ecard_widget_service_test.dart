@@ -19,17 +19,22 @@ void main() {
     addTearDown(service.dispose);
     var root = 0;
     var existing = 0;
+    var reveals = 0;
     service.initialize();
     service.setOpenPayHandler(() async => root++);
+    service.onRevealPaymentTarget = () => reveals++;
     final remove = service.registerPaymentTarget(() async => existing++);
 
     await _tapWidget(channel);
     await _tapWidget(channel);
     expect(root, 0);
     expect(existing, 2);
+    // The open campus card is brought forward before it handles each tap.
+    expect(reveals, 2);
     remove();
     await _tapWidget(channel);
     expect(root, 1);
+    expect(reveals, 2);
   });
 
   testWidgets('a second tap during startup targets the newly mounted page',
