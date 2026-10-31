@@ -9,6 +9,7 @@ import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
 import '../../domain/models/bill_models.dart';
 import '../../domain/models/card_models.dart';
+import '../../domain/models/merchant_alias_models.dart';
 import '../../domain/ports/platform_ports.dart';
 import '../icons/platform_icons.dart';
 import '../theme/colors.dart';
@@ -59,11 +60,15 @@ String formatTransactionAmount(TransactionRecord record) {
 IconData transactionIcon(BuildContext context, TransactionRecord record) =>
     switch (record.kind) {
       TransactionKind.recharge => GpPlatformIcons.recharge(context),
+      TransactionKind.creditReplenishment =>
+        GpPlatformIcons.creditReplenishment(context),
       TransactionKind.subsidy => GpPlatformIcons.gift(context),
       TransactionKind.transfer => GpPlatformIcons.transfer(context),
       TransactionKind.refund => GpPlatformIcons.refund(context),
       TransactionKind.adjustment => GpPlatformIcons.limits(context),
-      TransactionKind.consumption => GpPlatformIcons.consumption(context),
+      TransactionKind.consumption => record.isDining
+          ? GpPlatformIcons.dining(context)
+          : GpPlatformIcons.consumption(context),
     };
 
 String cardTail(String masked) {
@@ -703,15 +708,25 @@ final class TransactionList extends StatelessWidget {
     required this.items,
     this.onTap,
     this.emptyLabel,
+    this.aliases = const MerchantAliasConfig.empty(),
+    this.showAllRecords = false,
   });
 
   final List<TransactionRecord> items;
   final ValueChanged<TransactionRecord>? onTap;
   final String? emptyLabel;
+  final MerchantAliasConfig aliases;
+  final bool showAllRecords;
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) {
+    final visibleItems = items
+        .where(
+          (record) =>
+              isTransactionVisible(record, showAllRecords: showAllRecords),
+        )
+        .toList();
+    if (visibleItems.isEmpty) {
       return SliverToBoxAdapter(
         child: Container(
           width: double.infinity,
@@ -728,16 +743,36 @@ final class TransactionList extends StatelessWidget {
         ),
       );
     }
+    final sorted = List<TransactionRecord>.of(visibleItems)
+      ..sort((a, b) {
+        if (a.hasValidDate != b.hasValidDate) return a.hasValidDate ? -1 : 1;
+        final time = b.occurredAt.compareTo(a.occurredAt);
+        return time != 0 ? time : a.id.compareTo(b.id);
+      });
+    String day(TransactionRecord record) => record.hasValidDate
+        ? DateFormat('yyyy-MM-dd').format(record.occurredAt.toLocal())
+        : '日期未知';
     return SliverList.builder(
-      itemCount: items.length,
+      itemCount: sorted.length,
+      findChildIndexCallback: (key) {
+        if (key is! ValueKey<String>) return null;
+        final index = sorted.indexWhere((record) => record.id == key.value);
+        return index < 0 ? null : index;
+      },
       itemBuilder: (context, index) {
-        final first = index == 0;
-        final last = index == items.length - 1;
+        final record = sorted[index];
+        final date = day(record);
+        final first = index == 0 || date != day(sorted[index - 1]);
+        final last =
+            index == sorted.length - 1 || date != day(sorted[index + 1]);
         final row = ColoredBox(
           color: context.gpColors.surface,
           child: Column(
             children: [
-              _TransactionRow(record: items[index], onTap: onTap),
+              _TransactionRow(
+                record: aliases.apply(record),
+                onTap: onTap == null ? null : (_) => onTap!(record),
+              ),
               if (!last)
                 Padding(
                   padding: const EdgeInsets.only(left: 72, right: 18),
@@ -746,13 +781,30 @@ final class TransactionList extends StatelessWidget {
             ],
           ),
         );
-        return ClipRRect(
-          key: ValueKey(items[index].id),
-          borderRadius: BorderRadius.vertical(
-            top: first ? const Radius.circular(24) : Radius.zero,
-            bottom: last ? const Radius.circular(24) : Radius.zero,
-          ),
-          child: row,
+        return Column(
+          key: ValueKey(record.id),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (first)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 18, 4, 10),
+                child: Text(
+                  date,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: context.gpColors.textSecondary,
+                  ),
+                ),
+              ),
+            ClipRRect(
+              borderRadius: BorderRadius.vertical(
+                top: first ? const Radius.circular(24) : Radius.zero,
+                bottom: last ? const Radius.circular(24) : Radius.zero,
+              ),
+              child: row,
+            ),
+          ],
         );
       },
     );
@@ -770,9 +822,9 @@ final class _TransactionRow extends StatelessWidget {
     final c = context.gpColors;
     final incoming = transactionIsIncoming(record);
     final amount = formatTransactionAmount(record);
-    final date = DateFormat('yyyy-MM-dd HH:mm:ss').format(
-      record.occurredAt.toLocal(),
-    );
+    final date = record.hasValidDate
+        ? DateFormat('HH:mm:ss').format(record.occurredAt.toLocal())
+        : '时间未知';
     final icon = transactionIcon(context, record);
     return _ImmediatePressSurface(
       onTap: onTap == null ? null : () => onTap!(record),
@@ -796,9 +848,7 @@ final class _TransactionRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    record.merchantName?.trim().isNotEmpty == true
-                        ? record.merchantName!
-                        : '--',
+                    record.displayMerchantName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

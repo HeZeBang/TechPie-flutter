@@ -18,6 +18,7 @@ import '../../core/config/debug_mode_features.dart';
 import '../../core/config/offline_authorization_banner_controller.dart';
 import '../../core/config/payment_code_preferences.dart';
 import '../../core/errors/app_failure.dart';
+import '../../domain/models/bill_models.dart';
 import '../../domain/models/card_models.dart';
 import '../../domain/models/offline_models.dart';
 import '../../domain/models/payment_models.dart';
@@ -469,6 +470,8 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
       });
     }
     final transactions = ref.watch(transactionFeedProvider(_allTransactions));
+    final showAllRecords =
+        ref.watch(showAllTransactionRecordsProvider).valueOrNull ?? false;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final manualOffline = ref.watch(manualOfflineModeProvider);
     // Null while the stored preference is being read: the head start waits for
@@ -578,7 +581,11 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
 
     final transactionPage = transactions.valueOrNull;
     final realTransactionCount = transactionPage?.items
-        .where((record) => !record.id.startsWith('DEBUG-'))
+        .where(
+          (record) =>
+              isTransactionVisible(record, showAllRecords: showAllRecords) &&
+              !record.id.startsWith('DEBUG-'),
+        )
         .length;
     if (_active &&
         transactionPage != null &&
@@ -785,9 +792,16 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                 ),
                 sliver: switch (transactions) {
                   AsyncData(:final value) => TransactionList(
+                      showAllRecords: showAllRecords,
+                      aliases: ref.watch(merchantAliasConfigProvider),
                       items: value.items
                           .where(
-                            (record) => !record.id.startsWith('DEBUG-'),
+                            (record) =>
+                                !record.id.startsWith('DEBUG-') &&
+                                isTransactionVisible(
+                                  record,
+                                  showAllRecords: showAllRecords,
+                                ),
                           )
                           .take(25)
                           .toList(),
