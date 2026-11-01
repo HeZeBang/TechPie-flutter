@@ -222,8 +222,7 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
       if (call != null &&
           event.result != null &&
           event.result!['reused'] != true &&
-          (call.name == 'generate_image' ||
-              call.name == 'reserve_court' && call.arguments['action'] == 'book')) {
+          genAiRecordsMutationReceipt(call.name, call.arguments)) {
         ledger[genAiMutationReceiptKey(call, turnId: turn.actionScopeId ?? turn.id)] = event.result;
       }
     }

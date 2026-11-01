@@ -141,13 +141,15 @@ final class TechPieGenAiTools {
             description: 'Generate one PNG through the existing GenAI image '
                 'service after user approval; may consume school quota. Optional '
                 'model must match a currently available image model. Defaults: '
-                '1024x1024, low quality. Custom dimensions must contain '
+                '1024x1024, low quality. Optional short title is used for the '
+                'gallery caption. Custom dimensions must contain '
                 '655360..8294400 pixels. Returns image URLs, not invented images. '
                 'Available image model IDs: ${workspace.imageModels.map((m) => m.aiType).join(', ')}. '
                 'Omit model to use the current first available image model.',
             parameters: _schema(
               {
                 'prompt': _string(max: 6000),
+                'title': _string(max: 120),
                 'model': _string(max: 120),
                 'width': _integer(1, 8294400),
                 'height': _integer(1, 8294400),
@@ -404,6 +406,8 @@ final class TechPieGenAiTools {
             'course': _bounded(assignment.course),
             'kind': assignment.kind.id,
             'due': _campusTimestamp(assignment.due),
+            if (assignment.effectiveLateDue != null)
+              'effective_late_due': _campusTimestamp(assignment.effectiveLateDue!),
             'completed': assignments.isCompleted(assignment),
             if (assignment case ExamAssignment(:final location)) 'location': _bounded(location),
           },
@@ -668,6 +672,7 @@ final class TechPieGenAiTools {
     try {
       request = GenAiImageRequest(
         prompt: prompt,
+        title: args['title'] as String?,
         model: model,
         groupId: GenAiWorkspaceController.createGroupId(),
         size: '${width}x$height',
@@ -685,12 +690,13 @@ final class TechPieGenAiTools {
         [model.aiType, model.rootAiType, prompt, request.size, quality],
       ),
       executionTimeout: const Duration(minutes: 6),
-      summary: '生成 1 张图片 · ${model.name} · ${request.size} · $quality',
+      summary: '生成 1 张图片 · ${model.name} · ${request.size} · ${request.quality}',
       details: {
         'prompt': prompt,
+        if (request.title != null) 'title': request.title,
         'model': model.name,
         'size': request.size,
-        'quality': quality,
+        'quality': request.quality,
         'count': 1,
         'quota': '将使用校园生图额度，实际费用以平台结算为准',
       },
@@ -742,8 +748,9 @@ final class TechPieGenAiTools {
         return {
           'status': 'generated',
           'model': model.name,
+          if (request.title != null) 'title': request.title,
           'size': request.size,
-          'quality': quality,
+          'quality': request.quality,
           'images': images.map((uri) => uri.toString()).toList(),
         };
       },

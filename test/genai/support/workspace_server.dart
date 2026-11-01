@@ -207,6 +207,8 @@ final class FakeGenAiServer implements GenAiTransport {
       _images.add({
         'id': 'preview-image-${_images.length + 1}',
         'question': data['chatInfo'],
+        // The real campus gateway is not known to persist title/quality on
+        // image-history rows, so the shared fixture keeps rows metadata-absent.
         'images': [
           {'imageUrl': path},
         ],

@@ -37,6 +37,26 @@ void main() {
     expect(result, contains('```latex\nx^2.\n```'));
   });
 
+  test('delimiter stripping applies the ordered rules exactly once', () {
+    // Display pairs first, then the inline single-dollar rule.
+    expect(stripLatexDelimiters(r'  $$ x $$  '), 'x');
+    expect(stripLatexDelimiters(r'\[ y \]'), 'y');
+    expect(stripLatexDelimiters(r'\( z \)'), 'z');
+    expect(stripLatexDelimiters(r'$ w $'), 'w');
+
+    // Only the first matching rule runs, so one call removes one layer.
+    expect(stripLatexDelimiters(r'$$\[x\]$$'), r'\[x\]');
+    expect(stripLatexDelimiters(r'$$$$\frac{1}{2}$$$$'), r'$$\frac{1}{2}$$');
+
+    // Short and empty bodies behave as before: trim, then leave unmatched.
+    expect(stripLatexDelimiters('  '), '');
+    expect(stripLatexDelimiters(r'$$'), '');
+    expect(stripLatexDelimiters(r'$$  $$'), '');
+    expect(stripLatexDelimiters('plain'), 'plain');
+    expect(stripLatexDelimiters(r'\[unclosed'), r'\[unclosed');
+    expect(stripLatexDelimiters(r'end$$'), r'end$$');
+  });
+
   testWidgets('inline parentheses and dollars render beside literal math code', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -53,6 +73,31 @@ void main() {
     expect(find.byType(Math), findsNWidgets(3));
     expect(find.byType(GenAiLatexBlockView), findsOneWidget);
     expect(find.textContaining(r'$$z$$', findRichText: true), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('parenthesized and bracketed LaTeX never reach the text layer', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: GenAiMarkdown(
+            data: r'Before \(a+b\) after.'
+                '\n\n'
+                r'\[c^2\]'
+                '\n\n'
+                '```latex\n'
+                r'\(d\)'
+                '\n```',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Math), findsNWidgets(3));
+    expect(find.byType(GenAiLatexBlockView), findsNWidgets(2));
+    expect(find.textContaining(r'\(a+b\)', findRichText: true), findsNothing);
+    expect(find.textContaining(r'\[c^2\]', findRichText: true), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

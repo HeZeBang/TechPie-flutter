@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/genai_platform_contract.dart';
+import 'genai_icons.dart';
 
 class GenAiWebSearchView extends StatefulWidget {
   const GenAiWebSearchView({
@@ -50,8 +51,8 @@ class _GenAiWebSearchViewState extends State<GenAiWebSearchView> {
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.travel_explore_outlined,
+                    GenAiIcon(
+                      GenAiGlyph.search,
                       size: 15,
                       color: accent,
                     ),
@@ -62,17 +63,18 @@ class _GenAiWebSearchViewState extends State<GenAiWebSearchView> {
                             ? '已检索 ${widget.citations.length} 条网络参考来源'
                             : '搜索：${widget.query} · ${widget.citations.length} 条来源',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: FontWeight.w500,
                           color: muted,
                         ),
                       ),
                     ),
-                    Icon(
-                      _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                      size: 16,
-                      color: muted,
-                    ),
+                    _expanded
+                        ? RotatedBox(
+                            quarterTurns: 2,
+                            child: GenAiIcon(GenAiGlyph.down, size: 13, color: muted),
+                          )
+                        : GenAiIcon(GenAiGlyph.down, size: 13, color: muted),
                   ],
                 ),
               ),
@@ -142,8 +144,8 @@ class _GenAiWebSearchViewState extends State<GenAiWebSearchView> {
                                 ),
                               ),
                               const SizedBox(width: 4),
-                              Icon(
-                                Icons.open_in_new,
+                              GenAiIcon(
+                                GenAiGlyph.openExternal,
                                 size: 12,
                                 color: muted,
                               ),

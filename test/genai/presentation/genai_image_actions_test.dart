@@ -89,6 +89,7 @@ void main() {
         final target = find.byKey(ValueKey(i));
         await tester.runAsync(() => precacheImage(MemoryImage(images![i]), tester.element(target)));
         await tester.pumpAndSettle();
+        final tile = tester.getRect(target);
         if (mobile) {
           await tester.longPress(target);
         } else {
@@ -97,8 +98,19 @@ void main() {
         // Image encoding is a real engine operation, outside the fake clock.
         await tester.runAsync(() async => Future<void>.delayed(const Duration(milliseconds: 30)));
         await tester.pumpAndSettle();
-        final action = find.widgetWithText(MenuItemButton, Platform.isLinux ? '复制图片文件' : '复制图片');
-        expect(tester.widget<MenuItemButton>(action).onPressed, isNotNull);
+        final surface = find.byKey(const ValueKey('genai-anchored-menu'));
+        expect(surface, findsOneWidget);
+        // Long press and right click anchor the whole tile, never the pointer,
+        // so the shared route keeps its 7 px clearance outside the image.
+        final menu = tester.getRect(surface);
+        expect(menu.overlaps(tile), isFalse);
+        expect(menu.top - tile.bottom == 7 || tile.top - menu.bottom == 7, isTrue);
+        final action = find.ancestor(
+          of: find.text(Platform.isLinux ? '复制图片文件' : '复制图片'),
+          matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem),
+        );
+        expect(action, findsOneWidget);
+        expect(tester.widget<PopupMenuItem<dynamic>>(action).enabled, isTrue);
         expect(tester.getRect(action).left, greaterThanOrEqualTo(0));
         expect(tester.getRect(action).right, lessThanOrEqualTo(tester.view.physicalSize.width));
         final png = await tester.runAsync(() async {
@@ -109,15 +121,114 @@ void main() {
         await tester.pumpAndSettle();
         expect(ByteData.sublistView(png!).getUint32(16), i == 0 ? 16 : 32);
         copied = Completer<Uint8List>();
-        expect(find.byType(MenuItemButton), findsNothing);
+        expect(surface, findsNothing);
         expect(tester.takeException(), isNull);
       }
-      // Keyboard users can dismiss a pointer-opened menu and return to its button.
-      await tester.tap(find.byTooltip('图片操作').first);
+      // A click anchors the visible button itself, and Escape dismisses it.
+      final button = find.byTooltip('图片操作').first;
+      final buttonRect = tester.getRect(button);
+      await tester.tap(button);
       await tester.pump();
+      final buttonSurface = find.byKey(const ValueKey('genai-anchored-menu'));
+      expect(buttonSurface, findsOneWidget);
+      expect(tester.getRect(buttonSurface).overlaps(buttonRect), isFalse);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(find.byType(MenuItemButton), findsNothing);
+      expect(buttonSurface, findsNothing);
     });
   }
+
+  testWidgets('gallery tile menu anchors outside the whole tile', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(600, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final png = (await tester.runAsync(() => _picture(16)))!;
+    final image = MemoryImage(png);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.all(40),
+              child: GenAiImageActions(
+                image: image,
+                link: Uri.parse('https://example.test/gallery.png'),
+                showMenuButton: false,
+                onOpen: () {},
+                onReference: () {},
+                child: SizedBox(width: 240, height: 160, child: Image.memory(png)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final target = find.byType(GenAiImageActions);
+    await tester.runAsync(() => precacheImage(image, tester.element(target)));
+    await tester.pumpAndSettle();
+    // Gallery tiles leave the visible affordance to their preview.
+    expect(find.byTooltip('图片操作'), findsNothing);
+    final tile = tester.getRect(target);
+    await tester.longPress(target);
+    await tester.runAsync(() async => Future<void>.delayed(const Duration(milliseconds: 30)));
+    await tester.pumpAndSettle();
+    final surface = find.byKey(const ValueKey('genai-anchored-menu'));
+    expect(surface, findsOneWidget);
+    expect(find.text('查看图片'), findsOneWidget);
+    expect(find.text('用作参考'), findsOneWidget);
+    expect(find.text('复制链接'), findsOneWidget);
+    // The anchor is the tile itself, so the popover never covers the image.
+    final menu = tester.getRect(surface);
+    expect(menu.overlaps(tile), isFalse);
+    expect(menu.top - tile.bottom == 7 || tile.top - menu.bottom == 7, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(surface, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('share helper checks the caller scope before sharing or copying', (tester) async {
+    final png = (await tester.runAsync(() => _picture(16)))!;
+    var clipboardWrites = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') clipboardWrites++;
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+    late BuildContext hostContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            hostContext = context;
+            return const Scaffold(body: Text('share host'));
+          },
+        ),
+      ),
+    );
+    // A stale scope must return before either effect runs; on a platform that
+    // cannot share, an ignored guard would have written the link to the
+    // clipboard, and on one that can it would have invoked the share channel.
+    await tester.runAsync(
+      () => shareGenAiImagePng(
+        image: MemoryImage(png),
+        context: hostContext,
+        link: Uri.parse('https://example.test/image.png'),
+        isCurrent: () => false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(clipboardWrites, 0);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -12,6 +12,7 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
   web.HTMLAudioElement? _element;
   String? _objectUrl;
   bool _playing = false;
+  int _generation = 0;
   void Function()? _onFinished;
 
   @override
@@ -28,6 +29,14 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
   @override
   Future<void> playWav(List<int> bytes) async {
     await stop();
+    // A concurrent playWav can win the microtask race in stop(); take
+    // ownership of its element instead of leaving two players live.
+    final previous = _element;
+    if (previous != null) {
+      previous.pause();
+      _cleanup();
+    }
+    final generation = ++_generation;
     final uint8List = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
     final blob = web.Blob(
       [uint8List.toJS].toJS,
@@ -40,11 +49,13 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
     _playing = true;
 
     element.onended = ((web.Event _) {
+      if (!_isCurrent(generation, element)) return;
       _cleanup();
       _onFinished?.call();
     }).toJS;
 
     element.onerror = ((web.Event _) {
+      if (!_isCurrent(generation, element)) return;
       _cleanup();
       _onFinished?.call();
     }).toJS;
@@ -52,10 +63,14 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
     try {
       await element.play().toDart;
     } catch (_) {
+      if (!_isCurrent(generation, element)) return;
       _cleanup();
       _onFinished?.call();
     }
   }
+
+  bool _isCurrent(int generation, web.HTMLAudioElement element) =>
+      generation == _generation && identical(_element, element);
 
   void _cleanup() {
     _playing = false;
@@ -69,6 +84,9 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
 
   @override
   Future<void> stop() async {
+    // Invalidate callbacks bound to the element being torn down so a late
+    // ended/error/play rejection cannot clean up a newer element.
+    _generation++;
     final element = _element;
     if (element != null) {
       element.pause();

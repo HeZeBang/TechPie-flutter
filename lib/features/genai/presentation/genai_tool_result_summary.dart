@@ -56,10 +56,15 @@ String genAiToolResultSummary(String name, Map<String, Object?>? result) {
               '${labels.isEmpty ? '无可用场地' : labels}');
         }
       } else {
-        lines.add(
-          payload['success'] == true && payload['status'] == 'booked' ? '预约成功' : '未确认预约成功，请查看场馆记录',
-        );
-        lines.add('${text(payload['date'])} · ${text(payload['court_number'])} 号场');
+        final booked = payload['success'] == true && payload['status'] == 'booked';
+        if (!booked) lines.add('未确认预约成功，请查看场馆记录');
+        final date = text(payload['date']);
+        final court = text(payload['court_number']);
+        final slot = [
+          if (date.isNotEmpty) date,
+          if (court.isNotEmpty) '$court 号场',
+        ].join(' · ');
+        if (slot.isNotEmpty) lines.add(slot);
       }
     case 'generate_image':
       lines.add('${text(payload['model'])} · ${text(payload['size'])}');

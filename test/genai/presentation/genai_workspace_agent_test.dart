@@ -48,6 +48,15 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('genai-send')));
   }
 
+  /// On the phone toolbar an inactive campus mode lives inside the "+" menu;
+  /// open it and select the stable menu toggle.
+  Future<void> enableAgentFromMenu(WidgetTester tester) async {
+    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('genai-agent-menu-toggle')));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('committed edit closes its dialog before requesting external-action approval',
       (tester) async {
     final server = JournalServer();
@@ -84,10 +93,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('编辑并重新发送'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('重新发送'));
+    await tester.tap(find.text('保存并重发'));
     await pumpUntil(tester, () => demo.workspace.pendingAgentApproval != null);
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(Dialog), findsNothing);
     expect(find.byKey(const ValueKey('agent-approval')), findsOneWidget);
     expect(effects, 0);
     demo.workspace.resolveAgentApproval(false);
@@ -157,8 +166,7 @@ void main() {
           ? server.call(body, name: 'generate_image')
           : server.finalAnswer(body, '任务已处理，请查看工具结果。');
       await show(tester, demo.workspace);
-      await tester.tap(find.byKey(const ValueKey('genai-agent-toggle')));
-      await tester.pump();
+      await enableAgentFromMenu(tester);
       await send(tester, '画一张图');
       await pumpUntil(
         tester,
@@ -262,6 +270,8 @@ void main() {
       ),
     );
     await show(tester, demo.workspace);
+    // Enable once so both active mode chips are visible for the layout check.
+    await enableAgentFromMenu(tester);
     final agent = find.byKey(const ValueKey('genai-agent-toggle'));
     final thinking = find.byKey(const ValueKey('genai-thinking-toggle'));
     expect(tester.getCenter(agent).dy, tester.getCenter(thinking).dy);
@@ -272,11 +282,13 @@ void main() {
     expect(find.byType(Scaffold), findsOneWidget);
     expect(find.byKey(const ValueKey('genai-prompt')), findsOneWidget);
     final groupId = demo.workspace.groupId;
+    // Back to the inactive state: an inactive campus mode belongs to "+".
+    await tester.tap(agent);
+    await tester.pump();
     await send(tester, 'My favorite color is blue');
     await pumpUntil(tester, () => !demo.workspace.sending);
     // The compact, noninteractive context indicator leaves room for this toggle.
-    await tester.tap(agent);
-    await tester.pump();
+    await enableAgentFromMenu(tester);
     await send(tester, 'Remember my color');
     await pumpUntil(tester, () => !demo.workspace.sending);
     expect(

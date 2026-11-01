@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/genai_context_usage.dart';
+import 'genai_icons.dart';
 
 /// The last prepared request's budget, not a per-keystroke token counter.
 class GenAiContextStatus extends StatelessWidget {
@@ -27,41 +28,50 @@ class GenAiContextStatus extends StatelessWidget {
       key: const ValueKey('genai-context-status'),
       container: true,
       label: label,
-      child: SizedBox.square(
-        dimension: 48,
-        child: Center(
-          child: ExcludeSemantics(
-            child: SizedBox.square(
-              dimension: 20,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox.expand(
-                    child: CircularProgressIndicator(
-                      value: busy
-                          ? null
-                          : usage == null
-                              ? 0.0
-                              : (usage.estimatedInputUnits / usage.allowedInputUnits)
-                                  .clamp(0.0, 1.0),
-                      strokeWidth: 3,
-                      color: scheme.onSurfaceVariant,
-                      backgroundColor: scheme.onSurfaceVariant.withValues(alpha: .15),
-                    ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // The composer gives the phone slot a 24px cell; the desktop slot is
+          // wider. Derive the draft's 13px phone / 16px desktop ring from the
+          // cell it is actually placed in rather than the window size.
+          final compact = constraints.hasBoundedWidth && constraints.maxWidth < 30;
+          return SizedBox(
+            width: compact ? 24 : 28,
+            height: compact ? 42 : 48,
+            child: Center(
+              child: ExcludeSemantics(
+                child: SizedBox.square(
+                  dimension: compact ? 13 : 16,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox.expand(
+                        child: CircularProgressIndicator(
+                          value: busy
+                              ? null
+                              : usage == null
+                                  ? 0.0
+                                  : (usage.estimatedInputUnits / usage.allowedInputUnits)
+                                      .clamp(0.0, 1.0),
+                          strokeWidth: 3,
+                          color: scheme.onSurfaceVariant,
+                          backgroundColor: scheme.onSurfaceVariant.withValues(alpha: .15),
+                        ),
+                      ),
+                      if (busy)
+                        GenAiIcon(
+                          usage.stage == GenAiContextStage.compacting
+                              ? GenAiGlyph.fullExit
+                              : GenAiGlyph.more,
+                          size: compact ? 8 : 10,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                    ],
                   ),
-                  if (busy)
-                    Icon(
-                      usage.stage == GenAiContextStage.compacting
-                          ? Icons.compress_rounded
-                          : Icons.more_horiz_rounded,
-                      size: 12,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }

@@ -61,6 +61,7 @@ void main() {
     }
     await tester.pumpAndSettle();
     expect(find.text('正在读取…'), findsNothing);
+    expect(find.text('参考图片'), findsOneWidget);
   }
 
   testWidgets('local reference previews support four images, removal and confirmation count',
@@ -76,6 +77,14 @@ void main() {
         findsOneWidget,
       );
     }
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('genai-reference-preview-0')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('genai-reference-preview-0'))),
+      const Size(50, 50),
+    );
     expect(
       tester
           .widget<TextButton>(
@@ -86,7 +95,9 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('genai-remove-reference-0')));
     await tester.pumpAndSettle();
-    expect(find.text('参考图片 · 3/4'), findsOneWidget);
+    // The add control keeps a plain label; the count never enters the label.
+    expect(find.text('参考图片'), findsOneWidget);
+    expect(find.textContaining('参考图片 ·'), findsNothing);
     await tester.enterText(
       find.byKey(const ValueKey('genai-image-prompt')),
       'Use these reference colors',
@@ -112,10 +123,21 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Use these reference colors'), findsOneWidget);
-    expect(find.text('参考图片 · 3/4'), findsOneWidget);
+    expect(find.text('参考图片'), findsOneWidget);
+    expect(find.textContaining('参考图片 ·'), findsNothing);
+    for (var index = 0; index < 3; index++) {
+      expect(
+        find.byKey(ValueKey('genai-reference-preview-$index')),
+        findsOneWidget,
+      );
+    }
+    expect(
+      find.byKey(const ValueKey('genai-reference-preview-3')),
+      findsNothing,
+    );
     await demo.sessions.setOwner(null);
     await tester.pumpAndSettle();
-    expect(find.text('添加参考图片'), findsOneWidget);
+    expect(find.text('参考图片'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('genai-reference-preview-0')),
       findsNothing,
@@ -151,6 +173,9 @@ void main() {
       final demo = await show(tester, picker);
       await tester.tap(find.byKey(const ValueKey('genai-add-reference')));
       await tester.pump();
+      // While the picker is pending the label reads 正在读取…, never a count.
+      expect(find.text('正在读取…'), findsOneWidget);
+      expect(find.text('参考图片'), findsNothing);
       if (leavePage) {
         await tester.pumpWidget(const SizedBox.shrink());
       } else {

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../genai_icons.dart';
+import '../genai_theme.dart';
 import 'genai_code_font.dart';
 import 'genai_copy_button.dart';
 
@@ -254,11 +256,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: .08) : Colors.black.withValues(alpha: .06);
-    final cardBg =
-        isDark ? Colors.white.withValues(alpha: .03) : Colors.black.withValues(alpha: .02);
+    final palette = GenAiPalette.of(context);
 
     final spec = _spec;
 
@@ -268,9 +266,9 @@ class _GenAiChartViewState extends State<GenAiChartView> {
         width: double.infinity,
         margin: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: borderColor),
+          color: palette.raised,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: palette.line),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -286,6 +284,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
               padding: const EdgeInsets.all(12),
               child: SelectableText(
                 widget.code,
+                contextMenuBuilder: genAiTextSelectionContextMenu,
                 style: const TextStyle(
                   fontFamily: kGenAiMonospaceFamily,
                   fontFamilyFallback: kGenAiMonospaceFallback,
@@ -308,9 +307,9 @@ class _GenAiChartViewState extends State<GenAiChartView> {
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: borderColor),
+        color: palette.raised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: palette.line),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -327,6 +326,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
               padding: const EdgeInsets.all(12),
               child: SelectableText(
                 widget.code,
+                contextMenuBuilder: genAiTextSelectionContextMenu,
                 style: const TextStyle(
                   fontFamily: kGenAiMonospaceFamily,
                   fontFamilyFallback: kGenAiMonospaceFallback,
@@ -360,23 +360,18 @@ class _GenAiChartViewState extends State<GenAiChartView> {
     required Color badgeColor,
     required bool showToggle,
   }) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final palette = GenAiPalette.of(context);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      constraints: const BoxConstraints(minHeight: 48),
+      padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color:
-                isDark ? Colors.white.withValues(alpha: .06) : Colors.black.withValues(alpha: .04),
-          ),
-        ),
+        border: Border(bottom: BorderSide(color: palette.line)),
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.insert_chart_outlined_rounded,
+          GenAiIcon(
+            GenAiGlyph.chart,
             size: 16,
             color: badgeColor,
           ),
@@ -421,7 +416,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
             IconButton(
               tooltip: _showCode ? '切换到图表' : '查看数据',
               onPressed: () => setState(() => _showCode = !_showCode),
-              icon: Icon(_showCode ? Icons.bar_chart_rounded : Icons.code_rounded, size: 20),
+              icon: GenAiIcon(_showCode ? GenAiGlyph.chart : GenAiGlyph.code, size: 20),
             ),
           GenAiCopyButton(
             text: widget.code,

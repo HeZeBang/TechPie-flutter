@@ -1,23 +1,21 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../utils/platform.dart';
 import '../../../widgets/adaptive_feedback.dart';
-import '../../../widgets/adaptive_page_navigation.dart';
-import '../../../widgets/app_shell/desktop/desktop_sidebar_tokens.dart';
-import '../application/genai_chat_service.dart';
 import '../application/genai_workspace_controller.dart';
+import '../domain/genai_agent_contract.dart';
 import '../domain/genai_cancellation.dart';
-import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
 import '../domain/genai_session.dart';
 import 'audio/genai_audio_player.dart';
 import 'audio/genai_audio_recorder.dart';
 import 'audio/genai_workspace_media.dart';
-import 'genai_agent_widgets.dart';
 import 'genai_chat_copy.dart';
 import 'genai_composer.dart';
 import 'genai_context_status.dart';
@@ -25,13 +23,14 @@ import 'genai_conversation_menu.dart';
 import 'genai_copy.dart';
 import 'genai_history_controller.dart';
 import 'genai_history_sidebar.dart';
+import 'genai_icons.dart';
 import 'genai_image.dart';
+import 'genai_model_picker.dart';
 import 'genai_theme.dart';
-import 'genai_thinking_view.dart';
 import 'genai_tools_page.dart';
 import 'genai_turn_edit_dialog.dart';
-import 'genai_web_search_view.dart';
-import 'markdown/genai_markdown.dart';
+import 'genai_turn_view.dart';
+import 'genai_web_input_scope.dart';
 import 'picker/genai_picker.dart';
 import 'visuals/genai_visual_syntax.dart';
 
@@ -74,9 +73,16 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   final _inputFocus = FocusNode();
   // Keep composing state and keyboard focus when the empty view becomes a thread.
   final _composerKey = GlobalKey();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _scroll = ScrollController();
   bool _followingLatest = true;
   bool _showImages = false;
+  bool _sidebarHidden = false;
+
+  /// Whether the compact shell's history drawer is open. It is a local
+  /// overlay rather than a route, so web visuals cannot detect it through
+  /// [ModalRoute]; this flag is published to them through [GenAiWebInputScope].
+  bool _drawerOpen = false;
   int _scrollRevision = 0;
   late final GenAiHistoryController _history;
   late final GenAiWorkspaceMedia _media;
@@ -94,9 +100,17 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   _WorkspaceScope get _scope => (_state, _state.sessions.revision, _state.conversationRevision);
   bool _isCurrent(_WorkspaceScope scope) => mounted && scope == _scope;
 
+  /// The full surface width and the width of the chat column that remains
+  /// after the sidebar. Both come from the layout, never from MediaQuery, so
+  /// the workspace keeps its own breakpoints in an embedded or split view.
+  /// These cached values are only valid after the first layout and are read
+  /// by descendants or user callbacks after layout, not by overlay geometry.
+  /// Dialogs use their own route's MediaQuery because they occupy the screen.
+  double _stageWidth = GenAiPalette.wideBreakpoint;
+  double _workspaceWidth = GenAiPalette.wideBreakpoint;
+
   late ThemeData _theme;
-  Color get _accent => _theme.colorScheme.primary;
-  Color get _muted => _theme.colorScheme.onSurfaceVariant;
+  GenAiPalette get _palette => GenAiPalette.of(context);
   bool get _canSend =>
       _state.connected &&
       _state.selectedModel != null &&
@@ -104,6 +118,28 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       !_state.hasPendingUploads &&
       !_state.hasFailedUploads &&
       (_draft.text.trim().isNotEmpty || _state.attachments.isNotEmpty);
+
+  /// Touch layouts keep hover-only actions visible. The OHOS fork reports
+  /// its own TargetPlatform, which the stock enum cannot name.
+  bool get _platformTouch =>
+      isOhos() ||
+      switch (defaultTargetPlatform) {
+        TargetPlatform.android || TargetPlatform.iOS || TargetPlatform.fuchsia => true,
+        _ => false,
+      };
+
+  /// Below the 960 px workspace breakpoint the shell is the compact one, so
+  /// its controls behave as touch targets even on a desktop platform.
+  bool get _touch => _platformTouch || _stageWidth < GenAiPalette.wideBreakpoint;
+
+  /// Command on Apple platforms, Control elsewhere; never both, so Control+N
+  /// keeps its macOS text-editing meaning.
+  bool get _apple => switch (defaultTargetPlatform) {
+        TargetPlatform.macOS || TargetPlatform.iOS => true,
+        _ => false,
+      };
+
+  bool _searchOpen = false;
 
   @override
   void initState() {
@@ -249,10 +285,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     if (!_state.sending) return;
     _state.stop();
     _inputFocus.requestFocus();
-    showAdaptiveFeedback(
-      context: context,
-      message: '已停止',
-    );
+    showAdaptiveFeedback(context: context, message: '已停止');
   }
 
   Future<void> _login() async {
@@ -284,8 +317,15 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     }
   }
 
+  void _closeDrawer() {
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      _scaffoldKey.currentState!.closeDrawer();
+    }
+  }
+
   Future<void> _openConversation(GenAiConversationSummary item) async {
     if (_state.sending) return;
+    _closeDrawer();
     final sameConversation = item.id == _state.groupId;
     if (sameConversation && _state.archiveFailure == null) {
       setState(() => _showImages = false);
@@ -326,27 +366,30 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
         identical(controller, _state) &&
         controller.sessions.revision == revision &&
         controller.accountScope == accountScope;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await genAiShowDialog<bool>(
       context: context,
-      builder: (dialogContext) => AnimatedBuilder(
-        animation: controller,
-        builder: (_, __) => AlertDialog(
-          title: Text(current() ? '删除此对话？' : '账号已切换'),
-          content: Text(current() ? '这将删除此对话的本机和学校记录，无法撤销。' : '请在当前账号下重新打开对话操作。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: !current()
-                  ? null
-                  : () {
-                      if (current()) Navigator.pop(dialogContext, true);
-                    },
-              child: const Text('删除'),
-            ),
-          ],
+      builder: (dialogContext) => genAiThemeScope(
+        dialogContext,
+        AnimatedBuilder(
+          animation: controller,
+          builder: (_, __) => GenAiDialogFrame(
+            title: Text(current() ? '删除此对话？' : '账号已切换'),
+            content: Text(current() ? '这将删除此对话的本机和学校记录，无法撤销。' : '请在当前账号下重新打开对话操作。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: !current()
+                    ? null
+                    : () {
+                        if (current()) Navigator.pop(dialogContext, true);
+                      },
+                child: const Text('删除'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -354,9 +397,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     final cancellation = GenAiCancellation();
     try {
       await controller.deleteConversation(id, cancellation);
-      if (mounted && current()) {
-        _history.remove(id);
-      }
+      if (mounted && current()) _history.remove(id);
     } catch (_) {
       if (mounted && current()) {
         showAdaptiveFeedback(
@@ -400,34 +441,88 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     }
   }
 
-  Future<void> _openTools(int tab) async {
+  /// Image creation lives inside the workspace at every width, so the drawer,
+  /// header and draft behave the same as in chat.
+  void _openImages() {
     if (!_state.connected || _state.sending) return;
+    _closeDrawer();
+    _inputFocus.unfocus();
+    setState(() => _showImages = true);
+  }
+
+  Future<void> _openUsage() async {
+    if (!_state.connected) return;
+    _closeDrawer();
     final controller = _state;
-    final accountScope = controller.accountScope;
-    final revision = controller.sessions.revision;
-    if (tab == 1 && MediaQuery.sizeOf(context).width >= 960) {
-      _inputFocus.unfocus();
-      setState(() => _showImages = true);
-      return;
-    }
-    final opened = await pushAdaptivePage<bool>(
-      context,
-      builder: (_) => GenAiToolsPage(
-        workspace: controller,
-        initialTab: tab,
-        picker: widget.picker,
+    await genAiShowDialog<void>(
+      context: context,
+      builder: (dialogContext) => genAiThemeScope(
+        dialogContext,
+        _usageDialog(dialogContext, controller),
       ),
     );
-    if (mounted &&
-        identical(controller, _state) &&
-        controller.accountScope == accountScope &&
-        controller.sessions.revision == revision) {
-      if (opened == true) _draft.clear();
-      unawaited(_history.load());
-    }
+  }
+
+  /// The draft opens usage as a 500 px modal over the live shell instead of a
+  /// pushed page, so history and the composer stay in place behind it.
+  Widget _usageDialog(BuildContext dialogContext, GenAiWorkspaceController controller) {
+    final size = MediaQuery.sizeOf(dialogContext);
+    final palette = GenAiPalette.of(dialogContext);
+    final width = (size.width - 32).clamp(0.0, 500.0).toDouble();
+    final compact = size.width <= 600;
+    return Dialog(
+      clipBehavior: Clip.antiAlias,
+      insetPadding: const EdgeInsets.all(16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(compact ? 14 : 18),
+      ),
+      child: SizedBox(
+        key: const ValueKey('genai-usage-dialog'),
+        width: width,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: size.height * .8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(compact ? 16 : 22, 10, compact ? 8 : 12, 10),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        '用量与额度',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '关闭',
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: const GenAiIcon(GenAiGlyph.close, size: 20),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: palette.line),
+              Flexible(
+                child: GenAiToolsPage(
+                  key: const ValueKey('genai-usage-content'),
+                  workspace: controller,
+                  initialTab: GenAiToolsPage.usageTab,
+                  picker: widget.picker,
+                  embedded: true,
+                  stageWidth: _stageWidth > 0 ? _stageWidth : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _newConversation() {
+    _closeDrawer();
     setState(() => _showImages = false);
     _draft.clear();
     _state.newConversation();
@@ -467,29 +562,37 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     final keep = action == 'revert';
     final removed = controller.turns.skip(index + (keep ? 1 : 0)).toList();
     if (removed.isEmpty) return;
-    await showDialog<void>(
+    await genAiShowDialog<void>(
       context: context,
-      builder: (_) => GenAiTurnEditDialog(
-        prompt: turn.prompt,
-        action: action,
-        hasComposerDraft: _draft.text.isNotEmpty || controller.attachments.isNotEmpty,
-        onSubmit: (result, onCommitted) async {
-          if (!_isCurrent(scope)) return;
-          try {
-            await controller.changeTurn(
-              turn.id,
-              keepTurn: keep,
-              replacement: action == 'edit' ? result : null,
-              onCommitted: onCommitted,
-            );
-          } finally {
-            if (mounted && identical(_state, controller)) unawaited(_history.load());
-          }
-        },
-        removedTurns: removed.length,
-        hasExternalActions: removed.any(
-          (t) => t.agentEvents.values.any(
-            (e) => e.call?.name == 'generate_image' || e.call?.name == 'reserve_court',
+      builder: (dialogContext) => genAiThemeScope(
+        dialogContext,
+        GenAiTurnEditDialog(
+          prompt: turn.prompt,
+          action: action,
+          hasComposerDraft: _draft.text.isNotEmpty || controller.attachments.isNotEmpty,
+          hasAttachments: turn.attachedFileIds.isNotEmpty ||
+              turn.attachedFileNames.isNotEmpty ||
+              turn.attachedFileContents.isNotEmpty ||
+              turn.attachedImageUrls.isNotEmpty ||
+              turn.attachedImageUrl != null ||
+              turn.attachedImageBytes != null ||
+              turn.attachedImageBytesList.isNotEmpty,
+          onSubmit: (result, onCommitted) async {
+            if (!_isCurrent(scope)) return;
+            try {
+              await controller.changeTurn(
+                turn.id,
+                keepTurn: keep,
+                replacement: action == 'edit' ? result : null,
+                onCommitted: onCommitted,
+              );
+            } finally {
+              if (mounted && identical(_state, controller)) unawaited(_history.load());
+            }
+          },
+          removedTurns: removed.length,
+          hasExternalActions: removed.any(
+            (t) => t.agentEvents.values.any(genAiHasExternalEffect),
           ),
         ),
       ),
@@ -555,160 +658,516 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     super.dispose();
   }
 
+  Widget _sidebar({required bool drawer}) => GenAiHistorySidebar(
+        history: _history,
+        connected: _state.connected,
+        sending: _state.sending,
+        activeId: _showImages ? '' : _state.groupId,
+        imagesActive: _showImages,
+        touch: _touch || drawer,
+        // Draft rail: 232 px inline, 260 px as an overlay drawer.
+        width: drawer ? 260 : 232,
+        accountMenu: _accountMenu(),
+        onNewChat: _newConversation,
+        onImages: _openImages,
+        onOpen: (item) => unawaited(_openConversation(item)),
+        onSearch: () => unawaited(_openSearch()),
+        shortcutLabel: _touch ? null : (_apple ? '⌘N' : 'Ctrl N'),
+        onExit: Navigator.of(context).canPop() ? _exit : null,
+        menuBuilder: (item) => GenAiConversationMenu(
+          key: ValueKey(item.id),
+          workspace: _state,
+          conversation: item,
+          enabled: !_state.sending,
+          workspaceWidth: _workspaceWidth,
+          onChanged: () => unawaited(_history.load()),
+          onDelete: () => unawaited(_deleteConversation(item.id)),
+        ),
+      );
+
+  void _toggleSidebar(bool wide) {
+    if (wide) {
+      setState(() => _sidebarHidden = !_sidebarHidden);
+    } else {
+      _scaffoldKey.currentState?.openDrawer();
+    }
+  }
+
+  Future<void> _openSearch() async {
+    if (_searchOpen || !_state.connected) return;
+    _closeDrawer();
+    _searchOpen = true;
+    final controller = _state;
+    final revision = controller.sessions.revision;
+    final accountScope = controller.accountScope;
+    bool current() =>
+        mounted &&
+        identical(controller, _state) &&
+        controller.sessions.revision == revision &&
+        controller.accountScope == accountScope;
+    try {
+      final selected = await genAiShowDialog<GenAiConversationSummary>(
+        context: context,
+        builder: (dialogContext) => genAiThemeScope(
+          dialogContext,
+          AnimatedBuilder(
+            animation: Listenable.merge([controller, _history]),
+            builder: (_, __) => _shellDialog(
+              dialogContext,
+              current() ? '搜索对话' : '账号已切换',
+              current()
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          key: const ValueKey('genai-search-input'),
+                          autofocus: true,
+                          contextMenuBuilder: genAiTextSelectionContextMenu,
+                          controller: _history.searchController,
+                          onChanged: _history.searchChanged,
+                          textAlignVertical: TextAlignVertical.center,
+                          strutStyle: StrutStyle(
+                            fontSize: MediaQuery.sizeOf(dialogContext).width <= 600 ? 16 : 13,
+                            height: 1.5,
+                            forceStrutHeight: true,
+                          ),
+                          style: TextStyle(
+                            fontSize: MediaQuery.sizeOf(dialogContext).width <= 600 ? 16 : 13,
+                            height: 1.5,
+                          ),
+                          // Draft search field: 12px inset, a soft fill and a
+                          // 9px outline; hint and entered text share metrics.
+                          decoration: InputDecoration(
+                            hintText: '搜索历史对话',
+                            hintStyle: TextStyle(
+                              fontSize: MediaQuery.sizeOf(dialogContext).width <= 600 ? 16 : 13,
+                              height: 1.5,
+                              color: _palette.muted,
+                            ),
+                            filled: true,
+                            fillColor: _palette.soft,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(9),
+                              borderSide: BorderSide(color: _palette.line),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(9),
+                              borderSide: BorderSide(color: _palette.line),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(9),
+                              borderSide: BorderSide(color: _palette.accent),
+                            ),
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Flexible(
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (_history.loading)
+                                  const Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                  ),
+                                if (_history.failure case final failure?)
+                                  Text(
+                                    genAiFailureText(failure),
+                                    style: TextStyle(color: _palette.muted),
+                                  ),
+                                if (!_history.loading &&
+                                    _history.failure == null &&
+                                    _history.conversations.isEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Text('没有匹配的对话', style: TextStyle(color: _palette.muted)),
+                                  ),
+                                for (final item in _history.conversations)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 2),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: InkWell(
+                                        key: ValueKey('genai-search-result-${item.id}'),
+                                        borderRadius: BorderRadius.circular(8),
+                                        onTap: _state.sending
+                                            ? null
+                                            : () {
+                                                if (current()) {
+                                                  Navigator.pop(dialogContext, item);
+                                                }
+                                              },
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 12,
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                item.title.isEmpty ? '未命名对话' : item.title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(fontSize: 13),
+                                              ),
+                                              // The server returns only the
+                                              // question and createTime, so the
+                                              // draft preview line uses the
+                                              // available time rather than
+                                              // fetching every conversation.
+                                              if (item.time.isNotEmpty) ...[
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  genAiHistoryTime(item.time),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: _palette.muted,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                if (_history.hasMore)
+                                  TextButton(
+                                    onPressed: _history.loading
+                                        ? null
+                                        : () => unawaited(_history.load(more: true)),
+                                    child: const Text('加载更多'),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : const Text('请在当前账号下重新打开搜索。'),
+            ),
+          ),
+        ),
+      );
+      if (selected != null && current()) await _openConversation(selected);
+    } finally {
+      _searchOpen = false;
+      if (mounted) {
+        _history.searchController.clear();
+        _history.searchChanged('');
+      }
+    }
+  }
+
+  Widget _shellDialog(BuildContext dialogContext, String title, Widget body) {
+    // Overlay routes occupy the screen, independently of the chat column.
+    final compact = MediaQuery.sizeOf(dialogContext).width <= 600;
+    return Dialog(
+      clipBehavior: Clip.antiAlias,
+      insetPadding: compact
+          ? const EdgeInsets.all(12)
+          : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(compact ? 14 : 18)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 500,
+          maxHeight: MediaQuery.sizeOf(dialogContext).height * .8,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: compact
+                  ? const EdgeInsets.fromLTRB(16, 10, 8, 10)
+                  : const EdgeInsets.fromLTRB(22, 12, 12, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.pop(dialogContext),
+                    icon: const GenAiIcon(GenAiGlyph.close, size: 20),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: _palette.line),
+            Flexible(
+              child: Padding(
+                padding: EdgeInsets.all(compact ? 18 : 24),
+                child: body,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The drawer is a local history entry of this route, so close it first;
+  /// otherwise the pop only dismisses the drawer.
+  void _exit() {
+    _closeDrawer();
+    Navigator.of(context).pop();
+  }
+
+  /// A new chat drops the current one, so never trigger it mid-reply.
+  void _shortcutNewConversation() {
+    if (!_state.sending) _newConversation();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = _theme;
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
-    final canvas = theme.scaffoldBackgroundColor;
-    return CallbackShortcuts(
-      bindings: {
-        if (_state.sending) const SingleActivator(LogicalKeyboardKey.escape): _stop,
-      },
-      child: Theme(
-        data: theme,
-        child: Scaffold(
-          backgroundColor: canvas,
-          body: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, size) {
-                final wide = size.maxWidth >= 960;
-                final viewport = MediaQuery.sizeOf(context);
-                final landscape = !wide && size.maxWidth >= 560 && viewport.width > viewport.height;
-                final modelInComposer = wide || landscape;
-                return Row(
-                  children: [
-                    if (wide)
-                      Semantics(
-                        container: true,
-                        explicitChildNodes: true,
-                        child: GenAiHistorySidebar(
-                          history: _history,
-                          connected: _state.connected,
-                          sending: _state.sending,
-                          activeId: _showImages ? '' : _state.groupId,
-                          actions: _chatActions(labels: true),
-                          accountMenu: _accountMenu(),
-                          onOpen: (item) => unawaited(_openConversation(item)),
-                          menuBuilder: (item) => GenAiConversationMenu(
-                            key: ValueKey(item.id),
-                            workspace: _state,
-                            conversation: item,
-                            enabled: !_state.sending,
-                            onChanged: () => unawaited(_history.load()),
-                            onDelete: () => unawaited(_deleteConversation(item.id)),
+    return Theme(
+      data: theme,
+      child: LayoutBuilder(
+        builder: (context, size) {
+          // The shell switches at 960 px of the surface it actually occupies.
+          _stageWidth = size.maxWidth;
+          final wide = size.maxWidth >= GenAiPalette.wideBreakpoint;
+          // A drawer opened at compact stays open in the Scaffold's own state
+          // across a resize to the wide layout, where the drawer is no longer
+          // built. Keep _drawerOpen set: the scope ignores it while wide (the
+          // inline sidebar must stay interactive) and blocks again if the
+          // drawer reappears on the way back to compact. ScaffoldState cannot
+          // close a drawer it no longer owns, so clearing the flag here would
+          // leave a visibly open drawer unblocked after resizing back.
+          final sidebar = wide && !_sidebarHidden;
+          final drawerOpen = _scaffoldKey.currentState?.isDrawerOpen ?? false;
+          return CallbackShortcuts(
+            bindings: {
+              // Escape belongs to an open drawer before it stops a reply.
+              if (_state.sending && !drawerOpen)
+                const SingleActivator(LogicalKeyboardKey.escape): _stop,
+              SingleActivator(LogicalKeyboardKey.keyN, meta: _apple, control: !_apple):
+                  _shortcutNewConversation,
+              SingleActivator(LogicalKeyboardKey.keyK, meta: _apple, control: !_apple): () =>
+                  unawaited(_openSearch()),
+            },
+            // System back from inline image creation returns to the chat,
+            // as it did when the studio was a pushed page.
+            child: PopScope(
+              canPop: !_showImages,
+              onPopInvokedWithResult: (didPop, _) {
+                if (!didPop && _showImages) setState(() => _showImages = false);
+              },
+              child: Scaffold(
+                key: _scaffoldKey,
+                backgroundColor: theme.scaffoldBackgroundColor,
+                drawerScrimColor: genAiOverlayScrim(drawer: true),
+                // The drawer is an overlay owned by this scaffold, not a
+                // route, so publish its state to interactive web content.
+                // The scope always wraps the same body, so opening or closing
+                // the drawer never changes the subtree's shape.
+                onDrawerChanged: (open) {
+                  if (mounted && open != _drawerOpen) {
+                    setState(() => _drawerOpen = open);
+                  }
+                },
+                drawer: wide
+                    ? null
+                    : Drawer(
+                        width: 260,
+                        backgroundColor: GenAiPalette.of(context).sidebar,
+                        shape: const RoundedRectangleBorder(),
+                        child: _sidebar(drawer: true),
+                      ),
+                body: GenAiWebInputScope(
+                  // The inline sidebar at >=960 is not modal, so only the
+                  // compact drawer may block.
+                  blocked: !wide && _drawerOpen,
+                  child: Row(
+                    children: [
+                      if (sidebar)
+                        Semantics(
+                          container: true,
+                          explicitChildNodes: true,
+                          child: _sidebar(drawer: false),
+                        ),
+                      Expanded(
+                        child: SafeArea(
+                          left: !sidebar,
+                          child: LayoutBuilder(
+                            builder: (context, content) {
+                              // The chat column's own width drives the composer,
+                              // menus and dialogs, so the sidebar cannot make a
+                              // desktop window behave like a phone.
+                              _workspaceWidth = content.maxWidth;
+                              return _main(wide: wide, keyboardOpen: keyboardOpen);
+                            },
                           ),
                         ),
                       ),
-                    Expanded(
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  String get _networkTitle => '暂时无法连接校园 GenAI';
+  String get _networkSubtitle => '请连接校园网或校园 VPN 后重试。';
+
+  bool _isNetworkFailure(GenAiFailure failure) =>
+      failure.kind == GenAiFailureKind.campusNetworkRequired;
+
+  List<Widget> _notices({required bool compact}) {
+    final notices = <Widget>[];
+    final catalog = _state.catalogFailure;
+    if (catalog != null) {
+      final network = _isNetworkFailure(catalog);
+      notices.add(
+        _notice(
+          network ? _networkTitle : genAiFailureText(catalog),
+          subtitle: network ? _networkSubtitle : null,
+          compact: compact,
+          action: _noticeAction(
+            '重试',
+            () => unawaited(_state.reloadModels()),
+          ),
+        ),
+      );
+    }
+    if (_state.uncertainDeletionCount > 0) {
+      notices.add(
+        _notice(
+          '有 ${_state.uncertainDeletionCount} 个对话的删除结果待核实',
+          subtitle: '检查后将恢复仍存在的对话，不会重复删除。',
+          compact: compact,
+          action: _noticeAction(
+            _deletionCheck != null ? '正在检查…' : '检查删除结果',
+            _deletionCheck != null ? null : () => unawaited(_checkDeletions()),
+          ),
+        ),
+      );
+    }
+    if (_state.archiveFailure != null) {
+      notices.add(
+        _notice(
+          '服务器尚未确认完整记录',
+          subtitle: '请保留此页面并检查同步状态。',
+          compact: compact,
+          action: _noticeAction('检查同步', () async {
+            try {
+              await _state.retrySaveConversations();
+            } catch (_) {
+              // The persistent notice remains until a successful retry.
+            }
+          }),
+        ),
+      );
+    }
+    return notices;
+  }
+
+  Widget _main({required bool wide, required bool keyboardOpen}) {
+    final workspaceWidth = _workspaceWidth;
+    final phone = workspaceWidth <= 680;
+    final tiny = workspaceWidth < 360;
+    final gutter = tiny
+        ? 14.0
+        : phone
+            ? 18.0
+            : 24.0;
+    final notices = _notices(compact: phone);
+    final noticeArea = notices.isEmpty
+        ? null
+        : Padding(
+            padding: EdgeInsets.fromLTRB(gutter, phone ? 8 : 12, gutter, 0),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: GenAiPalette.readingWidth),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < notices.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 8),
+                      notices[i],
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+    return Column(
+      children: [
+        _header(wide: wide, gutter: gutter),
+        if (_showImages && _state.connected)
+          Expanded(
+            child: GenAiToolsPage(
+              key: const ValueKey('genai-image-workspace'),
+              workspace: _state,
+              initialTab: GenAiToolsPage.imagesTab,
+              picker: widget.picker,
+              embedded: true,
+              stageWidth: _stageWidth > 0 ? _stageWidth : null,
+            ),
+          )
+        else
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, body) {
+                if (!_state.connected) return _loginPanel(compact: phone);
+                if (_state.turns.isEmpty && !keyboardOpen && body.maxHeight > 420) {
+                  // The composer sits under the greeting, slightly above center.
+                  return Center(
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.only(bottom: body.maxHeight * .08),
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (!_showImages || wide) _header(wide, landscape: landscape),
-                          if (_showImages && _state.connected)
-                            Expanded(
-                              child: GenAiToolsPage(
-                                key: const ValueKey('genai-image-workspace'),
-                                workspace: _state,
-                                initialTab: 1,
-                                picker: widget.picker,
-                                embedded: true,
-                                onBack: wide ? null : () => setState(() => _showImages = false),
-                              ),
-                            )
-                          else ...[
-                            if (_state.connected && !modelInComposer) _modelBar(),
-                            if (_state.catalogFailure != null)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
-                                child: _notice(
-                                  genAiFailureText(_state.catalogFailure!),
-                                  action: TextButton(
-                                    onPressed: () => unawaited(_state.reloadModels()),
-                                    child: const Text('重新加载'),
-                                  ),
-                                ),
-                              ),
-                            if (_state.uncertainDeletionCount > 0)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 6,
-                                ),
-                                child: _notice(
-                                  '有 ${_state.uncertainDeletionCount} 个对话的删除结果待核实。检查后将恢复仍存在的对话，不会重复删除。',
-                                  action: TextButton(
-                                    onPressed: _deletionCheck != null
-                                        ? null
-                                        : () => unawaited(_checkDeletions()),
-                                    child: Text(
-                                      _deletionCheck != null ? '正在检查…' : '检查删除结果',
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            if (_state.archiveFailure != null)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
-                                child: _notice(
-                                  '服务器尚未确认完整记录。请保留此页面并检查同步状态。',
-                                  action: TextButton(
-                                    onPressed: () async {
-                                      try {
-                                        await _state.retrySaveConversations();
-                                      } catch (_) {
-                                        // The persistent notice remains until a successful retry.
-                                      }
-                                    },
-                                    child: const Text('检查同步'),
-                                  ),
-                                ),
-                              ),
-                            Expanded(
-                              child: LayoutBuilder(
-                                builder: (context, bodySize) {
-                                  if (_state.connected &&
-                                      _state.turns.isEmpty &&
-                                      !keyboardOpen &&
-                                      bodySize.maxHeight > 420) {
-                                    return Center(
-                                      child: SingleChildScrollView(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            _welcome(size.maxWidth, horizontal: landscape),
-                                            _composer(wide, modelInComposer: modelInComposer),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                  return Column(
-                                    children: [
-                                      Expanded(
-                                        child: !_state.connected
-                                            ? _loginPanel()
-                                            : _state.turns.isEmpty
-                                                ? _welcome(size.maxWidth, horizontal: landscape)
-                                                : _threadArea(),
-                                      ),
-                                      if (_state.connected)
-                                        ConstrainedBox(
-                                          constraints: BoxConstraints(
-                                            maxHeight:
-                                                bodySize.maxHeight * (keyboardOpen ? .85 : .65),
-                                          ),
-                                          child: SingleChildScrollView(
-                                            reverse: true,
-                                            child:
-                                                _composer(wide, modelInComposer: modelInComposer),
-                                          ),
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
+                          // Notices belong to the conversation column, not the
+                          // top chrome, so they keep the composer's geometry.
+                          if (noticeArea != null)
+                            ConstrainedBox(
+                              constraints: BoxConstraints(maxHeight: body.maxHeight * .4),
+                              child: SingleChildScrollView(child: noticeArea),
                             ),
-                          ],
+                          _welcome(body.maxWidth),
+                          const SizedBox(height: 20),
+                          _composer(gutter: gutter),
                         ],
+                      ),
+                    ),
+                  );
+                }
+                return Column(
+                  children: [
+                    if (noticeArea != null)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxHeight: body.maxHeight * .4),
+                        child: SingleChildScrollView(child: noticeArea),
+                      ),
+                    Expanded(
+                      child: _state.turns.isEmpty ? _welcome(body.maxWidth) : _threadArea(gutter),
+                    ),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: body.maxHeight * (keyboardOpen ? .85 : .65),
+                      ),
+                      child: SingleChildScrollView(
+                        reverse: true,
+                        child: _composer(gutter: gutter),
                       ),
                     ),
                   ],
@@ -716,356 +1175,435 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
               },
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _chatActions({bool labels = false}) {
-    final actions = [
-      if (labels) (Icons.edit_square, '新对话', _newConversation as VoidCallback?),
-      if (!labels)
-        (
-          Icons.forum_outlined,
-          '会话记录',
-          _state.connected && !_state.sending ? () => unawaited(_openTools(0)) : null
-        ),
-      (
-        Icons.image_outlined,
-        '图片创作',
-        _state.connected && !_state.sending ? () => unawaited(_openTools(1)) : null
-      ),
-    ];
-    Widget button((IconData, String, VoidCallback?) action) => labels
-        ? TextButton(
-            key: action.$1 == Icons.edit_square ? const ValueKey('genai-new-chat-wide') : null,
-            onPressed: action.$3,
-            style: TextButton.styleFrom(
-              alignment: Alignment.centerLeft,
-              minimumSize: const Size.fromHeight(DesktopSidebarTokens.navItemHeight),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(DesktopSidebarTokens.navItemRadius),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              backgroundColor: action.$1 == Icons.image_outlined && _showImages
-                  ? _theme.colorScheme.secondaryContainer
-                  : null,
-              foregroundColor: action.$1 == Icons.image_outlined && _showImages
-                  ? _theme.colorScheme.onSecondaryContainer
-                  : _theme.colorScheme.onSurfaceVariant,
-            ),
-            child: Row(
-              children: [
-                Icon(action.$1, size: DesktopSidebarTokens.navItemIconSize),
-                const SizedBox(width: DesktopSidebarTokens.navItemTextGap),
-                Flexible(child: Text(action.$2, style: _theme.textTheme.labelLarge)),
-              ],
-            ),
-          )
-        : IconButton(
-            tooltip: action.$2,
-            onPressed: action.$3,
-            icon: Icon(action.$1, size: 21),
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-          );
-    return labels
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [for (final action in actions) button(action)],
-          )
-        : Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [for (final action in actions) button(action)],
-          );
-  }
-
-  Widget _header(bool wide, {required bool landscape}) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: wide ? 28 : 12, vertical: 10),
-      child: Row(
-        children: [
-          if (_showImages || Navigator.of(context).canPop())
-            IconButton(
-              onPressed: _showImages
-                  ? () => setState(() => _showImages = false)
-                  : () => Navigator.of(context).pop(),
-              tooltip: _showImages ? '返回对话' : '返回',
-              icon: const BackButtonIcon(),
-            ),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: wide
-                  ? const SizedBox.shrink()
-                  : Text(
-                      _showImages
-                          ? '图片创作'
-                          : _state.turns.isEmpty
-                              ? 'GenAI'
-                              : _state.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                    ),
-            ),
-          ),
-          if (landscape && _state.connected && !_showImages) _newChatButton(),
-          if (!wide) _chatActions(),
-          if (!wide) _accountMenu(),
-        ],
-      ),
-    );
-  }
-
-  Widget _accountMenu() {
-    final scope = _scope;
-    return PopupMenuButton<String>(
-      tooltip: 'GenAI 账户',
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-      icon: Icon(Icons.account_circle_outlined, color: _muted),
-      onSelected: (value) {
-        if (!_isCurrent(scope)) return;
-        switch (value) {
-          case 'usage':
-            unawaited(_openTools(2));
-          case 'campus':
-            widget.onBindCampus?.call();
-          case 'disconnect':
-            unawaited(_state.disconnect());
-          case 'connect':
-            unawaited(_login());
-        }
-      },
-      itemBuilder: (_) => [
-        PopupMenuItem<String>(
-          enabled: false,
-          child: Text(
-            _state.connected ? _state.sessions.session!.profile.username : '尚未连接',
-          ),
-        ),
-        const PopupMenuDivider(),
-        if (_state.connected)
-          PopupMenuItem(
-            value: 'usage',
-            child: _accountMenuItem(Icons.bar_chart_outlined, '用量统计'),
-          ),
-        if (widget.onBindCampus != null)
-          PopupMenuItem(
-            value: 'campus',
-            child: _accountMenuItem(Icons.manage_accounts_outlined, '管理校园账号'),
-          ),
-        if (_state.connected)
-          PopupMenuItem(
-            value: 'disconnect',
-            child: _accountMenuItem(Icons.logout, '断开 GenAI'),
-          )
-        else
-          PopupMenuItem(
-            value: 'connect',
-            enabled: _state.sessions.owner != null,
-            child: _accountMenuItem(Icons.login, '连接 GenAI'),
-          ),
       ],
     );
   }
 
-  Widget _accountMenuItem(IconData icon, String label) => Row(
-        children: [
-          Icon(icon, size: 20),
-          const SizedBox(width: 12),
-          Flexible(child: Text(label)),
-        ],
-      );
+  String get _title => _showImages
+      ? '图片创作'
+      : _state.turns.isEmpty
+          ? ''
+          : _state.title;
 
-  Widget _modelSelector() => Semantics(
-        container: true,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 250),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<GenAiModel>(
-              key: const ValueKey('genai-model'),
-              borderRadius: BorderRadius.circular(12),
-              isExpanded: true,
-              value: _state.selectedModel,
-              hint: Text(_state.loadingModels ? '正在加载模型…' : '选择模型'),
-              icon: Icon(Icons.keyboard_arrow_down_rounded, color: _muted, size: 18),
-              items: _state.models
-                  .where((model) => !model.isImage)
-                  .map(
-                    (model) => DropdownMenuItem(
-                      value: model,
-                      child: Text(
-                        '${model.name}${model.payType == 'FREE' ? '' : model.payType == 'PAID' ? ' · 付费' : ' · 费用未知'}',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: _state.sending
-                  ? null
-                  : (model) {
-                      if (model != null) _state.selectModel(model);
-                    },
-            ),
-          ),
-        ),
-      );
-
-  Widget _modelBar() => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+  Widget _header({required bool wide, required double gutter}) {
+    final palette = _palette;
+    final canPop = Navigator.of(context).canPop();
+    final title = _title;
+    final phone = _workspaceWidth <= 680;
+    // Draft header: 66 px on desktop, 60 px and 16 px side padding in the
+    // compact shell; phone titles step to 13 px.
+    final horizontal = wide ? gutter : 16.0;
+    Widget iconButton({
+      required String tooltip,
+      required Widget icon,
+      required VoidCallback onPressed,
+      Key? key,
+      Color? color,
+    }) =>
+        IconButton(
+          key: key,
+          tooltip: tooltip,
+          onPressed: onPressed,
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+          color: color,
+          iconSize: 18,
+          icon: icon,
+        );
+    return SizedBox(
+      height: wide ? 66 : 60,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: horizontal),
         child: Row(
           children: [
-            Expanded(child: _modelSelector()),
-            const SizedBox(width: 8),
-            _newChatButton(),
+            // Image creation returns to the same chat and draft. Otherwise a
+            // pushed page keeps its platform back affordance on compact
+            // screens; the sidebar still holds the way back to TechPie.
+            if (_showImages)
+              iconButton(
+                tooltip: '返回对话',
+                onPressed: () => setState(() => _showImages = false),
+                icon: const GenAiIcon(GenAiGlyph.back, size: 18),
+              )
+            // With the wide sidebar hidden, its "返回 TechPie" is hidden too.
+            else if (canPop && (!wide || _sidebarHidden))
+              iconButton(
+                tooltip: '返回',
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const GenAiIcon(GenAiGlyph.back, size: 18),
+              ),
+            iconButton(
+              tooltip: wide ? (_sidebarHidden ? '展开侧栏' : '收起侧栏') : '打开导航与历史',
+              color: palette.muted,
+              onPressed: () => _toggleSidebar(wide),
+              icon: const GenAiIcon(GenAiGlyph.sidebar, size: 18),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Semantics(
+                header: true,
+                child: Text(
+                  title.isEmpty && !wide ? 'GenAI' : title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: phone ? 13 : 14,
+                    fontWeight: wide ? FontWeight.w500 : FontWeight.w600,
+                    color: palette.text,
+                  ),
+                ),
+              ),
+            ),
+            if (!wide && _state.connected && !_showImages)
+              iconButton(
+                key: const ValueKey('genai-new-chat-compact'),
+                tooltip: '新对话',
+                color: palette.muted,
+                onPressed: _newConversation,
+                icon: const GenAiIcon(GenAiGlyph.edit, size: 18),
+              ),
+            if (_state.connected && !_showImages && _state.turns.isNotEmpty) _conversationMenu(),
           ],
         ),
-      );
-
-  Widget _newChatButton() => TextButton.icon(
-        key: const ValueKey('genai-new-chat-compact'),
-        onPressed: _newConversation,
-        icon: const Icon(Icons.edit_square, size: 18),
-        label: const Text('新对话'),
-        style: TextButton.styleFrom(
-          minimumSize: const Size(48, 48),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          foregroundColor: _theme.colorScheme.onSurface,
-        ),
-      );
-
-  bool get _canResolveCampusIdentity =>
-      widget.campusBound && widget.onCampusLogin != null && widget.onSignIn == null;
-
-  Widget _loginPanel() => Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(28),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 460),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(22),
-                  decoration: BoxDecoration(
-                    color: _accent.withValues(alpha: .08),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Icon(
-                    Icons.lock_open_rounded,
-                    size: 38,
-                    color: _accent,
-                  ),
-                ),
-                const SizedBox(height: 28),
-                Text(
-                  _state.sessions.owner == null
-                      ? (_canResolveCampusIdentity ? '校园身份待同步' : '先连接校园账号')
-                      : '连接你的校园 AI',
-                  textAlign: TextAlign.center,
-                  style: _theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  _state.sessions.owner == null
-                      ? (_canResolveCampusIdentity
-                          ? 'IDS 账号已绑定。连接 GenAI 后，将通过学校平台核验你的校园身份。'
-                          : '登录 TechPie 并绑定校园账号后，即可连接学校的 GenAI 平台。')
-                      : '使用上海科技大学账号登录。',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: _muted, height: 1.9, fontSize: 14),
-                ),
-                const SizedBox(height: 28),
-                if (_state.sessions.owner != null || _canResolveCampusIdentity)
-                  FilledButton.icon(
-                    key: const ValueKey('genai-connect'),
-                    onPressed: _openingLogin || _state.connecting
-                        ? null
-                        : _state.sessions.owner == null
-                            ? widget.onCampusLogin
-                            : () => unawaited(_login()),
-                    icon: _openingLogin || _state.connecting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.login_rounded, size: 18),
-                    label: Text(
-                      _openingLogin || _state.connecting
-                          ? '正在验证身份…'
-                          : _state.sessions.owner == null
-                              ? '使用现有 IDS 会话连接'
-                              : '使用校园账号连接',
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _accent,
-                      foregroundColor: _theme.colorScheme.onPrimary,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 26,
-                        vertical: 18,
-                      ),
-                    ),
-                  ),
-                if (_state.sessions.owner == null && widget.onSignIn != null)
-                  FilledButton(
-                    onPressed: widget.onSignIn,
-                    child: const Text('登录 TechPie'),
-                  ),
-                if (_state.sessions.owner == null &&
-                    !widget.campusBound &&
-                    widget.onBindCampus != null)
-                  TextButton(
-                    onPressed: widget.onBindCampus,
-                    child: const Text('绑定校园账号'),
-                  ),
-                if (_state.loginFailure != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 20),
-                    child: _notice(genAiFailureText(_state.loginFailure!)),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      );
-
-  Widget _welcome(double width, {required bool horizontal}) {
-    final logo = Image.asset(
-      'assets/icon/icon.png',
-      width: horizontal ? 64 : 96,
-      height: horizontal ? 64 : 96,
-      semanticLabel: 'TechPie',
-    );
-    final title = Text(
-      _chatCopy.title,
-      key: const ValueKey('genai-welcome-title'),
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        fontSize: width < 500 ? 25 : 30,
-        fontWeight: FontWeight.w500,
-        letterSpacing: -.6,
-      ),
-    );
-    return Center(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.symmetric(horizontal: 24, vertical: horizontal ? 12 : 24),
-        child: horizontal
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [logo, const SizedBox(width: 12), Flexible(child: title)],
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [logo, const SizedBox(height: 12), title],
-              ),
       ),
     );
   }
 
-  Widget _threadArea() => Stack(
+  /// The open conversation's actions; rename, export and delete share the
+  /// sidebar row's guarded implementation.
+  Widget _conversationMenu() => GenAiConversationMenu(
+        key: ValueKey('genai-header-menu-${_state.groupId}'),
+        workspace: _state,
+        conversation: GenAiConversationSummary(id: _state.groupId, title: _state.title),
+        enabled: !_state.sending,
+        iconSize: 18,
+        showSync: true,
+        workspaceWidth: _workspaceWidth,
+        onChanged: () => unawaited(_history.load()),
+        onDelete: () => unawaited(_deleteConversation(_state.groupId)),
+      );
+
+  Widget _accountAvatar(String name, {double radius = 16}) => CircleAvatar(
+        radius: radius,
+        backgroundColor: _palette.accentSoft,
+        foregroundColor: _palette.accent,
+        child: name.isNotEmpty && !RegExp(r'^\d+$').hasMatch(name)
+            ? Text(
+                name.characters.last,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              )
+            : const GenAiIcon(GenAiGlyph.user, size: 17),
+      );
+
+  Widget _accountMenu() => IconButton(
+        tooltip: 'GenAI 账户',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        onPressed: () => unawaited(_openAccount()),
+        icon: _accountAvatar(_state.connected ? _state.sessions.session!.profile.username : ''),
+      );
+
+  Future<void> _openAccount() async {
+    _closeDrawer();
+    final controller = _state;
+    final revision = controller.sessions.revision;
+    final accountScope = controller.accountScope;
+    bool current() =>
+        mounted &&
+        identical(controller, _state) &&
+        controller.sessions.revision == revision &&
+        controller.accountScope == accountScope;
+    await genAiShowDialog<void>(
+      context: context,
+      builder: (dialogContext) => genAiThemeScope(
+        dialogContext,
+        AnimatedBuilder(
+          animation: controller,
+          builder: (_, __) {
+            final connected = controller.connected;
+            final name = connected ? controller.sessions.session!.profile.username : '';
+            // Draft menu row: 42px minimum, 8/10 padding, a 17px icon, a 10px
+            // gap and a 13px label, clipped to the draft's 7px corners.
+            Widget row(Widget icon, String label, VoidCallback? action) {
+              final radius = BorderRadius.circular(7);
+              return Material(
+                color: Colors.transparent,
+                borderRadius: radius,
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  borderRadius: radius,
+                  onTap: !current() ? null : action,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 42),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      child: Row(
+                        children: [
+                          IconTheme.merge(
+                            data: IconThemeData(size: 17, color: _palette.muted),
+                            child: icon,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(label, style: const TextStyle(fontSize: 13)),
+                          ),
+                          GenAiIcon(GenAiGlyph.chevron, size: 17, color: _palette.muted),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return _shellDialog(
+              dialogContext,
+              current() ? '校园账号' : '账号已切换',
+              !current()
+                  ? const Text('请在当前账号下重新打开账号操作。')
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            _accountAvatar(name, radius: 20),
+                            const SizedBox(width: 13),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(connected ? name : '尚未连接'),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    connected ? '校园 GenAI · 已连接' : '连接后可同步学校对话记录',
+                                    style: TextStyle(fontSize: 12, color: _palette.muted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        if (connected)
+                          row(const GenAiIcon(GenAiGlyph.clock), '用量与额度', () {
+                            if (!current()) return;
+                            Navigator.pop(dialogContext);
+                            unawaited(_openUsage());
+                          }),
+                        if (widget.onBindCampus != null)
+                          row(const GenAiIcon(GenAiGlyph.user), '管理校园账号', () {
+                            if (!current()) return;
+                            Navigator.pop(dialogContext);
+                            widget.onBindCampus?.call();
+                          }),
+                        if (!connected)
+                          row(
+                            const GenAiIcon(GenAiGlyph.logout),
+                            '连接 GenAI',
+                            controller.sessions.owner == null
+                                ? null
+                                : () {
+                                    if (!current()) return;
+                                    Navigator.pop(dialogContext);
+                                    unawaited(_login());
+                                  },
+                          ),
+                        if (connected)
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                foregroundColor: _palette.muted,
+                                textStyle: const TextStyle(fontSize: 12),
+                              ),
+                              onPressed: () async {
+                                if (!current()) return;
+                                final confirmed = await genAiShowDialog<bool>(
+                                  context: dialogContext,
+                                  builder: (confirmContext) => genAiThemeScope(
+                                    confirmContext,
+                                    AnimatedBuilder(
+                                      animation: controller,
+                                      builder: (_, __) => GenAiDialogFrame(
+                                        title: Text(current() ? '断开校园 GenAI？' : '账号已切换'),
+                                        content: Text(
+                                          current()
+                                              ? '保留 TechPie 已绑定的 IDS 账号。你可以随时重新连接。'
+                                              : '请在当前账号下重新打开账号操作。',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(confirmContext, false),
+                                            child: const Text('取消'),
+                                          ),
+                                          FilledButton(
+                                            onPressed: !current()
+                                                ? null
+                                                : () {
+                                                    if (current()) {
+                                                      Navigator.pop(confirmContext, true);
+                                                    }
+                                                  },
+                                            child: const Text('断开'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                                if (confirmed != true || !current() || !dialogContext.mounted) {
+                                  return;
+                                }
+                                Navigator.pop(dialogContext);
+                                await controller.disconnect();
+                              },
+                              child: const Text('断开 GenAI 连接'),
+                            ),
+                          ),
+                      ],
+                    ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  bool get _canResolveCampusIdentity =>
+      widget.campusBound && widget.onCampusLogin != null && widget.onSignIn == null;
+
+  Widget _loginPanel({required bool compact}) {
+    final palette = _palette;
+    final owner = _state.sessions.owner;
+    final busy = _openingLogin || _state.connecting;
+    final loginFailure = _state.loginFailure;
+    final network = loginFailure != null && _isNetworkFailure(loginFailure);
+    return Center(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(compact ? 20 : 28),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            children: [
+              GenAiIcon(GenAiGlyph.lock, size: 34, color: palette.accent),
+              const SizedBox(height: 22),
+              Text(
+                owner == null ? (_canResolveCampusIdentity ? '校园身份待同步' : '先连接校园账号') : '连接你的校园 AI',
+                textAlign: TextAlign.center,
+                style: _theme.textTheme.headlineSmall?.copyWith(
+                  fontSize: 25,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -.4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                owner == null
+                    ? (_canResolveCampusIdentity
+                        ? 'IDS 账号已绑定。连接 GenAI 后，将通过学校平台核验你的校园身份。'
+                        : '登录 TechPie 并绑定校园账号后，即可连接学校的 GenAI 平台。')
+                    : '使用 TechPie 已绑定的上海科技大学账号登录。',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: palette.muted, height: 1.8, fontSize: 14),
+              ),
+              const SizedBox(height: 26),
+              if (owner != null || _canResolveCampusIdentity)
+                FilledButton.icon(
+                  key: const ValueKey('genai-connect'),
+                  onPressed: busy
+                      ? null
+                      : owner == null
+                          ? widget.onCampusLogin
+                          : () => unawaited(_login()),
+                  icon: busy
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const GenAiIcon(GenAiGlyph.logout, size: 18),
+                  label: Text(
+                    busy
+                        ? '正在验证身份…'
+                        : owner == null
+                            ? '使用现有 IDS 会话连接'
+                            : '使用校园账号连接',
+                  ),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                  ),
+                ),
+              if (owner == null && widget.onSignIn != null)
+                FilledButton(onPressed: widget.onSignIn, child: const Text('登录 TechPie')),
+              if (owner == null && !widget.campusBound && widget.onBindCampus != null)
+                TextButton(onPressed: widget.onBindCampus, child: const Text('绑定校园账号')),
+              if (loginFailure != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 20),
+                  child: _notice(
+                    network ? _networkTitle : genAiFailureText(loginFailure),
+                    subtitle: network ? _networkSubtitle : null,
+                    compact: compact,
+                    action: _noticeAction(
+                      '重试',
+                      () => unawaited(_login()),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _welcome(double width) {
+    final phone = width <= 680;
+    final logo = phone ? 49.0 : 44.0;
+    final greeting = phone ? 25.0 : (width * .022).clamp(22.0, 28.0);
+    return Center(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.symmetric(
+          horizontal: width < 360
+              ? 14
+              : phone
+                  ? 18
+                  : 24,
+          vertical: 12,
+        ),
+        // The draft keeps the greeting and its composer side by side at every
+        // width: the wordmark is a row, the composer sits underneath.
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/icon/icon.png',
+              width: logo,
+              height: logo,
+              semanticLabel: 'TechPie',
+            ),
+            SizedBox(width: phone ? 10 : 14),
+            Flexible(
+              child: Text(
+                _chatCopy.title,
+                key: const ValueKey('genai-welcome-title'),
+                style: TextStyle(
+                  fontSize: greeting,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -.6,
+                  color: _palette.text,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _threadArea(double gutter) => Stack(
         children: [
           Positioned.fill(
             child: NotificationListener<ScrollStartNotification>(
@@ -1073,7 +1611,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                 if (notification.depth == 0) _scrollRevision++;
                 return false;
               },
-              child: _thread(),
+              child: _thread(gutter),
             ),
           ),
           if (!_followingLatest)
@@ -1085,19 +1623,12 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                 child: FilledButton.tonalIcon(
                   key: const ValueKey('genai-scroll-latest'),
                   onPressed: _scrollToEnd,
-                  icon: const Icon(Icons.arrow_downward_rounded, size: 16),
+                  icon: const GenAiIcon(GenAiGlyph.down, size: 16),
                   label: const Text('回到最新'),
                 ),
               ),
             ),
         ],
-      );
-
-  Widget _markdownImage(Uri uri, String? title, String? alt) => GenAiMarkdownImage(
-        uri: uri,
-        title: title,
-        alt: alt,
-        imageDisplayUri: _state.repository.imageDisplayUri,
       );
 
   final _visualCounts = <String, (String, int)>{};
@@ -1116,472 +1647,123 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     return null;
   }
 
-  Widget _thread() {
+  late final _turnActions = GenAiTurnActions(
+    copy: (text, message) => unawaited(_copy(text, message)),
+    openLink: (link) => unawaited(_openLink(link)),
+    changeTurn: (index, action) => unawaited(_changeTurn(index, action)),
+    retry: (index) => unawaited(_retryTurn(index)),
+    exportConversation: () => unawaited(
+      showGenAiConversationExport(
+        context,
+        _state,
+        GenAiConversationSummary(id: _state.groupId, title: _state.title),
+        workspaceWidth: _workspaceWidth,
+      ),
+    ),
+    openImages: _openImages,
+    showImage: _showImageDialog,
+    imageDisplayUri: (url) => _state.repository.imageDisplayUri(url),
+    markdownImage: (uri, title, alt) => GenAiMarkdownImage(
+      uri: uri,
+      title: title,
+      alt: alt,
+      imageDisplayUri: _state.repository.imageDisplayUri,
+    ),
+    toggleTts: (index, answer) => unawaited(_media.toggleTts(index, answer)),
+    approve: (pending) => _state.resolveAgentApproval(true, expected: pending),
+    reject: (pending) => _state.resolveAgentApproval(false, expected: pending),
+  );
+
+  Widget _thread(double gutter) {
     // The controller returns a defensive copy. Take it once per frame, rather
     // than copying the entire history for every visible row and key lookup.
     final turns = _state.turns;
-    return _threadWithVisuals(turns, _latestVisual(turns));
-  }
-
-  Widget _threadWithVisuals(List<GenAiConversationTurn> turns, (String, int)? latestVisual) =>
-      ListView.builder(
-        key: const ValueKey('genai-thread'),
-        controller: _scroll,
-        // The latest edge is always zero, even before older variable-height
-        // messages are laid out. Never chase an estimated maxScrollExtent.
-        reverse: true,
-        padding: const EdgeInsets.fromLTRB(24, 32, 24, 12),
-        itemCount: turns.length,
-        findChildIndexCallback: (key) {
-          if (key is! ValueKey<String>) return null;
-          final index = turns.indexWhere((turn) => turn.id == key.value);
-          return index < 0 ? null : turns.length - 1 - index;
-        },
-        itemBuilder: (context, reverseIndex) {
-          final index = turns.length - 1 - reverseIndex;
-          final turn = turns[index];
-          if (turn.isHistoryGap) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text(
-                '部分历史记录无法读取，上下文已在此处断开。',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: _muted, fontSize: 12),
-              ),
-            );
-          }
-          final incomplete = const [
-            GenAiChatPhase.cancelled,
-            GenAiChatPhase.interrupted,
-            GenAiChatPhase.failed,
-            GenAiChatPhase.needsLogin,
-          ].contains(turn.phase);
-          return Align(
-            key: ValueKey(turn.id),
-            alignment: Alignment.topCenter,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 800),
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            constraints: const BoxConstraints(maxWidth: 680),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 18,
-                              vertical: 13,
-                            ),
-                            margin: const EdgeInsets.only(left: 36, bottom: 4),
-                            decoration: BoxDecoration(
-                              color: _theme.colorScheme.surfaceContainerLow,
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                if (turn.attachedImageBytesList.isNotEmpty ||
-                                    turn.attachedImageBytes != null ||
-                                    turn.attachedImageUrl != null ||
-                                    turn.attachedImageUrls.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
-                                    child: Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      alignment: WrapAlignment.end,
-                                      children: [
-                                        if (turn.attachedImageBytesList.isNotEmpty)
-                                          for (final bytes in turn.attachedImageBytesList)
-                                            ClipRRect(
-                                              borderRadius: BorderRadius.circular(8),
-                                              child: GestureDetector(
-                                                onTap: () => _showImageDialog(
-                                                  bytes: bytes,
-                                                ),
-                                                child: Image.memory(
-                                                  bytes,
-                                                  height: 180,
-                                                  fit: BoxFit.contain,
-                                                  errorBuilder: (
-                                                    _,
-                                                    __,
-                                                    ___,
-                                                  ) =>
-                                                      _buildImageErrorPlaceholder(),
-                                                ),
-                                              ),
-                                            )
-                                        else if (turn.attachedImageBytes != null)
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(8),
-                                            child: GestureDetector(
-                                              onTap: () => _showImageDialog(
-                                                bytes: turn.attachedImageBytes,
-                                              ),
-                                              child: Image.memory(
-                                                turn.attachedImageBytes!,
-                                                height: 180,
-                                                fit: BoxFit.contain,
-                                                errorBuilder: (_, __, ___) =>
-                                                    _buildImageErrorPlaceholder(),
-                                              ),
-                                            ),
-                                          )
-                                        else if (turn.attachedImageUrls.isNotEmpty)
-                                          for (final url in turn.attachedImageUrls.map(
-                                            (url) =>
-                                                _state.repository.imageDisplayUri(url).toString(),
-                                          ))
-                                            ClipRRect(
-                                              borderRadius: BorderRadius.circular(8),
-                                              child: GestureDetector(
-                                                onTap: () => _showImageDialog(
-                                                  url: url,
-                                                ),
-                                                child: _remoteAttachmentImage(
-                                                  url,
-                                                  height: 180,
-                                                ),
-                                              ),
-                                            )
-                                        else if (turn.attachedImageUrl != null)
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(8),
-                                            child: GestureDetector(
-                                              onTap: () => _showImageDialog(
-                                                url: _state.repository
-                                                    .imageDisplayUri(
-                                                      turn.attachedImageUrl!,
-                                                    )
-                                                    .toString(),
-                                              ),
-                                              child: _remoteAttachmentImage(
-                                                _state.repository
-                                                    .imageDisplayUri(
-                                                      turn.attachedImageUrl!,
-                                                    )
-                                                    .toString(),
-                                                height: 180,
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                if (turn.attachedFileNames.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
-                                    child: Wrap(
-                                      spacing: 6,
-                                      runSpacing: 4,
-                                      children: [
-                                        for (final fileName in turn.attachedFileNames)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: _accent.withValues(
-                                                alpha: .15,
-                                              ),
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  Icons.description,
-                                                  size: 12,
-                                                  color: _accent,
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  fileName,
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w500,
-                                                    color: _accent,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                Semantics(
-                                  container: true,
-                                  child: SelectableText(
-                                    turn.prompt,
-                                    style: const TextStyle(
-                                      fontSize: 15.5,
-                                      height: 1.7,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 16, right: 4),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  key: ValueKey('genai-user-copy-$index'),
-                                  tooltip: '复制内容',
-                                  icon: Icon(
-                                    Icons.copy_outlined,
-                                    size: 14,
-                                    color: _muted,
-                                  ),
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.all(4),
-                                  constraints: const BoxConstraints(
-                                    minWidth: 26,
-                                    minHeight: 26,
-                                  ),
-                                  onPressed: () => unawaited(
-                                    _copy(turn.prompt, '已复制内容'),
-                                  ),
-                                ),
-                                PopupMenuButton<String>(
-                                  key: ValueKey('genai-turn-menu-${turn.id}'),
-                                  tooltip: '消息操作',
-                                  enabled: !_state.sending && !turn.isHistoryGap,
-                                  icon: Icon(Icons.more_horiz, size: 18, color: _muted),
-                                  onSelected: (action) => unawaited(_changeTurn(index, action)),
-                                  itemBuilder: (_) => [
-                                    const PopupMenuItem(value: 'edit', child: Text('编辑并重新发送')),
-                                    if (index < turns.length - 1)
-                                      const PopupMenuItem(value: 'revert', child: Text('回退到此处')),
-                                    const PopupMenuItem(value: 'delete', child: Text('删除此轮及后续')),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Semantics(
-                        container: true,
-                        // Keep selectable text semantics from covering embedded visuals.
-                        explicitChildNodes: true,
-                        label: turn.isAgent ? '校园工具回复' : 'AI 回复',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (turn.isAgent) ...[
-                              if (turn.agentEvents.isNotEmpty ||
-                                  turn.agentActivity.isNotEmpty ||
-                                  turn.reasoning.isNotEmpty ||
-                                  turn.citations.isNotEmpty)
-                                GenAiAgentToolActivity(
-                                  key: ObjectKey(turn),
-                                  events: turn.agentEvents.values.toList(),
-                                  activity: turn.agentActivity,
-                                  thinking: turn.isAgentThinking,
-                                  legacyReasoning: turn.reasoning,
-                                  legacyCitations: turn.citations,
-                                  onOpenLink: (url) => unawaited(_openLink(url)),
-                                  running: _state.sending && index == turns.length - 1,
-                                  stopped: incomplete,
-                                  imageDisplayUri: _state.repository.imageDisplayUri,
-                                  onOpenImages:
-                                      _state.sending ? null : () => unawaited(_openTools(1)),
-                                ),
-                              if (_state.pendingAgentApproval != null && index == turns.length - 1)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 12),
-                                  child: Builder(
-                                    builder: (context) {
-                                      final pending = _state.pendingAgentApproval!;
-                                      return GenAiAgentApprovalCard(
-                                        call: pending.call,
-                                        prepared: pending.prepared,
-                                        onApprove: () =>
-                                            _state.resolveAgentApproval(true, expected: pending),
-                                        onReject: () =>
-                                            _state.resolveAgentApproval(false, expected: pending),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              if (turn.agentEvents.isNotEmpty) const SizedBox(height: 12),
-                            ],
-                            if (!turn.isAgent && turn.citations.isNotEmpty)
-                              GenAiWebSearchView(
-                                citations: turn.citations,
-                                onOpenLink: (url) => unawaited(_openLink(url)),
-                              ),
-                            if (!turn.isAgent &&
-                                (turn.reasoning.isNotEmpty ||
-                                    turn.phase == GenAiChatPhase.streaming && turn.answer.isEmpty))
-                              GenAiThinkingView(
-                                reasoning: turn.reasoning,
-                                isThinking:
-                                    turn.phase == GenAiChatPhase.streaming && turn.answer.isEmpty,
-                                durationMs: turn.thinkingDurationMs,
-                                onTapLink: (href) => unawaited(_openLink(href)),
-                              ),
-                            if (turn.answer.isEmpty &&
-                                !incomplete &&
-                                turn.reasoning.isEmpty &&
-                                (!turn.isAgent || _state.pendingAgentApproval == null))
-                              Row(
-                                children: [
-                                  SizedBox(
-                                    width: 13,
-                                    height: 13,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 1.5,
-                                      color: _accent,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    turn.isAgent ? turn.agentStatus : '正在思考…',
-                                    style: TextStyle(color: _muted, fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            if (turn.answer.isNotEmpty)
-                              GenAiMarkdown(
-                                data: turn.answer,
-                                selectable: true,
-                                interactiveVisuals: true,
-                                latestVisual: latestVisual,
-                                visualAnswerId: turn.id,
-                                imageBuilder: _markdownImage,
-                                onTapLink: (_, href, __) => unawaited(_openLink(href)),
-                              ),
-                            if (incomplete)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 12),
-                                child: Text(
-                                  turn.failure != null
-                                      ? genAiFailureText(turn.failure!)
-                                      : turn.isAgent && turn.agentStatus.isNotEmpty
-                                          ? turn.agentStatus
-                                          : '已停止',
-                                  style: TextStyle(
-                                    color: _muted,
-                                    fontSize: 12,
-                                    height: 1.7,
-                                  ),
-                                ),
-                              ),
-                            if (turn.finishReason == GenAiFinishReason.length)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 12),
-                                child: Text(
-                                  '已达到本次回复的长度限制',
-                                  style: TextStyle(
-                                    color: _muted,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            if (turn.finishReason == GenAiFinishReason.contentFilter)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 12),
-                                child: Text(
-                                  '平台已结束本次回复',
-                                  style: TextStyle(
-                                    color: _muted,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            Row(
-                              children: [
-                                if (turn.answer.isNotEmpty) ...[
-                                  IconButton(
-                                    tooltip: '复制回复',
-                                    key: ValueKey('genai-copy-$index'),
-                                    icon: Icon(
-                                      Icons.copy_outlined,
-                                      size: 16,
-                                      color: _muted,
-                                    ),
-                                    onPressed: () => unawaited(_copy(turn.answer)),
-                                  ),
-                                  if (_media.supportsPlayback)
-                                    IconButton(
-                                      tooltip:
-                                          _media.playingTtsTurnIndex == index ? '停止播放' : '语音播报',
-                                      key: ValueKey('genai-tts-$index'),
-                                      icon: _media.loadingTts && _media.playingTtsTurnIndex == index
-                                          ? SizedBox(
-                                              width: 14,
-                                              height: 14,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 1.5,
-                                                color: _accent,
-                                              ),
-                                            )
-                                          : Icon(
-                                              _media.playingTtsTurnIndex == index
-                                                  ? Icons.stop_circle_outlined
-                                                  : Icons.volume_up_outlined,
-                                              size: 16,
-                                              color: _media.playingTtsTurnIndex == index
-                                                  ? _accent
-                                                  : _muted,
-                                            ),
-                                      onPressed: () => unawaited(
-                                        _media.toggleTts(index, turn.answer),
-                                      ),
-                                    ),
-                                ],
-                                if (incomplete &&
-                                    index == turns.length - 1 &&
-                                    !turn.isHistoryGap &&
-                                    _state.connected)
-                                  TextButton.icon(
-                                    key: ValueKey('genai-retry-$index'),
-                                    onPressed:
-                                        _state.sending ? null : () => unawaited(_retryTurn(index)),
-                                    icon: const Icon(Icons.refresh, size: 15),
-                                    label: const Text(
-                                      '重试',
-                                      style: TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+    final latestVisual = _latestVisual(turns);
+    final width = _workspaceWidth;
+    final top = width < 360
+        ? 18.0
+        : width <= 680
+            ? 18.0
+            : width < GenAiPalette.wideBreakpoint
+                ? 22.0
+                : 28.0;
+    return ListView.builder(
+      key: const ValueKey('genai-thread'),
+      controller: _scroll,
+      // The latest edge is always zero, even before older variable-height
+      // messages are laid out. Never chase an estimated maxScrollExtent.
+      reverse: true,
+      padding: EdgeInsets.fromLTRB(gutter, top, gutter, 8),
+      itemCount: turns.length,
+      findChildIndexCallback: (key) {
+        if (key is! ValueKey<String>) return null;
+        final index = turns.indexWhere((turn) => turn.id == key.value);
+        return index < 0 ? null : turns.length - 1 - index;
+      },
+      itemBuilder: (context, reverseIndex) {
+        final index = turns.length - 1 - reverseIndex;
+        final turn = turns[index];
+        return Align(
+          key: ValueKey(turn.id),
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: GenAiPalette.readingWidth),
+            child: GenAiTurnView(
+              turn: turn,
+              actions: _turnActions,
+              context: GenAiTurnContext(
+                index: index,
+                count: turns.length,
+                sending: _state.sending,
+                connected: _state.connected,
+                touch: _touch,
+                workspaceWidth: _workspaceWidth,
+                pendingApproval: _state.pendingAgentApproval,
+                latestVisual: latestVisual,
+                supportsPlayback: _media.supportsPlayback,
+                playingTtsIndex: _media.playingTtsTurnIndex,
+                loadingTts: _media.loadingTts,
               ),
             ),
-          );
-        },
-      );
+          ),
+        );
+      },
+    );
+  }
 
-  Widget _composer(bool wide, {required bool modelInComposer}) {
+  Widget _composer({required double gutter}) {
     final scope = _scope;
+    final workspaceWidth = _workspaceWidth;
+    final desktop = workspaceWidth >= GenAiPalette.wideBreakpoint;
+    // Measure the model name naturally. The composer's toolbar, which knows the
+    // row it has left after the fixed controls, is the only thing that trims it.
+    final modelWidth = GenAiModelPicker.widthFor(
+      context,
+      _state.selectedModel?.name ?? (_state.loadingModels ? '正在加载模型…' : '选择模型'),
+    );
     return GenAiComposer(
       key: _composerKey,
       draft: _draft,
       inputFocus: _inputFocus,
       hint: _chatCopy.hint,
-      wide: wide,
-      modelSelector: modelInComposer ? _modelSelector() : null,
+      wide: desktop,
+      workspaceWidth: workspaceWidth,
+      horizontalPadding: gutter,
+      modelSelectorWidth: modelWidth,
+      modelSelector: GenAiModelPicker(
+        models: _state.models,
+        selected: _state.selectedModel,
+        loading: _state.loadingModels,
+        enabled: !_state.sending,
+        maxWidth: modelWidth,
+        workspaceWidth: workspaceWidth,
+        onSelected: (model) {
+          // The picker awaits a menu route; the account or conversation may
+          // have moved on in the meantime, so re-check the captured scope.
+          if (!_isCurrent(scope) || _state.sending) return;
+          _state.selectModel(model);
+        },
+      ),
       keyboardOpen: MediaQuery.viewInsetsOf(context).bottom > 0,
       sending: _state.sending,
       thinkingEnabled: _state.thinkingEnabled,
@@ -1640,95 +1822,149 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     );
   }
 
-  Widget _notice(String text, {Widget? action}) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: _theme.colorScheme.errorContainer.withValues(alpha: .3),
-          borderRadius: BorderRadius.circular(12),
+  Widget _notice(
+    String title, {
+    String? subtitle,
+    Widget? action,
+    bool compact = false,
+  }) {
+    final palette = _palette;
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            height: 1.5,
+            color: palette.text,
+          ),
         ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.info_outline,
-              size: 17,
-              color: _theme.colorScheme.error,
+        if (subtitle != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              subtitle,
+              style: TextStyle(fontSize: 12, height: 1.6, color: palette.muted),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                text,
-                style: const TextStyle(fontSize: 12, height: 1.7),
+          ),
+      ],
+    );
+    final icon = GenAiIcon(GenAiGlyph.info, size: 18, color: palette.accent);
+    // The draft wraps the action under the text on phone widths; desktop keeps
+    // it inline, vertically centred and right-aligned.
+    final content = compact
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  icon,
+                  const SizedBox(width: 10),
+                  Expanded(child: text),
+                ],
               ),
-            ),
-            if (action != null) action,
-          ],
-        ),
-      );
+              if (action != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 28, top: 10),
+                  child: Align(alignment: AlignmentDirectional.centerStart, child: action),
+                ),
+            ],
+          )
+        : Row(
+            children: [
+              icon,
+              const SizedBox(width: 14),
+              Expanded(child: text),
+              if (action != null) ...[
+                const SizedBox(width: 14),
+                action,
+              ],
+            ],
+          );
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: palette.raised,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: palette.line),
+      ),
+      child: content,
+    );
+  }
 
-  Widget _buildImageErrorPlaceholder() => Container(
-        padding: const EdgeInsets.all(8),
-        color: Colors.black12,
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.broken_image_outlined, size: 16),
-            SizedBox(width: 4),
-            Text(
-              '图片无法加载',
-              style: TextStyle(fontSize: 11),
-            ),
-          ],
-        ),
-      );
-
-  Widget _remoteAttachmentImage(String url, {double? height}) {
-    return Image.network(
-      url,
-      height: height,
-      fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => _buildImageErrorPlaceholder(),
+  Widget _noticeAction(String label, VoidCallback? onPressed) {
+    final palette = _palette;
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: palette.text,
+        side: BorderSide(color: palette.line),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        minimumSize: const Size(0, 40),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: Text(label),
     );
   }
 
   void _showImageDialog({Uint8List? bytes, String? url}) {
     if (bytes == null && (url == null || url.isEmpty)) return;
     unawaited(
-      showDialog<void>(
+      genAiShowDialog<void>(
         context: context,
-        builder: (context) => Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.all(16),
-          child: Stack(
-            alignment: Alignment.topRight,
-            children: [
-              Center(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    color: Colors.black.withValues(alpha: .85),
-                    padding: const EdgeInsets.all(8),
-                    child: InteractiveViewer(
-                      maxScale: 4.0,
-                      child: bytes != null
-                          ? Image.memory(bytes, fit: BoxFit.contain)
-                          : _remoteAttachmentImage(url!),
+        builder: (dialogContext) => genAiThemeScope(
+          dialogContext,
+          Dialog(
+            insetPadding: const EdgeInsets.all(16),
+            child: Stack(
+              alignment: Alignment.topRight,
+              children: [
+                Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: .85),
+                      padding: const EdgeInsets.all(8),
+                      child: InteractiveViewer(
+                        maxScale: 4.0,
+                        child: bytes != null
+                            ? Image.memory(bytes, fit: BoxFit.contain)
+                            : Image.network(
+                                url!,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Text(
+                                    '图片无法加载',
+                                    style: TextStyle(color: Colors.white70),
+                                  ),
+                                ),
+                              ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Positioned(
-                top: 10,
-                right: 10,
-                child: IconButton.filled(
-                  icon: const Icon(Icons.close, size: 20),
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.black54,
-                    foregroundColor: Colors.white,
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: IconButton.filled(
+                    tooltip: '关闭',
+                    icon: const GenAiIcon(GenAiGlyph.close, size: 20),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
                   ),
-                  onPressed: () => Navigator.of(context).pop(),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

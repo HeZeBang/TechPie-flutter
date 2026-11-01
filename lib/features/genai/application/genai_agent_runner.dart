@@ -138,8 +138,7 @@ final class GenAiAgentRunner {
     for (final event in events) {
       final call = event.call;
       if (call == null || event.result == null || event.result!['reused'] == true) continue;
-      if (call.name == 'generate_image' ||
-          call.name == 'reserve_court' && call.arguments['action'] == 'book') {
+      if (genAiRecordsMutationReceipt(call.name, call.arguments)) {
         ledger[genAiMutationReceiptKey(call, turnId: turnId)] = event.result!;
       }
     }

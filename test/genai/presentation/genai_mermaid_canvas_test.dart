@@ -186,4 +186,82 @@ void main() {
       }
     });
   }
+
+  testWidgets('diagram cache hits exact matches and invalidates on code, width and theme',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    FlowchartPainter painter() {
+      final finder = find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter is FlowchartPainter,
+      );
+      return tester.widget<CustomPaint>(finder).painter! as FlowchartPainter;
+    }
+
+    Size canvasSize() => tester.getSize(
+          find.byWidgetPredicate(
+            (widget) => widget is CustomPaint && widget.painter is FlowchartPainter,
+          ),
+        );
+
+    Future<void> pump(
+      String code, {
+      Brightness brightness = Brightness.light,
+      double width = 900,
+    }) async {
+      tester.view.physicalSize = Size(width, 900);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(brightness: brightness),
+          home: Scaffold(
+            body: SingleChildScrollView(child: GenAiMermaidView(code: code)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    // Raw, unnormalized sources: a stale normalization cache would keep
+    // rendering the first diagram after the source changes.
+    const first = 'graph LR; A[Alpha] --> B[Beta] --> C[Gamma]';
+    const second = 'graph LR; A[One] --> B[Two]';
+
+    await pump(first);
+    final initial = painter();
+    expect(
+      initial.diagram.nodes.map((node) => node.label),
+      containsAll(['Alpha', 'Beta', 'Gamma']),
+    );
+    final initialWidth = canvasSize().width;
+
+    // Identical source, style and width reuse the cached parse and layout.
+    await pump(first);
+    expect(painter(), same(initial));
+
+    // Width is part of the layout key.
+    await pump(first, width: 420);
+    expect(painter(), isNot(same(initial)));
+
+    // Returning to the original width restores the exact cached frame.
+    await pump(first);
+    expect(painter(), same(initial));
+    expect(canvasSize().width, initialWidth);
+
+    // Theme participates through the style, so a palette change invalidates.
+    await pump(first, brightness: Brightness.dark);
+    final dark = painter();
+    expect(dark, isNot(same(initial)));
+    expect(dark.style.themeMode, MermaidThemeMode.dark);
+    expect(dark.style.backgroundColor, isNot(initial.style.backgroundColor));
+
+    // Source is part of the parse key (and normalization is refreshed).
+    await pump(second, brightness: Brightness.dark);
+    expect(
+      painter().diagram.nodes.map((node) => node.label),
+      unorderedEquals(['One', 'Two']),
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

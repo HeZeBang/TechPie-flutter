@@ -5,8 +5,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_mermaid/flutter_mermaid.dart';
 
+import '../genai_icons.dart';
+import '../genai_theme.dart';
 import 'genai_code_font.dart';
 import 'genai_copy_button.dart';
+import 'genai_mermaid_painter.dart';
 
 class GenAiMermaidView extends StatefulWidget {
   const GenAiMermaidView({
@@ -38,23 +41,27 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
             autofocus: true,
             child: Scaffold(
               appBar: AppBar(
-                leading: const CloseButton(),
+                leading: IconButton(
+                  tooltip: '关闭',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const GenAiIcon(GenAiGlyph.close),
+                ),
                 title: const Text('Mermaid 图表', maxLines: 1, overflow: TextOverflow.ellipsis),
                 actions: [
                   IconButton(
                     tooltip: '缩小',
                     onPressed: () => canvasKey.currentState?.zoom(.8),
-                    icon: const Icon(Icons.remove),
+                    icon: const GenAiIcon(GenAiGlyph.zoomOut),
                   ),
                   IconButton(
                     tooltip: '放大',
                     onPressed: () => canvasKey.currentState?.zoom(1.25),
-                    icon: const Icon(Icons.add),
+                    icon: const GenAiIcon(GenAiGlyph.zoomIn),
                   ),
                   IconButton(
                     tooltip: '适应窗口',
                     onPressed: () => canvasKey.currentState?.fit(),
-                    icon: const Icon(Icons.fit_screen),
+                    icon: const GenAiIcon(GenAiGlyph.fit),
                   ),
                 ],
               ),
@@ -84,40 +91,31 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: .08) : Colors.black.withValues(alpha: .06);
-    final cardBg =
-        isDark ? Colors.white.withValues(alpha: .03) : Colors.black.withValues(alpha: .02);
+    final palette = GenAiPalette.of(context);
 
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: borderColor),
+        color: palette.raised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: palette.line),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Header
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
             decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: .06)
-                      : Colors.black.withValues(alpha: .04),
-                ),
-              ),
+              border: Border(bottom: BorderSide(color: palette.line)),
             ),
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final title = Row(
                   children: [
-                    Icon(Icons.account_tree_outlined, size: 16, color: theme.colorScheme.primary),
+                    GenAiIcon(GenAiGlyph.diagram, size: 16, color: palette.accent),
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
@@ -136,18 +134,18 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
                       IconButton(
                         tooltip: '适应窗口',
                         onPressed: () => _canvasKey.currentState?.fit(),
-                        icon: const Icon(Icons.fit_screen, size: 20),
+                        icon: const GenAiIcon(GenAiGlyph.fit, size: 20),
                       ),
                       IconButton(
                         tooltip: '全屏查看',
                         onPressed: _openFullscreen,
-                        icon: const Icon(Icons.fullscreen, size: 20),
+                        icon: const GenAiIcon(GenAiGlyph.full, size: 20),
                       ),
                     ],
                     IconButton(
                       tooltip: _showCode ? '切换到图表' : '查看源码',
                       onPressed: () => setState(() => _showCode = !_showCode),
-                      icon: Icon(_showCode ? Icons.schema_outlined : Icons.code_rounded, size: 20),
+                      icon: GenAiIcon(_showCode ? GenAiGlyph.diagram : GenAiGlyph.code, size: 20),
                     ),
                     GenAiCopyButton(text: widget.code, tooltip: '复制源码'),
                   ],
@@ -180,15 +178,15 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.warning_amber_rounded,
+                    GenAiIcon(
+                      GenAiGlyph.warning,
                       size: 16,
                       color: theme.colorScheme.error,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Mermaid 语法解析未完成: $_renderError',
+                        'Mermaid 图表无法渲染，已显示源码：$_renderError',
                         style: TextStyle(
                           fontSize: 12,
                           color: theme.colorScheme.error,
@@ -202,6 +200,7 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
               child: SelectableText(
                 widget.code,
+                contextMenuBuilder: genAiTextSelectionContextMenu,
                 style: const TextStyle(
                   fontFamily: kGenAiMonospaceFamily,
                   fontFamilyFallback: kGenAiMonospaceFallback,
@@ -212,7 +211,7 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
             ),
           ] else
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
               child: _MermaidCanvas(
                 key: _canvasKey,
                 code: widget.code,
@@ -225,6 +224,41 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
       ),
     );
   }
+}
+
+/// Minimalist draft treatment for flutter_mermaid's pure-Dart painters.
+///
+/// Every color is a [GenAiPalette] role, so light, dark, AMOLED, dynamic-color
+/// and iOS-accent settings carry into the diagram. Only what [MermaidStyle]
+/// exposes is set: 1px [GenAiPalette.line] node borders with a 9px radius,
+/// 13px regular-weight [GenAiPalette.text] labels on a soft fill, and 1.15px
+/// [GenAiPalette.muted] edges whose 11.5px labels sit on a raised chip so a
+/// line never strikes through its own text. Spacing is widened for breathing
+/// room; node interior padding is fixed by the package's node measurement.
+MermaidStyle _mermaidStyle(GenAiPalette palette, {required bool dark}) {
+  return MermaidStyle(
+    backgroundColor: palette.raised.toARGB32(),
+    defaultNodeStyle: NodeStyle(
+      fillColor: palette.soft.toARGB32(),
+      strokeColor: palette.line.toARGB32(),
+      strokeWidth: 1,
+      textColor: palette.text.toARGB32(),
+      fontSize: 13,
+      fontWeight: FontWeight.w400,
+      borderRadius: 9,
+    ),
+    defaultEdgeStyle: EdgeStyle(
+      strokeColor: palette.muted.toARGB32(),
+      strokeWidth: 1.15,
+      labelColor: palette.muted.toARGB32(),
+      labelFontSize: 11.5,
+      labelBackgroundColor: palette.raised.toARGB32(),
+    ),
+    nodeSpacingX: 56,
+    nodeSpacingY: 56,
+    padding: 28,
+    themeMode: dark ? MermaidThemeMode.dark : MermaidThemeMode.light,
+  );
 }
 
 /// Preserve the renderer's natural canvas: viewport constraints must never
@@ -251,6 +285,15 @@ class _MermaidCanvasState extends State<_MermaidCanvas> {
   final _transform = TransformationController();
   Size _naturalSize = Size.zero;
   Size _viewport = Size.zero;
+
+  /// Normalization and the derived style are pure functions of the source and
+  /// the palette. Memoizing them keeps every rebuild from re-running the
+  /// source rewrite or allocating a fresh (never equal) [MermaidStyle].
+  String? _normalizedCode;
+  String? _styleKey;
+  MermaidStyle? _style;
+
+  String get _normalized => _normalizedCode ??= normalizeMermaid(widget.code);
 
   (double, Offset) get view => (
         _transform.value.getMaxScaleOnAxis(),
@@ -303,7 +346,24 @@ class _MermaidCanvasState extends State<_MermaidCanvas> {
     if (oldWidget.code != widget.code) {
       _naturalSize = Size.zero;
       _viewport = Size.zero;
+      _normalizedCode = null;
     }
+  }
+
+  /// Returns the same instance while the palette roles and brightness are
+  /// unchanged, so [GenAiMermaidDiagram]'s style-keyed layout cache can hit.
+  /// [MermaidStyle] has no value equality, so identity is the invalidation.
+  MermaidStyle _resolveStyle(BuildContext context) {
+    final palette = GenAiPalette.of(context);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final key = '${palette.raised.toARGB32()}:${palette.soft.toARGB32()}:'
+        '${palette.line.toARGB32()}:${palette.text.toARGB32()}:'
+        '${palette.muted.toARGB32()}:$dark';
+    if (_styleKey != key) {
+      _styleKey = key;
+      _style = _mermaidStyle(palette, dark: dark);
+    }
+    return _style!;
   }
 
   double get _fitScale => _naturalSize.isEmpty || _viewport.isEmpty
@@ -339,7 +399,7 @@ class _MermaidCanvasState extends State<_MermaidCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final style = _resolveStyle(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -384,13 +444,12 @@ class _MermaidCanvasState extends State<_MermaidCanvas> {
               // Leave room for arrowheads and curved return edges painted
               // just outside the renderer's node bounds.
               child: ColoredBox(
-                color: Color((dark ? MermaidStyle.dark() : const MermaidStyle()).backgroundColor),
+                color: Color(style.backgroundColor),
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: MermaidDiagram(
-                    code: normalizeMermaid(widget.code),
-                    enableResponsive: false,
-                    style: dark ? MermaidStyle.dark() : const MermaidStyle(),
+                  child: GenAiMermaidDiagram(
+                    code: _normalized,
+                    style: style,
                     onError: (error) {
                       final code = widget.code;
                       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -514,12 +573,29 @@ String normalizeMermaid(String source) {
     return cleanedSource;
   }
 
+  // A generated ID must never shadow one that already exists in the source.
+  // Without this, `n0[Start] --> 中文[结束]` maps 中文 onto the existing n0 and
+  // the two nodes collapse. Reserve every identifier-looking token up front,
+  // including labels, because skipping an extra counter value is harmless.
+  final usedIds = <String>{
+    for (final match in RegExp(r'[A-Za-z_][A-Za-z0-9_]*').allMatches(cleanedSource))
+      match.group(0)!,
+  };
   final idMap = <String, String>{};
   final hasExplicitLabel = <String, bool>{};
   var idCounter = 0;
 
+  String nextGeneratedId(String prefix) {
+    String candidate;
+    do {
+      candidate = '$prefix${idCounter++}';
+    } while (usedIds.contains(candidate));
+    usedIds.add(candidate);
+    return candidate;
+  }
+
   String getSafeId(String rawId) {
-    return idMap.putIfAbsent(rawId, () => 'n${idCounter++}');
+    return idMap.putIfAbsent(rawId, () => nextGeneratedId('n'));
   }
 
   bool needsSafeId(String id) {
@@ -628,7 +704,7 @@ String normalizeMermaid(String source) {
           final safeId = needsSafeId(rawId) ? getSafeId(rawId) : rawId;
           resultLines.add('  subgraph $safeId [$label]');
         } else {
-          final safeId = 'sub_${idCounter++}';
+          final safeId = nextGeneratedId('sub_');
           resultLines.add('  subgraph $safeId [$cleanLabel]');
         }
         continue;

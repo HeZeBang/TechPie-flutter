@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../widgets/adaptive_feedback.dart';
+import '../genai_icons.dart';
 
 /// Reports success only after the platform accepts the clipboard write.
 class GenAiCopyButton extends StatefulWidget {
@@ -66,13 +67,11 @@ class _GenAiCopyButtonState extends State<GenAiCopyButton> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final icon = Icon(
-      _copied ? Icons.check_rounded : Icons.copy_rounded,
+    final icon = GenAiIcon(
+      _copied ? GenAiGlyph.check : GenAiGlyph.copy,
       size: 16,
     );
-    final color = _copied
-        ? theme.colorScheme.primary
-        : theme.colorScheme.onSurfaceVariant;
+    final color = _copied ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant;
     final tooltip = _copied ? '已复制' : widget.tooltip;
     if (widget.showLabel) {
       return TextButton.icon(

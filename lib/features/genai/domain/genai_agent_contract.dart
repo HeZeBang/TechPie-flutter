@@ -263,6 +263,36 @@ final class GenAiAgentEvent {
   final List<GenAiMessage> history;
 }
 
+/// Tool names that can change state outside the app. Kept in one place so the
+/// effect warning and the session ledger cannot drift apart.
+const genAiMutationToolNames = {'generate_image', 'reserve_court'};
+
+/// Warning classification, name-only on purpose. A finished `reserve_court`
+/// receipt may describe an external effect (including an unknown outcome)
+/// whatever its arguments say, so this never inspects them.
+bool genAiIsMutationToolName(String? name) =>
+    name != null && genAiMutationToolNames.contains(name);
+
+/// Ledger classification, which is stricter than the warning: a court tool is
+/// only a mutation receipt when it actually books a slot. Read-only
+/// `reserve_court` actions stay retryable because they changed nothing.
+bool genAiRecordsMutationReceipt(String name, Map<String, Object?> arguments) =>
+    name == 'generate_image' ||
+    name == 'reserve_court' && arguments['action'] == 'book';
+
+/// True when a mutation-capable tool finished successfully, or with an unknown
+/// outcome that may still have been dispatched. Proposed, pending, rejected,
+/// cancelled, and failed events never count as external effects.
+bool genAiHasExternalEffect(GenAiAgentEvent event) {
+  if (event.kind != GenAiAgentEventKind.toolFinished) return false;
+  if (!genAiIsMutationToolName(event.call?.name)) return false;
+  final result = event.result;
+  if (result == null) return false;
+  if (result['ok'] == true) return true;
+  final error = result['error'];
+  return error is Map && error['code'] == 'outcome_unknown';
+}
+
 /// Deep immutable JSON snapshots prevent changes during an approval wait.
 Map<String, Object?> genAiAgentJsonMap(Map<String, Object?> value) =>
     _freeze(jsonDecode(jsonEncode(value)))! as Map<String, Object?>;

@@ -137,6 +137,87 @@ void main() {
     );
   });
 
+  test('image records keep optional title and quality across old and new rows', () {
+    final legacy = GenAiImageRecord.fromJson({
+      'id': 'legacy',
+      'question': 'Old prompt',
+      'images': [
+        {'imageUrl': 'old/picture.png'},
+      ],
+    });
+    expect(legacy.title, isNull);
+    expect(legacy.quality, isNull);
+    expect(legacy.toJson().containsKey('title'), isFalse);
+    expect(legacy.toJson().containsKey('quality'), isFalse);
+    final legacyRoundTrip = GenAiImageRecord.fromJson(legacy.toJson());
+    expect(legacyRoundTrip.title, isNull);
+    expect(legacyRoundTrip.quality, isNull);
+
+    final current = GenAiImageRecord.fromJson({
+      'id': 'current',
+      'question': 'New prompt',
+      'title': '  Sunrise over the lake  ',
+      'quality': 'high',
+      'images': [
+        {'imageUrl': 'new/picture.png'},
+      ],
+    });
+    expect(current.title, 'Sunrise over the lake');
+    expect(current.quality, 'high');
+
+    final restored = GenAiImageRecord.fromJson(current.toJson());
+    expect(restored.id, current.id);
+    expect(restored.prompt, current.prompt);
+    expect(restored.title, current.title);
+    expect(restored.quality, current.quality);
+    expect(restored.images.single, current.images.single);
+  });
+
+  test('image records ignore non-string optional metadata', () {
+    final record = GenAiImageRecord.fromJson({
+      'id': 'typed',
+      'question': 'Prompt',
+      'title': 42,
+      'quality': <String>['high'],
+      'images': [
+        {'imageUrl': 'typed/picture.png'},
+      ],
+    });
+    expect(record.title, isNull);
+    expect(record.quality, isNull);
+    expect(record.toJson().containsKey('title'), isFalse);
+    expect(record.toJson().containsKey('quality'), isFalse);
+  });
+
+  test('image requests send an optional trimmed title only when provided', () {
+    const model = GenAiModel(
+      name: 'Image',
+      aiType: 'image',
+      rootAiType: 'fixture',
+      status: 2,
+    );
+    final without = GenAiImageRequest(
+      prompt: 'A red square',
+      groupId: 'group',
+      model: model,
+      quality: 'medium',
+    );
+    expect(without.title, isNull);
+    expect(without.toJson().containsKey('title'), isFalse);
+    expect(without.toJson()['quality'], 'medium');
+
+    final withTitle = GenAiImageRequest(
+      prompt: 'A red square',
+      title: '  Red square  ',
+      groupId: 'group',
+      model: model,
+      quality: 'high',
+    );
+    expect(withTitle.title, 'Red square');
+    expect(withTitle.toJson()['title'], 'Red square');
+    expect(withTitle.toJson()['quality'], 'high');
+  });
+
   test('restored reasoning is kept out of assistant history content', () {
     final turn = GenAiSavedTurn.fromJson({
       'question': 'test',

@@ -57,6 +57,40 @@ class DeferredRecorder implements GenAiAudioRecorder {
 }
 
 void main() {
+  testWidgets('usage modal never pushes a page onto the host navigator', (tester) async {
+    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
+    addTearDown(demo.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigator,
+        home: GenAiWorkspace(controller: demo.workspace, login: (_) async => null),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('打开导航与历史'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('GenAI 账户'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('用量与额度'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-usage-dialog')), findsOneWidget);
+    // The usage surface is a dialog route, not a pushed page: its modal route
+    // is not a PageRoute, the workspace scaffold remains, and closing it
+    // leaves the host navigator exactly where it started.
+    final route = ModalRoute.of(
+      tester.element(find.byKey(const ValueKey('genai-usage-dialog'))),
+    );
+    expect(route, isNotNull);
+    expect(route, isNot(isA<PageRoute<dynamic>>()));
+    expect(find.byType(Scaffold), findsOneWidget);
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-usage-dialog')), findsNothing);
+    expect(navigator.currentState!.canPop(), isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final kind in ['document', 'image', 'audio']) {
     for (final boundary in ['account', 'conversation', 'controller']) {
       testWidgets('pending $kind selection cannot cross $boundary scope', (tester) async {

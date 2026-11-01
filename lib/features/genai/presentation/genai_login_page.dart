@@ -14,6 +14,8 @@ import '../application/genai_session_service.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_session.dart';
 import '../platform/genai_login_policy.dart';
+import 'genai_icons.dart';
+import 'genai_theme.dart';
 
 class GenAiLoginPage extends StatefulWidget {
   const GenAiLoginPage({
@@ -130,7 +132,7 @@ class _GenAiLoginPageState extends State<GenAiLoginPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.school_outlined, size: 48),
+                  const GenAiIcon(GenAiGlyph.school, size: 48),
                   const SizedBox(height: 24),
                   Text(
                     '使用学校账号登录',
@@ -146,7 +148,7 @@ class _GenAiLoginPageState extends State<GenAiLoginPage> {
                   const SizedBox(height: 24),
                   FilledButton.icon(
                     onPressed: () => unawaited(_openLogin()),
-                    icon: const Icon(Icons.open_in_new),
+                    icon: const GenAiIcon(GenAiGlyph.openExternal),
                     label: Text(
                       _supportsEmbedded && widget.campusSession != null
                           ? '使用现有 IDS 会话继续'
@@ -168,6 +170,7 @@ class _GenAiLoginPageState extends State<GenAiLoginPage> {
                     children: [
                       TextField(
                         key: const ValueKey('genai-token'),
+                        contextMenuBuilder: genAiTextSelectionContextMenu,
                         controller: _token,
                         obscureText: true,
                         enableSuggestions: false,

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_chat_service.dart';
+import 'package:techpie/features/genai/application/genai_conversation_archive.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
 import 'package:techpie/features/genai/application/genai_remote_history.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
@@ -287,6 +288,70 @@ void main() {
       (recovered.mutations['effects']! as Map).keys,
       contains(genAiMutationReceiptKey(call, turnId: 'original-task')),
     );
+  });
+
+  test('generated image receipt retains title and quality through archive roundtrip', () {
+    final source = GenAiConversationTurn('Draw a red square', id: 'image', isAgent: true);
+    final call = GenAiAgentToolCall(
+      id: 'img',
+      name: 'generate_image',
+      arguments: const {
+        'prompt': 'A red square',
+        'title': 'Red square',
+        'width': 1024,
+        'height': 1024,
+        'quality': 'high',
+      },
+    );
+    final receipt = <String, Object?>{
+      'call_id': 'img',
+      'name': 'generate_image',
+      'ok': true,
+      'result': {
+        'status': 'generated',
+        'model': 'Image',
+        'title': 'Red square',
+        'quality': 'high',
+        'size': '1024x1024',
+        'images': ['https://genaipic.shanghaitech.edu.cn/sys/common/static/temp/red.png'],
+      },
+    };
+    final rows = [
+      GenAiSavedTurn(
+        prompt: encodeGenAiRemoteRecord({
+          'kind': 'exchange',
+          'step_id': 'image-call',
+          'turn': source.toRemoteInput(),
+          'turn_id': source.id,
+          'input': source.prompt,
+        }),
+        answer: encodeGenAiAgentCall(call, nonce: nonce),
+      ),
+      GenAiSavedTurn(
+        prompt: encodeGenAiRemoteRecord({
+          'kind': 'exchange',
+          'step_id': 'image-result',
+          'turn': null,
+          'turn_id': source.id,
+          'input': encodeGenAiAgentResult(receipt, nonce: nonce),
+        }),
+        answer: encodeGenAiAgentFinal('Done.', nonce: nonce),
+      ),
+    ];
+    Map<String, Object?> imageResult(GenAiConversationTurn turn) =>
+        Map<String, Object?>.from(turn.agentEvents['img']!.result!['result']! as Map);
+
+    final archive = decodeGenAiConversation('group', rows).archive;
+    final recovered = imageResult(archive.restoreTurns().single);
+    expect(recovered['title'], 'Red square');
+    expect(recovered['quality'], 'high');
+
+    // The archive is a projection of remote history; re-encoding and loading
+    // it must preserve optional receipt metadata.
+    final rebuilt = GenAiConversationArchive.fromJson(archive.toJson());
+    final restored = imageResult(rebuilt.restoreTurns().single);
+    expect(restored['title'], 'Red square');
+    expect(restored['quality'], 'high');
   });
 
   test('missing tool receipt remains unknown and never recreates a pending approval', () {

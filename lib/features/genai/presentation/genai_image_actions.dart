@@ -5,80 +5,157 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../widgets/adaptive_feedback.dart';
+import 'genai_icons.dart';
 import 'genai_image_save.dart';
 import 'genai_image_transfer_native.dart'
     if (dart.library.js_interop) 'genai_image_transfer_web.dart' as platform;
+import 'genai_theme.dart';
+
+/// Resolves [image] and returns its PNG encoding.
+///
+/// Decode the displayed provider, not a URL inferred from model prose.
+Future<Uint8List> loadGenAiImagePng(
+  ImageProvider<Object> image,
+  BuildContext context,
+) async {
+  final stream = image.resolve(createLocalImageConfiguration(context));
+  final ready = Completer<ImageInfo>();
+  final listener = ImageStreamListener(
+    (info, _) {
+      if (ready.isCompleted) {
+        info.dispose();
+      } else {
+        ready.complete(info);
+      }
+    },
+    onError: (Object error, StackTrace? stack) {
+      if (!ready.isCompleted) ready.completeError(error, stack);
+    },
+  );
+  stream.addListener(listener);
+  ImageInfo? info;
+  try {
+    info = await ready.future.timeout(const Duration(seconds: 30));
+    final data = await info.image.toByteData(format: ui.ImageByteFormat.png);
+    if (data == null) throw StateError('Image could not be encoded');
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  } finally {
+    stream.removeListener(listener);
+    info?.dispose();
+  }
+}
+
+/// Shares [image] as PNG where the platform can share image bytes, otherwise
+/// copies [link]. The caller owns the account guard: [isCurrent] runs
+/// immediately before any effect, so a stale scope can neither share nor copy.
+Future<void> shareGenAiImagePng({
+  required ImageProvider<Object> image,
+  required BuildContext context,
+  Uri? link,
+  Rect? origin,
+  bool Function()? isCurrent,
+}) async {
+  final bounds = origin ?? _shareOriginFor(context);
+  final bytes = await loadGenAiImagePng(image, context);
+  if (isCurrent != null && !isCurrent()) return;
+  if (platform.canShareImage(bytes)) {
+    await platform.shareImage(bytes, bounds);
+    return;
+  }
+  if (link == null) {
+    throw StateError('Image sharing and the link fallback are unavailable');
+  }
+  await Clipboard.setData(ClipboardData(text: link.toString()));
+}
+
+Rect _shareOriginFor(BuildContext context) {
+  final screen = Offset.zero & MediaQuery.sizeOf(context);
+  final box = context.findRenderObject();
+  if (box is! RenderBox || !box.hasSize) {
+    return Rect.fromLTWH(screen.center.dx, screen.center.dy, 1, 1);
+  }
+  final bounds = box.localToGlobal(Offset.zero) & box.size;
+  final visible = bounds.intersect(screen);
+  return visible.isEmpty ? Rect.fromLTWH(screen.center.dx, screen.center.dy, 1, 1) : visible;
+}
 
 /// The same image actions for chat, Markdown, gallery tiles and image viewers.
 /// Decode the displayed provider, not a URL inferred from model prose.
 class GenAiImageActions extends StatefulWidget {
-  const GenAiImageActions({super.key, required this.image, required this.child, this.link});
+  const GenAiImageActions({
+    super.key,
+    required this.image,
+    required this.child,
+    this.link,
+    this.showMenuButton = true,
+    this.onOpen,
+    this.onReference,
+  });
 
   final ImageProvider<Object> image;
   final Uri? link;
   final Widget child;
 
+  /// Gallery tiles leave the visible button to the preview they open; the
+  /// context menu and long-press stay available on the tile itself.
+  final bool showMenuButton;
+
+  /// When either callback is set the menu becomes the gallery tile variant:
+  /// open, use as reference, copy link and save. Chat keeps its image menu.
+  final VoidCallback? onOpen;
+  final VoidCallback? onReference;
+
   @override
   State<GenAiImageActions> createState() => _GenAiImageActionsState();
 }
 
+enum _ImageAction { open, reference, copyLink, copyImage, shareImage, save }
+
 class _GenAiImageActionsState extends State<GenAiImageActions> {
-  final _menu = MenuController();
-  final _menuButtonFocus = FocusNode();
-  Future<Uint8List>? _bytes;
   bool _working = false;
+  bool _menuOpen = false;
 
-  @override
-  void didUpdateWidget(covariant GenAiImageActions oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.image != widget.image) {
-      _menu.close();
-      _bytes = null;
-    }
-  }
+  Future<Uint8List> _loadPng() => loadGenAiImagePng(widget.image, context);
 
-  @override
-  void dispose() {
-    _menuButtonFocus.dispose();
-    super.dispose();
-  }
-
-  void _open([Offset? position]) {
-    if (_working) return;
-    setState(() {
-      // Reload on each opening so failed downloads can be retried.
-      _bytes = _loadPng();
-    });
-    final box = context.findRenderObject()! as RenderBox;
-    _menu.open(position: position ?? Offset((box.size.width - 48).clamp(0, double.infinity), 48));
-  }
-
-  Future<Uint8List> _loadPng() async {
-    final stream = widget.image.resolve(createLocalImageConfiguration(context));
-    final ready = Completer<ImageInfo>();
-    final listener = ImageStreamListener(
-      (info, _) {
-        if (ready.isCompleted) {
-          info.dispose();
-        } else {
-          ready.complete(info);
-        }
-      },
-      onError: (Object error, StackTrace? stack) {
-        if (!ready.isCompleted) ready.completeError(error, stack);
-      },
-    );
-    stream.addListener(listener);
-    ImageInfo? info;
+  /// Opens the shared anchored menu.
+  ///
+  /// The PNG encoding starts here but is deliberately not awaited: the popover
+  /// opens immediately with its loading row and rebuilds when the bytes land.
+  /// [anchorContext] is the visible button for a click, and the whole tile for
+  /// a long press or right click, so the route never overlaps the image.
+  Future<void> _open(BuildContext anchorContext) async {
+    if (_working || _menuOpen) return;
+    final image = widget.image;
+    // The overlay route can outlive this tile, so its rows must not read
+    // `widget` after the state is disposed.
+    final link = widget.link;
+    final galleryMenu = _galleryMenu;
+    final showOpen = widget.onOpen != null;
+    final showReference = widget.onReference != null;
+    final bytes = _loadPng();
+    _menuOpen = true;
+    _ImageAction? action;
     try {
-      info = await ready.future.timeout(const Duration(seconds: 30));
-      final data = await info.image.toByteData(format: ui.ImageByteFormat.png);
-      if (data == null) throw StateError('Image could not be encoded');
-      return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      action = await genAiShowAnchoredMenu<_ImageAction>(
+        context: context,
+        anchorContext: anchorContext,
+        items: _items(
+          bytes,
+          galleryMenu: galleryMenu,
+          link: link,
+          showOpen: showOpen,
+          showReference: showReference,
+        ),
+        minWidth: 220,
+        gap: 7,
+        semanticLabel: '图片操作',
+      );
     } finally {
-      stream.removeListener(listener);
-      info?.dispose();
+      _menuOpen = false;
     }
+    // The tile can be removed or rebound while the popover is open.
+    if (!mounted || image != widget.image || action == null) return;
+    await _execute(action, bytes, image);
   }
 
   Future<void> _run(Future<void> Function() action, {String? success}) async {
@@ -93,126 +170,270 @@ class _GenAiImageActionsState extends State<GenAiImageActions> {
     } catch (_) {
       if (mounted && image == widget.image) {
         showAdaptiveFeedback(context: context, message: '操作失败，请尝试保存图片或复制链接');
-        _bytes = null;
       }
     } finally {
       if (mounted) setState(() => _working = false);
     }
   }
 
-  Rect get _shareOrigin {
-    final box = context.findRenderObject()! as RenderBox;
-    final bounds = box.localToGlobal(Offset.zero) & box.size;
-    final screen = Offset.zero & MediaQuery.sizeOf(context);
-    final visible = bounds.intersect(screen);
-    return visible.isEmpty ? Rect.fromLTWH(screen.center.dx, screen.center.dy, 1, 1) : visible;
+  /// Runs the selected row after the popover has closed and the tile scope was
+  /// re-checked. Byte-dependent rows await the same future the menu observed,
+  /// so a failed download still lands in [_run]'s recovery message.
+  Future<void> _execute(
+    _ImageAction action,
+    Future<Uint8List> bytes,
+    ImageProvider<Object> image,
+  ) async {
+    switch (action) {
+      case _ImageAction.open:
+        widget.onOpen?.call();
+        return;
+      case _ImageAction.reference:
+        widget.onReference?.call();
+        return;
+      case _ImageAction.copyLink:
+        final link = widget.link;
+        if (link == null) return;
+        await _run(
+          () => Clipboard.setData(ClipboardData(text: link.toString())),
+          success: '已复制链接',
+        );
+        return;
+      case _ImageAction.copyImage:
+        await _run(
+          () async {
+            final data = await bytes;
+            if (!mounted || image != widget.image) return;
+            await platform.copyImage(data);
+          },
+          success: '已复制图片',
+        );
+        return;
+      case _ImageAction.shareImage:
+        await _run(() async {
+          final data = await bytes;
+          if (!mounted || image != widget.image) return;
+          await platform.shareImage(data, _shareOrigin);
+        });
+        return;
+      case _ImageAction.save:
+        await _run(
+          () async {
+            final data = await bytes;
+            if (!mounted || image != widget.image) return;
+            await saveGenAiImage(
+              data,
+              'techpie-${DateTime.now().microsecondsSinceEpoch}.png',
+            );
+          },
+          success: '已保存图片',
+        );
+        return;
+    }
   }
 
-  Widget _item(String label, IconData icon, VoidCallback? action) => MenuItemButton(
-        onPressed: action,
-        leadingIcon: Icon(icon, size: 20),
-        style: const ButtonStyle(minimumSize: WidgetStatePropertyAll(Size(180, 48))),
-        child: Text(label),
+  Rect get _shareOrigin => _shareOriginFor(context);
+
+  // Draft menu rows: 42 px, 10/8 px padding, 13 px labels, 17 px muted icons
+  // and a 10 px gap. `genAiMenuEntry` gives every native row its 7 px plate.
+  Widget _menuRow(GenAiPalette palette, Widget icon, String label) => Row(
+        children: [
+          IconTheme.merge(
+            data: IconThemeData(size: 17, color: palette.muted),
+            child: icon,
+          ),
+          const SizedBox(width: 10),
+          Text(label, style: const TextStyle(fontSize: 13)),
+        ],
       );
 
-  @override
-  Widget build(BuildContext context) => MenuAnchor(
-        controller: _menu,
-        childFocusNode: _menuButtonFocus,
-        onClose: () {
-          // Avoid retaining an encoded copy for every visited gallery tile.
-          _bytes = null;
-        },
-        consumeOutsideTap: true,
-        menuChildren: [
-          FutureBuilder<Uint8List>(
-            future: _bytes,
-            builder: (context, snapshot) {
-              final bytes = snapshot.data;
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (bytes == null)
-                    _item(snapshot.hasError ? '图片加载失败' : '正在准备图片…', Icons.image_outlined, null),
-                  if (platform.canCopyImage)
-                    _item(
-                      platform.copiesImageFile ? '复制图片文件' : '复制图片',
-                      Icons.copy_outlined,
-                      bytes == null
-                          ? null
-                          : () => unawaited(
-                                _run(
-                                  () => platform.copyImage(bytes),
-                                  success: '已复制图片',
-                                ),
-                              ),
-                    ),
-                  if (bytes != null && platform.canShareImage(bytes))
-                    _item(
-                      '分享图片',
-                      Icons.ios_share_outlined,
-                      () => unawaited(_run(() => platform.shareImage(bytes, _shareOrigin))),
-                    ),
-                  _item(
-                    '保存图片',
-                    Icons.download_outlined,
-                    bytes == null
-                        ? null
-                        : () => unawaited(
-                              _run(
-                                () async {
-                                  await saveGenAiImage(
-                                    bytes,
-                                    'techpie-${DateTime.now().microsecondsSinceEpoch}.png',
-                                  );
-                                },
-                                success: '已保存图片',
-                              ),
-                            ),
+  PopupMenuItem<_ImageAction> _actionItem(
+    GenAiPalette palette,
+    _ImageAction action,
+    Widget icon,
+    String label, {
+    bool enabled = true,
+  }) =>
+      PopupMenuItem<_ImageAction>(
+        value: action,
+        enabled: enabled,
+        height: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: _menuRow(palette, icon, label),
+      );
+
+  PopupMenuItem<_ImageAction> _statusItem(GenAiPalette palette, String label) =>
+      PopupMenuItem<_ImageAction>(
+        enabled: false,
+        height: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: _menuRow(palette, const GenAiIcon(GenAiGlyph.image), label),
+      );
+
+  PopupMenuItem<_ImageAction> _copyLinkItem(
+    GenAiPalette palette, {
+    GenAiGlyph glyph = GenAiGlyph.link,
+  }) =>
+      _actionItem(
+        palette,
+        _ImageAction.copyLink,
+        GenAiIcon(glyph),
+        '复制链接',
+      );
+
+  PopupMenuItem<_ImageAction> _saveItem(
+    GenAiPalette palette, {
+    required bool enabled,
+  }) =>
+      _actionItem(
+        palette,
+        _ImageAction.save,
+        const GenAiIcon(GenAiGlyph.download),
+        '保存图片',
+        enabled: enabled,
+      );
+
+  /// Gallery tiles have no visible menu button, so their menu is the exact
+  /// tile action set the draft describes. Chat keeps its image menu.
+  bool get _galleryMenu => widget.onOpen != null || widget.onReference != null;
+
+  List<PopupMenuEntry<_ImageAction>> _items(
+    Future<Uint8List> bytes, {
+    required bool galleryMenu,
+    required Uri? link,
+    required bool showOpen,
+    required bool showReference,
+  }) =>
+      [
+        _GenAiImageMenuEntry<_ImageAction>(
+          future: bytes,
+          builder: (context, snapshot) {
+            final palette = GenAiPalette.of(context);
+            final data = snapshot.data;
+            final rows = <PopupMenuItem<_ImageAction>>[];
+            if (galleryMenu) {
+              if (showOpen) {
+                rows.add(
+                  _actionItem(
+                    palette,
+                    _ImageAction.open,
+                    const GenAiIcon(GenAiGlyph.full),
+                    '查看图片',
                   ),
-                  if (widget.link case final link?)
-                    _item(
-                      '复制链接',
-                      Icons.link,
-                      () => unawaited(
-                        _run(
-                          () => Clipboard.setData(ClipboardData(text: link.toString())),
-                          success: '已复制链接',
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ],
-        builder: (context, controller, child) => GestureDetector(
-          // The visible menu button exposes these secondary actions. Giving the
-          // whole image long-press semantics intercepts web preview activation.
-          excludeFromSemantics: true,
-          behavior: HitTestBehavior.opaque,
-          onSecondaryTapDown: (details) => _open(details.localPosition),
-          onLongPressStart: (details) => _open(details.localPosition),
-          child: Stack(
-            children: [
-              widget.child,
+                );
+              }
+              if (showReference) {
+                rows.add(
+                  _actionItem(
+                    palette,
+                    _ImageAction.reference,
+                    const GenAiIcon(GenAiGlyph.image),
+                    '用作参考',
+                  ),
+                );
+              }
+              if (link != null) rows.add(_copyLinkItem(palette, glyph: GenAiGlyph.copy));
+              rows.add(_saveItem(palette, enabled: data != null));
+            } else {
+              if (data == null) {
+                rows.add(
+                  _statusItem(
+                    palette,
+                    snapshot.hasError ? '图片加载失败' : '正在准备图片…',
+                  ),
+                );
+              }
+              if (platform.canCopyImage) {
+                rows.add(
+                  _actionItem(
+                    palette,
+                    _ImageAction.copyImage,
+                    const GenAiIcon(GenAiGlyph.copy),
+                    platform.copiesImageFile ? '复制图片文件' : '复制图片',
+                    enabled: data != null,
+                  ),
+                );
+              }
+              if (data != null && platform.canShareImage(data)) {
+                rows.add(
+                  _actionItem(
+                    palette,
+                    _ImageAction.shareImage,
+                    const GenAiIcon(GenAiGlyph.share),
+                    '分享图片',
+                  ),
+                );
+              }
+              rows.add(_saveItem(palette, enabled: data != null));
+              if (link != null) rows.add(_copyLinkItem(palette));
+            }
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [for (final row in rows) genAiMenuEntry<_ImageAction>(row)],
+            );
+          },
+        ),
+      ];
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        // The visible menu button exposes these secondary actions. Giving the
+        // whole image long-press semantics intercepts web preview activation.
+        excludeFromSemantics: true,
+        behavior: HitTestBehavior.opaque,
+        onSecondaryTapDown: (_) => unawaited(_open(context)),
+        onLongPressStart: (_) => unawaited(_open(context)),
+        child: Stack(
+          children: [
+            widget.child,
+            if (widget.showMenuButton)
               PositionedDirectional(
                 top: 4,
                 end: 4,
-                child: IconButton.filledTonal(
-                  tooltip: '图片操作',
-                  focusNode: _menuButtonFocus,
-                  onPressed: _working ? null : () => _open(),
-                  icon: _working
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.more_horiz),
+                child: Builder(
+                  builder: (anchorContext) => IconButton.filledTonal(
+                    tooltip: '图片操作',
+                    onPressed: _working
+                        ? null
+                        : () => unawaited(_open(anchorContext)),
+                    icon: _working
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const GenAiIcon(GenAiGlyph.more),
+                  ),
                 ),
               ),
-            ],
-          ),
+          ],
         ),
       );
+}
+
+/// A menu entry whose rows are built as the PNG encoding finishes.
+///
+/// The shared anchored route takes a fixed entry list, so the dynamic rows live
+/// inside one entry: the loading/error status and the byte-dependent copy,
+/// share and save actions rebuild in place instead of delaying the popover.
+class _GenAiImageMenuEntry<T> extends PopupMenuEntry<T> {
+  const _GenAiImageMenuEntry({required this.future, required this.builder});
+
+  final Future<Uint8List> future;
+  final Widget Function(BuildContext context, AsyncSnapshot<Uint8List> snapshot) builder;
+
+  @override
+  double get height => 0;
+
+  @override
+  bool represents(T? value) => false;
+
+  @override
+  State<_GenAiImageMenuEntry<T>> createState() => _GenAiImageMenuEntryState<T>();
+}
+
+class _GenAiImageMenuEntryState<T> extends State<_GenAiImageMenuEntry<T>> {
+  @override
+  Widget build(BuildContext context) =>
+      FutureBuilder<Uint8List>(future: widget.future, builder: widget.builder);
 }

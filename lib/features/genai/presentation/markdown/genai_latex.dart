@@ -3,6 +3,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:markdown/markdown.dart' as md;
 
+import '../genai_theme.dart';
 import 'genai_code_font.dart';
 
 /// Converts display math into `latex` fences without changing code examples.
@@ -141,7 +142,12 @@ class GenAiLatexInlineBuilder extends MarkdownElementBuilder {
     final resolvedColor = baseStyle?.color ??
         Theme.of(context).textTheme.bodyMedium?.color ??
         Theme.of(context).colorScheme.onSurface;
-    final textStyle = (baseStyle ?? const TextStyle()).copyWith(color: resolvedColor);
+    // Inline math follows the paragraph's own size (never the display size),
+    // so a formula keeps the line's rhythm instead of growing the row.
+    final textStyle = (baseStyle ?? const TextStyle()).copyWith(
+      color: resolvedColor,
+      fontSize: baseStyle?.fontSize ?? 15,
+    );
 
     return Text.rich(
       WidgetSpan(
@@ -168,6 +174,31 @@ class GenAiLatexInlineBuilder extends MarkdownElementBuilder {
   }
 }
 
+/// Strips at most one display/inline delimiter pair, in the same order the
+/// renderer has always tried them, and trims the result.
+///
+/// Each entry is `(opening, closing, minimum length, characters per side)`.
+/// Only the first matching rule applies, so a formula wrapped in two layers
+/// loses exactly one layer per call, and whitespace (including an empty body)
+/// is trimmed exactly as before.
+String stripLatexDelimiters(String formula) {
+  const rules = <(String, String, int, int)>[
+    (r'$$', r'$$', 4, 2),
+    (r'\[', r'\]', 4, 2),
+    (r'\(', r'\)', 4, 2),
+    (r'$', r'$', 2, 1),
+  ];
+  var cleanFormula = formula.trim();
+  for (final (opening, closing, minimumLength, strip) in rules) {
+    if (cleanFormula.length >= minimumLength &&
+        cleanFormula.startsWith(opening) &&
+        cleanFormula.endsWith(closing)) {
+      return cleanFormula.substring(strip, cleanFormula.length - strip).trim();
+    }
+  }
+  return cleanFormula;
+}
+
 /// A clean, KaTeX-HTML style display-mode equation view.
 ///
 /// Centered horizontally with natural padding and horizontal scrolling for wide equations,
@@ -188,20 +219,7 @@ class GenAiLatexBlockView extends StatelessWidget {
       color: theme.textTheme.bodyMedium?.color,
     );
 
-    var cleanFormula = formula.trim();
-    if (cleanFormula.startsWith(r'$$') &&
-        cleanFormula.endsWith(r'$$') &&
-        cleanFormula.length >= 4) {
-      cleanFormula = cleanFormula.substring(2, cleanFormula.length - 2).trim();
-    } else if (cleanFormula.startsWith(r'\[') &&
-        cleanFormula.endsWith(r'\]') &&
-        cleanFormula.length >= 4) {
-      cleanFormula = cleanFormula.substring(2, cleanFormula.length - 2).trim();
-    } else if (cleanFormula.startsWith(r'$') &&
-        cleanFormula.endsWith(r'$') &&
-        cleanFormula.length >= 2) {
-      cleanFormula = cleanFormula.substring(1, cleanFormula.length - 1).trim();
-    }
+    final cleanFormula = stripLatexDelimiters(formula);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -219,6 +237,7 @@ class GenAiLatexBlockView extends StatelessWidget {
                   textStyle: textStyle,
                   onErrorFallback: (error) => SelectableText(
                     cleanFormula,
+                    contextMenuBuilder: genAiTextSelectionContextMenu,
                     style: TextStyle(
                       fontFamily: kGenAiMonospaceFamily,
                       fontFamilyFallback: kGenAiMonospaceFallback,

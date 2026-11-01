@@ -86,8 +86,7 @@ final class GenAiPickerWeb implements GenAiPicker {
 
     focusListener = ((web.Event _) {
       Timer(const Duration(milliseconds: 500), () {
-        if (!completer.isCompleted &&
-            (input.files == null || input.files!.length == 0)) {
+        if (!completer.isCompleted && (input.files == null || input.files!.length == 0)) {
           cleanup();
           completer.complete(null);
         }

@@ -6,6 +6,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../genai_image.dart';
+import '../genai_theme.dart';
 import '../visuals/genai_visual_syntax.dart';
 import '../visuals/genai_visual_view.dart';
 import 'genai_code_block.dart';
@@ -25,6 +26,7 @@ class GenAiMarkdown extends StatelessWidget {
     super.key,
     required this.data,
     this.selectable = true,
+    this.compact = false,
     this.interactiveVisuals = false,
     this.latestVisual,
     this.visualAnswerId = '',
@@ -35,6 +37,7 @@ class GenAiMarkdown extends StatelessWidget {
 
   final String data;
   final bool selectable;
+  final bool compact;
   final bool interactiveVisuals;
   final (String, int)? latestVisual;
   final String visualAnswerId;
@@ -47,63 +50,77 @@ class GenAiMarkdown extends StatelessWidget {
     final theme = Theme.of(context);
     final accent = theme.colorScheme.primary;
     final isDark = theme.brightness == Brightness.dark;
+    // The draft separates table rows with a single hairline (--line), not a
+    // full grid.
+    final tableLineColor =
+        isDark ? Colors.white.withValues(alpha: .14) : Colors.black.withValues(alpha: .12);
 
-    final baseStyle = styleSheet ?? MarkdownStyleSheet.fromTheme(theme);
+    // Always retain the complete theme sheet: MarkdownBuilder requires styles
+    // for inline emphasis, links, tables and lists even on compact screens.
+    final baseStyle = MarkdownStyleSheet.fromTheme(theme).merge(styleSheet);
+    // The draft's thread runs at 15/1.75, gives paragraphs an 18px bottom
+    // margin and spaces every other block by 13px (its h2 margins). The
+    // paragraph padding below tops the block spacing up to 18.
     final effectiveStyleSheet = baseStyle.copyWith(
-      p: styleSheet?.p ??
-          const TextStyle(
-            fontSize: 15.5,
-            height: 1.75,
-          ),
-      h1: styleSheet?.h1 ??
-          TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            height: 1.4,
-            letterSpacing: -0.3,
-            color: theme.colorScheme.onSurface,
-          ),
-      h2: styleSheet?.h2 ??
-          TextStyle(
-            fontSize: 19,
-            fontWeight: FontWeight.w700,
-            height: 1.4,
-            letterSpacing: -0.2,
-            color: theme.colorScheme.onSurface,
-          ),
-      h3: styleSheet?.h3 ??
-          TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            height: 1.4,
-            color: theme.colorScheme.onSurface,
-          ),
-      h4: styleSheet?.h4 ??
-          TextStyle(
-            fontSize: 15.5,
-            fontWeight: FontWeight.w600,
-            height: 1.4,
-            color: theme.colorScheme.onSurface,
-          ),
-      h5: styleSheet?.h5 ??
-          TextStyle(
-            fontSize: 14.5,
-            fontWeight: FontWeight.w600,
-            height: 1.4,
-            color: theme.colorScheme.onSurface,
-          ),
-      h6: styleSheet?.h6 ??
-          TextStyle(
-            fontSize: 13.5,
-            fontWeight: FontWeight.w600,
-            height: 1.4,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+      blockSpacing: styleSheet?.blockSpacing ?? 13,
+      pPadding: styleSheet?.pPadding ?? const EdgeInsets.only(bottom: 5),
+      p: TextStyle(
+        fontSize: compact ? 14 : 15,
+        height: 1.75,
+        leadingDistribution: TextLeadingDistribution.even,
+        color: theme.colorScheme.onSurface,
+      ).merge(styleSheet?.p),
+      // Merge individual text styles, not whole nullable heading styles: a
+      // compact/color-only override must not discard the draft's 600 weight.
+      h1: TextStyle(
+        fontSize: 22,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        leadingDistribution: TextLeadingDistribution.even,
+        letterSpacing: -0.3,
+        color: theme.colorScheme.onSurface,
+      ).merge(styleSheet?.h1),
+      h2: TextStyle(
+        fontSize: compact ? 20 : 21,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        leadingDistribution: TextLeadingDistribution.even,
+        letterSpacing: -0.3,
+        color: theme.colorScheme.onSurface,
+      ).merge(styleSheet?.h2),
+      h3: TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        leadingDistribution: TextLeadingDistribution.even,
+        color: theme.colorScheme.onSurface,
+      ).merge(styleSheet?.h3),
+      h4: TextStyle(
+        fontSize: 15.5,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        leadingDistribution: TextLeadingDistribution.even,
+        color: theme.colorScheme.onSurface,
+      ).merge(styleSheet?.h4),
+      h5: TextStyle(
+        fontSize: 14.5,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        leadingDistribution: TextLeadingDistribution.even,
+        color: theme.colorScheme.onSurface,
+      ).merge(styleSheet?.h5),
+      h6: TextStyle(
+        fontSize: 13.5,
+        fontWeight: FontWeight.w600,
+        height: 1.4,
+        leadingDistribution: TextLeadingDistribution.even,
+        color: theme.colorScheme.onSurfaceVariant,
+      ).merge(styleSheet?.h6),
       blockquote: styleSheet?.blockquote ??
           TextStyle(
-            fontSize: 15,
-            height: 1.65,
-            color: theme.colorScheme.onSurfaceVariant,
+            fontSize: compact ? 14 : 15,
+            height: 1.75,
+            color: accent,
           ),
       blockquoteDecoration: styleSheet?.blockquoteDecoration ??
           BoxDecoration(
@@ -134,33 +151,44 @@ class GenAiMarkdown extends StatelessWidget {
             backgroundColor:
                 isDark ? Colors.white.withValues(alpha: .08) : accent.withValues(alpha: .08),
           ),
-      tableHead: styleSheet?.tableHead ??
-          TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 14.5,
-            color: theme.colorScheme.onSurface,
-          ),
-      tableBody: styleSheet?.tableBody ??
-          TextStyle(
-            fontSize: 14.5,
-            height: 1.5,
-            color: theme.colorScheme.onSurface,
-          ),
+      // Only activity tables use .step th { font-weight:400 } in the draft.
+      // Answer tables retain the browser's bold <th> default.
+      tableHead: TextStyle(
+        fontWeight: FontWeight.w700,
+        fontSize: 12,
+        height: 1.75,
+        leadingDistribution: TextLeadingDistribution.even,
+        color: theme.colorScheme.onSurface,
+      ).merge(styleSheet?.tableHead),
+      tableBody: TextStyle(
+        fontSize: 12,
+        height: 1.75,
+        leadingDistribution: TextLeadingDistribution.even,
+        color: theme.colorScheme.onSurface,
+      ).merge(styleSheet?.tableBody),
+      tableHeadAlign: styleSheet?.tableHeadAlign ?? TextAlign.left,
+      tablePadding: styleSheet?.tablePadding ?? const EdgeInsets.symmetric(vertical: 4),
       tableBorder: styleSheet?.tableBorder ??
-          TableBorder.all(
-            color:
-                isDark ? Colors.white.withValues(alpha: .14) : Colors.black.withValues(alpha: .12),
-            width: 1,
-            borderRadius: BorderRadius.circular(6),
+          TableBorder(
+            horizontalInside: BorderSide(color: tableLineColor, width: 1),
+            bottom: BorderSide(color: tableLineColor, width: 1),
           ),
       tableCellsPadding:
-          styleSheet?.tableCellsPadding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      listBullet: styleSheet?.listBullet ??
-          TextStyle(
-            fontSize: 15.5,
-            fontWeight: FontWeight.w600,
-            color: accent,
-          ),
+          styleSheet?.tableCellsPadding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      strong: const TextStyle(fontWeight: FontWeight.w700).merge(styleSheet?.strong),
+      // The draft leaves answer ul/ol at the browser defaults (40px indent,
+      // normal-weight markers inheriting the thread's 14/15px type and 1.75
+      // line-height). Give markers the same leading as the first content line
+      // rather than inheriting Material bodyMedium's different line metrics.
+      listIndent: styleSheet?.listIndent ?? 40,
+      listBulletPadding: styleSheet?.listBulletPadding ?? EdgeInsets.zero,
+      listBullet: TextStyle(
+        fontSize: compact ? 14 : 15,
+        fontWeight: FontWeight.w400,
+        height: 1.75,
+        leadingDistribution: TextLeadingDistribution.even,
+        color: theme.colorScheme.onSurface,
+      ).merge(styleSheet?.p).merge(styleSheet?.listBullet),
       horizontalRuleDecoration: styleSheet?.horizontalRuleDecoration ??
           BoxDecoration(
             border: Border(
@@ -183,17 +211,35 @@ class GenAiMarkdown extends StatelessWidget {
       codeblockPadding: EdgeInsets.zero,
     );
 
+    // flutter_markdown 0.7.6's MarkdownBuilder exposes no contextMenuBuilder
+    // hook: selectable: true builds a bare SelectableText whose menu cannot be
+    // themed. A SelectionArea owns prose selection instead, so the body is
+    // always built non-selectable to avoid a competing inner selection region.
+    // No caller places GenAiMarkdown inside a SelectionArea, so this does not
+    // nest selection areas.
+    final body = _GenAiMarkdownBody(
+      data: data,
+      selectable: false,
+      interactiveVisuals: interactiveVisuals,
+      styleSheet: effectiveStyleSheet,
+      imageBuilder: imageBuilder ?? _buildMarkdownImage,
+      onTapLink: onTapLink,
+    );
+
     return GenAiVisualScope(
       latest: latestVisual,
       answerId: visualAnswerId,
-      child: _GenAiMarkdownBody(
-        data: data,
-        selectable: selectable,
-        interactiveVisuals: interactiveVisuals,
-        styleSheet: effectiveStyleSheet,
-        imageBuilder: imageBuilder ?? _buildMarkdownImage,
-        onTapLink: onTapLink,
-      ),
+      child: selectable
+          ? SelectionArea(
+              contextMenuBuilder: genAiRegionSelectionContextMenu,
+              child: DefaultTextHeightBehavior(
+                textHeightBehavior: const TextHeightBehavior(
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
+                child: body,
+              ),
+            )
+          : body,
     );
   }
 }

@@ -43,13 +43,24 @@ void main() {
     await tester.tap(find.byTooltip('全屏'));
     await tester.pumpAndSettle();
     expect(tester.widget<GenAiVisualSurface>(surface).fullscreen, isTrue);
+    // The frame fills the padded overlay body instead of keeping the inline
+    // measurement. The generated document owns the width cap and scrolling.
+    final body = tester.getRect(find.byKey(const ValueKey('genai-visual-fullscreen-body')));
+    expect(tester.getRect(surface), body.deflate(24));
+    expect(tester.getCenter(surface).dx, body.center.dx);
     report('height', 900);
     await tester.pump();
     await tester.tap(find.byTooltip('退出全屏').hitTestable());
     await tester.pumpAndSettle();
+    // The inline viewport is restored exactly, in both directions.
     expect(tester.getSize(surface).height, 240);
     expect(platform.controllers, hasLength(1));
     expect(tester.widget<GenAiVisualSurface>(surface).fullscreen, isFalse);
+    // A measurement tagged for fullscreen may arrive after exit; it is stored
+    // separately and cannot disturb the inline height.
+    report('fullscreen-height', 900);
+    await tester.pump();
+    expect(tester.getSize(surface).height, 240);
     report('height', 280);
     await tester.pump();
     expect(tester.getSize(surface).height, 280);
@@ -57,7 +68,8 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('folding and source view pause the same visual runtime', (tester) async {
+  testWidgets('folding pauses the runtime while the source dialog leaves it running',
+      (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(body: GenAiVisualView(code: '<p>Example</p>', complete: true)),
@@ -78,21 +90,149 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.activities.last, isTrue);
 
-    await tester.tap(find.byTooltip('查看源码'));
+    // Source is a separate dialog: the same runtime stays active behind it and
+    // is never replaced, reloaded or paused by opening or closing it.
+    await tester.tap(find.byTooltip('更多操作'));
     await tester.pumpAndSettle();
-    expect(tester.widget<GenAiVisualSurface>(surface).active, isFalse);
-    expect(controller.activities.last, isFalse);
-    await tester.tap(find.byTooltip('全屏'));
+    await tester.tap(find.text('查看源代码'));
     await tester.pumpAndSettle();
-    expect(tester.widget<GenAiVisualSurface>(surface).active, isFalse);
-    await tester.tap(find.byTooltip('显示示例').hitTestable());
-    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-visual-source')), findsOneWidget);
     expect(tester.widget<GenAiVisualSurface>(surface).active, isTrue);
-    expect(controller.activities.last, isTrue);
-    await tester.tap(find.byTooltip('退出全屏').hitTestable());
-    await tester.pumpAndSettle();
     expect(platform.controllers.single, same(controller));
     expect(controller.documents, hasLength(1));
+
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-visual-source')), findsNothing);
+    expect(tester.widget<GenAiVisualSurface>(surface).active, isTrue);
+    expect(platform.controllers.single, same(controller));
+    expect(controller.documents, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('fullscreen activates an older scoped visual that started folded', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: GenAiVisualScope(
+              latest: ('answer', 2),
+              answerId: 'answer',
+              child: Column(
+                children: [
+                  GenAiVisualView(code: '<p>Older</p>', index: 1, complete: true),
+                  GenAiVisualView(code: '<p>Newer</p>', index: 2, complete: true),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Only the newest visual ran; the older one is folded and never activated.
+    expect(platform.controllers, hasLength(1));
+    final newerController = platform.controllers.single;
+    final older = find.byWidgetPredicate(
+      (widget) => widget is GenAiVisualView && widget.index == 1,
+    );
+    expect(find.descendant(of: older, matching: find.byType(GenAiVisualSurface)), findsNothing);
+    final olderFullscreen = find.descendant(of: older, matching: find.byTooltip('全屏'));
+    expect(olderFullscreen, findsOneWidget);
+
+    await tester.tap(olderFullscreen);
+    await tester.pumpAndSettle();
+
+    // Entering fullscreen lazily mounts exactly one runtime for the older
+    // visual and shows its active canvas.
+    expect(platform.controllers, hasLength(2));
+    final olderController = platform.controllers.last;
+    expect(olderController.documents, hasLength(1));
+    final fullscreen = find.byKey(const ValueKey('genai-visual-fullscreen'));
+    expect(fullscreen, findsOneWidget);
+    final canvas = find.descendant(of: fullscreen, matching: find.byType(GenAiVisualSurface));
+    expect(canvas, findsOneWidget);
+    expect(tester.widget<GenAiVisualSurface>(canvas).active, isTrue);
+    expect(tester.widget<GenAiVisualSurface>(canvas).document, contains('Older'));
+
+    // Leaving fullscreen does not load again.
+    await tester.tap(find.byTooltip('退出全屏').hitTestable());
+    await tester.pumpAndSettle();
+    expect(platform.controllers, hasLength(2));
+    expect(platform.controllers.first, same(newerController));
+    expect(olderController.documents, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('disposing the visual removes only its own source dialog route', (tester) async {
+    final copies = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copies.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    final showingVisual = ValueNotifier<bool>(true);
+    addTearDown(showingVisual.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ValueListenableBuilder<bool>(
+            valueListenable: showingVisual,
+            builder: (context, visible, _) => visible
+                ? const GenAiVisualView(
+                    key: ValueKey('first'),
+                    code: '<p>First</p>',
+                    title: 'First',
+                    complete: false,
+                  )
+                : const Text('Second conversation'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('查看源代码'));
+    await tester.pumpAndSettle();
+    final source = find.byKey(const ValueKey('genai-visual-source'));
+    expect(source, findsOneWidget);
+
+    // An unrelated route above the source dialog must survive. Disposal removes
+    // the exact route this visual owns, not whatever is on top.
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
+    unawaited(
+      navigator.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('其他页面'))),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('其他页面'), findsOneWidget);
+
+    // Account/history switch removes the originating visual while the modal
+    // is still open.
+    showingVisual.value = false;
+    await tester.pumpAndSettle();
+    expect(source, findsNothing);
+    expect(find.text('其他页面'), findsOneWidget);
+    expect(copies, isEmpty);
+    expect(tester.takeException(), isNull);
+
+    navigator.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('Second conversation'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
@@ -159,6 +299,44 @@ void main() {
     expect(events, isEmpty);
     expect(platform.controllers.single, same(controller));
     expect(controller.documents, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('entering and leaving fullscreen preserves the conversation scroll offset',
+      (tester) async {
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            controller: scroll,
+            child: const Column(
+              children: [
+                SizedBox(height: 500),
+                GenAiVisualView(code: '<p>Example</p>', complete: true),
+                SizedBox(height: 1200),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    scroll.jumpTo(300);
+    await tester.pumpAndSettle();
+    final offset = scroll.offset;
+    expect(offset, 300);
+
+    await tester.tap(find.byTooltip('全屏'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-visual-fullscreen')), findsOneWidget);
+    await tester.tap(find.byTooltip('退出全屏').hitTestable());
+    await tester.pumpAndSettle();
+    expect(scroll.offset, offset);
+    expect(platform.controllers, hasLength(1));
+
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
@@ -246,6 +424,41 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('native layout messages follow fullscreen transitions and ready without reloading',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: GenAiVisualView(code: '<p>Example</p>', complete: true)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final surface = find.byType(GenAiVisualSurface);
+    final controller = platform.controllers.single;
+    controller.scripts.clear();
+    controller.report('ready');
+    await tester.pump();
+    expect(controller.layouts, [false]);
+
+    await tester.tap(find.byTooltip('全屏'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<GenAiVisualSurface>(surface).fullscreen, isTrue);
+    expect(controller.layouts, [false, true]);
+
+    await tester.tap(find.byTooltip('退出全屏').hitTestable());
+    await tester.pumpAndSettle();
+    expect(tester.widget<GenAiVisualSurface>(surface).fullscreen, isFalse);
+    expect(controller.layouts, [false, true, false]);
+
+    // A ready report repeats the current layout; the runtime is never reloaded.
+    controller.report('ready');
+    await tester.pump();
+    expect(controller.layouts, [false, true, false, false]);
+    expect(platform.controllers.single, same(controller));
+    expect(controller.documents, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('native initialization stays hidden and cleans up after disposal', (tester) async {
     final gate = Completer<void>();
     platform.setupGate = gate.future;
@@ -268,6 +481,86 @@ void main() {
     await tester.pumpAndSettle();
     expect(platform.controllers.single.documents, ['<!doctype html><html></html>']);
     expect(tester.takeException(), isNull);
+  });
+  testWidgets('fullscreen uses bounded dialog geometry and a padded mobile body', (tester) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 820);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: GenAiVisualView(code: '<p>Example</p>', complete: true)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('全屏'));
+    await tester.pumpAndSettle();
+    final dialog = find.byKey(const ValueKey('genai-visual-fullscreen'));
+    expect(tester.getSize(dialog), const Size(1160, 780));
+    expect(tester.getTopLeft(dialog).dx, 60);
+    expect(
+      (tester.widget<Material>(dialog).shape! as RoundedRectangleBorder).borderRadius,
+      BorderRadius.circular(18),
+    );
+    final desktopSurface = find.byType(GenAiVisualSurface);
+    final desktopBody = tester.getRect(find.byKey(const ValueKey('genai-visual-fullscreen-body')));
+    expect(tester.getSize(desktopSurface).width, 1112);
+    expect(tester.getRect(desktopSurface), desktopBody.deflate(24));
+
+    await tester.tap(find.byTooltip('退出全屏').hitTestable());
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(375, 812);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('全屏'));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(dialog), const Size(375, 812));
+    expect(
+      (tester.widget<Material>(dialog).shape! as RoundedRectangleBorder).borderRadius,
+      BorderRadius.zero,
+    );
+    final mobileSurface = find.byType(GenAiVisualSurface);
+    final mobileBody = tester.getRect(find.byKey(const ValueKey('genai-visual-fullscreen-body')));
+    expect(tester.getSize(mobileSurface).width, 351);
+    expect(tester.getRect(mobileSurface), mobileBody.deflate(12));
+    expect(mobileBody.contains(tester.getCenter(mobileSurface)), isTrue);
+    expect(tester.getTopLeft(mobileSurface).dy, mobileBody.top + 12);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('theme and fullscreen changes keep the same runtime and document', (tester) async {
+    Future<void> build(Brightness brightness) => tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(brightness: brightness),
+            home: const Scaffold(
+              body: GenAiVisualView(code: '<p>Example</p>', complete: true),
+            ),
+          ),
+        );
+    await build(Brightness.light);
+    await tester.pumpAndSettle();
+    final surface = find.byType(GenAiVisualSurface);
+    final controller = platform.controllers.single;
+    expect(tester.widget<GenAiVisualSurface>(surface).theme['mode'], 'light');
+    await build(Brightness.dark);
+    await tester.pumpAndSettle();
+    expect(tester.widget<GenAiVisualSurface>(surface).theme['mode'], 'dark');
+    expect(platform.controllers.single, same(controller));
+    expect(controller.documents, hasLength(1));
+
+    await tester.tap(find.byTooltip('全屏'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<GenAiVisualSurface>(surface).theme['mode'], 'dark');
+    expect(platform.controllers.single, same(controller));
+    expect(controller.documents, hasLength(1));
+    await tester.tap(find.byTooltip('退出全屏').hitTestable());
+    await tester.pumpAndSettle();
+    expect(platform.controllers.single, same(controller));
+    expect(controller.documents, hasLength(1));
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
   });
 }
 
@@ -306,6 +599,11 @@ class _Controller extends PlatformWebViewController {
   List<bool> get activities => scripts
       .where((script) => script.contains('techpie-visual-active'))
       .map((script) => script.contains('"active":true'))
+      .toList();
+
+  List<bool> get layouts => scripts
+      .where((script) => script.contains('techpie-visual-layout'))
+      .map((script) => script.contains('"fullscreen":true'))
       .toList();
 
   void report(String event) => _channel!.onMessageReceived(

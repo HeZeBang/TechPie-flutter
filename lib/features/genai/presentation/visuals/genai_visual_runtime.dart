@@ -61,6 +61,30 @@ window.addEventListener('message',event=>{
 const genAiVisualMath = r'''
 (()=>{
 const rendered=new WeakMap();
+// Deferred formulas, newest request per element, until the renderer loads.
+const pending=new Map();
+const later=window.setTimeout.bind(window);
+const retryDelay=100;
+let retry=null;
+function armRetry(){if(retry===null)retry=later(retryPending,retryDelay);}
+function retryPending(){
+  retry=null;
+  if(!pending.size)return;
+  if(!window.katex){
+    // Drop entries whose element left the document; keep polling while any remain.
+    for(const element of Array.from(pending.keys()))if(!element.isConnected)pending.delete(element);
+    if(pending.size)armRetry();
+    return;
+  }
+  // Replay the latest request per mounted element, now that KaTeX exists.
+  const entries=Array.from(pending);pending.clear();
+  mutate(()=>{
+    for(const [element,item] of entries)
+      if(element.isConnected)render(element,item.tex,{displayMode:item.displayMode});
+  });
+  // Recover static data-latex attributes and delimited text that predate KaTeX.
+  mutate(()=>scan(document.body));
+}
 const htmlNamespace='http://www.w3.org/1999/xhtml';
 const ignored='script,style,noscript,pre,code,textarea,option,math,.katex,[data-math-ignore],[contenteditable]:not([contenteditable="false"])';
 const delimiters=[
@@ -110,6 +134,10 @@ function mutate(action){
 function render(element,tex,options={}){
   if(!eligible(element))return;
   tex=String(tex);const displayMode=options.displayMode===true;
+  if(!window.katex){
+    // Keep the exact TeX as readable text and render in place once KaTeX arrives.
+    pending.set(element,{tex,displayMode});armRetry();
+  }else pending.delete(element);
   const previous=rendered.get(element);
   if(previous&&previous.tex===tex&&previous.displayMode===displayMode&&
      previous.renderer===window.katex&&previous.markup===element.innerHTML){
@@ -122,7 +150,15 @@ function render(element,tex,options={}){
       if(!window.katex)throw new Error('Math renderer unavailable');
       element.innerHTML=window.katex.renderToString(tex,{...mathOptions,displayMode});
       element.removeAttribute('data-math-error');
-    }catch(_){element.textContent=tex;element.setAttribute('data-math-error','true');}
+      element.removeAttribute('data-math-display');
+    }catch(_){
+      // Keep the exact TeX as text; the host styles this marker as a readable
+      // typeset fallback instead of hiding or rewriting the formula.
+      element.textContent=tex;
+      element.setAttribute('data-math-error','true');
+      if(displayMode)element.setAttribute('data-math-display','block');
+      else element.removeAttribute('data-math-display');
+    }
     rendered.set(element,{
       tex,displayMode,renderer:window.katex,markup:element.innerHTML,
       attributeTex:element.getAttribute('data-latex'),

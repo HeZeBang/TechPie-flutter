@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../genai_icons.dart';
+
 class GenAiRecordingBar extends StatelessWidget {
   const GenAiRecordingBar({
     super.key,
@@ -70,7 +72,7 @@ class GenAiRecordingBar extends StatelessWidget {
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.check, size: 14),
+                GenAiIcon(GenAiGlyph.check, size: 14),
                 SizedBox(width: 4),
                 Text('完成', style: TextStyle(fontSize: 12)),
               ],
@@ -86,8 +88,7 @@ class _AudioWaveformVisualizer extends StatefulWidget {
   const _AudioWaveformVisualizer();
 
   @override
-  State<_AudioWaveformVisualizer> createState() =>
-      _AudioWaveformVisualizerState();
+  State<_AudioWaveformVisualizer> createState() => _AudioWaveformVisualizerState();
 }
 
 class _AudioWaveformVisualizerState extends State<_AudioWaveformVisualizer>
@@ -122,8 +123,7 @@ class _AudioWaveformVisualizerState extends State<_AudioWaveformVisualizer>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(heights.length, (i) {
-              final wave = ((heights[i] + (i.isEven ? t : 1 - t) * 0.5) % 1.0)
-                  .clamp(0.2, 1.0);
+              final wave = ((heights[i] + (i.isEven ? t : 1 - t) * 0.5) % 1.0).clamp(0.2, 1.0);
               return Container(
                 width: 2.5,
                 height: 16 * wave,

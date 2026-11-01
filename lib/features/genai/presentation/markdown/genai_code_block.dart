@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
+import '../genai_icons.dart';
+import '../genai_theme.dart';
 import 'genai_chart_view.dart';
 import 'genai_code_font.dart';
 import 'genai_copy_button.dart';
@@ -103,62 +105,52 @@ class GenAiStandardCodeBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: .08) : Colors.black.withValues(alpha: .06);
-    final cardBg =
-        isDark ? Colors.white.withValues(alpha: .03) : Colors.black.withValues(alpha: .025);
+    final palette = GenAiPalette.of(context);
     final rawLang = language?.trim();
-    final displayLang = (rawLang != null && rawLang.isNotEmpty) ? rawLang.toUpperCase() : 'CODE';
+    final displayLang = (rawLang != null && rawLang.isNotEmpty) ? rawLang.toUpperCase() : '代码';
 
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: borderColor),
+        color: palette.raised,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: palette.line),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
+          // Header: the draft's .visual-header — a 48px heading row with the
+          // title on the left and the copy action on the right.
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
             decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: .06)
-                      : Colors.black.withValues(alpha: .04),
-                ),
-              ),
+              border: Border(bottom: BorderSide(color: palette.line)),
             ),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: .1),
-                    borderRadius: BorderRadius.circular(5),
-                  ),
+                GenAiIcon(GenAiGlyph.code, size: 15, color: palette.muted),
+                const SizedBox(width: 9),
+                Expanded(
                   child: Text(
                     displayLang,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: kGenAiMonospaceFamily,
-                      fontFamilyFallback: kGenAiMonospaceFallback,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      color: theme.colorScheme.primary,
-                      letterSpacing: 0.5,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: palette.text,
                     ),
                   ),
                 ),
-                const Spacer(),
-                GenAiCopyButton(
-                  text: code,
-                  tooltip: '复制代码',
-                  showLabel: true,
+                SizedBox(
+                  height: 36,
+                  child: GenAiCopyButton(
+                    text: code,
+                    tooltip: '复制代码',
+                    showLabel: false,
+                  ),
                 ),
               ],
             ),
@@ -171,10 +163,21 @@ class GenAiStandardCodeBlock extends StatelessWidget {
               final baseCodeStyle = TextStyle(
                 fontFamily: kGenAiMonospaceFamily,
                 fontFamilyFallback: kGenAiMonospaceFallback,
-                fontSize: 13.5,
-                height: 1.6,
-                color: theme.textTheme.bodyMedium?.color?.withValues(alpha: .9),
+                fontSize: 13,
+                height: 1.7,
+                color: palette.text.withValues(alpha: .9),
               );
+              // Gutter numbers and code share one strut and one text-height
+              // policy so a CJK fallback in the code cannot shift its baselines
+              // relative to the line numbers.
+              const codeStrut = StrutStyle(
+                fontFamily: kGenAiMonospaceFamily,
+                fontFamilyFallback: kGenAiMonospaceFallback,
+                fontSize: 13,
+                height: 1.7,
+                forceStrutHeight: true,
+              );
+              const codeTextHeightBehavior = TextHeightBehavior();
               final spans = highlighter.highlight(
                 code: code,
                 language: language,
@@ -196,29 +199,31 @@ class GenAiStandardCodeBlock extends StatelessWidget {
                             padding: const EdgeInsets.only(left: 14, right: 10),
                             child: Text(
                               List.generate(lineCount, (i) => '${i + 1}').join('\n'),
+                              key: const ValueKey('genai-code-gutter'),
                               textAlign: TextAlign.right,
+                              strutStyle: codeStrut,
+                              textHeightBehavior: codeTextHeightBehavior,
                               style: TextStyle(
                                 fontFamily: kGenAiMonospaceFamily,
                                 fontFamilyFallback: kGenAiMonospaceFallback,
-                                fontSize: 13.5,
-                                height: 1.6,
-                                color: theme.hintColor.withValues(alpha: .35),
+                                fontSize: 13,
+                                height: 1.7,
+                                color: palette.muted.withValues(alpha: .55),
                               ),
                             ),
                           ),
-                          Container(
-                            width: 1,
-                            color: isDark
-                                ? Colors.white.withValues(alpha: .06)
-                                : Colors.black.withValues(alpha: .04),
-                          ),
+                          Container(width: 1, color: palette.line),
                           Expanded(
                             child: SingleChildScrollView(
                               scrollDirection: Axis.horizontal,
                               padding: const EdgeInsets.symmetric(horizontal: 14),
                               child: SelectableText.rich(
                                 TextSpan(children: spans),
+                                key: const ValueKey('genai-code-content'),
+                                contextMenuBuilder: genAiTextSelectionContextMenu,
                                 style: baseCodeStyle,
+                                strutStyle: codeStrut,
+                                textHeightBehavior: codeTextHeightBehavior,
                               ),
                             ),
                           ),
@@ -228,7 +233,11 @@ class GenAiStandardCodeBlock extends StatelessWidget {
                         scrollDirection: Axis.horizontal,
                         child: SelectableText.rich(
                           TextSpan(children: spans),
+                          key: const ValueKey('genai-code-content'),
+                          contextMenuBuilder: genAiTextSelectionContextMenu,
                           style: baseCodeStyle,
+                          strutStyle: codeStrut,
+                          textHeightBehavior: codeTextHeightBehavior,
                         ),
                       ),
               );

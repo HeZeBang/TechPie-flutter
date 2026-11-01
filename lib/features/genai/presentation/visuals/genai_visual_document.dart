@@ -32,7 +32,31 @@ class GenAiVisualDocument {
   static const mathAutoRenderLibrary =
       'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/auto-render.min.js';
   static const maxSourceBytes = 256 * 1024;
+  static const defaultTitle = '交互示例';
+  static const maxTitleLength = 80;
   static final Map<String, Future<String>> _libraries = {};
+
+  /// A plain-text label for the example card. Only an explicit `<title>` or
+  /// the first heading is used, so markup, scripts and attributes can never
+  /// reach the Flutter text layer; an untitled example keeps the generic label.
+  static String title(String source) {
+    final document = html.parse(source);
+    String clean(String? value) => (value ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final candidates = [
+      document.querySelector('title')?.text,
+      for (final tag in const ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        document.querySelector(tag)?.text,
+    ];
+    for (final candidate in candidates) {
+      final text = clean(candidate);
+      if (text.isEmpty) continue;
+      final runes = text.runes.toList();
+      return runes.length <= maxTitleLength
+          ? text
+          : '${String.fromCharCodes(runes.take(maxTitleLength))}…';
+    }
+    return defaultTitle;
+  }
 
   static Future<String> prepare(
     String source, {
@@ -81,6 +105,9 @@ class GenAiVisualDocument {
             if (needsAutoRender) optionalMathLibrary(mathAutoRenderLibrary),
           ])
         : const <String?>[];
+    final content = dom.Element.tag('div')..id = 'techpie-visual-content';
+    content.nodes.addAll(document.body!.nodes.toList());
+    document.body!.append(content);
     final head = document.head!;
     head.nodes.insertAll(0, [
       dom.Element.tag('meta')
@@ -139,13 +166,15 @@ class GenAiVisualDocument {
     String document, {
     required bool native,
     bool active = true,
+    bool fullscreen = false,
     Map<String, String> theme = const {},
   }) {
     final encodedTheme = jsonEncode(theme).replaceAll('<', r'\u003c');
     final encoded = jsonEncode(
       document
           .replaceFirst('{/*techpie-theme*/}', encodedTheme)
-          .replaceFirst('/*techpie-active*/true', '$active'),
+          .replaceFirst('/*techpie-active*/true', '$active')
+          .replaceFirst('/*techpie-fullscreen*/false', '$fullscreen'),
     ).replaceAll('<', r'\u003c');
     final csp = const HtmlEscape(HtmlEscapeMode.attribute).convert(genAiVisualCsp);
     return '''<!doctype html><html><head><meta charset="utf-8">
@@ -154,7 +183,10 @@ class GenAiVisualDocument {
 <style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{border:0;width:100%;height:100%;display:block;background:transparent}</style>
 </head><body><iframe id="visual" title="交互示例" sandbox="allow-scripts" referrerpolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"></iframe><script>
 const frame=document.getElementById('visual');
-let theme=$encodedTheme,active=$active;
+let theme=$encodedTheme,active=$active,fullscreen=$fullscreen;
+const sendLayout=()=>frame.contentWindow.postMessage({
+  kind:'techpie-visual-layout',fullscreen
+},'*');
 const sendActive=()=>frame.contentWindow.postMessage({kind:'techpie-visual-active',active},'*');
 const sendTheme=()=>frame.contentWindow.postMessage({kind:'techpie-visual-theme',theme},'*');
 window.addEventListener('message',event=>{
@@ -164,12 +196,18 @@ window.addEventListener('message',event=>{
   if(event.source===parent && event.data?.kind==='techpie-visual-theme'){
     theme=event.data.theme;sendTheme();return;
   }
+  if(event.source===parent && event.data?.kind==='techpie-visual-layout'){
+    fullscreen=event.data.fullscreen===true;sendLayout();return;
+  }
   if(event.source!==frame.contentWindow || !event.data || event.data.kind!=='techpie-visual')return;
   const d=event.data;
-  if(d.event==='ready'){sendTheme();sendActive();}
+  if(d.event==='ready'){sendTheme();sendActive();sendLayout();}
   if(!['ready','error','height','escape'].includes(d.event))return;
   const safe={kind:'techpie-visual',event:d.event};
-  if(d.event==='height')safe.height=Math.max(180,Math.min(560,Number(d.height)||360));
+  if(d.event==='height'){
+    safe.event=d.fullscreen===true?'fullscreen-height':'height';
+    safe.height=Math.max(0,Math.min(100000,Number(d.height)||360));
+  }
   ${native ? "TechPieVisual.postMessage(JSON.stringify(safe));" : "parent.postMessage(safe,'*');"}
 });
 frame.srcdoc=$encoded;
@@ -179,8 +217,25 @@ frame.srcdoc=$encoded;
   static const _baseStyle = '''
 :root{color-scheme:light;--tp-bg:#fff;--tp-surface:#f5f5f5;--tp-text:#202124;--tp-muted:#666;--tp-primary:#67504b;--tp-on-primary:#fff;--tp-border:#ddd;font-family:system-ui,sans-serif;color:var(--tp-text);background:var(--tp-bg)}
 *{box-sizing:border-box}body{margin:0;padding:16px;overflow-wrap:anywhere}
+#techpie-visual-content{display:flow-root;min-width:0}
+html[data-techpie-fullscreen=true]{height:100%;overflow:auto!important}
+html[data-techpie-fullscreen=true] body{
+  min-height:100%;height:auto!important;padding:0!important;overflow:visible!important;
+  display:flex!important;flex-direction:column;align-items:center;
+}
+html[data-techpie-fullscreen=true] #techpie-visual-content{
+  width:min(900px,100%);flex:none;margin-block:auto;
+}
+@media(max-width:600px){
+  html[data-techpie-fullscreen=true] #techpie-visual-content{margin-block:0}
+}
 html[data-techpie-active=false] *,html[data-techpie-active=false] *::before,html[data-techpie-active=false] *::after{animation-play-state:paused!important}
 math{color:inherit;font-size:1.05em}math[display=block]{overflow-x:auto;max-width:100%;padding:6px 0}
+/* An unavailable optional math renderer leaves the exact TeX in place; style it
+   as readable typeset source rather than plain body text. The marker is removed
+   when rendering succeeds, so these rules never outlive a recovered formula. */
+[data-math-error]{font-family:"Latin Modern Math","STIX Two Math","Cambria Math",ui-serif,Georgia,serif;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere;padding:0 .1em;border-bottom:1px dotted var(--tp-muted)}
+[data-math-error][data-math-display=block]{display:block;margin:.5em 0;padding:.5em .75em;border-bottom:0;border-inline-start:3px solid var(--tp-border);border-radius:4px;background:var(--tp-surface)}
 canvas,svg,img{max-width:100%}button,input,select{font:inherit}
 button,input[type=range],select{min-height:40px}button{cursor:pointer}
 html,body{background:var(--tp-bg)!important;color:var(--tp-text)!important}
@@ -210,8 +265,19 @@ function applyTheme(theme){
   window.dispatchEvent(new CustomEvent('techpie-theme',{detail:window.techpieTheme}));
 }
 applyTheme({/*techpie-theme*/});
+let fullscreen=/*techpie-fullscreen*/false;
+let resize=()=>{};
+function applyLayout(value){
+  fullscreen=value===true;
+  document.documentElement.dataset.techpieFullscreen=String(fullscreen);
+  resize();
+}
+applyLayout(fullscreen);
 window.addEventListener('message',event=>{
   if(event.source===parent && event.data?.kind==='techpie-visual-theme')applyTheme(event.data.theme);
+  if(event.source===parent && event.data?.kind==='techpie-visual-layout'){
+    applyLayout(event.data.fullscreen);
+  }
 });
 const emit=(event,extra={})=>parent.postMessage({kind:'techpie-visual',event,...extra},'*');
 window.addEventListener('keydown',event=>{if(event.key==='Escape')emit('escape');});
@@ -221,8 +287,17 @@ window.addEventListener('securitypolicyviolation',()=>emit('error'));
 window.addEventListener('DOMContentLoaded',()=>{
   emit('ready');
   let queued=false;
-  const resize=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;emit('height',{height:document.body.scrollHeight});});};
-  new ResizeObserver(resize).observe(document.body);resize();
+  resize=()=>{
+    if(queued)return;queued=true;
+    requestAnimationFrame(()=>{
+      queued=false;
+      const content=document.getElementById('techpie-visual-content');
+      const height=fullscreen?content.scrollHeight:document.body.scrollHeight;
+      emit('height',{height,fullscreen});
+    });
+  };
+  new ResizeObserver(resize).observe(document.getElementById('techpie-visual-content'));
+  window.addEventListener('resize',resize);resize();
 });
 })();
 ''';

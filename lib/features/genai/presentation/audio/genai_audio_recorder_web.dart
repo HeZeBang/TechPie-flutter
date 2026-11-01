@@ -41,9 +41,8 @@ final class GenAiAudioRecorderWeb implements GenAiAudioRecorder {
     await cancelling;
     if (_disposed || generation != _generation) return;
     final nav = web.window.navigator;
-    final stream = await nav.mediaDevices
-        .getUserMedia(web.MediaStreamConstraints(audio: true.toJS))
-        .toDart;
+    final stream =
+        await nav.mediaDevices.getUserMedia(web.MediaStreamConstraints(audio: true.toJS)).toDart;
     if (_disposed || generation != _generation) {
       for (final track in stream.getTracks().toDart) {
         track.stop();
@@ -53,16 +52,36 @@ final class GenAiAudioRecorderWeb implements GenAiAudioRecorder {
     _mediaStream = stream;
     _chunks.clear();
 
-    final recorder = web.MediaRecorder(stream);
-    recorder.ondataavailable = ((web.BlobEvent e) {
-      if (generation == _generation && e.data.size > 0) {
-        _chunks.add(e.data);
-      }
-    }).toJS;
+    web.MediaRecorder? recorder;
+    try {
+      final created = web.MediaRecorder(stream);
+      recorder = created;
+      created.ondataavailable = ((web.BlobEvent e) {
+        if (generation == _generation && e.data.size > 0) {
+          _chunks.add(e.data);
+        }
+      }).toJS;
 
-    _mediaRecorder = recorder;
+      _mediaRecorder = created;
+      created.start();
+    } catch (_) {
+      // The stream was acquired by this call, so a recorder that never started
+      // is ours to release: otherwise the microphone track stays live.
+      final failed = recorder;
+      if (failed != null) {
+        if (identical(_mediaRecorder, failed)) _mediaRecorder = null;
+        try {
+          failed.stop();
+        } catch (_) {}
+      }
+      if (identical(_mediaStream, stream)) _mediaStream = null;
+      for (final track in stream.getTracks().toDart) {
+        track.stop();
+      }
+      _recording = false;
+      rethrow;
+    }
     _recording = true;
-    recorder.start();
   }
 
   @override

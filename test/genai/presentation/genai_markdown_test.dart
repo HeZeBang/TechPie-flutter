@@ -7,10 +7,15 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_mermaid/flutter_mermaid.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:techpie/features/genai/presentation/genai_icons.dart';
 import 'package:techpie/features/genai/presentation/markdown/genai_markdown.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 
 void main() {
+  Finder genAiIcon(GenAiGlyph glyph) => find.byWidgetPredicate(
+        (widget) => widget is GenAiIcon && widget.glyph == glyph,
+      );
+
   Widget buildApp(Widget child, {ThemeData? theme}) {
     return MaterialApp(
       theme: theme,
@@ -151,6 +156,21 @@ void main() {
     expect(find.text('正在生成交互示例…'), findsNothing);
   });
 
+  testWidgets('tables render with the draft hairline rows and left-aligned headings',
+      (tester) async {
+    await tester.pumpWidget(
+      buildApp(
+        const GenAiMarkdown(
+          data: '| Name | Score |\n| --- | --- |\n| Ada | 10 |',
+          selectable: false,
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('Name', findRichText: true), findsOneWidget);
+    expect(find.text('Ada', findRichText: true), findsOneWidget);
+  });
+
   testWidgets('empty streamed task items render and tear down safely', (tester) async {
     for (final input in ['- [x] ', '- [ ] ', '> - [x] ', '1. [x] ']) {
       for (var length = 1; length <= input.length; length++) {
@@ -192,6 +212,26 @@ void main() {
     );
   });
 
+  test('generated Mermaid IDs never collide with IDs already in the source', () {
+    final normalized = normalizeMermaid('n0[Start] --> 中文[结束]');
+    expect(normalized, contains('n0[Start]'));
+    expect(normalized, contains('n1[结束]'));
+    expect(normalized, isNot(contains('n0[结束]')));
+
+    final diagram = const MermaidParser().parse(normalized);
+    expect(diagram, isNotNull);
+    expect(diagram!.nodes.map((node) => node.id).toSet(), {'n0', 'n1'});
+    expect(diagram.nodes.map((node) => node.label).toSet(), {'Start', '结束'});
+
+    final shifted = normalizeMermaid('n0[开始] --> 中文[结束]\nn1[中间] --> 英文[完成]');
+    expect(shifted, contains('n2[结束]'));
+    expect(shifted, contains('n3[完成]'));
+    expect(
+      const MermaidParser().parse(shifted)!.nodes.map((node) => node.id).toSet(),
+      {'n0', 'n1', 'n2', 'n3'},
+    );
+  });
+
   testWidgets('renders inline and block LaTeX equations in KaTeX-HTML style', (tester) async {
     const markdown = '''
 由第 1 行只能取第 \$n\$ 列，第 2 行只能取第 \$n - 1\$ 列，依此类推。因此
@@ -215,7 +255,7 @@ f(x) = \\sum_{i=1}^n x_i
     expect(find.byType(Math), findsAtLeastNWidgets(3));
     expect(find.byType(GenAiLatexBlockView), findsNWidgets(2));
     // Verify no copy button on LaTeX display block (clean textbook style)
-    expect(find.byIcon(Icons.copy_rounded), findsNothing);
+    expect(genAiIcon(GenAiGlyph.copy), findsNothing);
   });
 
   testWidgets('renders interactive BarChart, LineChart, and PieChart from code blocks',
@@ -277,12 +317,12 @@ f(x) = \\sum_{i=1}^n x_i
     expect(find.text('柱状图'), findsOneWidget);
 
     // Toggle to code
-    await tester.tap(find.byIcon(Icons.code_rounded));
+    await tester.tap(genAiIcon(GenAiGlyph.code));
     await tester.pumpAndSettle();
     expect(find.textContaining('"type": "bar"'), findsOneWidget);
 
     // Toggle back to chart
-    await tester.tap(find.byIcon(Icons.bar_chart_rounded));
+    await tester.tap(find.byTooltip('切换到图表'));
     await tester.pumpAndSettle();
     expect(find.byType(BarChart), findsOneWidget);
 
@@ -353,7 +393,12 @@ graph TD
     await tester.pumpAndSettle();
 
     expect(find.byType(GenAiMermaidView), findsOneWidget);
-    expect(find.byType(MermaidDiagram), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter is FlowchartPainter,
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Mermaid 图表'), findsOneWidget);
   });
 
@@ -375,7 +420,42 @@ stateDiagram-v2
     await tester.pumpAndSettle();
 
     expect(find.byType(GenAiMermaidView), findsOneWidget);
-    expect(find.byType(MermaidDiagram), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter is FlowchartPainter,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('sequence fence paints a diagram through Markdown', (tester) async {
+    await tester.pumpWidget(
+      buildApp(
+        const GenAiMarkdown(
+          data: '```mermaid\nsequenceDiagram\n'
+              'participant S as 源点 S\nparticipant A as 节点 A\n'
+              'S->>A: 松弛距离\n```',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(GenAiMermaidView), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter is SequencePainter,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('invalid Mermaid shows a clear notice and selectable source', (tester) async {
+    const source = 'pie\n"Broken": not-a-number';
+    await tester.pumpWidget(buildApp(const GenAiMarkdown(data: '```mermaid\n$source\n```')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('Mermaid 图表无法渲染，已显示源码'), findsOneWidget);
+    expect(find.text(source), findsOneWidget);
   });
 
   testWidgets('clipboard confirms success only after completion and reports denial',
@@ -397,7 +477,8 @@ void main() {
 
     expect(find.byType(GenAiStandardCodeBlock), findsOneWidget);
     expect(find.text('DART'), findsOneWidget);
-    expect(find.text('复制'), findsOneWidget);
+    expect(find.text('复制'), findsNothing);
+    expect(find.byTooltip('复制代码'), findsOneWidget);
     expect(find.textContaining('print("Hello, TechPie!");'), findsOneWidget);
 
     var write = Completer<void>();
@@ -412,21 +493,21 @@ void main() {
       () => tester.binding.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, null),
     );
-    await tester.tap(find.text('复制'));
+    await tester.tap(find.byTooltip('复制代码'));
     await tester.pump();
-    expect(find.text('已复制'), findsNothing);
+    expect(find.byTooltip('已复制'), findsNothing);
     write.completeError(PlatformException(code: 'denied'));
     await tester.pumpAndSettle();
-    expect(find.text('已复制'), findsNothing);
+    expect(find.byTooltip('已复制'), findsNothing);
     expect(find.text('无法复制，请手动选择文字'), findsOneWidget);
     expect(find.textContaining('print("Hello, TechPie!");'), findsOneWidget);
 
     write = Completer<void>();
-    await tester.tap(find.text('复制'));
+    await tester.tap(find.byTooltip('复制代码'));
     await tester.pump();
     write.complete();
     await tester.pumpAndSettle();
-    expect(find.text('已复制'), findsOneWidget);
+    expect(find.byTooltip('已复制'), findsOneWidget);
     // Leaving a rendered answer cancels its delayed feedback reset.
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 3));

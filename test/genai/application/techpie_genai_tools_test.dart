@@ -218,6 +218,35 @@ void main() {
     );
   });
 
+  test('assignments keep original due and expose effective late due separately', () async {
+    assignments.values.addAll([
+      Assignment(
+        id: 'late',
+        platform: 'gradescope',
+        title: 'Late report',
+        course: 'Course',
+        due: DateTime.utc(2026, 10, 23, 15),
+        lateDue: DateTime.utc(2026, 10, 25, 15),
+      ),
+      Assignment(
+        id: 'unsupported-late',
+        platform: 'blackboard',
+        title: 'Unsupported late',
+        course: 'Course',
+        due: DateTime.utc(2026, 10, 23, 15),
+        lateDue: DateTime.utc(2026, 10, 25, 15),
+      ),
+    ]);
+    final result = await run('get_assignments', {});
+    final rows = (result['assignments']! as List).cast<Map<String, Object?>>();
+    final late = rows.firstWhere((row) => row['id'] == 'late');
+    expect(late, containsPair('due', '2026-10-23T23:00:00.000+08:00'));
+    expect(late, containsPair('effective_late_due', '2026-10-25T23:00:00.000+08:00'));
+    final unsupported = rows.firstWhere((row) => row['id'] == 'unsupported-late');
+    expect(unsupported, containsPair('due', '2026-10-23T23:00:00.000+08:00'));
+    expect(unsupported.containsKey('effective_late_due'), isFalse);
+  });
+
   test('binding change while refreshing prevents returning newly mixed data', () async {
     final gate = Completer<void>();
     assignments.refreshGate = gate.future;
@@ -424,6 +453,36 @@ void main() {
     );
   });
 
+  test('image title is optional and flows through the request and receipt', () async {
+    final prepared = await prepare('generate_image', {
+      'prompt': 'A red square',
+      'title': '  Red square  ',
+      'width': 1536,
+      'height': 1024,
+      'quality': 'high',
+    });
+    expect(prepared.details['title'], 'Red square');
+    expect(prepared.details['quality'], 'high');
+    final result = await prepared.execute() as Map<String, Object?>;
+    expect(result['title'], 'Red square');
+    expect(result['quality'], 'high');
+    // The shared fixture models the real gateway, which does not persist
+    // title/quality on image-history rows yet. The receipt is still complete.
+    final records = (await demo.workspace.repository.listImages(GenAiCancellation())).records;
+    expect(records.single.title, isNull);
+    expect(records.single.quality, isNull);
+  });
+
+  test('image requests without a title omit it from details and receipts', () async {
+    final prepared = await prepare('generate_image', {'prompt': 'A red square'});
+    expect(prepared.details.containsKey('title'), isFalse);
+    final result = await prepared.execute() as Map<String, Object?>;
+    expect(result.containsKey('title'), isFalse);
+    final records = (await demo.workspace.repository.listImages(GenAiCancellation())).records;
+    expect(records.single.title, isNull);
+    expect(records.single.quality, isNull);
+  });
+
   test('campus image restriction reports network guidance and a confirmed unexecuted effect',
       () async {
     demo.backend.campusImageRestriction = true;
@@ -622,7 +681,24 @@ class _Assignments implements AssignmentService {
   @override
   bool get hasVerifiedAccountData => true;
   @override
-  List<Assignment> get verifiedVisibleAssignments => visibleAssignments;
+  List<Assignment> get verifiedVisibleAssignments => values;
+  final List<Assignment> values = [
+    Assignment(
+      id: 'todo',
+      platform: 'blackboard',
+      title: 'Report',
+      course: 'Course',
+      due: DateTime.utc(2026, 10, 23, 15),
+      url: 'https://example.com?token=private',
+    ),
+    Assignment(
+      id: 'done',
+      platform: 'blackboard',
+      title: 'Done',
+      course: 'Course',
+      due: DateTime.utc(2026, 10, 23, 16),
+    ),
+  ];
   Future<void>? refreshGate;
   @override
   bool get loading => false;
@@ -632,23 +708,7 @@ class _Assignments implements AssignmentService {
   @override
   Map<String, String> get platformErrors => failures;
   @override
-  List<Assignment> get visibleAssignments => [
-        Assignment(
-          id: 'todo',
-          platform: 'blackboard',
-          title: 'Report',
-          course: 'Course',
-          due: DateTime.utc(2026, 10, 23, 15),
-          url: 'https://example.com?token=private',
-        ),
-        Assignment(
-          id: 'done',
-          platform: 'blackboard',
-          title: 'Done',
-          course: 'Course',
-          due: DateTime.utc(2026, 10, 23, 16),
-        ),
-      ];
+  List<Assignment> get visibleAssignments => values;
   @override
   bool isCompleted(Assignment value) => value.id == 'done';
   @override

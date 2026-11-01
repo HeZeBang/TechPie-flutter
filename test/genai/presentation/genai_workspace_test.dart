@@ -1,10 +1,22 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_chat_service.dart';
+import 'package:techpie/features/genai/application/genai_repository.dart';
+import 'package:techpie/features/genai/application/genai_session_service.dart';
+import 'package:techpie/features/genai/application/genai_workspace_controller.dart';
+import 'package:techpie/features/genai/data/genai_api_client.dart';
+import 'package:techpie/features/genai/data/genai_request_signer.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
+import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
+import 'package:techpie/features/genai/platform/genai_transport.dart';
 import 'package:techpie/features/genai/presentation/audio/genai_audio_recorder.dart';
+import 'package:techpie/features/genai/presentation/genai_history_sidebar.dart';
+import 'package:techpie/features/genai/presentation/genai_icons.dart';
 import 'package:techpie/features/genai/presentation/genai_workspace.dart';
 import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
@@ -13,7 +25,147 @@ import '../support/fakes.dart';
 import '../support/journal_server.dart';
 import '../support/workspace_server.dart';
 
+/// Delegates to the in-memory server but can fail the model catalog and the
+/// next chat request once, so the workspace's recovery actions can be driven.
+final class _InterceptingTransport implements GenAiTransport {
+  _InterceptingTransport(this.inner);
+
+  final FakeGenAiServer inner;
+  bool failCatalog = false;
+  bool failNextChat = false;
+  bool failNextChatNetwork = false;
+  int catalogRequests = 0;
+
+  @override
+  Future<GenAiResponse> send({
+    required String method,
+    required Uri uri,
+    required GenAiCancellation cancellation,
+    Map<String, String> headers = const {},
+    String? body,
+    List<int>? bodyBytes,
+  }) {
+    if (uri.path == '/htk/ai/aiModel/list') {
+      catalogRequests++;
+      if (failCatalog) {
+        return Future.value(
+          GenAiResponse(
+            statusCode: 404,
+            headers: const {'Content-Type': 'text/html; charset=utf-8'},
+            bytes: Stream.value(
+              utf8.encode(
+                '<html><body><p>该服务暂不开放外网访问，仅支持校内访问</p></body></html>',
+              ),
+            ),
+            close: () {},
+          ),
+        );
+      }
+    }
+    if (method == 'POST' && uri.path == '/htk/chat/start/chat' && failNextChatNetwork) {
+      failNextChatNetwork = false;
+      return Future.value(
+        GenAiResponse(
+          statusCode: 404,
+          headers: const {'Content-Type': 'text/html; charset=utf-8'},
+          bytes: Stream.value(
+            utf8.encode(
+              '<html><body><p>该服务暂不开放外网访问，仅支持校内访问</p></body></html>',
+            ),
+          ),
+          close: () {},
+        ),
+      );
+    }
+    if (method == 'POST' && uri.path == '/htk/chat/start/chat' && failNextChat) {
+      failNextChat = false;
+      return Future.value(
+        GenAiResponse(
+          statusCode: 500,
+          headers: const {'Content-Type': 'application/json'},
+          bytes: Stream.value(utf8.encode('{"success":false,"code":500}')),
+          close: () {},
+        ),
+      );
+    }
+    return inner.send(
+      method: method,
+      uri: uri,
+      cancellation: cancellation,
+      headers: headers,
+      body: body,
+      bodyBytes: bodyBytes,
+    );
+  }
+
+  @override
+  void dispose() => inner.dispose();
+}
+
+final class _WorkspaceHarness {
+  _WorkspaceHarness(
+    this.backend,
+    this.transport,
+    this.sessions,
+    this.chat,
+    this.workspace,
+  );
+
+  final FakeGenAiServer backend;
+  final _InterceptingTransport transport;
+  final GenAiSessionService sessions;
+  final GenAiChatService chat;
+  final GenAiWorkspaceController workspace;
+
+  void dispose() {
+    workspace.dispose();
+    chat.dispose();
+    sessions.dispose();
+    transport.dispose();
+  }
+}
+
+Future<_WorkspaceHarness> _wireWorkspace({bool failCatalog = false}) async {
+  final backend = FakeGenAiServer(chunkDelay: Duration.zero);
+  final transport = _InterceptingTransport(backend)..failCatalog = failCatalog;
+  final api = GenAiApiClient(
+    transport: transport,
+    signer: const GenAiRequestSigner('synthetic-signing-salt'),
+  );
+  final sessions = GenAiSessionService(api: api, store: TestGenAiSessionStore());
+  await sessions.setOwner(
+    const GenAiOwner(
+      primaryUserId: 'test-primary',
+      studentId: FakeGenAiServer.studentId,
+      bindingId: 'test-binding',
+    ),
+  );
+  await sessions.connect(const GenAiCredential(token: FakeGenAiServer.token));
+  final repository = GenAiRepository(api: api, sessions: sessions);
+  final chat = GenAiChatService(repository);
+  final workspace = GenAiWorkspaceController(
+    sessions: sessions,
+    repository: repository,
+    chat: chat,
+  );
+  return _WorkspaceHarness(backend, transport, sessions, chat, workspace);
+}
+
+Future<void> _pumpWorkspace(
+  WidgetTester tester,
+  GenAiWorkspaceController workspace,
+) async {
+  await tester.pumpWidget(
+    MaterialApp(home: GenAiWorkspace(controller: workspace, login: (_) async => null)),
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  Finder genAiIcon(GenAiGlyph glyph) => find.byWidgetPredicate(
+        (widget) => widget is GenAiIcon && widget.glyph == glyph,
+      );
+
   testWidgets('reopening variable-height history starts at the latest message', (tester) async {
     final server = JournalServer();
     server.rows['long'] = List.generate(
@@ -61,6 +213,7 @@ void main() {
     Duration delay = const Duration(milliseconds: 1),
     GenAiAudioRecorder? audioRecorder,
     GenAiPicker? picker,
+    GenAiLoginAction? login,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -84,7 +237,7 @@ void main() {
           controller: demo.workspace,
           audioRecorder: audioRecorder,
           picker: picker,
-          login: (_) async => const GenAiCredential(token: FakeGenAiServer.token),
+          login: login ?? (_) async => const GenAiCredential(token: FakeGenAiServer.token),
         ),
       ),
     );
@@ -118,10 +271,10 @@ void main() {
       await tester.tap(find.text('编辑并重新发送'));
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)),
+        find.descendant(of: find.byType(Dialog), matching: find.byType(TextField)),
         'edited',
       );
-      await tester.tap(find.text('重新发送'));
+      await tester.tap(find.text('保存并重发'));
       await tester.pumpAndSettle();
       expect(demo.workspace.turns.map((t) => t.prompt), ['first', 'edited']);
       demo.workspace.newConversation();
@@ -199,7 +352,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('编辑并重新发送'));
     await tester.pumpAndSettle();
-    final editor = find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField));
+    final editor = find.descendant(of: find.byType(Dialog), matching: find.byType(TextField));
     await tester.enterText(editor, 'valuable replacement');
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -271,10 +424,113 @@ void main() {
     expect(find.byKey(const ValueKey('genai-prompt')), findsOneWidget);
     await tester.tap(find.byTooltip('GenAI 账户'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('断开 GenAI'));
+    await tester.tap(find.text('断开 GenAI 连接'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('断开'));
     await tester.pumpAndSettle();
     expect(find.text('连接你的校园 AI'), findsOneWidget);
     expect(demo.sessions.session, isNull);
+  });
+
+  testWidgets('campus-only catalog failure offers a working retry', (tester) async {
+    final harness = await _wireWorkspace(failCatalog: true);
+    addTearDown(harness.dispose);
+    await _pumpWorkspace(tester, harness.workspace);
+    expect(find.text('暂时无法连接校园 GenAI'), findsOneWidget);
+    expect(find.text('请连接校园网或校园 VPN 后重试。'), findsOneWidget);
+    expect(harness.workspace.catalogFailure?.kind, GenAiFailureKind.campusNetworkRequired);
+    final attempts = harness.transport.catalogRequests;
+    harness.transport.failCatalog = false;
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(harness.transport.catalogRequests, greaterThan(attempts));
+    expect(harness.workspace.catalogFailure, isNull);
+    expect(find.text('暂时无法连接校园 GenAI'), findsNothing);
+    expect(find.text('请连接校园网或校园 VPN 后重试。'), findsNothing);
+    expect(find.text('Test chat'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('failed last turn can be retried in place', (tester) async {
+    final harness = await _wireWorkspace();
+    addTearDown(harness.dispose);
+    await _pumpWorkspace(tester, harness.workspace);
+    harness.transport.failNextChat = true;
+    await tester.enterText(find.byKey(const ValueKey('genai-prompt')), 'retry me');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('genai-send')));
+    await tester.pumpAndSettle();
+    expect(harness.workspace.turns, hasLength(1));
+    final failed = harness.workspace.turns.single;
+    expect(failed.phase, GenAiChatPhase.failed);
+    expect(failed.failure?.kind, GenAiFailureKind.rejected);
+    final retry = find.byKey(const ValueKey('genai-retry-0'));
+    await tester.ensureVisible(retry);
+    await tester.pumpAndSettle();
+    expect(retry.hitTestable(), findsOneWidget);
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+    expect(harness.workspace.turns, hasLength(1));
+    expect(harness.workspace.turns.single.phase, GenAiChatPhase.completed);
+    expect(harness.workspace.turns.single.answer, contains('Response to'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('last turn campus network failure shows the card and retries once', (tester) async {
+    final harness = await _wireWorkspace();
+    addTearDown(harness.dispose);
+    await _pumpWorkspace(tester, harness.workspace);
+    harness.transport.failNextChatNetwork = true;
+    await tester.enterText(find.byKey(const ValueKey('genai-prompt')), 'campus retry');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('genai-send')));
+    await tester.pumpAndSettle();
+    expect(harness.workspace.turns, hasLength(1));
+    final failed = harness.workspace.turns.single;
+    expect(failed.phase, GenAiChatPhase.failed);
+    expect(failed.failure?.kind, GenAiFailureKind.campusNetworkRequired);
+    // The last turn renders the campus card instead of a generic failure line.
+    expect(find.text('暂时无法连接校园 GenAI'), findsOneWidget);
+    expect(find.text('请连接校园网或校园 VPN 后重试。'), findsOneWidget);
+    final retry = find.byKey(const ValueKey('genai-retry-0'));
+    expect(retry, findsOneWidget);
+    await tester.ensureVisible(retry);
+    await tester.pumpAndSettle();
+    expect(retry.hitTestable(), findsOneWidget);
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+    // The failed turn is replaced, not appended.
+    expect(harness.workspace.turns, hasLength(1));
+    expect(harness.workspace.turns.single.phase, GenAiChatPhase.completed);
+    expect(harness.workspace.turns.single.answer, contains('Response to'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('failed login can be retried from the connect panel', (tester) async {
+    var attempts = 0;
+    final demo = await show(
+      tester,
+      connected: false,
+      delay: Duration.zero,
+      login: (_) async {
+        attempts++;
+        if (attempts == 1) throw StateError('synthetic login failure');
+        return const GenAiCredential(token: FakeGenAiServer.token);
+      },
+    );
+    expect(find.text('连接你的校园 AI'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('genai-connect')));
+    await tester.pumpAndSettle();
+    expect(attempts, 1);
+    expect(demo.workspace.connected, isFalse);
+    expect(find.text('无法完成 GenAI 登录，请重试'), findsOneWidget);
+    // The same control stays available for another attempt.
+    await tester.tap(find.byKey(const ValueKey('genai-connect')));
+    await tester.pumpAndSettle();
+    expect(attempts, 2);
+    expect(demo.workspace.connected, isTrue);
+    expect(find.byKey(const ValueKey('genai-prompt')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('bound IDS without a school ID offers identity resolution', (tester) async {
@@ -303,24 +559,134 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('compact navigation opens history, image creation and account usage', (tester) async {
-    await show(tester, size: const Size(674, 1000));
-    await tester.tap(find.byTooltip('会话记录'));
+  testWidgets('compact drawer opens history, image creation and account usage', (tester) async {
+    final demo = await show(tester, size: const Size(674, 1000), delay: Duration.zero);
+    final sending = demo.workspace.send('drawer history entry');
     await tester.pumpAndSettle();
-    expect(find.text('搜索对话'), findsOneWidget);
-    await tester.pageBack();
+    await sending;
+    demo.workspace.newConversation();
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('图片创作'));
+    Future<void> openDrawer() async {
+      await tester.tap(find.byTooltip('打开导航与历史'));
+      await tester.pumpAndSettle();
+    }
+
+    await openDrawer();
+    expect(find.byTooltip('搜索对话'), findsOneWidget);
+    await tester.tap(find.byTooltip('搜索对话'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, '搜索历史对话'), findsOneWidget);
+    expect(find.byType(Drawer), findsNothing);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Dialog),
+        matching: find.widgetWithText(InkWell, 'drawer history entry'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(Drawer), findsNothing);
+    expect(demo.workspace.turns.single.prompt, 'drawer history entry');
+
+    await openDrawer();
+    await tester.tap(find.text('图片创作'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('genai-image-prompt')), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
-    await tester.pageBack();
+    await tester.tap(find.byTooltip('返回对话'));
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-prompt')), findsOneWidget);
+
+    await openDrawer();
     await tester.tap(find.byTooltip('GenAI 账户'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('用量统计'));
+    await tester.tap(find.text('用量与额度'));
     await tester.pumpAndSettle();
     expect(find.text('免费额度'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in [const Size(1200, 900), const Size(375, 812)]) {
+    testWidgets('usage opens as a bounded modal over the live shell on $size', (tester) async {
+      final demo = await show(tester, size: size, delay: Duration.zero);
+      if (size.width < 960) {
+        await tester.tap(find.byTooltip('打开导航与历史'));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byTooltip('GenAI 账户'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('用量与额度'));
+      await tester.pumpAndSettle();
+      final modal = find.byKey(const ValueKey('genai-usage-dialog'));
+      expect(modal, findsOneWidget);
+      final expectedWidth = size.width - 32 < 500 ? size.width - 32 : 500.0;
+      expect(tester.getSize(modal).width, expectedWidth);
+      expect(tester.getSize(modal).width, lessThanOrEqualTo(500));
+      // The modal overlays the workspace: the shell composer and its single
+      // Scaffold are still mounted, so this is not a pushed page.
+      expect(find.byKey(const ValueKey('genai-prompt')), findsOneWidget);
+      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('免费额度'), findsOneWidget);
+      expect(demo.workspace.turns, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('system back leaves inline images first and drawer exit leaves the page',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
+    addTearDown(demo.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(navigatorKey: navigator, home: const Scaffold(body: Text('TechPie host'))),
+    );
+    unawaited(
+      navigator.currentState!.push<void>(
+        MaterialPageRoute(
+          builder: (_) => GenAiWorkspace(controller: demo.workspace, login: (_) async => null),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('打开导航与历史'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('图片创作'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-image-prompt')), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-prompt')), findsOneWidget);
+    expect(find.text('TechPie host'), findsNothing);
+
+    await tester.tap(find.byTooltip('打开导航与历史'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('返回 TechPie'));
+    await tester.pumpAndSettle();
+    expect(find.text('TechPie host'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('new chat shortcut never interrupts a streaming reply', (tester) async {
+    final demo = await show(tester, delay: const Duration(milliseconds: 20));
+    await tester.enterText(find.byKey(const ValueKey('genai-prompt')), 'keep streaming');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('genai-send')));
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(demo.workspace.sending, isTrue);
+    final group = demo.workspace.groupId;
+    for (final modifier in [LogicalKeyboardKey.metaLeft, LogicalKeyboardKey.controlLeft]) {
+      await tester.sendKeyDownEvent(modifier);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pump();
+    }
+    expect(demo.workspace.groupId, group);
+    expect(demo.workspace.turns, hasLength(1));
+    await tester.pumpAndSettle();
+    expect(demo.workspace.turns.single.answer, isNotEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -563,7 +929,7 @@ void main() {
     expect(find.text('分析这幅图片'), findsOneWidget);
 
     // Removing the attachment chip works and retains connected state
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(genAiIcon(GenAiGlyph.close));
     await tester.pumpAndSettle();
     expect(demo.workspace.attachments, isEmpty);
     expect(demo.workspace.connected, isTrue);
@@ -670,7 +1036,13 @@ void main() {
     expect(turn.attachedImageBytes, equals(sampleBytes));
     expect(turn.attachedImageUrl, isNotNull);
 
-    expect(find.byType(Image), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('genai-thread')),
+        matching: find.byType(Image),
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -829,7 +1201,7 @@ void main() {
     await tester.tap(
       find.descendant(
         of: find.byType(Dialog),
-        matching: find.byIcon(Icons.close),
+        matching: genAiIcon(GenAiGlyph.close),
       ),
     );
     await tester.pumpAndSettle();
@@ -868,15 +1240,41 @@ void main() {
     await tester.tap(find.byTooltip('刷新历史'));
     await tester.pumpAndSettle();
 
-    Finder historyItem(String text) => find.byWidgetPredicate((w) => w is Text && w.data == text);
+    // The open conversation's title also appears in the header; count rows.
+    Finder historyItem(String text) => find.descendant(
+          of: find.byType(GenAiHistorySidebar),
+          matching: find.byWidgetPredicate((w) => w is Text && w.data == text),
+        );
 
     expect(historyItem('alpha physics research'), findsOneWidget);
     expect(historyItem('beta chemistry notes'), findsOneWidget);
 
+    await tester.tap(find.byTooltip('搜索对话'));
+    await tester.pumpAndSettle();
     final sidebarSearch = find.widgetWithText(TextField, '搜索历史对话');
     expect(sidebarSearch, findsOneWidget);
+    final searchField = tester.widget<TextField>(
+      find.byKey(const ValueKey('genai-search-input')),
+    );
+    expect(searchField.decoration!.hintText, '搜索历史对话');
+    expect(searchField.decoration!.prefixIcon, isNull);
+    final searchBorder = searchField.decoration!.border! as OutlineInputBorder;
+    expect(searchBorder.borderRadius, BorderRadius.circular(9));
+    expect(searchBorder.borderSide.width, 1);
+    expect(searchField.textAlignVertical, TextAlignVertical.center);
+    expect(searchField.strutStyle!.height, 1.5);
+    expect(searchField.strutStyle!.forceStrutHeight, isTrue);
+    expect(searchField.decoration!.contentPadding, const EdgeInsets.all(12));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('genai-search-input')),
+        matching: find.byType(GenAiIcon),
+      ),
+      findsNothing,
+    );
 
-    // Type 'alpha' in sidebar search
+    // Search results and the shared sidebar model filter together.
+    // Type 'alpha' in the search dialog
     await tester.enterText(sidebarSearch, 'alpha');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
@@ -884,6 +1282,47 @@ void main() {
 
     expect(historyItem('alpha physics research'), findsOneWidget);
     expect(historyItem('beta chemistry notes'), findsNothing);
+    final dialogResult = find.byType(Dialog);
+    expect(
+      find.descendant(
+        of: dialogResult,
+        matching: find.widgetWithText(InkWell, 'alpha physics research'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: dialogResult,
+        matching: find.widgetWithText(InkWell, 'beta chemistry notes'),
+      ),
+      findsNothing,
+    );
+    // The row is a title line plus the available time styled as the draft
+    // preview, and never a ListTile. The API exposes no independent content
+    // preview without fetching each conversation.
+    expect(
+      find.descendant(of: dialogResult, matching: find.byType(ListTile)),
+      findsNothing,
+    );
+    final resultTitle = find.descendant(
+      of: dialogResult,
+      matching: find.text('alpha physics research'),
+    );
+    expect(resultTitle, findsOneWidget);
+    expect(tester.widget<Text>(resultTitle).maxLines, 1);
+    final resultRow = find.descendant(
+      of: dialogResult,
+      matching: find.widgetWithText(InkWell, 'alpha physics research'),
+    );
+    final resultLines = tester
+        .widgetList<Text>(find.descendant(of: resultRow, matching: find.byType(Text)))
+        .toList();
+    expect(resultLines, hasLength(2));
+    expect(resultLines.first.data, 'alpha physics research');
+    expect(resultLines.first.maxLines, 1);
+    // The second line is the draft preview treatment: 12 px muted text.
+    expect(resultLines.last.style?.fontSize, 12);
+    expect(resultLines.last.style?.color, isNotNull);
 
     // Clear search
     await tester.enterText(sidebarSearch, '');

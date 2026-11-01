@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
@@ -26,6 +27,39 @@ void main() {
     await expectLater(invalid.pickDocument(), throwsA(isA<GenAiDocumentUploadException>()));
     final oversized = GenAiPickerIo(selectDocument: (_) async => _OversizedDocument());
     await expectLater(oversized.pickDocument(), throwsA(isA<GenAiDocumentUploadException>()));
+  });
+
+  test('macOS sandbox entitlements grant Downloads read-write for image saving', () {
+    for (final path in const [
+      'macos/Runner/DebugProfile.entitlements',
+      'macos/Runner/Release.entitlements',
+    ]) {
+      final contents = File(path).readAsStringSync();
+      expect(
+        contents,
+        matches(
+          RegExp(
+            r'<key>com\.apple\.security\.files\.downloads\.read-write</key>\s*<true/>',
+          ),
+        ),
+        reason: '$path must enable the Downloads read-write entitlement',
+      );
+      expect(
+        contents,
+        matches(RegExp(r'<key>com\.apple\.security\.app-sandbox</key>\s*<true/>')),
+        reason: '$path must keep the App Sandbox enabled',
+      );
+      for (final broad in const [
+        'com.apple.security.files.all',
+        'com.apple.security.files.home-relative-path.read-write',
+      ]) {
+        expect(
+          contents,
+          isNot(contains(broad)),
+          reason: '$path must not grant the broad write entitlement $broad',
+        );
+      }
+    }
   });
 }
 

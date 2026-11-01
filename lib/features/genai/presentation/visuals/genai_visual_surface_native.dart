@@ -71,12 +71,14 @@ class _GenAiVisualSurfaceState extends State<GenAiVisualSurface> with WidgetsBin
             final value = jsonDecode(message.message);
             if (value is! Map || value['kind'] != 'techpie-visual') return;
             final kind = value['event'];
-            if (kind is! String || !const ['ready', 'height', 'error', 'escape'].contains(kind)) {
+            if (kind is! String ||
+                !const ['ready', 'height', 'fullscreen-height', 'error', 'escape'].contains(kind)) {
               return;
             }
             if (kind == 'ready') {
               unawaited(_updateActivity());
               unawaited(_updateTheme());
+              unawaited(_updateLayout());
             }
             final height = value['height'];
             widget.onEvent(kind, height is num ? height.toDouble() : null);
@@ -95,6 +97,7 @@ class _GenAiVisualSurfaceState extends State<GenAiVisualSurface> with WidgetsBin
           native: true,
           theme: widget.theme,
           active: _active,
+          fullscreen: widget.fullscreen,
         ),
       );
       if (mounted && identical(_controller, controller)) await _updateActivity();
@@ -115,6 +118,19 @@ class _GenAiVisualSurfaceState extends State<GenAiVisualSurface> with WidgetsBin
     super.didUpdateWidget(oldWidget);
     if (oldWidget.active != widget.active) unawaited(_updateActivity());
     if (!mapEquals(oldWidget.theme, widget.theme)) unawaited(_updateTheme());
+    if (oldWidget.fullscreen != widget.fullscreen) unawaited(_updateLayout());
+  }
+
+  Future<void> _updateLayout() async {
+    try {
+      final data = jsonEncode({
+        'kind': 'techpie-visual-layout',
+        'fullscreen': widget.fullscreen,
+      });
+      await _controller?.runJavaScript("window.postMessage($data, '*');");
+    } catch (_) {
+      // A disposed platform view no longer needs layout updates.
+    }
   }
 
   @override

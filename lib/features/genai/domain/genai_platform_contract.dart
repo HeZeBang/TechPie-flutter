@@ -214,6 +214,8 @@ final class GenAiImageRecord {
     required this.id,
     required this.prompt,
     required this.images,
+    this.title,
+    this.quality,
   });
   factory GenAiImageRecord.fromJson(Map<String, dynamic> json) {
     final images = json['images'];
@@ -221,6 +223,10 @@ final class GenAiImageRecord {
     return GenAiImageRecord(
       id: genAiRequiredString(json, 'id'),
       prompt: genAiOptionalText(json, 'question'),
+      // Older history rows predate these optional fields; absent means unknown,
+      // never a protocol failure.
+      title: _optionalImageText(json, 'title'),
+      quality: _optionalImageText(json, 'quality'),
       images: List.unmodifiable(
         images.map(
           (Object? row) => genAiImageUri(
@@ -233,6 +239,39 @@ final class GenAiImageRecord {
   final String id;
   final String prompt;
   final List<Uri> images;
+
+  /// Optional user-facing caption saved with the image record. Null when the
+  /// server row predates titles or the user did not provide one.
+  final String? title;
+
+  /// Optional requested quality (`low`, `medium`, `high`). Null when unknown,
+  /// including legacy rows that predate quality retention.
+  final String? quality;
+
+  /// Mirrors the image-history row shape so locally persisted or replayed
+  /// records keep optional metadata. Null values are omitted, which keeps old
+  /// stored rows backward compatible.
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'question': prompt,
+        if (title != null) 'title': title,
+        if (quality != null) 'quality': quality,
+        'images': [
+          for (final image in images) {'imageUrl': image.toString()},
+        ],
+      };
+}
+
+/// Trims an optional caption, treating a null or blank value as absent.
+String? _blankImageText(String? value) {
+  final trimmed = value?.trim();
+  return trimmed == null || trimmed.isEmpty ? null : trimmed;
+}
+
+String? _optionalImageText(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  // A non-string field is unknown metadata, never a protocol failure.
+  return value is String ? _blankImageText(value) : null;
 }
 
 final class GenAiImageRequest {
@@ -242,8 +281,10 @@ final class GenAiImageRequest {
     required this.groupId,
     this.size = '1024x1024',
     this.quality = 'low',
+    String? title,
     List<GenAiReferenceImage> referenceImages = const [],
-  }) : referenceImages = List.unmodifiable(referenceImages) {
+  })  : title = _blankImageText(title),
+        referenceImages = List.unmodifiable(referenceImages) {
     GenAiReferenceImage.validate(this.referenceImages);
     if (prompt.trim().isEmpty ||
         groupId.isEmpty ||
@@ -265,6 +306,10 @@ final class GenAiImageRequest {
   final String groupId;
   final String size;
   final String quality;
+
+  /// Optional caption requested alongside the image. Trimmed; null when the
+  /// user left it blank. Sent upstream only when present.
+  final String? title;
   final List<GenAiReferenceImage> referenceImages;
   Map<String, Object?> toJson() => {
         'chatInfo': prompt,
@@ -273,6 +318,7 @@ final class GenAiImageRequest {
         'aiType': model.aiType,
         'rootAiType': model.rootAiType,
         'chatGroupId': groupId,
+        if (title != null) 'title': title,
         'size': size,
         'quality': quality,
         'count': '1',

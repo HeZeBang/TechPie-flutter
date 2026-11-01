@@ -58,6 +58,8 @@ final class GenAiImageStudioController extends ChangeNotifier {
         GenAiImageRecord(
           id: request.groupId,
           prompt: request.prompt,
+          title: request.title,
+          quality: request.quality,
           images: images,
         ),
       );
