@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:desktop_webview_window/desktop_webview_window.dart' show runWebViewTitleBarWidget;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
@@ -349,6 +350,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
               )
             : null,
       );
+  final _nativeChromeObserver = CNTabBarRouteObserver();
 
   /// The silent check runs at launch and whenever the app comes back to the
   /// foreground, but not more often than this: a resume is not a reason to hit
@@ -424,8 +426,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     }
     if (release == null || !mounted) return;
 
+    // This State sits above the MaterialApp, so its own context has no
+    // MaterialLocalizations and no navigator to put a dialog on; ask the app's
+    // navigator instead.
+    final dialogContext = _navigatorKey.currentContext;
+    if (dialogContext == null || !dialogContext.mounted) return;
     _promptedThisLaunch = true;
-    await showUpdateAvailableDialog(context, release);
+    await showUpdateAvailableDialog(dialogContext, release);
   }
 
   Future<void> _openEcardPayCode() async {
@@ -473,7 +480,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
-          navigatorObservers: [FeedbackRouteObserver()],
+          navigatorObservers: [FeedbackRouteObserver(), _nativeChromeObserver],
           builder: (context, child) => AdaptiveFeedbackHost(
             key: adaptiveFeedbackHostKey,
             child: child ?? const SizedBox.shrink(),

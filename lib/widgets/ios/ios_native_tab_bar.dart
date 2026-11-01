@@ -1,7 +1,9 @@
-import 'dart:async';
-
+import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
+import '../../utils/platform.dart';
+import 'sf_symbol_glyphs.dart';
 
 class IosNativeTabBarItem {
   const IosNativeTabBarItem({
@@ -28,117 +30,131 @@ class IosNativeTabBar extends StatefulWidget {
   });
 
   final int selectedIndex;
+
+  /// Called with the tapped tab — the selected one included, which is how the
+  /// shell knows to return that tab to its root.
   final ValueChanged<int> onSelected;
   final List<IosNativeTabBarItem> items;
+
+  /// Where a portrait phone's tab bar draws its items, measured on iOS 26: the
+  /// Liquid Glass capsule sits [liquidGlassHorizontalInset] in from each side
+  /// and [liquidGlassTop] below the top of the view, is
+  /// [liquidGlassCapsuleHeight] tall, and splits its width equally between the
+  /// items. The legacy bar spans the full width with 49pt-tall items.
+  static const double liquidGlassHorizontalInset = 21;
+  static const double liquidGlassTop = 14;
+  static const double liquidGlassCapsuleHeight = 61;
+  static const double legacyItemHeight = 49;
+
+  /// Wider than this (landscape, iPad) UITabBar centres compact items instead
+  /// of splitting the width, so where an item is cannot be known from here.
+  static const double maxEqualSplitWidth = 500;
 
   @override
   State<IosNativeTabBar> createState() => _IosNativeTabBarState();
 }
 
 class _IosNativeTabBarState extends State<IosNativeTabBar> {
-  MethodChannel? _channel;
+  int? _downPointer;
+  Offset? _downPosition;
 
-  int get _safeSelectedIndex {
-    if (widget.items.isEmpty) return 0;
-    return widget.selectedIndex.clamp(0, widget.items.length - 1);
+  int get _selected => widget.selectedIndex.clamp(0, widget.items.length - 1);
+
+  void _select(int index) {
+    if (index < 0 || index >= widget.items.length) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    widget.onSelected(index);
   }
 
-  @override
-  void didUpdateWidget(covariant IosNativeTabBar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedIndex == widget.selectedIndex) return;
-    unawaited(_sendSelectionUpdate(_safeSelectedIndex));
+  /// The tab drawn under [position], or null where no item is known to be —
+  /// outside the bar's visible band, or in a layout whose item frames this
+  /// cannot derive. Null means "not a tap on the selected tab", which is the
+  /// safe answer: a wrong guess would pop a tab the user did not tap.
+  int? _indexAt(Offset position, double width) {
+    if (width > IosNativeTabBar.maxEqualSplitWidth) return null;
+    final glass = usesIosLiquidGlass();
+    final top = glass ? IosNativeTabBar.liquidGlassTop : 0.0;
+    final bottom =
+        top + (glass ? IosNativeTabBar.liquidGlassCapsuleHeight : IosNativeTabBar.legacyItemHeight);
+    if (position.dy < top || position.dy >= bottom) return null;
+    final inset = glass ? IosNativeTabBar.liquidGlassHorizontalInset : 0.0;
+    final span = width - inset * 2;
+    if (span <= 0 || position.dx < inset || position.dx >= width - inset) {
+      return null;
+    }
+    return ((position.dx - inset) / span * widget.items.length)
+        .floor()
+        .clamp(0, widget.items.length - 1);
   }
 
-  @override
-  void dispose() {
-    _channel?.setMethodCallHandler(null);
-    _channel = null;
-    super.dispose();
+  // UITabBar reports a tap only when it changes the selection, so a tap on the
+  // selected tab never reaches Dart through the plugin. The Listener sees the
+  // same touch without entering the gesture arena, so the native bar still
+  // gets it, and a tap that starts and ends on the selected tab is reported
+  // here instead.
+  void _onPointerDown(PointerDownEvent event) {
+    if (_downPointer != null) return;
+    _downPointer = event.pointer;
+    _downPosition = event.localPosition;
+  }
+
+  void _onPointerUp(PointerUpEvent event, double width) {
+    if (event.pointer != _downPointer) return;
+    final down = _downPosition!;
+    _clearPointer();
+    if ((event.localPosition - down).distance > kTouchSlop) return;
+    final index = _indexAt(event.localPosition, width);
+    if (index != null && index == _selected && _indexAt(down, width) == index) {
+      _select(index);
+    }
+  }
+
+  void _clearPointer() {
+    _downPointer = null;
+    _downPosition = null;
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
-    const standardTabBarHeight = 49.0;
-    final tabBarHeight = standardTabBarHeight + bottomInset;
-
+    if (widget.items.length < 2) return const SizedBox.shrink();
+    final nativeGlass = usesIosLiquidGlass();
     return LayoutBuilder(
-      builder: (context, constraints) {
-        final mediaWidth = MediaQuery.sizeOf(context).width;
-        final constrainedWidth =
-            constraints.hasBoundedWidth ? constraints.maxWidth : mediaWidth;
-        final width = constrainedWidth.isFinite ? constrainedWidth : mediaWidth;
-
-        if (width <= 40 || tabBarHeight <= 20) {
-          return SizedBox(height: tabBarHeight);
-        }
-
-        final itemSignature = widget.items
-            .map(
-              (item) =>
-                  '${item.label}|${item.sfSymbol}|${item.selectedSfSymbol}',
-            )
-            .join(';');
-
-        return SizedBox(
-          width: width,
-          height: tabBarHeight,
-          child: UiKitView(
-            key: ValueKey(
-              'ios-glass-tabbar-${width.round()}-${tabBarHeight.round()}-$itemSignature',
-            ),
-            viewType: _viewType,
-            layoutDirection: Directionality.of(context),
-            creationParams: <String, Object?>{
-              'selectedIndex': _safeSelectedIndex,
-              'items': [
-                for (final item in widget.items)
-                  <String, Object?>{
-                    'label': item.label,
-                    'sfSymbol': item.sfSymbol,
-                    'selectedSfSymbol': item.selectedSfSymbol,
-                  },
-              ],
-            },
-            creationParamsCodec: const StandardMessageCodec(),
-            onPlatformViewCreated: _onPlatformViewCreated,
-          ),
-        );
-      },
+      builder: (context, constraints) => Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: _onPointerDown,
+        onPointerUp: (event) => _onPointerUp(event, constraints.maxWidth),
+        onPointerCancel: (_) => _clearPointer(),
+        child: CNTabBar(
+          // CNTabBar 1.8.1 places UITabBar 14pt below its container's top.
+          // Reserve that headroom so the bar itself keeps its original height.
+          height: 49 + MediaQuery.viewPaddingOf(context).bottom + (nativeGlass ? 14 : 0),
+          // The native adapter treats zero as an unspecified symbol size,
+          // matching UIImage(systemName:) in the previous implementation. The
+          // Flutter fallback needs an explicit, nonzero icon size.
+          iconSize: nativeGlass ? 0 : 25,
+          currentIndex: _selected,
+          tint: Theme.of(context).colorScheme.primary,
+          items: [
+            for (final item in widget.items)
+              CNTabBarItem(
+                label: item.label,
+                icon: CNSymbol(item.sfSymbol),
+                activeIcon: CNSymbol(item.selectedSfSymbol),
+                // Before iOS 26 the bar is Flutter's CupertinoTabBar, which
+                // prefers these over the symbols: Flutter glyphs, not native
+                // icon views that would take the tap. See cupertinoGlyphFor.
+                customIcon: nativeGlass ? null : cupertinoGlyphFor(item.sfSymbol),
+                activeCustomIcon:
+                    nativeGlass ? null : cupertinoGlyphFor(item.selectedSfSymbol),
+              ),
+          ],
+          // A reselect is the Listener's to report; taking it from here too
+          // would report it twice wherever the plugin does forward one.
+          onTap: (index) {
+            if (index != _selected) _select(index);
+          },
+        ),
+      ),
     );
   }
-
-  void _onPlatformViewCreated(int viewId) {
-    final channel = MethodChannel('$_channelPrefix/$viewId');
-    _channel = channel;
-
-    channel.setMethodCallHandler((call) async {
-      if (call.method != 'onSelect') return null;
-      final arguments = call.arguments;
-      final index = arguments is Map ? arguments['index'] : null;
-      if (index is int && index >= 0 && index < widget.items.length) {
-        widget.onSelected(index);
-      }
-      return null;
-    });
-  }
-
-  Future<void> _sendSelectionUpdate(int index) async {
-    final channel = _channel;
-    if (channel == null) return;
-
-    try {
-      await channel.invokeMethod<void>('updateSelectedIndex', <String, Object?>{
-        'index': index,
-      });
-    } on PlatformException {
-      // Platform view may be tearing down.
-    } on MissingPluginException {
-      // Platform view may not be wired yet.
-    }
-  }
 }
-
-const _viewType = 'techpie/native_glass_tab_bar';
-const _channelPrefix = 'techpie/native_glass_tab_bar';

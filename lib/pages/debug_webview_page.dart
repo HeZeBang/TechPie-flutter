@@ -144,12 +144,24 @@ class _DebugWebViewPageState extends State<DebugWebViewPage>
             ),
           ];
     return Scaffold(
-      appBar: hostNavBarVisible
-          ? AppBar(title: Text(hostPageTitle ?? 'Debug WebView'), centerTitle: true)
-          : null,
+      appBar: buildHostNavigationBar('Debug WebView'),
       body: isDesktopWebView
           ? Column(children: [urlRow, ...bridgeText, const Text('Desktop WebView opened in separate window')])
-          : Column(children: [urlRow, ...bridgeText, Expanded(child: WebViewWidget(controller: _controller))]),
+          : Column(
+              children: [
+                urlRow,
+                ...bridgeText,
+                Expanded(
+                  // Bottom only: inside a tab the page sits above the tab bar.
+                  child: SafeArea(
+                    top: false,
+                    left: false,
+                    right: false,
+                    child: WebViewWidget(controller: _controller),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }

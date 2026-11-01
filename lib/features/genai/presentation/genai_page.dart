@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 
 import '../../../models/third_party_account.dart';
 import '../../../pages/campus_session_handle.dart';
-import '../../../pages/login_page.dart';
 import '../../../pages/third_party_accounts_page.dart';
 import '../../../pages/third_party_bind_page.dart';
 import '../../../services/service_provider.dart';
 import '../../../widgets/adaptive_feedback.dart';
 import '../../../widgets/adaptive_page_navigation.dart';
+import '../../../widgets/uni_auth_login.dart';
 import '../app/genai_runtime.dart';
 import '../application/genai_agent_runner.dart';
 import '../application/techpie_genai_tools.dart';
@@ -147,7 +147,7 @@ class _GenAiPageState extends State<GenAiPage> {
           );
         },
         onSignIn:
-            services.authService.isLoggedIn ? null : () => unawaited(presentLoginPage(context)),
+            services.authService.isLoggedIn ? null : () => unawaited(startUniAuthLogin(context)),
         onBindCampus: () => unawaited(
           pushAdaptivePage<void>(
             context,

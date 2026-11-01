@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -17,6 +18,7 @@ import '../utils/product_version.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_confirmation_button.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_switch.dart';
@@ -24,11 +26,11 @@ import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/uni_auth_login.dart';
 import '../widgets/update_dialogs.dart';
 import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
-import 'login_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'watch_settings_page.dart';
@@ -176,7 +178,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ? 0.0
         : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
 
-    return Scaffold(
+    return AdaptiveNavigationScaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
           ? const IosNativeNavigationBar(
@@ -300,7 +302,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   label: '通过 GeekPie Uni-Auth 登录',
                   role: AdaptiveButtonRole.prominent,
                   accessibilityLabel: '登录 TechPie',
-                  onPressed: () => unawaited(presentLoginPage(context)),
+                  onPressed: () => unawaited(startUniAuthLogin(context)),
                 ),
               )
             else
@@ -308,7 +310,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 leading: const Icon(Icons.login),
                 title: const Text('Login'),
                 subtitle: const Text('通过 GeekPie Uni-Auth 登录'),
-                onTap: () => unawaited(presentLoginPage(context)),
+                onTap: () => unawaited(startUniAuthLogin(context)),
               ),
             // Bindings are configured independently of the primary account, so
             // this row sits outside the signed-in block (it replaces the old
@@ -358,13 +360,12 @@ class _SettingsPageState extends State<SettingsPage> {
               ListTile(
                 leading: Icon(themeService.mode.icon),
                 title: const Text('Theme'),
-                subtitle: Text(themeService.mode.label),
+                // The menu button shows the value; a subtitle would repeat it.
                 trailing: AdaptiveSelect(
                   value: themeService.mode.name,
                   placeholder: 'Choose theme',
                   accessibilityLabel: 'Theme',
-                  useIosNativeMenu: true,
-                  width: 156,
+                  shrinkWrap: true,
                   options: [
                     for (final mode in AppThemeMode.values)
                       AdaptiveSelectOption(
@@ -545,6 +546,7 @@ class _SettingsPageState extends State<SettingsPage> {
         width: 260,
         placement: DesktopPopoverPlacement.belowEnd,
         offset: const Offset(0, 8),
+        scrollable: true,
         builder: (context, close) {
           final theme = Theme.of(context);
           return DesktopPopoverSurface(
@@ -560,30 +562,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const Divider(height: 1),
-                for (final mode in AppThemeMode.values)
-                  DesktopMenuRow(
-                    leading: Icon(mode.icon, size: 20),
-                    title: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            mode.label,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ),
-                        if (themeService.mode == mode)
-                          Icon(
-                            Icons.check,
-                            size: 20,
-                            color: theme.colorScheme.primary,
-                          ),
-                      ],
-                    ),
-                    onTap: () {
-                      unawaited(themeService.setMode(mode));
-                      close();
-                    },
-                  ),
+                _ThemeModeOptions(
+                  themeService: themeService,
+                  desktop: true,
+                  onSelected: (mode) {
+                    unawaited(themeService.setMode(mode));
+                    close();
+                  },
+                ),
               ],
             ),
           );
@@ -593,8 +579,9 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
+        useRootNavigator: true,
         builder: (context) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -606,21 +593,13 @@ class _SettingsPageState extends State<SettingsPage> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              for (final mode in AppThemeMode.values)
-                ListTile(
-                  leading: Icon(mode.icon),
-                  title: Text(mode.label),
-                  trailing: themeService.mode == mode
-                      ? Icon(
-                          Icons.check,
-                          color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () {
-                    unawaited(themeService.setMode(mode));
-                    Navigator.pop(context);
-                  },
-                ),
+              _ThemeModeOptions(
+                themeService: themeService,
+                onSelected: (mode) {
+                  unawaited(themeService.setMode(mode));
+                  Navigator.pop(context);
+                },
+              ),
               const SizedBox(height: 8),
             ],
           ),
@@ -692,8 +671,9 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
+        useRootNavigator: true,
         builder: (context) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -750,6 +730,63 @@ class _SettingsPageState extends State<SettingsPage> {
   String _shortTime(DateTime t) {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+  }
+}
+
+class _ThemeModeOptions extends StatelessWidget {
+  const _ThemeModeOptions({
+    required this.themeService,
+    required this.onSelected,
+    this.desktop = false,
+  });
+
+  final ThemeService themeService;
+  final ValueChanged<AppThemeMode> onSelected;
+  final bool desktop;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final mode in AppThemeMode.values)
+          if (desktop)
+            DesktopMenuRow(
+              leading: Icon(mode.icon, size: 20),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      mode.label,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  if (themeService.mode == mode)
+                    Icon(
+                      Icons.check,
+                      size: 20,
+                      color: theme.colorScheme.primary,
+                    ),
+                ],
+              ),
+              onTap: () => onSelected(mode),
+            )
+          else
+            ListTile(
+              leading: Icon(mode.icon),
+              title: Text(mode.label),
+              trailing: themeService.mode == mode
+                  ? Icon(
+                      Icons.check,
+                      color: theme.colorScheme.primary,
+                    )
+                  : null,
+              onTap: () => onSelected(mode),
+            ),
+      ],
+    );
   }
 }
 

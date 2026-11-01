@@ -1,3 +1,4 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,9 +12,13 @@ import 'package:techpie/features/campus_card/presentation/icons/platform_icons.d
 import 'package:techpie/features/campus_card/presentation/theme/glass.dart';
 import 'package:techpie/features/campus_card/presentation/theme/theme.dart';
 import 'package:techpie/features/campus_card/presentation/widgets/apple_wallet_components.dart';
+import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
 void main() {
+  // These cover the iOS 26 chrome; the pre-26 fallback has its own tests.
+  setUp(() => debugUsesIosLiquidGlass = true);
+  tearDown(() => debugUsesIosLiquidGlass = false);
   testWidgets('list rows expose their tap action to accessibility',
       (tester) async {
     final handle = tester.ensureSemantics();
@@ -449,9 +454,19 @@ void main() {
     expect(bar.leadingItems.single.sfSymbol, 'chevron.left');
     expect(bar.trailingItems.map((item) => item.id), ['info', 'scan']);
     expect(bar.trailingItems.last.enabled, isFalse);
-    bar.onItemPressed!('info');
+    final groupFinder = find.byType(CNGlassButtonGroup);
+    final group = tester.widget<CNGlassButtonGroup>(groupFinder);
+    expect(group.buttons.last.enabled, isFalse);
+    expect(group.buttons.last.onPressed, isNull);
+    final infoSemantics = tester.widgetList<Semantics>(find.byType(Semantics)).singleWhere(
+          (widget) => widget.properties.label == 'Card details',
+        );
+    expect(infoSemantics.properties.onTap, isNotNull);
+    group.buttons.first.onPressed!();
     expect(infoPressed, isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
+    // CNIcon's startup guard leaves a 500ms timer on the Linux fallback path.
+    await tester.pump(const Duration(milliseconds: 500));
     debugDefaultTargetPlatformOverride = null;
   });
 

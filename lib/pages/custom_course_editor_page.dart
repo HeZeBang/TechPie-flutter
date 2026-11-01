@@ -232,7 +232,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         title: '上课日期',
         selection: () => pending,
         builder: (_) => SizedBox(
-          height: 200,
+          height: 216,
           child: CupertinoDatePicker(
             mode: CupertinoDatePickerMode.date,
             initialDateTime: initialDate,
@@ -260,7 +260,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
       title: isStart ? '开始时间' : '结束时间',
       selection: () => pending,
       builder: (_) => SizedBox(
-        height: 200,
+        height: 216,
         child: CupertinoDatePicker(
           mode: CupertinoDatePickerMode.time,
           use24hFormat: true,
@@ -676,6 +676,8 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                 value: value,
                 placeholder: placeholder,
                 width: double.infinity,
+                // A display field: tapping opens the period wheel sheet.
+                useIosNativeMenu: false,
                 onChanged: (_) {},
               ),
             ),
@@ -742,6 +744,8 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
           value: value,
           placeholder: placeholder,
           width: double.infinity,
+          // A display field: tapping opens the semester wheel sheet.
+          useIosNativeMenu: false,
           onChanged: onChanged,
         ),
       ),

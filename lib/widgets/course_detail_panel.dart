@@ -1,6 +1,8 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../models/course.dart';
+import '../utils/platform.dart';
 
 class CourseDetailContent extends StatelessWidget {
   final Course course;
@@ -23,8 +25,17 @@ class CourseDetailContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final titleStyle = compact ? theme.textTheme.titleLarge : theme.textTheme.headlineSmall;
-    final detailColor = colorScheme.onSurfaceVariant;
+    final ios = isIos();
+    // iOS: Calendar's event detail — a title2-weight heading, SF-style glyphs
+    // and the system secondary label colour for the details.
+    final titleStyle = ios
+        ? const TextStyle(fontSize: 22, height: 1.25)
+        : compact
+            ? theme.textTheme.titleLarge
+            : theme.textTheme.headlineSmall;
+    final detailColor =
+        ios ? CupertinoColors.secondaryLabel.resolveFrom(context) : colorScheme.onSurfaceVariant;
+    IconData glyph(IconData material, IconData cupertino) => ios ? cupertino : material;
 
     return Padding(
       padding: padding,
@@ -42,29 +53,29 @@ class CourseDetailContent extends StatelessWidget {
           const SizedBox(height: 18),
           if (course.location.isNotEmpty)
             CourseDetailRow(
-              icon: Icons.location_on_outlined,
+              icon: glyph(Icons.location_on_outlined, CupertinoIcons.placemark),
               text: course.location,
               color: detailColor,
             ),
           CourseDetailRow(
-            icon: Icons.schedule_outlined,
+            icon: glyph(Icons.schedule_outlined, CupertinoIcons.clock),
             text: _timeRange(),
             color: detailColor,
           ),
           CourseDetailRow(
-            icon: Icons.calendar_today_outlined,
+            icon: glyph(Icons.calendar_today_outlined, CupertinoIcons.calendar),
             text: _dayName(),
             color: detailColor,
           ),
           if (course.teachers != null && course.teachers!.isNotEmpty)
             CourseDetailRow(
-              icon: Icons.person_outlined,
+              icon: glyph(Icons.person_outlined, CupertinoIcons.person),
               text: course.teachers!,
               color: detailColor,
             ),
           if (course.weeksText != null && course.weeksText!.isNotEmpty)
             CourseDetailRow(
-              icon: Icons.date_range_outlined,
+              icon: glyph(Icons.date_range_outlined, CupertinoIcons.repeat),
               text: course.weeksText!,
               color: detailColor,
             ),
