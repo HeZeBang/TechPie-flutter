@@ -148,11 +148,12 @@ packages:
   cupertino_native_better:
     dependency: "direct main"
     description:
-      name: cupertino_native_better
-      sha256: "7546f2f5c5dfd17c77605e288e932a7da4f6bf51f9733bb366cada4727a211ed"
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "1.8.1"
+      path: "."
+      ref: "1c01bff23a383e321f86f174753330a5ac7a7f33"
+      resolved-ref: "1c01bff23a383e321f86f174753330a5ac7a7f33"
+      url: "https://github.com/Honahec/cupertino_native_better.git"
+    source: git
+    version: "1.8.3"
   dbus:
     dependency: transitive
     description:
@@ -1156,5 +1157,5 @@ packages:
     source: hosted
     version: "3.1.4"
 sdks:
-  dart: ">=3.9.0 <4.0.0"
+  dart: ">=3.9.0-0 <4.0.0"
   flutter: ">=3.27.4-ohos-1.0.5"

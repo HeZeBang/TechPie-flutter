@@ -1,3 +1,4 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -48,6 +49,11 @@ void main() {
     expect(selected, [1]);
   },
     variant: ios,
+    // CNTabBar decides between its native bar and the Flutter one from the
+    // host's OS version, not from debugUsesIosLiquidGlass: on a macOS 26+ host
+    // it waits for a native view no test creates, and draws nothing meanwhile.
+    // The Flutter bar this checks is what a pre-26 iPhone (and CI) gets.
+    skip: PlatformVersion.shouldUseNativeGlass,
   );
 
   testWidgets('a tap on a bar button icon reaches the bar', (tester) async {

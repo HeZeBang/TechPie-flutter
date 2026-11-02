@@ -249,6 +249,29 @@ void main() {
   );
 
   testWidgets(
+    'a widget tap opens the code in the Home tab, whatever tab was showing',
+    (tester) async {
+      await pumpApp(tester);
+      tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(3);
+      await tester.pumpAndSettle();
+      expect(tester.widget<CNTabBar>(find.byType(CNTabBar)).currentIndex, 3);
+
+      appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<CNTabBar>(find.byType(CNTabBar)).currentIndex, 0);
+      expect(find.byKey(const Key('payment-code-page')), findsOneWidget);
+
+      // One back lands on Home, where the feature grid would have opened it.
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(CampusCardPage), findsNothing);
+      expect(find.byType(HomePage), findsOneWidget);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
     'widget entry reveals code through tabs, scanner and root pages',
     (tester) async {
       const channel = MethodChannel('test/ecard_widget_tab_entry');
@@ -286,6 +309,7 @@ void main() {
       expect(find.byType(CampusCardPage), findsNothing);
       await openPayCode();
       expect(nativeCalls, contains('acknowledgePendingRoute'));
+      expect(tester.widget<CNTabBar>(find.byType(CNTabBar)).currentIndex, 0);
       expect(
         find.byKey(const Key('payment-code-page')),
         findsOneWidget,
