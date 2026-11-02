@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../../application/campus_network_status.dart';
 import '../../core/errors/app_failure.dart';
 import '../../domain/models/bill_models.dart';
 import '../../domain/money_fen.dart';
@@ -15,10 +16,13 @@ final class EcardTransactionHistoryRepository
   EcardTransactionHistoryRepository(
     this._client, {
     required TransactionSubjectReader subjectReader,
-  }) : _subjectReader = subjectReader;
+    CampusNetworkStatus? networkStatus,
+  }) : _subjectReader = subjectReader,
+       _networkStatus = networkStatus;
 
   final EcardTransport _client;
   final TransactionSubjectReader _subjectReader;
+  final CampusNetworkStatus? _networkStatus;
   final Map<String, Map<String, TransactionRecord>> _detailCache = {};
 
   @override
@@ -86,6 +90,18 @@ final class EcardTransactionHistoryRepository
     required int pageSize,
   }) async {
     final subjectId = await _requireSubject();
+    Future<TransactionPage> query() => _requestPage(
+      subjectId, begin: begin, end: end, cursor: cursor, pageSize: pageSize,
+    );
+    return _networkStatus?.track('/selftrade/queryCardSelfTradeList', query) ?? query();
+  }
+
+  Future<TransactionPage> _requestPage(String subjectId, {
+    DateTime? begin,
+    DateTime? end,
+    String? cursor,
+    required int pageSize,
+  }) async {
     final page = int.tryParse(cursor ?? '0') ?? 0;
     final size = pageSize.clamp(1, 50);
     final now = DateTime.now();
