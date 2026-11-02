@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:ui';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -16,6 +18,7 @@ import '../utils/product_version.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_confirmation_button.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_switch.dart';
@@ -23,11 +26,11 @@ import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/uni_auth_login.dart';
 import '../widgets/update_dialogs.dart';
 import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
-import 'login_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'watch_settings_page.dart';
@@ -42,6 +45,8 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   String _appVersion = '';
   bool _checkingUpdate = false;
+  bool? _isPersonalInfoBlurred;
+  bool _wasVisible = false;
 
   /// The stack a settings subpage is pushed onto in a wide window. A field, not
   /// a local: a GlobalKey rebuilt every frame would drop the stack with it.
@@ -51,6 +56,24 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     unawaited(_loadAppVersion());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ignore: deprecated_member_use
+    final isVisible = TickerMode.of(context);
+    if (isVisible && !_wasVisible) {
+      _isPersonalInfoBlurred =
+          ServiceProvider.of(context).storageService.maskPersonalInfo;
+    }
+    _wasVisible = isVisible;
+  }
+
+  void _togglePersonalInfoBlur() {
+    setState(() {
+      _isPersonalInfoBlurred = !(_isPersonalInfoBlurred ?? true);
+    });
   }
 
   Future<void> _loadAppVersion() async {
@@ -155,7 +178,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ? 0.0
         : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
 
-    return Scaffold(
+    return AdaptiveNavigationScaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
           ? const IosNativeNavigationBar(
@@ -170,30 +193,61 @@ class _SettingsPageState extends State<SettingsPage> {
           themeService,
           tpAuth,
           campusCard,
+          sp.syncService,
         ]),
-        builder: (context, _) => ListView(
-          padding: EdgeInsets.only(
-            top: topInset,
-            bottom: AppShellMetrics.bottomContentPaddingOf(context),
-          ),
-          children: [
-            // Account section
-            _sectionHeader(theme, 'Account'),
+        builder: (context, _) {
+          final session = auth.session;
+          return ListView(
+            padding: EdgeInsets.only(
+              top: topInset,
+              bottom: AppShellMetrics.bottomContentPaddingOf(context),
+            ),
+            children: [
+              // Account section
+              _sectionHeader(theme, 'Account'),
+              if (session != null) ...[
+                Semantics(
+                  button: true,
+                  label: (_isPersonalInfoBlurred ?? true)
+                      ? 'Personal info hidden, tap to show'
+                      : 'Personal info shown, tap to hide',
+                  child: ListTile(
+                    leading: const Icon(Icons.person),
+                    title: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      enabled: _isPersonalInfoBlurred ?? true,
+                      child: Text(
+                        session.userName.isNotEmpty
+                            ? session.userName
+                            : session.userId,
+                      ),
+                    ),
+                    subtitle: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      enabled: _isPersonalInfoBlurred ?? true,
+                      child: Text(
+                        [
+                          'GeekPie Uni-Auth',
+                          if (session.userId.isNotEmpty) session.userId,
+                        ].join(' · '),
+                      ),
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(
+                        (_isPersonalInfoBlurred ?? true)
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                      ),
+                      tooltip: (_isPersonalInfoBlurred ?? true)
+                          ? 'Show personal info'
+                          : 'Hide personal info',
+                      onPressed: _togglePersonalInfoBlur,
+                    ),
+                    onTap: _togglePersonalInfoBlur,
+                  ),
+                ),
+              ],
             if (auth.isLoggedIn) ...[
-              ListTile(
-                leading: const Icon(Icons.person),
-                title: Text(
-                  auth.session!.userName.isNotEmpty
-                      ? auth.session!.userName
-                      : auth.session!.userId,
-                ),
-                subtitle: Text(
-                  [
-                    'GeekPie Uni-Auth',
-                    if (auth.session!.userId.isNotEmpty) auth.session!.userId,
-                  ].join(' · '),
-                ),
-              ),
               ListTile(
                 leading: const Icon(Icons.cloud_sync_outlined),
                 title: const Text('Cloud sync'),
@@ -212,7 +266,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 trailing: const Icon(Icons.open_in_new),
                 onTap: () => unawaited(
                   launchUrl(
-                    Uri.parse('https://techpie.geekpie.club/privacy#account-deletion'),
+                    Uri.parse(
+                        'https://techpie.geekpie.club/privacy#account-deletion',),
                     mode: LaunchMode.externalApplication,
                   ),
                 ),
@@ -247,7 +302,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   label: '通过 GeekPie Uni-Auth 登录',
                   role: AdaptiveButtonRole.prominent,
                   accessibilityLabel: '登录 TechPie',
-                  onPressed: () => unawaited(presentLoginPage(context)),
+                  onPressed: () => unawaited(startUniAuthLogin(context)),
                 ),
               )
             else
@@ -255,7 +310,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 leading: const Icon(Icons.login),
                 title: const Text('Login'),
                 subtitle: const Text('通过 GeekPie Uni-Auth 登录'),
-                onTap: () => unawaited(presentLoginPage(context)),
+                onTap: () => unawaited(startUniAuthLogin(context)),
               ),
             // Bindings are configured independently of the primary account, so
             // this row sits outside the signed-in block (it replaces the old
@@ -294,7 +349,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: const Text('Apple Watch'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  pushAdaptivePage<void>(context, builder: (_) => const WatchSettingsPage()),
+                  pushAdaptivePage<void>(context,
+                      builder: (_) => const WatchSettingsPage(),),
                 ),
               ),
 
@@ -304,14 +360,24 @@ class _SettingsPageState extends State<SettingsPage> {
               ListTile(
                 leading: Icon(themeService.mode.icon),
                 title: const Text('Theme'),
-                subtitle: Text(themeService.mode.label),
+                // The menu button shows the value; a subtitle would repeat it.
                 trailing: AdaptiveSelect(
                   value: themeService.mode.name,
                   placeholder: 'Choose theme',
-                  width: 156,
+                  accessibilityLabel: 'Theme',
+                  shrinkWrap: true,
                   options: [
                     for (final mode in AppThemeMode.values)
-                      AdaptiveSelectOption(value: mode.name, label: mode.label),
+                      AdaptiveSelectOption(
+                        value: mode.name,
+                        label: mode.label,
+                        sfSymbol: switch (mode) {
+                          AppThemeMode.system => 'circle.lefthalf.filled',
+                          AppThemeMode.light => 'sun.max',
+                          AppThemeMode.dark => 'moon',
+                          AppThemeMode.amoled => 'moon.fill',
+                        },
+                      ),
                   ],
                   onChanged: (value) {
                     final mode = AppThemeMode.values.firstWhere(
@@ -344,6 +410,19 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // General section
             _sectionHeader(theme, 'General'),
+            _AdaptiveSwitchTile(
+              usesIosLiquidGlass: useIosChrome,
+              secondary: const Icon(Icons.visibility_off_outlined),
+              title: 'Mask personal info',
+              subtitle: 'Blur sensitive profile details by default',
+              value: storage.maskPersonalInfo,
+              onChanged: (value) {
+                unawaited(storage.setMaskPersonalInfo(value));
+                setState(() {
+                  _isPersonalInfoBlurred = value;
+                });
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('About'),
@@ -369,30 +448,32 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // Developer section
             if (!kReleaseMode) _sectionHeader(theme, 'Developer'),
-            if (!kReleaseMode) _AdaptiveSwitchTile(
-              usesIosLiquidGlass: useIosChrome,
-              secondary: const Icon(Icons.bug_report_outlined),
-              title: 'Debug mode',
-              subtitle: 'Log all API requests',
-              value: logger.enabled,
-              onChanged: (value) {
-                logger.enabled = value;
-                unawaited(storage.setDebugMode(value));
-              },
-            ),
-            if (!kReleaseMode) _AdaptiveSwitchTile(
-              usesIosLiquidGlass: useIosChrome,
-              secondary: const Icon(Icons.dns_outlined),
-              title: 'Use localhost',
-              subtitle: isAndroid()
-                  ? 'Connect to local server via 10.0.2.2:3000'
-                  : 'Connect to local development server',
-              value: storage.useLocalhost,
-              onChanged: (value) {
-                unawaited(storage.setUseLocalhost(value));
-                setState(() {});
-              },
-            ),
+            if (!kReleaseMode)
+              _AdaptiveSwitchTile(
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.bug_report_outlined),
+                title: 'Debug mode',
+                subtitle: 'Log all API requests',
+                value: logger.enabled,
+                onChanged: (value) {
+                  logger.enabled = value;
+                  unawaited(storage.setDebugMode(value));
+                },
+              ),
+            if (!kReleaseMode)
+              _AdaptiveSwitchTile(
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.dns_outlined),
+                title: 'Use localhost',
+                subtitle: isAndroid()
+                    ? 'Connect to local server via 10.0.2.2:3000'
+                    : 'Connect to local development server',
+                value: storage.useLocalhost,
+                onChanged: (value) {
+                  unawaited(storage.setUseLocalhost(value));
+                  setState(() {});
+                },
+              ),
             if (!kReleaseMode)
               ListTile(
                 leading: const Icon(Icons.science_outlined),
@@ -432,9 +513,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
           ],
-        ),
-      ),
-    );
+        );
+      },
+    ),
+  );
   }
 
   Future<void> _confirmLogout(AuthService auth) async {
@@ -464,6 +546,7 @@ class _SettingsPageState extends State<SettingsPage> {
         width: 260,
         placement: DesktopPopoverPlacement.belowEnd,
         offset: const Offset(0, 8),
+        scrollable: true,
         builder: (context, close) {
           final theme = Theme.of(context);
           return DesktopPopoverSurface(
@@ -479,30 +562,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const Divider(height: 1),
-                for (final mode in AppThemeMode.values)
-                  DesktopMenuRow(
-                    leading: Icon(mode.icon, size: 20),
-                    title: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            mode.label,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ),
-                        if (themeService.mode == mode)
-                          Icon(
-                            Icons.check,
-                            size: 20,
-                            color: theme.colorScheme.primary,
-                          ),
-                      ],
-                    ),
-                    onTap: () {
-                      unawaited(themeService.setMode(mode));
-                      close();
-                    },
-                  ),
+                _ThemeModeOptions(
+                  themeService: themeService,
+                  desktop: true,
+                  onSelected: (mode) {
+                    unawaited(themeService.setMode(mode));
+                    close();
+                  },
+                ),
               ],
             ),
           );
@@ -512,8 +579,9 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
+        useRootNavigator: true,
         builder: (context) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -525,21 +593,13 @@ class _SettingsPageState extends State<SettingsPage> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              for (final mode in AppThemeMode.values)
-                ListTile(
-                  leading: Icon(mode.icon),
-                  title: Text(mode.label),
-                  trailing: themeService.mode == mode
-                      ? Icon(
-                          Icons.check,
-                          color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () {
-                    unawaited(themeService.setMode(mode));
-                    Navigator.pop(context);
-                  },
-                ),
+              _ThemeModeOptions(
+                themeService: themeService,
+                onSelected: (mode) {
+                  unawaited(themeService.setMode(mode));
+                  Navigator.pop(context);
+                },
+              ),
               const SizedBox(height: 8),
             ],
           ),
@@ -611,8 +671,9 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
+        useRootNavigator: true,
         builder: (context) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -669,6 +730,63 @@ class _SettingsPageState extends State<SettingsPage> {
   String _shortTime(DateTime t) {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+  }
+}
+
+class _ThemeModeOptions extends StatelessWidget {
+  const _ThemeModeOptions({
+    required this.themeService,
+    required this.onSelected,
+    this.desktop = false,
+  });
+
+  final ThemeService themeService;
+  final ValueChanged<AppThemeMode> onSelected;
+  final bool desktop;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final mode in AppThemeMode.values)
+          if (desktop)
+            DesktopMenuRow(
+              leading: Icon(mode.icon, size: 20),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      mode.label,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  if (themeService.mode == mode)
+                    Icon(
+                      Icons.check,
+                      size: 20,
+                      color: theme.colorScheme.primary,
+                    ),
+                ],
+              ),
+              onTap: () => onSelected(mode),
+            )
+          else
+            ListTile(
+              leading: Icon(mode.icon),
+              title: Text(mode.label),
+              trailing: themeService.mode == mode
+                  ? Icon(
+                      Icons.check,
+                      color: theme.colorScheme.primary,
+                    )
+                  : null,
+              onTap: () => onSelected(mode),
+            ),
+      ],
+    );
   }
 }
 

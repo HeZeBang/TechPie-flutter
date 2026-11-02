@@ -120,7 +120,7 @@ class AdaptiveFeedbackHostState extends State<AdaptiveFeedbackHost>
         onAction: onAction,
       );
     });
-    _controller.forward(from: _controller.value == 0 ? 0 : _controller.value);
+    unawaited(_controller.forward(from: _controller.value == 0 ? 0 : _controller.value));
     _dismissTimer = Timer(duration, dismiss);
   }
 

@@ -41,6 +41,14 @@ class Assignment {
 
   bool get submitted => status == 'Submitted' || status == 'Graded';
 
+  /// Only Gradescope exposes a late-submission deadline. Other platforms use
+  /// their primary [due] time as the final deadline.
+  bool get supportsLateDue => platform.toLowerCase() == 'gradescope';
+
+  DateTime? get effectiveLateDue => supportsLateDue ? lateDue : null;
+
+  DateTime get effectiveDue => effectiveLateDue ?? due;
+
   factory Assignment.fromJson(Map<String, dynamic> json) {
     DateTime parseDate(dynamic v) {
       if (v is num) {

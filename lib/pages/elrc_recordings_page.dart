@@ -201,6 +201,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       if (!mounted || request != _request) return;
       await pushAdaptivePage<void>(
         context,
+        rootNavigator: true,
         builder: (_) => ElrcPlayerPage(
           courseName: course.name,
           lessonTitle: lesson.title,

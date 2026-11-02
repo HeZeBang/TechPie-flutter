@@ -20,7 +20,7 @@ final class ScannerViewport extends StatelessWidget {
           return MobileScanner(
             controller: (session! as MobileScannerSession).controller,
             scanWindow: window.isEmpty ? null : window,
-            errorBuilder: (context, error, _) => const _CameraFallback(
+            errorBuilder: (context, error) => const _CameraFallback(
               message: '当前设备没有可用相机，请从相册选择二维码图片。',
             ),
           );
