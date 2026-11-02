@@ -37,7 +37,7 @@ dependencies:
   crypto: 3.0.7
   cryptography: ^2.9.0
   cupertino_icons: ^1.0.8
-  cupertino_native_better: 1.8.1
+  cupertino_native_better: 1.8.3
   desktop_webview_window: any
   dio: ^5.8.0
   dynamic_color: ">=1.7.0 <1.8.0"
@@ -77,6 +77,13 @@ dependencies:
       ref: main
 
 dependency_overrides:
+  # iOS tab bar: upstream 1.8.3 plus a fix for the native bar resending every
+  # item on its first rebuild (iconSize was never cached at creation).
+  # Drop this once that fix ships upstream.
+  cupertino_native_better:
+    git:
+      url: https://github.com/Honahec/cupertino_native_better.git
+      ref: 1c01bff23a383e321f86f174753330a5ac7a7f33
   # Linux: use forked desktop_webview_window (WebKitGTK) for webview
   # popup, avoiding WPE WebKit EGL issues on Wayland. The fork adds
   # native setCookie via webkit_cookie_manager_add_cookie and forwards

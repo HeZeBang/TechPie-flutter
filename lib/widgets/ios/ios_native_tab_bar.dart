@@ -61,19 +61,11 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
   int? _downPointer;
   Offset? _downPosition;
 
-  /// The launch screen stays up until the native bar has settled, at most
-  /// this long. Without the hold a cold start shows CNTabBar's stand-ins
-  /// first: its Flutter CupertinoTabBar while it prepares the native view
-  /// (500ms of it in a debug build), then an empty band while UIKit creates
-  /// that view, and then the Liquid Glass bar with its selection jumping
-  /// across every tab — see [_nativeBarSettle].
-  static const _firstFrameHoldLimit = Duration(milliseconds: 2500);
-
-  /// How long the native bar keeps changing after UIKit has created it.
-  /// CNTabBar 1.8.1 sends `refresh` 50ms and 200ms after creation, and each
-  /// one selects every tab in turn, 10ms apart, to force UITabBar to lay out
-  /// its labels — drawn, so the pill visibly runs across the bar twice.
-  static const _nativeBarSettle = Duration(milliseconds: 350);
+  /// The launch screen stays up until the native bar can be drawn, at most
+  /// this long. Until UIKit has created that view, CNTabBar leaves an empty
+  /// slot where the bar goes, and a cold start would show the page with a gap
+  /// where the bar then pops in.
+  static const _firstFrameHoldLimit = Duration(seconds: 2);
   static bool _firstFrameHoldTaken = false;
   bool _holdingFirstFrame = false;
   Timer? _firstFrameHoldTimer;
@@ -100,8 +92,7 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
   }
 
   /// UiKitView lays out an empty box until UIKit has created its view, so a
-  /// RenderUiKitView below the bar means the native bar exists; the first
-  /// frame goes out once it has settled.
+  /// RenderUiKitView below the bar means the next frame shows the real bar.
   void _checkNativeBarReady(Duration _) {
     if (!_holdingFirstFrame || !mounted) return;
     var ready = false;
@@ -116,8 +107,7 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
 
     (context as Element).visitChildElements(visit);
     if (ready) {
-      _firstFrameHoldTimer?.cancel();
-      _firstFrameHoldTimer = Timer(_nativeBarSettle, _releaseFirstFrame);
+      _releaseFirstFrame();
     } else {
       WidgetsBinding.instance.addPostFrameCallback(_checkNativeBarReady);
     }
