@@ -98,7 +98,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(tester.takeException(), isNull);
     expect(find.text('发现新版本 v1.0.2'), findsOneWidget);
     expect(find.text('前往更新'), findsOneWidget);
+    await tester.tap(find.text('以后再说'));
+    await tester.pumpAndSettle();
+    expect(find.text('发现新版本 v1.0.2'), findsNothing);
   });
 }

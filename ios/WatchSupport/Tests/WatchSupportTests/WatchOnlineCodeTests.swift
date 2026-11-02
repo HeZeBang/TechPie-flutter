@@ -206,8 +206,8 @@ final class WatchOnlineCodeTests: XCTestCase {
     XCTAssertEqual(requests.count, 3)
   }
 
-  func testPollingUsesTheWatchCodeAndSameSessionWithBoundedTimeout() async throws {
-    let transport = ScriptedTransport([.session(), .quota(), .code(), .payment()])
+  func testPollingUsesTheWatchSessionAndPreventsConsumedCodeReuse() async throws {
+    let transport = ScriptedTransport([.session(), .quota(), .code(), .payment(), .code()])
     let client = WatchOnlineCodeClient(account: account(), transport: transport)
     let frame = try await client.generate()
     let result = try await client.poll(frame)
@@ -226,6 +226,8 @@ final class WatchOnlineCodeTests: XCTestCase {
     XCTAssertEqual(repeated, .expired)
     let afterRepeat = await transport.requests
     XCTAssertEqual(afterRepeat.count, 4, "A consumed code cannot confirm payment twice")
+    do { _ = try await client.generate(); XCTFail("A consumed code was displayed again") }
+    catch let error as WatchOnlineFailure { XCTAssertEqual(error, .invalidResponse) }
   }
 
   func testExpiredOrReplacedCodeIsNeverPolled() async throws {
@@ -426,15 +428,6 @@ final class WatchOnlineCodeTests: XCTestCase {
     catch is CancellationError {}
     let old = try await client.poll(frame)
     XCTAssertEqual(old, .expired)
-  }
-
-  func testServerCannotReissueTheAlreadyConsumedCode() async throws {
-    let transport = ScriptedTransport([.session(), .quota(), .code(), .payment(), .code()])
-    let client = WatchOnlineCodeClient(account: account(), transport: transport)
-    let frame = try await client.generate()
-    _ = try await client.poll(frame)
-    do { _ = try await client.generate(); XCTFail("A consumed code was displayed again") }
-    catch let error as WatchOnlineFailure { XCTAssertEqual(error, .invalidResponse) }
   }
 
   func testRetryDoesNotWaitForACancelledRequest() async throws {
