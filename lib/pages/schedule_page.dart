@@ -581,6 +581,12 @@ class _SchedulePageState extends State<SchedulePage> {
                       value: 'source',
                       title: '课表来源',
                     ),
+                    if (_schedule.isGraduate)
+                      const IosNativeNavigationBarMenuItem(
+                        value: 'termStart',
+                        title: '设置学期起始日',
+                        sfSymbol: 'calendar',
+                      ),
                     IosNativeNavigationBarMenuItem(
                       value: 'saturday',
                       title: '显示周六',
@@ -714,6 +720,8 @@ class _SchedulePageState extends State<SchedulePage> {
                         child: Text('切换学期'),
                       ),
                       const PopupMenuItem(value: 'source', child: Text('课表来源')),
+                      if (_schedule.isGraduate)
+                        const PopupMenuItem(value: 'termStart', child: Text('设置学期起始日')),
                       CheckedPopupMenuItem(
                         value: 'saturday',
                         checked: _showSaturday,
@@ -985,16 +993,6 @@ class _SchedulePageState extends State<SchedulePage> {
                 }
               },
             ),
-          TextButton.icon(
-            icon: const Icon(Icons.event_outlined, size: 18),
-            label: Text(
-              _schedule.termBegin == null
-                  ? '设置第 1 周周一'
-                  : '第 1 周周一 · ${_schedule.termBegin!.month}/${_schedule.termBegin!.day}',
-            ),
-            onPressed: _setGraduateFirstMonday,
-          ),
-          if (_schedule.termBegin == null) const Text('设置后可显示日期、当前周和导出日历'),
           if (extraCount > 0)
             TextButton(
               onPressed: _showGraduateExtraCourses,
@@ -1132,6 +1130,8 @@ class _SchedulePageState extends State<SchedulePage> {
         _showSemesterPicker();
       case 'source':
         unawaited(_showScheduleSource());
+      case 'termStart':
+        unawaited(_setGraduateFirstMonday());
       case 'saturday':
         setState(() => _showSaturday = !_showSaturday);
       case 'sunday':
@@ -1277,6 +1277,15 @@ class _SchedulePageState extends State<SchedulePage> {
                       unawaited(_showScheduleSource());
                     },
                   ),
+                  if (_schedule.isGraduate)
+                    DesktopMenuRow(
+                      leading: const Icon(Icons.event_outlined, size: 20),
+                      title: Text('设置学期起始日', style: theme.textTheme.bodyMedium),
+                      onTap: () {
+                        close();
+                        unawaited(_setGraduateFirstMonday());
+                      },
+                    ),
                   const Divider(height: 1),
                   DesktopMenuRow(
                     leading: Icon(
