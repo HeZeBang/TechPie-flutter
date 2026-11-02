@@ -353,31 +353,21 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_checkForUpdatesQuietly());
-    _attachEcardWidgetService(widget.ecardWidgetService);
-  }
-
-  void _attachEcardWidgetService(EcardWidgetService? service) {
-    service?.setOpenPayHandler(_openEcardPayCode);
-    service?.onRevealPaymentTarget = appShellCampusCardRevealRequests.request;
-  }
-
-  void _detachEcardWidgetService(EcardWidgetService? service) {
-    service?.clearOpenPayHandler();
-    service?.onRevealPaymentTarget = null;
+    widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
   }
 
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
-    _detachEcardWidgetService(oldWidget.ecardWidgetService);
-    _attachEcardWidgetService(widget.ecardWidgetService);
+    oldWidget.ecardWidgetService?.clearOpenPayHandler();
+    widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _detachEcardWidgetService(widget.ecardWidgetService);
+    widget.ecardWidgetService?.clearOpenPayHandler();
     widget.campusCardService.dispose();
     super.dispose();
   }
@@ -417,13 +407,19 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     }
     if (release == null || !mounted) return;
 
+    // This State sits above the MaterialApp, so its own context has no
+    // MaterialLocalizations and no navigator to put a dialog on; ask the app's
+    // navigator instead.
+    final dialogContext = _navigatorKey.currentContext;
+    if (dialogContext == null || !dialogContext.mounted) return;
     _promptedThisLaunch = true;
-    await showUpdateAvailableDialog(context, release);
+    await showUpdateAvailableDialog(dialogContext, release);
   }
 
   Future<void> _openEcardPayCode() async {
     // The shell performs the push: it knows which stack the entry belongs in —
     // the Home tab's on iOS — and it is still there after a cold start.
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
     appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
   }
 

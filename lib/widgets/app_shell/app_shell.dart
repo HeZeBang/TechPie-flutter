@@ -26,15 +26,6 @@ import 'mobile_shell.dart';
 /// mounts waits for it, which is what a cold start needs.
 final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
 
-/// Asks the shell to bring the campus card's own tab forward, for an entry that
-/// an already-open campus card handles itself: the code must not open in a tab
-/// the user cannot see.
-final appShellCampusCardRevealRequests = AppShellRevealRequests();
-
-class AppShellRevealRequests extends ChangeNotifier {
-  void request() => notifyListeners();
-}
-
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
@@ -111,7 +102,6 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     appShellPendingEcardEntry.addListener(_showPendingEcardEntry);
-    appShellCampusCardRevealRequests.addListener(_revealCampusCardTab);
     if (appShellPendingEcardEntry.value != null) {
       // Deferred: a push during the first build is a build-time side effect.
       WidgetsBinding.instance.addPostFrameCallback(
@@ -123,7 +113,6 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     appShellPendingEcardEntry.removeListener(_showPendingEcardEntry);
-    appShellCampusCardRevealRequests.removeListener(_revealCampusCardTab);
     for (final controller in _tabHeroControllers.values) {
       controller.dispose();
     }
@@ -133,33 +122,36 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
-  /// Pushes the entry the host asked for into the destination the user is on.
+  /// Pushes the entry onto the visible navigation stack.
   void _showPendingEcardEntry() {
     final entry = appShellPendingEcardEntry.value;
     if (entry == null || !mounted) return;
     appShellPendingEcardEntry.value = null;
+    // Login and playback pages can cover the entire tab shell: the code then
+    // opens above that page, and back returns to it.
+    final shellCovered = !ModalRoute.of(context)!.isCurrent;
     final BuildContext? nested;
-    if (isIos()) {
+    if (isIos() && !shellCovered) {
       // Straight above Home, as the feature grid would have opened it, so one
       // back lands on Home rather than on whatever that tab was showing.
-      _revealCampusCardTab();
+      if (_selectedIndex != _campusCardTab) {
+        _onDestinationSelected(_campusCardTab);
+      }
       final navigator = _tabNavigatorKeys[_campusCardTab]?.currentState;
       navigator?.popUntil((route) => route.isFirst);
       nested = navigator?.context;
+    } else if (isIos()) {
+      nested = _tabNavigatorKeys[_selectedIndex]?.currentContext;
     } else {
       nested = _contentNavigatorKeys[_selectedIndex]?.currentContext;
     }
     unawaited(
       pushAdaptivePage<void>(
         nested ?? context,
+        rootNavigator: shellCovered,
         builder: (_) => CampusCardPage(entry: entry),
       ),
     );
-  }
-
-  void _revealCampusCardTab() {
-    if (!mounted || !isIos() || _selectedIndex == _campusCardTab) return;
-    _onDestinationSelected(_campusCardTab);
   }
 
   void _onDestinationSelected(int index) {
@@ -356,7 +348,10 @@ class _AppDestinationSwitcherState extends State<AppDestinationSwitcher> {
                 offstage: index != widget.selectedIndex,
                 child: TickerMode(
                   enabled: index == widget.selectedIndex,
-                  child: widget.pages[index],
+                  child: HeroMode(
+                    enabled: index == widget.selectedIndex,
+                    child: widget.pages[index],
+                  ),
                 ),
               ),
         ],

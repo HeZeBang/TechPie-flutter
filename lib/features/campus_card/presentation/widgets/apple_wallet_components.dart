@@ -438,7 +438,7 @@ final class CampusWalletCard extends StatelessWidget {
 
     return Semantics(
       button: onTap != null,
-      label: '上海科技大学 eCard',
+      label: '校园卡',
       child: ExcludeSemantics(
         child: DecoratedBox(
           decoration: BoxDecoration(
@@ -486,8 +486,6 @@ final class AppleSegmentedControl extends StatelessWidget {
       width: double.infinity,
       child: CupertinoSlidingSegmentedControl<int>(
         groupValue: selectedIndex,
-        backgroundColor: c.surfaceDisabled,
-        thumbColor: c.surface,
         children: {
           for (var index = 0; index < labels.length; index++)
             index: Padding(

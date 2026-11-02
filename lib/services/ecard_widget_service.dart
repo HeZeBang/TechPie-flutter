@@ -18,10 +18,6 @@ final class EcardWidgetService implements HomeWidgetPort {
   bool _pending = false;
   bool _dispatching = false;
 
-  /// Called before a tap goes to a campus card that is already open, so the
-  /// host can bring the place it is open in forward first — its tab on iOS.
-  void Function()? onRevealPaymentTarget;
-
   void initialize() {
     if (_initialized) return;
     _initialized = true;
@@ -66,7 +62,6 @@ final class EcardWidgetService implements HomeWidgetPort {
 
   Future<void> dispose() async {
     _handler = null;
-    onRevealPaymentTarget = null;
     _paymentTargets.clear();
     _channel.setMethodCallHandler(null);
   }
@@ -102,7 +97,6 @@ final class EcardWidgetService implements HomeWidgetPort {
     _pending = false;
     _dispatching = true;
     try {
-      if (_paymentTargets.isNotEmpty) onRevealPaymentTarget?.call();
       await handler();
       try {
         await _channel.invokeMethod<void>('acknowledgePendingRoute');

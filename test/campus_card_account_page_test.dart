@@ -470,6 +470,15 @@ void main() {
     expect(find.byKey(const Key('ecard-bind-hijack-button')), findsNothing);
     expect(find.byKey(const Key('ecard-bind-redeem-button')), findsNothing);
     expect(find.byKey(const Key('openid-field')), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('openid-field')), openId);
+    await tester.tap(find.byKey(const Key('openid-save-button')));
+    await tester.pumpAndSettle();
+
+    expect(auth.signInCalls, 1);
+    expect(await service.readOpenId(), openId);
+    expect(find.text('eCard 已连接'), findsOneWidget);
+    expect(tunnel.stopCalls, 0);
   });
 
   testWidgets('an unknown tunnel state offers stopping instead of starting', (

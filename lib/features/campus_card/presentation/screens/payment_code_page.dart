@@ -12,6 +12,7 @@ import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/page_refresh.dart';
 
 import '../../app/app_providers.dart';
+import '../../application/campus_network_status.dart';
 import '../../application/confirmed_disconnect_feedback.dart';
 import '../../core/config/debug_mode_controller.dart';
 import '../../core/config/debug_mode_features.dart';
@@ -79,6 +80,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
   bool _active = false;
   int _activityRevision = 0;
   late final ConfirmedDisconnectFeedback _disconnectFeedback;
+  late final CampusNetworkStatus _networkStatus;
 
   bool get _allowAutomaticOffline =>
       !_refreshWaiting || !_deferOfflineDuringRefresh || _refreshWaitExpired;
@@ -97,10 +99,12 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
     _refreshWaitTimer = Timer(const Duration(milliseconds: 1500), () {
       if (!mounted || !_active || revision != _refreshWaitRevision || !_refreshWaiting) return;
       setState(() => _refreshWaitExpired = true);
+      _networkStatus.setSlowCode(true);
     });
   }
 
   void _endRefreshWait({bool rebuild = true}) {
+    _networkStatus.setSlowCode(false);
     _refreshWaitTimer?.cancel();
     _refreshWaitTimer = null;
     ++_refreshWaitRevision;
@@ -120,8 +124,12 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
   void initState() {
     super.initState();
     final runtime = ref.read(appRuntimeProvider);
+    _networkStatus = ref.read(campusNetworkStatusProvider);
     _foreground = runtime.lifecycle.current == AppLifecycleState.resumed;
     _lifecycleSubscription = runtime.lifecycle.changes.listen((state) {
+      if (state == AppLifecycleState.resumed) {
+        unawaited(_networkStatus.checkConnection());
+      }
       _foreground = state == AppLifecycleState.resumed;
       _updateActivity(defer: false);
     });
@@ -177,6 +185,8 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
   Future<void> _applyActivity(int revision) async {
     if (!mounted || revision != _activityRevision) return;
     if (_active) {
+      await ref.read(manualOfflineModeProvider.notifier).restored;
+      if (!mounted || revision != _activityRevision) return;
       await _paymentCodes.enter(online: !ref.read(manualOfflineModeProvider));
     } else {
       await _paymentCodes.leave();
@@ -193,7 +203,9 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
     super.dispose();
   }
 
-  void _handleConnectivity(bool online) {
+  Future<void> _handleConnectivity(bool online) async {
+    if (!mounted || !_active) return;
+    await ref.read(manualOfflineModeProvider.notifier).restored;
     if (!mounted || !_active) return;
     final card = ref.read(cardControllerProvider).valueOrNull;
     if (card == null) return;
@@ -230,7 +242,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
     await ref.read(appRuntimeProvider).feedback.play(FeedbackEvent.selection);
     if (!mounted) return;
     _endRefreshWait();
-    ref.read(manualOfflineModeProvider.notifier).setEnabled(enabled);
+    unawaited(ref.read(manualOfflineModeProvider.notifier).setEnabled(enabled));
     if (!enabled) {
       // The local code stays on screen until a fresh online one is ready; only
       // the failure note goes away.
@@ -255,7 +267,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
       // expired — so the mode cannot take effect: the pass goes back online and
       // the activation banner takes over. A code that failed for any other
       // reason keeps the offline surface and its retry.
-      ref.read(manualOfflineModeProvider.notifier).setEnabled(false);
+      unawaited(ref.read(manualOfflineModeProvider.notifier).setEnabled(false));
       setState(() {
         _offline = false;
         _offlinePayload = null;
@@ -436,6 +448,8 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
   @override
   Widget build(BuildContext context) {
     final cardAsync = ref.watch(cardControllerProvider);
+    final networkState = ref.watch(campusNetworkStateProvider).valueOrNull ??
+        _networkStatus.state;
     final card = cardAsync.valueOrNull;
     // Starting/finishing a pending poll changes no visible content.
     ref.watch(
@@ -648,6 +662,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                       _ExpandedPaymentPass(
                         card: card,
                         payment: payment,
+                        networkState: networkState,
                         // What the pass shows, and what a tap on the code
                         // means, follows the mode the user chose — not only
                         // the automatic fallback, or a failed local refresh
@@ -659,7 +674,6 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                             !manualOffline &&
                             _onlineInFlight(payment),
                         refreshLoading: _refreshWaiting && _deferOfflineDuringRefresh && (!_refreshWaitExpired || !_offline),
-                        refreshDegraded: _refreshWaiting && _refreshWaitExpired,
                         offlineBusy: _offlineBusy,
                         offlinePayload: _offlinePayload,
                         offlineRemaining: _offlineRemaining,
@@ -672,9 +686,6 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                         onShowStatus: () => unawaited(
                           _showStatusSheet(
                             card: card,
-                            payment: payment,
-                            manualOffline: manualOffline,
-                            canToggleOffline: canGenerateOffline,
                           ),
                         ),
                         onRefreshOnline: _refreshOnline,
@@ -857,25 +868,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
     });
   }
 
-  Future<void> _showStatusSheet({
-    required CampusCard card,
-    required PaymentCodeViewState payment,
-    required bool manualOffline,
-    required bool canToggleOffline,
-  }) async {
-    final stateLabel = _refreshWaiting &&
-            _refreshWaitExpired &&
-            payment.connectionState != PaymentConnectionState.disconnected
-        ? '在线码响应较慢，已降级'
-        : switch (payment.connectionState) {
-      PaymentConnectionState.online => '网络正常',
-      PaymentConnectionState.disconnected => '网络已断开',
-      PaymentConnectionState.apiError => '服务响应异常',
-      PaymentConnectionState.unknown => '正在检测',
-    };
-    final latency = payment.requestLatency == null
-        ? '--'
-        : '${payment.requestLatency!.inMilliseconds} ms';
+  Future<void> _showStatusSheet({required CampusCard card}) async {
     final selected = await CNBottomSheet.show<bool>(
       context: context,
       useRootNavigator: false,
@@ -883,48 +876,76 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
       useSafeArea: true,
       // A fixed-height sheet: iOS shows no grabber on one.
       showDragHandle: Theme.of(context).platform != TargetPlatform.iOS,
-      builder: (sheetContext) => ApplePinnedHeaderLayout.sheetInsets(sheetContext, Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          Theme.of(context).platform == TargetPlatform.iOS ? 24 : 0,
-          20,
-          28,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppleSection(
-              children: [
-                AppleListRow(label: '在线状态', value: stateLabel),
-                AppleListRow(label: '当前延迟', value: latency),
-                AppleListRow(
-                  label: '离线付款码',
-                  verticalPadding: 4,
-                  trailing: Switch.adaptive(
-                    // The switch is the user's mode, not "an offline code happens
-                    // to be on screen": it moves only when the mode moves, and it
-                    // is inert while there is no usable grant to generate from.
-                    value: manualOffline,
-                    onChanged: canToggleOffline
-                        ? (value) => Navigator.pop(sheetContext, value)
-                        : null,
+      builder: (sheetContext) => ApplePinnedHeaderLayout.sheetInsets(
+        sheetContext,
+        Consumer(
+          builder: (context, ref, _) {
+            final payment = ref.watch(paymentCodeControllerProvider);
+            final networkState =
+                ref.watch(campusNetworkStateProvider).valueOrNull ??
+                _networkStatus.state;
+            final manualOffline = ref.watch(manualOfflineModeProvider);
+            final authorization = ref
+                .watch(offlineAuthorizationProvider(card.id))
+                .valueOrNull
+                ?.state;
+            final canToggleOffline =
+                manualOffline ||
+                authorization == OfflineAuthorizationState.active ||
+                authorization == OfflineAuthorizationState.renewalDue;
+            final stateLabel = switch (networkState) {
+              PaymentConnectionState.disconnected => '网络已断开',
+              PaymentConnectionState.apiError => '服务响应异常或响应较慢',
+              _ => '网络正常',
+            };
+            final latency = payment.requestLatency == null
+                ? '--'
+                : '${payment.requestLatency!.inMilliseconds} ms';
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                Theme.of(context).platform == TargetPlatform.iOS ? 24 : 0,
+                20,
+                28,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppleSection(
+                    children: [
+                      AppleListRow(label: '在线状态', value: stateLabel),
+                      AppleListRow(label: '当前延迟', value: latency),
+                      AppleListRow(
+                        label: '离线付款码',
+                        verticalPadding: 4,
+                        trailing: Switch.adaptive(
+                          // The switch is the user's mode, not "an offline code happens
+                          // to be on screen". An unavailable grant only blocks turning
+                          // the mode on; turning it off remains available.
+                          value: manualOffline,
+                          onChanged: canToggleOffline
+                              ? (value) => Navigator.pop(sheetContext, value)
+                              : null,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              !canToggleOffline
-                  ? '没有可用的离线授权：请先开通或联网续期，之后才能使用离线码。'
-                  : manualOffline
-                      ? '离线模式：只用本机生成的付款码，本地即时刷新，不发起网络请求。'
-                      : '开启后只用本机生成的离线码（每次刷新消耗一次授权次数），直到关闭或退出 App。',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: context.gpColors.textSecondary),
-            ),
-          ],
+                  const SizedBox(height: 10),
+                  Text(
+                    !canToggleOffline
+                        ? '没有可用的离线授权：请先开通或联网续期，之后才能使用离线码。'
+                        : manualOffline
+                        ? '离线模式：只用本机生成的付款码，本地即时刷新，不请求在线付款码。'
+                        : '开启后只用本机生成的离线码（每次刷新消耗一次授权次数）。关闭或重启 App 后会保留设置。',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: context.gpColors.textSecondary),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
-      ),),
+      ),
     );
     if (selected != null && mounted) await _setOfflineMode(card, selected);
   }
@@ -1012,6 +1033,7 @@ final class _ExpandedPaymentPass extends StatelessWidget {
   const _ExpandedPaymentPass({
     required this.card,
     required this.payment,
+    required this.networkState,
     required this.offline,
     required this.waitingForOnlineCode,
     required this.offlineBusy,
@@ -1028,13 +1050,12 @@ final class _ExpandedPaymentPass extends StatelessWidget {
     required this.onRefreshOffline,
     required this.onActivateOnline,
     this.refreshLoading = false,
-    this.refreshDegraded = false,
   });
 
   final bool refreshLoading;
-  final bool refreshDegraded;
   final CampusCard card;
   final PaymentCodeViewState payment;
+  final PaymentConnectionState networkState;
   final bool offline;
   final bool waitingForOnlineCode;
   final bool offlineBusy;
@@ -1069,7 +1090,6 @@ final class _ExpandedPaymentPass extends StatelessWidget {
         payment.phase == PaymentCodePhase.displaying ||
         payment.phase == PaymentCodePhase.refreshing ||
         payment.phase == PaymentCodePhase.polling);
-    final degraded = refreshDegraded && payment.connectionState != PaymentConnectionState.disconnected;
     final ownerName = card.detailsAvailable
         // The feature's copy is Chinese, and the host resolves its own locale
         // (English by default) independently of the device: shorten the name to
@@ -1138,30 +1158,17 @@ final class _ExpandedPaymentPass extends StatelessWidget {
                                     behavior: HitTestBehavior.opaque,
                                     child: SizedBox.square(
                                       dimension: statusSize,
-                                      child: !degraded && payment.connectionState ==
-                                              PaymentConnectionState.unknown
-                                          ? const CupertinoActivityIndicator(
-                                              color: Colors.white,
-                                            )
-                                          : Image.asset(
-                                              degraded ? GeekPayAssets.warningOnline : switch (payment.connectionState) {
-                                                PaymentConnectionState.online =>
-                                                  GeekPayAssets.online,
-                                                PaymentConnectionState
-                                                      .disconnected =>
-                                                  GeekPayAssets.offline,
-                                                PaymentConnectionState
-                                                      .apiError =>
-                                                  GeekPayAssets.warningOnline,
-                                                PaymentConnectionState
-                                                      .unknown =>
-                                                  GeekPayAssets.online,
-                                              },
-                                              width: statusSize,
-                                              height: statusSize,
-                                              filterQuality: FilterQuality.high,
-                                              gaplessPlayback: true,
-                                            ),
+                                      child: Image.asset(
+                                        switch (networkState) {
+                                          PaymentConnectionState.disconnected => GeekPayAssets.offline,
+                                          PaymentConnectionState.apiError => GeekPayAssets.warningOnline,
+                                          _ => GeekPayAssets.online,
+                                        },
+                                        width: statusSize,
+                                        height: statusSize,
+                                        filterQuality: FilterQuality.high,
+                                        gaplessPlayback: true,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1591,7 +1598,7 @@ final class _PaymentSuccess extends ConsumerWidget {
             Text(
               result == null
                   ? '支付成功'
-                  : formatMoneyFen(result!.amount.value),
+                  : formatMoneyFen(result!.amount.value, fixedDecimals: true),
               style: const TextStyle(
                 color: GpTokens.campusRed,
                 fontSize: 35,

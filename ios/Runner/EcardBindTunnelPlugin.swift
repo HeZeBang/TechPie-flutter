@@ -11,6 +11,14 @@ final class EcardBindTunnelPlugin {
     providerBundleIdentifier = "\(Bundle.main.bundleIdentifier ?? "com.example.techpie").EcardBindTunnel"
     channel = FlutterMethodChannel(name: "techpie/ecard_bind", binaryMessenger: messenger)
     channel.setMethodCallHandler { [weak self] call, result in
+      #if targetEnvironment(simulator)
+      // Simulator has no nehelper connection; manual OPENID login remains available.
+      switch call.method {
+      case "start", "status": result("unsupported")
+      case "stop": result(nil)
+      default: result(FlutterMethodNotImplemented)
+      }
+      #else
       guard let self else {
         result(FlutterError(code: "ECARD_TUNNEL_UNAVAILABLE", message: "无法读取自动获取状态", details: nil))
         return
@@ -21,6 +29,7 @@ final class EcardBindTunnelPlugin {
       case "status": self.status(result)
       default: result(FlutterMethodNotImplemented)
       }
+      #endif
     }
   }
 

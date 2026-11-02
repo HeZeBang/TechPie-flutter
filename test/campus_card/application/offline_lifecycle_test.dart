@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:clock/clock.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/campus_card/app/app_providers.dart';
 import 'package:techpie/features/campus_card/app/app_runtime.dart';
 import 'package:techpie/features/campus_card/app/demo_runtime_factory.dart';
@@ -112,6 +113,7 @@ void main() {
 
   testWidgets('late maintenance finishes safely after provider disposal',
       (tester) async {
+    SharedPreferences.setMockInitialValues({});
     final fixture = await _Fixture.create();
     addTearDown(fixture.service.dispose);
     final base = await buildDemoRuntime();
@@ -119,7 +121,7 @@ void main() {
     final container = ProviderContainer(overrides: [
       appRuntimeProvider.overrideWithValue(fixture.runtime(base)),
     ],);
-    container.read(offlineAuthorizationProvider('card'));
+    await container.read(offlineAuthorizationProvider('card').future);
     await tester.pump();
     fixture.remote.pending = Completer<OfflineActivationResponse?>();
     final maintenance = container

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +22,7 @@ import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
 import 'package:techpie/services/debug_logger.dart';
 import 'package:techpie/services/ecard_bind_service.dart';
+import 'package:techpie/services/ecard_widget_service.dart';
 import 'package:techpie/services/egate_app_service.dart';
 import 'package:techpie/services/http_client.dart';
 import 'package:techpie/services/oa_gym_service.dart';
@@ -55,7 +57,10 @@ void main() {
     await runtime.dispose();
   });
 
-  Future<void> pumpApp(WidgetTester tester) async {
+  Future<void> pumpApp(
+    WidgetTester tester, {
+    EcardWidgetService? ecardWidgets,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
     final logger = DebugLogger();
@@ -82,6 +87,7 @@ void main() {
         syncService: SyncService(auth, tpAuth, storage),
         updateService: UpdateService(),
         ecardBindService: EcardBindService(),
+        ecardWidgetService: ecardWidgets,
         campusCardService: CampusCardService.withStore(
           InMemorySecureCredentialStore(),
           runtimeFactory: () => runtime,
@@ -241,6 +247,7 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
+
   testWidgets(
     'a widget tap opens the code in the Home tab, whatever tab was showing',
     (tester) async {
@@ -265,22 +272,85 @@ void main() {
   );
 
   testWidgets(
-    'a widget tap brings an open campus card forward instead of a second one',
+    'widget entry reveals code through tabs, scanner and root pages',
     (tester) async {
-      await pumpApp(tester);
-      featureEntries.singleWhere((feature) => feature.id == 'campus_card').nativeEntry!(
-        tester.element(find.byType(HomePage)),
-      );
+      const channel = MethodChannel('test/ecard_widget_tab_entry');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      final nativeCalls = <String>[];
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        nativeCalls.add(call.method);
+        return null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final service = EcardWidgetService(channel: channel);
+      addTearDown(service.dispose);
+      service.initialize();
+      Future<void> openPayCode() async {
+        final delivered = messenger.handlePlatformMessage(
+          channel.name,
+          const StandardMethodCodec().encodeMethodCall(
+            const MethodCall('openPayCode'),
+          ),
+          (_) {},
+        );
+        await tester.pumpAndSettle();
+        await delivered;
+      }
+
+      await pumpApp(tester, ecardWidgets: service);
+      featureEntries
+          .singleWhere((feature) => feature.id == 'campus_card')
+          .nativeEntry!(tester.element(find.byType(HomePage)));
       await tester.pumpAndSettle();
+      expect(find.byKey(const Key('payment-code-page')), findsOneWidget);
       tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(3);
       await tester.pumpAndSettle();
       expect(find.byType(CampusCardPage), findsNothing);
-
-      appShellCampusCardRevealRequests.request();
-      await tester.pumpAndSettle();
-
+      await openPayCode();
+      expect(nativeCalls, contains('acknowledgePendingRoute'));
       expect(tester.widget<CNTabBar>(find.byType(CNTabBar)).currentIndex, 0);
-      expect(find.byType(CampusCardPage), findsOneWidget);
+      expect(
+        find.byKey(const Key('payment-code-page')),
+        findsOneWidget,
+        reason:
+            'A widget/shortcut entry must show the payment code, not only acknowledge a hidden route.',
+      );
+      final context = tester.element(
+        find.byKey(const Key('payment-code-page')),
+      );
+      final scanner = runtime.scanner as InMemoryScannerPort;
+      final scannerClosed = openGpScanner(context);
+      await tester.pumpAndSettle();
+      expect(scanner.running, isTrue);
+      await openPayCode();
+      expect(
+        find.byType(ScannerModal),
+        findsNothing,
+        reason: 'The payment entry must dismiss the scanner covering the code.',
+      );
+      expect(scanner.running, isFalse);
+      await scannerClosed;
+      final root = Navigator.of(context, rootNavigator: true);
+      final rootPage = root.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('root-entry-page')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await openPayCode();
+      expect(
+        find.byKey(const Key('payment-code-page')),
+        findsOneWidget,
+        reason:
+            'The entry must show the code above a root page, not behind it.',
+      );
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('root-entry-page'), findsOneWidget);
+      root.pop();
+      await tester.pumpAndSettle();
+      await rootPage;
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
