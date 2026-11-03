@@ -58,7 +58,7 @@ jobs:
       # only the github/needs/strategy/matrix/vars/inputs contexts, so this has
       # to be a literal — an `env:` entry could not be read here even if it held
       # the same string.)
-      image: ghcr.io/hezebang/techpie-ohos-buildenv:6.1.1.268-3.27.5-ohos-1.0.5
+      image: ghcr.io/hezebang/techpie-ohos-buildenv:26.0.0.851-3.41.9_ohos-1.0.2
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -95,7 +95,7 @@ jobs:
           node --version
           java -version 2>&1 | head -1
           # The image is trimmed on purpose so this job fits a hosted runner's
-          # disk — 3.3 GB to download, ~5.5 GB extracted, against ~14 GB free —
+          # disk — 3.68 GB to download, ~6.02 GB extracted, against ~14 GB free —
           # and a container cannot free the runner's own disk anyway. If this
           # ever looks tight, shrink the image (ci/Dockerfile.ohos-buildenv),
           # don't hunt for more space here.

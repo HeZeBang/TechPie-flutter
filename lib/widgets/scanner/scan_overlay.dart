@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -120,8 +121,10 @@ final class ScanOverlayController {
 
   void startAppearing() {
     appearing.value = 0;
-    appearing.animateWith(
-      SpringSimulation(_appearingSpring, 0, 1, 0),
+    unawaited(
+      appearing.animateWith(
+        SpringSimulation(_appearingSpring, 0, 1, 0),
+      ),
     );
   }
 
@@ -161,17 +164,21 @@ final class ScanOverlayController {
   /// captured image separately before stopping the camera.
   void setFound(bool found) {
     final from = found ? absorbed.value : 1 - absorbed.value;
-    absorbed.animateWith(
-      SpringSimulation(_absorbedSpring, from, found ? 1 : 0, 0),
-    );
-    dismissed.animateTo(
-      found ? 1 : 0,
-      duration: Duration(
-        milliseconds: (300 * (found ? 1 - dismissed.value : dismissed.value))
-            .round()
-            .clamp(1, 300),
+    unawaited(
+      absorbed.animateWith(
+        SpringSimulation(_absorbedSpring, from, found ? 1 : 0, 0),
       ),
-      curve: foundCurve,
+    );
+    unawaited(
+      dismissed.animateTo(
+        found ? 1 : 0,
+        duration: Duration(
+          milliseconds: (300 * (found ? 1 - dismissed.value : dismissed.value))
+              .round()
+              .clamp(1, 300),
+        ),
+        curve: foundCurve,
+      ),
     );
   }
 

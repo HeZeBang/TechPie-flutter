@@ -63,7 +63,7 @@ visible. WidgetKit may delay transitions, so the absolute deadline remains visib
 
 ## Platform configuration
 
-macOS embeds `DeadlineWidgets`, supporting Notification Center on macOS 11+ and
+macOS embeds `DeadlineWidgets`, supporting Notification Center on macOS 12+ and
 desktop widgets on macOS 14+. iOS uses the existing `EcardPayWidget` extension's
 WidgetBundle, preserving its bundle identifier and campus-code widget kind.
 The deadline widget kind is `DeadlineWidget` on both platforms.

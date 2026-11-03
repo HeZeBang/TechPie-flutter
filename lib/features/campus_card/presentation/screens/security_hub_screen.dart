@@ -33,7 +33,7 @@ final class SecurityHubScreen extends ConsumerWidget {
               20,
               ApplePinnedHeaderLayout.contentTop(context),
               20,
-              52,
+              ApplePinnedHeaderLayout.contentBottom(context, 52),
             ),
             children: [
               AppleSection(

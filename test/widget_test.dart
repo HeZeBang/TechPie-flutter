@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -156,14 +160,29 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.element(find.byType(AssignmentsPage)), same(original));
     }
-    await tester.tap(find.text('Home').first);
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      // A widget tap must also unwind the preserved stack of an inactive tab.
+      unawaited(
+        Navigator.of(original).push<void>(
+          MaterialPageRoute(
+            builder: (_) => const Scaffold(body: Text('Deadline detail')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Deadline detail'), findsOneWidget);
+      tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(0);
+    } else {
+      await tester.tap(find.text('Home').first);
+    }
     await tester.pumpAndSettle();
     expect(find.byType(AssignmentsPage), findsNothing);
     appShellPendingDeadlines.value = true;
     await tester.pumpAndSettle();
     expect(find.byType(AssignmentsPage), findsOneWidget);
     expect(appShellPendingDeadlines.value, isFalse);
-  });
+    expect(find.text('Deadline detail'), findsNothing);
+  }, variant: const TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}),);
 
   testWidgets('Navigation switches pages', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:desktop_webview_window/desktop_webview_window.dart'
     show runWebViewTitleBarWidget;
 import 'package:dynamic_color/dynamic_color.dart';
@@ -31,6 +32,7 @@ import 'services/update_service.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
 import 'widgets/update_dialogs.dart';
+
 void main(List<String> args) async {
   // If this Flutter engine is a desktop_webview_window title bar (secondary
   // engine inside the webview popup), render the navigation controls and
@@ -64,10 +66,11 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
   final httpClient = LoggingHttpClient(debugLogger);
   final uniAuthService = UniAuthService(logger: debugLogger);
-  final authService =
-      AuthService(storageService, httpClient, uniAuthService, logger: debugLogger);
+  final authService = AuthService(storageService, httpClient, uniAuthService,
+      logger: debugLogger,);
   final themeService = ThemeService(storageService);
-  final campusCardService = CampusCardService(debugLogger: debugLogger, storage: storageService);
+  final campusCardService =
+      CampusCardService(debugLogger: debugLogger, storage: storageService);
   final ecardBindService = EcardBindService();
   final ecardWidgetService = EcardWidgetService();
   final thirdPartyAuthService = ThirdPartyAuthService(
@@ -345,6 +348,7 @@ class TechPieApp extends StatefulWidget {
 
 class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
+  final _nativeChromeObserver = CNTabBarRouteObserver();
 
   /// The silent check runs at launch and whenever the app comes back to the
   /// foreground, but not more often than this: a resume is not a reason to hit
@@ -419,8 +423,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     }
     if (release == null || !mounted) return;
 
+    // This State sits above the MaterialApp, so its own context has no
+    // MaterialLocalizations and no navigator to put a dialog on; ask the app's
+    // navigator instead.
+    final dialogContext = _navigatorKey.currentContext;
+    if (dialogContext == null || !dialogContext.mounted) return;
     _promptedThisLaunch = true;
-    await showUpdateAvailableDialog(context, release);
+    await showUpdateAvailableDialog(dialogContext, release);
   }
 
   Future<void> _openDeadlines() async {
@@ -430,9 +439,9 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   }
 
   Future<void> _openEcardPayCode() async {
-    // The shell performs the push: it knows whether the entry belongs inside the
-    // selected destination's stack or on the root navigator, and it is still
-    // there after a cold start.
+    // The shell performs the push: it knows which stack the entry belongs in —
+    // the Home tab's on iOS — and it is still there after a cold start.
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
     appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
   }
 
@@ -473,7 +482,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
-          navigatorObservers: [FeedbackRouteObserver()],
+          navigatorObservers: [FeedbackRouteObserver(), _nativeChromeObserver],
           builder: (context, child) => AdaptiveFeedbackHost(
             key: adaptiveFeedbackHostKey,
             child: child ?? const SizedBox.shrink(),
