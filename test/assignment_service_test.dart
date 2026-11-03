@@ -158,6 +158,32 @@ void main() {
     });
   }
 
+  test('a renewal that rotates sid is not an account change', () async {
+    var deadlineCalls = 0;
+    final fixture = await _identityFixture(
+      (url, body) {
+        if (url.path.endsWith('/deadlines/gradescope')) deadlineCalls++;
+        return http.Response('not found', 404);
+      },
+      account: _gradescopeAccount('old-account', 'old-token')
+          .copyWith(sid: 'session-1'),
+    );
+    fixture.service.enableAutoRefetch();
+    await fixture.thirdParty.replaceAll([
+      _gradescopeAccount('old-account', 'renewed-token')
+          .copyWith(sid: 'session-2'),
+    ]);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(fixture.service.identityEpoch, 0);
+    expect(
+      fixture.service.assignments.map((a) => a.id),
+      ['old-cache', 'unrelated'],
+    );
+    // The new token is still worth a refetch.
+    expect(deadlineCalls, 1);
+  });
+
   test(
       'logout invalidates pending results and binding renewal cannot restore them',
       () async {

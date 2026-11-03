@@ -433,8 +433,9 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   }
 
   Future<void> _openDeadlines() async {
-    // Dismiss overlays and select the existing destination on warm launches.
-    _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+    // Only dialogs and sheets are dismissed: a login or player covering the
+    // shell stays, and back from it lands on the Deadlines tab.
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
     appShellPendingDeadlines.value = true;
   }
 
