@@ -5,15 +5,17 @@ public struct DeadlineItem: Codable, Equatable, Identifiable {
   public let id: String
   public let kind: Kind
   public let title: String
-  public let course: String
+  /// The line under the title: the course for an assignment, the location for
+  /// an exam (whose title already names the course). May be empty.
+  public let subtitle: String
   public let dueAt: Double
   public var due: Date { Date(timeIntervalSince1970: dueAt) }
 
-  public init(id: String, kind: Kind, title: String, course: String, dueAt: Double) {
+  public init(id: String, kind: Kind, title: String, subtitle: String, dueAt: Double) {
     self.id = id
     self.kind = kind
     self.title = title
-    self.course = course
+    self.subtitle = subtitle
     self.dueAt = dueAt
   }
 }
@@ -76,8 +78,68 @@ public struct DeadlineSnapshot: Codable, Equatable {
   public enum SnapshotError: Error { case invalidData }
 }
 
+/// The day groups the large widget lists deadlines under.
+public enum DeadlineDay: Int, Comparable {
+  case today, tomorrow, nextWeek, later
+
+  public static func of(_ due: Date, at now: Date, calendar: Calendar = .current) -> DeadlineDay {
+    let start = calendar.startOfDay(for: now)
+    let days = calendar.dateComponents([.day], from: start, to: calendar.startOfDay(for: due)).day ?? 0
+    switch days {
+    case ..<1: return .today
+    case 1: return .tomorrow
+    case 2..<7: return .nextWeek
+    default: return .later
+    }
+  }
+
+  /// Consecutive runs of `items` (already in deadline order) that share a day.
+  public static func group(_ items: [DeadlineItem], at now: Date,
+                           calendar: Calendar = .current) -> [(day: DeadlineDay, items: [DeadlineItem])] {
+    var groups: [(day: DeadlineDay, items: [DeadlineItem])] = []
+    for item in items {
+      let day = of(item.due, at: now, calendar: calendar)
+      if groups.last?.day == day { groups[groups.count - 1].items.append(item) }
+      else { groups.append((day, [item])) }
+    }
+    return groups
+  }
+
+  public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+}
+
+/// Coarser the further away it is: hours matter tomorrow, not next month.
+public enum DeadlineRemaining: Equatable {
+  case dueSoon, hours(Int), daysHours(Int, Int), days(Int)
+
+  public init(hours: Int) {
+    switch hours {
+    case ..<1: self = .dueSoon
+    case ..<24: self = .hours(hours)
+    case ..<48: self = .daysHours(hours / 24, hours % 24)
+    default: self = .days(hours / 24)
+    }
+  }
+
+  public var isUrgent: Bool {
+    switch self { case .dueSoon, .hours: return true; default: return false }
+  }
+}
+
 public enum DeadlineDateLabel {
-  public static func string(for due: Date, at now: Date, compact: Bool,
+  /// Time of day only, for rows already grouped under Today or Tomorrow.
+  public static func time(for due: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = calendar
+    formatter.timeZone = calendar.timeZone
+    formatter.locale = locale
+    formatter.dateFormat = "HH:mm"
+    return formatter.string(from: due)
+  }
+
+  /// `weekday` adds the day of the week to an absolute date ("11/08 Sun
+  /// 23:59"), where there is room for it; Today and Tomorrow need none.
+  public static func string(for due: Date, at now: Date, compact: Bool, weekday: Bool = false,
                             calendar: Calendar = .current, locale: Locale = .current) -> String {
     let formatter = DateFormatter()
     formatter.calendar = calendar
@@ -93,8 +155,8 @@ public enum DeadlineDateLabel {
        calendar.isDate(due, inSameDayAs: next) {
       return "\(localizedDay(tomorrow: true, locale: locale)) \(time)"
     }
-    formatter.dateFormat = sameYear
-      ? "MM/dd HH:mm" : "yyyy/MM/dd HH:mm"
+    let day = sameYear ? "MM/dd" : "yyyy/MM/dd"
+    formatter.dateFormat = weekday ? "\(day) EEE HH:mm" : "\(day) HH:mm"
     return formatter.string(from: due)
   }
 

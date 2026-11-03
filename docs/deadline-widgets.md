@@ -4,12 +4,24 @@
 
 Widgets display future, incomplete assignments and exams from local data,
 respecting hidden items and completion overrides. Items are ordered by deadline,
-then internal identifier. Small, medium and large display at most 2, 4 and 8 items.
-Each item shows its title, course, type, absolute deadline and remaining time.
-Truncated text retains the full title, course and deadline in accessibility labels.
+then internal identifier. Small shows the next deadline alone: its title and
+subtitle (two lines each, the subtitle giving up its second line first), then
+the countdown and a date that includes the weekday; medium lists up to three; large lists up to six under Today,
+Tomorrow, Next 7 days and Later headings, fewer when they spread over many days.
+A medium or large widget with a single deadline shows it the way small does.
+The header counts deadlines that did not fit.
 
-Remaining time is rounded down to whole hours and displayed as days/hours or
-hours only. Below one hour it becomes red "Due soon" ("即将截止" in Chinese).
+Each item shows its title, a subtitle, its kind as a coloured bar (assignments
+in the accent colour, exams in orange), its absolute deadline and the remaining
+time. The subtitle is the course for an assignment and the location for an exam,
+whose title already names the course — the same choice the Deadlines and Home
+pages make; it is decided in Dart and may be empty. The date comes before the
+subtitle so that a long subtitle truncates first. Truncated text retains the
+full title, subtitle and deadline in accessibility labels.
+
+Remaining time is rounded down to whole hours and gets coarser further out:
+hours below a day, days and hours below two days, whole days beyond that. Below
+a day it is red, and below one hour it reads "Due soon" ("即将截止" in Chinese).
 Remaining minutes and seconds are never displayed. Absolute deadlines use the
 device's local time zone and include the year when it differs from the current
 year. Compact list rows use "Today" or "Tomorrow" where applicable.
@@ -34,7 +46,7 @@ inside the shared App Group:
       "id": "assignment:example",
       "kind": "assignment",
       "title": "Problem Set",
-      "course": "Example Course",
+      "subtitle": "Example Course",
       "dueAt": 1791849600
     }
   ]

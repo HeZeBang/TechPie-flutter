@@ -85,7 +85,7 @@ void main() {
     expect(items, hasLength(10));
     expect(
       (items.first as Map).keys.toSet(),
-      {'id', 'kind', 'title', 'course', 'dueAt'},
+      {'id', 'kind', 'title', 'subtitle', 'dueAt'},
     );
     expect(jsonEncode(payload), isNot(contains('SECRET')));
     expect(jsonEncode(payload), isNot(contains('past')));
@@ -170,5 +170,21 @@ void main() {
     );
     expect(items.first['kind'], 'exam');
     expect(items.first['dueAt'], exam.due.millisecondsSinceEpoch / 1000);
+    expect(items.first['subtitle'], '');
+    expect(items.last['subtitle'], 'Course');
+  });
+
+  test('exams show their location, not the course', () {
+    final exam = ExamAssignment(
+      id: 'exam',
+      title: 'Algorithms Midterm',
+      course: 'Algorithms',
+      due: now.add(const Duration(hours: 1)),
+      semesterId: '2026',
+      location: ' Teaching Center 101 ',
+      batchName: 'Midterm',
+    );
+    final items = DeadlineWidgetService.displayItems([exam], (_) => false, now);
+    expect(items.single['subtitle'], 'Teaching Center 101');
   });
 }

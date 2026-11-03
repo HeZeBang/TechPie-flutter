@@ -62,7 +62,12 @@ class DeadlineWidgetService with WidgetsBindingObserver {
           'id': AssignmentOverrides.keyFor(a),
           'kind': a.kind.id,
           'title': a.title,
-          'course': a.course,
+          // Exam titles already name the course, so the line under them is
+          // where to go — the same choice the Deadlines and Home pages make.
+          'subtitle': switch (a) {
+            ExamAssignment(:final location) => location.trim(),
+            _ => a.course,
+          },
           'dueAt': a.due.toUtc().millisecondsSinceEpoch / 1000,
         },
     ];

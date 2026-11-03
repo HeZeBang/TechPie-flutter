@@ -4,6 +4,12 @@
 "deadline.widget.notSynced" = "TechPie を開いて同期";
 "deadline.widget.unavailable" = "締切データを読み込めません";
 "deadline.widget.hours" = "%ld 時間";
-"deadline.widget.daysHours" = "%ld日 %ld時間";
+"deadline.widget.daysHours" = "%ld 日 %ld 時間";
 "deadline.widget.remaining" = "残り";
 "deadline.widget.dueSoon" = "まもなく締切";
+"deadline.widget.days" = "%ld 日";
+"deadline.widget.more" = "ほか %ld 件";
+"deadline.widget.section.today" = "今日";
+"deadline.widget.section.tomorrow" = "明日";
+"deadline.widget.section.nextWeek" = "7 日以内";
+"deadline.widget.section.later" = "それ以降";

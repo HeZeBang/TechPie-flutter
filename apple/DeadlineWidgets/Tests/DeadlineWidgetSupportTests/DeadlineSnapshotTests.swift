@@ -4,7 +4,7 @@ import XCTest
 final class DeadlineSnapshotTests: XCTestCase {
   private let now = Date(timeIntervalSince1970: 1780000000)
   private func item(_ id: String, seconds: Double) -> DeadlineItem {
-    DeadlineItem(id: id, kind: .assignment, title: "Synthetic assignment", course: "Synthetic course", dueAt: now.timeIntervalSince1970 + seconds)
+    DeadlineItem(id: id, kind: .assignment, title: "Synthetic assignment", subtitle: "Synthetic course", dueAt: now.timeIntervalSince1970 + seconds)
   }
 
   func testSortingFilteringAndFamilyLimits() {
@@ -36,9 +36,9 @@ final class DeadlineSnapshotTests: XCTestCase {
     object["schemaVersion"] = 1
     object["items"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode([item("a", seconds: 10), item("a", seconds: 20)]))
     XCTAssertThrowsError(try DeadlineSnapshot.decode(JSONSerialization.data(withJSONObject: object)))
-    object["items"] = [["id": "a", "kind": "exam", "title": "Exam", "course": "Course", "dueAt": -10]]
+    object["items"] = [["id": "a", "kind": "exam", "title": "Exam", "subtitle": "Course", "dueAt": -10]]
     XCTAssertThrowsError(try DeadlineSnapshot.decode(JSONSerialization.data(withJSONObject: object)))
-    object["items"] = [["id": "a", "kind": "assignment", "title": "A", "course": "C", "dueAt": "tomorrow"]]
+    object["items"] = [["id": "a", "kind": "assignment", "title": "A", "subtitle": "C", "dueAt": "tomorrow"]]
     XCTAssertThrowsError(try DeadlineSnapshot.decode(JSONSerialization.data(withJSONObject: object)))
   }
 
@@ -88,12 +88,50 @@ final class DeadlineSnapshotTests: XCTestCase {
     calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
     let now = ISO8601DateFormatter().date(from: "2026-10-12T15:30:00Z")!
     let due = ISO8601DateFormatter().date(from: "2026-10-12T16:10:00Z")!
-    let snapshot = DeadlineSnapshot(writtenAt: now.timeIntervalSince1970, items: [DeadlineItem(id: "a", kind: .exam, title: "Exam", course: "Course", dueAt: due.timeIntervalSince1970)])
+    let snapshot = DeadlineSnapshot(writtenAt: now.timeIntervalSince1970, items: [DeadlineItem(id: "a", kind: .exam, title: "Exam", subtitle: "Course", dueAt: due.timeIntervalSince1970)])
     let midnight = ISO8601DateFormatter().date(from: "2026-10-12T16:00:00Z")!
     XCTAssertTrue(snapshot.timelineDates(after: now, calendar: calendar).contains(midnight))
     let locale = Locale(identifier: "zh_CN")
     XCTAssertEqual(DeadlineDateLabel.string(for: due, at: now, compact: true, calendar: calendar, locale: locale), "明天 00:10")
     XCTAssertEqual(DeadlineDateLabel.string(for: due, at: midnight, compact: true, calendar: calendar, locale: locale), "今天 00:10")
+  }
+
+  func testGroupsByLocalDay() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
+    // 23:30 local: an hour later is already tomorrow.
+    let now = ISO8601DateFormatter().date(from: "2026-10-12T15:30:00Z")!
+    let items = [0.25, 1, 20, 72, 24 * 6.5, 24 * 7].enumerated().map { index, hours in
+      DeadlineItem(id: "\(index)", kind: .assignment, title: "A", subtitle: "",
+                   dueAt: now.timeIntervalSince1970 + hours * 3600)
+    }
+    let groups = DeadlineDay.group(items, at: now, calendar: calendar)
+    XCTAssertEqual(groups.map(\.day), [.today, .tomorrow, .nextWeek, .later])
+    XCTAssertEqual(groups.map { $0.items.map(\.id) }, [["0"], ["1", "2"], ["3"], ["4", "5"]])
+  }
+
+  func testRemainingGetsCoarserFurtherOut() {
+    XCTAssertEqual(DeadlineRemaining(hours: 0), .dueSoon)
+    XCTAssertEqual(DeadlineRemaining(hours: 23), .hours(23))
+    XCTAssertEqual(DeadlineRemaining(hours: 29), .daysHours(1, 5))
+    XCTAssertEqual(DeadlineRemaining(hours: 48 + 13), .days(2))
+    XCTAssertTrue(DeadlineRemaining(hours: 5).isUrgent)
+    XCTAssertFalse(DeadlineRemaining(hours: 29).isUrgent)
+  }
+
+  func testWeekdayLabelSkipsRelativeDays() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
+    let now = ISO8601DateFormatter().date(from: "2026-11-03T02:00:00Z")!
+    let sunday = ISO8601DateFormatter().date(from: "2026-11-08T15:59:00Z")!
+    let tomorrow = ISO8601DateFormatter().date(from: "2026-11-04T15:59:00Z")!
+    let zh = Locale(identifier: "zh_CN")
+    XCTAssertEqual(DeadlineDateLabel.string(for: sunday, at: now, compact: true, weekday: true,
+                                            calendar: calendar, locale: zh), "11/08 周日 23:59")
+    XCTAssertEqual(DeadlineDateLabel.string(for: sunday, at: now, compact: true, weekday: true,
+                                            calendar: calendar, locale: Locale(identifier: "en_US")), "11/08 Sun 23:59")
+    XCTAssertEqual(DeadlineDateLabel.string(for: tomorrow, at: now, compact: true, weekday: true,
+                                            calendar: calendar, locale: zh), "明天 23:59")
   }
 
   func testAtomicStoreKeepsLastValidSnapshotAndClears() throws {

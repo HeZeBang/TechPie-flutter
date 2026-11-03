@@ -4,6 +4,12 @@
 "deadline.widget.notSynced" = "请打开 TechPie 同步";
 "deadline.widget.unavailable" = "暂时无法读取 Deadline";
 "deadline.widget.hours" = "%ld 小时";
-"deadline.widget.daysHours" = "%ld天 %ld小时";
+"deadline.widget.daysHours" = "%ld 天 %ld 小时";
 "deadline.widget.remaining" = "还剩";
 "deadline.widget.dueSoon" = "即将截止";
+"deadline.widget.days" = "%ld 天";
+"deadline.widget.more" = "还有 %ld 项";
+"deadline.widget.section.today" = "今天";
+"deadline.widget.section.tomorrow" = "明天";
+"deadline.widget.section.nextWeek" = "7 天内";
+"deadline.widget.section.later" = "之后";
