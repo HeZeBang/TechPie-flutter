@@ -436,9 +436,9 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   }
 
   Future<void> _openEcardPayCode() async {
-    // The shell performs the push: it knows whether the entry belongs inside the
-    // selected destination's stack or on the root navigator, and it is still
-    // there after a cold start.
+    // The shell performs the push: it knows which stack the entry belongs in —
+    // the Home tab's on iOS — and it is still there after a cold start.
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
     appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
   }
 

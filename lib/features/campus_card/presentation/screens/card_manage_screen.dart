@@ -242,7 +242,6 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
   Widget build(BuildContext context) {
     final cardAsync = ref.watch(cardControllerProvider);
     final card = cardAsync.valueOrNull;
-    final profile = ref.watch(profileControllerProvider).valueOrNull;
 
     return Scaffold(
       key: const Key('card-manage-page'),
@@ -339,7 +338,6 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
                                   child: _InformationTab(
                                     key: const ValueKey('info'),
                                     card: card,
-                                    profilePosition: profile?.positionName,
                                   ),
                                 )
                               : _ActivitySliver(
@@ -364,11 +362,9 @@ final class _InformationTab extends ConsumerWidget {
   const _InformationTab({
     super.key,
     required this.card,
-    required this.profilePosition,
   });
 
   final CampusCard card;
-  final String? profilePosition;
 
   String _date(BuildContext context, DateTime? value) => value == null
       ? '—'
@@ -394,7 +390,7 @@ final class _InformationTab extends ConsumerWidget {
             AppleListRow(label: '姓名', value: card.ownerName),
             AppleListRow(
               label: '身份',
-              value: profilePosition ?? card.positionName,
+              value: card.positionName,
             ),
             AppleListRow(
               label: '所属单位',

@@ -11,7 +11,6 @@ import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/features/campus_card/domain/models/auth_models.dart';
 import 'package:techpie/features/campus_card/domain/models/card_models.dart';
 import 'package:techpie/features/campus_card/domain/models/offline_models.dart';
-import 'package:techpie/features/campus_card/domain/models/profile_models.dart';
 import 'package:techpie/features/campus_card/domain/money_fen.dart';
 import 'package:techpie/features/campus_card/domain/ports/auth_port.dart';
 import 'package:techpie/features/campus_card/domain/ports/card_ports.dart';
@@ -46,7 +45,7 @@ void main() {
       await container
           .read(offlineAuthorizationBannerDismissedProvider.notifier)
           .dismiss();
-      container.read(manualOfflineModeProvider.notifier).setEnabled(true);
+      await container.read(manualOfflineModeProvider.notifier).setEnabled(true);
 
       await container.read(authControllerProvider.notifier).signOut();
 
@@ -290,13 +289,6 @@ final class _SubjectCardRepository implements CardRepository {
       offlineCodeAllowed: false,
     );
   }
-
-  @override
-  Future<UserProfile> profile() async => UserProfile(
-        displayName: 'Account $subject',
-        maskedCardNumber: '••••$subject',
-        positionName: 'Student',
-      );
 
   @override
   Future<BindCardResult> bind(BindCardCommand command) =>

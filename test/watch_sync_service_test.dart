@@ -13,7 +13,6 @@ import 'package:techpie/features/campus_card/data/storage/secure_offline_credent
 import 'package:techpie/features/campus_card/domain/models/auth_models.dart';
 import 'package:techpie/features/campus_card/domain/models/card_models.dart';
 import 'package:techpie/features/campus_card/domain/models/offline_models.dart';
-import 'package:techpie/features/campus_card/domain/models/profile_models.dart';
 import 'package:techpie/features/campus_card/domain/money_fen.dart';
 import 'package:techpie/features/campus_card/domain/ports/auth_port.dart';
 import 'package:techpie/features/campus_card/domain/ports/card_ports.dart';
@@ -33,12 +32,14 @@ void main() {
   late bool enabled;
   late bool ready;
   String? boundSubject;
+  late Uri sessionEndpoint;
 
   setUp(() async {
     calls = [];
     enabled = false;
     ready = true;
     boundSubject = null;
+    sessionEndpoint = Uri.parse('https://example.invalid/api/auth/third-party/ecard');
     secure = InMemorySecureCredentialStore();
     session = SecureSessionCredentialStore(secure);
     eventsAuth = _EventsAuth();
@@ -82,7 +83,7 @@ void main() {
         'subject': boundSubject,
       };
     });
-    sync = WatchSyncService(runtime, session, channel: channel);
+    sync = WatchSyncService(runtime, session, channel: channel, sessionEndpoint: () => sessionEndpoint);
   });
   tearDown(() async {
     sync.dispose();
@@ -138,6 +139,57 @@ void main() {
     ready = false;
     await sync.enable();
     expect(calls.where((c) => c.method == 'publish'), isEmpty);
+  });
+
+  for (final (channel, method, subject) in [
+    (EcardOpenIdChannel.wechat, 'wechat_openid', 'cc64076d7631233ac425307f95e1fa9752723c78efdc9632e2adf7465b229d96'),
+    (EcardOpenIdChannel.alipay, 'alipay_openid', '4bd16fe8924f3ef8971b92b18e7286541b10b33b3e61947178b5066a300d1bc2'),
+  ]) {
+    test('exports $method login parameters and identity pins without the phone cookie', () async {
+      await session.writeSession(sessionCookie: 'synthetic', openId: 'SYNTHETIC_OPENID_0123456789',
+        orgId: '2', verifiedIdSerial: 'DEMO-CARD-0001', verifiedCardId: 'TEST-CARD', channel: channel,);
+      await sync.enable();
+      final body = calls.singleWhere((call) => call.method == 'publish').arguments as Map;
+      expect(body['onlineAccount'], {
+        'openID': 'SYNTHETIC_OPENID_0123456789',
+        'method': method,
+        'idSerial': 'DEMO-CARD-0001',
+        'cardID': 'TEST-CARD',
+        'sessionEndpoint': sessionEndpoint.toString(),
+      });
+      expect(body['subject'], subject);
+      expect(sync.events.map((event) => event.text).join(), isNot(contains('SYNTHETIC_OPENID')));
+    });
+  }
+
+  test('an insecure development endpoint does not export online credentials', () async {
+    sessionEndpoint = Uri.parse('http://localhost:3000/api/auth/third-party/ecard');
+    await sync.enable();
+    final body = calls.singleWhere((call) => call.method == 'publish').arguments as Map;
+    expect(body['onlineAccount'], isNull);
+  });
+
+  test('a blocked card does not claim to have exported online authorization', () async {
+    cards.card = const CampusCard(
+      id: 'DEMO-CARD-0001', maskedNumber: '****0001', ownerName: '示例',
+      balance: MoneyFen(12860), status: CampusCardStatus.frozen,
+      positionName: '学生', offlineCodeAllowed: false,
+    );
+    await sync.enable();
+    final body = calls.singleWhere((call) => call.method == 'publish').arguments as Map;
+    expect(body['onlineAccount'], isNull);
+    expect(sync.message, contains('卡片信息已发送'));
+  });
+
+  test('an endpoint change during card refresh prevents stale credential export', () async {
+    cards.cachePresent = false;
+    cards.pending = Completer<CampusCard?>();
+    final pending = sync.enable();
+    await pumpEventQueue();
+    sessionEndpoint = Uri.parse('https://changed.invalid/api/auth/third-party/ecard');
+    cards.pending!.complete(cards.card);
+    await pending;
+    expect(calls.where((call) => call.method == 'publish'), isEmpty);
   });
 
   test('an existing grant exports even when the API opening flag is false',
@@ -271,7 +323,7 @@ void main() {
 final class _Cards implements CacheFirstCardRepository {
   bool cachePresent = true;
   Completer<CampusCard?>? pending;
-  final card = CampusCard(
+  var card = CampusCard(
     id: 'DEMO-CARD-0001',
     maskedNumber: '****0001',
     ownerName: '示例',
@@ -287,8 +339,6 @@ final class _Cards implements CacheFirstCardRepository {
   Future<CampusCard?> refreshCard() => pending?.future ?? Future.value(card);
   @override
   Future<CampusCard?> currentCard() async => card;
-  @override
-  Future<UserProfile> profile() => throw UnimplementedError();
   @override
   Future<BindCardResult> bind(BindCardCommand command) =>
       throw UnimplementedError();

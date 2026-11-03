@@ -16,7 +16,6 @@ import 'package:techpie/features/campus_card/domain/models/auth_models.dart';
 import 'package:techpie/features/campus_card/domain/models/card_models.dart';
 import 'package:techpie/features/campus_card/domain/models/offline_models.dart';
 import 'package:techpie/features/campus_card/domain/models/payment_models.dart';
-import 'package:techpie/features/campus_card/domain/models/profile_models.dart';
 import 'package:techpie/features/campus_card/domain/models/scan_models.dart';
 import 'package:techpie/features/campus_card/domain/money_fen.dart';
 import 'package:techpie/features/campus_card/domain/ports/auth_port.dart';
@@ -132,7 +131,7 @@ void main() {
     final container = ProviderScope.containerOf(
       tester.element(find.byKey(const Key('payment-code-page'))),
     );
-    container.read(manualOfflineModeProvider.notifier).setEnabled(true);
+    await container.read(manualOfflineModeProvider.notifier).setEnabled(true);
     await tester.pump(const Duration(seconds: 1));
     expect(
       (base.feedback as InMemoryFeedbackPort)
@@ -590,9 +589,6 @@ final class _DelayedCardRepository implements CardRepository {
   Future<CampusCard?> currentCard() => _currentCard;
 
   @override
-  Future<UserProfile> profile() => _delegate.profile();
-
-  @override
   Future<BindCardResult> bind(BindCardCommand command) =>
       _delegate.bind(command);
 
@@ -643,9 +639,6 @@ final class _OfflineCacheMissCardRepository
 
   @override
   Future<CampusCard?> currentCard() => refreshCard();
-
-  @override
-  Future<UserProfile> profile() => _delegate.profile();
 
   @override
   Future<BindCardResult> bind(BindCardCommand command) =>

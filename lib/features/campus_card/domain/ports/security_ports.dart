@@ -1,18 +1,4 @@
 import '../models/security_models.dart';
-import '../money_fen.dart';
-
-abstract interface class RechargePort {
-  Future<RechargeInitialization> initialize();
-
-  Future<List<RechargeChannelInfo>> channels({required String menuId});
-
-  Future<RechargeOrder> create({
-    required MoneyFen amount,
-    required RechargeChannel channel,
-  });
-
-  Future<RechargeOrder> status(String orderId);
-}
 
 abstract interface class SecuritySettingsPort {
   Future<SpendingPasswordInitialization> initializePasswordChange();

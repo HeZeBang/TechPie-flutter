@@ -67,7 +67,9 @@ sealed class PaymentCodePollResult {
 }
 
 final class PaymentPending extends PaymentCodePollResult {
-  const PaymentPending();
+  const PaymentPending({this.querySucceeded = true});
+  // A rejected query can remain pending without replacing the current code.
+  final bool querySucceeded;
 }
 
 final class PaymentCodeExpired extends PaymentCodePollResult {

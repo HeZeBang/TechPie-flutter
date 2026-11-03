@@ -90,7 +90,11 @@ class _SchedulePageState extends State<SchedulePage> {
   // Animation: track slide direction for week transitions
   // 1 = forward (next week), -1 = backward (previous week), 0 = no slide
   int _slideDirection = 0;
-  final PageController _weekPageController = PageController();
+  /// Created once the week to show is known: a controller that starts on page
+  /// 0 draws week 1 for the first frames of the first visit, before the jump
+  /// to the current week lands — most visibly at the weekend, which week 1
+  /// and the current week rarely share.
+  late final PageController _weekPageController;
   final GlobalKey _viewSettingsAnchorKey = GlobalKey();
 
   @override
@@ -104,6 +108,7 @@ class _SchedulePageState extends State<SchedulePage> {
       _schedule.addListener(_onScheduleChanged);
       _assignments.addListener(_onAssignmentsChanged);
       _loadData();
+      _weekPageController = PageController(initialPage: _currentWeek - 1);
     }
   }
 

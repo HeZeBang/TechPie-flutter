@@ -171,13 +171,10 @@ function highestAndroidCode(tags) {
   return highest;
 }
 
-/// Highest build number already shipped for [base] on iOS. App Store Connect
-/// only requires monotonicity inside a version train, which is also how the
-/// iOS history here was tagged (`ios-v0.1.0+8` never constrained `0.3.0+1`).
-function highestIosCode(tags, base) {
-  const pattern = new RegExp(
-    `^ios-v${base.replaceAll('.', '\\.')}\\+([0-9]+)$`,
-  );
+/// Include iOS-only releases from every version train in the shared counter.
+/// A manual iOS dispatch can consume a build without creating a v… release tag.
+function highestIosCode(tags) {
+  const pattern = /^ios-v[0-9]+\.[0-9]+\.[0-9]+\+([0-9]+)$/;
   let highest = 0;
   for (const tag of tags) {
     const match = pattern.exec(tag);
@@ -286,7 +283,7 @@ function plan(opts) {
   notesFor(readChangelog(), version.base);
 
   const androidHighest = highestAndroidCode(tags);
-  const iosHighest = highestIosCode(tags, version.base);
+  const iosHighest = highestIosCode(tags);
   if (version.code <= androidHighest) {
     throw new Error(
       `pubspec build number ${version.code} is not above the released build ` +
@@ -297,8 +294,8 @@ function plan(opts) {
   if (version.code <= iosHighest) {
     throw new Error(
       `pubspec build number ${version.code} is not above the released iOS build ` +
-        `${iosHighest} for ${version.base}; App Store Connect refuses a lower ` +
-        `build under the same version, so bump to "+${iosHighest + 1}" or higher.`,
+        `${iosHighest}; the repository shares one increasing build number ` +
+        `across all versions and platforms, so bump to "+${iosHighest + 1}" or higher.`,
     );
   }
 
@@ -334,14 +331,14 @@ function plan(opts) {
 }
 
 /// The version line to write for [base]: one build above everything ever shipped
-/// for it. `prepare-release.yml` proposes this, so the arithmetic stays here with
+/// on any platform. `prepare-release.yml` proposes this, so the arithmetic stays here with
 /// the rest of the rules instead of being re-implemented in bash.
 function nextVersionLine(base) {
   if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(base)) {
     throw new Error(`--next-version wants X.Y.Z, got "${base}"`);
   }
   const tags = gitTags();
-  return `${base}+${Math.max(highestAndroidCode(tags), highestIosCode(tags, base)) + 1}`;
+  return `${base}+${Math.max(highestAndroidCode(tags), highestIosCode(tags)) + 1}`;
 }
 
 /// Did this push move the `version:` line? That line is the release switch, so a

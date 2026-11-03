@@ -508,10 +508,12 @@ distinguishable in git, and the file names deliberately do not try to.
   for such a build — it looks for the `-signed.hap` the signing config would
   have produced. The script judges the build by the artifact instead.
   Also note: the OHOS toolchain rewrites `AppScope/app.json5`'s version fields
-  itself and hvigor flattens a pre-release name, so a declared `1.0.0-rc.4+5`
-  packs as versionName `1.0.0.4` with versionCode 5. Android and iOS strip the
-  suffix instead (iOS forbids it in `CFBundleShortVersionString`), so `+B` is
-  what identifies a build on every platform.
+  from pubspec itself, and hvigor only accepts digits and dots in a versionName —
+  left alone it flattens `1.0.0-rc.4` into `1.0.0.4`. `scripts/build-ohos-app.sh`
+  and `scripts/build-unsigned-hap.sh` therefore pass `--build-name X.Y.Z
+  --build-number B`, the same shape Android already uses and the only shape iOS
+  allows (`CFBundleShortVersionString` forbids a suffix), so the store version is
+  `X.Y.Z` on every platform and `+B` is what identifies a build.
 
 ## OHOS-Specific Gotchas
 

@@ -20,7 +20,8 @@ import 'mobile_shell.dart';
 /// shortcut, a `techpie://ecard/pay` link — that has not been shown yet.
 ///
 /// The shell owns the push because the shell is what knows where the page
-/// belongs: inside the selected tab on iOS or the destination on a wide
+/// belongs: in the Home tab on iOS — where the feature grid opens it, whatever
+/// tab the user left the app on — or the selected destination on a wide
 /// window, and on the root navigator otherwise. A value set before the shell
 /// mounts waits for it, which is what a cold start needs.
 final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
@@ -39,6 +40,11 @@ class _AppShellState extends State<AppShell> {
   // nav-bar-clearance check in adaptive_feedback.dart was changed to match —
   // re-enabling this alone is not enough, see that call site as well.
   static const bool _desktopShellEnabled = false;
+
+  /// The tab the campus card lives in on iOS: it is entered from Home's feature
+  /// grid, so a widget or shortcut opens it there too, the way a system app's
+  /// widget opens its content where that content belongs.
+  static const int _campusCardTab = 0;
 
   int _selectedIndex = 0;
   int _previousSelectedIndex = 0;
@@ -116,18 +122,33 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
-  /// Pushes the entry the host asked for into the destination the user is on.
+  /// Pushes the entry onto the visible navigation stack.
   void _showPendingEcardEntry() {
     final entry = appShellPendingEcardEntry.value;
     if (entry == null || !mounted) return;
     appShellPendingEcardEntry.value = null;
-    // Use the selected tab on iOS, including cold-start widget/deep-link entries.
-    final nested = isIos()
-        ? _tabNavigatorKeys[_selectedIndex]?.currentContext
-        : _contentNavigatorKeys[_selectedIndex]?.currentContext;
+    // Login and playback pages can cover the entire tab shell: the code then
+    // opens above that page, and back returns to it.
+    final shellCovered = !ModalRoute.of(context)!.isCurrent;
+    final BuildContext? nested;
+    if (isIos() && !shellCovered) {
+      // Straight above Home, as the feature grid would have opened it, so one
+      // back lands on Home rather than on whatever that tab was showing.
+      if (_selectedIndex != _campusCardTab) {
+        _onDestinationSelected(_campusCardTab);
+      }
+      final navigator = _tabNavigatorKeys[_campusCardTab]?.currentState;
+      navigator?.popUntil((route) => route.isFirst);
+      nested = navigator?.context;
+    } else if (isIos()) {
+      nested = _tabNavigatorKeys[_selectedIndex]?.currentContext;
+    } else {
+      nested = _contentNavigatorKeys[_selectedIndex]?.currentContext;
+    }
     unawaited(
       pushAdaptivePage<void>(
         nested ?? context,
+        rootNavigator: shellCovered,
         builder: (_) => CampusCardPage(entry: entry),
       ),
     );
@@ -327,7 +348,10 @@ class _AppDestinationSwitcherState extends State<AppDestinationSwitcher> {
                 offstage: index != widget.selectedIndex,
                 child: TickerMode(
                   enabled: index == widget.selectedIndex,
-                  child: widget.pages[index],
+                  child: HeroMode(
+                    enabled: index == widget.selectedIndex,
+                    child: widget.pages[index],
+                  ),
                 ),
               ),
         ],
