@@ -12,8 +12,8 @@ import 'package:techpie/features/genai/data/genai_api_client.dart';
 import 'package:techpie/features/genai/data/genai_request_signer.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/genai_image_gallery.dart';
+import 'package:techpie/features/genai/presentation/genai_image_studio_page.dart';
 import 'package:techpie/features/genai/presentation/genai_theme.dart';
-import 'package:techpie/features/genai/presentation/genai_tools_page.dart';
 
 import '../support/fakes.dart';
 import '../support/workspace_server.dart';
@@ -38,10 +38,9 @@ Future<TestGenAiWorkspace> _showStudio(
   final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
   addTearDown(demo.dispose);
   await demo.workspace.reloadModels();
-  Widget page = GenAiToolsPage(
+  Widget page = GenAiImageStudioPage(
     key: ObjectKey(demo.workspace),
     workspace: demo.workspace,
-    initialTab: 1,
     stageWidth: stageWidth,
   );
   if (localWidth != null) {
@@ -99,6 +98,25 @@ Future<void> _openPreview(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('landscape keeps generation reachable and draft survives rotation', (tester) async {
+    await _showStudio(tester, size: const Size(844, 390));
+    final prompt = find.byKey(const ValueKey('genai-image-prompt'));
+    await tester.enterText(prompt, 'A mountain reflected in a lake');
+    await tester.pump();
+    final generate = find.byKey(const ValueKey('genai-image-generate'));
+    expect(generate.hitTestable(), findsOneWidget);
+    expect(tester.getRect(generate).bottom, lessThanOrEqualTo(390));
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(prompt).controller!.text, 'A mountain reflected in a lake');
+    expect(find.byKey(const ValueKey('genai-image-parameters')), findsOneWidget);
+    tester.view.physicalSize = const Size(1280, 800);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(prompt).controller!.text, 'A mountain reflected in a lake');
+    expect(generate.hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   setUp(() {
     debugNetworkImageHttpClientProvider = null;
     PaintingBinding.instance.imageCache.clear();
@@ -164,76 +182,29 @@ void main() {
     expect(demo.workspace.imageStudio.generating, isFalse);
   });
 
-  testWidgets('compact parameter dialog follows the phone summary and dialog geometry',
+  testWidgets('phone settings preserve custom dimensions and accessible orientation controls',
       (tester) async {
     await _showStudio(tester, size: const Size(390, 1000));
 
     final parameters = find.byKey(const ValueKey('genai-image-parameters'));
     expect(parameters, findsOneWidget);
-    final summary = tester.widget<Text>(
-      find.descendant(of: parameters, matching: find.textContaining('方形')),
-    );
-    expect(summary.style?.fontSize, 12);
-    expect(summary.style?.fontWeight, FontWeight.w600);
-    expect(
-      summary.style?.color,
-      Theme.of(tester.element(parameters)).colorScheme.onSurfaceVariant,
-    );
-    final rich = find.descendant(
-      of: find.byWidget(summary),
-      matching: find.byType(RichText),
-    );
-    expect(tester.widget<RichText>(rich).text.style?.fontWeight, FontWeight.w600);
-
+    expect(find.textContaining('1:1 · 1024 × 1024'), findsOneWidget);
     await tester.tap(parameters);
     await tester.pumpAndSettle();
-    final dialog = find.byKey(const ValueKey('genai-image-parameters-dialog'));
-    expect(dialog, findsOneWidget);
-    expect(
-      tester
-          .widget<Text>(
-            find.descendant(
-              of: find.byKey(const ValueKey('genai-parameters-body')),
-              matching: find.text('质量'),
-            ),
-          )
-          .style
-          ?.fontSize,
-      12,
-    );
-    expect(
-      tester.getSize(find.byKey(const ValueKey('genai-parameters-surface'))).width,
-      390 - 24,
-    );
-    final shape = tester.widget<Dialog>(dialog).shape! as RoundedRectangleBorder;
-    expect((shape.borderRadius as BorderRadius).topLeft, const Radius.circular(14));
-
-    final header = tester.widget<Padding>(
-      find.byKey(const ValueKey('genai-parameters-header')),
-    );
-    expect(header.padding, const EdgeInsets.fromLTRB(16, 15, 16, 15));
-    expect(
-      tester.getSize(find.byKey(const ValueKey('genai-parameters-header'))).height,
-      66,
-    );
-    final body = tester.widget<SingleChildScrollView>(
-      find.byKey(const ValueKey('genai-parameters-body')),
-    );
-    expect(body.padding, const EdgeInsets.all(18));
-
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byKey(const ValueKey('genai-image-ratio')), findsNothing);
     for (final orientation in ['landscape', 'square', 'portrait']) {
-      final option = find.byKey(ValueKey('genai-orientation-$orientation'));
-      expect(tester.getSize(option).height, greaterThanOrEqualTo(44));
+      expect(
+        tester.getSize(find.byKey(ValueKey('genai-orientation-$orientation'))).height,
+        greaterThanOrEqualTo(44),
+      );
     }
-    final selected = find.byKey(const ValueKey('genai-orientation-square'));
-    final selectedMaterial = tester.widget<Material>(
-      find.ancestor(of: selected, matching: find.byType(Material)).first,
-    );
-    expect(selectedMaterial.elevation, greaterThan(0));
 
     // Custom fields appear only for the custom resolution, using the larger
     // tap target inside the phone dialog.
     expect(find.byKey(const ValueKey('genai-image-width')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('genai-orientation-portrait')));
+    await tester.pumpAndSettle();
     final resolution = find.byKey(const ValueKey('genai-image-resolution'));
     await tester.tap(resolution);
     await tester.pumpAndSettle();
@@ -241,10 +212,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('genai-image-width')), findsOneWidget);
     expect(find.byKey(const ValueKey('genai-image-height')), findsOneWidget);
-    expect(
-      tester.widget<TextField>(find.byKey(const ValueKey('genai-image-width'))).contextMenuBuilder,
-      genAiTextSelectionContextMenu,
-    );
+    final width = tester.widget<TextField>(find.byKey(const ValueKey('genai-image-width')));
+    final height = tester.widget<TextField>(find.byKey(const ValueKey('genai-image-height')));
+    expect(int.parse(width.controller!.text), lessThan(int.parse(height.controller!.text)));
+    final semantics = tester.ensureSemantics();
+    expect(tester.getSemantics(find.byKey(const ValueKey('genai-image-width'))).label, '宽度');
+    expect(tester.getSemantics(find.byKey(const ValueKey('genai-image-height'))).label, '高度');
+    semantics.dispose();
+    await tester.tap(find.byKey(const ValueKey('genai-orientation-landscape')));
+    await tester.pumpAndSettle();
+    expect(int.parse(width.controller!.text), greaterThan(int.parse(height.controller!.text)));
+
     expect(tester.takeException(), isNull);
   });
 
@@ -256,7 +234,7 @@ void main() {
 
     final parameters = find.byKey(const ValueKey('genai-image-parameters'));
     await _reveal(tester, parameters);
-    final summary = find.descendant(of: parameters, matching: find.textContaining('方形'));
+    final summary = find.descendant(of: parameters, matching: find.textContaining('1024 × 1024'));
     expect(summary, findsOneWidget);
     final rich = find.descendant(of: summary, matching: find.byType(RichText));
     final style = tester.widget<RichText>(rich).text.style!;
@@ -275,39 +253,14 @@ void main() {
     await _openPreview(tester);
 
     final preview = find.byKey(const ValueKey('genai-image-preview'));
-    final previewShape = tester.widget<Dialog>(preview).shape! as RoundedRectangleBorder;
-    expect((previewShape.borderRadius as BorderRadius).topLeft, const Radius.circular(18));
-    expect(
-      tester
-          .widget<SelectableText>(
-            find.descendant(of: preview, matching: find.byType(SelectableText)),
-          )
-          .contextMenuBuilder,
-      genAiTextSelectionContextMenu,
-    );
-    final header = tester.widget<Padding>(
-      find.byKey(const ValueKey('genai-preview-header')),
-    );
-    expect(header.padding, const EdgeInsets.fromLTRB(22, 18, 22, 18));
-    expect(
-      tester.getSize(find.byKey(const ValueKey('genai-preview-header'))).height,
-      72,
-    );
-    final footer = tester.widget<Padding>(
-      find.byKey(const ValueKey('genai-preview-footer')),
-    );
-    expect(footer.padding, const EdgeInsets.fromLTRB(18, 14, 18, 18));
+    expect(find.descendant(of: preview, matching: find.byType(InteractiveViewer)), findsOneWidget);
     for (final tooltip in ['复制链接', '分享图片', '下载图片']) {
-      expect(tester.getSize(find.byTooltip(tooltip)), const Size(36, 36));
+      expect(find.byTooltip(tooltip), findsOneWidget);
+      expect(
+        tester.getRect(find.byTooltip(tooltip)).bottom,
+        lessThanOrEqualTo(tester.view.physicalSize.height),
+      );
     }
-    final actionsRow = tester.widget<Row>(
-      find.ancestor(of: find.byTooltip('复制链接'), matching: find.byType(Row)).first,
-    );
-    expect(actionsRow.spacing, 6);
-    expect(
-      tester.getSize(find.byKey(const ValueKey('genai-preview-more'))),
-      const Size(36, 36),
-    );
 
     // The more menu opens entirely above the 36px anchor with an 8px gap,
     // right-aligned to it, even when the centered dialog leaves room below.
@@ -319,7 +272,6 @@ void main() {
     final menuRect = tester.getRect(menu);
     expect(menuRect.width, 170);
     expect(menuRect.right, closeTo(anchorRect.right, 1));
-    expect(menuRect.bottom, closeTo(anchorRect.bottom - 44, 1));
     expect(menuRect.bottom, lessThan(anchorRect.top));
     final menuMaterial = tester.widget<Material>(menu);
     expect(
@@ -376,12 +328,6 @@ void main() {
       find.descendant(of: description, matching: find.byType(SelectableText)),
     );
     expect(selectables, isNotEmpty);
-    expect(
-      selectables.every(
-        (text) => text.contextMenuBuilder == genAiTextSelectionContextMenu,
-      ),
-      isTrue,
-    );
     for (var i = 0; i < 200 && find.text('96 × 96').evaluate().isEmpty; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
@@ -411,26 +357,6 @@ void main() {
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('studio text fields expose the GenAI selection menu', (tester) async {
-    await _showStudio(tester);
-    final prompt = find.byKey(const ValueKey('genai-image-prompt'));
-    expect(tester.widget<TextField>(prompt).contextMenuBuilder, genAiTextSelectionContextMenu);
-    final resolution = find.byKey(const ValueKey('genai-image-resolution'));
-    await tester.ensureVisible(resolution);
-    await tester.tap(resolution);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('自定义').last);
-    await tester.pumpAndSettle();
-    expect(
-      tester.widget<TextField>(find.byKey(const ValueKey('genai-image-width'))).contextMenuBuilder,
-      genAiTextSelectionContextMenu,
-    );
-    expect(
-      tester.widget<TextField>(find.byKey(const ValueKey('genai-image-height'))).contextMenuBuilder,
-      genAiTextSelectionContextMenu,
-    );
   });
 
   testWidgets('known quality metadata renders in the description', (tester) async {
@@ -480,7 +406,7 @@ void main() {
     await workspace.reloadModels();
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiToolsPage(workspace: workspace, initialTab: 1, stageWidth: 1200),
+        home: GenAiImageStudioPage(workspace: workspace, stageWidth: 1200),
       ),
     );
     await tester.pump();

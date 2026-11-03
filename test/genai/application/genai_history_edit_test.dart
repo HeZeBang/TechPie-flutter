@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
 import 'package:techpie/features/genai/application/genai_history_edit.dart';
 import 'package:techpie/features/genai/application/genai_remote_history.dart';
@@ -76,7 +75,7 @@ void main() {
     expect(plan.removedIds, ['3', '4', '5']);
     final fresh = decodeGenAiConversation('group', plan.retained).archive;
     expect(fresh.contextMemory, isEmpty);
-    final restored = fresh.restoreTurns().single;
+    final restored = fresh.turns.single;
     expect(restored.answer, 'semester 3');
     expect(restored.agentEvents['call']!.result!['ok'], true);
     expect(restored.phase, GenAiChatPhase.completed);
@@ -103,7 +102,7 @@ void main() {
     ];
     final plan = GenAiHistoryEdit.plan('group', rows, 'retry');
     expect(plan.removedIds, ['2', '3']);
-    expect(decodeGenAiConversation('group', plan.retained).archive.restoreTurns().single.id, 'a');
+    expect(decodeGenAiConversation('group', plan.retained).archive.turns.single.id, 'a');
     expect(GenAiHistoryEdit.plan('group', rows, 'a').removedIds, ['1', '2', '3']);
   });
 
@@ -130,12 +129,12 @@ void main() {
         answer: encodeGenAiAgentFinal('12:00', nonce: nonce),
       ),
     ];
-    final turns = decodeGenAiConversation('group', rows).archive.restoreTurns();
+    final turns = decodeGenAiConversation('group', rows).archive.turns;
     expect(turns, hasLength(2));
     final plan = GenAiHistoryEdit.plan('group', rows, turns.last.id);
     expect(plan.removedIds, ['2', '3']);
     expect(
-      decodeGenAiConversation('group', plan.retained).archive.restoreTurns().single.answer,
+      decodeGenAiConversation('group', plan.retained).archive.turns.single.answer,
       'kept',
     );
   });

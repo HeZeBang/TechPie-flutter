@@ -2,11 +2,12 @@ import 'dart:convert';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../../../widgets/adaptive_feedback.dart';
 import '../genai_icons.dart';
 import '../genai_theme.dart';
 import 'genai_code_font.dart';
-import 'genai_copy_button.dart';
 
 enum GenAiChartType {
   bar,
@@ -275,8 +276,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
           children: [
             _buildHeader(
               context,
-              title: '图表数据',
-              badge: '格式未识别',
+              title: '图表数据格式无法识别',
               badgeColor: theme.colorScheme.error,
               showToggle: false,
             ),
@@ -284,7 +284,6 @@ class _GenAiChartViewState extends State<GenAiChartView> {
               padding: const EdgeInsets.all(12),
               child: SelectableText(
                 widget.code,
-                contextMenuBuilder: genAiTextSelectionContextMenu,
                 style: const TextStyle(
                   fontFamily: kGenAiMonospaceFamily,
                   fontFamilyFallback: kGenAiMonospaceFallback,
@@ -296,12 +295,6 @@ class _GenAiChartViewState extends State<GenAiChartView> {
         ),
       );
     }
-
-    final typeLabel = switch (spec.type) {
-      GenAiChartType.bar => '柱状图',
-      GenAiChartType.line => '折线图',
-      GenAiChartType.pie => '饼图',
-    };
 
     return Container(
       width: double.infinity,
@@ -317,7 +310,6 @@ class _GenAiChartViewState extends State<GenAiChartView> {
           _buildHeader(
             context,
             title: spec.title ?? '数据图表',
-            badge: typeLabel,
             badgeColor: theme.colorScheme.primary,
             showToggle: true,
           ),
@@ -326,7 +318,6 @@ class _GenAiChartViewState extends State<GenAiChartView> {
               padding: const EdgeInsets.all(12),
               child: SelectableText(
                 widget.code,
-                contextMenuBuilder: genAiTextSelectionContextMenu,
                 style: const TextStyle(
                   fontFamily: kGenAiMonospaceFamily,
                   fontFamilyFallback: kGenAiMonospaceFallback,
@@ -339,11 +330,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
               child: SizedBox(
                 height: 240,
-                child: switch (spec.type) {
-                  GenAiChartType.bar => _buildBarChart(context, spec),
-                  GenAiChartType.line => _buildLineChart(context, spec),
-                  GenAiChartType.pie => _buildPieChart(context, spec),
-                },
+                child: _chart(context, spec),
               ),
             ),
             _buildLegend(context, spec),
@@ -356,79 +343,86 @@ class _GenAiChartViewState extends State<GenAiChartView> {
   Widget _buildHeader(
     BuildContext context, {
     required String title,
-    required String badge,
     required Color badgeColor,
     required bool showToggle,
-  }) {
-    final palette = GenAiPalette.of(context);
-
-    return Container(
-      constraints: const BoxConstraints(minHeight: 48),
-      padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: palette.line)),
-      ),
-      child: Row(
-        children: [
-          GenAiIcon(
-            GenAiGlyph.chart,
-            size: 16,
-            color: badgeColor,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Tooltip(
-                  message: title,
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: badgeColor.withValues(alpha: .12),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    badge,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: badgeColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+  }) =>
+      GenAiContentHeader(
+        title: title,
+        leading: GenAiIcon(GenAiGlyph.chart, size: 16, color: badgeColor),
+        actions: [
           if (showToggle)
             IconButton(
-              tooltip: _showCode ? '切换到图表' : '查看数据',
-              onPressed: () => setState(() => _showCode = !_showCode),
-              icon: GenAiIcon(_showCode ? GenAiGlyph.chart : GenAiGlyph.code, size: 20),
+              tooltip: '全屏查看',
+              icon: const GenAiIcon(GenAiGlyph.full, size: 20),
+              onPressed: () async {
+                final spec = _spec;
+                if (spec == null) return;
+                await Navigator.of(context, rootNavigator: true).push<void>(
+                  MaterialPageRoute<void>(
+                    fullscreenDialog: true,
+                    builder: (context) => genAiThemeScope(
+                      context,
+                      Scaffold(
+                        appBar: AppBar(title: Text(title)),
+                        body: SafeArea(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              children: [
+                                Expanded(child: _chart(context, spec)),
+                                _buildLegend(context, spec),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          GenAiCopyButton(
-            text: widget.code,
-            tooltip: '复制数据',
-            showLabel: false,
+          Builder(
+            builder: (anchor) => IconButton(
+              tooltip: '更多操作',
+              icon: const GenAiIcon(GenAiGlyph.more, size: 20),
+              onPressed: () async {
+                final action = await genAiShowMenu<String>(
+                  context: context,
+                  anchorContext: anchor,
+                  items: [
+                    if (showToggle)
+                      PopupMenuItem(
+                        value: 'source',
+                        child: Text(_showCode ? '切换到图表' : '查看数据'),
+                      ),
+                    const PopupMenuItem(value: 'copy', child: Text('复制数据')),
+                  ],
+                );
+                if (!mounted) return;
+                if (action == 'source') setState(() => _showCode = !_showCode);
+                if (action == 'copy') {
+                  try {
+                    await Clipboard.setData(ClipboardData(text: widget.code));
+                    if (context.mounted) showAdaptiveFeedback(context: context, message: '已复制数据');
+                  } catch (_) {
+                    if (context.mounted) {
+                      showAdaptiveFeedback(context: context, message: '无法复制，请手动选择文字');
+                    }
+                  }
+                }
+              },
+            ),
           ),
         ],
-      ),
-    );
-  }
+      );
 
-  Widget _buildBarChart(BuildContext context, GenAiChartSpec spec) {
+  static Widget _chart(BuildContext context, GenAiChartSpec spec) => switch (spec.type) {
+        GenAiChartType.bar => _buildBarChart(context, spec),
+        GenAiChartType.line => _buildLineChart(context, spec),
+        GenAiChartType.pie => _buildPieChart(context, spec),
+      };
+
+  static Widget _buildBarChart(BuildContext context, GenAiChartSpec spec) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final gridColor =
@@ -529,7 +523,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
     );
   }
 
-  Widget _buildLineChart(BuildContext context, GenAiChartSpec spec) {
+  static Widget _buildLineChart(BuildContext context, GenAiChartSpec spec) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final gridColor =
@@ -643,7 +637,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
     );
   }
 
-  Widget _buildPieChart(BuildContext context, GenAiChartSpec spec) {
+  static Widget _buildPieChart(BuildContext context, GenAiChartSpec spec) {
     final sections = <PieChartSectionData>[];
     final series = spec.series.firstOrNull;
     if (series != null) {
@@ -677,7 +671,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
     );
   }
 
-  Widget _buildLegend(BuildContext context, GenAiChartSpec spec) {
+  static Widget _buildLegend(BuildContext context, GenAiChartSpec spec) {
     final theme = Theme.of(context);
     final items = <Widget>[];
 
@@ -714,7 +708,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
     );
   }
 
-  Widget _buildLegendItem(Color color, String label, ThemeData theme) {
+  static Widget _buildLegendItem(Color color, String label, ThemeData theme) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

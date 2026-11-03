@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:techpie/features/genai/presentation/markdown/genai_markdown.dart';
 import 'package:techpie/features/genai/presentation/visuals/genai_visual_document.dart';
 import 'package:techpie/features/genai/presentation/visuals/genai_visual_surface.dart';
 import 'package:techpie/features/genai/presentation/visuals/genai_visual_view.dart';
@@ -27,11 +28,34 @@ void main() {
 
   testWidgets('fullscreen measurements do not overwrite the inline viewport', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(body: GenAiVisualView(code: '<p>Example</p>', complete: true)),
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: LayoutBuilder(
+              builder: (context, constraints) => GenAiMarkdown(
+                compact: constraints.maxWidth <= 680,
+                interactiveVisuals: true,
+                data: r'''Text with $a$ before the visual.
+
+```techpie-visual
+<p>Example</p>
+```
+
+- First item with $a$.
+- Second item with $x^2$.
+''',
+              ),
+            ),
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
+    final prose = find.byWidgetPredicate(
+      (widget) =>
+          widget is Text && (widget.textSpan?.toPlainText().startsWith('Text with ') ?? false),
+    );
+    expect(SelectionContainer.maybeOf(tester.element(prose)), isNotNull);
     final surface = find.byType(GenAiVisualSurface);
     void report(String event, [double? height]) =>
         tester.widget<GenAiVisualSurface>(surface).onEvent(event, height);
@@ -43,10 +67,16 @@ void main() {
     await tester.tap(find.byTooltip('全屏'));
     await tester.pumpAndSettle();
     expect(tester.widget<GenAiVisualSurface>(surface).fullscreen, isTrue);
+    expect(SelectionContainer.maybeOf(tester.element(prose)), isNull);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpAndSettle();
     // The frame fills the padded overlay body instead of keeping the inline
     // measurement. The generated document owns the width cap and scrolling.
     final body = tester.getRect(find.byKey(const ValueKey('genai-visual-fullscreen-body')));
-    expect(tester.getRect(surface), body.deflate(24));
+    expect(tester.getRect(surface), body.deflate(12));
     expect(tester.getCenter(surface).dx, body.center.dx);
     report('height', 900);
     await tester.pump();
@@ -55,6 +85,7 @@ void main() {
     // The inline viewport is restored exactly, in both directions.
     expect(tester.getSize(surface).height, 240);
     expect(platform.controllers, hasLength(1));
+    expect(SelectionContainer.maybeOf(tester.element(prose)), isNotNull);
     expect(tester.widget<GenAiVisualSurface>(surface).fullscreen, isFalse);
     // A measurement tagged for fullscreen may arrive after exit; it is stored
     // separately and cannot disturb the inline height.
@@ -66,6 +97,33 @@ void main() {
     expect(tester.getSize(surface).height, 280);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('inline content grows and shrinks without recreating its runtime', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: GenAiVisualView(code: '<p>Example</p>', complete: true),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final surface = find.byType(GenAiVisualSurface);
+    final controller = platform.controllers.single;
+    for (final height in [960.0, 1400.0, 220.0]) {
+      tester.widget<GenAiVisualSurface>(surface).onEvent('height', height);
+      await tester.pump();
+      expect(tester.getSize(surface).height, height);
+      expect(platform.controllers.single, same(controller));
+      expect(controller.documents, hasLength(1));
+    }
+    tester.widget<GenAiVisualSurface>(surface).onEvent('height', double.nan);
+    await tester.pump();
+    expect(tester.getSize(surface).height, 220);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('folding pauses the runtime while the source dialog leaves it running',

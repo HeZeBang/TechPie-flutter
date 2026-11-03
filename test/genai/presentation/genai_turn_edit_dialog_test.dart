@@ -63,6 +63,19 @@ Future<void> _pump(
 String _warningText(WidgetTester tester) => tester.widget<Text>(find.byKey(_warningKey)).data!;
 
 void main() {
+  testWidgets('an uncommitted submit keeps replacement text and permits retry', (tester) async {
+    await _pump(tester, _dialog());
+    await tester.enterText(find.byType(TextField), 'Keep this replacement');
+    await tester.tap(find.widgetWithText(FilledButton, '保存并重发'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.text('Keep this replacement'), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.widgetWithText(FilledButton, '保存并重发')).onPressed,
+      isNotNull,
+    );
+  });
+
   testWidgets('edit dialog uses an unpadded Dialog with the draft geometry', (tester) async {
     await _pump(tester, _dialog());
 

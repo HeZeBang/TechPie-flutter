@@ -63,6 +63,9 @@ void main() {
     saved = {};
     recordSequence = 0;
     transport = ScriptedTransport((r) async {
+      if (r.method == 'GET' && r.uri.path.startsWith('/sys/common/static/')) {
+        return response(type: 'image/png', bytes: Stream.value([1, 2, 3]));
+      }
       if (r.uri.path.endsWith('/list')) return models();
       if (r.uri.path.endsWith('/getByChatGroupId')) {
         return response(
@@ -111,6 +114,45 @@ void main() {
     sessions.dispose();
   });
 
+  test('sync adopts the server completion instead of replaying a local interruption', () async {
+    await workspace.send('Saved server answer');
+    final interrupted = workspace.turns.single;
+    interrupted.phase = GenAiChatPhase.interrupted;
+    interrupted.answer = 'partial';
+    await workspace.retrySaveConversations();
+    expect(workspace.turns.single.phase, GenAiChatPhase.completed);
+    expect(workspace.turns.single.answer, 'answer');
+    await workspace.send('Follow-up');
+    final body = jsonDecode(transport.requests.lastWhere((r) => r.method == 'POST').body!) as Map;
+    final record = decodeGenAiRemoteRecord(body['chatInfo'] as String)!;
+    expect(record['interrupted'], isNull);
+    expect(jsonEncode(body['messages']), contains('answer'));
+  });
+
+  test('image-heavy plain chat uses bounded vision without deleting archived attachments',
+      () async {
+    await workspace.send('Image archive');
+    final group = workspace.groupId;
+    final row = saved[group]!.single;
+    final record = decodeGenAiRemoteRecord(row['question'] as String)!;
+    final turn = Map<String, Object?>.from(record['turn'] as Map);
+    turn['images'] =
+        List.generate(65, (i) => 'https://genaipic.shanghaitech.edu.cn/sys/common/static/$i.png');
+    record['turn'] = turn;
+    row['question'] = encodeGenAiRemoteRecord(record);
+    await workspace.openConversation(group, GenAiCancellation());
+    await workspace.send('Describe the latest');
+    expect(workspace.turns.last.phase, GenAiChatPhase.completed);
+    expect(workspace.turns.first.attachedImageUrls, hasLength(65));
+    final body = jsonDecode(transport.requests.lastWhere((r) => r.method == 'POST').body!);
+    final vision = (body['messages'] as List)
+        .expand((m) => m['content'] is List ? m['content'] as List : const [])
+        .where((p) => p['type'] == 'image_url');
+    expect(vision, hasLength(8));
+    await workspace.openConversation(group, GenAiCancellation());
+    expect(workspace.turns.first.attachedImageUrls, hasLength(65));
+  });
+
   test('edit deletes the suffix, preserves attachments, and survives server-only reopening',
       () async {
     await workspace.send('keep');
@@ -149,6 +191,73 @@ void main() {
     await workspace.send('fresh');
     expect(workspace.groupId, group);
     expect(workspace.turns.single.prompt, 'fresh');
+  });
+
+  test('stopped streaming edit accepts late output but rejects changed requests and prior turns',
+      () async {
+    await workspace.send('keep');
+    final group = workspace.groupId;
+    final original = transport.handle;
+    final stream = StreamController<List<int>>();
+    final partial = Completer<void>();
+    late Map<String, dynamic> request;
+    workspace.addListener(() {
+      if (!partial.isCompleted && workspace.turns.last.answer == 'partial') partial.complete();
+    });
+    transport.handle = (r) async {
+      if (r.method != 'POST') return original(r);
+      request = jsonDecode(r.body!) as Map<String, dynamic>;
+      stream.add(utf8.encode(sseChunk(text: 'partial')));
+      return response(type: 'text/event-stream', bytes: stream.stream);
+    };
+    final sending = workspace.send('replace stopped answer');
+    await partial.future;
+    workspace.stop();
+    await stream.close();
+    await sending;
+    transport.handle = original;
+    final target = workspace.turns.last.id;
+    expect(workspace.turns.last.phase, GenAiChatPhase.cancelled);
+
+    // Cancellation may return before the school commits its row.
+    await workspace.retrySaveConversations();
+    expect(workspace.archiveFailure?.kind, GenAiFailureKind.historyChanged);
+    saved[group]!.add({
+      'id': 'late-record',
+      'question': request['chatInfo'],
+      'answer': 'partial and completed on server',
+      'aiType': request['aiType'],
+    });
+    await workspace.retrySaveConversations();
+    expect(workspace.archiveFailure, isNull);
+    expect(workspace.turns.last.answer, 'partial and completed on server');
+
+    // Changes outside the stopped output are still real edit conflicts.
+    saved[group]!.first['answer'] = 'changed prior answer';
+    await expectLater(
+      workspace.changeTurn(target, replacement: 'corrected'),
+      throwsA(failure(GenAiFailureKind.historyChanged)),
+    );
+    saved[group]!.first['answer'] = 'answer';
+    final question = saved[group]!.last['question'];
+    final changed = decodeGenAiRemoteRecord(question! as String)!;
+    changed['input'] = 'changed by another device';
+    saved[group]!.last['question'] = encodeGenAiRemoteRecord(changed);
+    await expectLater(
+      workspace.changeTurn(target, replacement: 'corrected'),
+      throwsA(failure(GenAiFailureKind.historyChanged)),
+    );
+    saved[group]!.last['question'] = question;
+    expect(transport.requests.where((r) => r.uri.path.endsWith('/delete/batch')), isEmpty);
+    // The server completes AFTER sync: no repeated check-sync loop is needed.
+    saved[group]!.last['answer'] = 'partial and even later server completion';
+    await workspace.changeTurn(target, replacement: 'corrected');
+    expect(workspace.turns.map((t) => t.prompt), ['keep', 'corrected']);
+    expect(workspace.turns.last.answer, 'answer');
+    workspace.newConversation();
+    await workspace.openConversation(group, GenAiCancellation());
+    expect(workspace.turns.map((t) => t.prompt), ['keep', 'corrected']);
+    expect(workspace.turns.last.phase, GenAiChatPhase.completed);
   });
 
   for (final checkSync in [true, false]) {
@@ -422,8 +531,7 @@ void main() {
     expect(jsonDecode(transport.requests.last.body!)['aiType'], 'paid');
   });
 
-  test('attaching image and sending populates turn bytes and sends imageUrl and imageUrls',
-      () async {
+  test('attaching image sends transient vision content and preserves durable URLs', () async {
     final original = transport.handle;
     transport.handle = (r) async {
       if (r.uri.path == '/sys/common/upload') {
@@ -451,13 +559,13 @@ void main() {
     expect(workspace.attachments, isEmpty);
     expect(workspace.turns.length, 1);
     final turn = workspace.turns.first;
-    expect(turn.attachedImageBytes, equals(imageBytes));
-    expect(turn.attachedImageUrl, contains('temp/test_image.png'));
+    expect(turn.attachedImageBytesList.firstOrNull, equals(imageBytes));
+    expect(turn.attachedImageUrls.firstOrNull, contains('temp/test_image.png'));
 
     final post = transport.requests.last;
     final json = jsonDecode(post.body!) as Map<String, dynamic>;
-    expect(json['imageUrl'], contains('temp/test_image.png'));
-    expect(json['imageUrls'], equals([turn.attachedImageUrl]));
+    expect(visionImageLabels(json), [turn.attachedImageUrls.firstOrNull]);
+    expect(json['chatInfo'], contains(turn.attachedImageUrls.firstOrNull!));
   });
 
   test('reopened vision chat carries canonical images into follow-ups and retries', () async {
@@ -484,20 +592,20 @@ void main() {
     };
     await workspace.openConversation('saved-vision', GenAiCancellation());
     final turn = workspace.turns.single;
-    expect(turn.attachedImageBytes, isNull);
+    expect(turn.attachedImageBytesList.firstOrNull, isNull);
     expect(turn.attachedImageUrls, hasLength(2));
-    expect(turn.attachedImageUrl, turn.attachedImageUrls.first);
+    expect(turn.attachedImageUrls.firstOrNull, turn.attachedImageUrls.first);
     final urls = turn.attachedImageUrls;
     await workspace.send('What differs between them?');
     expect(
-      jsonDecode(transport.requests.last.body!)['imageUrls'],
+      visionImageLabels(jsonDecode(transport.requests.last.body!) as Map<String, dynamic>),
       urls,
     );
     await workspace.retryTurn(1);
     final payload = jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
     expect(payload['chatGroupId'], 'saved-vision');
-    expect(payload['imageUrl'], urls.last);
-    expect(payload['imageUrls'], urls);
+    expect(visionImageLabels(payload), urls);
+    expect(payload['imageUrl'], isNull);
     expect(
       urls.every(
         (url) => url.startsWith('https://genaipic.shanghaitech.edu.cn/'),
@@ -555,11 +663,11 @@ void main() {
 
     expect(workspace.turns.length, 1);
     final turn = workspace.turns.first;
-    expect(turn.attachedImageBytes, equals(imageBytes));
-    expect(turn.attachedImageUrl, contains('temp/pending.png'));
+    expect(turn.attachedImageBytesList.firstOrNull, equals(imageBytes));
+    expect(turn.attachedImageUrls.firstOrNull, contains('temp/pending.png'));
     final json = jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
-    expect(json['imageUrl'], contains('temp/pending.png'));
-    expect(json['imageUrls'], isNotEmpty);
+    expect(visionImageLabels(json), [turn.attachedImageUrls.firstOrNull]);
+    expect(json['chatInfo'], contains(turn.attachedImageUrls.firstOrNull!));
   });
 
   test('send rejects sending when an attachment upload failed and retry recovers', () async {
@@ -610,8 +718,8 @@ void main() {
     expect(workspace.attachments, isEmpty);
     expect(workspace.turns.length, 1);
     final turn = workspace.turns.first;
-    expect(turn.attachedImageBytes, equals(imageBytes));
-    expect(turn.attachedImageUrl, contains('temp/recovered.png'));
+    expect(turn.attachedImageBytesList.firstOrNull, equals(imageBytes));
+    expect(turn.attachedImageUrls.firstOrNull, contains('temp/recovered.png'));
   });
 
   test('retryTurn retries turn and resends conversation context', () async {

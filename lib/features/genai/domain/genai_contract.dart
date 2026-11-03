@@ -38,6 +38,7 @@ final class GenAiChatRequest {
     this.contextGoal,
     this.stepContext,
     this.requestGuide,
+    this.responseFormat,
     Map<String, String> documentContents = const {},
     this.imageUrl,
     List<String> imageUrls = const [],
@@ -56,8 +57,19 @@ final class GenAiChatRequest {
   /// Host-authored metadata persisted together with this exchange.
   final Map<String, Object?> record;
   String get storedPrompt => record.isEmpty
-      ? prompt
-      : encodeGenAiRemoteRecord({...record, 'kind': 'exchange', 'input': prompt});
+      ? responseFormat == null
+          ? prompt
+          : '$prompt\n\n$responseFormat'
+      : encodeGenAiRemoteRecord({
+          ...record,
+          'kind': 'exchange',
+          'input': prompt,
+          if (responseFormat != null) 'reply_format': responseFormat,
+        });
+
+  /// Brief wire-format reminder after the current input, including long uploads.
+  /// Kept separate from input so server recovery never displays it as user text.
+  final String? responseFormat;
 
   final String chatGroupId;
   final String prompt;
@@ -104,6 +116,7 @@ final class GenAiChatRequest {
         contextGoal: contextGoal,
         stepContext: stepContext,
         requestGuide: requestGuide,
+        responseFormat: responseFormat,
         contextCompacted: contextCompacted,
         historyRetrieval: historyRetrieval,
         record: value,

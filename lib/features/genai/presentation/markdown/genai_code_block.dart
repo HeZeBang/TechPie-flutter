@@ -92,7 +92,7 @@ class GenAiPreBuilder extends MarkdownElementBuilder {
 }
 
 /// A standard code block with language indicator and copy-to-clipboard button.
-class GenAiStandardCodeBlock extends StatelessWidget {
+class GenAiStandardCodeBlock extends StatefulWidget {
   const GenAiStandardCodeBlock({
     super.key,
     required this.code,
@@ -101,6 +101,29 @@ class GenAiStandardCodeBlock extends StatelessWidget {
 
   final String code;
   final String? language;
+
+  @override
+  State<GenAiStandardCodeBlock> createState() => _GenAiStandardCodeBlockState();
+}
+
+class _GenAiStandardCodeBlockState extends State<GenAiStandardCodeBlock> {
+  (String, String?, Brightness, TextStyle)? _highlightKey;
+  List<TextSpan> _spans = const [];
+  String get code => widget.code;
+  String? get language => widget.language;
+
+  List<TextSpan> _highlight(Brightness brightness, TextStyle style) {
+    final key = (code, language, brightness, style);
+    if (_highlightKey != key) {
+      _spans = GenAiSyntaxHighlighter(brightness: brightness).highlight(
+        code: code,
+        language: language,
+        baseStyle: style,
+      );
+      _highlightKey = key;
+    }
+    return _spans;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,46 +143,20 @@ class GenAiStandardCodeBlock extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header: the draft's .visual-header — a 48px heading row with the
-          // title on the left and the copy action on the right.
-          Container(
-            constraints: const BoxConstraints(minHeight: 48),
-            padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: palette.line)),
-            ),
-            child: Row(
-              children: [
-                GenAiIcon(GenAiGlyph.code, size: 15, color: palette.muted),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Text(
-                    displayLang,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: palette.text,
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  height: 36,
-                  child: GenAiCopyButton(
-                    text: code,
-                    tooltip: '复制代码',
-                    showLabel: false,
-                  ),
-                ),
-              ],
-            ),
+          GenAiContentHeader(
+            title: displayLang,
+            leading: GenAiIcon(GenAiGlyph.code, size: 15, color: palette.muted),
+            actions: [
+              SizedBox(
+                height: 36,
+                child: GenAiCopyButton(text: code, tooltip: '复制代码', showLabel: false),
+              ),
+            ],
           ),
 
           // Code Body
           Builder(
             builder: (context) {
-              final highlighter = GenAiSyntaxHighlighter(brightness: theme.brightness);
               final baseCodeStyle = TextStyle(
                 fontFamily: kGenAiMonospaceFamily,
                 fontFamilyFallback: kGenAiMonospaceFallback,
@@ -178,11 +175,7 @@ class GenAiStandardCodeBlock extends StatelessWidget {
                 forceStrutHeight: true,
               );
               const codeTextHeightBehavior = TextHeightBehavior();
-              final spans = highlighter.highlight(
-                code: code,
-                language: language,
-                baseStyle: baseCodeStyle,
-              );
+              final spans = _highlight(theme.brightness, baseCodeStyle);
               final lineCount = '\n'.allMatches(code).length + 1;
               final showLineNumbers = lineCount > 1;
 
@@ -220,7 +213,6 @@ class GenAiStandardCodeBlock extends StatelessWidget {
                               child: SelectableText.rich(
                                 TextSpan(children: spans),
                                 key: const ValueKey('genai-code-content'),
-                                contextMenuBuilder: genAiTextSelectionContextMenu,
                                 style: baseCodeStyle,
                                 strutStyle: codeStrut,
                                 textHeightBehavior: codeTextHeightBehavior,
@@ -234,7 +226,6 @@ class GenAiStandardCodeBlock extends StatelessWidget {
                         child: SelectableText.rich(
                           TextSpan(children: spans),
                           key: const ValueKey('genai-code-content'),
-                          contextMenuBuilder: genAiTextSelectionContextMenu,
                           style: baseCodeStyle,
                           strutStyle: codeStrut,
                           textHeightBehavior: codeTextHeightBehavior,

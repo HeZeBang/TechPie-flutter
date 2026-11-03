@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:techpie/features/genai/presentation/markdown/genai_markdown.dart';
 
 void main() {
@@ -37,6 +38,21 @@ void main() {
     expect(result, contains('```latex\nx^2.\n```'));
   });
 
+  test('display math retains quote and list containers without treating markers as TeX', () {
+    const source = '> Before\n> \\[\n> A=U\\Sigma V^T\n> \\]\n> After';
+    final nodes = md.Document().parseLines(preprocessLatexBlocks(source).split('\n'));
+    final quote = nodes.whereType<md.Element>().single;
+    expect(quote.tag, 'blockquote');
+    expect(quote.textContent, contains(r'A=U\Sigma V^T'));
+    expect(quote.textContent, isNot(contains('>')));
+
+    const list = '1. Before\n\n   \\[x^2\\]\n\n   After';
+    final listNodes = md.Document().parseLines(preprocessLatexBlocks(list).split('\n'));
+    expect(listNodes.whereType<md.Element>().single.tag, 'ol');
+    const code = '> ```text\n> \\[literal\\]\n> ```';
+    expect(preprocessLatexBlocks(code), code);
+  });
+
   test('delimiter stripping applies the ordered rules exactly once', () {
     // Display pairs first, then the inline single-dollar rule.
     expect(stripLatexDelimiters(r'  $$ x $$  '), 'x');
@@ -55,6 +71,39 @@ void main() {
     expect(stripLatexDelimiters('plain'), 'plain');
     expect(stripLatexDelimiters(r'\[unclosed'), r'\[unclosed');
     expect(stripLatexDelimiters(r'end$$'), r'end$$');
+  });
+
+  testWidgets('empty inline math advances the parser during streaming and replay', (tester) async {
+    for (final literal in [r'\( \)', '\\( \t \\)']) {
+      final parser = md.InlineParser(literal, md.Document());
+      expect(LatexInlineSyntax().tryMatch(parser), isTrue);
+      // Check progress before invoking the full parser: a regression must fail
+      // this assertion instead of hanging the test runner in its parse loop.
+      expect(parser.pos, literal.length);
+    }
+
+    // Reduced from the saved Kimi-K3 reasoning that locked the browser.
+    const source = r'Wait note uses \( \) directly in HTML text. Then \(x^2\).';
+    for (var end = 1; end <= source.length; end++) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: GenAiMarkdown(data: source.substring(0, end))),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+    }
+    expect(find.textContaining(r'\( \)', findRichText: true), findsWidgets);
+    expect(find.byType(Math), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: GenAiMarkdown(data: source)),
+      ),
+    );
+    expect(find.textContaining(r'\( \)', findRichText: true), findsWidgets);
+    expect(find.byType(Math), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('inline parentheses and dollars render beside literal math code', (tester) async {

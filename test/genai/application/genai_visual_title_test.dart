@@ -1,12 +1,7 @@
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:markdown/markdown.dart' as md;
-import 'package:techpie/features/genai/application/genai_chat_service.dart';
-import 'package:techpie/features/genai/application/genai_conversation_archive.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
 import 'package:techpie/features/genai/application/genai_remote_history.dart';
-import 'package:techpie/features/genai/application/genai_system_prompt.dart';
 import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
 import 'package:techpie/features/genai/domain/genai_remote_record.dart';
 import 'package:techpie/features/genai/domain/genai_visual.dart';
@@ -27,23 +22,6 @@ md.Element _parseVisual(String markdown) {
   final document = md.Document(blockSyntaxes: [GenAiVisualSyntax()]);
   return GenAiVisualSyntax.elements(document.parseLines(markdown.split('\n'))).single;
 }
-
-GenAiConversationArchive _archive(String answer) => GenAiConversationArchive(
-      id: 'visual-title',
-      title: '视觉标题',
-      updatedAt: DateTime.utc(2026, 10, 31),
-      turns: [
-        GenAiConversationTurn('演示', id: 'turn-1')
-          ..phase = GenAiChatPhase.completed
-          ..answer = answer,
-      ],
-      agentEnabled: false,
-      netSearchEnabled: false,
-      thinkingEnabled: false,
-      modelAiType: 'demo',
-      modelRootAiType: null,
-      mutations: const {'version': 1, 'effects': <String, Object?>{}},
-    );
 
 GenAiSavedTurn _saved(String answer) {
   final turn = GenAiConversationTurn('演示', id: 'turn-1');
@@ -138,38 +116,7 @@ void main() {
     });
   });
 
-  group('system prompt', () {
-    test('asks for an optional 4-12 character JSON title', () {
-      final prompt = genAiSystemPrompt(campusTools: false, documents: false, images: false);
-      expect(prompt, contains('optional JSON metadata'));
-      expect(prompt, contains('`title` field'));
-      expect(prompt, contains('4-12 Chinese characters'));
-      expect(prompt, contains('```techpie-visual {"title":"曲线与切线"}'));
-    });
-  });
-
   group('local persistence and sync', () {
-    test('a titled fence survives archive encoding unchanged with version 1', () {
-      final encoded = _archive(_titledAnswer).encode();
-      final json = jsonDecode(encoded) as Map<String, Object?>;
-      expect(json['version'], 1);
-      final loaded = GenAiConversationArchive.fromJson(json);
-      expect(loaded.toJson()['version'], 1);
-      expect(loaded.restoreTurns().single.answer, _titledAnswer);
-      expect(_parseVisual(loaded.restoreTurns().single.answer).attributes['title'], '曲线与切线');
-    });
-
-    test('an old untitled payload loads byte-for-byte unchanged', () {
-      final json = jsonDecode(_archive(_bareAnswer).encode()) as Map<String, Object?>;
-      final loaded = GenAiConversationArchive.fromJson(json);
-      expect(loaded.toJson(), json);
-      expect(loaded.restoreTurns().single.answer, _bareAnswer);
-      expect(
-        _parseVisual(loaded.restoreTurns().single.answer).attributes.containsKey('title'),
-        isFalse,
-      );
-    });
-
     test('the sync record carries the title only inside the raw answer text', () {
       final saved = _saved(_titledAnswer);
       expect(saved.answer, _titledAnswer);
@@ -186,14 +133,14 @@ void main() {
       });
       expect(loaded.answer, _titledAnswer);
 
-      final restored = decodeGenAiConversation('group', [saved]).archive.restoreTurns().single;
+      final restored = decodeGenAiConversation('group', [saved]).archive.turns.single;
       expect(restored.answer, _titledAnswer);
       expect(_parseVisual(restored.answer).attributes['title'], '曲线与切线');
     });
 
     test('an old untitled sync record restores its bare fence unchanged', () {
       final saved = _saved(_bareAnswer);
-      final restored = decodeGenAiConversation('old-group', [saved]).archive.restoreTurns().single;
+      final restored = decodeGenAiConversation('old-group', [saved]).archive.turns.single;
       expect(restored.answer, _bareAnswer);
       expect(_parseVisual(restored.answer).attributes.containsKey('title'), isFalse);
       expect(decodeGenAiRemoteRecord(saved.prompt)!.keys, isNot(contains('visualTitle')));

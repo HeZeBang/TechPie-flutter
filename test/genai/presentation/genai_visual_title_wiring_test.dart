@@ -36,10 +36,8 @@ void main() {
     expect(view.title, '曲线与切线');
     expect(view.complete, false);
 
-    final label = tester.widget<Text>(find.text('曲线与切线'));
-    expect(label.style?.fontSize, 13);
-    final tag = tester.widget<Text>(find.text('交互示例'));
-    expect(tag.style?.fontSize, 11);
+    expect(find.text('曲线与切线'), findsOneWidget);
+    expect(find.text('交互示例'), findsNothing);
   });
 
   testWidgets('an old bare fence shows only the generic tag', (tester) async {
@@ -50,8 +48,6 @@ void main() {
     expect(view.complete, false);
     expect(find.text('曲线与切线'), findsNothing);
 
-    final tag = tester.widget<Text>(find.text('交互示例'));
-    expect(tag.style?.fontSize, 11);
     expect(find.text('交互示例'), findsOneWidget);
   });
 }

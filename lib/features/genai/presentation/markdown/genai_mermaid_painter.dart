@@ -37,10 +37,8 @@ mixin _SmallArrowHeads on MermaidPainter {
 /// type falls through to [MermaidDiagram] unchanged.
 ///
 /// Parsing depends only on the source and layout only on the parsed diagram,
-/// the style and the available width, so both are cached per widget state
-/// under exactly those keys. The caches are bounded and widget-local: a
-/// rebuild reuses a result, but a changed source, style or width always
-/// invalidates the entry it would otherwise read.
+/// and style. Dagre/sequence layout is independent of viewport width; resizing
+/// only changes the viewport. The bounded caches retain their natural layout.
 class GenAiMermaidDiagram extends StatefulWidget {
   const GenAiMermaidDiagram({
     super.key,
@@ -65,7 +63,7 @@ class _GenAiMermaidDiagramState extends State<GenAiMermaidDiagram> {
   static const _cacheLimit = 6;
 
   final _parsed = <String, _MermaidParse>{};
-  final _layouts = <(MermaidDiagramData, MermaidStyle, double), _MermaidLayout>{};
+  final _layouts = <(MermaidDiagramData, MermaidStyle), _MermaidLayout>{};
 
   static V _cached<K, V>(Map<K, V> cache, K key, V Function() create) {
     final hit = cache.remove(key);
@@ -95,21 +93,18 @@ class _GenAiMermaidDiagramState extends State<GenAiMermaidDiagram> {
         },
       );
 
-  _MermaidLayout _layout(MermaidDiagramData diagram, MermaidStyle style, double width) =>
-      _cached(
+  _MermaidLayout _layout(MermaidDiagramData diagram, MermaidStyle style) => _cached(
         _layouts,
-        (diagram, style, width),
+        (diagram, style),
         () {
           final styled = _withDraftSubgraphs(diagram, style);
           final Size natural;
           final CustomPainter painter;
           if (styled.type == DiagramType.flowchart) {
-            natural = const DagreLayout()
-                .computeLayout(styled, style, Size(width, 600));
+            natural = const DagreLayout().computeLayout(styled, style, Size.zero);
             painter = GenAiFlowchartPainter(diagram: styled, style: style);
           } else {
-            natural = const SequenceLayout()
-                .computeLayout(styled, style, Size(width, 600));
+            natural = const SequenceLayout().computeLayout(styled, style, Size.zero);
             painter = GenAiSequencePainter(diagram: styled, style: style);
           }
           return _MermaidLayout(natural, painter);
@@ -135,8 +130,7 @@ class _GenAiMermaidDiagramState extends State<GenAiMermaidDiagram> {
         }
 
         final diagram = parsed.diagram!;
-        if (diagram.type != DiagramType.flowchart &&
-            diagram.type != DiagramType.sequence) {
+        if (diagram.type != DiagramType.flowchart && diagram.type != DiagramType.sequence) {
           return MermaidDiagram(
             code: widget.code,
             style: widget.style,
@@ -146,13 +140,9 @@ class _GenAiMermaidDiagramState extends State<GenAiMermaidDiagram> {
           );
         }
 
-        final availableWidth = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : MediaQuery.sizeOf(context).width;
-        final layout = _layout(diagram, widget.style, availableWidth);
-        final maxWidth = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : layout.natural.width;
+        final layout = _layout(diagram, widget.style);
+        final maxWidth =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : layout.natural.width;
         return Container(
           width: layout.natural.width.clamp(0.0, maxWidth),
           height: layout.natural.height,

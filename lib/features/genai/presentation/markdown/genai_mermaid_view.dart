@@ -5,10 +5,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_mermaid/flutter_mermaid.dart';
 
+import '../../../../widgets/adaptive_feedback.dart';
+import '../../../../widgets/adaptive_page_navigation.dart';
 import '../genai_icons.dart';
 import '../genai_theme.dart';
 import 'genai_code_font.dart';
-import 'genai_copy_button.dart';
 import 'genai_mermaid_painter.dart';
 
 class GenAiMermaidView extends StatefulWidget {
@@ -30,48 +31,47 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
 
   Future<void> _openFullscreen() async {
     final canvasKey = GlobalKey<_MermaidCanvasState>();
-    await Navigator.of(context, rootNavigator: true).push<void>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (context) => CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).pop(),
-          },
-          child: Focus(
-            autofocus: true,
-            child: Scaffold(
-              appBar: AppBar(
-                leading: IconButton(
-                  tooltip: '关闭',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const GenAiIcon(GenAiGlyph.close),
-                ),
-                title: const Text('Mermaid 图表', maxLines: 1, overflow: TextOverflow.ellipsis),
-                actions: [
-                  IconButton(
-                    tooltip: '缩小',
-                    onPressed: () => canvasKey.currentState?.zoom(.8),
-                    icon: const GenAiIcon(GenAiGlyph.zoomOut),
-                  ),
-                  IconButton(
-                    tooltip: '放大',
-                    onPressed: () => canvasKey.currentState?.zoom(1.25),
-                    icon: const GenAiIcon(GenAiGlyph.zoomIn),
-                  ),
-                  IconButton(
-                    tooltip: '适应窗口',
-                    onPressed: () => canvasKey.currentState?.fit(),
-                    icon: const GenAiIcon(GenAiGlyph.fit),
-                  ),
-                ],
+    await pushAdaptivePage<void>(
+      context,
+      rootNavigator: true,
+      builder: (context) => CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).pop(),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            appBar: AppBar(
+              leading: IconButton(
+                tooltip: '关闭',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const GenAiIcon(GenAiGlyph.close),
               ),
-              body: SafeArea(
-                child: _MermaidCanvas(
-                  key: canvasKey,
-                  code: widget.code,
-                  fullscreen: true,
-                  initialView: _canvasKey.currentState?.view,
+              title: const Text('Mermaid 图表', maxLines: 1, overflow: TextOverflow.ellipsis),
+              actions: [
+                IconButton(
+                  tooltip: '缩小',
+                  onPressed: () => canvasKey.currentState?.zoom(.8),
+                  icon: const GenAiIcon(GenAiGlyph.zoomOut),
                 ),
+                IconButton(
+                  tooltip: '放大',
+                  onPressed: () => canvasKey.currentState?.zoom(1.25),
+                  icon: const GenAiIcon(GenAiGlyph.zoomIn),
+                ),
+                IconButton(
+                  tooltip: '适应窗口',
+                  onPressed: () => canvasKey.currentState?.fit(),
+                  icon: const GenAiIcon(GenAiGlyph.fit),
+                ),
+              ],
+            ),
+            body: SafeArea(
+              child: _MermaidCanvas(
+                key: canvasKey,
+                code: widget.code,
+                fullscreen: true,
+                initialView: _canvasKey.currentState?.view,
               ),
             ),
           ),
@@ -85,6 +85,36 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.code != widget.code) {
       _renderError = null;
+    }
+  }
+
+  Future<void> _openMenu(BuildContext anchor) async {
+    final code = widget.code;
+    final action = await genAiShowMenu<String>(
+      context: context,
+      anchorContext: anchor,
+      semanticLabel: '图表操作',
+      minWidth: 180,
+      items: [
+        if (!_showCode && _renderError == null)
+          const PopupMenuItem(value: 'fit', child: Text('适应窗口')),
+        PopupMenuItem(value: 'source', child: Text(_showCode ? '切换到图表' : '查看源码')),
+        const PopupMenuItem(value: 'copy', child: Text('复制源码')),
+      ],
+    );
+    if (!mounted || widget.code != code) return;
+    switch (action) {
+      case 'fit':
+        _canvasKey.currentState?.fit();
+      case 'source':
+        setState(() => _showCode = !_showCode);
+      case 'copy':
+        try {
+          await Clipboard.setData(ClipboardData(text: code));
+          if (mounted) showAdaptiveFeedback(context: context, message: '已复制');
+        } catch (_) {
+          if (mounted) showAdaptiveFeedback(context: context, message: '无法复制，请手动选择文字');
+        }
     }
   }
 
@@ -104,66 +134,24 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
-          Container(
-            constraints: const BoxConstraints(minHeight: 48),
-            padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: palette.line)),
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final title = Row(
-                  children: [
-                    GenAiIcon(GenAiGlyph.diagram, size: 16, color: palette.accent),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Mermaid 图表',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                );
-                final actions = Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!_showCode && _renderError == null) ...[
-                      IconButton(
-                        tooltip: '适应窗口',
-                        onPressed: () => _canvasKey.currentState?.fit(),
-                        icon: const GenAiIcon(GenAiGlyph.fit, size: 20),
-                      ),
-                      IconButton(
-                        tooltip: '全屏查看',
-                        onPressed: _openFullscreen,
-                        icon: const GenAiIcon(GenAiGlyph.full, size: 20),
-                      ),
-                    ],
-                    IconButton(
-                      tooltip: _showCode ? '切换到图表' : '查看源码',
-                      onPressed: () => setState(() => _showCode = !_showCode),
-                      icon: GenAiIcon(_showCode ? GenAiGlyph.diagram : GenAiGlyph.code, size: 20),
-                    ),
-                    GenAiCopyButton(text: widget.code, tooltip: '复制源码'),
-                  ],
-                );
-                final compact =
-                    constraints.maxWidth < 332 * MediaQuery.textScalerOf(context).scale(13) / 13;
-                return compact && !_showCode && _renderError == null
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          title,
-                          const SizedBox(height: 4),
-                          Align(alignment: Alignment.centerRight, child: actions),
-                        ],
-                      )
-                    : Row(children: [Expanded(child: title), actions]);
-              },
-            ),
+          GenAiContentHeader(
+            title: 'Mermaid 图表',
+            leading: GenAiIcon(GenAiGlyph.diagram, size: 16, color: palette.accent),
+            actions: [
+              if (!_showCode && _renderError == null)
+                IconButton(
+                  tooltip: '全屏查看',
+                  onPressed: _openFullscreen,
+                  icon: const GenAiIcon(GenAiGlyph.full, size: 20),
+                ),
+              Builder(
+                builder: (anchor) => IconButton(
+                  tooltip: '更多操作',
+                  icon: const GenAiIcon(GenAiGlyph.more, size: 20),
+                  onPressed: () => _openMenu(anchor),
+                ),
+              ),
+            ],
           ),
 
           // Body
@@ -200,7 +188,6 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
               child: SelectableText(
                 widget.code,
-                contextMenuBuilder: genAiTextSelectionContextMenu,
                 style: const TextStyle(
                   fontFamily: kGenAiMonospaceFamily,
                   fontFamilyFallback: kGenAiMonospaceFallback,
@@ -239,7 +226,10 @@ MermaidStyle _mermaidStyle(GenAiPalette palette, {required bool dark}) {
   return MermaidStyle(
     backgroundColor: palette.raised.toARGB32(),
     defaultNodeStyle: NodeStyle(
-      fillColor: palette.soft.toARGB32(),
+      fillColor: (dark
+              ? Color.alphaBlend(palette.text.withValues(alpha: .06), palette.raised)
+              : palette.soft)
+          .toARGB32(),
       strokeColor: palette.line.toARGB32(),
       strokeWidth: 1,
       textColor: palette.text.toARGB32(),

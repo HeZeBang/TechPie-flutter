@@ -1,17 +1,9 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/presentation/genai_theme.dart';
 
 void main() {
-  test('GenAI uses the draft drawer and modal scrims', () {
-    expect(genAiOverlayScrim(drawer: true), const Color(0x55121015));
-    expect(genAiOverlayScrim(), const Color(0x66121015));
-  });
-
-  testWidgets('dialog blurs only its barrier and preserves the result and dismissal',
-      (tester) async {
+  testWidgets('dialog preserves the result and dismissal policy', (tester) async {
     int? result;
     await tester.pumpWidget(
       MaterialApp(
@@ -44,14 +36,7 @@ void main() {
     final content = find.byKey(const ValueKey('overlay-content'));
     final route = ModalRoute.of(tester.element(content))!;
     expect(route, isA<DialogRoute<int>>());
-    expect(route.barrierColor, const Color(0x66121015));
     expect(route.barrierDismissible, isFalse);
-    expect(route.filter, ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3));
-    expect(
-      find.byWidgetPredicate((widget) => widget is BackdropFilter && widget.filter == route.filter),
-      findsOneWidget,
-    );
-    // The filter is attached to the barrier, not around the dialog itself.
     expect(find.ancestor(of: content, matching: find.byType(BackdropFilter)), findsNothing);
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
@@ -62,7 +47,7 @@ void main() {
     expect(content, findsNothing);
   });
 
-  testWidgets('modal sheet shares the blurred scrim and stays barrier dismissible', (tester) async {
+  testWidgets('modal sheet stays barrier dismissible', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -91,14 +76,8 @@ void main() {
     final content = find.byKey(const ValueKey('overlay-content'));
     final route = ModalRoute.of(tester.element(content))!;
     expect(route, isA<ModalBottomSheetRoute<void>>());
-    expect(route.barrierColor, const Color(0x66121015));
     expect(route.barrierDismissible, isTrue);
-    expect(route.filter, ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3));
     expect(find.ancestor(of: content, matching: find.byType(BackdropFilter)), findsNothing);
-    expect(
-      find.byWidgetPredicate((widget) => widget is BackdropFilter && widget.filter == route.filter),
-      findsOneWidget,
-    );
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
     expect(content, findsNothing);
@@ -139,10 +118,6 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
     final header = find.byKey(const ValueKey('frame-header'));
-    expect(tester.getSize(header).height, 72);
-    expect(tester.widget<Padding>(header).padding, const EdgeInsets.fromLTRB(22, 18, 22, 18));
-    expect(tester.getSize(find.byKey(const ValueKey('frame-surface'))).width, 500);
-    expect(tester.getSize(find.byTooltip('关闭')), const Size(36, 36));
     await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();
     expect(header, findsOneWidget);

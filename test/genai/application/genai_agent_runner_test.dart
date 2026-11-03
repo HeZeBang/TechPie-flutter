@@ -8,6 +8,7 @@ import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_contract.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
+import 'package:techpie/features/genai/domain/genai_remote_record.dart';
 
 const objectSchema = <String, Object?>{
   'type': 'object',
@@ -33,7 +34,7 @@ GenAiAgentRunner testRunner({
             ? GenAiTextDelta(
                 event.text.replaceAll(
                   testNonce,
-                  genAiAgentNonceFromSystem(request.history.first.content)!,
+                  genAiAgentNonceFromSystem(request.requestGuide!)!,
                 ),
               )
             : event,
@@ -84,7 +85,7 @@ GenAiAgentTool tool({
     GenAiAgentTool(
       name: name,
       description: 'Test tool.',
-      parameters: schema,
+      inputSchema: schema,
       prepare: (_, context) async => GenAiAgentPreparedTool(
         requiresApproval: mutation,
         summary: 'Concrete test action',
@@ -101,7 +102,7 @@ Future<List<GenAiAgentEvent>> run(
   GenAiAgentApproval? approve,
   Map<String, int>? approvalBudget,
   List<GenAiAgentHistoryEntry>? transcript,
-  Future<void> Function(Map<String, Object?> snapshot)? checkpoint,
+  Future<void> Function()? confirmProposalSaved,
 }) =>
     runner
         .run(
@@ -111,11 +112,31 @@ Future<List<GenAiAgentEvent>> run(
           approve: approve ?? (_, __, ___) async => true,
           transcript: transcript,
           approvalBudget: approvalBudget,
-          checkpoint: checkpoint,
+          confirmProposalSaved: confirmProposalSaved,
         )
         .toList();
 
 void main() {
+  test('retrieval evidence is transient while its exact source reference is saved', () async {
+    const source = GenAiMessage(role: GenAiRole.user, content: 'Budget marker: cedar-83 数学😀');
+    final requests = <GenAiChatRequest>[];
+    final runner = testRunner(
+      tools: GenAiAgentToolRegistry([]),
+      streamChat: (r, _) {
+        requests.add(r);
+        return requests.length == 1
+            ? answer(call('search', name: 'search_conversation', args: {'query': 'cedar-83'}))
+            : answer('Found the original budget marker.');
+      },
+    );
+    final events = await run(runner, input: request(history: [source]));
+    expect(events.last.kind, GenAiAgentEventKind.completed);
+    expect(requests.last.storedPrompt, contains('techpie_excerpt_v1'));
+    expect(requests.last.storedPrompt, isNot(contains(source.content)));
+    expect(requests.last.stepContext, contains(source.content));
+    expect(requests.map((r) => r.history.first.content).toSet(), hasLength(1));
+  });
+
   test('compact frames normalize wrapping but reject ambiguous or stale calls', () {
     final compact = encodeGenAiCompactCall('read_data', {}, nonce: testNonce);
     for (final input in [
@@ -156,6 +177,99 @@ void main() {
     expect(decodeGenAiAgentFinal('```xml\n$frame\n```'), text);
   });
 
+  test('stream and final parser agree across fences, legacy attributes and literal markers', () {
+    const text = 'Explain `</techpie-final>` without invoking tools.\nThen finish.';
+    for (final frame in [
+      encodeGenAiAgentFinal(text, nonce: testNonce),
+      "<techpie-final nonce = '$testNonce'>$text</techpie-final >",
+      '<techpie-agent-final nonce="$testNonce" version="3">${jsonEncode({
+            'text': text,
+          })}</techpie-agent-final>',
+    ]) {
+      for (final source in [frame, '```xml\n$frame\n```']) {
+        for (var split = 0; split <= source.length; split++) {
+          final decoder = GenAiAgentFinalStream(testNonce);
+          final preview =
+              decoder.add(source.substring(0, split)) + decoder.add(source.substring(split));
+          expect(preview.trim(), text, reason: 'split $split');
+          expect(decoder.finish().text, text);
+        }
+        final decoder = GenAiAgentFinalStream(testNonce);
+        expect(
+          source.codeUnits.map((c) => decoder.add(String.fromCharCode(c))).join().trim(),
+          text,
+        );
+      }
+    }
+  });
+
+  test('total repair budget stops alternating failures with an inert unverified candidate',
+      () async {
+    var requests = 0;
+    var executions = 0;
+    final runner = testRunner(
+      limits: const GenAiAgentLimits(maxProtocolErrors: 1, maxTotalProtocolErrors: 2),
+      tools: GenAiAgentToolRegistry([tool(execute: (_) async => ++executions)]),
+      streamChat: (_, __) => ++requests % 2 == 1
+          ? answer(
+              '<techpie-call>A useful but unframed observation.\n```techpie-visual\n<script>run()</script>\n```',
+              raw: true,
+            )
+          : answer(call('read-$requests')),
+    );
+    final events = await run(runner);
+    expect(requests, 5);
+    expect(executions, 2);
+    expect(events.last.failure?.kind, GenAiFailureKind.protocol);
+    expect(events.last.partialText, startsWith('````text'));
+    expect(events.last.partialText, contains('useful but unframed'));
+    expect(events.where((e) => e.kind == GenAiAgentEventKind.completed), isEmpty);
+  });
+
+  test('unchanged read loops pause, but fresh runs and changing observations remain usable',
+      () async {
+    var calls = 0;
+    var changing = false;
+    var rounds = 0;
+    final runner = testRunner(
+      tools: GenAiAgentToolRegistry([
+        tool(execute: (_) async => {'value': changing ? ++calls : 42}),
+      ]),
+      streamChat: (_, __) => answer(++rounds <= 4 ? call('read-$rounds') : 'Done.'),
+    );
+    final stalled = await run(runner);
+    expect(stalled.last.kind, GenAiAgentEventKind.failed);
+    expect(stalled.last.text, contains('相同结果'));
+    expect(stalled.where((e) => e.kind == GenAiAgentEventKind.toolFinished), hasLength(3));
+    expect(runner.transcriptForConversation('agent-test').last.result?['ok'], true);
+    changing = true;
+    rounds = 0;
+    expect((await run(runner)).last.kind, GenAiAgentEventKind.completed);
+    expect(calls, 4);
+  });
+
+  test('visual guide is loaded on demand and constant instructions never enter saved input',
+      () async {
+    final requests = <GenAiChatRequest>[];
+    final runner = testRunner(
+      tools: GenAiAgentToolRegistry([]),
+      streamChat: (r, _) {
+        requests.add(r);
+        return answer(requests.length == 1 ? call('guide', name: 'get_visual_guide') : 'Ready.');
+      },
+    );
+    expect((await run(runner)).last.kind, GenAiAgentEventKind.completed);
+    expect(requests.first.history.first.content, isNot(contains('INTERACTIVE_VISUALS:')));
+    expect(requests.last.requestGuide, contains('INTERACTIVE_VISUALS:'));
+    expect(requests.last.requestGuide, contains('techpieMath.render'));
+    expect(requests.map((r) => r.history.first.content).toSet(), hasLength(1));
+    expect(requests.first.history.first.content, isNot(contains('CURRENT_CALL_NONCE')));
+    for (final request in requests) {
+      expect(request.storedPrompt, isNot(contains('INTERACTIVE_VISUALS:')));
+    }
+    expect(requests.last.prompt, contains('inline_visuals'));
+  });
+
   test('targeted repair resets after valid decisions and leaves a clean trajectory', () async {
     var requests = 0;
     var executions = 0;
@@ -172,9 +286,10 @@ void main() {
           r.history.skip(1).map((m) => m.content).join(),
           isNot(contains('invalid_agent_response')),
         );
-        if (requests.isOdd) return answer('I will check it.', raw: true);
-        expect(currentControl(r)['rejected_response'], 'I will check it.');
-        expect(r.prompt, contains('No tool executed from this response'));
+        if (requests.isOdd) return answer('<techpie-call>I will check it.', raw: true);
+        expect(currentControl(r)['rejected_response'], '<techpie-call>I will check it.');
+        expect(r.requestGuide, contains('No tool executed from the rejected response'));
+        expect(r.storedPrompt, isNot(contains('Previously completed tools remain completed')));
         if (requests < 6) {
           return answer(encodeGenAiCompactCall('read_data', {}, nonce: testNonce), raw: true);
         }
@@ -198,7 +313,7 @@ void main() {
     final imageTool = GenAiAgentTool(
       name: 'generate_image',
       description: 'Image revisions',
-      parameters: {
+      inputSchema: {
         'type': 'object',
         'properties': {
           'prompt': {'type': 'string'},
@@ -283,7 +398,7 @@ void main() {
     final imageTool = GenAiAgentTool(
       name: 'generate_image',
       description: 'Generate a single image',
-      parameters: objectSchema,
+      inputSchema: objectSchema,
       prepare: (_, __) async => GenAiAgentPreparedTool(
         requiresApproval: true,
         effectKey: 'same-image',
@@ -378,7 +493,7 @@ void main() {
           GenAiAgentTool(
             name: 'reserve_court',
             description: 'Book one slot',
-            parameters: objectSchema,
+            inputSchema: objectSchema,
             maxApprovalsPerRun: 1,
             prepare: (_, __) async => GenAiAgentPreparedTool(
               requiresApproval: true,
@@ -526,10 +641,10 @@ void main() {
         expect(currentControl(r)['current_task'], requests == 0 ? isNull : r.contextGoal);
         expect(
           currentControl(r)['current_step'],
-          genAiAgentNonceFromSystem(r.history.first.content),
+          genAiAgentNonceFromSystem(r.requestGuide!),
         );
         expect(r.storedPrompt, isNot(contains('techpie_agent_context_v1')));
-        expect(genAiAgentNonceFromSystem(r.history.first.content), isNotNull);
+        expect(genAiAgentNonceFromSystem(r.requestGuide!), isNotNull);
         if (++requests == 1) {
           expect(r.history.first.content, isNot(contains('"name":"inspect_image"')));
           return answer(call('image', name: 'generate_image'));
@@ -537,16 +652,16 @@ void main() {
         expect(executions, 1);
         if (requests == 2) {
           expect(r.imageUrls, contains(image));
-          expect(r.history.first.content, contains('"name":"inspect_image"'));
-          return answer('The picture is ready.', raw: true);
+          expect(r.requestGuide, contains('"name":"inspect_image"'));
+          return answer('<techpie-final>The picture is ready.', raw: true);
         }
         expect(r.imageUrl, isNull);
         expect(r.imageUrls, isEmpty);
         expect(r.history.every((m) => m.imageUrls.isEmpty), true);
-        expect(currentControl(r)['rejected_response'], 'The picture is ready.');
-        expect(r.history.first.content, isNot(contains('The picture is ready.')));
-        expect(r.prompt, contains('Previously completed tools remain completed'));
-        expect(r.history.any((m) => m.content == 'The picture is ready.'), false);
+        expect(currentControl(r)['rejected_response'], '<techpie-final>The picture is ready.');
+        expect(r.history.first.content, isNot(contains('<techpie-final>The picture is ready.')));
+        expect(r.stepContext, contains('Previously completed tools remain completed'));
+        expect(r.history.any((m) => m.content == '<techpie-final>The picture is ready.'), false);
         expect(r.history.map((m) => m.content).join(), contains('"status":"generated"'));
         return answer('Created the requested campus picture.');
       },
@@ -567,14 +682,14 @@ void main() {
         if (step > 0) tool(execute: (_) async => ++executed),
       ]),
       streamChat: (r, _) async* {
-        final nonce = genAiAgentNonceFromSystem(r.history.first.content)!;
+        final nonce = genAiAgentNonceFromSystem(r.requestGuide!)!;
         step++;
         if (step == 1) {
           expect(r.history.first.content, isNot(contains('"name":"read_data"')));
-          yield const GenAiTextDelta('I will inspect the image.');
+          yield const GenAiTextDelta('<techpie-call>I will inspect the image.');
         } else if (step == 2) {
           expect(r.imageUrls, isEmpty);
-          expect(r.history.first.content, contains('"name":"read_data"'));
+          expect(r.requestGuide, contains('"name":"read_data"'));
           yield GenAiTextDelta(
             encodeGenAiAgentCall(
               GenAiAgentToolCall(
@@ -622,7 +737,7 @@ void main() {
     final runner = GenAiAgentRunner(
       tools: () => GenAiAgentToolRegistry([]),
       streamChat: (r, _) async* {
-        final nonce = genAiAgentNonceFromSystem(r.history.first.content)!;
+        final nonce = genAiAgentNonceFromSystem(r.requestGuide!)!;
         final frame = '<techpie-agent-final version="3" nonce="$nonce">'
             r'{"text":"Hello\n\"campus\" \uD83C\uDF33"}'
             '</techpie-agent-final>';
@@ -655,12 +770,11 @@ void main() {
     expect(events.last.text, 'Hello\n"campus" 🌳');
   });
 
-  test('unframed responses recover only through fresh validated decisions', () async {
+  test('ambiguous tool responses recover only through fresh validated decisions', () async {
     for (final preamble in [
-      "I'll check the current semester information for you.",
-      'Let me look up the current semester.',
-      '我来查询一下当前学期。',
-      '好的，我先帮你查一下。',
+      '<techpie-call>missing nonce',
+      '{"name":"read_data","arguments":{}}',
+      '```tool_call\n{"name":"read_data","arguments":{}}\n```',
       'I will check.\n${call('mixed')}',
     ]) {
       var requests = 0;
@@ -669,7 +783,7 @@ void main() {
       final runner = testRunner(
         tools: GenAiAgentToolRegistry([tool(execute: (_) async => ++executed)]),
         streamChat: (r, _) {
-          final nonce = genAiAgentNonceFromSystem(r.history.first.content)!;
+          final nonce = genAiAgentNonceFromSystem(r.requestGuide!)!;
           switch (++requests) {
             case 1:
               firstNonce = nonce;
@@ -677,7 +791,7 @@ void main() {
             case 2:
               expect(executed, 0);
               expect(nonce, isNot(firstNonce));
-              expect(r.prompt, contains('Previously completed tools remain completed'));
+              expect(r.stepContext, contains('Previously completed tools remain completed'));
               expect(r.history.where((e) => e.role == GenAiRole.system), hasLength(1));
               return answer(call('verified'));
             default:
@@ -703,7 +817,7 @@ void main() {
       tools: registry,
       streamChat: (_, __) {
         requests++;
-        return answer("I'll check the semester for you.", raw: true);
+        return answer('<techpie-call>{"name":"read_data"}', raw: true);
       },
     );
     final events = await run(stuck);
@@ -746,7 +860,7 @@ void main() {
             GenAiAgentTool(
               name: 'reserve_court',
               description: 'Book one slot',
-              parameters: objectSchema,
+              inputSchema: objectSchema,
               maxApprovalsPerRun: 1,
               prepare: (_, __) async => GenAiAgentPreparedTool(
                 requiresApproval: true,
@@ -762,7 +876,7 @@ void main() {
     await run(
       create(),
       approvalBudget: budget,
-      checkpoint: (_) async {
+      confirmProposalSaved: () async {
         saved = Map.of(budget);
       },
       approve: (_, __, ___) async {
@@ -794,7 +908,7 @@ void main() {
         name: 'reserve_court',
         description: 'Reserve one court',
         maxApprovalsPerRun: 1,
-        parameters: const {
+        inputSchema: const {
           'type': 'object',
           'properties': {
             'court': {'type': 'integer', 'minimum': 1, 'maximum': 10},
@@ -835,6 +949,42 @@ void main() {
     });
   }
 
+  test('recovery ignores undispatched failures while retaining uncertain receipts', () {
+    final runner =
+        testRunner(tools: GenAiAgentToolRegistry([]), streamChat: (_, __) => answer('Done'));
+    final proposal =
+        GenAiAgentToolCall(id: 'old', name: 'reserve_court', arguments: const {'action': 'book'});
+    Map<String, Object?> receipt(String code) => {
+          'call_id': 'old',
+          'name': 'reserve_court',
+          'ok': false,
+          'error': {'code': code, 'message': 'Not completed'},
+        };
+    runner.restoreConversation('agent-test', {
+      'version': 1,
+      'effects': {'reserve_court:old': receipt('approval_expired')},
+    });
+    runner.recoverCalls('agent-test', [
+      for (final code in ['court_not_available', 'approval_expired'])
+        GenAiAgentEvent(
+          kind: GenAiAgentEventKind.toolFinished,
+          turn: 1,
+          call: proposal,
+          result: receipt(code),
+        ),
+    ]);
+    expect(runner.snapshotConversation('agent-test')['effects'], isEmpty);
+    runner.recoverCalls('agent-test', [
+      GenAiAgentEvent(
+        kind: GenAiAgentEventKind.toolFinished,
+        turn: 1,
+        call: proposal,
+        result: receipt('outcome_unknown'),
+      ),
+    ]);
+    expect(runner.snapshotConversation('agent-test')['effects'], isNotEmpty);
+  });
+
   test('expired approval permits a new user request but not a same-run retry', () async {
     var calls = 0;
     var approvals = 0;
@@ -845,7 +995,7 @@ void main() {
         GenAiAgentTool(
           name: 'reserve_court',
           description: 'Reserve one court',
-          parameters: objectSchema,
+          inputSchema: objectSchema,
           maxApprovalsPerRun: 1,
           prepare: (_, __) async => GenAiAgentPreparedTool(
             requiresApproval: true,
@@ -873,7 +1023,7 @@ void main() {
         approvals++;
         return true;
       },
-      checkpoint: (snapshot) async => writes.add(snapshot),
+      confirmProposalSaved: () async => writes.add(runner.snapshotConversation('agent-test')),
     );
     expect(approvals, 1);
     expect(effects, 0);
@@ -898,52 +1048,6 @@ void main() {
     expect(effects, 1);
   });
 
-  test('failed expired-receipt cleanup keeps unknown outcome blocked', () async {
-    var calls = 0;
-    var approvals = 0;
-    var executions = 0;
-    var writes = 0;
-    final runner = testRunner(
-      tools: GenAiAgentToolRegistry([
-        tool(
-          mutation: true,
-          execute: (_) async {
-            executions++;
-            throw const GenAiAgentToolException(
-              'approval_expired',
-              'Not submitted',
-              effectNotDispatched: true,
-            );
-          },
-        ),
-      ]),
-      streamChat: (_, __) => answer(++calls == 1 ? call('expired') : 'Done'),
-    );
-    final events = await run(
-      runner,
-      approve: (_, __, ___) async {
-        approvals++;
-        return true;
-      },
-      checkpoint: (_) async {
-        if (++writes == 2) throw StateError('Disk unavailable');
-      },
-    );
-    expect(events.last.failure?.kind, GenAiFailureKind.storage);
-    final effects = runner.snapshotConversation('agent-test')['effects']! as Map;
-    expect((effects.values.single as Map)['error'], containsPair('code', 'outcome_unknown'));
-    calls = 0;
-    await run(
-      runner,
-      approve: (_, __, ___) async {
-        approvals++;
-        return true;
-      },
-    );
-    expect(approvals, 1);
-    expect(executions, 1);
-  });
-
   test('legacy court receipts prevent reapproval after changing player count', () async {
     var approvals = 0;
     var calls = 0;
@@ -952,7 +1056,7 @@ void main() {
         GenAiAgentTool(
           name: 'reserve_court',
           description: 'Reserve one court',
-          parameters: objectSchema,
+          inputSchema: objectSchema,
           maxApprovalsPerRun: 1,
           prepare: (_, __) async => GenAiAgentPreparedTool(
             requiresApproval: true,
@@ -985,6 +1089,80 @@ void main() {
     expect(approvals, 0);
   });
 
+  test('confirmed final EOF is normalized but never authorizes incomplete tools', () async {
+    final body = 'A complete ordinary answer. ' * 1800;
+    final source = '<techpie-final nonce="$testNonce">$body';
+    for (final reason in [GenAiFinishReason.stop, GenAiFinishReason.length]) {
+      final runner = testRunner(
+        tools: GenAiAgentToolRegistry([]),
+        streamChat: (_, __) => answer(source, raw: true, reason: reason),
+      );
+      final events = await run(runner);
+      if (reason == GenAiFinishReason.stop) {
+        expect(events.last.kind, GenAiAgentEventKind.completed);
+        expect(events.last.text, body.trim());
+        expect(events.where((e) => e.kind == GenAiAgentEventKind.protocolError), isEmpty);
+        expect(decodeGenAiAgentFinal(source), body.trim());
+      } else {
+        expect(events.last.failure?.kind, GenAiFailureKind.interrupted);
+      }
+    }
+    for (final rejected in [
+      '<techpie-call nonce="$testNonce">{"name":"read_data","arguments":{}}',
+      '$source</techpie-fin',
+      '$source${call('two')}',
+      source.replaceFirst(testNonce, 'old_nonce_0123456789'),
+    ]) {
+      expect(
+        () => parseGenAiAgentDecision(rejected, nonce: testNonce),
+        throwsA(isA<GenAiAgentToolException>()),
+      );
+    }
+  });
+
+  test('reasoning does not consume final answer allowance and remains bounded', () async {
+    for (final reasoningSize in [128 * 1024, 128 * 1024 + 1]) {
+      final runner = testRunner(
+        tools: GenAiAgentToolRegistry([]),
+        limits: const GenAiAgentLimits(maxOutputCharacters: 100),
+        streamChat: (_, __) async* {
+          yield GenAiReasoningDelta('r' * reasoningSize);
+          yield* answer('Done.');
+        },
+      );
+      final events = await run(runner);
+      expect(
+        events.last.kind,
+        reasoningSize <= 128 * 1024 ? GenAiAgentEventKind.completed : GenAiAgentEventKind.failed,
+      );
+    }
+  });
+
+  test('long task retains trailing contract and portable original without duplication', () async {
+    final prompt = 'Original evidence. ' * 1000;
+    var step = 0;
+    final runner = testRunner(
+      tools: GenAiAgentToolRegistry([tool()]),
+      streamChat: (r, _) {
+        final stored = r.withRecord({'step_id': 'persisted-step'}).storedPrompt;
+        final record = decodeGenAiRemoteRecord(stored)!;
+        expect(record['input'], r.prompt);
+        expect(record['reply_format'], r.responseFormat);
+        expect(stored.lastIndexOf('reply_format'), greaterThan(stored.indexOf('input')));
+        expect(r.responseFormat, contains(genAiAgentNonceFromSystem(r.requestGuide!)!));
+        if (++step == 1) return answer(call('read'));
+        expect(currentControl(r).containsKey('current_task'), isFalse);
+        expect(currentControl(r)['current_task_record'], startsWith('r_'));
+        expect(r.history.where((m) => m.content == prompt), hasLength(1));
+        return answer('Done.');
+      },
+    );
+    expect(
+      (await run(runner, input: request(prompt: prompt))).last.kind,
+      GenAiAgentEventKind.completed,
+    );
+  });
+
   test('strict nonce parser rejects malformed live envelopes and leaves examples as text', () {
     expect(
       parseGenAiAgentDecision(call('one'), nonce: testNonce).call!.name,
@@ -993,8 +1171,6 @@ void main() {
     for (final ordinary in [
       '{"call_id":"one","name":"read_data","arguments":{}}',
       '```tool_call\n{"call_id":"one","name":"read_data","arguments":{}}\n```',
-      '```json\n{"message":"ordinary JSON"}\n```',
-      'The tool_call format is documented here.',
       'Example only:\n```xml\n${call('example')}\n```',
       '> ${call('example')}',
       '<|open|>call tool="read_data"',
@@ -1039,8 +1215,9 @@ void main() {
         if (turns == 1) return answer('我先调用工具。$native', raw: true);
         if (turns == 2) {
           expect(executed, 0);
-          expect(r.prompt, contains('invalid_agent_response'));
-          expect(r.prompt, contains('Previously completed tools remain completed'));
+          expect(r.prompt, contains('native_tool_format'));
+          expect(r.thinking, isFalse);
+          expect(r.stepContext, contains('previously completed tools remain completed'));
           expect(r.stepContext, isNot(contains('<|')));
           expect(r.history.map((m) => m.content).join(), isNot(contains(native)));
           return answer(call('corrected'));
@@ -1167,6 +1344,8 @@ void main() {
       requests.first.history.first.content,
       startsWith(genAiAgentProtocolMarker),
     );
+    expect(requests.first.requestGuide, contains('"inputSchema":'));
+    expect(requests.first.history.first.content, isNot(contains('"parameters":')));
     expect(requests.last.prompt, contains('"result":{"value":42}'));
     expect(requests.every((r) => r.chatGroupId == 'agent-test'), isTrue);
     expect(events.last.history.map((m) => m.role), [
@@ -1175,6 +1354,74 @@ void main() {
       GenAiRole.user,
       GenAiRole.assistant,
     ]);
+  });
+
+  test('native result contracts preserve errors, validate outputs and retain approval policy',
+      () async {
+    for (final scenario in ['denied', 'error', 'invalid', 'ok']) {
+      var calls = 0;
+      var executions = 0;
+      var approvals = 0;
+      final registered = GenAiAgentTool(
+        name: 'read_data',
+        description: 'Native contract check.',
+        inputSchema: objectSchema,
+        outputSchema: {
+          'type': 'object',
+          'properties': {
+            'value': {'type': 'integer'},
+          },
+          'required': ['value'],
+        },
+        // Even a read-only hint cannot bypass the prepared action's policy.
+        annotations: {'readOnlyHint': true},
+        maxApprovalsPerRun: 1,
+        prepare: (_, __) async => GenAiAgentPreparedTool(
+          requiresApproval: true,
+          summary: 'Concrete action',
+          execute: () async {
+            executions++;
+            if (scenario == 'error') {
+              return GenAiToolResult(
+                isError: true,
+                structuredContent: {'code': 'unavailable'},
+                content: [
+                  {'type': 'text', 'text': 'No data available'},
+                ],
+              );
+            }
+            return GenAiToolResult.fromValue({'value': scenario == 'invalid' ? 'wrong' : 42});
+          },
+        ),
+      );
+      final events = await run(
+        testRunner(
+          tools: GenAiAgentToolRegistry([registered]),
+          streamChat: (_, __) => answer(++calls == 1 ? call('one') : 'Finished.'),
+        ),
+        approve: (_, __, ___) async {
+          approvals++;
+          return scenario != 'denied';
+        },
+      );
+      expect(approvals, 1);
+      expect(executions, scenario == 'denied' ? 0 : 1);
+      final receipt =
+          events.where((e) => e.kind == GenAiAgentEventKind.toolFinished).single.result!;
+      expect(receipt['ok'], scenario == 'ok');
+      if (scenario == 'ok') {
+        expect(receipt['result'], {'value': 42});
+      } else {
+        expect(
+          (receipt['error']! as Map)['code'],
+          switch (scenario) {
+            'denied' => 'approval_denied',
+            'invalid' => 'invalid_tool_result',
+            _ => 'unavailable',
+          },
+        );
+      }
+    }
   });
 
   test('malformed/unknown calls produce recoverable feedback without execution', () async {
@@ -1463,7 +1710,7 @@ void main() {
     final t = GenAiAgentTool(
       name: 'read_data',
       description: 'Test',
-      parameters: objectSchema,
+      inputSchema: objectSchema,
       prepare: (_, __) {
         preparing.complete();
         return prepared.future;
@@ -1588,8 +1835,9 @@ void main() {
         content: 'Old task completed.',
       ),
     ];
+    var reads = 0;
     final runner = testRunner(
-      tools: GenAiAgentToolRegistry([tool(execute: (_) async => 'z' * 900)]),
+      tools: GenAiAgentToolRegistry([tool(execute: (_) async => '${++reads}${'z' * 900}')]),
       streamChat: (r, _) {
         requests.add(r);
         return answer(
@@ -1621,7 +1869,7 @@ void main() {
     final normalized = GenAiAgentTool(
       name: 'read_data',
       description: 'Normalized mutation',
-      parameters: {
+      inputSchema: {
         'type': 'object',
         'properties': {
           'width': {'type': 'integer'},
@@ -1671,7 +1919,7 @@ void main() {
     final slow = GenAiAgentTool(
       name: 'read_data',
       description: 'Slow image',
-      parameters: objectSchema,
+      inputSchema: objectSchema,
       prepare: (_, context) async => GenAiAgentPreparedTool(
         executionTimeout: const Duration(milliseconds: 200),
         execute: () async {
@@ -1710,7 +1958,7 @@ void main() {
     await stalledStream.close();
   });
 
-  test('raw service exceptions are sanitized and oversized tool results are bounded', () async {
+  test('raw service exceptions are sanitized while oversized success is retained', () async {
     var turns = 0;
     final runner = testRunner(
       tools: GenAiAgentToolRegistry([
@@ -1727,10 +1975,8 @@ void main() {
     final events = await run(runner);
     final results = events.where((e) => e.kind == GenAiAgentEventKind.toolFinished).toList();
     expect(jsonEncode(results.first.result), isNot(contains('secret-token')));
-    expect(
-      (results.last.result!['error']! as Map<String, Object?>)['code'],
-      'result_too_large',
-    );
+    expect(results.last.result!['ok'], true);
+    expect(jsonEncode(results.last.result), contains('x' * 7000));
   });
   test('fresh request nonces reject replay while archived calls stay inert', () async {
     final requests = <GenAiChatRequest>[];
@@ -1740,7 +1986,7 @@ void main() {
       tools: GenAiAgentToolRegistry([tool(execute: (_) async => ++executions)]),
       streamChat: (request, _) {
         requests.add(request);
-        final nonce = genAiAgentNonceFromSystem(request.history.first.content)!;
+        final nonce = genAiAgentNonceFromSystem(request.requestGuide!)!;
         firstNonce ??= nonce;
         if (requests.length == 1) return answer(call('first'));
         if (requests.length == 2) {
@@ -1760,12 +2006,13 @@ void main() {
     );
     final events = await run(runner);
     expect(executions, 1);
+    expect(requests.map((r) => r.history.first.content).toSet(), hasLength(1));
     expect(
       events.where((event) => event.kind == GenAiAgentEventKind.protocolError),
       hasLength(1),
     );
     expect(
-      requests.map((r) => genAiAgentNonceFromSystem(r.history.first.content)).toSet(),
+      requests.map((r) => genAiAgentNonceFromSystem(r.requestGuide!)).toSet(),
       hasLength(3),
     );
     final secondHistory = requests[1].history.skip(1).map((message) => message.content).join('\n');
@@ -1870,147 +2117,145 @@ void main() {
     expect(runner.transcriptForConversation('agent-test').first.call, isNull);
   });
 
-  test('mutation awaits durable unknown receipt and checkpoints final result', () async {
+  test('proposal read-back precedes approval and result is carried by the next exchange', () async {
     final release = Completer<void>();
-    final started = Completer<void>();
+    final checking = Completer<void>();
     var executions = 0;
-    var rounds = 0;
-    final writes = <Map<String, Object?>>[];
-    late GenAiAgentRunner runner;
-    runner = testRunner(
-      tools: GenAiAgentToolRegistry(
-        [tool(mutation: true, execute: (_) async => ++executions)],
-      ),
-      streamChat: (_, __) => answer(++rounds == 1 ? call('one') : 'Done.'),
+    var approvals = 0;
+    var confirmations = 0;
+    final requests = <GenAiChatRequest>[];
+    final runner = testRunner(
+      tools: GenAiAgentToolRegistry([tool(mutation: true, execute: (_) async => ++executions)]),
+      streamChat: (request, _) {
+        requests.add(request);
+        return answer(requests.length == 1 ? call('one') : 'Done.');
+      },
     );
     final running = run(
       runner,
-      checkpoint: (snapshot) async {
-        writes.add(snapshot);
-        if (writes.length == 1) {
-          expect(
-            (runner.transcriptForConversation('agent-test').last.result!['error']!
-                as Map<String, Object?>)['code'],
-            'outcome_unknown',
-          );
-          started.complete();
-          await release.future;
-        }
+      confirmProposalSaved: () async {
+        confirmations++;
+        checking.complete();
+        await release.future;
       },
-    );
-    await started.future;
-    expect(executions, 0);
-    release.complete();
-    expect((await running).last.kind, GenAiAgentEventKind.completed);
-    expect(executions, 1);
-    expect(writes, hasLength(2));
-    final first =
-        (writes.first['effects']! as Map<String, Object?>).values.single as Map<String, Object?>;
-    final last =
-        (writes.last['effects']! as Map<String, Object?>).values.single as Map<String, Object?>;
-    expect(
-      (first['error']! as Map<String, Object?>)['code'],
-      'outcome_unknown',
-    );
-    expect(last['ok'], true);
-  });
-
-  test('checkpoint failure before dispatch fails closed and cannot retry after restart', () async {
-    var executions = 0;
-    final registry = GenAiAgentToolRegistry(
-      [tool(mutation: true, execute: (_) async => ++executions)],
-    );
-    final runner = testRunner(tools: registry, streamChat: (_, __) => answer(call('one')));
-    final events = await run(
-      runner,
-      checkpoint: (_) async => throw StateError('disk unavailable'),
-    );
-    expect(events.last.failure?.kind, GenAiFailureKind.storage);
-    expect(executions, 0);
-    var rounds = 0;
-    final restored = testRunner(
-      tools: registry,
-      streamChat: (_, __) => answer(++rounds == 1 ? call('new_id') : 'Done.'),
-    );
-    restored.restoreConversation(
-      'agent-test',
-      runner.snapshotConversation('agent-test'),
-    );
-    var approvals = 0;
-    final resumed = await run(
-      restored,
       approve: (_, __, ___) async {
         approvals++;
         return true;
       },
     );
-    expect(approvals, 0);
+    await checking.future;
     expect(executions, 0);
-    expect(
-      resumed
-          .firstWhere(
-            (event) => event.kind == GenAiAgentEventKind.toolFinished,
-          )
-          .result!['reused'],
-      true,
-    );
+    expect(approvals, 0);
+    expect(runner.snapshotConversation('agent-test')['effects'], isEmpty);
+    release.complete();
+    expect((await running).last.kind, GenAiAgentEventKind.completed);
+    expect(executions, 1);
+    expect(confirmations, 1);
+    expect(decodeGenAiAgentRecord(requests.last.prompt)!.result, containsPair('ok', true));
+    expect(requests.last.storedPrompt, contains('"ok":true'));
   });
 
-  test('persisted unknown receipt blocks repeats when post-dispatch persistence fails', () async {
+  test('failed proposal read-back never approves or dispatches and does not poison local ledger',
+      () async {
     var executions = 0;
-    var writes = 0;
-    Map<String, Object?>? durable;
-    final registry = GenAiAgentToolRegistry(
-      [tool(mutation: true, execute: (_) async => ++executions)],
+    var approvals = 0;
+    var rounds = 0;
+    final runner = testRunner(
+      tools: GenAiAgentToolRegistry([tool(mutation: true, execute: (_) async => ++executions)]),
+      streamChat: (_, __) => answer(++rounds == 1 ? call('one') : 'Done.'),
     );
-    final runner = testRunner(tools: registry, streamChat: (_, __) => answer(call('one')));
-    final events = await run(
+    final failed = await run(
       runner,
-      checkpoint: (snapshot) async {
-        if (++writes == 1) {
-          durable = snapshot;
-          return;
-        }
-        throw const GenAiFailure(GenAiFailureKind.storage);
+      confirmProposalSaved: () async => throw const GenAiFailure(GenAiFailureKind.storage),
+      approve: (_, __, ___) async {
+        approvals++;
+        return true;
       },
     );
+    expect(failed.last.failure?.kind, GenAiFailureKind.storage);
+    expect(executions, 0);
+    expect(approvals, 0);
+    expect(runner.snapshotConversation('agent-test')['effects'], isEmpty);
+    rounds = 0;
+    expect((await run(runner)).last.kind, GenAiAgentEventKind.completed);
+    expect(executions, 1);
+  });
+
+  test(
+      'a failed receipt exchange retains known outcome locally and unresolved proposal on a fresh instance',
+      () async {
+    var executions = 0;
+    var rounds = 0;
+    Map<String, Object?>? dispatched;
+    final registry =
+        GenAiAgentToolRegistry([tool(mutation: true, execute: (_) async => ++executions)]);
+    late GenAiAgentRunner runner;
+    runner = testRunner(
+      tools: registry,
+      streamChat: (_, __) {
+        if (++rounds == 1) return answer(call('one'));
+        return Stream.error(const GenAiFailure(GenAiFailureKind.storage));
+      },
+    );
+    final events = <GenAiAgentEvent>[];
+    await for (final event in runner.run(
+      request: request(),
+      cancellation: GenAiCancellation(),
+      isCurrent: () => true,
+      approve: (_, __, ___) async => true,
+    )) {
+      events.add(event);
+      if (event.kind == GenAiAgentEventKind.toolFinished) {
+        expect(event.result!['ok'], true);
+        // A fresh reader has only a durable proposal, not this local result.
+        dispatched = {
+          'version': 1,
+          'effects': {
+            'read_data:{}': {
+              'call_id': 'one',
+              'name': 'read_data',
+              'ok': false,
+              'error': {'code': 'outcome_unknown', 'message': 'Proposal has no saved receipt.'},
+            },
+          },
+        };
+      }
+    }
     expect(events.last.failure?.kind, GenAiFailureKind.storage);
     expect(executions, 1);
-    var rounds = 0;
+    expect(
+      ((runner.snapshotConversation('agent-test')['effects'] as Map).values.single as Map)['ok'],
+      true,
+    );
+    rounds = 0;
     final restored = testRunner(
       tools: registry,
       streamChat: (_, __) => answer(++rounds == 1 ? call('new_id') : 'Done.'),
     );
-    restored.restoreConversation('agent-test', durable!);
+    restored.restoreConversation('agent-test', dispatched!);
     final resumed = await run(restored);
     expect(executions, 1);
-    final result =
-        resumed.firstWhere((event) => event.kind == GenAiAgentEventKind.toolFinished).result!;
+    final result = resumed.firstWhere((e) => e.kind == GenAiAgentEventKind.toolFinished).result!;
     expect(result['reused'], true);
-    expect(
-      (result['error']! as Map<String, Object?>)['code'],
-      'outcome_unknown',
-    );
+    expect(result['error'], containsPair('code', 'outcome_unknown'));
   });
 
-  test('denials are persisted and snapshot restoration rejects pending or malformed state',
-      () async {
+  test('denials travel in the next request and restoration rejects malformed state', () async {
     var rounds = 0;
     final runner = testRunner(
       tools: GenAiAgentToolRegistry([tool(mutation: true)]),
       streamChat: (_, __) => answer(++rounds == 1 ? call('one') : 'Done.'),
     );
-    final writes = <Map<String, Object?>>[];
-    await run(
-      runner,
-      approve: (_, __, ___) async => false,
-      checkpoint: (snapshot) async {
-        writes.add(snapshot);
-      },
+    await run(runner, approve: (_, __, ___) async => false);
+    final denied = (runner.snapshotConversation('agent-test')['effects']! as Map<String, Object?>)
+        .values
+        .single as Map<String, Object?>;
+    expect(
+      runner
+          .transcriptForConversation('agent-test')
+          .any((entry) => (entry.result?['error'] as Map?)?['code'] == 'approval_denied'),
+      true,
     );
-    expect(writes, hasLength(1));
-    final denied =
-        (writes.single['effects']! as Map<String, Object?>).values.single as Map<String, Object?>;
     expect(
       (denied['error']! as Map<String, Object?>)['code'],
       'approval_denied',

@@ -71,8 +71,7 @@ class _GenAiVisualSurfaceState extends State<GenAiVisualSurface> with WidgetsBin
             final value = jsonDecode(message.message);
             if (value is! Map || value['kind'] != 'techpie-visual') return;
             final kind = value['event'];
-            if (kind is! String ||
-                !const ['ready', 'height', 'fullscreen-height', 'error', 'escape'].contains(kind)) {
+            if (kind is! String || !GenAiVisualDocument.statusEvents.contains(kind)) {
               return;
             }
             if (kind == 'ready') {
@@ -123,10 +122,7 @@ class _GenAiVisualSurfaceState extends State<GenAiVisualSurface> with WidgetsBin
 
   Future<void> _updateLayout() async {
     try {
-      final data = jsonEncode({
-        'kind': 'techpie-visual-layout',
-        'fullscreen': widget.fullscreen,
-      });
+      final data = jsonEncode(GenAiVisualDocument.layoutMessage(widget.fullscreen));
       await _controller?.runJavaScript("window.postMessage($data, '*');");
     } catch (_) {
       // A disposed platform view no longer needs layout updates.
@@ -141,7 +137,7 @@ class _GenAiVisualSurfaceState extends State<GenAiVisualSurface> with WidgetsBin
 
   Future<void> _updateActivity() async {
     try {
-      final data = jsonEncode({'kind': 'techpie-visual-active', 'active': _active});
+      final data = jsonEncode(GenAiVisualDocument.activityMessage(_active));
       await _controller?.runJavaScript("window.postMessage($data, '*');");
     } catch (_) {
       // A disposed platform view no longer needs activity updates.
@@ -150,7 +146,7 @@ class _GenAiVisualSurfaceState extends State<GenAiVisualSurface> with WidgetsBin
 
   Future<void> _updateTheme() async {
     try {
-      final data = jsonEncode({'kind': 'techpie-visual-theme', 'theme': widget.theme});
+      final data = jsonEncode(GenAiVisualDocument.themeMessage(widget.theme));
       await _controller?.runJavaScript("window.postMessage($data, '*');");
     } catch (_) {
       // A disposed platform view no longer needs theme updates.

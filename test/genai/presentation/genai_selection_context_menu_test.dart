@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
-import 'package:techpie/features/genai/presentation/genai_theme.dart';
 import 'package:techpie/features/genai/presentation/genai_turn_edit_dialog.dart';
 import 'package:techpie/features/genai/presentation/genai_turn_view.dart';
 
@@ -60,7 +58,7 @@ List<String> _captureClipboard(WidgetTester tester) {
   return copies;
 }
 
-Finder get _popover => find.byKey(const ValueKey('genai-selection-popover'));
+Finder get _popover => find.byType(AdaptiveTextSelectionToolbar);
 
 /// Lands a long press on the first glyph of the answer paragraph rendered by
 /// GenAiMarkdown, whose prose is a plain RichText inside the SelectionArea.
@@ -74,7 +72,7 @@ Offset _positionInsideAnswer(WidgetTester tester) {
 
 void main() {
   testWidgets(
-    'long pressing an assistant answer opens the GenAI selection popover',
+    'long pressing an assistant answer opens the platform selection menu',
     (tester) async {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -89,19 +87,17 @@ void main() {
 
       await tester.pumpWidget(
         _host(
-          GenAiTurnView(
-            turn: turn,
-            context: _context(900),
-            actions: _actions(),
+          LayoutBuilder(
+            builder: (context, constraints) => GenAiTurnView(
+              turn: turn,
+              context: _context(constraints.maxWidth),
+              actions: _actions(),
+            ),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      // GenAiMarkdown selects prose through a SelectionArea, not a
-      // SelectableText, and wires the GenAI region builder to it.
-      final area = tester.widget<SelectionArea>(find.byType(SelectionArea));
-      expect(area.contextMenuBuilder, genAiRegionSelectionContextMenu);
       expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
 
       await tester.longPressAt(
@@ -110,24 +106,32 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(_popover, findsOneWidget);
-      expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
 
       // A read-only region offers copy/select-all through Flutter's own
       // callbacks, never cut.
-      final copy = find.byKey(const ValueKey('genai-selection-copy'));
+      final copy = find.text('Copy');
       expect(copy, findsOneWidget);
-      expect(find.byKey(const ValueKey('genai-selection-selectAll')), findsOneWidget);
-      expect(find.byKey(const ValueKey('genai-selection-cut')), findsNothing);
+      expect(find.text('Select all'), findsOneWidget);
+      expect(find.text('Cut'), findsNothing);
 
       await tester.tap(copy);
       await tester.pumpAndSettle();
       expect(copies.join(), contains('SelectableAnswer'));
+      // Restyling at the phone breakpoint replaces selection geometry, while
+      // copying the same answer must remain available after the transition.
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpAndSettle();
+      await tester.longPressAt(_positionInsideAnswer(tester));
+      await tester.pumpAndSettle();
+      await tester.tap(copy);
+      await tester.pumpAndSettle();
+      expect(copies, ['SelectableAnswer', 'SelectableAnswer']);
       expect(tester.takeException(), isNull);
     },
   );
 
   testWidgets(
-    'the edit dialog field exposes the GenAI popover with working copy and cut',
+    'the edit dialog field exposes the platform menu with working copy and cut',
     (tester) async {
       final copies = _captureClipboard(tester);
 
@@ -150,7 +154,6 @@ void main() {
       final fieldFinder = find.byType(TextField);
       expect(fieldFinder, findsOneWidget);
       final field = tester.widget<TextField>(fieldFinder);
-      expect(field.contextMenuBuilder, genAiTextSelectionContextMenu);
 
       await tester.tap(fieldFinder);
       await tester.pump();
@@ -165,9 +168,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(_popover, findsOneWidget);
-      expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
-      expect(find.byKey(const ValueKey('genai-selection-copy')), findsOneWidget);
-      final cut = find.byKey(const ValueKey('genai-selection-cut'));
+      expect(find.text('Copy'), findsOneWidget);
+      final cut = find.text('Cut');
       expect(cut, findsOneWidget);
 
       await tester.tap(cut);

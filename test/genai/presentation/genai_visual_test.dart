@@ -194,7 +194,8 @@ void main() {
     expect(find.byTooltip('更多操作'), findsOneWidget);
   });
 
-  testWidgets('explicit title shows beside the tag and HTML titles are ignored', (tester) async {
+  testWidgets('explicit title replaces the generic label and HTML titles are ignored',
+      (tester) async {
     tester.view.physicalSize = const Size(800, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -212,25 +213,21 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('曲线与切线'), findsOneWidget);
-    expect(find.text('交互示例'), findsOneWidget);
+    expect(find.text('交互示例'), findsNothing);
     // Only the explicit label is used; markup can never reach the text layer.
     expect(find.text('Line Chart'), findsNothing);
     expect(find.text('Heading'), findsNothing);
     expect(tester.widget<Text>(find.text('曲线与切线')).style?.fontSize, 13);
-    expect(tester.widget<Text>(find.text('交互示例')).style?.fontSize, 11);
 
-    AnimatedRotation rotation() => tester.widget<AnimatedRotation>(find.byType(AnimatedRotation));
-    expect(rotation().turns, 0);
     await tester.tap(find.text('曲线与切线'));
     await tester.pumpAndSettle();
-    expect(rotation().turns, -0.25);
     expect(find.text('正在生成交互示例…'), findsNothing);
 
-    // Even on a narrow card the title and its separate tag both remain.
+    // The title still fits on a narrow card without a duplicate label.
     tester.view.physicalSize = const Size(375, 812);
     await tester.pumpAndSettle();
     expect(find.text('曲线与切线'), findsOneWidget);
-    expect(find.text('交互示例'), findsOneWidget);
+    expect(find.text('交互示例'), findsNothing);
   });
 
   testWidgets('blank or absent title leaves only the generic tag', (tester) async {
@@ -251,7 +248,6 @@ void main() {
       expect(find.text('交互示例'), findsOneWidget);
       expect(find.text('Line Chart'), findsNothing);
       expect(find.text('Heading'), findsNothing);
-      expect(tester.widget<Text>(find.text('交互示例')).style?.fontSize, 11);
     }
   });
 
@@ -267,7 +263,8 @@ void main() {
     }
   });
 
-  testWidgets('more menu opens anchored clear of its button and preserves its rows', (tester) async {
+  testWidgets('more menu opens anchored clear of its button and preserves its rows',
+      (tester) async {
     tester.view.physicalSize = const Size(800, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -275,9 +272,8 @@ void main() {
 
     await pumpVisual(tester);
     // The tooltip's child is inset from the IconButton the menu anchors to.
-    final anchor = find
-        .ancestor(of: find.byTooltip('更多操作'), matching: find.byType(IconButton))
-        .first;
+    final anchor =
+        find.ancestor(of: find.byTooltip('更多操作'), matching: find.byType(IconButton)).first;
     final anchorRect = tester.getRect(anchor);
     await openActions(tester);
 

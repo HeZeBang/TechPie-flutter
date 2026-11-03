@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_agent_runner.dart';
-import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/application/genai_workspace_controller.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
@@ -67,7 +66,7 @@ void main() {
         GenAiAgentTool(
           name: 'generate_image',
           description: 'Test image tool',
-          parameters: {'type': 'object', 'properties': <String, Object?>{}},
+          inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
           prepare: (_, __) async => GenAiAgentPreparedTool(
             requiresApproval: true,
             effectKey: 'image',
@@ -125,7 +124,7 @@ void main() {
         GenAiAgentTool(
           name: 'generate_image',
           description: 'Generate one test image.',
-          parameters: const {
+          inputSchema: const {
             'type': 'object',
             'properties': <String, Object?>{},
           },
@@ -202,7 +201,9 @@ void main() {
           await tester.tap(reject);
           await pumpUntil(tester, () => !demo.workspace.sending);
           expect(effects, 0);
-          expect(find.text('未完成 · 查看原因'), findsOneWidget);
+          await tester.tap(find.byKey(const ValueKey('agent-tool-activity-heading')));
+          await tester.pump();
+          expect(find.text('已取消'), findsOneWidget);
         case 'stop':
           await tester.tap(find.byKey(const ValueKey('genai-send')));
           await pumpUntil(tester, () => !demo.workspace.sending);

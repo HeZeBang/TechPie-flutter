@@ -241,7 +241,8 @@ final class _RecorderHarness {
       'start'.toJS,
       ((JSAny? _) {
         throw StateError('synthetic start failure');
-      } as void Function(JSAny?)).toJS,
+      } as void Function(JSAny?))
+          .toJS,
     );
   }
 

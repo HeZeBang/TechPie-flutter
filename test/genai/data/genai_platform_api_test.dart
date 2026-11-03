@@ -18,6 +18,19 @@ import '../support/fakes.dart';
 import '../support/workspace_server.dart';
 
 void main() {
+  test('malformed quota rows do not hide valid numeric-string quotas', () {
+    final summary = GenAiUsageSummary.fromJson({
+      'free': {'total': '100', 'used': '1.5', 'remain': '98.5'},
+      'recharge': {'total': null},
+      'projects': [
+        null,
+        {'name': 'Project', 'total': 10, 'used': 2, 'remain': 8},
+      ],
+    });
+    expect(summary.quotas.map((q) => q.remaining), [98.5, 8]);
+    expect(summary.hasUnavailableQuotas, isTrue);
+  });
+
   test('remote protocol titles become readable without hiding normal titles', () {
     for (final frame in ['call', 'result', 'history']) {
       expect(
@@ -402,6 +415,8 @@ void main() {
       final body = jsonDecode(r.body!) as Map<String, dynamic>;
       expect(body['count'], '1');
       expect(body['quality'], 'low');
+      expect(body['outputFormat'], 'jpeg');
+      expect(body['outputCompression'], 65);
       expect(body['aiSecType'], '1');
       expect(body.containsKey('stream'), isFalse);
       expect(r.headers['Accept'], 'application/json, text/plain, */*');
@@ -419,6 +434,8 @@ void main() {
       'token',
       GenAiImageRequest(
         prompt: 'blue pie',
+        outputFormat: 'jpeg',
+        outputCompression: 65,
         groupId: 'group',
         model: const GenAiModel(
           name: 'Image',

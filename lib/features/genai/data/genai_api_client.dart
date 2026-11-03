@@ -6,6 +6,7 @@ import '../domain/genai_document_upload.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
 import '../platform/genai_transport.dart';
+import 'genai_chat_payload.dart';
 import 'genai_http_failure.dart';
 import 'genai_multipart.dart';
 import 'genai_request_signer.dart';
@@ -300,26 +301,13 @@ final class GenAiApiClient {
         'aiType': aiType,
       },
     );
-    final response = await _transport.send(
-      method: 'POST',
-      uri: uri,
-      cancellation: cancellation,
-      headers: {
-        'X-Access-Token': token,
-        'tenant-id': '0',
-        'Accept': 'application/json, text/plain, */*',
-        'Content-Type': multipart.contentType,
-      },
-      bodyBytes: multipart.bytes,
+    final value = await _postMultipart(
+      uri,
+      token,
+      multipart,
+      cancellation,
     );
-    try {
-      await _checkStatus(response, cancellation);
-      final value = await _readJson(response);
-      cancellation.throwIfCancelled();
-      return GenAiUploadedFile.fromJson(genAiObject(genAiEnvelope(value)));
-    } finally {
-      response.close();
-    }
+    return GenAiUploadedFile.fromJson(genAiObject(value));
   }
 
   Future<GenAiUploadedImage> uploadVisionImage(
@@ -352,10 +340,11 @@ final class GenAiApiClient {
       path: '/sys/common/upload',
       queryParameters: null,
     );
-    final response = await _transport.send(
-      method: 'POST',
-      uri: uri,
-      cancellation: cancellation,
+    final value = await _postMultipart(
+      uri,
+      token,
+      multipart,
+      cancellation,
       headers: {
         'x-access-token': token,
         'X-Access-Token': token,
@@ -363,9 +352,28 @@ final class GenAiApiClient {
           'TECHPI_GENAI_VISION_TOKEN',
           defaultValue: '2ea38f293adb4abca21132feba61eaa3',
         ),
+      },
+    );
+    return GenAiUploadedImage.fromJson(genAiObject(value));
+  }
+
+  Future<Object?> _postMultipart(
+    Uri uri,
+    String token,
+    GenAiMultipartData multipart,
+    GenAiCancellation cancellation, {
+    Map<String, String> headers = const {},
+  }) async {
+    final response = await _transport.send(
+      method: 'POST',
+      uri: uri,
+      cancellation: cancellation,
+      headers: {
+        'X-Access-Token': token,
         'tenant-id': '0',
         'Accept': 'application/json, text/plain, */*',
         'Content-Type': multipart.contentType,
+        ...headers,
       },
       bodyBytes: multipart.bytes,
     );
@@ -373,7 +381,7 @@ final class GenAiApiClient {
       await _checkStatus(response, cancellation);
       final value = await _readJson(response);
       cancellation.throwIfCancelled();
-      return GenAiUploadedImage.fromJson(genAiObject(genAiEnvelope(value)));
+      return genAiEnvelope(value);
     } finally {
       response.close();
     }
@@ -564,27 +572,8 @@ final class GenAiApiClient {
     String token,
     Map<String, String> query,
     GenAiCancellation cancellation,
-  ) async {
-    _validateToken(token);
-    final response = await _transport.send(
-      method: 'GET',
-      uri: _base.resolve(path).replace(queryParameters: query),
-      cancellation: cancellation,
-      headers: {
-        'X-Access-Token': token,
-        'tenant-id': '0',
-        'Accept': 'application/json, text/plain, */*',
-      },
-    );
-    try {
-      await _checkStatus(response, cancellation);
-      final value = await _readJson(response);
-      cancellation.throwIfCancelled();
-      return genAiEnvelope(value);
-    } finally {
-      response.close();
-    }
-  }
+  ) =>
+      _jsonRequest(path, token, cancellation, query: query);
 
   Stream<GenAiChatEvent> streamChat(
     GenAiChatRequest request,
@@ -592,6 +581,13 @@ final class GenAiApiClient {
     GenAiCancellation cancellation,
   ) async* {
     _validateToken(token);
+    final payload = await genAiChatPayload(
+      request,
+      transport: _transport,
+      cancellation: cancellation,
+      imageUri: imageDisplayUri,
+    );
+    cancellation.throwIfCancelled();
     final response = await _transport.send(
       method: 'POST',
       uri: _base.resolve('chat/start/chat'),
@@ -602,7 +598,7 @@ final class GenAiApiClient {
         'Content-Type': 'application/json; charset=utf-8',
         'Accept': 'text/event-stream',
       },
-      body: jsonEncode(request.toJson()),
+      body: jsonEncode(payload),
     );
     try {
       await _checkStatus(response, cancellation);
@@ -612,13 +608,17 @@ final class GenAiApiClient {
         genAiEnvelope(await _readJson(response));
         throw const GenAiFailure(GenAiFailureKind.protocol);
       }
+      final azure = request.rootAiType == 'azure';
+      GenAiFinishReason? finishReason;
       await for (final event in const GenAiSseDecoder().decode(response.bytes)) {
         cancellation.throwIfCancelled();
         if (event.type == 'error') {
           throw const GenAiFailure(GenAiFailureKind.rejected);
         }
         if (event.data.trim() == '[DONE]') {
-          yield const GenAiChatFinished(GenAiFinishReason.done);
+          // Azure sends the school persistence receipt after the model's DONE.
+          if (azure) continue;
+          yield GenAiChatFinished(finishReason ?? GenAiFinishReason.done);
           return;
         }
         final Map<String, dynamic> chunk;
@@ -627,23 +627,48 @@ final class GenAiApiClient {
         } on FormatException {
           throw const GenAiFailure(GenAiFailureKind.protocol);
         }
-        if (chunk.containsKey('success')) {
+        if (chunk.containsKey('success') || chunk.containsKey('code')) {
           genAiEnvelope(chunk);
           throw const GenAiFailure(GenAiFailureKind.protocol);
         }
         if (chunk.containsKey('error')) {
           throw const GenAiFailure(GenAiFailureKind.rejected);
         }
+        if (azure && chunk.containsKey('other')) {
+          final Object? receipt;
+          try {
+            final other = chunk['other'];
+            receipt = other is String ? jsonDecode(other) : other;
+          } on FormatException {
+            throw const GenAiFailure(GenAiFailureKind.protocol);
+          }
+          final metadata = genAiObject(receipt);
+          final answerId = metadata['answerGroupId'];
+          if (!((answerId is String && answerId.trim().isNotEmpty) || answerId is int)) {
+            throw const GenAiFailure(GenAiFailureKind.protocol);
+          }
+          yield GenAiChatFinished(finishReason ?? GenAiFinishReason.done);
+          return;
+        }
         final choices = chunk['choices'];
         if (choices is! List) {
           throw const GenAiFailure(GenAiFailureKind.protocol);
         }
-        if (choices.isEmpty && chunk['usage'] is Map) continue;
+        if (choices.isEmpty &&
+            (chunk['usage'] is Map ||
+                (azure &&
+                    (chunk['prompt_filter_results'] is List ||
+                        chunk['prompt_annotations'] is List)))) {
+          continue;
+        }
         if (choices.length != 1) {
           throw const GenAiFailure(GenAiFailureKind.protocol);
         }
         final choice = genAiObject(choices.single);
-        final delta = genAiObject(choice['delta']);
+        // Azure can also send annotation-only choices without a text delta.
+        final delta = azure && choice['delta'] == null && choice['content_filter_results'] is Map
+            ? <String, dynamic>{}
+            : genAiObject(choice['delta']);
         for (final field in ['reasoning_content', 'content']) {
           final value = delta[field];
           if (value != null && value is! String) {
@@ -658,18 +683,21 @@ final class GenAiApiClient {
           if (finish is! String || finish.isEmpty) {
             throw const GenAiFailure(GenAiFailureKind.protocol);
           }
-          yield GenAiChatFinished(
-            switch (finish) {
-              'stop' => GenAiFinishReason.stop,
-              'length' => GenAiFinishReason.length,
-              'content_filter' => GenAiFinishReason.contentFilter,
-              _ => GenAiFinishReason.other,
-            },
-          );
-          return;
+          // The school can report a save failure after the model's stop chunk.
+          // Keep streaming text; Azure additionally requires the school receipt.
+          finishReason = switch (finish) {
+            'stop' => GenAiFinishReason.stop,
+            'length' => GenAiFinishReason.length,
+            'content_filter' => GenAiFinishReason.contentFilter,
+            _ => GenAiFinishReason.other,
+          };
         }
       }
       cancellation.throwIfCancelled();
+      if (!azure && finishReason != null) {
+        yield GenAiChatFinished(finishReason);
+        return;
+      }
       throw const GenAiFailure(GenAiFailureKind.interrupted);
     } finally {
       response.close();

@@ -4,10 +4,11 @@ import '../domain/genai_agent_contract.dart';
 import '../domain/genai_agent_protocol.dart';
 import '../domain/genai_context_record.dart';
 import '../domain/genai_context_usage.dart';
+import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
 import '../domain/genai_remote_record.dart';
-import 'genai_chat_service.dart';
-import 'genai_conversation_archive.dart';
+import 'genai_agent_projection.dart';
+import 'genai_conversation_snapshot.dart';
 import 'genai_conversation_turn.dart';
 import 'genai_legacy_conversation_import.dart';
 
@@ -18,11 +19,11 @@ final class GenAiRemoteHistory {
 
   final GenAiConversationSummary summary;
   final bool isEmpty;
-  final GenAiConversationArchive Function() _createArchive;
+  final GenAiConversationSnapshot Function() _createArchive;
 
   // Listing titles does not need to serialize and freeze every message, tool
   // receipt and attachment. Build that immutable snapshot only for a reader.
-  late final GenAiConversationArchive archive = _createArchive();
+  late final GenAiConversationSnapshot archive = _createArchive();
 }
 
 GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows) {
@@ -151,7 +152,13 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
       if (row.createdAt != null && row.createdAt!.isAfter(lastMessage)) {
         lastMessage = row.createdAt!;
       }
-      final result = source == null ? decodeGenAiAgentRecord(input)?.result : null;
+      final rawResult = source == null ? decodeGenAiAgentRecord(input)?.result : null;
+      final result = rawResult == null
+          ? null
+          : genAiRestoreRetrievedReceipt(
+              rawResult,
+              turns.values.expand((saved) => saved.evidenceEntries.map((entry) => entry.message)),
+            );
       if (result != null && result['call_id'] != null) {
         final previous = turn.agentEvents[result['call_id']];
         if (previous?.call?.name != result['name']) {
@@ -191,14 +198,40 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
           ),
         );
       }
+      if (turn.isAgent) {
+        turn.answer = '';
+        turn.failure = null;
+      }
       final call = decodeGenAiAgentRecord(row.answer)?.call;
       if (turn.isAgent && call != null) {
         addCall(turn, call);
         turn.phase = GenAiChatPhase.interrupted;
       } else {
-        final answer = turn.isAgent ? decodeGenAiAgentFinal(row.answer) : row.answer;
+        final answer = turn.isAgent
+            ? decodeGenAiAgentFinal(row.answer, allowPlain: record['agent_format'] == 5)
+            : row.answer;
         if (answer == null || answer.isEmpty) {
           turn.phase = GenAiChatPhase.interrupted;
+          if (turn.isAgent && row.answer.trim().isNotEmpty) {
+            try {
+              parseGenAiAgentDecision(
+                row.answer,
+                nonce: record['step_id']! as String,
+                allowPlain: record['agent_format'] == 5,
+              );
+            } on GenAiAgentToolException catch (error) {
+              turn.recordAgentActivity(
+                GenAiAgentEvent(
+                  kind: GenAiAgentEventKind.protocolError,
+                  turn: turn.agentEvents.length + 1,
+                  text: error.message,
+                ),
+              );
+            }
+            turn.answer = genAiUnverifiedAgentSource(row.answer);
+            turn.failure = const GenAiFailure(GenAiFailureKind.protocol);
+            turn.agentStatus = '回复未验证，可以继续整理。';
+          }
         } else {
           turn.answer = answer;
           turn.phase = GenAiChatPhase.completed;
@@ -248,7 +281,7 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
       time: lastMessage.toLocal().toIso8601String(),
     ),
     ordered.isEmpty,
-    () => GenAiConversationArchive(
+    () => GenAiConversationSnapshot(
       id: id,
       title: resolvedTitle,
       updatedAt: lastMessage,
@@ -256,7 +289,6 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
       turns: ordered,
       agentEnabled: settings['agent'] as bool? ?? ordered.lastOrNull?.isAgent ?? false,
       thinkingEnabled: settings['thinking'] == true,
-      netSearchEnabled: settings['search'] == true,
       modelAiType: settings['aiType'] as String? ?? rows.lastOrNull?.aiType,
       modelRootAiType: settings['rootAiType'] as String?,
       mutations: effects.isEmpty ? const {'version': 1, 'effects': <String, Object?>{}} : effects,

@@ -30,7 +30,7 @@ final class _TemporaryClipboard extends IOOverrides {
 void main() {
   for (final mobile in [true, false]) {
     testWidgets(
-        '${mobile ? 'long press' : 'right click'} copies the selected image, not its neighbor',
+        '${mobile ? 'menu button' : 'right click'} copies the selected image, not its neighbor',
         (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = mobile ? const Size(320, 740) : const Size(1280, 800);
@@ -92,19 +92,22 @@ void main() {
         final tile = tester.getRect(target);
         if (mobile) {
           await tester.longPress(target);
+          await tester.pumpAndSettle();
+          expect(find.byKey(const ValueKey('genai-anchored-menu')), findsNothing);
+          await tester.tap(find.descendant(of: target, matching: find.byTooltip('图片操作')));
         } else {
           await tester.tapAt(tester.getCenter(target), buttons: kSecondaryMouseButton);
         }
         // Image encoding is a real engine operation, outside the fake clock.
         await tester.runAsync(() async => Future<void>.delayed(const Duration(milliseconds: 30)));
         await tester.pumpAndSettle();
-        final surface = find.byKey(const ValueKey('genai-anchored-menu'));
+        final surface = find.byKey(ValueKey(mobile ? 'genai-choice-sheet' : 'genai-anchored-menu'));
         expect(surface, findsOneWidget);
-        // Long press and right click anchor the whole tile, never the pointer,
-        // so the shared route keeps its 7 px clearance outside the image.
-        final menu = tester.getRect(surface);
-        expect(menu.overlaps(tile), isFalse);
-        expect(menu.top - tile.bottom == 7 || tile.top - menu.bottom == 7, isTrue);
+        if (!mobile) {
+          final menu = tester.getRect(surface);
+          expect(menu.overlaps(tile), isFalse);
+          expect(menu.top - tile.bottom == 7 || tile.top - menu.bottom == 7, isTrue);
+        }
         final action = find.ancestor(
           of: find.text(Platform.isLinux ? '复制图片文件' : '复制图片'),
           matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem),
@@ -129,9 +132,10 @@ void main() {
       final buttonRect = tester.getRect(button);
       await tester.tap(button);
       await tester.pump();
-      final buttonSurface = find.byKey(const ValueKey('genai-anchored-menu'));
+      final buttonSurface =
+          find.byKey(ValueKey(mobile ? 'genai-choice-sheet' : 'genai-anchored-menu'));
       expect(buttonSurface, findsOneWidget);
-      expect(tester.getRect(buttonSurface).overlaps(buttonRect), isFalse);
+      if (!mobile) expect(tester.getRect(buttonSurface).overlaps(buttonRect), isFalse);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(buttonSurface, findsNothing);
@@ -171,7 +175,7 @@ void main() {
     // Gallery tiles leave the visible affordance to their preview.
     expect(find.byTooltip('图片操作'), findsNothing);
     final tile = tester.getRect(target);
-    await tester.longPress(target);
+    await tester.tapAt(tester.getCenter(target), buttons: kSecondaryMouseButton);
     await tester.runAsync(() async => Future<void>.delayed(const Duration(milliseconds: 30)));
     await tester.pumpAndSettle();
     final surface = find.byKey(const ValueKey('genai-anchored-menu'));

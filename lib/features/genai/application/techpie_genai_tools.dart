@@ -13,6 +13,7 @@ import '../../../services/third_party_auth_service.dart';
 import '../domain/genai_agent_contract.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
+import '../domain/genai_image_size.dart';
 import '../domain/genai_platform_contract.dart';
 import 'genai_workspace_controller.dart';
 
@@ -43,7 +44,24 @@ final class TechPieGenAiTools {
           name: 'get_current_time',
           description: 'Read the current device time and Shanghai campus time '
               '(UTC+08:00). Use this before interpreting today or booking dates.',
-          parameters: _schema(const {}),
+          inputSchema: _schema(const {}),
+          outputSchema: _schema(
+            {
+              'utc': {'type': 'string'},
+              'campus_time': {'type': 'string'},
+              'campus_timezone': {'type': 'string'},
+              'device_time': {'type': 'string'},
+              'source': {'type': 'string'},
+            },
+            required: [
+              'utc',
+              'campus_time',
+              'campus_timezone',
+              'device_time',
+              'source',
+            ],
+          ),
+          annotations: const {'readOnlyHint': true, 'openWorldHint': false},
           prepare: (_, context) async => GenAiAgentPreparedTool(
             execute: () async {
               context.checkActive();
@@ -62,7 +80,7 @@ final class TechPieGenAiTools {
           name: 'get_semesters',
           description: 'Read TechPie academic semesters. Use current-account verified '
               'data from TechPie; refresh when unverified or refresh=true. Cached data may be stale.',
-          parameters: _schema({'refresh': _boolean}),
+          inputSchema: _schema({'refresh': _boolean}),
           prepare: (args, context) async => GenAiAgentPreparedTool(
             execute: () => _semesters(args, context),
           ),
@@ -75,7 +93,7 @@ final class TechPieGenAiTools {
               'semesters must first be selected in TechPie. Unverified data is refreshed '
               'before reading; this does not change the selected semester. '
               'Use weekday to filter and next_offset with offset to read additional results.',
-          parameters: _schema({
+          inputSchema: _schema({
             'semester_id': _string(max: 100),
             'week': _integer(1, 60),
             'weekday': _integer(1, 7),
@@ -94,7 +112,7 @@ final class TechPieGenAiTools {
               'due_before is inclusive YYYY-MM-DD in campus time. Cache data may '
               'be stale. First use refreshes connected services to verify ownership; '
               'refresh=true repeats that check. Use next_offset with offset to page results.',
-          parameters: _schema({
+          inputSchema: _schema({
             'include_completed': _boolean,
             'due_before': _dateSchema,
             'limit': _integer(1, 100),
@@ -116,7 +134,7 @@ final class TechPieGenAiTools {
               'book requires court_number and players_count, and uses the '
               'contact profile already saved in TechPie. Never guess availability, '
               'price, or success. Do not retry a booking with an unknown outcome.',
-          parameters: _schema(
+          inputSchema: _schema(
             {
               'action': _enum(['availability', 'book']),
               'sport': _enum(OaSport.values.map((sport) => sport.id).toList()),
@@ -138,15 +156,19 @@ final class TechPieGenAiTools {
         if (workspace.imageModels.isNotEmpty)
           GenAiAgentTool(
             name: 'generate_image',
-            description: 'Generate one PNG through the existing GenAI image '
+            description: 'Generate one image through the existing GenAI image '
                 'service after user approval; may consume school quota. Optional '
                 'model must match a currently available image model. Defaults: '
-                '1024x1024, low quality. Optional short title is used for the '
+                '1:1 at 1K, low quality, PNG. Choose aspect_ratio and resolution, '
+                'or supply both width and height; do not mix these modes. '
+                '4K supports only 16:9, 9:16, 2:1, 1:2, 21:9 and 9:21. '
+                'output_compression is JPEG-only (1..100, default 80). '
+                'Optional short title is used for the '
                 'gallery caption. Custom dimensions must contain '
                 '655360..8294400 pixels. Returns image URLs, not invented images. '
                 'Available image model IDs: ${workspace.imageModels.map((m) => m.aiType).join(', ')}. '
                 'Omit model to use the current first available image model.',
-            parameters: _schema(
+            inputSchema: _schema(
               {
                 'prompt': _string(max: 6000),
                 'title': _string(max: 120),
@@ -154,6 +176,10 @@ final class TechPieGenAiTools {
                 'width': _integer(1, 8294400),
                 'height': _integer(1, 8294400),
                 'quality': _enum(['low', 'medium', 'high']),
+                'aspect_ratio': _enum(GenAiImageSize.presets.keys.toList()),
+                'resolution': _enum(['1K', '2K', '4K']),
+                'output_format': _enum(['png', 'jpeg']),
+                'output_compression': _integer(1, 100),
               },
               required: [
                 'prompt',
@@ -163,16 +189,21 @@ final class TechPieGenAiTools {
           ),
       ]);
 
-  String get _scope => jsonEncode([
-        auth.session?.userId,
-        for (final account in thirdPartyAuth.accounts)
-          [
-            account.platform.name,
-            account.account,
-            account.sid,
-            account.boundAt.toIso8601String(),
-          ],
-      ]);
+  /// Stable identity for every account whose data campus tools can read.
+  static String accountScope(AuthService auth, ThirdPartyAuthService bindings) {
+    final accounts = [
+      for (final account in bindings.accounts)
+        jsonEncode([
+          account.platform.name,
+          account.account,
+          account.sid,
+          account.boundAt.toUtc().toIso8601String(),
+        ]),
+    ]..sort();
+    return jsonEncode([auth.session?.userId, ...accounts]);
+  }
+
+  String get _scope => accountScope(auth, thirdPartyAuth);
 
   void Function() _guard(GenAiAgentToolContext context) {
     context.checkActive();
@@ -548,10 +579,10 @@ final class TechPieGenAiTools {
     requireProfile();
     final approvedProfile = gym.bookingProfile().toJson();
     final approvedStudent = gym.bookingStudentId;
-    final preparedAt = _now();
+    var approvedAt = _now();
     var executionClaimed = false;
     void requireFreshApproval() {
-      final age = _now().difference(preparedAt);
+      final age = _now().difference(approvedAt);
       if (age.isNegative || age >= const Duration(minutes: 2)) {
         throw const GenAiAgentToolException(
           'approval_expired',
@@ -569,7 +600,7 @@ final class TechPieGenAiTools {
       'players': players,
       'price': '平台未提供价格；请以学校预约结果为准',
       'contact': '使用场馆预约中已保存的联系信息',
-      'policy': '仅预约此场地的这一个时段；每条消息最多一次预约确认，2 分钟内有效。',
+      'policy': '仅预约此场地的这一个时段；每条消息最多一次预约确认，确认后 2 分钟内提交。',
     };
     return GenAiAgentPreparedTool(
       requiresApproval: true,
@@ -577,6 +608,7 @@ final class TechPieGenAiTools {
         [court.bookingSport.id, date, slot, court.bookingNumber],
       ),
       summary: '预约 $date ${oaTimeSlots[slot - 1].range} ${court.label}，$players 人',
+      onApproved: () => approvedAt = _now(),
       details: details,
       execute: () async {
         guard();
@@ -665,8 +697,26 @@ final class TechPieGenAiTools {
       );
     }
     final prompt = (args['prompt']! as String).trim();
-    final width = args['width'] as int? ?? 1024;
-    final height = args['height'] as int? ?? 1024;
+    final custom = args.containsKey('width') || args.containsKey('height');
+    if (custom &&
+        (!args.containsKey('width') ||
+            !args.containsKey('height') ||
+            args.containsKey('aspect_ratio') ||
+            args.containsKey('resolution'))) {
+      throw const GenAiAgentToolException(
+        'invalid_arguments',
+        '自定义尺寸需同时指定 width 和 height，不能与 aspect_ratio 或 resolution 混用。',
+      );
+    }
+    final size = custom
+        ? '${args['width']}x${args['height']}'
+        : GenAiImageSize.presets[args['aspect_ratio'] ?? '1:1']?[args['resolution'] ?? '1K'];
+    if (size == null) {
+      throw const GenAiAgentToolException(
+        'invalid_arguments',
+        '该比例不支持所选分辨率，请改用 1K、2K 或自定义尺寸。',
+      );
+    }
     final quality = args['quality'] as String? ?? 'low';
     final GenAiImageRequest request;
     try {
@@ -675,28 +725,37 @@ final class TechPieGenAiTools {
         title: args['title'] as String?,
         model: model,
         groupId: GenAiWorkspaceController.createGroupId(),
-        size: '${width}x$height',
+        size: size,
         quality: quality,
+        outputFormat: args['output_format'] as String? ?? 'png',
+        outputCompression: args['output_compression'] as int?,
       );
     } on ArgumentError {
       throw const GenAiAgentToolException(
         'invalid_arguments',
-        '请提供有效提示词与分辨率，总像素需在 655360 到 8294400 之间。',
+        '请检查提示词、尺寸和输出格式。总像素需在 655360 到 8294400 之间；压缩率仅用于 JPEG，范围为 1–100。',
       );
     }
     return GenAiAgentPreparedTool(
       requiresApproval: true,
       effectKey: jsonEncode(
-        [model.aiType, model.rootAiType, prompt, request.size, quality],
+        [
+          model.aiType, model.rootAiType, prompt, request.size, quality,
+          // Preserve the identity of existing default PNG requests.
+          if (request.outputFormat != 'png') ...[request.outputFormat, request.outputCompression],
+        ],
       ),
       executionTimeout: const Duration(minutes: 6),
-      summary: '生成 1 张图片 · ${model.name} · ${request.size} · ${request.quality}',
+      summary:
+          '生成 1 张图片 · ${model.name} · ${request.size} · ${request.quality} · ${request.outputFormat.toUpperCase()}',
       details: {
         'prompt': prompt,
         if (request.title != null) 'title': request.title,
         'model': model.name,
         'size': request.size,
         'quality': request.quality,
+        'output_format': request.outputFormat,
+        if (request.outputCompression != null) 'output_compression': request.outputCompression,
         'count': 1,
         'quota': '将使用校园生图额度，实际费用以平台结算为准',
       },
@@ -751,6 +810,8 @@ final class TechPieGenAiTools {
           if (request.title != null) 'title': request.title,
           'size': request.size,
           'quality': request.quality,
+          'output_format': request.outputFormat,
+          if (request.outputCompression != null) 'output_compression': request.outputCompression,
           'images': images.map((uri) => uri.toString()).toList(),
         };
       },

@@ -81,3 +81,13 @@ abstract interface class GenAiSessionIssuer {
     GenAiCancellation cancellation,
   );
 }
+
+/// Issues a credential from a campus binding before its school ID is known.
+/// The caller must verify the profile and the unchanged binding before saving it.
+abstract interface class GenAiCampusIdentityIssuer implements GenAiSessionIssuer {
+  Future<GenAiCredential> issueForCampusBinding({
+    required String primaryUserId,
+    required String bindingId,
+    required GenAiCancellation cancellation,
+  });
+}

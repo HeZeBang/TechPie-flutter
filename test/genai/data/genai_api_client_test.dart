@@ -12,6 +12,159 @@ import 'package:techpie/features/genai/domain/genai_failure.dart';
 import '../support/fakes.dart';
 
 void main() {
+  test('vision is transient multimodal context with canonical recovery and active selection',
+      () async {
+    const oldImage = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/old.png';
+    const currentImage = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/current.png';
+    var closed = 0;
+    final transport = ScriptedTransport(
+      (request) async => request.method == 'GET'
+          ? response(type: 'image/png', bytes: Stream.value([1, 2, 3]), close: () => closed++)
+          : response(type: 'text/event-stream', text: sseChunk(text: 'seen', finish: 'stop')),
+    );
+    final api = GenAiApiClient(transport: transport);
+    final request = GenAiChatRequest(
+      chatGroupId: 'vision',
+      prompt: 'Inspect current',
+      aiType: 'Kimi-k3',
+      rootAiType: 'xinference',
+      history: const [
+        GenAiMessage(role: GenAiRole.user, content: 'Earlier', imageUrls: [oldImage]),
+      ],
+      imageUrl: currentImage,
+      imageUrls: const [currentImage, currentImage],
+      requestGuide: 'Final tool guide',
+      record: const {
+        'step_id': 'step',
+        'turn': {
+          'id': 'turn',
+          'images': [currentImage],
+        },
+      },
+    );
+    final original = jsonEncode(request.toJson());
+    await api.streamChat(request, 'secret', GenAiCancellation()).toList();
+    expect(transport.requests.map((r) => r.method), ['GET', 'POST']);
+    expect(transport.requests.first.uri.toString(), currentImage);
+    expect(
+      transport.requests.first.headers,
+      {'Accept': 'image/png,image/jpeg,image/webp,image/gif'},
+    );
+    expect(closed, 1);
+    final payload = jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
+    expect(payload.containsKey('imageUrl'), isFalse);
+    expect(payload.containsKey('imageUrls'), isFalse);
+    expect(payload['chatInfo'], request.storedPrompt);
+    expect(payload['chatInfo'], isNot(contains('base64')));
+    final messages = payload['messages'] as List<dynamic>;
+    expect(messages.first, {'role': 'user', 'content': 'Earlier'});
+    expect(messages.last, {'role': 'system', 'content': 'Final tool guide'});
+    expect(messages[1]['content'], [
+      {'type': 'text', 'text': 'Image: $currentImage'},
+      {
+        'type': 'image_url',
+        'image_url': {'url': 'data:image/png;base64,AQID'},
+      },
+    ]);
+    expect(jsonEncode(request.toJson()), original);
+    // A new client can rebuild the same request from canonical URLs; no cache is required.
+    await GenAiApiClient(transport: transport)
+        .streamChat(request, 'secret', GenAiCancellation())
+        .toList();
+    expect(transport.requests.last.body, transport.requests[1].body);
+  });
+
+  test('image preparation rejects unsafe, oversized and non-image content before chat dispatch',
+      () async {
+    GenAiChatRequest request(String url) => GenAiChatRequest(
+          chatGroupId: 'vision',
+          prompt: 'Inspect',
+          aiType: 'Kimi-k3',
+          rootAiType: 'xinference',
+          imageUrl: url,
+        );
+    final transport = ScriptedTransport((_) async => response(type: 'text/html', text: 'denied'));
+    final api = GenAiApiClient(transport: transport);
+    await expectLater(
+      api
+          .streamChat(request('https://other.example/image.png'), 'secret', GenAiCancellation())
+          .toList(),
+      throwsA(failure(GenAiFailureKind.protocol)),
+    );
+    expect(transport.requests, isEmpty);
+    const url = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/image.png';
+    await expectLater(
+      api.streamChat(request(url), 'secret', GenAiCancellation()).toList(),
+      throwsA(failure(GenAiFailureKind.protocol)),
+    );
+    var closed = false;
+    transport.handle = (_) async => response(
+          type: 'image/png',
+          bytes: Stream.fromIterable(List.filled(11, List.filled(1024 * 1024, 0))),
+          close: () => closed = true,
+        );
+    await expectLater(
+      api.streamChat(request(url), 'secret', GenAiCancellation()).toList(),
+      throwsA(failure(GenAiFailureKind.messageTooLarge)),
+    );
+    expect(closed, isTrue);
+    expect(transport.requests.every((r) => r.method == 'GET'), isTrue);
+  });
+
+  test('cancelling an image download closes it without dispatching chat', () async {
+    final ready = Completer<void>();
+    final wire = StreamController<List<int>>();
+    var closed = false;
+    final transport = ScriptedTransport((_) async {
+      ready.complete();
+      return response(type: 'image/png', bytes: wire.stream, close: () => closed = true);
+    });
+    final cancellation = GenAiCancellation();
+    final result = GenAiApiClient(transport: transport)
+        .streamChat(
+          GenAiChatRequest(
+            chatGroupId: 'vision',
+            prompt: 'Inspect',
+            aiType: 'Kimi-k3',
+            rootAiType: 'xinference',
+            imageUrl: 'https://genaipic.shanghaitech.edu.cn/sys/common/static/image.png',
+          ),
+          'secret',
+          cancellation,
+        )
+        .toList();
+    final assertion = expectLater(result, throwsA(failure(GenAiFailureKind.cancelled)));
+    await ready.future;
+    cancellation.cancel();
+    await assertion;
+    unawaited(wire.close());
+    expect(closed, isTrue);
+    expect(transport.requests.single.method, 'GET');
+  });
+
+  test('a save error after model stop is not a successful completion', () async {
+    final wire = StreamController<List<int>>();
+    final textSeen = Completer<void>();
+    final transport =
+        ScriptedTransport((_) async => response(type: 'text/event-stream', bytes: wire.stream));
+    final events = <GenAiChatEvent>[];
+    final result = GenAiApiClient(transport: transport)
+        .streamChat(chatRequest(), 'token', GenAiCancellation())
+        .map((event) {
+      events.add(event);
+      if (event is GenAiTextDelta) textSeen.complete();
+      return event;
+    }).toList();
+    final assertion = expectLater(result, throwsA(failure(GenAiFailureKind.rejected)));
+    wire.add(utf8.encode(sseChunk(text: 'visible answer', finish: 'stop')));
+    await textSeen.future;
+    expect(events.whereType<GenAiChatFinished>(), isEmpty);
+    wire.add(utf8.encode('data: {"code":500,"errMsg":"save failed"}\n\n'));
+    await assertion;
+    await wire.close();
+    expect(events.whereType<GenAiChatFinished>(), isEmpty);
+  });
+
   test('vision upload expires authentication on HTTP 401 and closes response', () async {
     var closed = false;
     final api = GenAiApiClient(
@@ -217,6 +370,94 @@ void main() {
     expect(jsonDecode(transport.requests.single.body!)['chatInfo'], '你好');
   });
 
+  final azureRequest = GenAiChatRequest(
+    chatGroupId: 'azure-conversation',
+    prompt: 'Reply OK',
+    aiType: 'GPT-6.1-Sol',
+    rootAiType: 'azure',
+  );
+
+  test('Azure streams through moderation and DONE, completing only on the school receipt',
+      () async {
+    for (final encodedReceipt in [false, true]) {
+      final wire = StreamController<List<int>>();
+      final observed = Completer<void>();
+      final events = <GenAiChatEvent>[];
+      var closed = 0;
+      final api = GenAiApiClient(
+        transport: ScriptedTransport(
+          (_) async => response(
+            type: 'text/event-stream',
+            bytes: wire.stream,
+            close: () => closed++,
+          ),
+        ),
+      );
+      final done = api.streamChat(azureRequest, 'token', GenAiCancellation()).forEach((event) {
+        events.add(event);
+        if (event is GenAiTextDelta) observed.complete();
+      });
+      wire.add(
+        utf8.encode('data: {"choices":[],"prompt_filter_results":[]}\n\n'
+            'data: {"choices":[],"prompt_annotations":[],"usage":null}\n\n'
+            '${sseChunk(text: 'OK')}'),
+      );
+      await observed.future.timeout(const Duration(seconds: 2));
+      expect(events.whereType<GenAiTextDelta>().single.text, 'OK');
+      wire.add(
+        utf8.encode('data: {"choices":[{"content_filter_results":{},"delta":null}]}\n\n'
+            '${sseChunk(finish: 'stop')}'
+            'data: {"choices":[],"usage":{"total_tokens":10}}\n\n'
+            'data: [DONE]\n\n'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(events.whereType<GenAiChatFinished>(), isEmpty);
+      expect(closed, 0);
+      final receipt = {'answerGroupId': 'saved-answer', 'totalTokens': 10};
+      wire.add(
+        utf8.encode('data: ${jsonEncode({
+              'other': encodedReceipt ? jsonEncode(receipt) : receipt,
+            })}\n\n'),
+      );
+      await done;
+      expect(events.whereType<GenAiChatFinished>().single.reason, GenAiFinishReason.stop);
+      expect(closed, 1);
+      await wire.close();
+    }
+  });
+
+  test('Azure cannot report success on missing receipts, malformed metadata or late errors',
+      () async {
+    for (final (tail, kind) in [
+      ('', GenAiFailureKind.interrupted),
+      ('data: {"code":500,"errMsg":"save failed"}\n\n', GenAiFailureKind.rejected),
+      ('data: {"code":401}\n\n', GenAiFailureKind.authenticationRequired),
+      ('data: {"other":"not-json"}\n\n', GenAiFailureKind.protocol),
+      ('data: {"other":{}}\n\n', GenAiFailureKind.protocol),
+      ('data: {"choices":[]}\n\n', GenAiFailureKind.protocol),
+      ('data: {"choices":[{"delta":null}]}\n\n', GenAiFailureKind.protocol),
+    ]) {
+      final events = <GenAiChatEvent>[];
+      var closed = false;
+      final api = GenAiApiClient(
+        transport: ScriptedTransport(
+          (_) async => response(
+            type: 'text/event-stream',
+            text: '${sseChunk(text: 'OK', finish: 'stop')}data: [DONE]\n\n$tail',
+            close: () => closed = true,
+          ),
+        ),
+      );
+      await expectLater(
+        api.streamChat(azureRequest, 'token', GenAiCancellation()).forEach(events.add),
+        throwsA(failure(kind)),
+      );
+      expect(events.whereType<GenAiTextDelta>().single.text, 'OK');
+      expect(events.whereType<GenAiChatFinished>(), isEmpty);
+      expect(closed, isTrue);
+    }
+  });
+
   test('DONE is terminal, but bare EOF and malformed data are failures', () async {
     final transport = ScriptedTransport(
       (_) async => response(type: 'text/event-stream', text: 'data: [DONE]\n\n'),
@@ -269,6 +510,19 @@ void main() {
       api.streamChat(chatRequest(), 'token', GenAiCancellation()).toList(),
       throwsA(failure(GenAiFailureKind.rejected)),
     );
+    for (final (code, kind) in [
+      (500, GenAiFailureKind.rejected),
+      (401, GenAiFailureKind.authenticationRequired),
+    ]) {
+      transport.handle = (_) async => response(
+            type: 'text/event-stream',
+            text: 'data: {"code":$code,"errMsg":"secret gateway failure"}\n\n',
+          );
+      await expectLater(
+        api.streamChat(chatRequest(), 'token', GenAiCancellation()).toList(),
+        throwsA(failure(kind)),
+      );
+    }
     expect(
       const GenAiFailure(GenAiFailureKind.rejected).toString(),
       isNot(contains('secret')),

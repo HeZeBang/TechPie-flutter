@@ -15,7 +15,6 @@ import '../domain/genai_failure.dart';
 import '../domain/genai_session.dart';
 import '../platform/genai_login_policy.dart';
 import 'genai_icons.dart';
-import 'genai_theme.dart';
 
 class GenAiLoginPage extends StatefulWidget {
   const GenAiLoginPage({
@@ -170,7 +169,6 @@ class _GenAiLoginPageState extends State<GenAiLoginPage> {
                     children: [
                       TextField(
                         key: const ValueKey('genai-token'),
-                        contextMenuBuilder: genAiTextSelectionContextMenu,
                         controller: _token,
                         obscureText: true,
                         enableSuggestions: false,

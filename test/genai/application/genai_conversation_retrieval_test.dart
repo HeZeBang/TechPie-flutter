@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:techpie/features/genai/application/genai_agent_projection.dart';
 import 'package:techpie/features/genai/application/genai_context_compactor.dart';
 import 'package:techpie/features/genai/application/genai_conversation_retrieval.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
@@ -23,10 +24,46 @@ Future<Map<String, Object?>> invoke(
     GenAiAgentToolContext(cancellation: GenAiCancellation(), isCurrent: isCurrent ?? () => true),
   );
   expect(prepared.requiresApproval, isFalse);
-  return (await prepared.execute())! as Map<String, Object?>;
+  return (await prepared.execute()).structuredContent!;
 }
 
 void main() {
+  test('large successful receipts are projected without losing server-recoverable data', () async {
+    for (final name in ['get_assignments', 'generate_image']) {
+      final receipt = genAiToolReceipt(
+        GenAiAgentToolCall(id: 'large', name: name, arguments: {}),
+        GenAiToolResult.fromValue(
+          {'data': '"\\\n数学😀' * 1200, 'url': 'https://genaipic.shanghaitech.edu.cn/test.png'},
+        ),
+      );
+      final entry = GenAiAgentHistoryEntry.result(receipt);
+      final projected = genAiAgentContextMessage(entry, 6000);
+      expect(projected.content.length, lessThanOrEqualTo(6000));
+      final result = decodeGenAiAgentRecord(projected.content)!.result!;
+      expect(result['ok'], true);
+      final ref = result['result']! as Map;
+      expect(ref['partial'], true);
+      // Only the school-persisted input is retained; no local cache is supplied.
+      final saved = entry.promptForNonce('abcdefghijklmnop');
+      final recovered = decodeGenAiAgentRecord(saved)!;
+      final retrieval = GenAiConversationRetrieval(() => [recovered.message]);
+      final content = StringBuffer();
+      var offset = 0;
+      while (true) {
+        final page = await invoke(
+          retrieval,
+          'read_conversation_records',
+          {'record_id': ref['record_id'], 'offset': offset},
+        );
+        content.write(page['text']);
+        if (page['next_offset'] == null) break;
+        offset = page['next_offset']! as int;
+      }
+      expect(content.toString(), entry.content);
+      expect(recovered.result, receipt);
+    }
+  });
+
   test('compaction never promotes retrieved assistant text into factual memory', () async {
     final copied = GenAiAgentHistoryEntry.result({
       'call_id': 'read',
@@ -117,6 +154,27 @@ void main() {
       invoke(retrieval, 'read_conversation_records', {'record_id': id}, isCurrent: () => false),
       throwsA(isA<GenAiFailure>()),
     );
+  });
+
+  test('retrieval follows appended and removed records after warming its index', () async {
+    final old = const GenAiMessage(role: GenAiRole.user, content: 'budget 49');
+    final messages = [old];
+    final retrieval = GenAiConversationRetrieval(() => messages);
+    final id = genAiContextSourceId(old);
+    await invoke(retrieval, 'read_conversation_records', {'record_id': id});
+    messages.add(const GenAiMessage(role: GenAiRole.user, content: 'budget 73'));
+    final search = await invoke(retrieval, 'search_conversation', {'query': 'budget'});
+    expect(search['total'], 2);
+    messages.removeAt(0);
+    await expectLater(
+      invoke(retrieval, 'read_conversation_records', {'record_id': id}),
+      throwsA(isA<GenAiAgentToolException>().having((e) => e.code, 'code', 'record_not_found')),
+    );
+    final current = await invoke(retrieval, 'read_conversation_records', {
+      'record_id': genAiContextSourceId(messages.single),
+    });
+    expect(current['source'], 0);
+    expect(current['text'], 'budget 73');
   });
 
   test('search pages rank exact identifiers and preserve newer corrections and source roles',

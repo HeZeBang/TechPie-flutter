@@ -30,6 +30,9 @@ class JournalServer {
   bool failDelete = false;
   late final transport = ScriptedTransport((request) async {
     final path = request.uri.path;
+    if (request.method == 'GET' && path.startsWith('/sys/common/static/')) {
+      return response(type: 'image/png', bytes: Stream.value([1, 2, 3]));
+    }
     if (path.endsWith('/getByChatGroupId')) {
       final snapshot = List.of(
         rows[request.uri.queryParameters['chatGroupId']] ?? const <Map<String, Object?>>[],
@@ -147,7 +150,7 @@ class JournalServer {
       body['chatInfo'] as String;
 
   String nonce(Map<String, dynamic> body) =>
-      genAiAgentNonceFromSystem(((body['messages'] as List).first as Map)['content'] as String)!;
+      genAiAgentNonceFromSystem(((body['messages'] as List).last as Map)['content'] as String)!;
 
   String finalAnswer(Map<String, dynamic> body, String text) =>
       encodeGenAiAgentFinal(text, nonce: nonce(body));

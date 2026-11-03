@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../utils/platform.dart';
+
 import 'genai_icons.dart';
 
 /// Keep TechPie's palette, typography and component styles as the source of
@@ -68,34 +70,6 @@ ThemeData genAiTheme(ThemeData base) {
     focusedErrorBorder: fieldBorder(scheme.error, 1.5),
   );
 
-  final filledButtonStyle = ButtonStyle(
-    backgroundColor: buttonBackground(palette.accent),
-    foregroundColor: buttonForeground(palette.onAccent),
-    overlayColor: WidgetStatePropertyAll(palette.hover),
-    padding: const WidgetStatePropertyAll(controlPadding),
-    shape: const WidgetStatePropertyAll(controlShape),
-    textStyle: WidgetStatePropertyAll(
-      textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
-    ),
-  );
-
-  final outlinedButtonStyle = ButtonStyle(
-    foregroundColor: buttonForeground(palette.accent),
-    overlayColor: WidgetStatePropertyAll(palette.hover),
-    padding: const WidgetStatePropertyAll(controlPadding),
-    shape: const WidgetStatePropertyAll(controlShape),
-    side: WidgetStateProperty.resolveWith<BorderSide?>(
-      (states) => BorderSide(
-        color: states.contains(WidgetState.disabled)
-            ? palette.line.withValues(alpha: .5)
-            : palette.line,
-      ),
-    ),
-    textStyle: WidgetStatePropertyAll(
-      textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
-    ),
-  );
-
   final textButtonStyle = ButtonStyle(
     foregroundColor: buttonForeground(palette.accent),
     overlayColor: WidgetStatePropertyAll(palette.hover),
@@ -103,6 +77,19 @@ ThemeData genAiTheme(ThemeData base) {
     shape: const WidgetStatePropertyAll(controlShape),
     textStyle: WidgetStatePropertyAll(
       textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+    ),
+  );
+  final filledButtonStyle = textButtonStyle.copyWith(
+    backgroundColor: buttonBackground(palette.accent),
+    foregroundColor: buttonForeground(palette.onAccent),
+  );
+  final outlinedButtonStyle = textButtonStyle.copyWith(
+    side: WidgetStateProperty.resolveWith<BorderSide?>(
+      (states) => BorderSide(
+        color: states.contains(WidgetState.disabled)
+            ? palette.line.withValues(alpha: .5)
+            : palette.line,
+      ),
     ),
   );
 
@@ -253,10 +240,7 @@ Widget genAiThemeScope(BuildContext context, Widget child) => Theme(
 Color genAiOverlayScrim({bool drawer = false}) =>
     drawer ? const Color(0x55121015) : const Color(0x66121015);
 
-/// Opens a Material dialog with the GenAI scrim and a 3px backdrop blur.
-///
-/// The filter belongs to the route barrier, not its content, so only the
-/// underlying shell is blurred and barrier dismissal/focus behavior is intact.
+/// Opens a standard Material dialog with the shared GenAI theme and scrim.
 Future<T?> genAiShowDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -273,7 +257,7 @@ Future<T?> genAiShowDialog<T>({
 }) {
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
   return navigator.push<T>(
-    _GenAiDialogRoute<T>(
+    DialogRoute<T>(
       context: context,
       builder: (context) => genAiThemeScope(context, builder(context)),
       themes: InheritedTheme.capture(from: context, to: navigator.context),
@@ -395,6 +379,164 @@ class GenAiDialogFrame extends StatelessWidget {
   }
 }
 
+/// Layout decisions use the space available to the feature, including short
+/// landscape windows. These are presentation rules, never platform capabilities.
+class GenAiLayout {
+  /// Hover-only actions must remain visible on touch platforms, including OHOS.
+  static bool get touchPlatform =>
+      isOhos() ||
+      switch (defaultTargetPlatform) {
+        TargetPlatform.android || TargetPlatform.iOS || TargetPlatform.fuchsia => true,
+        _ => false,
+      };
+
+  const GenAiLayout(this.size);
+
+  factory GenAiLayout.of(BuildContext context) => GenAiLayout(MediaQuery.sizeOf(context));
+
+  final Size size;
+  bool get narrow => size.width <= 680;
+  bool get short => size.height < 560;
+  bool get compactControls => narrow || short;
+}
+
+/// Short choices use a sheet on phones and an anchored menu on wider windows.
+/// Both return the same value and support dismissal without changing selection.
+Future<T?> genAiShowMenu<T>({
+  required BuildContext context,
+  required BuildContext anchorContext,
+  required List<PopupMenuEntry<T>> items,
+  double minWidth = 220,
+  String? semanticLabel,
+  bool preferAbove = false,
+  bool alignEnd = false,
+  bool pointerMenu = false,
+  double gap = 7,
+  double menuPadding = 6,
+  double radius = 12,
+}) {
+  if (pointerMenu || !GenAiLayout.of(context).narrow) {
+    return genAiShowAnchoredMenu<T>(
+      context: context,
+      anchorContext: anchorContext,
+      items: items,
+      minWidth: minWidth,
+      semanticLabel: semanticLabel,
+      preferAbove: preferAbove,
+      alignEnd: alignEnd,
+      gap: gap,
+      menuPadding: menuPadding,
+      radius: radius,
+    );
+  }
+  return genAiShowModalBottomSheet<T>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    builder: (context) {
+      final media = MediaQuery.of(context);
+      return Padding(
+        padding: media.viewInsets,
+        child: SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: (media.size.height - media.padding.vertical - media.viewInsets.vertical)
+                      .clamp(0.0, double.infinity) *
+                  .8,
+            ),
+            child: Semantics(
+              key: const ValueKey('genai-choice-sheet'),
+              role: ui.SemanticsRole.menu,
+              explicitChildNodes: true,
+              label: semanticLabel ?? '选项',
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: items.map(genAiMenuEntry).toList(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// Shared chrome for rich answers. Actions stay reachable at narrow widths;
+/// a foldable title exposes its expanded state to assistive technology.
+class GenAiContentHeader extends StatelessWidget {
+  const GenAiContentHeader({
+    super.key,
+    required this.title,
+    this.leading,
+    this.actions = const [],
+    this.expanded,
+    this.onToggle,
+    this.divider = true,
+  });
+
+  final String title;
+  final Widget? leading;
+  final List<Widget> actions;
+  final bool? expanded;
+  final VoidCallback? onToggle;
+  final bool divider;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = GenAiPalette.of(context);
+    final label = Row(
+      children: [
+        if (onToggle != null)
+          GenAiIcon(expanded == true ? GenAiGlyph.down : GenAiGlyph.chevron, size: 15)
+        else if (leading != null)
+          leading!,
+        if (onToggle != null || leading != null) const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: palette.text),
+          ),
+        ),
+      ],
+    );
+    return Container(
+      constraints: const BoxConstraints(minHeight: 48),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration:
+          divider ? BoxDecoration(border: Border(bottom: BorderSide(color: palette.line))) : null,
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              expanded: expanded,
+              child: onToggle == null
+                  ? Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: label)
+                  : TextButton(
+                      onPressed: onToggle,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        alignment: Alignment.centerLeft,
+                      ),
+                      child: label,
+                    ),
+            ),
+          ),
+          ...actions,
+        ],
+      ),
+    );
+  }
+}
+
 /// The sheet counterpart of [genAiShowDialog], sharing its barrier treatment.
 Future<T?> genAiShowModalBottomSheet<T>({
   required BuildContext context,
@@ -421,7 +563,7 @@ Future<T?> genAiShowModalBottomSheet<T>({
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
   final localizations = MaterialLocalizations.of(context);
   return navigator.push<T>(
-    _GenAiModalBottomSheetRoute<T>(
+    ModalBottomSheetRoute<T>(
       builder: (context) => genAiThemeScope(context, builder(context)),
       capturedThemes: InheritedTheme.capture(from: context, to: navigator.context),
       barrierLabel: barrierLabel ?? localizations.scrimLabel,
@@ -445,55 +587,6 @@ Future<T?> genAiShowModalBottomSheet<T>({
       requestFocus: requestFocus,
     ),
   );
-}
-
-mixin _GenAiOverlayBlur<T> on ModalRoute<T> {
-  @override
-  ui.ImageFilter get filter => ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3);
-}
-
-class _GenAiDialogRoute<T> extends DialogRoute<T> with _GenAiOverlayBlur<T> {
-  _GenAiDialogRoute({
-    required super.context,
-    required super.builder,
-    super.themes,
-    super.barrierColor,
-    super.barrierDismissible,
-    super.barrierLabel,
-    super.useSafeArea,
-    super.settings,
-    super.anchorPoint,
-    super.traversalEdgeBehavior,
-    super.fullscreenDialog,
-    super.requestFocus,
-    super.animationStyle,
-  });
-}
-
-class _GenAiModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T> with _GenAiOverlayBlur<T> {
-  _GenAiModalBottomSheetRoute({
-    required super.builder,
-    required super.isScrollControlled,
-    super.capturedThemes,
-    super.barrierLabel,
-    super.barrierOnTapHint,
-    super.modalBarrierColor,
-    super.backgroundColor,
-    super.elevation,
-    super.shape,
-    super.clipBehavior,
-    super.constraints,
-    super.scrollControlDisabledMaxHeightRatio,
-    super.isDismissible,
-    super.enableDrag,
-    super.showDragHandle,
-    super.useSafeArea,
-    super.settings,
-    super.transitionAnimationController,
-    super.anchorPoint,
-    super.sheetAnimationStyle,
-    super.requestFocus,
-  });
 }
 
 /// Shows a popover using the draft's anchor rule rather than Material's
@@ -701,224 +794,6 @@ class _GenAiAnchoredMenuLayout extends SingleChildLayoutDelegate {
       oldDelegate.preferAbove != preferAbove ||
       oldDelegate.alignEnd != alignEnd ||
       oldDelegate.gap != gap;
-}
-
-/// A GenAI-styled native text selection menu for [EditableText]-backed widgets.
-///
-/// Attach it as the `contextMenuBuilder` of a [TextField] or [SelectableText]:
-///
-/// ```dart
-/// TextField(contextMenuBuilder: genAiTextSelectionContextMenu)
-/// ```
-///
-/// The popover reuses [EditableTextState.contextMenuButtonItems], so every
-/// copy/cut/paste/select-all action keeps Flutter's own callback. It only
-/// paints the draft's menu surface: a 12px radius, a 1px [GenAiPalette.line]
-/// border, the raised background, 42px rows and 13px localized labels with the
-/// workspace's icon sprite.
-///
-/// Web keeps Flutter's default path: the browser owns its context menu
-/// ([BrowserContextMenu]), and [EditableText] ignores this builder there while
-/// that menu is enabled. The default adaptive toolbar is still returned so a
-/// host that disabled the browser menu keeps a working one.
-Widget genAiTextSelectionContextMenu(
-  BuildContext context,
-  EditableTextState editableTextState,
-) {
-  if (kIsWeb) {
-    return AdaptiveTextSelectionToolbar.editableText(editableTextState: editableTextState);
-  }
-  final items = editableTextState.contextMenuButtonItems;
-  if (items.isEmpty) return const SizedBox.shrink();
-  return _GenAiSelectionToolbar(
-    anchors: editableTextState.contextMenuAnchors,
-    child: genAiThemeScope(
-      context,
-      _GenAiSelectionPopover(
-        items: items,
-        localizations: MaterialLocalizations.of(context),
-      ),
-    ),
-  );
-}
-
-/// The same GenAI selection popover for [SelectionArea] and [SelectableRegion].
-///
-/// Keeps the region's native copy/select-all callbacks and mirrors the editable
-/// builder's browser-owned context menu fallback on web.
-Widget genAiRegionSelectionContextMenu(
-  BuildContext context,
-  SelectableRegionState selectableRegionState,
-) {
-  if (kIsWeb) {
-    return AdaptiveTextSelectionToolbar.selectableRegion(
-      selectableRegionState: selectableRegionState,
-    );
-  }
-  final items = selectableRegionState.contextMenuButtonItems;
-  if (items.isEmpty) return const SizedBox.shrink();
-  return _GenAiSelectionToolbar(
-    anchors: selectableRegionState.contextMenuAnchors,
-    child: genAiThemeScope(
-      context,
-      _GenAiSelectionPopover(
-        items: items,
-        localizations: MaterialLocalizations.of(context),
-      ),
-    ),
-  );
-}
-
-/// Positions the popover above the selection when it fits, otherwise below it,
-/// using the same public layout delegate as Material's selection toolbar.
-class _GenAiSelectionToolbar extends StatelessWidget {
-  const _GenAiSelectionToolbar({required this.anchors, required this.child});
-
-  final TextSelectionToolbarAnchors anchors;
-  final Widget child;
-
-  static const _screenPadding = 8.0;
-  static const _contentGapAbove = 8.0;
-  static const _contentGapBelow = 20.0;
-
-  @override
-  Widget build(BuildContext context) {
-    final paddingAbove = MediaQuery.paddingOf(context).top + _screenPadding;
-    final adjustment = Offset(_screenPadding, paddingAbove);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(_screenPadding, paddingAbove, _screenPadding, _screenPadding),
-      child: CustomSingleChildLayout(
-        delegate: TextSelectionToolbarLayoutDelegate(
-          anchorAbove: anchors.primaryAnchor - const Offset(0, _contentGapAbove) - adjustment,
-          anchorBelow: (anchors.secondaryAnchor ?? anchors.primaryAnchor) +
-              const Offset(0, _contentGapBelow) -
-              adjustment,
-        ),
-        child: child,
-      ),
-    );
-  }
-}
-
-/// The draft's popover: raised surface, 12px radius, 1px line border and 42px
-/// rows whose 13px labels come from [MaterialLocalizations].
-class _GenAiSelectionPopover extends StatelessWidget {
-  const _GenAiSelectionPopover({required this.items, required this.localizations});
-
-  final List<ContextMenuButtonItem> items;
-  final MaterialLocalizations localizations;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = GenAiPalette.of(context);
-    return Material(
-      key: const ValueKey('genai-selection-popover'),
-      color: palette.raised,
-      elevation: 6,
-      shadowColor: Theme.of(context).colorScheme.shadow.withValues(alpha: .18),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: palette.line),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: 220,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final item in items)
-                _GenAiSelectionRow(
-                  item: item,
-                  label: _label(localizations, item),
-                  palette: palette,
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  static String _label(MaterialLocalizations localizations, ContextMenuButtonItem item) {
-    if (item.label != null) return item.label!;
-    return switch (item.type) {
-      ContextMenuButtonType.cut => localizations.cutButtonLabel,
-      ContextMenuButtonType.copy => localizations.copyButtonLabel,
-      ContextMenuButtonType.paste => localizations.pasteButtonLabel,
-      ContextMenuButtonType.selectAll => localizations.selectAllButtonLabel,
-      ContextMenuButtonType.delete => localizations.deleteButtonTooltip.toUpperCase(),
-      ContextMenuButtonType.lookUp => localizations.lookUpButtonLabel,
-      ContextMenuButtonType.searchWeb => localizations.searchWebButtonLabel,
-      ContextMenuButtonType.share => localizations.shareButtonLabel,
-      ContextMenuButtonType.liveTextInput => localizations.scanTextButtonLabel,
-      ContextMenuButtonType.custom => '',
-    };
-  }
-}
-
-/// A 42px action row. Only existing [GenAiGlyph]s are used; the callback is the
-/// one supplied by [EditableTextState.contextMenuButtonItems].
-class _GenAiSelectionRow extends StatelessWidget {
-  const _GenAiSelectionRow({
-    required this.item,
-    required this.label,
-    required this.palette,
-  });
-
-  final ContextMenuButtonItem item;
-  final String label;
-  final GenAiPalette palette;
-
-  static GenAiGlyph _glyph(ContextMenuButtonType type) => switch (type) {
-        ContextMenuButtonType.cut => GenAiGlyph.edit,
-        ContextMenuButtonType.copy => GenAiGlyph.copy,
-        ContextMenuButtonType.paste => GenAiGlyph.plus,
-        ContextMenuButtonType.selectAll => GenAiGlyph.checkCircle,
-        ContextMenuButtonType.delete => GenAiGlyph.trash,
-        ContextMenuButtonType.lookUp => GenAiGlyph.search,
-        ContextMenuButtonType.searchWeb => GenAiGlyph.search,
-        ContextMenuButtonType.share => GenAiGlyph.share,
-        ContextMenuButtonType.liveTextInput => GenAiGlyph.image,
-        ContextMenuButtonType.custom => GenAiGlyph.info,
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    final onPressed = item.onPressed;
-    return Semantics(
-      button: true,
-      label: label,
-      excludeSemantics: true,
-      child: InkWell(
-        key: ValueKey('genai-selection-${item.type.name}'),
-        onTap: onPressed == null ? null : () => onPressed(),
-        borderRadius: BorderRadius.circular(7),
-        child: SizedBox(
-          height: 42,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              children: [
-                GenAiIcon(_glyph(item.type), size: 17, color: palette.muted),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, color: palette.text),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// The workspace's few surface roles, derived from the host scheme so light,

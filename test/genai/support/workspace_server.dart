@@ -20,6 +20,9 @@ final class FakeGenAiServer implements GenAiTransport {
 
   final Duration chunkDelay;
   bool failUpload = false;
+  final usageRecords = <Map<String, Object?>>[];
+  int? failUsagePage;
+  final usagePages = <int>[];
   String? imageRejection;
   bool campusImageRestriction = false;
   bool loseDeleteResponse = false;
@@ -52,6 +55,14 @@ final class FakeGenAiServer implements GenAiTransport {
     List<int>? bodyBytes,
   }) async {
     cancellation.throwIfCancelled();
+    if (method == 'GET' && uri.path.startsWith('/sys/common/static/')) {
+      return GenAiResponse(
+        statusCode: 200,
+        headers: const {'Content-Type': 'image/png'},
+        bytes: Stream.value([1, 2, 3]),
+        close: () {},
+      );
+    }
     if (headers['X-Access-Token'] != token &&
         headers['token'] != '2ea38f293adb4abca21132feba61eaa3') {
       return _json({'success': false, 'code': 401});
@@ -189,7 +200,10 @@ final class FakeGenAiServer implements GenAiTransport {
           'keys': <Object>[],
         });
       case '/htk/ai-trade-order/my/list':
-        return _ok(_page([], uri));
+        final page = int.parse(uri.queryParameters['pageNo']!);
+        usagePages.add(page);
+        if (failUsagePage == page) throw const GenAiFailure(GenAiFailureKind.transport);
+        return _ok(_page(usageRecords, uri));
     }
     if (uri.path == '/htk/chat/start/chat' && data['aiType'] == 'test-image') {
       if (campusImageRestriction) {

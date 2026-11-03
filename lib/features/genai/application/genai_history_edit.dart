@@ -21,7 +21,7 @@ final class GenAiHistoryEdit {
     String turnId, {
     bool keepTurn = false,
   }) {
-    final turns = decodeGenAiConversation(groupId, rows).archive.restoreTurns();
+    final turns = decodeGenAiConversation(groupId, rows).archive.turns;
     final index = turns.indexWhere((turn) => turn.id == turnId);
     if (index < 0 || turns.any((turn) => turn.isHistoryGap)) {
       throw const GenAiFailure(GenAiFailureKind.historyChanged);
@@ -46,7 +46,7 @@ final class GenAiHistoryEdit {
         // Legacy tool exchanges have no turn IDs. Use the same importer as
         // recovery instead of guessing boundaries from text or call markers.
         final prefix = decodeGenAiConversation(groupId, rows.sublist(0, i + 1));
-        if (prefix.archive.restoreTurns().any((turn) => removed.contains(turn.id))) {
+        if (prefix.archive.turns.any((turn) => removed.contains(turn.id))) {
           cut = i;
           break;
         }
@@ -65,7 +65,7 @@ final class GenAiHistoryEdit {
     if (keep == 0) cut = 0;
     while (cut >= 0) {
       retained = rows.take(cut).where((row) => !isGenAiContextExtraction(row.prompt)).toList();
-      final recovered = decodeGenAiConversation(groupId, retained).archive.restoreTurns();
+      final recovered = decodeGenAiConversation(groupId, retained).archive.turns;
       if (contents(recovered) == expected) break;
       cut--;
     }

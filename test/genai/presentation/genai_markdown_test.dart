@@ -31,6 +31,55 @@ void main() {
     );
   }
 
+  testWidgets('fullscreen chart retains its snapshot after inline source changes and disposal',
+      (tester) async {
+    var code = '{"type":"bar","labels":["A"],"series":[{"name":"Saved","values":[2]}]}';
+    var visible = true;
+    late StateSetter update;
+    await tester.pumpWidget(
+      buildApp(
+        StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return visible ? GenAiChartView(code: code) : const SizedBox();
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('全屏查看'));
+    await tester.pumpAndSettle();
+    update(() => code = 'invalid');
+    await tester.pumpAndSettle();
+    update(() => visible = false);
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(1000, 700);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpAndSettle();
+    expect(find.byType(BarChart), findsOneWidget);
+    expect(find.text('Saved'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('chart reports clipboard failures instead of throwing', (tester) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform,
+        (call) async {
+      if (call.method == 'Clipboard.setData') throw PlatformException(code: 'denied');
+      return null;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await tester.pumpWidget(buildApp(const GenAiChartView(code: 'invalid')));
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('复制数据'));
+    await tester.pumpAndSettle();
+    expect(find.text('无法复制，请手动选择文字'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('streaming a new reply reuses the rendered widgets of older replies', (tester) async {
     final history = List.generate(
       12,
@@ -154,21 +203,6 @@ void main() {
     expect(find.text('正在生成交互示例…'), findsOneWidget);
     await tester.pumpWidget(content(false, 'replacement renderer'));
     expect(find.text('正在生成交互示例…'), findsNothing);
-  });
-
-  testWidgets('tables render with the draft hairline rows and left-aligned headings',
-      (tester) async {
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(
-          data: '| Name | Score |\n| --- | --- |\n| Ada | 10 |',
-          selectable: false,
-        ),
-      ),
-    );
-    expect(tester.takeException(), isNull);
-    expect(find.text('Name', findRichText: true), findsOneWidget);
-    expect(find.text('Ada', findRichText: true), findsOneWidget);
   });
 
   testWidgets('empty streamed task items render and tear down safely', (tester) async {
@@ -314,15 +348,18 @@ f(x) = \\sum_{i=1}^n x_i
     await tester.pumpAndSettle();
     expect(find.byType(BarChart), findsOneWidget);
     expect(find.text('月度销售'), findsOneWidget);
-    expect(find.text('柱状图'), findsOneWidget);
 
     // Toggle to code
-    await tester.tap(genAiIcon(GenAiGlyph.code));
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('查看数据'));
     await tester.pumpAndSettle();
     expect(find.textContaining('"type": "bar"'), findsOneWidget);
 
     // Toggle back to chart
-    await tester.tap(find.byTooltip('切换到图表'));
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('切换到图表'));
     await tester.pumpAndSettle();
     expect(find.byType(BarChart), findsOneWidget);
 
@@ -335,7 +372,6 @@ f(x) = \\sum_{i=1}^n x_i
     await tester.pumpAndSettle();
     expect(find.byType(LineChart), findsOneWidget);
     expect(find.text('温度趋势'), findsOneWidget);
-    expect(find.text('折线图'), findsOneWidget);
 
     // 3. PieChart
     await tester.pumpWidget(
@@ -346,7 +382,6 @@ f(x) = \\sum_{i=1}^n x_i
     await tester.pumpAndSettle();
     expect(find.byType(PieChart), findsOneWidget);
     expect(find.text('语言占比'), findsOneWidget);
-    expect(find.text('饼图'), findsOneWidget);
   });
 
   testWidgets('invalid chart data shows source without crashing or inventing zeros',
@@ -366,7 +401,7 @@ f(x) = \\sum_{i=1}^n x_i
       await tester.pumpWidget(buildApp(GenAiMarkdown(data: '```chart\n$code\n```')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.text('格式未识别'), findsOneWidget);
+      expect(find.text('图表数据格式无法识别'), findsOneWidget);
       expect(find.text(code), findsOneWidget);
       expect(find.byType(LineChart), findsNothing);
       expect(find.byType(BarChart), findsNothing);

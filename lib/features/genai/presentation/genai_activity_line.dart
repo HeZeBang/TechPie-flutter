@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'genai_icons.dart';
-import 'genai_theme.dart';
 
 /// One quiet, expandable line for thinking, tool steps and technical detail.
 /// The summary stays a single row; expanded content hangs off a thin rail.
@@ -22,6 +21,7 @@ class GenAiDisclosure extends StatefulWidget {
     this.color,
     this.initiallyExpanded = false,
     this.expandWhen = false,
+    this.collapseWhen = false,
     this.rail = true,
     this.dense = false,
     this.steps = false,
@@ -42,6 +42,9 @@ class GenAiDisclosure extends StatefulWidget {
   /// Opens the line when this turns true (live progress starting). It never
   /// closes it, so a reader keeps what they expanded.
   final bool expandWhen;
+
+  /// Collapse completed automatic progress, unless the reader chose its state.
+  final bool collapseWhen;
   final bool rail;
   final bool dense;
 
@@ -56,11 +59,15 @@ class GenAiDisclosure extends StatefulWidget {
 
 class _GenAiDisclosureState extends State<GenAiDisclosure> {
   late bool _expanded = widget.initiallyExpanded || widget.expandWhen;
+  bool _manuallyToggled = false;
 
   @override
   void didUpdateWidget(covariant GenAiDisclosure oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.expandWhen && !oldWidget.expandWhen) _expanded = true;
+    if (!_manuallyToggled) {
+      if (widget.expandWhen && !oldWidget.expandWhen) _expanded = true;
+      if (widget.collapseWhen && !oldWidget.collapseWhen) _expanded = false;
+    }
   }
 
   @override
@@ -104,7 +111,6 @@ class _GenAiDisclosureState extends State<GenAiDisclosure> {
                     if (widget.summary?.isNotEmpty ?? false)
                       SelectableText(
                         widget.summary!,
-                        contextMenuBuilder: genAiTextSelectionContextMenu,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: muted,
                           fontSize: 12,
@@ -136,7 +142,12 @@ class _GenAiDisclosureState extends State<GenAiDisclosure> {
             button: hasBody,
             expanded: hasBody ? _expanded : null,
             child: InkWell(
-              onTap: hasBody ? () => setState(() => _expanded = !_expanded) : null,
+              onTap: hasBody
+                  ? () => setState(() {
+                        _manuallyToggled = true;
+                        _expanded = !_expanded;
+                      })
+                  : null,
               borderRadius: BorderRadius.circular(8),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 36),

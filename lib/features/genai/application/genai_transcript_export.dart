@@ -2,12 +2,12 @@ import '../../../models/oa_gym.dart';
 import '../domain/genai_agent_contract.dart';
 import '../domain/genai_platform_contract.dart';
 import 'genai_chat_service.dart';
-import 'genai_conversation_archive.dart';
+import 'genai_conversation_snapshot.dart';
 
 /// A user-readable snapshot, never a replayable protocol or credential export.
-String exportGenAiTranscript(GenAiConversationArchive archive) {
+String exportGenAiTranscript(GenAiConversationSnapshot archive) {
   final out = StringBuffer('# ${_line(archive.title)}\n\n');
-  for (final turn in archive.restoreTurns()) {
+  for (final turn in archive.turns) {
     if (turn.isHistoryGap) {
       out.writeln('（服务器返回的一条历史记录无法读取，部分上下文可能缺失。）\n\n---\n');
       continue;
@@ -18,7 +18,6 @@ String exportGenAiTranscript(GenAiConversationArchive archive) {
     }
     for (final url in <String>{
       ...turn.attachedImageUrls,
-      if (turn.attachedImageUrl != null) turn.attachedImageUrl!,
     }) {
       _writeImage(out, url, reference: true);
     }

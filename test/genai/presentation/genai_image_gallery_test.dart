@@ -9,8 +9,38 @@ import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
 import 'package:techpie/features/genai/presentation/genai_icons.dart';
 import 'package:techpie/features/genai/presentation/genai_image_actions.dart';
 import 'package:techpie/features/genai/presentation/genai_image_gallery.dart';
+import 'package:techpie/features/genai/presentation/genai_image_viewer.dart';
 
 void main() {
+  testWidgets('failed preview retries the same image and recovers in place', (tester) async {
+    final frame = await tester.runAsync(() async {
+      final codec = await ui.instantiateImageCodec(await _picture(const Size(40, 60)));
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+      return frame;
+    });
+    final provider = _RetryImage(frame!.image);
+    addTearDown(frame.image.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GenAiImageViewer(
+            image: provider,
+            link: Uri.parse('https://example.test/image.png'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('图片暂时无法加载'), findsOneWidget);
+    expect(find.text('打开原图'), findsOneWidget);
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(provider.attempts, 2);
+    expect(find.text('图片暂时无法加载'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('mixed image proportions remain uncropped and reachable across viewport sizes',
       (tester) async {
     tester.view.devicePixelRatio = 1;
@@ -570,7 +600,7 @@ void main() {
     final tile = find.byKey(const ValueKey('genai-image-0'));
     expect(find.byTooltip('图片操作'), findsNothing);
     final tileRect = tester.getRect(tile);
-    await tester.longPress(tile);
+    await tester.tapAt(tester.getCenter(tile), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
     final surface = find.byKey(const ValueKey('genai-anchored-menu'));
     expect(surface, findsOneWidget);
@@ -620,7 +650,7 @@ void main() {
     await tester.tap(find.descendant(of: surface, matching: find.text('查看图片')));
     await tester.pumpAndSettle();
     expect(opened, '0');
-    await tester.longPress(tile);
+    await tester.tapAt(tester.getCenter(tile), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
     await tester.tap(
       find.descendant(
@@ -740,4 +770,21 @@ Future<Uint8List> _picture(Size size) async {
   image.dispose();
   picture.dispose();
   return data!.buffer.asUint8List();
+}
+
+class _RetryImage extends ImageProvider<_RetryImage> {
+  _RetryImage(this.image);
+  final ui.Image image;
+  int attempts = 0;
+
+  @override
+  Future<_RetryImage> obtainKey(ImageConfiguration configuration) => SynchronousFuture(this);
+
+  @override
+  ImageStreamCompleter loadImage(_RetryImage key, ImageDecoderCallback decode) =>
+      OneFrameImageStreamCompleter(
+        ++attempts == 1
+            ? Future<ImageInfo>.error(StateError('temporary network failure'))
+            : Future.value(ImageInfo(image: image.clone())),
+      );
 }

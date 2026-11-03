@@ -69,7 +69,7 @@ void main() {
     String name,
     Map<String, Object?> args,
   ) async =>
-      (await (await prepare(name, args)).execute())! as Map<String, Object?>;
+      (await (await prepare(name, args)).execute()).structuredContent!;
 
   test('tools reject unknown keys and invalid argument types', () {
     expect(
@@ -290,7 +290,7 @@ void main() {
     expect(gym.checks, 2);
     expect(gym.bookings, 0);
     expect(jsonEncode(prepared.details), isNot(contains('13800000000')));
-    final result = await prepared.execute();
+    final result = (await prepared.execute()).structuredContent!;
     expect(result, containsPair('success', true));
     expect(gym.checks, 3);
     expect(gym.bookings, 1);
@@ -310,6 +310,14 @@ void main() {
     }
     expect(gym.bookings, 0);
     expect(gym.checks, 0);
+  });
+
+  test('reading the approval sheet does not consume the execution freshness window', () async {
+    final prepared = await prepare('reserve_court', book);
+    now = now.add(const Duration(minutes: 3));
+    prepared.onApproved!();
+    await prepared.execute();
+    expect(gym.bookings, 1);
   });
 
   test('reservation approvals are single-use and expire before POST after renewal', () async {
@@ -444,13 +452,56 @@ void main() {
       (await demo.workspace.repository.listImages(GenAiCancellation())).records,
       isEmpty,
     );
-    final result = await prepared.execute();
+    final result = (await prepared.execute()).structuredContent!;
     expect(result, containsPair('status', 'generated'));
     expect(result, containsPair('size', '1536x1024'));
     expect(
       (await demo.workspace.repository.listImages(GenAiCancellation())).records,
       hasLength(1),
     );
+  });
+
+  test('image presets and output settings survive approval with distinct effect identities',
+      () async {
+    final preset = await prepare('generate_image', {
+      'prompt': 'A landscape',
+      'aspect_ratio': '16:9',
+      'resolution': '2K',
+      'output_format': 'jpeg',
+      'output_compression': 65,
+    });
+    final custom = await prepare('generate_image', {
+      'prompt': 'A landscape',
+      'width': 2048,
+      'height': 1152,
+      'output_format': 'jpeg',
+      'output_compression': 65,
+    });
+    final png = await prepare('generate_image', {
+      'prompt': 'A landscape',
+      'width': 2048,
+      'height': 1152,
+    });
+    expect(preset.requiresApproval, isTrue);
+    expect(preset.details['size'], '2048x1152');
+    expect(preset.details['output_compression'], 65);
+    expect(preset.effectKey, custom.effectKey);
+    expect(preset.effectKey, isNot(png.effectKey));
+    final result = (await preset.execute()).structuredContent!;
+    expect(result['output_format'], 'jpeg');
+    expect(result['output_compression'], 65);
+    for (final invalid in <Map<String, Object?>>[
+      {'width': 1024},
+      {'width': 1024, 'height': 1024, 'aspect_ratio': '1:1'},
+      {'aspect_ratio': '1:1', 'resolution': '4K'},
+      {'output_format': 'png', 'output_compression': 80},
+      {'output_format': 'jpeg', 'output_compression': 101},
+    ]) {
+      await expectLater(
+        prepare('generate_image', {'prompt': 'A landscape', ...invalid}),
+        throwsA(isA<GenAiAgentToolException>()),
+      );
+    }
   });
 
   test('image title is optional and flows through the request and receipt', () async {
@@ -463,7 +514,7 @@ void main() {
     });
     expect(prepared.details['title'], 'Red square');
     expect(prepared.details['quality'], 'high');
-    final result = await prepared.execute() as Map<String, Object?>;
+    final result = (await prepared.execute()).structuredContent!;
     expect(result['title'], 'Red square');
     expect(result['quality'], 'high');
     // The shared fixture models the real gateway, which does not persist
@@ -476,7 +527,7 @@ void main() {
   test('image requests without a title omit it from details and receipts', () async {
     final prepared = await prepare('generate_image', {'prompt': 'A red square'});
     expect(prepared.details.containsKey('title'), isFalse);
-    final result = await prepared.execute() as Map<String, Object?>;
+    final result = (await prepared.execute()).structuredContent!;
     expect(result.containsKey('title'), isFalse);
     final records = (await demo.workspace.repository.listImages(GenAiCancellation())).records;
     expect(records.single.title, isNull);

@@ -63,9 +63,11 @@ protocol guide immediately before the current input. Both modes use the catalog'
 There is no search preflight/tool; historical citations remain readable.
 
 SSE supports incremental UTF-8, CR/LF/CRLF, comments and multiline data with bounded
-event sizes. Reasoning and answer deltas stay separate. A terminal finish reason
-or `[DONE]` completes the stream; bare EOF is interruption. Malformed events fail
-visibly. Cancellation aborts local work without promising server rollback or
+event sizes. Reasoning and answer deltas stay separate. A model finish reason is
+confirmed at `[DONE]` or EOF for non-Azure providers. Azure accepts moderation-only
+events and waits beyond `[DONE]` for the school `other` receipt with `answerGroupId`.
+EOF before that receipt is interruption; an intervening save-error envelope fails
+the turn. Non-Azure EOF without a finish reason is interruption. Malformed events fail visibly. Cancellation aborts local work without promising server rollback or
 avoided billing. No automatic generation POST retry or stream reconnection occurs.
 
 ## Documents and images
@@ -86,10 +88,18 @@ Extraction counts in full toward context, without duplicate instruction copies.
 Archived IDs do not guarantee server availability; expired files need re-upload.
 
 Vision history accepts URL arrays and legacy comma-separated `imageUrl`. Store
-canonical validated CDN URLs. Chat,
-reasoning and tool images share the trusted-URL policy; external/data/file images
-do not load automatically. Chat, gallery and viewer share long-press/right-click
-and accessible image actions. Copy/share capability varies by platform; Android
+canonical validated CDN URLs in the turn record and tool receipts. For inference,
+fetch the active image selection without credentials and put base64 image content
+blocks only in `messages`, before the tool guide. Do not put bytes in `chatInfo`
+or the top-level image fields: those fields can fail server persistence after
+inference succeeds. Historical image-field extensions are not reliable vision
+input. Downloads are cancellable and bounded to 30 seconds, 10 MiB per image and
+25 MiB per request; failure stops before the chat POST. Reopening rebuilds this
+request from server records without local image storage.
+
+Chat, reasoning and tool images share the trusted-URL policy; external/data/file images
+do not load automatically. Chat, gallery and viewer share explicit image actions and desktop right-click
+menus; long-press does not open a menu. Copy/share capability varies by platform; Android
 uses a non-exported cache FileProvider and iPad sharing needs source bounds.
 
 Image dimensions must be positive integers totaling 655,360–8,294,400 pixels;

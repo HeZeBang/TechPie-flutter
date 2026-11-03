@@ -16,7 +16,7 @@ GenAiAgentTool testTool({bool mutation = false, Future<Object?> Function()? exec
     GenAiAgentTool(
       name: mutation ? 'reserve_court' : 'get_semesters',
       description: 'Test campus service',
-      parameters: {
+      inputSchema: {
         'type': 'object',
         'properties': {
           'action': {'type': 'string'},
@@ -39,6 +39,20 @@ Future<void> until(bool Function() ready) async {
 }
 
 void main() {
+  test('same-owner token rejection retains transcript but cancels active work', () async {
+    final client = await JournalClient.create(JournalServer(), tools: [testTool()]);
+    addTearDown(client.dispose);
+    await client.workspace.send('Keep this chat');
+    final group = client.workspace.groupId;
+    final answer = client.workspace.turns.single.answer;
+    await client.sessions.reject(client.sessions.session!);
+    expect(client.workspace.connected, isFalse);
+    expect(client.workspace.groupId, group);
+    expect(client.workspace.turns.single.answer, answer);
+    await client.sessions.setOwner(ownerB);
+    expect(client.workspace.turns, isEmpty);
+  });
+
   test('new task after a timed-out tool turn has its own control on every step', () async {
     final server = JournalServer();
     var executions = 0;
@@ -66,7 +80,7 @@ void main() {
       expect(control['current_task'], steps == 0 ? isNull : 'Only read the new semester');
       expect(
         control['current_step'],
-        genAiAgentNonceFromSystem((messages.first as Map)['content'] as String),
+        genAiAgentNonceFromSystem((messages.last as Map)['content'] as String),
       );
       expect(messages.toString(), contains('techpie_turn_end'));
       steps++;
@@ -74,7 +88,7 @@ void main() {
           ? encodeGenAiCompactCall(
               'get_semesters',
               {},
-              nonce: genAiAgentNonceFromSystem((messages.first as Map)['content'] as String)!,
+              nonce: genAiAgentNonceFromSystem((messages.last as Map)['content'] as String)!,
             )
           : server.finalAnswer(body, 'New semester $executions');
     };
@@ -127,6 +141,50 @@ void main() {
     expect(executions, 3); // Recovery never replays a tool.
   });
 
+  test('editing a stopped agent preserves a tool receipt not yet saved by the model', () async {
+    final server = JournalServer();
+    var executions = 0;
+    final tool = testTool(mutation: true, execute: () async => {'booked': ++executions});
+    final client = await JournalClient.create(server, tools: [tool]);
+    addTearDown(client.dispose);
+    client.workspace.setAgentEnabled(true);
+    final finishing = Completer<void>();
+    final release = Completer<void>();
+    server.onGenerate = (body) async {
+      if (decodeGenAiAgentRecord(server.input(body))?.result == null) {
+        return server.call(body, name: 'reserve_court', arguments: {'action': 'book'});
+      }
+      finishing.complete();
+      await release.future;
+      return server.finalAnswer(body, 'Done.');
+    };
+    final sending = client.workspace.send('Book one court');
+    await until(() => client.workspace.pendingAgentApproval != null);
+    client.workspace.resolveAgentApproval(true);
+    await finishing.future;
+    client.workspace.stop();
+    release.complete();
+    await sending;
+    final group = client.workspace.groupId;
+    final target = client.workspace.turns.single.id;
+    expect(executions, 1);
+    expect(server.rows[group], hasLength(1)); // Only the proposal was saved.
+    // Editing directly after stop must not require a synchronization round trip.
+    server.onGenerate = (body) => server.finalAnswer(body, 'Revised explanation.');
+    await client.workspace.changeTurn(target, replacement: 'Explain my booking');
+    final fresh = await JournalClient.create(server, tools: [tool]);
+    addTearDown(fresh.dispose);
+    await fresh.workspace.openConversation(group, GenAiCancellation());
+    expect(fresh.workspace.turns.single.prompt, 'Explain my booking');
+    server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+        ? server.call(body, name: 'reserve_court', arguments: {'action': 'book'})
+        : server.finalAnswer(body, 'Already booked.');
+    await fresh.workspace.send('Book the same court');
+    expect(fresh.workspace.pendingAgentApproval, isNull);
+    expect(executions, 1); // Server-only recovery still prevents duplicate booking.
+    expect(fresh.workspace.turns.last.phase, GenAiChatPhase.completed);
+  });
+
   for (final name in ['generate_image', 'reserve_court']) {
     test('explicit $name edit renews approval while keeping external receipts recoverable',
         () async {
@@ -136,7 +194,7 @@ void main() {
       final tool = GenAiAgentTool(
         name: name,
         description: 'Test mutation',
-        parameters: {'type': 'object', 'properties': <String, Object?>{}},
+        inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
         maxApprovalsPerRun: name == 'reserve_court' ? 1 : null,
         prepare: (_, __) async => GenAiAgentPreparedTool(
           requiresApproval: true,
@@ -208,8 +266,9 @@ void main() {
       final turn = client.workspace.turns.single;
       expect(turn.agentEvents.values.single.kind, GenAiAgentEventKind.toolStarted);
       expect(turn.agentEvents.values.single.result, isNull);
-      // The unknown receipt still exists for recovery even while the UI runs.
-      expect(turn.agentTranscript.last.result?['error'], containsPair('code', 'outcome_unknown'));
+      // Read-back confirms the proposal, not a durable unknown-result write.
+      // Cancellation captures the runner's dispatched receipt below.
+      expect(turn.agentTranscript.last.call?.name, 'reserve_court');
       if (cancel) client.workspace.stop();
       finish.complete({'status': 'booked'});
       await sending;
@@ -232,7 +291,7 @@ void main() {
     final imageTool = GenAiAgentTool(
       name: 'generate_image',
       description: 'Test image',
-      parameters: {
+      inputSchema: {
         'type': 'object',
         'properties': <String, Object?>{},
         'additionalProperties': false,
@@ -252,11 +311,11 @@ void main() {
       if (decodeGenAiAgentRecord(server.input(body))?.result == null) {
         return server.call(body, name: 'generate_image');
       }
-      expect(body['imageUrls'], [executions == 1 ? image : revision]);
-      expect(body['messages'].toString(), contains('images: true'));
-      expect(body['imageUrl'], executions == 1 ? image : revision);
+      expect(visionImageLabels(body), [executions == 1 ? image : revision]);
+      expect(body['messages'].toString(), contains('"images":true'));
+      expect(body['imageUrl'], isNull);
       if (executions == 1) return server.call(body, name: 'generate_image');
-      expect(body['imageUrls'], [revision]);
+      expect(visionImageLabels(body), [revision]);
       return server.finalAnswer(body, 'Created.');
     };
     await a.workspace.send('Create a campus image');
@@ -267,9 +326,9 @@ void main() {
       expect(await b.workspace.openConversation(id, GenAiCancellation()), true);
       b.workspace.setAgentEnabled(enabled);
       server.onGenerate = (body) {
-        expect(body['imageUrls'], enabled ? [revision] : [image, revision]);
+        expect(visionImageLabels(body), enabled ? [revision] : [image, revision]);
         if (enabled) expect(body['messages'].toString(), contains(image));
-        expect(body['imageUrl'], revision);
+        expect(body['imageUrl'], isNull);
         expect(body['netGo'], false);
         return enabled ? server.finalAnswer(body, 'The saved picture.') : 'The saved picture.';
       };

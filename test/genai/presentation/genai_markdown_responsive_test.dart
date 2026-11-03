@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
 import 'package:techpie/features/genai/presentation/genai_icons.dart';
 import 'package:techpie/features/genai/presentation/genai_turn_view.dart';
@@ -112,6 +111,35 @@ graph TD
 ''';
 
 void main() {
+  testWidgets('wide tables scroll without squeezing cells or overflowing the chat', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: GenAiMarkdown(
+            data:
+                '| Name | Description | Result | Status |\n| --- | --- | --- | --- |\n| GenAiStandardCodeBlock | **Readable** details | 42 | Done |',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final scroll = find.byWidgetPredicate(
+      (w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+    );
+    final controller = tester.widget<SingleChildScrollView>(scroll).controller!;
+    expect(controller.position.maxScrollExtent, greaterThan(0));
+    final table = tester.widget<Table>(find.byType(Table));
+    expect(table.defaultColumnWidth, isA<IntrinsicColumnWidth>());
+    await tester.drag(scroll, const Offset(-200, 0));
+    await tester.pumpAndSettle();
+    expect(controller.offset, greaterThan(0));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'rich answer renders headings, emphasis, lists, table, code, math and mermaid at each width',
     (tester) async {
@@ -162,7 +190,7 @@ void main() {
         final compact = width < 960;
         final body = _spanWith(tester, 'Body paragraph text.');
         expect(body.style?.fontSize, compact ? 14 : 15);
-        expect(body.style?.height, 1.75);
+        expect(body.style?.height, 1.6);
         expect(h2.style?.fontSize, compact ? 20 : 21);
         expect(h2.style?.height, 1.4);
 
@@ -187,8 +215,8 @@ void main() {
 
         // Table cells carry the tableBody style, not the paragraph style.
         final cell = _spanWith(tester, 'Ada');
-        expect(cell.style?.fontSize, 12);
-        expect(cell.style?.height, 1.75);
+        expect(cell.style?.fontSize, compact ? 13 : 14);
+        expect(cell.style?.height, 1.6);
       }
     },
   );

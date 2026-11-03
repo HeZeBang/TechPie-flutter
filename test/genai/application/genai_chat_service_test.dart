@@ -32,8 +32,7 @@ void main() {
     sessions.dispose();
   });
 
-  test('completed turn preserves answer, reasoning, and termination reason',
-      () async {
+  test('completed turn preserves answer, reasoning, and termination reason', () async {
     transport.handle = (_) async => response(
           type: 'text/event-stream',
           text: sseChunk(reasoning: 'reasoning') +
@@ -47,20 +46,17 @@ void main() {
     expect(chat.failure, isNull);
   });
 
-  test('EOF preserves partial answer as interrupted without replaying POST',
-      () async {
-    transport.handle = (_) async =>
-        response(type: 'text/event-stream', text: sseChunk(text: 'partial'));
+  test('EOF preserves partial answer as interrupted without replaying POST', () async {
+    transport.handle =
+        (_) async => response(type: 'text/event-stream', text: sseChunk(text: 'partial'));
     await chat.send(chatRequest());
     expect(chat.phase, GenAiChatPhase.interrupted);
     expect(chat.answer, 'partial');
     expect(transport.requests.where((r) => r.method == 'POST').length, 1);
   });
 
-  test('auth failure drops credential and prompts login without replaying POST',
-      () async {
-    transport.handle =
-        (_) async => response(json: {'success': false, 'code': 401});
+  test('auth failure drops credential and prompts login without replaying POST', () async {
+    transport.handle = (_) async => response(json: {'success': false, 'code': 401});
     await chat.send(chatRequest());
     expect(chat.phase, GenAiChatPhase.needsLogin);
     expect(sessions.session, isNull);
@@ -68,9 +64,7 @@ void main() {
     expect(transport.requests.where((r) => r.method == 'POST').length, 1);
   });
 
-  test(
-      'stop before response headers allows a new turn and rejects stale callbacks',
-      () async {
+  test('stop before response headers allows a new turn and rejects stale callbacks', () async {
     final header = Completer<GenAiResponse>();
     final started = Completer<void>();
     transport.handle = (r) {
@@ -98,8 +92,7 @@ void main() {
     expect(chat.answer, 'new answer');
   });
 
-  test('owner change cancels active stream and removes private partial output',
-      () async {
+  test('owner change cancels active stream and removes private partial output', () async {
     final wire = StreamController<List<int>>();
     final partial = Completer<void>();
     late RecordedRequest active;
@@ -134,8 +127,8 @@ void main() {
       maxOutputCharacters: 3,
     );
     addTearDown(limited.dispose);
-    transport.handle = (_) async =>
-        response(type: 'text/event-stream', text: sseChunk(text: 'too long'));
+    transport.handle =
+        (_) async => response(type: 'text/event-stream', text: sseChunk(text: 'too long'));
     await limited.send(chatRequest());
     expect(limited.phase, GenAiChatPhase.failed);
     expect(limited.failure?.kind, GenAiFailureKind.protocol);

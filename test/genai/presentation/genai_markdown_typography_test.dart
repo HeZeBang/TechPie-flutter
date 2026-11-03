@@ -199,7 +199,7 @@ void main() {
           'Body paragraph text with ',
         );
         expect(body.fontSize, fontSize);
-        expect(body.height, 1.75);
+        expect(body.height, 1.6);
         expect(body.leadingDistribution, TextLeadingDistribution.even);
 
         // The header row is a weight stronger than its cells even though the
@@ -293,12 +293,11 @@ void main() {
           reason: 'list copy stays body-coloured, not accent',
         );
 
-        // The bullet glyph and the ordered number share the paragraph style:
-        // same size, same 1.75 leading, normal weight, body colour.
+        // Dots are slightly larger; both marker styles retain the same line
+        // height, normal weight, and body colour.
         for (final marker in <String>['•', '1.']) {
           final style = _effectiveStyle(tester, marker);
-          expect(style.fontSize, fontSize, reason: 'marker $marker size');
-          expect(style.height, 1.75, reason: 'marker $marker leading');
+          expect(style.fontSize! * style.height!, closeTo(fontSize * 1.6, .01));
           expect(
             _normalizedWeight(style),
             FontWeight.w400,
@@ -325,15 +324,16 @@ void main() {
           expect(markerFinder, findsOneWidget);
           expect(itemFinder, findsOneWidget);
 
-          // The draft keeps the browser's inherited 40 px list indent with no
-          // extra bullet padding: the item content starts 40 px after the
-          // marker slot's left edge.
+          // A dedicated gutter separates the marker from the text, including
+          // bold first words and wrapped continuation lines.
           final indent = tester.getTopLeft(itemFinder).dx - tester.getTopLeft(markerFinder).dx;
-          expect(
-            indent,
-            40,
-            reason: 'list indent for $markerText must be 40 px',
+          expect(indent, 34);
+          final markerParagraphForGap = tester.renderObject<RenderParagraph>(markerFinder);
+          final boxes = markerParagraphForGap.getBoxesForSelection(
+            TextSelection(baseOffset: 0, extentOffset: markerText.length),
           );
+          final glyphEnd = tester.getTopLeft(markerFinder).dx + boxes.last.right;
+          expect(tester.getTopLeft(itemFinder).dx - glyphEnd, greaterThanOrEqualTo(9));
 
           final markerParagraph = tester.renderObject<RenderParagraph>(markerFinder);
           final itemParagraph = tester.renderObject<RenderParagraph>(itemFinder);
@@ -406,7 +406,7 @@ void main() {
 
         final style = _effectiveStyle(tester, '第一行 mixed CJK 与 Latin');
         expect(style.fontSize, fontSize);
-        expect(style.height, 1.75);
+        expect(style.height, 1.6);
         expect(
           style.leadingDistribution,
           TextLeadingDistribution.even,

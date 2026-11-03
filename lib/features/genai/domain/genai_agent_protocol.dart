@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'genai_agent_contract.dart';
 import 'genai_contract.dart';
 
-const genAiAgentProtocolMarker = 'TECHPIE_AGENT_PROTOCOL_V4';
+const genAiAgentProtocolMarker = 'TECHPIE_AGENT_PROTOCOL_V5';
 final _noncePattern = RegExp(r'^[a-zA-Z0-9_-]{16,80}$');
 
 String? genAiAgentNonceFromSystem(String system) =>
@@ -60,9 +60,28 @@ String _unfence(String source) {
   final match = RegExp(
     r'^<(techpie-(?:agent-)?(?:call|final))\s+([^<>]+)>([\s\S]*)</\1\s*>$',
   ).firstMatch(_unfence(source));
-  if (match == null) return null;
-  final tag = match.group(1)!;
-  final attributes = match.group(2)!;
+  if (match == null) {
+    // A provider-confirmed end of response can terminate a final answer. This
+    // normalization never closes tool calls, guesses a nonce, or extracts calls
+    // from prose. A partial closing tag or a second envelope still needs repair.
+    final open = RegExp(r'^<techpie-final\s+([^<>]+)>([\s\S]*)$').firstMatch(_unfence(source));
+    if (open == null) return null;
+    final header = _decisionHeader('techpie-final', open[1]!);
+    final body = open[2]!.trim();
+    if (header == null || RegExp(r'</?techpie-').hasMatch(body)) return null;
+    return (kind: 'final', nonce: header.nonce, body: body, legacy: false);
+  }
+  final header = _decisionHeader(match.group(1)!, match.group(2)!);
+  if (header == null) return null;
+  return (
+    kind: header.kind,
+    nonce: header.nonce,
+    body: match.group(3)!.trim(),
+    legacy: header.legacy
+  );
+}
+
+({String kind, String nonce, bool legacy})? _decisionHeader(String tag, String attributes) {
   final values = <String, String>{};
   final attribute = RegExp(r'''([a-z_]+)\s*=\s*(["'])([^"']*)\2''');
   var end = 0;
@@ -81,20 +100,39 @@ String _unfence(String source) {
       !_noncePattern.hasMatch(values['nonce'] ?? '')) {
     return null;
   }
-  return (
-    kind: tag.endsWith('-call') ? 'call' : 'final',
-    nonce: values['nonce']!,
-    body: match.group(3)!.trim(),
-    legacy: legacy
-  );
+  return (kind: tag.endsWith('-call') ? 'call' : 'final', nonce: values['nonce']!, legacy: legacy);
 }
 
-GenAiAgentDecision parseGenAiAgentDecision(String response, {required String nonce}) {
+GenAiAgentDecision parseGenAiAgentDecision(
+  String response, {
+  required String nonce,
+  bool allowPlain = true,
+}) =>
+    (GenAiAgentFinalStream(nonce, allowPlain: allowPlain)..add(response)).finish();
+
+GenAiAgentDecision _completeDecision(String response, String nonce, {required bool allowPlain}) {
   final frame = _decisionFrame(response);
-  if (frame == null || frame.nonce != nonce) {
+  if (frame != null && frame.nonce != nonce) {
+    throw const GenAiAgentToolException(
+      'wrong_nonce',
+      'Use CURRENT_CALL_NONCE, not an identity copied from history.',
+    );
+  }
+  if (frame == null) {
+    if (RegExp(r'<\|(?:open|tool_call)|"tool_calls"\s*:').hasMatch(response)) {
+      throw const GenAiAgentToolException(
+        'native_tool_format',
+        'Native function-call syntax is not supported by this text endpoint. '
+            'Rewrite the intended call using techpie-call with name and arguments. '
+            'No tool executed from this response; previously completed tools remain completed.',
+      );
+    }
+    if (allowPlain && _isPlainAnswer(response)) {
+      return GenAiAgentDecision(text: response.trim());
+    }
     throw const GenAiAgentToolException(
         'invalid_agent_response',
-        'Expected one complete current-nonce call or final frame; no surrounding prose. '
+        'Use ordinary Markdown for the answer, or one complete current-nonce tool call with no surrounding prose. '
             'Previously completed tools remain completed.');
   }
   if (frame.kind == 'final' && !frame.legacy) {
@@ -132,12 +170,43 @@ GenAiAgentDecision parseGenAiAgentDecision(String response, {required String non
   throw const GenAiAgentToolException('invalid_final', 'Expected a nonempty final answer.');
 }
 
+/// Plain text has no execution authority. Keep suspected control output on the
+/// recovery path; never reinterpret a malformed call as a successful answer.
+/// Explicit final envelopes can still quote protocol examples or contain JSON.
+bool _isPlainAnswer(String source) {
+  final text = _unfence(source);
+  if (text.isEmpty ||
+      RegExp(
+        r'</?techpie-(?!visual\b)|</?(?:tool_call|function_calls|invoke)\b|<\||\|>|```(?:tool_call|tool_response)\b',
+        caseSensitive: false,
+      ).hasMatch(text) ||
+      RegExp(r'"(?:tool_calls|function_call)"\s*:').hasMatch(text)) {
+    return false;
+  }
+  // Unframed JSON with action keys is ambiguous, including truncated JSON.
+  if (RegExp(r'^[{\[]').hasMatch(text) &&
+      RegExp(r'"(?:name|arguments|function|tool|recipient)"\s*:').hasMatch(text)) {
+    return false;
+  }
+  return true;
+}
+
+/// Preserve a rejected candidate without executing its visual/code blocks.
+String genAiUnverifiedAgentSource(String source) {
+  var fence = '```';
+  while (source.contains(fence)) {
+    fence += '`';
+  }
+  return '${fence}text\n$source\n$fence';
+}
+
 /// Read-only rendering of saved finals, including previous protocol versions.
-String? decodeGenAiAgentFinal(String source) {
+String? decodeGenAiAgentFinal(String source, {bool allowPlain = false}) {
   final frame = _decisionFrame(source);
-  if (frame?.kind != 'final') return null;
+  if (frame == null) return allowPlain && _isPlainAnswer(source) ? source.trim() : null;
+  if (frame.kind != 'final') return null;
   try {
-    return parseGenAiAgentDecision(source, nonce: frame!.nonce).text;
+    return parseGenAiAgentDecision(source, nonce: frame.nonce).text;
   } catch (_) {
     return null;
   }
@@ -415,61 +484,94 @@ void _checkDuplicateKeys(String source) {
 /// Stream ordinary Markdown while withholding a possibly split closing tag.
 /// Only whole-response validation commits the answer or authorizes execution.
 final class GenAiAgentFinalStream {
-  GenAiAgentFinalStream(this.nonce) : _legacy = _LegacyFinalStream(nonce);
+  GenAiAgentFinalStream(this.nonce, {this.allowPlain = true});
+  final bool allowPlain;
   final String nonce;
-  final _LegacyFinalStream _legacy;
+  final _source = StringBuffer();
   String _buffer = '';
   bool _started = false;
-  bool _done = false;
-  bool _old = false;
+  bool _plain = false;
+  bool _ignored = false;
+  bool _fenced = false;
+  _LegacyFinalStream? _legacy;
+
+  String get source => _source.toString();
+
+  /// The same normalization and header grammar govern preview and commitment.
+  /// A preview is provisional; callers must discard it on validation failure.
+  GenAiAgentDecision finish() => _completeDecision(source, nonce, allowPlain: allowPlain);
 
   String add(String chunk) {
-    if (_old) return _legacy.add(chunk);
-    if (_done) return '';
+    _source.write(chunk);
+    if (_ignored) return '';
+    if (_plain) return chunk;
+    if (_legacy != null) return _legacy!.add(chunk);
     _buffer += chunk;
     if (!_started) {
-      if (_buffer.trimLeft().startsWith('<techpie-agent-final')) {
-        _old = true;
-        return _legacy.add(_buffer);
+      _buffer = _buffer.trimLeft();
+      // Stream ordinary prose immediately. Ambiguous markup/JSON prefixes stay
+      // buffered until the complete response can be classified safely.
+      if (allowPlain &&
+          !_fenced &&
+          _buffer.isNotEmpty &&
+          !const ['<', '`', '{', '['].contains(_buffer[0])) {
+        _plain = true;
+        final value = _buffer;
+        _buffer = '';
+        return value;
+      }
+      if (!_fenced && _buffer.startsWith('`')) {
+        final newline = _buffer.indexOf('\n');
+        if (newline < 0) return '';
+        if (!RegExp(r'^```(?:xml|json|text)?[ \t]*\r?$').hasMatch(_buffer.substring(0, newline))) {
+          _ignored = true;
+          return '';
+        }
+        _fenced = true;
+        _buffer = _buffer.substring(newline + 1).trimLeft();
       }
       final end = _buffer.indexOf('>');
-      if (end < 0) {
-        if (_buffer.length > 256) _done = true;
-        return '';
-      }
-      final header = _buffer.substring(0, end + 1);
-      final frame = _decisionFrame('$header.</techpie-final>');
-      if (frame == null || frame.kind != 'final' || frame.nonce != nonce || frame.legacy) {
-        _done = true;
+      if (end < 0) return '';
+      final match = RegExp(r'^<(techpie-(?:agent-)?(?:call|final))\s+([^<>]+)>$')
+          .firstMatch(_buffer.substring(0, end + 1));
+      final header = match == null ? null : _decisionHeader(match[1]!, match[2]!);
+      if (header == null || header.kind != 'final' || header.nonce != nonce) {
+        _ignored = true;
         return '';
       }
       _started = true;
       _buffer = _buffer.substring(end + 1);
+      if (header.legacy) {
+        _legacy = _LegacyFinalStream();
+        return _legacy!.add(_buffer);
+      }
     }
-    const suffix = '</techpie-final>';
-    final end = _buffer.indexOf(suffix);
-    if (end >= 0) {
-      _done = true;
-      return _buffer.substring(0, end);
+    // A literal closing marker may appear in an explanation/code example.
+    // Hold a possible terminal suffix, then release it if more body follows.
+    final closing = RegExp(r'</techpie-final\s*>\s*(?:`{1,3}\s*)?$').firstMatch(_buffer);
+    int keepFrom;
+    if (closing != null) {
+      keepFrom = closing.start;
+    } else {
+      const close = '</techpie-final';
+      var keep = 0;
+      for (var i = 1; i <= close.length && i <= _buffer.length; i++) {
+        if (_buffer.endsWith(close.substring(0, i))) keep = i;
+      }
+      final spaced = RegExp(r'</techpie-final\s*$').firstMatch(_buffer);
+      keepFrom = spaced?.start ?? _buffer.length - keep;
     }
-    var keep = 0;
-    for (var i = 1; i < suffix.length && i <= _buffer.length; i++) {
-      if (_buffer.endsWith(suffix.substring(0, i))) keep = i;
-    }
-    final text = _buffer.substring(0, _buffer.length - keep);
-    _buffer = _buffer.substring(_buffer.length - keep);
-    return text;
+    final value = _buffer.substring(0, keepFrom);
+    _buffer = _buffer.substring(keepFrom);
+    return value;
   }
 }
 
 /// Incremental display decoder. Execution and completion still require the
 /// strict whole-response parser; a rejected preview is cleared by the runner.
 final class _LegacyFinalStream {
-  _LegacyFinalStream(String nonce)
-      : _prefix = RegExp(
-          '^\\s*<techpie-agent-final version="3" nonce="$nonce">\\s*\\{\\s*"text"\\s*:\\s*"',
-        );
-  final RegExp _prefix;
+  _LegacyFinalStream();
+  static final _prefix = RegExp(r'^\s*\{\s*"text"\s*:\s*"');
   String _header = '';
   bool _started = false;
   bool _done = false;

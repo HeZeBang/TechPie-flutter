@@ -8,7 +8,31 @@ import '../domain/genai_context_usage.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_platform_contract.dart';
-import 'genai_chat_service.dart';
+
+enum GenAiChatPhase {
+  idle,
+  preparing,
+  streaming,
+  completed,
+  interrupted,
+  cancelled,
+  failed,
+  needsLogin
+}
+
+final class GenAiTurnFile {
+  const GenAiTurnFile({required this.id, required this.name, this.content});
+  final String id;
+  final String name;
+  final String? content;
+  Map<String, Object?> toJson() =>
+      {'id': id, 'name': name, if (content != null) 'content': content};
+  factory GenAiTurnFile.fromJson(Map<String, Object?> json) => GenAiTurnFile(
+        id: json['id']! as String,
+        name: json['name']! as String,
+        content: json['content'] as String?,
+      );
+}
 
 final class GenAiConversationTurn {
   GenAiConversationTurn(
@@ -30,15 +54,7 @@ final class GenAiConversationTurn {
         'parentId': parentId,
         'actionScopeId': actionScopeId ?? id,
         'isAgent': isAgent,
-        if (attachedFileIds.isNotEmpty)
-          'files': [
-            for (var i = 0; i < attachedFileIds.length; i++)
-              {
-                'id': attachedFileIds[i],
-                'name': i < attachedFileNames.length ? attachedFileNames[i] : attachedFileIds[i],
-                'content': attachedFileContents[attachedFileIds[i]],
-              },
-          ],
+        if (files.isNotEmpty) 'files': [for (final file in files) file.toJson()],
         if (attachedImageUrls.isNotEmpty) 'images': attachedImageUrls,
         if (approvalBudget.isNotEmpty) 'approvalBudget': approvalBudget,
       };
@@ -52,16 +68,41 @@ final class GenAiConversationTurn {
       isAgent: value['isAgent']! as bool,
     );
     final files = (value['files'] as List? ?? const []).cast<Map<String, Object?>>();
-    turn.attachedFileIds = [for (final file in files) file['id']! as String];
-    turn.attachedFileNames = [for (final file in files) file['name']! as String];
-    turn.attachedFileContents = {
-      for (final file in files)
-        if (file['content'] is String) file['id']! as String: file['content']! as String,
-    };
+    turn.files = [for (final file in files) GenAiTurnFile.fromJson(file)];
     turn.attachedImageUrls = (value['images'] as List? ?? const []).cast<String>();
-    turn.attachedImageUrl = turn.attachedImageUrls.firstOrNull;
     turn.approvalBudget.addAll(Map<String, int>.from(value['approvalBudget'] as Map? ?? const {}));
     return turn;
+  }
+
+  GenAiConversationTurn snapshot() {
+    final interrupted = phase == GenAiChatPhase.preparing || phase == GenAiChatPhase.streaming;
+    return GenAiConversationTurn(
+      prompt,
+      id: id,
+      parentId: parentId,
+      actionScopeId: actionScopeId,
+      isAgent: isAgent,
+      isHistoryGap: isHistoryGap,
+    )
+      ..agentEvents.addAll(agentEvents.map((key, event) => MapEntry(key, _snapshotEvent(event))))
+      ..agentActivity.addAll(agentActivity.map(_snapshotEvent))
+      ..approvalBudget.addAll(approvalBudget)
+      ..agentStatus = interrupted ? '已停止' : agentStatus
+      ..agentTranscript = List.of(agentTranscript)
+      ..contextCompacted = contextCompacted
+      ..contextUsage = contextUsage
+      ..answer = answer
+      ..reasoning = reasoning
+      ..thinkingDurationMs = thinkingDurationMs
+      ..citations = List.of(citations)
+      ..files = List.of(files)
+      ..attachedImageUrls = List.of(attachedImageUrls)
+      ..attachedImageBytesList = [
+        for (final bytes in attachedImageBytesList) Uint8List.fromList(bytes),
+      ]
+      ..phase = interrupted ? GenAiChatPhase.cancelled : phase
+      ..failure = failure
+      ..finishReason = finishReason;
   }
 
   final String prompt;
@@ -115,14 +156,7 @@ final class GenAiConversationTurn {
       ];
 
   String agentStatus = '';
-  // Legacy archives may contain this redundant wire history. New turns use
-  // only the typed transcript below.
-  List<GenAiMessage> agentHistory = const [];
   List<GenAiAgentHistoryEntry> agentTranscript = const [];
-
-  /// Older archives stored a cumulative checkpoint on every agent turn.
-  /// New turns retain only their own entries, keeping memory and storage linear.
-  bool agentTranscriptIsDelta = false;
   bool contextCompacted = false;
 
   /// Latest request accounting; only its ready snapshot survives recovery.
@@ -133,12 +167,14 @@ final class GenAiConversationTurn {
   int? thinkingDurationMs;
   DateTime? thinkingStartTime;
   List<GenAiWebSearchCitation> citations = const [];
-  List<String> attachedFileNames = const [];
-  List<String> attachedFileIds = const [];
-  Map<String, String> attachedFileContents = const {};
-  String? attachedImageUrl;
+  List<GenAiTurnFile> files = const [];
+  List<String> get attachedFileNames => [for (final file in files) file.name];
+  List<String> get attachedFileIds => [for (final file in files) file.id];
+  Map<String, String> get attachedFileContents => {
+        for (final file in files)
+          if (file.content != null) file.id: file.content!,
+      };
   List<String> attachedImageUrls = const [];
-  Uint8List? attachedImageBytes;
   List<Uint8List> attachedImageBytesList = const [];
   GenAiChatPhase phase = GenAiChatPhase.preparing;
   GenAiFailure? failure;
@@ -152,9 +188,7 @@ extension GenAiConversationTurnArchive on GenAiConversationTurn {
   /// binary previews. Canonical attachment URLs and tool receipts suffice.
   Map<String, Object?> toInterruptedRecord() => {
         ...toArchiveJson(),
-        'agentHistory': <Object?>[],
         'agentTranscript': <Object?>[],
-        'attachedImageBytes': null,
         'attachedImageBytesList': <Object?>[],
       };
 
@@ -174,11 +208,6 @@ extension GenAiConversationTurnArchive on GenAiConversationTurn {
         'phase': phase.name,
         'thinkingDurationMs': thinkingDurationMs,
         'agentStatus': agentStatus,
-        'agentHistory': [
-          for (final message in agentHistory)
-            {'role': message.role.name, 'content': message.content},
-        ],
-        'agentTranscriptIsDelta': agentTranscriptIsDelta,
         'agentTranscript': [
           for (final entry in agentTranscript) entry.toJson(),
         ],
@@ -188,16 +217,8 @@ extension GenAiConversationTurnArchive on GenAiConversationTurn {
         'agentActivity': [
           for (final event in agentActivity) _agentEventToArchive(event),
         ],
-        'attachedFileNames': attachedFileNames,
-        'attachedFileIds': attachedFileIds,
-        'attachedFileContents': attachedFileContents,
-        'attachedImageUrl': attachedImageUrl,
+        'files': [for (final file in files) file.toJson()],
         'attachedImageUrls': attachedImageUrls,
-        'attachedImageBytes': attachedImageUrls.isNotEmpty ||
-                attachedImageBytes == null ||
-                attachedImageBytes!.length > 512 * 1024
-            ? null
-            : base64Encode(attachedImageBytes!),
         'attachedImageBytesList': [
           if (attachedImageUrls.isEmpty)
             for (final bytes in attachedImageBytesList)
@@ -242,28 +263,14 @@ GenAiConversationTurn genAiTurnFromArchive(Map<String, Object?> json) {
     ..phase = interrupted ? GenAiChatPhase.cancelled : savedPhase
     ..thinkingDurationMs = json['thinkingDurationMs'] as int?
     ..agentStatus = interrupted ? '任务已中断。已提交的操作可能完成，请先查看工具记录。' : json['agentStatus']! as String
-    ..agentHistory = [
-      for (final raw in json['agentHistory']! as List)
-        GenAiMessage(
-          role: _archiveRole((raw as Map)['role'] as String),
-          content: raw['content'] as String,
-        ),
-    ]
-    ..agentTranscriptIsDelta = json['agentTranscriptIsDelta'] as bool? ?? false
     ..agentTranscript = [
       for (final raw in json['agentTranscript']! as List)
         GenAiAgentHistoryEntry.fromJson(_archiveMap(raw)),
     ]
-    ..attachedFileNames = _archiveStrings(json['attachedFileNames'])
-    ..attachedFileIds = _archiveStrings(json['attachedFileIds'])
-    ..attachedFileContents = Map<String, String>.from(
-      json['attachedFileContents'] as Map? ?? const {},
-    )
-    ..attachedImageUrl = json['attachedImageUrl'] as String?
+    ..files = [
+      ..._recordFiles(json),
+    ]
     ..attachedImageUrls = _archiveStrings(json['attachedImageUrls'])
-    ..attachedImageBytes = json['attachedImageBytes'] == null
-        ? null
-        : base64Decode(json['attachedImageBytes']! as String)
     ..attachedImageBytesList = [
       for (final encoded in _archiveStrings(json['attachedImageBytesList'])) base64Decode(encoded),
     ]
@@ -312,6 +319,41 @@ GenAiConversationTurn genAiTurnFromArchive(Map<String, Object?> json) {
   return turn;
 }
 
+// Older server checkpoints used parallel file fields. Normalize once here;
+// live turns and newly written records only carry typed files.
+List<GenAiTurnFile> _recordFiles(Map<String, Object?> json) {
+  if (json['files'] case final List<Object?> files) {
+    return [for (final file in files) GenAiTurnFile.fromJson(_archiveMap(file))];
+  }
+  final ids = _archiveStrings(json['attachedFileIds']);
+  final names = _archiveStrings(json['attachedFileNames']);
+  final contents = json['attachedFileContents'] as Map? ?? const {};
+  return [
+    for (var i = 0; i < ids.length; i++)
+      GenAiTurnFile(
+        id: ids[i],
+        name: i < names.length ? names[i] : ids[i],
+        content: contents[ids[i]] as String?,
+      ),
+  ];
+}
+
+GenAiAgentEvent _snapshotEvent(GenAiAgentEvent event) => GenAiAgentEvent(
+      kind: event.kind,
+      turn: event.turn,
+      call: event.call,
+      result: event.result == null ? null : genAiAgentJsonMap(event.result!),
+      text: event.text,
+      failure: event.failure,
+      prepared: event.prepared == null
+          ? null
+          : GenAiAgentPreparedTool(
+              summary: event.prepared!.summary,
+              details: event.prepared!.details,
+              execute: () => Future<Object?>.error(const GenAiFailure(GenAiFailureKind.cancelled)),
+            ),
+    );
+
 Map<String, Object?> _agentEventToArchive(GenAiAgentEvent event) => {
       'kind': event.kind.name,
       'turn': event.turn,
@@ -359,11 +401,3 @@ GenAiAgentEvent _agentEventFromArchive(Map<String, Object?> event) {
 Map<String, Object?> _archiveMap(Object? value) => Map<String, Object?>.from(value! as Map);
 List<String> _archiveStrings(Object? value) =>
     List<String>.unmodifiable((value! as List).cast<String>());
-
-GenAiRole _archiveRole(String name) {
-  final role = GenAiRole.values.byName(name);
-  if (role == GenAiRole.system) {
-    throw const FormatException('Invalid history role');
-  }
-  return role;
-}

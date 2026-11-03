@@ -83,26 +83,23 @@ class _GenAiConversationMenuState extends State<GenAiConversationMenu> {
       if (action == 'rename') {
         final name = await genAiShowDialog<String>(
           context: context,
-          builder: (dialogContext) => genAiThemeScope(
-            dialogContext,
-            AnimatedBuilder(
-              animation: workspace,
-              builder: (_, __) => current()
-                  ? _RenameDialog(title: conversation.title, narrow: narrow)
-                  : GenAiDialogFrame(
-                      insetPadding: narrow ? const EdgeInsets.all(12) : null,
-                      shape: narrow ? _compactDialogShape : null,
-                      title: const Text('对话或账号已切换'),
-                      content: const Text('请重新打开重命名。'),
-                      actions: [
-                        TextButton(
-                          style: _dialogActionStyle(narrow),
-                          onPressed: () => Navigator.pop(dialogContext),
-                          child: const Text('关闭'),
-                        ),
-                      ],
-                    ),
-            ),
+          builder: (dialogContext) => AnimatedBuilder(
+            animation: workspace,
+            builder: (_, __) => current()
+                ? _RenameDialog(title: conversation.title, narrow: narrow)
+                : GenAiDialogFrame(
+                    insetPadding: narrow ? const EdgeInsets.all(12) : null,
+                    shape: narrow ? _compactDialogShape : null,
+                    title: const Text('对话或账号已切换'),
+                    content: const Text('请重新打开重命名。'),
+                    actions: [
+                      TextButton(
+                        style: _dialogActionStyle(narrow),
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('关闭'),
+                      ),
+                    ],
+                  ),
           ),
         );
         if (name == null || !current()) return;
@@ -207,7 +204,7 @@ class _GenAiConversationMenuState extends State<GenAiConversationMenu> {
     final revision = workspace.conversationRevision;
     final accountRevision = workspace.sessions.revision;
     final accountScope = workspace.accountScope;
-    final value = await genAiShowAnchoredMenu<String>(
+    final value = await genAiShowMenu<String>(
       context: context,
       anchorContext: anchorContext,
       items: items,
@@ -308,57 +305,53 @@ Future<void> _showGenAiConversationExport(
     final markdown = exportGenAiTranscript(archive);
     await genAiShowDialog<void>(
       context: context,
-      builder: (dialogContext) => genAiThemeScope(
-        dialogContext,
-        AnimatedBuilder(
-          animation: workspace,
-          builder: (_, __) => GenAiDialogFrame(
-            insetPadding: narrow ? const EdgeInsets.all(12) : null,
-            shape: narrow ? _compactDialogShape : null,
-            title: const Text('导出对话'),
-            content: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: SingleChildScrollView(
-                child: SelectableText(
-                  current() ? markdown : '对话或账号已切换，请重新打开导出。',
-                  contextMenuBuilder: genAiTextSelectionContextMenu,
-                ),
+      builder: (dialogContext) => AnimatedBuilder(
+        animation: workspace,
+        builder: (_, __) => GenAiDialogFrame(
+          insetPadding: narrow ? const EdgeInsets.all(12) : null,
+          shape: narrow ? _compactDialogShape : null,
+          title: const Text('导出对话'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                current() ? markdown : '对话或账号已切换，请重新打开导出。',
               ),
             ),
-            actions: [
-              TextButton(
-                style: _dialogActionStyle(narrow),
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('关闭'),
-              ),
-              FilledButton.icon(
-                style: _dialogActionStyle(narrow),
-                onPressed: !current()
-                    ? null
-                    : () async {
-                        if (!current()) return;
-                        try {
-                          await Clipboard.setData(ClipboardData(text: markdown));
-                          if (dialogContext.mounted && current()) {
-                            showAdaptiveFeedback(
-                              context: dialogContext,
-                              message: '已复制 Markdown 对话',
-                            );
-                          }
-                        } catch (_) {
-                          if (dialogContext.mounted) {
-                            showAdaptiveFeedback(
-                              context: dialogContext,
-                              message: '无法复制，请手动选择文字',
-                            );
-                          }
-                        }
-                      },
-                icon: const GenAiIcon(GenAiGlyph.copy),
-                label: const Text('复制 Markdown'),
-              ),
-            ],
           ),
+          actions: [
+            TextButton(
+              style: _dialogActionStyle(narrow),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('关闭'),
+            ),
+            FilledButton.icon(
+              style: _dialogActionStyle(narrow),
+              onPressed: !current()
+                  ? null
+                  : () async {
+                      if (!current()) return;
+                      try {
+                        await Clipboard.setData(ClipboardData(text: markdown));
+                        if (dialogContext.mounted && current()) {
+                          showAdaptiveFeedback(
+                            context: dialogContext,
+                            message: '已复制 Markdown 对话',
+                          );
+                        }
+                      } catch (_) {
+                        if (dialogContext.mounted) {
+                          showAdaptiveFeedback(
+                            context: dialogContext,
+                            message: '无法复制，请手动选择文字',
+                          );
+                        }
+                      }
+                    },
+              icon: const GenAiIcon(GenAiGlyph.copy),
+              label: const Text('复制 Markdown'),
+            ),
+          ],
         ),
       ),
     );
@@ -444,7 +437,6 @@ class _RenameDialogState extends State<_RenameDialog> {
               child: TextField(
                 key: const ValueKey('genai-rename-input'),
                 controller: _name,
-                contextMenuBuilder: genAiTextSelectionContextMenu,
                 autofocus: true,
                 maxLength: _maxLength,
                 textAlignVertical: TextAlignVertical.center,

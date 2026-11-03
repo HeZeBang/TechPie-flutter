@@ -9,6 +9,7 @@ import 'genai_activity_line.dart';
 import 'genai_icons.dart';
 import 'genai_image.dart';
 import 'genai_image_actions.dart';
+import 'genai_image_viewer.dart';
 import 'genai_theme.dart';
 import 'genai_thinking_view.dart';
 import 'genai_tool_result_summary.dart';
@@ -26,6 +27,7 @@ String genAiAgentToolName(String? name) => switch (name) {
       'reserve_court' => '处理场地预约',
       'generate_image' => '生成图片',
       'inspect_image' => '查看图片',
+      'get_visual_guide' => '准备交互示例',
       _ => name ?? '工具',
     };
 
@@ -61,15 +63,17 @@ class GenAiAgentToolActivity extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final hasFailures = events.any(
-      (event) => event.result?['ok'] == false || event.result?['error'] != null,
+      (event) {
+        final error = event.result?['error'];
+        if (error is Map && error['code'] == 'approval_denied') return false;
+        return event.result?['ok'] == false || error != null;
+      },
     );
     final status = running
         ? ' · 进行中'
-        : stopped
-            ? ' · 已停止'
-            : hasFailures
-                ? ' · 有未完成项'
-                : '';
+        : hasFailures
+            ? ' · 有未完成项'
+            : '';
     final color = running
         ? colors.primary
         : hasFailures || stopped
@@ -83,7 +87,9 @@ class GenAiAgentToolActivity extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 10),
       child: GenAiDisclosure(
         key: const ValueKey('agent-tool-activity-toggle'),
-        initiallyExpanded: running,
+        initiallyExpanded: running || hasFailures,
+        expandWhen: running || hasFailures,
+        collapseWhen: !running && !hasFailures,
         titleKey: const ValueKey('agent-tool-activity-heading'),
         title: _title(status),
         color: running ? colors.primary : colors.onSurfaceVariant,
@@ -151,7 +157,11 @@ class GenAiAgentToolActivity extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         child: Text(
-          running && identical(event, activity.lastOrNull) ? '正在重试请求' : '请求格式有误',
+          running
+              ? '正在整理回复格式'
+              : stopped
+                  ? '回复格式未恢复'
+                  : '已恢复回复格式',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -300,6 +310,7 @@ class GenAiAgentToolCard extends StatelessWidget {
     final complete = event.kind == GenAiAgentEventKind.toolFinished;
     final failed = result?['ok'] == false || result?['error'] != null;
     final error = result?['error'];
+    final cancelled = error is Map && error['code'] == 'approval_denied';
     final unknown = error is Map && error['code'] == 'outcome_unknown' ||
         stopped && !complete && event.kind == GenAiAgentEventKind.toolStarted;
     final payload = result?['result'];
@@ -310,19 +321,20 @@ class GenAiAgentToolCard extends StatelessWidget {
         call.name == 'generate_image' &&
         payload is Map &&
         payload['status'] == 'generated';
-    final images = generated ? _verifiedImages(payload) : const <Uri>[];
-    final status = unknown
-        ? '结果待核实 · 请先查看记录'
-        : complete
-            ? failed
-                ? '未完成 · 查看原因'
-                : '已完成'
-            : stopped
-                ? '已停止 · 未执行'
-                : event.kind == GenAiAgentEventKind.approvalRequired
-                    ? '等待你的确认'
-                    : '处理中';
-    final color = unknown || failed
+    final status = cancelled
+        ? '已取消'
+        : unknown
+            ? '结果待核实 · 请先查看记录'
+            : complete
+                ? failed
+                    ? '未完成 · 查看原因'
+                    : '已完成'
+                : stopped
+                    ? '已停止 · 未执行'
+                    : event.kind == GenAiAgentEventKind.approvalRequired
+                        ? '等待你的确认'
+                        : '处理中';
+    final color = unknown || failed && !cancelled
         ? colors.error
         : complete || stopped
             ? colors.onSurfaceVariant
@@ -342,16 +354,18 @@ class GenAiAgentToolCard extends StatelessWidget {
           rail: false,
           color: palette.muted,
           leading: GenAiIcon(
-            unknown || failed
-                ? GenAiGlyph.info
-                : complete
-                    ? GenAiGlyph.check
-                    : GenAiGlyph.more,
+            cancelled
+                ? GenAiGlyph.close
+                : unknown || failed
+                    ? GenAiGlyph.info
+                    : complete
+                        ? GenAiGlyph.check
+                        : GenAiGlyph.more,
             color: color,
           ),
           title: genAiAgentToolName(call.name),
           subtitle: status,
-          summary: summary.isEmpty ? null : summary,
+          summary: cancelled || summary.isEmpty ? null : summary,
           children: [
             if (result?['reused'] == true)
               Padding(
@@ -376,7 +390,6 @@ class GenAiAgentToolCard extends StatelessWidget {
                     ),
                     child: SelectableText(
                       const JsonEncoder.withIndent('  ').convert(result ?? call.arguments),
-                      contextMenuBuilder: genAiTextSelectionContextMenu,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colors.onSurfaceVariant,
                         fontFamily: kGenAiMonospaceFamily,
@@ -390,21 +403,6 @@ class GenAiAgentToolCard extends StatelessWidget {
             ),
           ],
         ),
-        if (generated)
-          Padding(
-            padding: const EdgeInsetsDirectional.only(start: 6, end: 6, bottom: 8),
-            child: images.isEmpty
-                ? Text('图片未能直接预览，可查看图片记录。', style: body)
-                : Column(
-                    children: [
-                      for (final uri in images)
-                        _GenAiAgentImagePreview(
-                          key: ValueKey('agent-image-${call.id}-$uri'),
-                          uri: uri,
-                        ),
-                    ],
-                  ),
-          ),
         if ((generated || unknown) && call.name == 'generate_image')
           Align(
             alignment: AlignmentDirectional.centerStart,
@@ -417,21 +415,53 @@ class GenAiAgentToolCard extends StatelessWidget {
       ],
     );
   }
+}
 
-  List<Uri> _verifiedImages(Map<dynamic, dynamic> payload) {
-    final values = payload['images'];
-    if (values is! List) return const [];
-    final images = <Uri>[];
-    for (final value in values) {
-      if (value is! String) continue;
-      final display = genAiAutomaticImageUri(
-        value,
-        imageDisplayUri: imageDisplayUri,
-      );
-      if (display != null && !images.contains(display)) images.add(display);
-      if (images.length == 4) break;
+/// Durable generated artifacts stay visible independently of tool disclosure.
+class GenAiAgentImages extends StatelessWidget {
+  const GenAiAgentImages({super.key, required this.events, this.imageDisplayUri});
+
+  final Iterable<GenAiAgentEvent> events;
+  final Uri Function(String)? imageDisplayUri;
+
+  @override
+  Widget build(BuildContext context) {
+    final images = <Uri>{};
+    for (final event in events) {
+      final result = event.result;
+      final payload = result?['result'];
+      if (event.call?.name != 'generate_image' ||
+          event.kind != GenAiAgentEventKind.toolFinished ||
+          result?['ok'] != true ||
+          payload is! Map ||
+          payload['status'] != 'generated') {
+        continue;
+      }
+      final values = payload['images'];
+      if (values is! List) continue;
+      for (final value in values.whereType<String>()) {
+        final uri = genAiAutomaticImageUri(value, imageDisplayUri: imageDisplayUri);
+        if (uri != null) images.add(uri);
+      }
     }
-    return images;
+    if (images.isEmpty) return const SizedBox.shrink();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = images.length > 1 && constraints.maxWidth >= 300 ? 2 : 1;
+        final width = ((constraints.maxWidth - (columns - 1) * 12) / columns).clamp(0.0, 280.0);
+        return Wrap(
+          spacing: 12,
+          runSpacing: 4,
+          children: [
+            for (final uri in images)
+              SizedBox(
+                width: width,
+                child: _GenAiAgentImagePreview(key: ValueKey('agent-image-$uri'), uri: uri),
+              ),
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -453,6 +483,7 @@ class _GenAiAgentImagePreviewState extends State<_GenAiAgentImagePreview> {
   Widget _image() => GenAiImageActions(
         image: NetworkImage(widget.uri.toString()),
         link: genAiImageUri(widget.uri.path),
+        showMenuButton: false,
         child: Image.network(
           widget.uri.toString(),
           fit: BoxFit.contain,
@@ -469,29 +500,9 @@ class _GenAiAgentImagePreviewState extends State<_GenAiAgentImagePreview> {
     if (_viewer != null) return;
     final route = DialogRoute<void>(
       context: context,
-      builder: (context) => genAiThemeScope(
-        context,
-        Dialog(
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: InteractiveViewer(maxScale: 4, child: _image()),
-                ),
-              ),
-              Positioned(
-                top: 8,
-                left: 8,
-                child: IconButton.filledTonal(
-                  tooltip: '关闭图片预览',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const GenAiIcon(GenAiGlyph.close),
-                ),
-              ),
-            ],
-          ),
-        ),
+      builder: (context) => GenAiImageViewer(
+        image: NetworkImage(widget.uri.toString()),
+        link: genAiImageUri(widget.uri.path),
       ),
     );
     _viewer = route;
@@ -523,20 +534,16 @@ class _GenAiAgentImagePreviewState extends State<_GenAiAgentImagePreview> {
           button: true,
           label: '放大生成的图片',
           onTap: _open,
-          child: Tooltip(
-            message: '点击放大',
-            child: InkWell(
-              onTap: _open,
+          child: InkWell(
+            onTap: _open,
+            borderRadius: BorderRadius.circular(10),
+            child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: ColoredBox(
-                  color: Theme.of(context).colorScheme.surface,
-                  child: SizedBox(
-                    height: 240,
-                    width: double.infinity,
-                    child: Center(child: _image()),
-                  ),
+              child: ColoredBox(
+                color: Theme.of(context).colorScheme.surface,
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: Center(child: _image()),
                 ),
               ),
             ),
@@ -570,9 +577,12 @@ class GenAiAgentApprovalCard extends StatelessWidget {
       const {
         'venue': '场地',
         'prompt': '画面描述',
+        'title': '标题',
         'model': '模型',
         'size': '分辨率',
         'quality': '质量',
+        'output_format': '图片格式',
+        'output_compression': 'JPEG 压缩率',
         'count': '数量',
         'quota': '额度',
         'previous_outcome': '此前操作',
@@ -703,7 +713,6 @@ class GenAiAgentApprovalCard extends StatelessWidget {
                               const SizedBox(height: 5),
                               SelectableText(
                                 _detailValue(entry),
-                                contextMenuBuilder: genAiTextSelectionContextMenu,
                                 style: valueStyle,
                               ),
                             ],

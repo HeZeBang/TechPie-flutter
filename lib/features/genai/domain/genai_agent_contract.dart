@@ -22,13 +22,18 @@ final class GenAiAgentTool {
   GenAiAgentTool({
     required this.name,
     required this.description,
-    required Map<String, Object?> parameters,
+    required Map<String, Object?> inputSchema,
+    Map<String, Object?>? outputSchema,
+    Map<String, Object?> annotations = const {},
     required this.prepare,
     this.maxApprovalsPerRun,
-  }) : parameters = genAiAgentJsonMap(parameters) {
+  })  : inputSchema = genAiAgentJsonMap(inputSchema),
+        outputSchema = outputSchema == null ? null : genAiAgentJsonMap(outputSchema),
+        annotations = genAiAgentJsonMap(annotations) {
     if (!RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(name) ||
         description.trim().isEmpty ||
-        parameters['type'] != 'object' ||
+        inputSchema['type'] != 'object' ||
+        (outputSchema != null && outputSchema['type'] != 'object') ||
         (maxApprovalsPerRun != null && maxApprovalsPerRun! <= 0)) {
       throw ArgumentError('Invalid agent tool definition');
     }
@@ -36,7 +41,11 @@ final class GenAiAgentTool {
 
   final String name;
   final String description;
-  final Map<String, Object?> parameters;
+  final Map<String, Object?> inputSchema;
+  final Map<String, Object?>? outputSchema;
+
+  /// Descriptive MCP-style hints only; these never grant execution permission.
+  final Map<String, Object?> annotations;
   final GenAiAgentPrepare prepare;
 
   /// Host policy, never a model argument. Denied requests also consume the
@@ -46,21 +55,80 @@ final class GenAiAgentTool {
   Map<String, Object?> toJson() => {
         'name': name,
         'description': description,
-        'parameters': parameters,
+        'inputSchema': inputSchema,
+        if (outputSchema != null) 'outputSchema': outputSchema,
+        if (annotations.isNotEmpty) 'annotations': annotations,
       };
+}
+
+/// MCP-style result envelope, independent of TechPie's durable turn protocol.
+/// Both the structured value and its text fallback are immutable snapshots.
+final class GenAiToolResult {
+  GenAiToolResult({
+    List<Map<String, Object?>> content = const [],
+    Map<String, Object?>? structuredContent,
+    this.isError = false,
+  })  : content = List.unmodifiable(content.map(genAiAgentJsonMap)),
+        structuredContent = structuredContent == null ? null : genAiAgentJsonMap(structuredContent);
+
+  factory GenAiToolResult.fromValue(Object? value) {
+    final data = value is Map<String, Object?> ? value : <String, Object?>{'value': value};
+    return GenAiToolResult(
+      content: [
+        {'type': 'text', 'text': jsonEncode(data)},
+      ],
+      structuredContent: data,
+    );
+  }
+
+  final List<Map<String, Object?>> content;
+  final Map<String, Object?>? structuredContent;
+  final bool isError;
+
+  Map<String, Object?> toJson() => {
+        'content': content,
+        if (structuredContent != null) 'structuredContent': structuredContent,
+        'isError': isError,
+      };
+
+  /// Keep existing campus receipts compact and readable by older clients.
+  Map<String, Object?> get recordValue {
+    final data = structuredContent;
+    final onlyFallback = content.isEmpty ||
+        (content.length == 1 &&
+            content.single['type'] == 'text' &&
+            content.single['text'] == jsonEncode(data));
+    if (data != null && onlyFallback) return data;
+    return {
+      if (data != null) 'structuredContent': data,
+      'content': content,
+    };
+  }
 }
 
 final class GenAiAgentPreparedTool {
   GenAiAgentPreparedTool({
-    required this.execute,
+    required Future<Object?> Function() execute,
     this.requiresApproval = false,
+    this.onApproved,
     this.summary,
     this.executionTimeout,
     this.effectKey,
     Map<String, Object?> details = const {},
-  }) : details = genAiAgentJsonMap(details);
+  })  : _execute = execute,
+        details = genAiAgentJsonMap(details);
 
-  final Future<Object?> Function() execute;
+  final Future<Object?> Function() _execute;
+
+  /// Native services can keep returning domain JSON; normalize exactly once at
+  /// the execution boundary. No MCP connection or transport is involved.
+  Future<GenAiToolResult> execute() async {
+    final value = await _execute();
+    return value is GenAiToolResult ? value : GenAiToolResult.fromValue(value);
+  }
+
+  /// Host notification after the user accepts, before execution starts.
+  final void Function()? onApproved;
   final bool requiresApproval;
   final String? summary;
   final Duration? executionTimeout;
@@ -143,7 +211,20 @@ final class GenAiAgentToolRegistry {
         'Choose a listed tool.',
       );
     }
-    _validate(call.arguments, tool.parameters, 'arguments', 0);
+    _validate(call.arguments, tool.inputSchema, 'arguments', 0);
+  }
+
+  void validateResult(GenAiAgentToolCall call, GenAiToolResult result) {
+    final schema = _tools[call.name]?.outputSchema;
+    if (schema == null || result.isError) return;
+    try {
+      _validate(result.structuredContent, schema, 'result', 0);
+    } on GenAiAgentToolException {
+      throw const GenAiAgentToolException(
+        'invalid_tool_result',
+        'The tool completed but returned data outside its declared output schema.',
+      );
+    }
   }
 
   static Never _invalid(String path, String reason) =>
@@ -248,6 +329,7 @@ final class GenAiAgentEvent {
     this.result,
     this.text,
     this.failure,
+    this.partialText,
     this.contextUsage,
     this.history = const [],
   });
@@ -259,6 +341,9 @@ final class GenAiAgentEvent {
   final Map<String, Object?>? result;
   final String? text;
   final GenAiFailure? failure;
+
+  /// Inert, explicitly unverified output retained after format recovery fails.
+  final String? partialText;
   final GenAiContextUsage? contextUsage;
   final List<GenAiMessage> history;
 }
@@ -270,15 +355,13 @@ const genAiMutationToolNames = {'generate_image', 'reserve_court'};
 /// Warning classification, name-only on purpose. A finished `reserve_court`
 /// receipt may describe an external effect (including an unknown outcome)
 /// whatever its arguments say, so this never inspects them.
-bool genAiIsMutationToolName(String? name) =>
-    name != null && genAiMutationToolNames.contains(name);
+bool genAiIsMutationToolName(String? name) => name != null && genAiMutationToolNames.contains(name);
 
 /// Ledger classification, which is stricter than the warning: a court tool is
 /// only a mutation receipt when it actually books a slot. Read-only
 /// `reserve_court` actions stay retryable because they changed nothing.
 bool genAiRecordsMutationReceipt(String name, Map<String, Object?> arguments) =>
-    name == 'generate_image' ||
-    name == 'reserve_court' && arguments['action'] == 'book';
+    name == 'generate_image' || name == 'reserve_court' && arguments['action'] == 'book';
 
 /// True when a mutation-capable tool finished successfully, or with an unknown
 /// outcome that may still have been dispatched. Proposed, pending, rejected,

@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/presentation/genai_tools_page.dart';
+import 'package:techpie/features/genai/presentation/genai_image_studio_page.dart';
 import 'package:techpie/features/genai/presentation/picker/genai_picker.dart';
 
 import '../support/fakes.dart';
@@ -37,9 +37,8 @@ void main() {
     await demo.workspace.reloadModels();
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiToolsPage(
+        home: GenAiImageStudioPage(
           workspace: demo.workspace,
-          initialTab: 1,
           picker: picker,
         ),
       ),
@@ -114,9 +113,8 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiToolsPage(
+        home: GenAiImageStudioPage(
           workspace: demo.workspace,
-          initialTab: 1,
           picker: picker,
         ),
       ),

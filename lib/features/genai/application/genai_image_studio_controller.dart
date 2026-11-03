@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
+import '../domain/genai_image_size.dart';
 import '../domain/genai_platform_contract.dart';
 import '../domain/genai_reference_image.dart';
 import 'genai_repository.dart';
@@ -18,6 +19,35 @@ final class GenAiImageDraft {
   String quality = 'low';
   final references = <GenAiReferenceImage>[];
   final previews = <GenAiReferenceImage, Uint8List>{};
+  void selectAspectRatio(String value) {
+    final options = GenAiImageSize.presets[value];
+    if (options == null) return;
+    aspectRatio = value;
+    if (resolution != 'custom' && !options.containsKey(resolution)) resolution = options.keys.first;
+  }
+
+  void selectOrientation(String value) {
+    if (value == 'square') {
+      selectAspectRatio('1:1');
+      return;
+    }
+    final opposite = aspectRatio.split(':').reversed.join(':');
+    selectAspectRatio(
+      GenAiImageSize.presets.containsKey(opposite) && orientationOf(opposite) == value
+          ? opposite
+          : value == 'landscape'
+              ? '16:9'
+              : '9:16',
+    );
+  }
+
+  static String orientationOf(String ratio) {
+    final sides = ratio.split(':').map(int.tryParse).toList();
+    if (sides.length != 2 || sides[0] == null || sides[1] == null || sides[0] == sides[1]) {
+      return 'square';
+    }
+    return sides[0]! > sides[1]! ? 'landscape' : 'portrait';
+  }
 }
 
 final class GenAiImageStudioController extends ChangeNotifier {

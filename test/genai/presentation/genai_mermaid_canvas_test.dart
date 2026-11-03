@@ -106,7 +106,9 @@ void main() {
         if (direction == 'TD') {
           expect(tester.getSize(find.byType(InteractiveViewer)).height, greaterThan(380));
         }
-        await tester.tap(find.byTooltip('适应窗口'));
+        await tester.tap(find.byTooltip('更多操作'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('适应窗口'));
         await tester.pumpAndSettle();
         expectFits();
         await dragPastEdges();
@@ -117,7 +119,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(viewer.transformationController!.value.getMaxScaleOnAxis(), greaterThan(1));
         await dragPastEdges();
-        await tester.tap(find.byTooltip('适应窗口'));
+        await tester.tap(find.byTooltip('更多操作'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('适应窗口'));
         await tester.pumpAndSettle();
         expectFits();
         await tester.tap(find.byTooltip('全屏查看'));
@@ -177,17 +181,21 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byTooltip('全屏查看'), findsOneWidget);
         expectPanBounded();
-        await tester.tap(find.byTooltip('查看源码'));
+        await tester.tap(find.byTooltip('更多操作'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('查看源码'));
         await tester.pumpAndSettle();
         expect(find.text(code), findsOneWidget);
-        await tester.tap(find.byTooltip('切换到图表'));
+        await tester.tap(find.byTooltip('更多操作'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('切换到图表'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       }
     });
   }
 
-  testWidgets('diagram cache hits exact matches and invalidates on code, width and theme',
+  testWidgets('diagram cache reuses natural layout on resize and invalidates on code and theme',
       (tester) async {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -240,9 +248,9 @@ void main() {
     await pump(first);
     expect(painter(), same(initial));
 
-    // Width is part of the layout key.
+    // Viewport width must not rerun natural graph layout.
     await pump(first, width: 420);
-    expect(painter(), isNot(same(initial)));
+    expect(painter(), same(initial));
 
     // Returning to the original width restores the exact cached frame.
     await pump(first);

@@ -92,14 +92,16 @@ void main() {
       transport: transport,
       store: store,
       issuer: trustedIssuer
-          ? CampusGenAiSessionIssuer(
-              thirdPartyAuth: bindings,
-              exchange: exchange ??
-                  (provider, _) async {
-                    expect(provider.studentId, isEmpty);
-                    expect(provider.cookies, contains('CASTGC='));
-                    return const GenAiCredential(token: 'genai-token');
-                  },
+          ? _CampusIssuerAdapter(
+              CampusGenAiSessionIssuer(
+                thirdPartyAuth: bindings,
+                exchange: exchange ??
+                    (provider, _) async {
+                      expect(provider.studentId, isEmpty);
+                      expect(provider.cookies, contains('CASTGC='));
+                      return const GenAiCredential(token: 'genai-token');
+                    },
+              ),
             )
           : CallbackIssuer(
               (_, __) async => const GenAiCredential(token: 'untrusted-token'),
@@ -295,4 +297,25 @@ void main() {
     expect(f.transport.requests, isEmpty);
     expect(f.store.writes, 0);
   });
+}
+
+class _CampusIssuerAdapter implements GenAiCampusIdentityIssuer {
+  _CampusIssuerAdapter(this.delegate);
+  final GenAiCampusIdentityIssuer delegate;
+
+  @override
+  Future<GenAiCredential> issue(GenAiOwner owner, GenAiCancellation cancellation) =>
+      delegate.issue(owner, cancellation);
+
+  @override
+  Future<GenAiCredential> issueForCampusBinding({
+    required String primaryUserId,
+    required String bindingId,
+    required GenAiCancellation cancellation,
+  }) =>
+      delegate.issueForCampusBinding(
+        primaryUserId: primaryUserId,
+        bindingId: bindingId,
+        cancellation: cancellation,
+      );
 }

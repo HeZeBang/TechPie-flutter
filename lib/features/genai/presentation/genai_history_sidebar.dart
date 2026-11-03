@@ -109,7 +109,7 @@ class GenAiHistorySidebar extends StatelessWidget {
                 icon: const GenAiIcon(GenAiGlyph.plus),
                 label: '新对话',
                 shortcut: touch ? null : shortcutLabel,
-                onPressed: onNewChat,
+                onPressed: sending ? null : onNewChat,
               ),
               _NavButton(
                 icon: const GenAiIcon(GenAiGlyph.image),

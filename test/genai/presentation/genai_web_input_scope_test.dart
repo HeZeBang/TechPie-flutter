@@ -145,11 +145,9 @@ void main() {
     expect(probe.blocks, isFalse);
   });
 
-  testWidgets('scope toggles preserve the child state and only notify on change',
-      (tester) async {
+  testWidgets('scope toggles preserve the child state and only notify on change', (tester) async {
     const probe = _Probe();
-    Widget tree(bool blocked) =>
-        GenAiWebInputScope(blocked: blocked, child: probe);
+    Widget tree(bool blocked) => GenAiWebInputScope(blocked: blocked, child: probe);
 
     await tester.pumpWidget(tree(false));
     final state = tester.state<_ProbeState>(find.byType(_Probe));
@@ -193,8 +191,7 @@ void main() {
     expect(probe.blocks, isFalse);
   });
 
-  testWidgets('route first: closing the scope cannot unblock while covered',
-      (tester) async {
+  testWidgets('route first: closing the scope cannot unblock while covered', (tester) async {
     final (scope, probe) = await _pumpHarness(tester);
 
     await _openDialog(tester);
@@ -216,8 +213,7 @@ void main() {
     expect(probe.blocks, isFalse);
   });
 
-  testWidgets('scope first: closing the route cannot unblock while scoped',
-      (tester) async {
+  testWidgets('scope first: closing the route cannot unblock while scoped', (tester) async {
     // Start blocked so the probe's very first build evaluates the scope first;
     // a short-circuit there would leave it without a route dependency.
     final (scope, probe) = await _pumpHarness(tester, initial: true);
@@ -242,8 +238,7 @@ void main() {
     expect(probe.blocks, isFalse);
   });
 
-  testWidgets('compact drawer publishes blocking and closing clears it',
-      (tester) async {
+  testWidgets('compact drawer publishes blocking and closing clears it', (tester) async {
     await _showWorkspace(tester, size: const Size(375, 812));
     final prompt = find.byKey(const ValueKey('genai-prompt'));
     expect(prompt, findsOneWidget);
@@ -270,8 +265,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('pinned wide rail stays unblocked across collapse and expand',
-      (tester) async {
+  testWidgets('pinned wide rail stays unblocked across collapse and expand', (tester) async {
     await _showWorkspace(tester, size: const Size(1200, 900));
     expect(find.byType(Drawer), findsNothing);
     expect(_publishedBlock(tester), isFalse);
@@ -288,8 +282,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('crossing the 960 boundary with an open drawer cannot leak blocking',
-      (tester) async {
+  testWidgets('crossing the 960 boundary with an open drawer cannot leak blocking', (tester) async {
     await _showWorkspace(tester, size: const Size(959, 812));
     await tester.tap(find.byTooltip('打开导航与历史'));
     await tester.pumpAndSettle();

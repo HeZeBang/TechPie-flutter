@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
-import '../application/genai_chat_service.dart';
 import '../application/genai_workspace_controller.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
@@ -180,7 +179,7 @@ class GenAiTurnView extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: GenAiAgentToolActivity(
-              key: ObjectKey(turn),
+              key: ValueKey(turn.id),
               events: turn.agentEvents.values.toList(),
               activity: turn.agentActivity,
               thinking: turn.isAgentThinking,
@@ -242,6 +241,11 @@ class GenAiTurnView extends StatelessWidget {
             imageBuilder: actions.markdownImage,
             onTapLink: (_, href, __) => actions.openLink(href),
           ),
+        if (turn.isAgent)
+          GenAiAgentImages(
+            events: turn.agentEvents.values,
+            imageDisplayUri: actions.imageDisplayUri,
+          ),
         if (_incomplete)
           Padding(
             padding: const EdgeInsets.only(top: 10),
@@ -266,13 +270,18 @@ class GenAiTurnView extends StatelessWidget {
       context.isLast && turn.failure?.kind == GenAiFailureKind.campusNetworkRequired;
 
   Widget _failureNotice(GenAiPalette palette) {
+    if (turn.phase == GenAiChatPhase.cancelled && turn.failure == null) {
+      return Text('已停止', style: TextStyle(fontSize: 13, color: palette.muted));
+    }
     final title = _campusFailure
         ? '暂时无法连接校园 GenAI'
-        : turn.failure != null
-            ? genAiFailureText(turn.failure!)
-            : turn.isAgent && turn.agentStatus.isNotEmpty
-                ? turn.agentStatus
-                : '已停止';
+        : turn.isAgent && turn.failure?.kind == GenAiFailureKind.protocol && turn.answer.isNotEmpty
+            ? '回复未验证，可以继续整理。'
+            : turn.failure != null
+                ? genAiFailureText(turn.failure!)
+                : turn.isAgent && turn.agentStatus.isNotEmpty
+                    ? turn.agentStatus
+                    : '已停止';
     final text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -425,7 +434,7 @@ class GenAiTurnView extends StatelessWidget {
   ) async {
     final answer = turn.answer;
     final palette = GenAiPalette.of(hostContext);
-    final value = await genAiShowAnchoredMenu<String>(
+    final value = await genAiShowMenu<String>(
       context: hostContext,
       anchorContext: anchorContext,
       items: [
@@ -510,7 +519,6 @@ class _UserMessage extends StatelessWidget {
                   container: true,
                   child: SelectableText(
                     turn.prompt,
-                    contextMenuBuilder: genAiTextSelectionContextMenu,
                     style: TextStyle(
                       fontSize: turnContext.phone ? 13 : 14,
                       height: 1.7,
@@ -604,9 +612,7 @@ class _UserMessage extends StatelessWidget {
           padding: EdgeInsets.zero,
           style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
           constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-          onPressed: enabled
-              ? () => unawaited(_openMenu(anchorContext, hostContext, items))
-              : null,
+          onPressed: enabled ? () => unawaited(_openMenu(anchorContext, hostContext, items)) : null,
         ),
       ),
     );
@@ -623,7 +629,7 @@ class _UserMessage extends StatelessWidget {
   ) async {
     final prompt = turn.prompt;
     final index = turnContext.index;
-    final value = await genAiShowAnchoredMenu<String>(
+    final value = await genAiShowMenu<String>(
       context: hostContext,
       anchorContext: anchorContext,
       items: items,
@@ -662,29 +668,8 @@ class _UserMessage extends StatelessWidget {
             Image.memory(bytes, height: 180, fit: BoxFit.contain, errorBuilder: _broken),
             () => actions.showImage(bytes: bytes),
           )
-      else if (turn.attachedImageBytes != null)
-        framed(
-          Image.memory(
-            turn.attachedImageBytes!,
-            height: 180,
-            fit: BoxFit.contain,
-            errorBuilder: _broken,
-          ),
-          () => actions.showImage(bytes: turn.attachedImageBytes),
-        )
       else
-        for (final url in turn.attachedImageUrls.isNotEmpty
-            ? turn.attachedImageUrls
-            : [if (turn.attachedImageUrl != null) turn.attachedImageUrl!])
-          framed(
-            Image.network(
-              actions.imageDisplayUri(url).toString(),
-              height: 180,
-              fit: BoxFit.contain,
-              errorBuilder: _broken,
-            ),
-            () => actions.showImage(url: actions.imageDisplayUri(url).toString()),
-          ),
+        for (final url in turn.attachedImageUrls) _remoteAttachment(context, url),
     ];
     return [
       if (images.isNotEmpty)
@@ -726,6 +711,23 @@ class _UserMessage extends StatelessWidget {
           ),
         ),
     ];
+  }
+
+  Widget _remoteAttachment(BuildContext context, String url) {
+    try {
+      final displayUrl = actions.imageDisplayUri(url).toString();
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: GestureDetector(
+          onTap: () => actions.showImage(url: displayUrl),
+          child: Image.network(displayUrl, height: 180, fit: BoxFit.contain, errorBuilder: _broken),
+        ),
+      );
+    } on GenAiFailure catch (error) {
+      return _broken(context, error, null);
+    } on FormatException catch (error) {
+      return _broken(context, error, null);
+    }
   }
 
   static Widget _broken(BuildContext context, Object _, StackTrace? __) => Container(

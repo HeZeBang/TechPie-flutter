@@ -4,18 +4,10 @@ import '../domain/genai_cancellation.dart';
 import '../domain/genai_context_usage.dart';
 import '../domain/genai_contract.dart';
 import '../domain/genai_failure.dart';
+import 'genai_conversation_turn.dart';
 import 'genai_repository.dart';
 
-enum GenAiChatPhase {
-  idle,
-  preparing,
-  streaming,
-  completed,
-  interrupted,
-  cancelled,
-  failed,
-  needsLogin
-}
+export 'genai_conversation_turn.dart' show GenAiChatPhase;
 
 /// UI-independent single-turn controller. It keeps partial output on a failed
 /// connection and never silently retries a generation or edits server history.
@@ -30,65 +22,58 @@ final class GenAiChatService extends ChangeNotifier {
   GenAiCancellation? _operation;
   int _turn = 0;
   bool _disposed = false;
-  StringBuffer _answer = StringBuffer();
-  StringBuffer _reasoning = StringBuffer();
-  GenAiChatPhase _phase = GenAiChatPhase.idle;
-  GenAiFailure? _failure;
-  GenAiFinishReason? _finishReason;
+  GenAiConversationTurn _state = GenAiConversationTurn('')..phase = GenAiChatPhase.idle;
 
-  bool contextCompacted = false;
-  GenAiContextUsage? contextUsage;
+  String get answer => _state.answer;
+  String get reasoning => _state.reasoning;
+  GenAiChatPhase get phase => _state.phase;
+  GenAiFailure? get failure => _state.failure;
+  GenAiFinishReason? get finishReason => _state.finishReason;
+  bool get contextCompacted => _state.contextCompacted;
+  GenAiContextUsage? get contextUsage => _state.contextUsage;
 
-  String get answer => _answer.toString();
-  String get reasoning => _reasoning.toString();
-  GenAiChatPhase get phase => _phase;
-  GenAiFailure? get failure => _failure;
-  GenAiFinishReason? get finishReason => _finishReason;
-
-  Future<void> send(GenAiChatRequest request) async {
+  Future<void> send(GenAiChatRequest request, {GenAiConversationTurn? target}) async {
     if (_disposed) throw const GenAiFailure(GenAiFailureKind.cancelled);
     if (_operation != null) throw const GenAiFailure(GenAiFailureKind.busy);
     final turn = ++_turn;
     final operation = GenAiCancellation();
     _operation = operation;
-    contextCompacted = false;
-    contextUsage = null;
-    _answer = StringBuffer();
-    _reasoning = StringBuffer();
-    _failure = null;
-    _finishReason = null;
-    _phase = GenAiChatPhase.preparing;
+    final state = _state = target ?? GenAiConversationTurn(request.prompt);
+    final answer = StringBuffer();
+    final reasoning = StringBuffer();
+    state.phase = GenAiChatPhase.preparing;
     notifyListeners();
     try {
       await for (final event in _repository.streamChat(request, operation)) {
         if (_disposed || turn != _turn) return;
         switch (event) {
           case GenAiContextUsageChanged(:final usage):
-            contextUsage = usage;
+            state.contextUsage = usage;
           case GenAiContextCompacted():
-            contextCompacted = true;
+            state.contextCompacted = true;
           case GenAiTextDelta(:final text):
-            _answer.write(text);
-            _phase = GenAiChatPhase.streaming;
+            answer.write(text);
+            state.answer = answer.toString();
+            state.phase = GenAiChatPhase.streaming;
           case GenAiReasoningDelta(:final text):
-            _reasoning.write(text);
-            _phase = GenAiChatPhase.streaming;
+            reasoning.write(text);
+            state.reasoning = reasoning.toString();
+            state.phase = GenAiChatPhase.streaming;
           case GenAiChatFinished(:final reason):
-            _finishReason = reason;
-            _phase = GenAiChatPhase.completed;
+            state.finishReason = reason;
+            state.phase = GenAiChatPhase.completed;
         }
-        if (_answer.length + _reasoning.length > maxOutputCharacters) {
+        if (answer.length + reasoning.length > maxOutputCharacters) {
           throw const GenAiFailure(GenAiFailureKind.protocol);
         }
         notifyListeners();
       }
     } catch (error) {
       if (_disposed || turn != _turn) return;
-      contextUsage = null;
-      _failure = error is GenAiFailure
-          ? error
-          : const GenAiFailure(GenAiFailureKind.transport);
-      _phase = switch (_failure!.kind) {
+      state.contextUsage = null;
+      state.failure =
+          error is GenAiFailure ? error : const GenAiFailure(GenAiFailureKind.transport);
+      state.phase = switch (state.failure!.kind) {
         GenAiFailureKind.authenticationRequired => GenAiChatPhase.needsLogin,
         GenAiFailureKind.interrupted ||
         GenAiFailureKind.transport ||
@@ -97,9 +82,9 @@ final class GenAiChatService extends ChangeNotifier {
         GenAiFailureKind.cancelled => GenAiChatPhase.cancelled,
         _ => GenAiChatPhase.failed,
       };
-      if (_failure!.kind == GenAiFailureKind.accountChanged) {
-        _answer = StringBuffer();
-        _reasoning = StringBuffer();
+      if (state.failure!.kind == GenAiFailureKind.accountChanged) {
+        state.answer = '';
+        state.reasoning = '';
       }
       notifyListeners();
     } finally {
@@ -110,32 +95,25 @@ final class GenAiChatService extends ChangeNotifier {
 
   void stop() {
     if (_operation == null) return;
-    contextUsage = null;
+    _state.contextUsage = null;
     _operation!.cancel();
     _operation = null;
     _turn++;
-    _phase = GenAiChatPhase.cancelled;
+    _state.phase = GenAiChatPhase.cancelled;
     notifyListeners();
   }
 
   void clear() {
-    contextCompacted = false;
-    contextUsage = null;
     _operation?.cancel(GenAiFailureKind.accountChanged);
     _operation = null;
     _turn++;
-    _answer = StringBuffer();
-    _reasoning = StringBuffer();
-    _phase = GenAiChatPhase.idle;
-    _failure = null;
-    _finishReason = null;
+    _state = GenAiConversationTurn('')..phase = GenAiChatPhase.idle;
     notifyListeners();
   }
 
   @override
   void dispose() {
     _disposed = true;
-    contextUsage = null;
     _operation?.cancel();
     super.dispose();
   }

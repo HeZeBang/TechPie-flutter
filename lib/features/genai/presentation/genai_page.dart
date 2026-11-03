@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import '../../../models/third_party_account.dart';
 import '../../../pages/campus_session_handle.dart';
-import '../../../pages/third_party_accounts_page.dart';
 import '../../../pages/third_party_bind_page.dart';
 import '../../../services/service_provider.dart';
 import '../../../widgets/adaptive_feedback.dart';
@@ -15,11 +13,13 @@ import '../app/genai_runtime.dart';
 import '../application/genai_agent_runner.dart';
 import '../application/techpie_genai_tools.dart';
 import '../domain/genai_session.dart';
+import '../platform/genai_login_policy.dart';
 import 'genai_login_page.dart';
 import 'genai_workspace.dart';
 
 class GenAiPage extends StatefulWidget {
   const GenAiPage({super.key});
+
   @override
   State<GenAiPage> createState() => _GenAiPageState();
 }
@@ -46,18 +46,10 @@ class _GenAiPageState extends State<GenAiPage> {
           thirdPartyAuth: services.thirdPartyAuthService,
         ).createRegistry,
       ),
-      scope: () {
-        final accounts = [
-          for (final account in services.thirdPartyAuthService.accounts)
-            [
-              account.platform.name,
-              account.account,
-              account.sid,
-              account.boundAt.toUtc().toIso8601String(),
-            ],
-        ]..sort((a, b) => jsonEncode(a).compareTo(jsonEncode(b)));
-        return jsonEncode([services.authService.session?.userId, ...accounts]);
-      },
+      scope: () => TechPieGenAiTools.accountScope(
+        services.authService,
+        services.thirdPartyAuthService,
+      ),
       scopeChanges: Listenable.merge([
         services.authService,
         services.thirdPartyAuthService,
@@ -77,14 +69,14 @@ class _GenAiPageState extends State<GenAiPage> {
     try {
       final bindings = services.thirdPartyAuthService;
       final cookies = bindings.cpdailyNode.cookieProvider?.cookies ?? '';
-      if (!cookies.split(';').any((c) => c.trim().startsWith('CASTGC='))) {
+      if (!GenAiLoginPolicy.hasCampusCookie(cookies)) {
         await pushAdaptivePage<void>(
           context,
           builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.cpdaily),
         );
       }
       if (!mounted || !current()) return;
-      if (bindings.cpdailyNode.cookieProvider == null) {
+      if (!GenAiLoginPolicy.hasCampusCookie(bindings.cpdailyNode.cookieProvider?.cookies ?? '')) {
         return;
       }
       if (runtime.sessions.canIssue) {
@@ -151,7 +143,7 @@ class _GenAiPageState extends State<GenAiPage> {
         onBindCampus: () => unawaited(
           pushAdaptivePage<void>(
             context,
-            builder: (_) => const ThirdPartyAccountsPage(),
+            builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.cpdaily),
           ),
         ),
       ),

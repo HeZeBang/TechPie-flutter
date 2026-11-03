@@ -4,6 +4,7 @@ import '../../../services/third_party_auth_service.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_session.dart';
+import '../platform/genai_login_policy.dart';
 
 typedef GenAiCampusExchange = Future<GenAiCredential> Function(
   CookieProvider provider,
@@ -13,7 +14,7 @@ typedef GenAiCampusExchange = Future<GenAiCredential> Function(
 /// Reuses the IDS parent and its existing scheduled/401 renewal budget.
 /// SMS bindings may lack a school ID. The GenAI profile verifier must still
 /// match every issued credential to the resolved owner before persistence.
-final class CampusGenAiSessionIssuer implements GenAiSessionIssuer {
+final class CampusGenAiSessionIssuer implements GenAiCampusIdentityIssuer {
   CampusGenAiSessionIssuer({
     required this.thirdPartyAuth,
     required this.exchange,
@@ -22,16 +23,24 @@ final class CampusGenAiSessionIssuer implements GenAiSessionIssuer {
   final GenAiCampusExchange exchange;
 
   @override
+  Future<GenAiCredential> issueForCampusBinding({
+    required String primaryUserId,
+    required String bindingId,
+    required GenAiCancellation cancellation,
+  }) =>
+      issue(
+        GenAiOwner(primaryUserId: primaryUserId, studentId: '', bindingId: bindingId),
+        cancellation,
+      );
+
+  @override
   Future<GenAiCredential> issue(
     GenAiOwner owner,
     GenAiCancellation cancellation,
   ) async {
     cancellation.throwIfCancelled();
     final initial = thirdPartyAuth.cpdailyNode.cookieProvider;
-    if (initial == null ||
-        !initial.cookies.split(';').any(
-              (c) => c.trim().startsWith('CASTGC=') && c.trim() != 'CASTGC=',
-            )) {
+    if (initial == null || !GenAiLoginPolicy.hasCampusCookie(initial.cookies)) {
       throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
     }
     if (owner.studentId.isNotEmpty &&
@@ -53,8 +62,7 @@ final class CampusGenAiSessionIssuer implements GenAiSessionIssuer {
             throw const GenAiFailure(GenAiFailureKind.identityMismatch);
           }
           try {
-            final value =
-                await cancellation.race(exchange(provider, cancellation));
+            final value = await cancellation.race(exchange(provider, cancellation));
             return CookieAction<GenAiCredential?>(value, expired: false);
           } on GenAiFailure catch (error) {
             if (error.kind != GenAiFailureKind.authenticationRequired) rethrow;

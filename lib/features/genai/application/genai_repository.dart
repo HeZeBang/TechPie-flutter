@@ -345,30 +345,8 @@ final class GenAiRepository {
     }
   }
 
-  Future<List<GenAiModel>> listModels(GenAiCancellation cancellation) async {
-    cancellation.throwIfCancelled();
-    final revision = _sessions.revision;
-    final session = await cancellation.race(_sessions.requireSession());
-    cancellation.throwIfCancelled();
-    if (revision != _sessions.revision) {
-      throw const GenAiFailure(GenAiFailureKind.accountChanged);
-    }
-    void checkOwner() {
-      if (revision != _sessions.revision) {
-        cancellation.cancel(GenAiFailureKind.accountChanged);
-      }
-    }
-
-    _sessions.addListener(checkOwner);
-    try {
-      return await _api.listModels(session.credential.token, cancellation);
-    } on GenAiFailure catch (error) {
-      if (error.kind == GenAiFailureKind.authenticationRequired) {
-        await _sessions.reject(session);
-      }
-      rethrow;
-    } finally {
-      _sessions.removeListener(checkOwner);
-    }
-  }
+  Future<List<GenAiModel>> listModels(GenAiCancellation cancellation) => _authorized(
+        cancellation,
+        (session) => _api.listModels(session.credential.token, cancellation),
+      );
 }

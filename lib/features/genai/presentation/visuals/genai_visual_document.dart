@@ -28,6 +28,14 @@ class GenAiVisualException implements Exception {
 /// Builds an inert outer shell around an opaque-origin, scripts-only frame.
 /// The only bridge carries ready/error/height notifications, never app commands.
 class GenAiVisualDocument {
+  static const statusEvents = {'ready', 'height', 'fullscreen-height', 'error', 'escape'};
+  static Map<String, Object?> layoutMessage(bool fullscreen) =>
+      {'kind': 'techpie-visual-layout', 'fullscreen': fullscreen};
+  static Map<String, Object?> themeMessage(Map<String, String> theme) =>
+      {'kind': 'techpie-visual-theme', 'theme': theme};
+  static Map<String, Object?> activityMessage(bool active) =>
+      {'kind': 'techpie-visual-active', 'active': active};
+
   static const mathLibrary = 'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js';
   static const mathAutoRenderLibrary =
       'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/auto-render.min.js';
@@ -185,7 +193,7 @@ class GenAiVisualDocument {
 const frame=document.getElementById('visual');
 let theme=$encodedTheme,active=$active,fullscreen=$fullscreen;
 const sendLayout=()=>frame.contentWindow.postMessage({
-  kind:'techpie-visual-layout',fullscreen
+  kind:'techpie-visual-layout',fullscreen,scrollBridge:${!native}
 },'*');
 const sendActive=()=>frame.contentWindow.postMessage({kind:'techpie-visual-active',active},'*');
 const sendTheme=()=>frame.contentWindow.postMessage({kind:'techpie-visual-theme',theme},'*');
@@ -202,8 +210,13 @@ window.addEventListener('message',event=>{
   if(event.source!==frame.contentWindow || !event.data || event.data.kind!=='techpie-visual')return;
   const d=event.data;
   if(d.event==='ready'){sendTheme();sendActive();sendLayout();}
-  if(!['ready','error','height','escape'].includes(d.event))return;
+  if(!['ready','error','height','escape','scroll'].includes(d.event))return;
+  if(d.event==='scroll' && (fullscreen || !active || $native))return;
   const safe={kind:'techpie-visual',event:d.event};
+  if(d.event==='scroll'){
+    if(!Number.isFinite(d.delta))return;
+    safe.delta=Math.max(-800,Math.min(800,d.delta));
+  }
   if(d.event==='height'){
     safe.event=d.fullscreen===true?'fullscreen-height':'height';
     safe.height=Math.max(0,Math.min(100000,Number(d.height)||360));
@@ -218,6 +231,12 @@ frame.srcdoc=$encoded;
 :root{color-scheme:light;--tp-bg:#fff;--tp-surface:#f5f5f5;--tp-text:#202124;--tp-muted:#666;--tp-primary:#67504b;--tp-on-primary:#fff;--tp-border:#ddd;font-family:system-ui,sans-serif;color:var(--tp-text);background:var(--tp-bg)}
 *{box-sizing:border-box}body{margin:0;padding:16px;overflow-wrap:anywhere}
 #techpie-visual-content{display:flow-root;min-width:0}
+html:not([data-techpie-fullscreen=true]),html:not([data-techpie-fullscreen=true]) body{height:auto!important;min-height:0!important}
+body{font-size:14px;line-height:1.5}
+@media(min-width:600px){body{padding:20px}}
+label{font-size:13px}input[type=range]{max-width:100%}
+button,input,select,textarea{max-width:100%}
+button:disabled{opacity:.5;cursor:default}
 html[data-techpie-fullscreen=true]{height:100%;overflow:auto!important}
 html[data-techpie-fullscreen=true] body{
   min-height:100%;height:auto!important;padding:0!important;overflow:visible!important;
@@ -237,7 +256,7 @@ math{color:inherit;font-size:1.05em}math[display=block]{overflow-x:auto;max-widt
 [data-math-error]{font-family:"Latin Modern Math","STIX Two Math","Cambria Math",ui-serif,Georgia,serif;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere;padding:0 .1em;border-bottom:1px dotted var(--tp-muted)}
 [data-math-error][data-math-display=block]{display:block;margin:.5em 0;padding:.5em .75em;border-bottom:0;border-inline-start:3px solid var(--tp-border);border-radius:4px;background:var(--tp-surface)}
 canvas,svg,img{max-width:100%}button,input,select{font:inherit}
-button,input[type=range],select{min-height:40px}button{cursor:pointer}
+button,input[type=range],select{min-height:44px}button{cursor:pointer}
 html,body{background:var(--tp-bg)!important;color:var(--tp-text)!important}
 h1,h2,h3,h4,h5,h6,label,p,pre{color:var(--tp-text)!important}
 button,input,select,textarea{color:var(--tp-text)!important;background:var(--tp-surface)!important;border:1px solid var(--tp-border)!important;border-radius:8px;accent-color:var(--tp-primary)}
@@ -266,7 +285,7 @@ function applyTheme(theme){
 }
 applyTheme({/*techpie-theme*/});
 let fullscreen=/*techpie-fullscreen*/false;
-let resize=()=>{};
+let resize=()=>{},scrollBridge=false;
 function applyLayout(value){
   fullscreen=value===true;
   document.documentElement.dataset.techpieFullscreen=String(fullscreen);
@@ -276,10 +295,45 @@ applyLayout(fullscreen);
 window.addEventListener('message',event=>{
   if(event.source===parent && event.data?.kind==='techpie-visual-theme')applyTheme(event.data.theme);
   if(event.source===parent && event.data?.kind==='techpie-visual-layout'){
+    scrollBridge=event.data.scrollBridge===true;
     applyLayout(event.data.fullscreen);
   }
 });
 const emit=(event,extra={})=>parent.postMessage({kind:'techpie-visual',event,...extra},'*');
+// Browsing contexts do not bubble unused wheel/touch gestures to Flutter.
+// Leave native scrollable controls and explicitly handled diagram gestures alone.
+function ownsScroll(target,delta){
+  for(let node=target instanceof Element?target:null;node;node=node.parentElement){
+    const style=getComputedStyle(node);
+    if(node.matches('input,select,textarea,[contenteditable="true"]') ||
+       style.touchAction==='none')return true;
+    if(/auto|scroll/.test(style.overflowY) && node.scrollHeight>node.clientHeight+1 &&
+       (delta<0?node.scrollTop>0:node.scrollTop+node.clientHeight<node.scrollHeight-1))return true;
+  }
+  return false;
+}
+function forwardScroll(event,delta){
+  if(!scrollBridge || fullscreen || event.defaultPrevented || !Number.isFinite(delta) ||
+     ownsScroll(event.target,delta))return;
+  if(event.cancelable)event.preventDefault();
+  emit('scroll',{delta});
+}
+window.addEventListener('wheel',event=>{
+  if(event.ctrlKey || event.metaKey || Math.abs(event.deltaX)>Math.abs(event.deltaY))return;
+  forwardScroll(event,event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?innerHeight:1));
+},{passive:false});
+let touch=null;
+window.addEventListener('touchstart',event=>{
+  touch=event.touches.length===1?{x:event.touches[0].clientX,y:event.touches[0].clientY}:null;
+},{passive:true});
+window.addEventListener('touchmove',event=>{
+  if(!touch || event.touches.length!==1){touch=null;return;}
+  const point=event.touches[0],dx=touch.x-point.clientX,dy=touch.y-point.clientY;
+  touch={x:point.clientX,y:point.clientY};
+  if(Math.abs(dy)>Math.abs(dx))forwardScroll(event,dy);
+},{passive:false});
+window.addEventListener('touchend',()=>{touch=null;},{passive:true});
+window.addEventListener('touchcancel',()=>{touch=null;},{passive:true});
 window.addEventListener('keydown',event=>{if(event.key==='Escape')emit('escape');});
 window.addEventListener('error',()=>emit('error'));
 window.addEventListener('unhandledrejection',()=>emit('error'));
@@ -292,7 +346,12 @@ window.addEventListener('DOMContentLoaded',()=>{
     requestAnimationFrame(()=>{
       queued=false;
       const content=document.getElementById('techpie-visual-content');
-      const height=fullscreen?content.scrollHeight:document.body.scrollHeight;
+      // body.scrollHeight is at least the iframe viewport height: using it
+      // prevents shrinking after controls collapse or the available width grows.
+      const rect=content.getBoundingClientRect();
+      const style=getComputedStyle(document.body);
+      const height=Math.ceil(Math.max(rect.height,content.scrollHeight)+
+        (parseFloat(style.paddingTop)||0)+(parseFloat(style.paddingBottom)||0));
       emit('height',{height,fullscreen});
     });
   };

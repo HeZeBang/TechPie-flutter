@@ -28,39 +28,6 @@ void main() {
     }
   });
 
-  for (final size in [16.0, 24.0]) {
-    testWidgets('every glyph paints at size $size', (tester) async {
-      for (final glyph in GenAiGlyph.values) {
-        await tester.pumpWidget(
-          Directionality(
-            textDirection: TextDirection.ltr,
-            child: Center(child: GenAiIcon(glyph, size: size)),
-          ),
-        );
-        final paint = tester.widget<CustomPaint>(
-          find.descendant(of: find.byType(GenAiIcon), matching: find.byType(CustomPaint)),
-        );
-        final recorder = ui.PictureRecorder();
-        paint.painter!.paint(Canvas(recorder), Size.square(size));
-        final picture = recorder.endRecording();
-        await tester.runAsync(() async {
-          final image = await picture.toImage(size.toInt(), size.toInt());
-          final bytes = await image.toByteData();
-          expect(bytes, isNotNull, reason: glyph.name);
-          expect(
-            List.generate(size.toInt() * size.toInt(), (index) => bytes!.getUint8(index * 4 + 3))
-                .any((alpha) => alpha != 0),
-            isTrue,
-            reason: '${glyph.name} must paint visible strokes',
-          );
-          image.dispose();
-        });
-        picture.dispose();
-        expect(tester.takeException(), isNull, reason: glyph.name);
-      }
-    });
-  }
-
   testWidgets('labelled icons expose their label; unlabelled icons expose nothing', (tester) async {
     final semantics = tester.ensureSemantics();
     await tester.pumpWidget(

@@ -108,7 +108,6 @@ void main() {
       task.agentEvents.values.every((event) => event.prepared == null),
       isTrue,
     );
-    expect(task.agentHistory, isEmpty);
     expect(task.agentTranscript, isEmpty);
     expect(turns.last.isAgent, isFalse);
   });
@@ -171,7 +170,6 @@ void main() {
     expect(turns.single.isAgent, isTrue);
     expect(turns.single.answer, '现在是下午三点。');
     expect(turns.single.agentEvents, hasLength(1));
-    expect(turns.single.agentHistory, isEmpty);
     expect(turns.single.agentTranscript, isEmpty);
     final unfinished = importGenAiLegacyConversation([
       GenAiSavedTurn(
@@ -224,7 +222,7 @@ void main() {
       ),
     ]);
     expect(turns.first.agentEvents, hasLength(2));
-    expect(turns.last.attachedImageUrl, endsWith('/a.png'));
+    expect(turns.last.attachedImageUrls.firstOrNull, endsWith('/a.png'));
     expect(turns.last.attachedImageUrls, hasLength(1));
   });
 

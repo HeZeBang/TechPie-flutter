@@ -15,21 +15,43 @@ bool get copiesImageFile => Platform.isLinux;
 bool canShareImage(Uint8List bytes) =>
     Platform.isAndroid || Platform.isIOS || Platform.isMacOS || Platform.isWindows;
 
+Directory? _clipboardDirectory;
+Future<void> _clipboardWrite = Future<void>.value();
+
 Future<void> copyImage(Uint8List bytes) async {
   if (!canCopyImage) throw UnsupportedError('Image clipboard unavailable');
-  if (Platform.isLinux) {
-    // Linux pasteboard supports file URIs, not bitmap writes. Keep the latest
-    // clipboard file alive until the next copy so the receiver can read it.
-    final root = Directory.systemTemp;
-    final directory = Directory('${root.path}/genai-clipboard');
-    await directory.create(recursive: true);
+  if (!Platform.isLinux) {
+    await Pasteboard.writeImage(bytes);
+    return;
+  }
+  final write = _clipboardWrite.then((_) => _copyLinuxImage(bytes));
+  _clipboardWrite = write.catchError((Object _) {});
+  await write;
+}
+
+Future<void> _copyLinuxImage(Uint8List bytes) async {
+  // createTemp uses a private, unpredictable directory on POSIX. Never follow
+  // a path another local user could have created in the shared temporary root.
+  final directory = await Directory.systemTemp.createTemp('techpie-clipboard-');
+  var retained = false;
+  try {
     final file = File('${directory.path}/image.png');
     await file.writeAsBytes(bytes, flush: true);
     if (!await Pasteboard.writeFiles([file.path])) {
       throw StateError('Clipboard rejected image file');
     }
-  } else {
-    await Pasteboard.writeImage(bytes);
+    final previous = _clipboardDirectory;
+    _clipboardDirectory = directory;
+    retained = true;
+    if (previous != null) {
+      try {
+        await previous.delete(recursive: true);
+      } on FileSystemException {
+        // Cleanup failure does not invalidate an accepted clipboard update.
+      }
+    }
+  } finally {
+    if (!retained) await directory.delete(recursive: true);
   }
 }
 

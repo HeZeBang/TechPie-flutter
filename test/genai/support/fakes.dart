@@ -28,11 +28,9 @@ GenAiChatRequest chatRequest() => GenAiChatRequest(
       rootAiType: 'fixture-provider',
     );
 
-Matcher failure(GenAiFailureKind kind) =>
-    isA<GenAiFailure>().having((e) => e.kind, 'kind', kind);
+Matcher failure(GenAiFailureKind kind) => isA<GenAiFailure>().having((e) => e.kind, 'kind', kind);
 
-String sseChunk({String? text, String? reasoning, String? finish}) =>
-    'data: ${jsonEncode({
+String sseChunk({String? text, String? reasoning, String? finish}) => 'data: ${jsonEncode({
           'choices': [
             {
               'index': 0,
@@ -147,8 +145,7 @@ final class MemorySessionStore implements GenAiSessionStore {
 
 final class CallbackIssuer implements GenAiSessionIssuer {
   CallbackIssuer(this.callback);
-  final Future<GenAiCredential> Function(GenAiOwner, GenAiCancellation)
-      callback;
+  final Future<GenAiCredential> Function(GenAiOwner, GenAiCancellation) callback;
   int calls = 0;
   @override
   Future<GenAiCredential> issue(
@@ -246,3 +243,12 @@ final class FakeGenAiPicker implements GenAiPicker {
     return nextAudio;
   }
 }
+
+/// Canonical labels paired with request-only image bytes, not text-only URLs in history.
+List<String> visionImageLabels(Map<String, dynamic> payload) => [
+      for (final message in payload['messages'] as List<dynamic>)
+        if (message['content'] is List)
+          for (final part in message['content'] as List<dynamic>)
+            if (part['type'] == 'text' && (part['text'] as String).startsWith('Image: '))
+              (part['text'] as String).substring('Image: '.length),
+    ];

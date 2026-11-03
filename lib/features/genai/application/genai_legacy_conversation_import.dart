@@ -2,7 +2,6 @@ import '../domain/genai_agent_contract.dart';
 import '../domain/genai_agent_protocol.dart';
 import '../domain/genai_context_record.dart';
 import '../domain/genai_platform_contract.dart';
-import 'genai_chat_service.dart';
 import 'genai_conversation_turn.dart';
 
 /// Recovers display-only tasks from the server's append-only model-step log.
@@ -176,7 +175,6 @@ GenAiConversationTurn _savedTurn(
     GenAiConversationTurn(saved.prompt, isAgent: isAgent)
       ..answer = decodeGenAiAgentFinal(saved.answer) ?? saved.answer
       ..reasoning = saved.reasoning
-      ..attachedImageUrl = saved.imageUrls.firstOrNull
       ..attachedImageUrls = saved.imageUrls
       ..phase = saved.answer.isEmpty ? GenAiChatPhase.interrupted : GenAiChatPhase.completed;
 

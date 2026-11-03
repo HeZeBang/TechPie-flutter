@@ -60,7 +60,9 @@ class _GenAiTurnEditDialogState extends State<GenAiTurnEditDialog> {
           Navigator.pop(context);
         }
       });
-      if (mounted && !_committed) Navigator.pop(context);
+      if (mounted && !_committed) {
+        throw const GenAiFailure(GenAiFailureKind.historyChanged);
+      }
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -152,7 +154,6 @@ class _GenAiTurnEditDialogState extends State<GenAiTurnEditDialog> {
                             constraints: const BoxConstraints(minHeight: 120),
                             child: TextField(
                               controller: _text,
-                              contextMenuBuilder: genAiTextSelectionContextMenu,
                               readOnly: _submitting,
                               autofocus: true,
                               minLines: 4,

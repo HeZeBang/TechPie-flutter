@@ -26,6 +26,7 @@ class GenAiHistoryController extends ChangeNotifier {
   bool _hasMoreHistory = false;
   bool _loadingHistory = false;
   bool _historyRequested = false;
+  bool _refreshPending = false;
   bool _disposed = false;
   late Object? _accountScope;
   late int _sessionRevision;
@@ -70,9 +71,24 @@ class GenAiHistoryController extends ChangeNotifier {
     }
     final historyChanged = _finishedTurnRevision != _workspace.finishedTurnRevision;
     _rememberWorkspace();
-    if (_workspace.connected &&
-        (!_historyRequested || (historyChanged && !(_searchTimer?.isActive ?? false)))) {
-      unawaited(load());
+    _refreshPending |= historyChanged;
+    if (_workspace.connected && !(_searchTimer?.isActive ?? false)) {
+      if (!_historyRequested) {
+        unawaited(load());
+      } else {
+        _refreshWhenIdle();
+      }
+    }
+  }
+
+  void _refreshWhenIdle() {
+    if (!_disposed &&
+        _refreshPending &&
+        !_loadingHistory &&
+        _workspace.connected &&
+        !(_searchTimer?.isActive ?? false)) {
+      _refreshPending = false;
+      unawaited(load(refresh: true));
     }
   }
 
@@ -93,16 +109,19 @@ class GenAiHistoryController extends ChangeNotifier {
     _hasMoreHistory = false;
     _loadingHistory = false;
     _historyRequested = false;
+    _refreshPending = false;
     _historyFailure = null;
   }
 
-  Future<void> load({bool more = false, String? query}) async {
+  Future<void> load({bool more = false, String? query, bool refresh = false}) async {
     if (_disposed || !_workspace.connected || (more && _loadingHistory)) return;
     _historyCancellation?.cancel();
     final cancellation = GenAiCancellation();
     _historyCancellation = cancellation;
     final page = more ? _historyPage + 1 : 1;
     final targetQuery = query ?? _sidebarQuery;
+    final lastPage = refresh && targetQuery == _sidebarQuery ? _historyPage : page;
+    if (!more) _refreshPending = false;
     _update(() {
       _historyRequested = true;
       _loadingHistory = true;
@@ -110,25 +129,38 @@ class GenAiHistoryController extends ChangeNotifier {
       if (!more) {
         if (_sidebarQuery != targetQuery) _conversations = const [];
         _sidebarQuery = targetQuery;
+        if (!refresh) {
+          _historyPage = 0;
+          _hasMoreHistory = false;
+        }
       }
     });
     try {
-      final result = await _workspace.listConversations(
-        cancellation,
-        page: page,
-        query: targetQuery,
-      );
-      if (_disposed || cancellation.isCancelled) return;
+      final records = <GenAiConversationSummary>[];
+      var loadedPage = page;
+      var hasMore = false;
+      for (var next = page; next <= lastPage || next == page; next++) {
+        final result = await _workspace.listConversations(
+          cancellation,
+          page: next,
+          query: targetQuery,
+        );
+        if (_disposed || cancellation.isCancelled) return;
+        records.addAll(result.records);
+        loadedPage = next;
+        hasMore = result.hasMore;
+        if (!hasMore) break;
+      }
       final byId = {
         if (more)
           for (final item in _conversations) item.id: item,
-        for (final item in result.records) item.id: item,
+        for (final item in records) item.id: item,
       };
       _conversations = List.unmodifiable(
         byId.values.toList()..sort(GenAiConversationSummary.newestFirst),
       );
-      _hasMoreHistory = result.hasMore;
-      _historyPage = page;
+      _hasMoreHistory = hasMore;
+      _historyPage = loadedPage;
     } catch (error) {
       if (!_disposed && !cancellation.isCancelled) {
         _historyFailure =
@@ -137,7 +169,10 @@ class GenAiHistoryController extends ChangeNotifier {
     } finally {
       if (identical(_historyCancellation, cancellation)) {
         _historyCancellation = null;
-        if (!_disposed) _update(() => _loadingHistory = false);
+        if (!_disposed) {
+          _update(() => _loadingHistory = false);
+          _refreshWhenIdle();
+        }
       }
     }
   }
@@ -149,6 +184,7 @@ class GenAiHistoryController extends ChangeNotifier {
     _loadingHistory = false;
     // Notifications from streaming must not start a competing history load.
     _historyRequested = true;
+    _refreshPending = false;
     _searchTimer = Timer(const Duration(milliseconds: 250), () {
       if (!_disposed) unawaited(load(query: text.trim()));
     });

@@ -294,15 +294,20 @@ final class GenAiContextCompactor {
     const memoryOverhead = 256;
     final first = source.first;
     final goal = request.contextGoal;
+    final goalIndex = goal == null ? -1 : source.lastIndexWhere((m) => m.content == goal);
+    bool pinGoal(int at) => goal != null && goal != first.content && goalIndex < at;
     List<GenAiMessage> pinnedFor(int at) => [
           first,
-          if (goal != null &&
-              goal != first.content &&
-              !source.sublist(at).any((m) => m.content == goal))
-            GenAiMessage(role: GenAiRole.user, content: goal),
+          if (pinGoal(at)) GenAiMessage(role: GenAiRole.user, content: goal!),
         ];
-    int retainedSize(int at) => [...pinnedFor(at), ...source.sublist(at)]
-        .fold<int>(0, (n, m) => n + messageTokens(contextMessage(m)));
+    final suffixTokens = List<int>.filled(source.length + 1, 0);
+    for (var i = source.length - 1; i >= 0; i--) {
+      suffixTokens[i] = suffixTokens[i + 1] + messageTokens(contextMessage(source[i]));
+    }
+    final firstSize = messageTokens(contextMessage(first));
+    final goalSize =
+        goal == null ? 0 : messageTokens(GenAiMessage(role: GenAiRole.user, content: goal));
+    int retainedSize(int at) => firstSize + suffixTokens[at] + (pinGoal(at) ? goalSize : 0);
     final minimumMemory = policy.memoryTokens.clamp(0, 1536);
     // If recent messages themselves are large, move the oldest complete
     // exchanges into memory as well. Keep at least the newest exchange intact.
@@ -437,8 +442,9 @@ final class GenAiContextCompactor {
     items.removeWhere(secondaryEvidence);
     durable.removeWhere(secondaryEvidence);
     final query = _terms(retrievalQuery);
+    final ranks = {for (final item in items) item: _rank(item, query)};
     items.sort((a, b) {
-      final rank = _rank(b, query).compareTo(_rank(a, query));
+      final rank = ranks[b]!.compareTo(ranks[a]!);
       return rank != 0 ? rank : (b['source']! as int).compareTo(a['source']! as int);
     });
     final selected = <Map<String, Object?>>[];
@@ -448,6 +454,8 @@ final class GenAiContextCompactor {
       reusing ? previousMemoryLimit : policy.memoryTokens,
     );
     final sourceReferences = <int, String>{};
+    var selectedAscii = 2; // JSON array brackets.
+    var selectedOther = 0;
     bool select(Map<String, Object?> item, int limit) {
       if (request.historyRetrieval) {
         final index = item['source']! as int;
@@ -459,8 +467,18 @@ final class GenAiContextCompactor {
       }
       final identity = '${item['source']}:${item['quote']}';
       if (seen.contains(identity)) return false;
-      final candidate = [...selected, item];
-      if (tokens(jsonEncode(candidate)) <= limit) {
+      var ascii = selectedAscii + (selected.isEmpty ? 0 : 1); // Separator.
+      var other = selectedOther;
+      for (final rune in jsonEncode(item).runes) {
+        if (rune <= 0x7f) {
+          ascii++;
+        } else {
+          other++;
+        }
+      }
+      if ((ascii + 1) ~/ 2 + other <= limit) {
+        selectedAscii = ascii;
+        selectedOther = other;
         selected.add(item);
         seen.add(identity);
         return true;
@@ -815,9 +833,11 @@ final class GenAiContextCompactor {
         }
       }
     }
+    final ranks = {
+      for (final item in candidates) item: _rank(item, query) + requestRanks[item['source']]!,
+    };
     candidates.sort((a, b) {
-      int rank(Map<String, Object?> item) => _rank(item, query) + requestRanks[item['source']]!;
-      final relevance = rank(b).compareTo(rank(a));
+      final relevance = ranks[b]!.compareTo(ranks[a]!);
       if (relevance != 0) return relevance;
       final chronology = (b['source']! as int).compareTo(a['source']! as int);
       if (chronology != 0) return chronology;
@@ -848,7 +868,8 @@ final class GenAiContextCompactor {
         'quote': text,
       });
     }
-    chunks.sort((a, b) => _rank(b, terms).compareTo(_rank(a, terms)));
+    final ranks = {for (final chunk in chunks) chunk: _rank(chunk, terms)};
+    chunks.sort((a, b) => ranks[b]!.compareTo(ranks[a]!));
     return chunks.take(3).toList();
   }
 
@@ -872,6 +893,7 @@ final class GenAiContextCompactor {
         historyRetrieval: input.historyRetrieval,
         stepContext: input.stepContext,
         requestGuide: input.requestGuide,
+        responseFormat: input.responseFormat,
         contextCompacted: compacted,
         imageUrl: input.imageUrl,
         imageUrls: input.imageUrls,

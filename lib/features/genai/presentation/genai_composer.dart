@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show SemanticsRole;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -300,52 +299,6 @@ class _GenAiComposerState extends State<GenAiComposer> {
         ),
       ),
     );
-    // Flutter's popup route does not avoid viewInsets. A scrollable sheet
-    // keeps every action reachable while the software keyboard is visible.
-    if (widget.keyboardOpen) {
-      return Tooltip(
-        message: tooltip,
-        child: InkWell(
-          key: const ValueKey('genai-composer-more'),
-          borderRadius: BorderRadius.circular(8),
-          onTap: widget.sending
-              ? null
-              : () async {
-                  final action = await genAiShowModalBottomSheet<String>(
-                    context: context,
-                    isScrollControlled: true,
-                    useSafeArea: true,
-                    showDragHandle: true,
-                    builder: (sheetContext) => genAiThemeScope(
-                      sheetContext,
-                      Padding(
-                        padding: MediaQuery.viewInsetsOf(sheetContext),
-                        child: SafeArea(
-                          top: false,
-                          child: Semantics(
-                            role: SemanticsRole.menu,
-                            explicitChildNodes: true,
-                            label: '聊天选项',
-                            child: SingleChildScrollView(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: items.map(genAiMenuEntry).toList(),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                  if (mounted && action != null) _handleMenuAction(action);
-                },
-          child: control,
-        ),
-      );
-    }
-    // The shared anchored menu keeps a measured 7px clearance below or above
-    // the "+" control instead of letting Flutter's popup clamp overlap it.
     return Tooltip(
       message: tooltip,
       child: Builder(
@@ -355,7 +308,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
           onTap: widget.sending
               ? null
               : () async {
-                  final action = await genAiShowAnchoredMenu<String>(
+                  final action = await genAiShowMenu<String>(
                     context: context,
                     anchorContext: anchorContext,
                     items: items,
@@ -381,57 +334,54 @@ class _GenAiComposerState extends State<GenAiComposer> {
 
   Future<void> _showToolList() => genAiShowDialog<void>(
         context: context,
-        builder: (dialogContext) => genAiThemeScope(
-          dialogContext,
-          Dialog(
-            key: const ValueKey('genai-tool-list-dialog'),
-            // The draft dialog is 500px wide, or the screen minus 32px on phones.
-            insetPadding: const EdgeInsets.all(16),
-            constraints: BoxConstraints(
-              maxWidth: 500,
-              maxHeight: MediaQuery.sizeOf(dialogContext).height * .9,
-            ),
-            child: Column(
-              key: const ValueKey('genai-tool-list-content'),
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '校园工具',
-                          style: _theme.textTheme.titleMedium?.copyWith(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                            color: _theme.colorScheme.onSurface,
-                          ),
+        builder: (dialogContext) => Dialog(
+          key: const ValueKey('genai-tool-list-dialog'),
+          // The draft dialog is 500px wide, or the screen minus 32px on phones.
+          insetPadding: const EdgeInsets.all(16),
+          constraints: BoxConstraints(
+            maxWidth: 500,
+            maxHeight: MediaQuery.sizeOf(dialogContext).height * .9,
+          ),
+          child: Column(
+            key: const ValueKey('genai-tool-list-content'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '校园工具',
+                        style: _theme.textTheme.titleMedium?.copyWith(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: _theme.colorScheme.onSurface,
                         ),
                       ),
-                      IconButton(
-                        key: const ValueKey('genai-tool-list-close'),
-                        tooltip: '关闭',
-                        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-                        padding: EdgeInsets.zero,
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        icon: GenAiIcon(GenAiGlyph.close, size: 18, color: _muted),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(height: 1, thickness: 1, color: _palette.line),
-                Flexible(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: _toolRows(),
                     ),
+                    IconButton(
+                      key: const ValueKey('genai-tool-list-close'),
+                      tooltip: '关闭',
+                      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                      padding: EdgeInsets.zero,
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: GenAiIcon(GenAiGlyph.close, size: 18, color: _muted),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, thickness: 1, color: _palette.line),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _toolRows(),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       );
@@ -490,10 +440,9 @@ class _GenAiComposerState extends State<GenAiComposer> {
         fontWeight: FontWeight.w500,
       );
 
-  /// An active mode always keeps its label and a dot, so compact layouts never
-  /// reduce the on state to a colored icon alone.
+  /// Reserve the state indicator so toggling does not move adjacent controls.
   double _modeChipWidth(String label, {required bool compact, required bool selected}) {
-    if (compact && !selected) return 48;
+    if (compact) return 48;
     final painter = TextPainter(
       text: TextSpan(text: label, style: _modeLabelStyle),
       textDirection: Directionality.of(context),
@@ -502,7 +451,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
     // Keep overflow decisions aligned with the mode chip's own row: 4px
     // padding each side, the icon box, a 7px gap and the optional 4px dot
     // preceded by a 5px gap.
-    final width = painter.width.ceilToDouble() + (compact ? 20 : 18) + 8 + 7 + (selected ? 9 : 0);
+    final width = painter.width.ceilToDouble() + (compact ? 20 : 18) + 8 + 7 + 9;
     painter.dispose();
     return width;
   }
@@ -513,14 +462,15 @@ class _GenAiComposerState extends State<GenAiComposer> {
     required Widget icon,
     required bool selected,
     required bool compact,
+    double? phoneWidth,
     required ValueChanged<bool>? onSelected,
   }) {
-    // Compact inactive modes are icons; an active mode reveals its label and
-    // places a 4px accent dot after it, like the draft's mode indicator.
-    final iconOnly = compact && !selected;
+    // Compact controls keep their size in both states.
+    final iconOnly = phoneWidth != null || compact;
     final labelStyle = _modeLabelStyle.copyWith(color: selected ? _accent : _muted);
     final radius = BorderRadius.circular(8);
     return Semantics(
+      key: phoneWidth != null ? ValueKey(key) : null,
       label: '$label，${selected ? '已开启' : '已关闭'}',
       excludeSemantics: true,
       toggled: selected,
@@ -528,103 +478,70 @@ class _GenAiComposerState extends State<GenAiComposer> {
       child: Tooltip(
         message: iconOnly ? label : '',
         child: Material(
-          key: ValueKey(key),
+          key: phoneWidth == null ? ValueKey(key) : null,
           color: selected ? _palette.accentSoft : Colors.transparent,
           borderRadius: radius,
           child: InkWell(
             borderRadius: radius,
             onTap: onSelected == null ? null : () => onSelected(!selected),
             child: Container(
-              height: 30,
-              padding: iconOnly ? const EdgeInsets.symmetric(horizontal: 6) : _modePadding,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconTheme.merge(
-                    data: IconThemeData(
-                      size: compact ? 19 : 17,
-                      color: selected ? _accent : _muted,
+              height: phoneWidth != null ? 42 : 30,
+              width: phoneWidth ?? (iconOnly ? 48 : null),
+              padding: phoneWidth != null
+                  ? EdgeInsets.zero
+                  : iconOnly
+                      ? const EdgeInsets.symmetric(horizontal: 6)
+                      : _modePadding,
+              child: iconOnly
+                  ? Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        IconTheme.merge(
+                          data: IconThemeData(size: 18, color: selected ? _accent : _muted),
+                          child: KeyedSubtree(key: ValueKey('$key-icon'), child: icon),
+                        ),
+                        if (selected)
+                          Positioned(
+                            right: 7,
+                            top: 6,
+                            child: Container(
+                              key: ValueKey('$key-dot'),
+                              width: 3,
+                              height: 3,
+                              decoration: BoxDecoration(color: _accent, shape: BoxShape.circle),
+                            ),
+                          ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconTheme.merge(
+                          data: IconThemeData(
+                            size: compact ? 19 : 17,
+                            color: selected ? _accent : _muted,
+                          ),
+                          child: icon,
+                        ),
+                        if (!iconOnly) ...[
+                          const SizedBox(width: 7),
+                          Text(label, style: labelStyle),
+                          ...[
+                            const SizedBox(width: 5),
+                            Container(
+                              key: ValueKey('$key-dot'),
+                              width: 4,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: selected ? _accent : Colors.transparent,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ],
                     ),
-                    child: icon,
-                  ),
-                  if (!iconOnly) ...[
-                    const SizedBox(width: 7),
-                    Text(label, style: labelStyle),
-                    if (selected) ...[
-                      const SizedBox(width: 5),
-                      Container(
-                        key: ValueKey('$key-dot'),
-                        width: 4,
-                        height: 4,
-                        decoration: BoxDecoration(color: _accent, shape: BoxShape.circle),
-                      ),
-                    ],
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Phone mode control from the draft: icon only at every width, 40 × 42
-  /// (36 wide below 360), with the active state carried by the soft accent
-  /// fill and a 3px dot at the top-right corner (right 7, top 6 in the final
-  /// draft rules). A plain Material/InkWell replaces FilterChip because a
-  /// FilterChip avatar is laid out beside reserved label space and cannot be
-  /// centred in a fixed target.
-  Widget _phoneModeChip({
-    required String key,
-    required String label,
-    required Widget icon,
-    required bool selected,
-    required double width,
-    required ValueChanged<bool>? onSelected,
-  }) {
-    final foreground = selected ? _accent : _muted;
-    final radius = BorderRadius.circular(8);
-    return Semantics(
-      key: ValueKey(key),
-      label: '$label，${selected ? '已开启' : '已关闭'}',
-      excludeSemantics: true,
-      toggled: selected,
-      onTap: onSelected == null ? null : () => onSelected(!selected),
-      child: Tooltip(
-        message: label,
-        child: Material(
-          color: selected ? _palette.accentSoft : Colors.transparent,
-          borderRadius: radius,
-          child: InkWell(
-            borderRadius: radius,
-            onTap: onSelected == null ? null : () => onSelected(!selected),
-            child: SizedBox(
-              width: width,
-              height: 42,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  IconTheme.merge(
-                    data: IconThemeData(size: 18, color: foreground),
-                    child: KeyedSubtree(
-                      key: ValueKey('$key-icon'),
-                      child: icon,
-                    ),
-                  ),
-                  if (selected)
-                    Positioned(
-                      right: 7,
-                      top: 6,
-                      child: Container(
-                        key: ValueKey('$key-dot'),
-                        width: 3,
-                        height: 3,
-                        decoration: BoxDecoration(color: _accent, shape: BoxShape.circle),
-                      ),
-                    ),
-                ],
-              ),
             ),
           ),
         ),
@@ -755,21 +672,23 @@ class _GenAiComposerState extends State<GenAiComposer> {
         height: 42,
       ),
       if (showThinking)
-        _phoneModeChip(
+        _modeChip(
           key: 'genai-thinking-toggle',
           label: '深度思考',
           icon: const GenAiIcon(GenAiGlyph.brain),
           selected: widget.thinkingEnabled,
-          width: width,
+          compact: true,
+          phoneWidth: width,
           onSelected: widget.sending ? null : widget.onThinkingChanged,
         ),
       if (showCampus)
-        _phoneModeChip(
+        _modeChip(
           key: 'genai-agent-toggle',
           label: '校园工具',
           icon: const GenAiIcon(GenAiGlyph.tools),
           selected: widget.agentEnabled,
-          width: width,
+          compact: true,
+          phoneWidth: width,
           onSelected: widget.sending ? null : widget.onAgentChanged,
         ),
     ];
@@ -1013,7 +932,11 @@ class _GenAiComposerState extends State<GenAiComposer> {
 
   Widget _input() => Focus(
         onKeyEvent: (_, event) {
-          if (event is KeyDownEvent &&
+          if (switch (Theme.of(context).platform) {
+                TargetPlatform.android || TargetPlatform.iOS || TargetPlatform.fuchsia => false,
+                _ => true,
+              } &&
+              event is KeyDownEvent &&
               event.logicalKey == LogicalKeyboardKey.enter &&
               !HardwareKeyboard.instance.isShiftPressed &&
               !(widget.draft.value.composing.isValid &&
@@ -1025,7 +948,6 @@ class _GenAiComposerState extends State<GenAiComposer> {
         },
         child: TextField(
           key: const ValueKey('genai-prompt'),
-          contextMenuBuilder: genAiTextSelectionContextMenu,
           controller: widget.draft,
           focusNode: widget.inputFocus,
           minLines: 2,

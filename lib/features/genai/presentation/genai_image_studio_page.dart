@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../widgets/adaptive_feedback.dart';
+import '../application/genai_image_studio_controller.dart';
 import '../application/genai_workspace_controller.dart';
 import '../domain/genai_cancellation.dart';
 import '../domain/genai_contract.dart';
@@ -17,30 +17,23 @@ import '../domain/genai_platform_contract.dart';
 import '../domain/genai_reference_image.dart';
 import 'genai_copy.dart';
 import 'genai_icons.dart';
-import 'genai_image_actions.dart';
+import 'genai_image_dimensions.dart';
 import 'genai_image_gallery.dart';
-import 'genai_image_save.dart';
+import 'genai_image_viewer.dart';
 import 'genai_theme.dart';
 import 'picker/genai_picker.dart';
 
-/// Image creation and usage. Conversation history lives in the workspace
-/// sidebar and drawer. Tools share the app's verified session; no
-/// independent login or credentials.
-class GenAiToolsPage extends StatefulWidget {
-  const GenAiToolsPage({
+/// Image creation and gallery using the workspace's verified campus session.
+class GenAiImageStudioPage extends StatefulWidget {
+  const GenAiImageStudioPage({
     super.key,
     required this.workspace,
-    this.initialTab = imagesTab,
     this.picker,
     this.embedded = false,
     this.stageWidth,
   });
 
-  static const imagesTab = 1;
-  static const usageTab = 2;
-
   final GenAiWorkspaceController workspace;
-  final int initialTab;
   final GenAiPicker? picker;
 
   /// Width of the surface the workspace actually occupies (window/sidebar
@@ -51,28 +44,27 @@ class GenAiToolsPage extends StatefulWidget {
   /// Embedded inside the workspace, which already provides the header.
   final bool embedded;
   @override
-  State<GenAiToolsPage> createState() => _GenAiToolsPageState();
+  State<GenAiImageStudioPage> createState() => _GenAiImageStudioPageState();
 }
 
-class _GenAiToolsPageState extends State<GenAiToolsPage> {
+class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   static const _qualityLabels = {'low': '普通', 'medium': '标准', 'high': '高清'};
   static const _customResolution = 'custom';
 
   late final GenAiPicker _picker;
-  final _references = <GenAiReferenceImage>[];
-  final _referencePreviews = <GenAiReferenceImage, Uint8List>{};
+  late final GenAiImageDraft _draft;
+  List<GenAiReferenceImage> get _references => _draft.references;
+  Map<GenAiReferenceImage, Uint8List> get _referencePreviews => _draft.previews;
   bool _pickingReference = false;
   String? _referenceError;
   final _prompt = TextEditingController();
   final _studioScroll = ScrollController();
-  final _savingImages = <Uri>{};
+  final _parameterScroll = ScrollController(keepScrollOffset: false);
   final _images = <GenAiImageRecord>[];
-  final _orders = <GenAiUsageOrder>[];
-  GenAiUsageSummary? _usage;
-  GenAiModel? _imageModel;
+  GenAiModel? get _imageModel => _draft.model;
+  set _imageModel(GenAiModel? value) => _draft.model = value;
   GenAiCancellation? _operation;
   GenAiFailure? _failure;
-  late final int _tab;
   late final int _revision;
   bool _busy = false;
   bool _loading = false;
@@ -93,8 +85,10 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
   int _page = 1;
   final _customWidth = TextEditingController(text: '1024');
   final _customHeight = TextEditingController(text: '1024');
-  String _aspectRatio = '1:1';
-  String _resolution = '1K';
+  String get _aspectRatio => _draft.aspectRatio;
+  set _aspectRatio(String value) => _draft.aspectRatio = value;
+  String get _resolution => _draft.resolution;
+  set _resolution(String value) => _draft.resolution = value;
   bool _linked = true;
   bool get _customSize => _resolution == _customResolution;
 
@@ -111,17 +105,18 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
   String get _resolutionLabel => _customSize ? '自定义' : _resolution;
   GenAiImageSize? get _parsedSize => GenAiImageSize.tryParse(_size);
   bool get _validSize => _parsedSize?.isValid ?? false;
-  String _quality = 'low';
+  String get _quality => _draft.quality;
+  set _quality(String value) => _draft.quality = value;
   GenAiWorkspaceController get _workspace => widget.workspace;
 
   @override
   void initState() {
     super.initState();
     _picker = widget.picker ?? GenAiPicker();
-    _tab = widget.initialTab;
     _revision = _workspace.sessions.revision;
     _accountScope = _workspace.accountScope;
-    final draft = _workspace.imageStudio.draft;
+    final draft = _draft = _workspace.imageStudio.draft;
+    final restoreRatioFromDimensions = !GenAiImageSize.presets.containsKey(draft.aspectRatio);
     _prompt.text = draft.prompt;
     _customWidth.text = draft.width;
     _customHeight.text = draft.height;
@@ -132,8 +127,8 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
         ? draft.resolution
         : '1K';
     _quality = _qualityLabels.containsKey(draft.quality) ? draft.quality : 'low';
-    // Typed free-form dimensions survive preset switches. Seed them once when
-    // the draft has no usable custom size so selecting 自定义 starts valid.
+    // Restore a valid custom draft; preset-to-custom transitions use the
+    // dimensions currently shown by the selected preset.
     final restoredCustom = GenAiImageSize.tryParse(
       '${_customWidth.text}x${_customHeight.text}',
     );
@@ -141,17 +136,19 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       final seed = GenAiImageSize.tryParse(presets[_customSize ? '1K' : _resolution]!)!;
       _setCustomDimensions(seed);
     }
-    if (!GenAiImageSize.presets.containsKey(draft.aspectRatio)) {
+    if (restoreRatioFromDimensions) {
       final width = int.tryParse(_customWidth.text);
       final height = int.tryParse(_customHeight.text);
       if (width != null && height != null && width > 0 && height > 0) {
         _aspectRatio = _ratioFor(width, height);
-        final options = GenAiImageSize.presets[_aspectRatio]!;
-        if (!_customSize && !options.containsKey(_resolution)) _resolution = '1K';
+        final options = GenAiImageSize.presets[_aspectRatio];
+        if (options == null) {
+          _resolution = _customResolution;
+        } else if (!_customSize && !options.containsKey(_resolution)) {
+          _resolution = '1K';
+        }
       }
     }
-    _references.addAll(draft.references);
-    _referencePreviews.addAll(draft.previews);
     _imageModel = _workspace.imageModels
             .where(
               (m) => m.aiType == draft.model?.aiType && m.rootAiType == draft.model?.rootAiType,
@@ -168,26 +165,15 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
   }
 
   void _saveDraft() {
-    if (_tab != GenAiToolsPage.imagesTab ||
-        !_scopeValid ||
+    if (!_scopeValid ||
         _accountScope != _workspace.accountScope ||
         _revision != _workspace.sessions.revision) {
       return;
     }
     final draft = _workspace.imageStudio.draft;
     draft.prompt = _prompt.text;
-    draft.model = _imageModel;
     draft.width = _customWidth.text;
     draft.height = _customHeight.text;
-    draft.aspectRatio = _aspectRatio;
-    draft.resolution = _resolution;
-    draft.quality = _quality;
-    draft.references
-      ..clear()
-      ..addAll(_references);
-    draft.previews
-      ..clear()
-      ..addAll(_referencePreviews);
   }
 
   void _imageChanged() {
@@ -196,7 +182,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     final completion = _workspace.imageStudio.completion;
     if (_imageCompletion != completion) {
       _imageCompletion = completion;
-      if (_tab == GenAiToolsPage.imagesTab && _scopeValid) unawaited(_load());
+      if (_scopeValid) unawaited(_load());
     }
     setState(() {});
   }
@@ -234,8 +220,6 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       _loading = false;
       _loadFailure = null;
       _images.clear();
-      _orders.clear();
-      _usage = null;
       _prompt.clear();
       _failure = const GenAiFailure(GenAiFailureKind.accountChanged);
     });
@@ -278,24 +262,15 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     try {
       final page = more ? _page + 1 : 1;
       final repository = _workspace.repository;
-      if (_tab == GenAiToolsPage.imagesTab) {
-        final data = await repository.listImages(c, page: page);
-        c.throwIfCancelled();
-        if (!more) _images.clear();
-        for (final record in data.records) {
-          _images.removeWhere((item) => item.id == record.id);
-          _images.add(record);
-        }
-        _workspace.imageStudio.reconcile(_images);
-        _more = data.hasMore;
-      } else {
-        if (!more) _usage = await repository.usageSummary(c);
-        final data = await repository.usageOrders(c, page: page);
-        c.throwIfCancelled();
-        if (!more) _orders.clear();
-        _orders.addAll(data.records);
-        _more = data.hasMore;
+      final data = await repository.listImages(c, page: page);
+      c.throwIfCancelled();
+      if (!more) _images.clear();
+      for (final record in data.records) {
+        _images.removeWhere((item) => item.id == record.id);
+        _images.add(record);
       }
+      _workspace.imageStudio.reconcile(_images);
+      _more = data.hasMore;
       _page = page;
     } on GenAiFailure catch (error) {
       if (!c.isCancelled && mounted) _loadFailure = error;
@@ -315,27 +290,24 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     if (!_currentScope || _busy) return;
     final confirmed = await genAiShowDialog<bool>(
       context: context,
-      builder: (dialogContext) => genAiThemeScope(
-        dialogContext,
-        GenAiDialogFrame(
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: _compactDialog(dialogContext) ? 12 : 24,
-            vertical: 24,
-          ),
-          shape: _dialogShape(_compactDialog(dialogContext)),
-          title: const Text('删除图片记录？'),
-          content: const Text('这将删除学校平台上的图片记录，无法撤销。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('删除'),
-            ),
-          ],
+      builder: (dialogContext) => GenAiDialogFrame(
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: _compactDialog(dialogContext) ? 12 : 24,
+          vertical: 24,
         ),
+        shape: _dialogShape(_compactDialog(dialogContext)),
+        title: const Text('删除图片记录？'),
+        content: const Text('这将删除学校平台上的图片记录，无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
       ),
     );
     if (confirmed != true || !_currentScope) return;
@@ -370,31 +342,28 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     );
     final confirmed = await genAiShowDialog<bool>(
       context: context,
-      builder: (dialogContext) => genAiThemeScope(
-        dialogContext,
-        GenAiDialogFrame(
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: _compactDialog(dialogContext) ? 12 : 24,
-            vertical: 24,
-          ),
-          shape: _dialogShape(_compactDialog(dialogContext)),
-          title: const Text('生成 1 张图片'),
-          content: Text(
-            '${model.name} · $_size · ${_qualityLabels[_quality] ?? _quality}'
-            '${request.referenceImages.isEmpty ? '' : ' · ${request.referenceImages.length} 张参考图片'}\n'
-            '可能扣除学校账号额度。生成可能需要几分钟，可离开此页面，稍后回来查看结果。',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('生成'),
-            ),
-          ],
+      builder: (dialogContext) => GenAiDialogFrame(
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: _compactDialog(dialogContext) ? 12 : 24,
+          vertical: 24,
         ),
+        shape: _dialogShape(_compactDialog(dialogContext)),
+        title: const Text('生成 1 张图片'),
+        content: Text(
+          '${model.name} · $_size · ${_qualityLabels[_quality] ?? _quality}'
+          '${request.referenceImages.isEmpty ? '' : ' · ${request.referenceImages.length} 张参考图片'}\n'
+          '可能扣除学校账号额度。生成可能需要几分钟，可离开此页面，稍后回来查看结果。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('生成'),
+          ),
+        ],
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -411,10 +380,9 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     _operation?.cancel();
     _workspace.sessions.removeListener(_sessionChanged);
     _workspace.removeListener(_workspaceChanged);
-    _references.clear();
-    _referencePreviews.clear();
     _prompt.dispose();
     _studioScroll.dispose();
+    _parameterScroll.dispose();
     _customWidth.dispose();
     _customHeight.dispose();
     super.dispose();
@@ -427,7 +395,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
             ? _content()
             : Scaffold(
                 appBar: AppBar(
-                  title: Text(_tab == GenAiToolsPage.imagesTab ? '图片创作' : '用量统计'),
+                  title: const Text('图片创作'),
                   actions: [_refreshButton()],
                 ),
                 body: SafeArea(top: false, child: _content()),
@@ -451,18 +419,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
               padding: const EdgeInsets.all(16),
               child: Text(genAiFailureText(_failure!)),
             ),
-          if (_tab != GenAiToolsPage.imagesTab && _loadFailure != null) _loadError(),
-          Expanded(
-            child: _tab == GenAiToolsPage.imagesTab
-                ? _imageStudio()
-                : Align(
-                    alignment: Alignment.topCenter,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
-                      child: _statistics(),
-                    ),
-                  ),
-          ),
+          Expanded(child: _imageStudio()),
         ],
       );
 
@@ -484,7 +441,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       ? Padding(
           padding: const EdgeInsets.all(16),
           child: OutlinedButton(
-            onPressed: _busy || _loading ? null : () => unawaited(_load(more: true)),
+            onPressed: _busy || _loading ? null : () => _load(more: true),
             child: const Text('加载更多'),
           ),
         )
@@ -678,7 +635,8 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       final sample = GenAiImageSize.tryParse(entry.value.values.first)!;
       if (sample.width * height == sample.height * width) return entry.key;
     }
-    return '1:1';
+    final divisor = width.gcd(height);
+    return '${width ~/ divisor}:${height ~/ divisor}';
   }
 
   /// Parses a `width:height` ratio into its two positive sides. A malformed,
@@ -695,65 +653,45 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     return (sides[0]!, sides[1]!);
   }
 
-  String _orientationOf(String ratio) {
-    // An unparseable ratio falls back to square, matching the default preset.
-    final sides = _ratioValues(ratio);
-    if (sides == null || sides.$1 == sides.$2) return 'square';
-    return sides.$1 > sides.$2 ? 'landscape' : 'portrait';
-  }
+  String _orientationOf(String ratio) => GenAiImageDraft.orientationOf(ratio);
 
   (int, int)? _ratioSides() => _ratioValues(_aspectRatio);
 
-  String get _orientationLabel => switch (_orientationOf(_aspectRatio)) {
-        'landscape' => '横向',
-        'portrait' => '纵向',
-        _ => '方形',
-      };
-
   String get _parameterSummary =>
-      '$_orientationLabel · $_aspectRatio · $_resolutionLabel · ${_qualityLabels[_quality] ?? _quality}';
+      '$_aspectRatio · ${_size.replaceAll('x', ' × ')} · ${_qualityLabels[_quality] ?? _quality}';
+
+  void _alignCustomSize() {
+    if (!_customSize) return;
+    final ratio = _ratioSides();
+    final width = int.tryParse(_customWidth.text);
+    if (ratio != null && width != null && width > 0) {
+      _customHeight.text = '${(width * ratio.$2 / ratio.$1).round()}';
+    }
+  }
 
   void _selectOrientation(String orientation, {VoidCallback? notify}) {
-    if (orientation == 'square') {
-      _selectAspectRatio('1:1', notify: notify);
-      return;
-    }
-    // Flipping orientation keeps the ratio family and resolution tier.
-    final opposite = _aspectRatio.split(':').reversed.join(':');
-    _selectAspectRatio(
-      GenAiImageSize.presets.containsKey(opposite) && _orientationOf(opposite) == orientation
-          ? opposite
-          : orientation == 'landscape'
-              ? '16:9'
-              : '9:16',
-      notify: notify,
-    );
+    setState(() {
+      _draft.selectOrientation(orientation);
+      _alignCustomSize();
+    });
+    notify?.call();
   }
 
   void _selectAspectRatio(String ratio, {VoidCallback? notify}) {
     setState(() {
-      _aspectRatio = ratio;
-      final options = GenAiImageSize.presets[ratio];
-      if (options == null) return;
-      // Keep the selected preset tier when it exists for the new ratio; a
-      // custom size is independent of the ratio and its typed values stay.
-      if (!_customSize && !options.containsKey(_resolution)) _resolution = options.keys.first;
+      _draft.selectAspectRatio(ratio);
+      _alignCustomSize();
     });
     notify?.call();
   }
 
   void _selectResolution(String resolution, {VoidCallback? notify}) {
     setState(() {
+      final previousSize = GenAiImageSize.tryParse(_size);
+      final wasCustom = _customSize;
       _resolution = resolution;
-      if (resolution != _customResolution) return;
-      final current = GenAiImageSize.tryParse(
-        '${_customWidth.text}x${_customHeight.text}',
-      );
-      if (current == null || !current.isValid) {
-        final value =
-            GenAiImageSize.presets[_aspectRatio]?['1K'] ?? GenAiImageSize.presets['1:1']!['1K']!;
-        final size = GenAiImageSize.tryParse(value);
-        if (size != null) _setCustomDimensions(size);
+      if (_customSize && !wasCustom && previousSize != null) {
+        _setCustomDimensions(previousSize);
       }
     });
     notify?.call();
@@ -788,7 +726,12 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
 
   void _editDimension(String value, {required bool width, VoidCallback? notify}) {
     setState(() {
-      if (!_linked) return;
+      if (!_linked) {
+        final w = int.tryParse(_customWidth.text);
+        final h = int.tryParse(_customHeight.text);
+        if (w != null && h != null && w > 0 && h > 0) _aspectRatio = _ratioFor(w, h);
+        return;
+      }
       final amount = int.tryParse(value);
       final other = width ? _customHeight : _customWidth;
       if (amount == null || amount <= 0) {
@@ -894,7 +837,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                       menuWidth = math.max(menuWidth, measure.width + 60);
                       measure.dispose();
                     }
-                    final selected = await genAiShowAnchoredMenu<T>(
+                    final selected = await genAiShowMenu<T>(
                       context: anchorContext,
                       anchorContext: anchorContext,
                       minWidth: menuWidth,
@@ -935,7 +878,8 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                 minHeight: compact ? 30 : 44,
               ),
               child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 12, vertical: compact ? 0 : 10),
+                padding:
+                    EdgeInsets.symmetric(horizontal: compact ? 0 : 12, vertical: compact ? 0 : 10),
                 child: Row(
                   children: [
                     Expanded(
@@ -948,7 +892,8 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: textStyle,
-                          strutStyle: const StrutStyle(fontSize: 13, height: 1.4, forceStrutHeight: true),
+                          strutStyle:
+                              const StrutStyle(fontSize: 13, height: 1.4, forceStrutHeight: true),
                           textHeightBehavior: const TextHeightBehavior(
                             applyHeightToFirstAscent: false,
                             applyHeightToLastDescent: false,
@@ -1053,7 +998,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
 
   Widget _imageSizeControls({VoidCallback? onChanged, bool compactDialog = false}) {
     final enabled = !_editingBlocked;
-    final presets = GenAiImageSize.presets[_aspectRatio] ?? GenAiImageSize.presets['1:1']!;
+    final presets = GenAiImageSize.presets[_aspectRatio] ?? const <String, String>{};
     final orientation = _orientationOf(_aspectRatio);
     final ratios = [
       for (final ratio in GenAiImageSize.presets.keys)
@@ -1102,13 +1047,15 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: _studioField('比例', ratio)),
-            const SizedBox(width: 12),
+            if (ratios.length > 1) ...[
+              Expanded(child: _studioField('比例', ratio)),
+              const SizedBox(width: 12),
+            ],
             Expanded(child: _studioField('分辨率', resolution)),
           ],
         ),
         if (_customSize) ...[
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           _dimensionRow(enabled, onChanged),
         ],
         const SizedBox(height: 18),
@@ -1122,21 +1069,23 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     final error = !_validSize;
     Widget dimension(TextEditingController controller, bool width) => _studioField(
           width ? '宽度' : '高度',
-          TextField(
-            key: ValueKey(width ? 'genai-image-width' : 'genai-image-height'),
-            controller: controller,
-            enabled: enabled,
-            textAlignVertical: TextAlignVertical.center,
-            style: const TextStyle(fontSize: 13, height: 1.4),
-            strutStyle: const StrutStyle(fontSize: 13, height: 1.4, forceStrutHeight: true),
-            keyboardType: TextInputType.number,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(7),
-            ],
-            contextMenuBuilder: genAiTextSelectionContextMenu,
-            decoration: _studioDecoration(error: error),
-            onChanged: (value) => _editDimension(value, width: width, notify: onChanged),
+          Semantics(
+            label: width ? '宽度' : '高度',
+            child: TextField(
+              key: ValueKey(width ? 'genai-image-width' : 'genai-image-height'),
+              controller: controller,
+              enabled: enabled,
+              textAlignVertical: TextAlignVertical.center,
+              style: const TextStyle(fontSize: 13, height: 1.4),
+              strutStyle: const StrutStyle(fontSize: 13, height: 1.4, forceStrutHeight: true),
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(7),
+              ],
+              decoration: _studioDecoration(error: error),
+              onChanged: (value) => _editDimension(value, width: width, notify: onChanged),
+            ),
           ),
         );
     return Row(
@@ -1196,15 +1145,18 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
               ],
             );
           }
+          final short = GenAiLayout(Size(localWidth, constraints.maxHeight)).short;
           final wide = stage > 1100;
           final mid = stage > 959;
           final formWidth = wide ? 290.0 : (mid ? 255.0 : 260.0);
           final gap = wide ? 42.0 : (mid ? 26.0 : 28.0);
-          final padding = wide
-              ? const EdgeInsets.fromLTRB(32, 24, 32, 40)
-              : mid
-                  ? const EdgeInsets.all(20)
-                  : const EdgeInsets.symmetric(horizontal: 24, vertical: 20);
+          final padding = short
+              ? const EdgeInsets.symmetric(horizontal: 18, vertical: 8)
+              : wide
+                  ? const EdgeInsets.fromLTRB(32, 24, 32, 40)
+                  : mid
+                      ? const EdgeInsets.all(20)
+                      : const EdgeInsets.symmetric(horizontal: 24, vertical: 20);
           return Padding(
             key: const ValueKey('genai-image-padding'),
             padding: padding,
@@ -1214,20 +1166,34 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
                 SizedBox(
                   key: const ValueKey('genai-image-form'),
                   width: formWidth,
-                  child: ListView(
-                    controller: _studioScroll,
-                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: Column(
                     children: [
-                      Text(
-                        '让想象成像。',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: -.4,
+                      Flexible(
+                        child: ListView(
+                          controller: _studioScroll,
+                          shrinkWrap: true,
+                          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                          children: [
+                            if (!short) ...[
+                              Text(
+                                '让想象成像。',
+                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: -.4,
+                                    ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
+                            ..._studioForm(
+                              compact: short || constraints.maxHeight < 760,
+                              includeGenerate: false,
                             ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 24),
-                      ..._studioForm(compact: false),
+                      const SizedBox(height: 8),
+                      _generateButton(),
                     ],
                   ),
                 ),
@@ -1286,7 +1252,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
         SliverToBoxAdapter(child: SizedBox(height: bottom)),
       ];
 
-  List<Widget> _studioForm({required bool compact}) {
+  List<Widget> _studioForm({required bool compact, bool includeGenerate = true}) {
     final models = _workspace.imageModels;
     return [
       if (models.isEmpty) const Text('当前模型目录没有可用的生图模型。') else _modelField(models, compact: compact),
@@ -1304,7 +1270,6 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
             maxLines: null,
             textAlignVertical: TextAlignVertical.top,
             style: const TextStyle(fontSize: 13, height: 1.7),
-            contextMenuBuilder: genAiTextSelectionContextMenu,
             onChanged: (_) => setState(() {}),
             decoration: _studioDecoration(hint: '描述你想创作的画面…'),
           ),
@@ -1320,7 +1285,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
         _imageSizeControls(),
       ],
       const SizedBox(height: 16),
-      _generateButton(),
+      if (includeGenerate) _generateButton(),
       if (_workspace.imageStudio.failure case final failure?)
         Padding(
           padding: const EdgeInsets.only(top: 12),
@@ -1383,116 +1348,76 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
 
   Future<void> _showParameters() async {
     if (_editingBlocked || !_currentScope) return;
-    await genAiShowDialog<void>(
-      context: context,
-      builder: (dialogContext) => genAiThemeScope(
-        dialogContext,
-        AnimatedBuilder(
+    Widget content(BuildContext dialogContext) => AnimatedBuilder(
           animation: Listenable.merge([_workspace, _workspace.sessions, _workspace.imageStudio]),
           builder: (context, _) => StatefulBuilder(
-            builder: (context, update) {
-              if (!_currentScope) {
-                return GenAiDialogFrame(
-                  insetPadding: EdgeInsets.symmetric(
-                    horizontal: _compactDialog(dialogContext) ? 12 : 24,
-                    vertical: 24,
-                  ),
-                  shape: _dialogShape(_compactDialog(dialogContext)),
-                  title: const Text('账号已切换'),
-                  content: const Text('当前图片参数属于之前的账号，请关闭后重新打开。'),
+            builder: (context, update) => Column(
+              key: const ValueKey('genai-parameters-surface'),
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                GenAiContentHeader(
+                  key: const ValueKey('genai-parameters-header'),
+                  title: _currentScope ? '图片参数' : '账号已切换',
                   actions: [
-                    TextButton(
+                    IconButton(
+                      tooltip: '关闭',
                       onPressed: () => Navigator.pop(dialogContext),
-                      child: const Text('关闭'),
+                      icon: const GenAiIcon(GenAiGlyph.close),
                     ),
                   ],
-                );
-              }
-              final compact = _compactDialog(context);
-              final theme = Theme.of(context);
-              return Dialog(
-                key: const ValueKey('genai-image-parameters-dialog'),
-                clipBehavior: Clip.antiAlias,
-                shape: _dialogShape(compact),
-                insetPadding: EdgeInsets.all(compact ? 12 : 16),
-                child: ConstrainedBox(
-                  key: const ValueKey('genai-parameters-surface'),
-                  constraints: BoxConstraints(
-                    maxWidth: compact ? MediaQuery.sizeOf(context).width - 24 : 520,
-                    maxHeight: MediaQuery.sizeOf(context).height - (compact ? 24 : 48),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        key: const ValueKey('genai-parameters-header'),
-                        padding: EdgeInsets.fromLTRB(
-                          compact ? 16 : 18,
-                          compact ? 15 : 8,
-                          compact ? 16 : 8,
-                          compact ? 15 : 8,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '图片参数',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            SizedBox.square(
-                              dimension: 36,
-                              child: IconButton(
-                                tooltip: '关闭',
-                                style: IconButton.styleFrom(
-                                  minimumSize: const Size(36, 36),
-                                  maximumSize: const Size(36, 36),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  padding: EdgeInsets.zero,
-                                ),
-                                onPressed: () => Navigator.pop(dialogContext),
-                                icon: const GenAiIcon(GenAiGlyph.close),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      Flexible(
-                        child: SingleChildScrollView(
-                          key: const ValueKey('genai-parameters-body'),
-                          padding: EdgeInsets.all(compact ? 18 : 20),
-                          child: _imageSizeControls(
-                            onChanged: () => update(() {}),
-                            compactDialog: compact,
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            FilledButton(
-                              onPressed: () => Navigator.pop(dialogContext),
-                              child: const Text('完成'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                ),
+                Flexible(
+                  child: Scrollbar(
+                    controller: _parameterScroll,
+                    child: SingleChildScrollView(
+                      key: const ValueKey('genai-parameters-body'),
+                      controller: _parameterScroll,
+                      padding: const EdgeInsets.all(18),
+                      child: _currentScope
+                          ? _imageSizeControls(onChanged: () => update(() {}), compactDialog: true)
+                          : const Text('请关闭后重新打开。'),
+                    ),
                   ),
                 ),
-              );
-            },
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('完成'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
+        );
+    if (GenAiLayout.of(context).narrow) {
+      await genAiShowModalBottomSheet<void>(
+        context: context,
+        useRootNavigator: true,
+        useSafeArea: true,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (context) => Padding(
+          padding: MediaQuery.viewInsetsOf(context),
+          child: SafeArea(top: false, child: content(context)),
         ),
-      ),
-    );
+      );
+    } else {
+      await genAiShowDialog<void>(
+        context: context,
+        builder: (context) => Dialog(
+          key: const ValueKey('genai-image-parameters-dialog'),
+          clipBehavior: Clip.antiAlias,
+          insetPadding: const EdgeInsets.all(16),
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: content(context),
+        ),
+      );
+    }
   }
 
   Widget _generateButton() {
@@ -1573,33 +1498,6 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     );
   }
 
-  Widget _image(Uri uri, {BoxFit fit = BoxFit.contain}) => Image.network(
-        _workspace.repository.imageDisplayUri(uri.toString()).toString(),
-        fit: fit,
-        loadingBuilder: (context, child, progress) => progress == null
-            ? child
-            : const Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-        errorBuilder: (context, _, __) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                GenAiIcon(GenAiGlyph.image, color: Theme.of(context).colorScheme.outline),
-                const SizedBox(height: 8),
-                const Text('预览暂不可用', textAlign: TextAlign.center),
-              ],
-            ),
-          ),
-        ),
-      );
-
   Widget _previewMenuRow(GenAiGlyph glyph, String label) => Row(
         children: [
           GenAiIcon(glyph, size: 18),
@@ -1617,7 +1515,7 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     if (!_currentScope) return;
     final anchorContext = _previewMoreKey.currentContext;
     if (anchorContext == null) return;
-    final action = await genAiShowAnchoredMenu<String>(
+    final action = await genAiShowMenu<String>(
       context: context,
       anchorContext: anchorContext,
       minWidth: 170,
@@ -1670,307 +1568,102 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     }
     await genAiShowDialog<void>(
       context: context,
-      builder: (dialogContext) => genAiThemeScope(
-        dialogContext,
-        AnimatedBuilder(
-          animation: Listenable.merge([_workspace, _workspace.sessions, _workspace.imageStudio]),
-          builder: (context, _) => StatefulBuilder(
-            builder: (context, updatePreview) {
-              if (!_currentScope) {
-                return GenAiDialogFrame(
-                  insetPadding: EdgeInsets.symmetric(
-                    horizontal: _compactDialog(dialogContext) ? 12 : 24,
-                    vertical: 24,
-                  ),
-                  shape: _dialogShape(_compactDialog(dialogContext)),
-                  title: const Text('账号已切换'),
-                  content: const Text('此图片属于之前的账号，请关闭预览后重新打开。'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(dialogContext),
-                      child: const Text('关闭'),
-                    ),
-                  ],
-                );
-              }
-              final uri = record.images.isEmpty ? null : record.images[current];
-              final screen = MediaQuery.sizeOf(context);
-              final compact = screen.width <= 600;
-              final inset = compact ? 12.0 : 16.0;
-              final maxWidth = compact ? screen.width - 24 : math.min(940.0, screen.width - 32);
-              final canDelete = _images.any((image) => image.id == record.id);
-              final colors = Theme.of(context).colorScheme;
-              final caption = genAiImageCaption(record.prompt, title: record.title);
-              return Dialog(
-                key: const ValueKey('genai-image-preview'),
-                insetPadding: EdgeInsets.all(inset),
-                clipBehavior: Clip.antiAlias,
-                shape: _dialogShape(compact),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: maxWidth,
-                    maxHeight: screen.height - inset * 2,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        key: const ValueKey('genai-preview-header'),
-                        padding: EdgeInsets.fromLTRB(
-                          compact ? 16 : 22,
-                          compact ? 15 : 18,
-                          compact ? 16 : 22,
-                          compact ? 15 : 18,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: SelectableText(
-                                caption.isEmpty ? '图片预览' : caption,
-                                maxLines: 1,
-                                contextMenuBuilder: genAiTextSelectionContextMenu,
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ),
-                            SizedBox.square(
-                              dimension: 36,
-                              child: IconButton(
-                                tooltip: '关闭图片预览',
-                                style: IconButton.styleFrom(
-                                  minimumSize: const Size(36, 36),
-                                  maximumSize: const Size(36, 36),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  padding: EdgeInsets.zero,
-                                ),
-                                onPressed: () => Navigator.pop(dialogContext),
-                                icon: const GenAiIcon(GenAiGlyph.close),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      Flexible(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxHeight: screen.height * .64,
-                                ),
-                                child: uri == null
-                                    ? const Center(child: Text('此记录没有可预览的图片'))
-                                    : Center(
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(10),
-                                          child: GenAiImageActions(
-                                            image: _imageProvider(uri),
-                                            link: uri,
-                                            showMenuButton: false,
-                                            child: InteractiveViewer(
-                                              key: ValueKey(uri),
-                                              minScale: 1,
-                                              maxScale: 5,
-                                              child: _image(uri),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                              ),
-                              if (record.images.length > 1)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 8),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      IconButton(
-                                        tooltip: '上一张图片',
-                                        onPressed: current > 0
-                                            ? () => updatePreview(() => current--)
-                                            : null,
-                                        icon: const GenAiIcon(GenAiGlyph.chevronLeft),
-                                      ),
-                                      Text('${current + 1} / ${record.images.length}'),
-                                      IconButton(
-                                        tooltip: '下一张图片',
-                                        onPressed: current + 1 < record.images.length
-                                            ? () => updatePreview(() => current++)
-                                            : null,
-                                        icon: const GenAiIcon(GenAiGlyph.chevron),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (_referenceError != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
-                          child: Text(
-                            _referenceError!,
-                            style: TextStyle(color: colors.error),
-                          ),
-                        ),
-                      Padding(
-                        key: const ValueKey('genai-preview-footer'),
-                        padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-                        child: Wrap(
-                          alignment: WrapAlignment.spaceBetween,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: [
-                            OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size(0, 36),
-                                padding: const EdgeInsets.symmetric(horizontal: 14),
-                              ),
-                              onPressed: uri == null ||
-                                      _editingBlocked ||
-                                      _pickingReference ||
-                                      _references.length >= GenAiReferenceImage.maxCount
-                                  ? null
-                                  : () async {
-                                      if (_editingBlocked) return;
-                                      final adding = _pickReferenceImage(uri: uri);
-                                      updatePreview(() {});
-                                      final added = await adding;
-                                      if (!context.mounted || !_currentScope) return;
-                                      if (added) {
-                                        Navigator.pop(dialogContext);
-                                      } else {
-                                        updatePreview(() {});
-                                      }
-                                    },
-                              child: const Text('用作参考'),
-                            ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              spacing: 6,
-                              children: [
-                                IconButton(
-                                  tooltip: '复制链接',
-                                  style: IconButton.styleFrom(
-                                    minimumSize: const Size(36, 36),
-                                    maximumSize: const Size(36, 36),
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    padding: EdgeInsets.zero,
-                                  ),
-                                  onPressed: uri == null
-                                      ? null
-                                      : () async {
-                                          if (!_currentScope) return;
-                                          await Clipboard.setData(
-                                            ClipboardData(text: uri.toString()),
-                                          );
-                                          if (!mounted || !_currentScope) return;
-                                          showAdaptiveFeedback(
-                                            context: this.context,
-                                            message: '已复制链接',
-                                          );
-                                        },
-                                  icon: const GenAiIcon(GenAiGlyph.copy),
-                                ),
-                                IconButton(
-                                  tooltip: '分享图片',
-                                  style: IconButton.styleFrom(
-                                    minimumSize: const Size(36, 36),
-                                    maximumSize: const Size(36, 36),
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    padding: EdgeInsets.zero,
-                                  ),
-                                  onPressed: uri == null
-                                      ? null
-                                      : () async {
-                                          if (!_currentScope) return;
-                                          try {
-                                            await shareGenAiImagePng(
-                                              image: _imageProvider(uri),
-                                              context: this.context,
-                                              link: uri,
-                                              isCurrent: () => _currentScope,
-                                            );
-                                            if (!mounted || !_currentScope) return;
-                                            showAdaptiveFeedback(
-                                              context: this.context,
-                                              message: '已分享图片',
-                                            );
-                                          } catch (_) {
-                                            if (!mounted || !_currentScope) return;
-                                            showAdaptiveFeedback(
-                                              context: this.context,
-                                              message: '分享失败，请尝试下载图片',
-                                            );
-                                          }
-                                        },
-                                  icon: const GenAiIcon(GenAiGlyph.share),
-                                ),
-                                IconButton(
-                                  tooltip: '下载图片',
-                                  style: IconButton.styleFrom(
-                                    minimumSize: const Size(36, 36),
-                                    maximumSize: const Size(36, 36),
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    padding: EdgeInsets.zero,
-                                  ),
-                                  onPressed: uri == null || _savingImages.contains(uri)
-                                      ? null
-                                      : () async {
-                                          if (!_currentScope) return;
-                                          final saving = _saveImage(uri);
-                                          updatePreview(() {});
-                                          await saving;
-                                          if (context.mounted) updatePreview(() {});
-                                        },
-                                  icon: _savingImages.contains(uri)
-                                      ? const SizedBox.square(
-                                          dimension: 18,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        )
-                                      : const GenAiIcon(GenAiGlyph.download),
-                                ),
-                                SizedBox.square(
-                                  key: const ValueKey('genai-preview-more'),
-                                  dimension: 36,
-                                  child: IconButton(
-                                    key: _previewMoreKey,
-                                    tooltip: '更多图片操作',
-                                    style: IconButton.styleFrom(
-                                      minimumSize: const Size(36, 36),
-                                      maximumSize: const Size(36, 36),
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      padding: EdgeInsets.zero,
-                                    ),
-                                    onPressed: () => unawaited(
-                                      _showPreviewMoreMenu(
-                                        dialogContext,
-                                        record,
-                                        current,
-                                        canDelete: canDelete,
-                                      ),
-                                    ),
-                                    icon: const GenAiIcon(GenAiGlyph.more),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+      builder: (dialogContext) => AnimatedBuilder(
+        animation: Listenable.merge([_workspace, _workspace.sessions, _workspace.imageStudio]),
+        builder: (context, _) => StatefulBuilder(
+          builder: (context, updatePreview) {
+            if (!_currentScope) {
+              return GenAiDialogFrame(
+                insetPadding: EdgeInsets.symmetric(
+                  horizontal: _compactDialog(dialogContext) ? 12 : 24,
+                  vertical: 24,
                 ),
+                shape: _dialogShape(_compactDialog(dialogContext)),
+                title: const Text('账号已切换'),
+                content: const Text('此图片属于之前的账号，请关闭预览后重新打开。'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('关闭'),
+                  ),
+                ],
               );
-            },
-          ),
+            }
+            final uri = record.images.isEmpty ? null : record.images[current];
+            final canDelete = _images.any((image) => image.id == record.id);
+            final caption = genAiImageCaption(record.prompt, title: record.title);
+            return GenAiImageViewer(
+              image: uri == null ? null : _imageProvider(uri),
+              link: uri,
+              title: caption.isEmpty ? '图片预览' : caption,
+              navigation: record.images.length <= 1
+                  ? null
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          tooltip: '上一张图片',
+                          onPressed: current > 0 ? () => updatePreview(() => current--) : null,
+                          icon: const GenAiIcon(GenAiGlyph.chevronLeft),
+                        ),
+                        Text('${current + 1} / ${record.images.length}'),
+                        IconButton(
+                          tooltip: '下一张图片',
+                          onPressed: current + 1 < record.images.length
+                              ? () => updatePreview(() => current++)
+                              : null,
+                          icon: const GenAiIcon(GenAiGlyph.chevron),
+                        ),
+                      ],
+                    ),
+              error: _referenceError == null
+                  ? null
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      child: Text(
+                        _referenceError!,
+                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      ),
+                    ),
+              leadingAction: OutlinedButton(
+                onPressed: uri == null ||
+                        _editingBlocked ||
+                        _pickingReference ||
+                        _references.length >= GenAiReferenceImage.maxCount
+                    ? null
+                    : () async {
+                        if (_editingBlocked) return;
+                        final adding = _pickReferenceImage(uri: uri);
+                        updatePreview(() {});
+                        final added = await adding;
+                        if (!context.mounted || !_currentScope) return;
+                        if (added) {
+                          Navigator.pop(dialogContext);
+                        } else {
+                          updatePreview(() {});
+                        }
+                      },
+                child: const Text('用作参考'),
+              ),
+              trailingAction: SizedBox.square(
+                key: const ValueKey('genai-preview-more'),
+                dimension: 40,
+                child: IconButton(
+                  key: _previewMoreKey,
+                  tooltip: '更多图片操作',
+                  onPressed: () => unawaited(
+                    _showPreviewMoreMenu(
+                      dialogContext,
+                      record,
+                      current,
+                      canDelete: canDelete,
+                    ),
+                  ),
+                  icon: const GenAiIcon(GenAiGlyph.more),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -1985,116 +1678,111 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
     final uri = record.images.isEmpty ? null : record.images[current];
     await genAiShowDialog<void>(
       context: context,
-      builder: (dialogContext) => genAiThemeScope(
-        dialogContext,
-        AnimatedBuilder(
-          animation: Listenable.merge([_workspace, _workspace.sessions, _workspace.imageStudio]),
-          builder: (context, _) {
-            if (!_currentScope) {
-              return GenAiDialogFrame(
-                insetPadding: EdgeInsets.symmetric(
-                  horizontal: _compactDialog(dialogContext) ? 12 : 24,
-                  vertical: 24,
-                ),
-                shape: _dialogShape(_compactDialog(dialogContext)),
-                title: const Text('账号已切换'),
-                content: const Text('此图片属于之前的账号，请关闭后重新打开。'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('关闭'),
-                  ),
-                ],
-              );
-            }
-            final theme = Theme.of(context);
-            final prompt = record.prompt.trim();
-            final screen = MediaQuery.sizeOf(context);
-            final compact = screen.width <= 600;
-            final dialogWidth = math.min(500.0, screen.width - 32);
-            final caption = genAiImageCaption(prompt, title: record.title);
-            final quality = record.quality?.trim();
+      builder: (dialogContext) => AnimatedBuilder(
+        animation: Listenable.merge([_workspace, _workspace.sessions, _workspace.imageStudio]),
+        builder: (context, _) {
+          if (!_currentScope) {
             return GenAiDialogFrame(
-              key: const ValueKey('genai-image-description'),
-              constraints: BoxConstraints.tightFor(width: dialogWidth),
-              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-              shape: _dialogShape(compact),
-              contentPadding: EdgeInsets.zero,
-              actionsPadding: const EdgeInsets.fromLTRB(17, 0, 17, 17),
-              surfaceKey: const ValueKey('genai-description-surface'),
-              headerKey: const ValueKey('genai-description-header'),
-              title: SelectableText(
-                caption.isEmpty ? '图片描述' : caption,
-                maxLines: 1,
-                contextMenuBuilder: genAiTextSelectionContextMenu,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                ),
+              insetPadding: EdgeInsets.symmetric(
+                horizontal: _compactDialog(dialogContext) ? 12 : 24,
+                vertical: 24,
               ),
-              content: SingleChildScrollView(
-                key: const ValueKey('genai-description-body'),
-                padding: const EdgeInsets.all(17),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '描述',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SelectableText(
-                      prompt.isEmpty ? '无描述' : prompt,
-                      contextMenuBuilder: genAiTextSelectionContextMenu,
-                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
-                    ),
-                    const SizedBox(height: 17),
-                    if (uri != null) _ImageSizeLabel(image: _imageProvider(uri)),
-                    if (quality != null && quality.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Text(
-                            '质量',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(_qualityLabels[quality] ?? quality),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+              shape: _dialogShape(_compactDialog(dialogContext)),
+              title: const Text('账号已切换'),
+              content: const Text('此图片属于之前的账号，请关闭后重新打开。'),
               actions: [
-                OutlinedButton(
-                  onPressed: prompt.isEmpty || _editingBlocked
-                      ? null
-                      : () {
-                          if (!_currentScope) return;
-                          Navigator.pop(dialogContext);
-                          _reuseImagePrompt(record.prompt);
-                        },
-                  child: const Text('复用描述'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    if (!_currentScope) return;
-                    Navigator.pop(dialogContext);
-                    unawaited(_previewImage(record, index: current));
-                  },
-                  child: const Text('返回图片'),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('关闭'),
                 ),
               ],
             );
-          },
-        ),
+          }
+          final theme = Theme.of(context);
+          final prompt = record.prompt.trim();
+          final screen = MediaQuery.sizeOf(context);
+          final compact = screen.width <= 600;
+          final dialogWidth = math.min(500.0, screen.width - 32);
+          final caption = genAiImageCaption(prompt, title: record.title);
+          final quality = record.quality?.trim();
+          return GenAiDialogFrame(
+            key: const ValueKey('genai-image-description'),
+            constraints: BoxConstraints.tightFor(width: dialogWidth),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            shape: _dialogShape(compact),
+            contentPadding: EdgeInsets.zero,
+            actionsPadding: const EdgeInsets.fromLTRB(17, 0, 17, 17),
+            surfaceKey: const ValueKey('genai-description-surface'),
+            headerKey: const ValueKey('genai-description-header'),
+            title: SelectableText(
+              caption.isEmpty ? '图片描述' : caption,
+              maxLines: 1,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            content: SingleChildScrollView(
+              key: const ValueKey('genai-description-body'),
+              padding: const EdgeInsets.all(17),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    '描述',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    prompt.isEmpty ? '无描述' : prompt,
+                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+                  ),
+                  const SizedBox(height: 17),
+                  if (uri != null) _ImageSizeLabel(image: _imageProvider(uri)),
+                  if (quality != null && quality.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Text(
+                          '质量',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(_qualityLabels[quality] ?? quality),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              OutlinedButton(
+                onPressed: prompt.isEmpty || _editingBlocked
+                    ? null
+                    : () {
+                        if (!_currentScope) return;
+                        Navigator.pop(dialogContext);
+                        _reuseImagePrompt(record.prompt);
+                      },
+                child: const Text('复用描述'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (!_currentScope) return;
+                  Navigator.pop(dialogContext);
+                  unawaited(_previewImage(record, index: current));
+                },
+                child: const Text('返回图片'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2113,229 +1801,31 @@ class _GenAiToolsPageState extends State<GenAiToolsPage> {
       );
     }
   }
-
-  Future<void> _saveImage(Uri uri) async {
-    if (_savingImages.contains(uri) || !_currentScope) return;
-    setState(() => _savingImages.add(uri));
-    final client = Dio(
-      BaseOptions(
-        connectTimeout: const Duration(seconds: 20),
-        receiveTimeout: const Duration(seconds: 60),
-      ),
-    );
-    try {
-      final response = await client.get<List<int>>(
-        _workspace.repository.imageDisplayUri(uri.toString()).toString(),
-        options: Options(responseType: ResponseType.bytes),
-      );
-      final bytes = Uint8List.fromList(response.data ?? const []);
-      if (!_currentScope) return;
-      if (bytes.isEmpty) throw const FormatException('Empty image');
-      // Use the actual image format, not a URL suffix that may be absent.
-      final extension = bytes.length >= 3 && bytes[0] == 0xff && bytes[1] == 0xd8
-          ? 'jpg'
-          : bytes.length >= 12 && String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP'
-              ? 'webp'
-              : 'png';
-      final path = await saveGenAiImage(
-        bytes,
-        'techpie-${DateTime.now().microsecondsSinceEpoch}.$extension',
-      );
-      if (mounted && _currentScope) {
-        showAdaptiveFeedback(
-          context: context,
-          message: path == null ? '已开始下载' : '已保存到 $path',
-        );
-      }
-    } catch (_) {
-      if (mounted && _currentScope) {
-        showAdaptiveFeedback(context: context, message: '保存失败，请重试');
-      }
-    } finally {
-      client.close(force: true);
-      if (mounted) setState(() => _savingImages.remove(uri));
-    }
-  }
-
-  Widget _statistics() {
-    final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurfaceVariant;
-    final line = theme.colorScheme.outlineVariant;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
-      children: [
-        Text('学校平台数据 · 结算可能延迟', style: theme.textTheme.bodySmall?.copyWith(color: muted)),
-        for (final quota in _usage?.quotas ?? <GenAiQuota>[])
-          Padding(
-            padding: const EdgeInsets.only(top: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(quota.name, style: theme.textTheme.bodyMedium?.copyWith(color: muted)),
-                const SizedBox(height: 6),
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '${quota.remaining}',
-                        style: const TextStyle(fontSize: 34, letterSpacing: -1),
-                      ),
-                      TextSpan(
-                        text: '  / ${quota.total}',
-                        style: TextStyle(fontSize: 15, color: muted),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    minHeight: 5,
-                    value: quota.total <= 0
-                        ? 0
-                        : (quota.remaining / quota.total).clamp(0, 1).toDouble(),
-                    backgroundColor: line,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '剩余 ${quota.remaining} · 已用 ${quota.used} · 总额 ${quota.total}',
-                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                ),
-              ],
-            ),
-          ),
-        const SizedBox(height: 32),
-        Text('消费明细', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 4),
-        if (_orders.isEmpty && !_loading && _loadFailure == null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Text('没有消费记录', style: TextStyle(color: muted)),
-          ),
-        for (final order in _orders)
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: line))),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(order.model, style: theme.textTheme.bodyMedium),
-                      const SizedBox(height: 3),
-                      Text(
-                        [
-                          if (order.time.isNotEmpty) order.time,
-                          '输入 ${order.inputTokens} Token',
-                          '输出 ${order.outputTokens} Token',
-                          if (order.imageTokens != 0) '图片 ${order.imageTokens} Token',
-                        ].join(' · '),
-                        style: theme.textTheme.bodySmall?.copyWith(color: muted, height: 1.5),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Text('${order.used} 额度', style: theme.textTheme.bodyMedium),
-              ],
-            ),
-          ),
-        _loadMore(),
-      ],
-    );
-  }
 }
 
 /// Shows the decoded pixel dimensions of an image, the only size metadata the
 /// history record actually carries.
-class _ImageSizeLabel extends StatefulWidget {
+class _ImageSizeLabel extends StatelessWidget {
   const _ImageSizeLabel({required this.image});
-
   final ImageProvider<Object> image;
 
   @override
-  State<_ImageSizeLabel> createState() => _ImageSizeLabelState();
-}
-
-class _ImageSizeLabelState extends State<_ImageSizeLabel> {
-  ImageStream? _stream;
-  ImageStreamListener? _listener;
-  Size? _size;
-  int _generation = 0;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _resolve();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ImageSizeLabel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.image != widget.image) {
-      _size = null;
-      _resolve();
-    }
-  }
-
-  void _resolve() {
-    _stop();
-    final generation = ++_generation;
-    final stream = widget.image.resolve(createLocalImageConfiguration(context));
-    final listener = ImageStreamListener(
-      (info, _) {
-        final width = info.image.width;
-        final height = info.image.height;
-        info.dispose();
-        if (!mounted || generation != _generation) return;
-        _stop();
-        // A cached image stream can complete while this widget is building.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || generation != _generation) return;
-          setState(() => _size = Size(width.toDouble(), height.toDouble()));
-        });
-      },
-      onError: (Object error, StackTrace? stackTrace) {
-        if (!mounted || generation != _generation) return;
-        _stop();
-      },
-    );
-    _stream = stream;
-    _listener = listener;
-    stream.addListener(listener);
-  }
-
-  void _stop() {
-    final listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
-    _stream = null;
-    _listener = null;
-  }
-
-  @override
-  void dispose() {
-    _stop();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final size = _size;
-    if (size == null) return const SizedBox.shrink();
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Text(
-          '尺寸',
-          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-        const Spacer(),
-        Text('${size.width.round()} × ${size.height.round()}'),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => GenAiImageDimensions(
+        image: image,
+        builder: (context, size) {
+          if (size == null) return const SizedBox.shrink();
+          final theme = Theme.of(context);
+          return Row(
+            children: [
+              Text(
+                '尺寸',
+                style:
+                    theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const Spacer(),
+              Text('${size.width.round()} × ${size.height.round()}'),
+            ],
+          );
+        },
+      );
 }

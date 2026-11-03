@@ -3,9 +3,9 @@ import 'dart:typed_data';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/application/genai_chat_service.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
+import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
 import 'package:techpie/features/genai/presentation/genai_icons.dart';
 import 'package:techpie/features/genai/presentation/genai_turn_view.dart';
 
@@ -16,6 +16,7 @@ GenAiTurnActions _actions({
   void Function(int index, String action)? changeTurn,
   void Function(int index)? retry,
   VoidCallback? exportConversation,
+  Uri Function(String)? imageDisplayUri,
 }) =>
     GenAiTurnActions(
       copy: copy ?? (_, __) {},
@@ -25,7 +26,7 @@ GenAiTurnActions _actions({
       exportConversation: exportConversation ?? () {},
       openImages: () {},
       showImage: ({Uint8List? bytes, String? url}) {},
-      imageDisplayUri: (url) => Uri.parse(url),
+      imageDisplayUri: imageDisplayUri ?? (url) => Uri.parse(url),
       markdownImage: (uri, title, alt) => const SizedBox.shrink(),
       toggleTts: (_, __) {},
       approve: (_) {},
@@ -63,8 +64,10 @@ Widget _host({
   bool sending = false,
   bool connected = true,
   GenAiFailure? failure,
+  List<String> imageUrls = const [],
 }) {
   final turn = GenAiConversationTurn('User prompt', id: _turnId)
+    ..attachedImageUrls = imageUrls
     ..answer = 'Answer body'
     ..failure = failure
     ..phase = failure == null ? GenAiChatPhase.completed : GenAiChatPhase.failed;
@@ -111,6 +114,22 @@ Finder get _edit => find.byKey(const ValueKey('genai-turn-edit-$_turnId'));
 Finder get _menu => find.byKey(const ValueKey('genai-turn-menu-$_turnId'));
 
 void main() {
+  testWidgets('unsafe restored image URLs leave the prompt and answer readable', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        width: 800,
+        touch: false,
+        imageUrls: ['http://127.0.0.1/private', 'https://other.example/image.png'],
+        actions: _actions(imageDisplayUri: genAiImageUri),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('User prompt'), findsOneWidget);
+    expect(find.text('Answer body'), findsOneWidget);
+    expect(find.byType(Image), findsNothing);
+  });
+
   for (final width in [375.0, 1280.0]) {
     testWidgets('campus-network warning retains the draft notice weight at $width', (tester) async {
       _sizeTo(tester, Size(width, 900));

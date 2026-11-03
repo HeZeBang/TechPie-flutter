@@ -1,19 +1,195 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/application/genai_chat_service.dart';
-import 'package:techpie/features/genai/application/genai_conversation_archive.dart';
+import 'package:techpie/features/genai/application/genai_agent_projection.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
 import 'package:techpie/features/genai/application/genai_remote_history.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
+import 'package:techpie/features/genai/domain/genai_context_source.dart';
 import 'package:techpie/features/genai/domain/genai_context_usage.dart';
+import 'package:techpie/features/genai/domain/genai_contract.dart';
+import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
 import 'package:techpie/features/genai/domain/genai_remote_record.dart';
 
 const nonce = 'remote_test_nonce_012345';
 
 void main() {
+  test('versioned plain answer recovers after a tool receipt without local state', () {
+    final turn = GenAiConversationTurn('Read then explain', id: 'plain', isAgent: true);
+    final call = GenAiAgentToolCall(id: 'read', name: 'get_current_time', arguments: {});
+    final rows = [
+      GenAiSavedTurn(
+        prompt: encodeGenAiRemoteRecord({
+          'step_id': nonce,
+          'agent_format': 5,
+          'turn': turn.toRemoteInput(),
+          'input': turn.prompt,
+        }),
+        answer: encodeGenAiAgentCall(call, nonce: nonce),
+      ),
+      GenAiSavedTurn(
+        prompt: encodeGenAiRemoteRecord({
+          'step_id': '${nonce}2',
+          'agent_format': 5,
+          'turn_id': turn.id,
+          'input': encodeGenAiAgentResult(
+            {
+              'call_id': call.id,
+              'name': call.name,
+              'ok': true,
+              'result': {'utc': '2026-11-02T12:00:00Z'},
+            },
+            nonce: nonce,
+          ),
+        }),
+        answer: 'It is 20:00 in Shanghai.\n```techpie-visual\n<p>20:00</p>\n```',
+      ),
+    ];
+    final restored = decodeGenAiConversation('group', rows).archive.turns.single;
+    expect(restored.phase, GenAiChatPhase.completed);
+    expect(restored.answer, rows.last.answer);
+    expect(restored.agentEvents['read']!.result!['ok'], true);
+    expect(
+      restored.agentActivity.where((e) => e.kind == GenAiAgentEventKind.protocolError),
+      isEmpty,
+    );
+  });
+
+  test('server-only recovery keeps native-format retry and end-delimited final', () {
+    final turn = GenAiConversationTurn('Get the time', id: 'turn', isAgent: true);
+    final recovered = decodeGenAiConversation('group', [
+      GenAiSavedTurn(
+        prompt: encodeGenAiRemoteRecord({
+          'step_id': nonce,
+          'turn': turn.toRemoteInput(),
+          'input': turn.prompt,
+        }),
+        answer: '<|open|>call tool="get_current_time"<|close|>',
+      ),
+      GenAiSavedTurn(
+        prompt: encodeGenAiRemoteRecord({
+          'step_id': '${nonce}2',
+          'turn_id': turn.id,
+          'input': encodeGenAiAgentResult(
+            {
+              'call_id': null,
+              'name': null,
+              'ok': false,
+              'error': {'code': 'native_tool_format', 'message': 'native_tool_format'},
+            },
+            nonce: nonce,
+          ),
+        }),
+        answer: '<techpie-final nonce="${nonce}2">Unable to retrieve the time.',
+      ),
+    ]).archive.turns.single;
+    expect(recovered.phase, GenAiChatPhase.completed);
+    expect(recovered.answer, 'Unable to retrieve the time.');
+    expect(recovered.agentEvents, isEmpty);
+    expect(
+      recovered.agentActivity.where((e) => e.kind == GenAiAgentEventKind.protocolError),
+      hasLength(1),
+    );
+  });
+
+  test('retrieved excerpts recover from school records without duplicated source text', () {
+    const text = 'Budget: 42 数学😀; never substitute an assistant guess.';
+    const original = GenAiMessage(role: GenAiRole.user, content: text);
+    final first = GenAiConversationTurn(text, id: 'original');
+    final next =
+        GenAiConversationTurn('Recall budget', id: 'lookup', parentId: first.id, isAgent: true);
+    for (final name in ['search_conversation', 'read_conversation_records']) {
+      final page = <String, Object?>{
+        'record_id': genAiContextSourceId(original),
+        'offset': 0,
+        'text': text,
+        'partial': false,
+      };
+      final receipt = <String, Object?>{
+        'call_id': 'lookup-call',
+        'name': name,
+        'ok': true,
+        'result': name == 'search_conversation'
+            ? {
+                'matches': [
+                  page,
+                  {
+                    ...page,
+                    'offset': text.runes.toList().indexOf('数'.runes.single),
+                    'text': '数学😀',
+                    'partial': true,
+                  },
+                ],
+                'total': 2,
+              }
+            : page,
+      };
+      final compact = genAiCompactRetrievedReceipt(receipt, [original]);
+      expect(jsonEncode(compact), isNot(contains(text)));
+      final rows = [
+        GenAiSavedTurn(
+          prompt: encodeGenAiRemoteRecord({
+            'step_id': 'original-step',
+            'turn': first.toRemoteInput(),
+            'input': text,
+          }),
+          answer: 'Recorded.',
+        ),
+        GenAiSavedTurn(
+          prompt: encodeGenAiRemoteRecord({
+            'step_id': 'lookup-step',
+            'turn': next.toRemoteInput(),
+            'input': next.prompt,
+          }),
+          answer: encodeGenAiAgentCall(
+            GenAiAgentToolCall(id: 'lookup-call', name: name, arguments: {}),
+            nonce: nonce,
+          ),
+        ),
+        GenAiSavedTurn(
+          prompt: encodeGenAiRemoteRecord({
+            'step_id': 'result-step',
+            'turn_id': next.id,
+            'input': encodeGenAiAgentResult(compact, nonce: nonce),
+          }),
+          answer: encodeGenAiAgentFinal('42', nonce: nonce),
+        ),
+      ];
+      final recovered = decodeGenAiConversation('group', rows).archive.turns.last;
+      expect(recovered.phase, GenAiChatPhase.completed);
+      expect(recovered.agentEvents['lookup-call']!.result, receipt);
+      expect(() => genAiRestoreRetrievedReceipt(compact, []), throwsFormatException);
+    }
+  });
+
+  test('server recovery retains unverified output inertly and a valid repair replaces it', () {
+    final turn = GenAiConversationTurn('Explain', id: 'unverified', isAgent: true);
+    const candidate = 'Useful observation.\n```techpie-visual\n<script>run()</script>\n```';
+    GenAiSavedTurn row(String step, String answer, {bool first = false}) => GenAiSavedTurn(
+          prompt: encodeGenAiRemoteRecord({
+            'step_id': step,
+            'turn_id': turn.id,
+            if (first) 'turn': turn.toRemoteInput(),
+            'input': first ? turn.prompt : 'Repair format',
+          }),
+          answer: answer,
+        );
+    final initial = row('first', candidate, first: true);
+    final recovered = decodeGenAiConversation('group', [initial]).archive.turns.single;
+    expect(recovered.phase, GenAiChatPhase.interrupted);
+    expect(recovered.failure?.kind, GenAiFailureKind.protocol);
+    expect(recovered.answer, genAiUnverifiedAgentSource(candidate));
+    final repaired = decodeGenAiConversation('group', [
+      initial,
+      row('second', encodeGenAiAgentFinal('Verified answer', nonce: nonce)),
+    ]).archive.turns.single;
+    expect(repaired.phase, GenAiChatPhase.completed);
+    expect(repaired.failure, isNull);
+    expect(repaired.answer, 'Verified answer');
+  });
+
   test('late completion cannot revive a cancelled ancestor or hide its follow-up', () {
     final stopped = GenAiConversationTurn('Long task', id: 'stopped', isAgent: true)
       ..phase = GenAiChatPhase.cancelled
@@ -43,7 +219,7 @@ void main() {
       row(followup, 'New answer', carryStop: true),
       row(stopped, encodeGenAiAgentFinal('Late full answer', nonce: nonce)),
     ];
-    final recovered = decodeGenAiConversation('group', rows).archive.restoreTurns();
+    final recovered = decodeGenAiConversation('group', rows).archive.turns;
     expect(recovered.map((turn) => turn.id), ['stopped', 'next']);
     expect(recovered.first.phase, GenAiChatPhase.cancelled);
     expect(recovered.first.answer, 'Partial answer');
@@ -54,9 +230,13 @@ void main() {
   test('server-only recovery joins identified tools, preserves files and selects retry ancestry',
       () {
     final source = GenAiConversationTurn('Read my document', id: 'a', isAgent: true)
-      ..attachedFileNames = ['notes.txt']
-      ..attachedFileIds = ['file-a']
-      ..attachedFileContents = {'file-a': 'Original numeric record: 5837'};
+      ..files = [
+        const GenAiTurnFile(
+          id: 'file-a',
+          name: 'notes.txt',
+          content: 'Original numeric record: 5837',
+        ),
+      ];
     final call = GenAiAgentToolCall(id: 'c1', name: 'get_semesters', arguments: const {});
     GenAiSavedTurn row(String step, GenAiConversationTurn turn, String input, String answer) =>
         GenAiSavedTurn(
@@ -111,7 +291,7 @@ void main() {
         'New answer',
       ),
     ];
-    final recovered = decodeGenAiConversation('group', rows).archive.restoreTurns();
+    final recovered = decodeGenAiConversation('group', rows).archive.turns;
     expect(recovered.map((t) => t.id), ['a', 'c']);
     expect(recovered.first.attachedFileContents['file-a'], contains('5837'));
     expect(recovered.first.agentEvents['c1']!.result!['ok'], true);
@@ -174,7 +354,7 @@ void main() {
       ),
     ];
     final archive = decodeGenAiConversation('group', rows).archive;
-    final turn = archive.restoreTurns().single;
+    final turn = archive.turns.single;
     expect(turn.phase, GenAiChatPhase.completed);
     expect(turn.agentEvents[call.id]!.result, receipt);
     expect(turn.approvalBudget['reserve_court'], 1);
@@ -190,12 +370,40 @@ void main() {
     expect('booking-314'.allMatches(compact), hasLength(1));
   });
 
+  test('server checkpoints normalize earlier parallel attachment fields', () {
+    final stopped = GenAiConversationTurn('Read attached notes', id: 'stopped')
+      ..answer = 'Partial answer';
+    final checkpoint = stopped.toInterruptedRecord()
+      ..remove('files')
+      ..addAll({
+        'attachedFileIds': ['notes-id'],
+        'attachedFileNames': ['notes.txt'],
+        'attachedFileContents': {'notes-id': 'Seats: 144'},
+      });
+    final next = GenAiConversationTurn('Continue', id: 'next', parentId: 'stopped');
+    final recovered = decodeGenAiConversation('group', [
+      GenAiSavedTurn(
+        prompt: encodeGenAiRemoteRecord({
+          'kind': 'exchange',
+          'step_id': 'next-step',
+          'turn': next.toRemoteInput(),
+          'turn_id': next.id,
+          'input': next.prompt,
+          'interrupted': [checkpoint],
+        }),
+        answer: '144 seats',
+      ),
+    ]).archive.turns;
+    expect(recovered.first.files.single.id, 'notes-id');
+    expect(recovered.first.files.single.content, 'Seats: 144');
+    expect(recovered.first.files.single.name, 'notes.txt');
+    expect(recovered.first.phase, GenAiChatPhase.cancelled);
+  });
+
   test('upload fallback parents migrate without reviving stale interrupted snapshots', () {
     final first = GenAiConversationTurn('Start', id: 'first');
     final document = GenAiConversationTurn('Read file', id: 'doc', parentId: 'first', isAgent: true)
-      ..attachedFileIds = ['file']
-      ..attachedFileNames = ['notes.txt']
-      ..attachedFileContents = {'file': 'Seats: 144'};
+      ..files = [const GenAiTurnFile(id: 'file', name: 'notes.txt', content: 'Seats: 144')];
     final followup = GenAiConversationTurn('Recall seats', id: 'next', parentId: 'legacy-2');
     final call = GenAiAgentToolCall(id: 'time', name: 'get_current_time', arguments: const {});
     GenAiSavedTurn row(
@@ -246,7 +454,7 @@ void main() {
         ],
       ),
     ];
-    final turns = decodeGenAiConversation('group', rows).archive.restoreTurns();
+    final turns = decodeGenAiConversation('group', rows).archive.turns;
     expect(turns.map((t) => t.id), ['first', 'doc', 'next']);
     expect(turns[1].agentEvents['time']!.result!['ok'], true);
     expect(turns[1].attachedFileContents['file'], 'Seats: 144');
@@ -256,7 +464,7 @@ void main() {
     final broken = decodeGenAiConversation('group', [
       ...rows.take(3),
       row('5', followup, followup.prompt, '144'),
-    ]).archive.restoreTurns();
+    ]).archive.turns;
     expect(broken.first.isHistoryGap, true);
   });
 
@@ -282,8 +490,8 @@ void main() {
         ),
       ],
     ).archive;
-    expect(recovered.restoreTurns().single.actionScopeId, 'original-task');
-    expect(recovered.restoreTurns().single.toArchiveJson()['actionScopeId'], 'original-task');
+    expect(recovered.turns.single.actionScopeId, 'original-task');
+    expect(recovered.turns.single.toArchiveJson()['actionScopeId'], 'original-task');
     expect(
       (recovered.mutations['effects']! as Map).keys,
       contains(genAiMutationReceiptKey(call, turnId: 'original-task')),
@@ -342,16 +550,9 @@ void main() {
         Map<String, Object?>.from(turn.agentEvents['img']!.result!['result']! as Map);
 
     final archive = decodeGenAiConversation('group', rows).archive;
-    final recovered = imageResult(archive.restoreTurns().single);
+    final recovered = imageResult(archive.turns.single);
     expect(recovered['title'], 'Red square');
     expect(recovered['quality'], 'high');
-
-    // The archive is a projection of remote history; re-encoding and loading
-    // it must preserve optional receipt metadata.
-    final rebuilt = GenAiConversationArchive.fromJson(archive.toJson());
-    final restored = imageResult(rebuilt.restoreTurns().single);
-    expect(restored['title'], 'Red square');
-    expect(restored['quality'], 'high');
   });
 
   test('missing tool receipt remains unknown and never recreates a pending approval', () {
@@ -374,7 +575,7 @@ void main() {
         ),
       ),
     ];
-    final turn = decodeGenAiConversation('group', rows).archive.restoreTurns().single;
+    final turn = decodeGenAiConversation('group', rows).archive.turns.single;
     expect(turn.phase, GenAiChatPhase.interrupted);
     expect(turn.approvalBudget['reserve_court'], 1);
     expect((turn.agentEvents['book']!.result!['error']! as Map)['code'], 'outcome_unknown');

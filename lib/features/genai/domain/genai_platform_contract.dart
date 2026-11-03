@@ -281,16 +281,23 @@ final class GenAiImageRequest {
     required this.groupId,
     this.size = '1024x1024',
     this.quality = 'low',
+    this.outputFormat = 'png',
+    int? outputCompression,
     String? title,
     List<GenAiReferenceImage> referenceImages = const [],
-  })  : title = _blankImageText(title),
+  })  : outputCompression = outputFormat == 'jpeg' ? (outputCompression ?? 80) : outputCompression,
+        title = _blankImageText(title),
         referenceImages = List.unmodifiable(referenceImages) {
     GenAiReferenceImage.validate(this.referenceImages);
     if (prompt.trim().isEmpty ||
         groupId.isEmpty ||
         !model.isImage ||
         !(GenAiImageSize.tryParse(size)?.isValid ?? false) ||
-        !const ['low', 'medium', 'high'].contains(quality)) {
+        !const ['low', 'medium', 'high'].contains(quality) ||
+        !const ['png', 'jpeg'].contains(outputFormat) ||
+        (outputFormat == 'png' && outputCompression != null) ||
+        (this.outputCompression != null &&
+            (this.outputCompression! < 1 || this.outputCompression! > 100))) {
       throw ArgumentError('Invalid image request');
     }
   }
@@ -306,6 +313,8 @@ final class GenAiImageRequest {
   final String groupId;
   final String size;
   final String quality;
+  final String outputFormat;
+  final int? outputCompression;
 
   /// Optional caption requested alongside the image. Trimmed; null when the
   /// user left it blank. Sent upstream only when present.
@@ -323,12 +332,12 @@ final class GenAiImageRequest {
         'quality': quality,
         'count': '1',
         'style': 'vivid',
-        'outputFormat': 'png',
+        'outputFormat': outputFormat,
         'imageBase64': referenceImages.length == 1 ? referenceImages.single.dataUrl : null,
         'imageBase64List': referenceImages.length > 1
             ? [for (final image in referenceImages) image.dataUrl]
             : null,
-        'outputCompression': null,
+        'outputCompression': outputCompression,
       };
 }
 
@@ -362,32 +371,35 @@ final class GenAiQuota {
 }
 
 final class GenAiUsageSummary {
-  const GenAiUsageSummary(this.quotas);
+  const GenAiUsageSummary(this.quotas, {this.hasUnavailableQuotas = false});
   factory GenAiUsageSummary.fromJson(Map<String, dynamic> json) {
     final quotas = <GenAiQuota>[];
-    for (final key in ['free', 'recharge']) {
-      if (json[key] != null) {
-        quotas.add(
-          GenAiQuota.fromJson(
-            key == 'free' ? '免费额度' : '充值额度',
-            genAiObject(json[key]),
-          ),
-        );
+    var unavailable = false;
+    void add(Object? value, {String? name}) {
+      try {
+        final row = genAiObject(value);
+        quotas.add(GenAiQuota.fromJson(name ?? genAiOptionalText(row, 'name'), row));
+      } on GenAiFailure {
+        unavailable = true;
       }
+    }
+
+    for (final key in ['free', 'recharge']) {
+      if (json[key] != null) add(json[key], name: key == 'free' ? '免费额度' : '充值额度');
     }
     final projects = json['projects'];
     if (projects is List) {
       for (final item in projects) {
-        final project = genAiObject(item);
-        quotas.add(
-          GenAiQuota.fromJson(genAiOptionalText(project, 'name'), project),
-        );
+        add(item);
       }
+    } else if (projects != null) {
+      unavailable = true;
     }
     // Deliberately discard developer keys, including plaintext appKey fields.
-    return GenAiUsageSummary(List.unmodifiable(quotas));
+    return GenAiUsageSummary(List.unmodifiable(quotas), hasUnavailableQuotas: unavailable);
   }
   final List<GenAiQuota> quotas;
+  final bool hasUnavailableQuotas;
 }
 
 final class GenAiUsageOrder {

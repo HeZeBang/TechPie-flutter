@@ -1,6 +1,7 @@
 /// Summaries preserve partial/cache warnings; raw results remain available below.
 String genAiToolResultSummary(String name, Map<String, Object?>? result) {
   final error = result?['error'];
+  if (error is Map && error['code'] == 'approval_denied') return '已取消，未执行';
   if (error is Map && error['message'] is String) return error['message'] as String;
   if (result?['ok'] != true || result?['result'] is! Map) return '';
   final payload = result!['result'] as Map;

@@ -4,7 +4,6 @@ import 'dart:convert';
 import '../../../models/third_party_account.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/third_party_auth_service.dart';
-import '../application/campus_genai_session_issuer.dart';
 import '../application/genai_chat_service.dart';
 import '../application/genai_repository.dart';
 import '../application/genai_session_service.dart';
@@ -142,7 +141,7 @@ final class GenAiRuntime {
     final scope = _currentCampusScope();
     final binding = _thirdPartyAuth.cpdailyBinding;
     final issuer = _issuer;
-    if (scope == null || binding == null || issuer is! CampusGenAiSessionIssuer) {
+    if (scope == null || binding == null || issuer is! GenAiCampusIdentityIssuer) {
       throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
     }
     final cancellation = GenAiCancellation();
@@ -156,13 +155,10 @@ final class GenAiRuntime {
     _auth.addListener(guard);
     _thirdPartyAuth.addListener(guard);
     try {
-      final credential = await issuer.issue(
-        GenAiOwner(
-          primaryUserId: _auth.session!.userId,
-          studentId: '',
-          bindingId: binding.boundAt.toUtc().toIso8601String(),
-        ),
-        cancellation,
+      final credential = await issuer.issueForCampusBinding(
+        primaryUserId: _auth.session!.userId,
+        bindingId: binding.boundAt.toUtc().toIso8601String(),
+        cancellation: cancellation,
       );
       final profile = await cancellation.race(
         _api.verifyToken(credential.token, cancellation),

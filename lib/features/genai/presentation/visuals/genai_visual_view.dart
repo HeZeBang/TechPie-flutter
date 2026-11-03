@@ -21,10 +21,12 @@ class GenAiVisualScope extends InheritedWidget {
     super.key,
     required this.latest,
     required this.answerId,
+    this.onFullscreenChanged,
     required super.child,
   });
   final (String, int)? latest;
   final String answerId;
+  final ValueChanged<bool>? onFullscreenChanged;
 
   @override
   bool updateShouldNotify(GenAiVisualScope oldWidget) =>
@@ -155,9 +157,15 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
     }
   }
 
-  void _event(String event, double? height) {
+  void _event(String event, double? value) {
     if (!mounted) return;
-    if (event == 'loading') {
+    if (event == 'scroll') {
+      if (!kIsWeb || _full || _collapsed || value == null || !value.isFinite) return;
+      final position = Scrollable.maybeOf(context)?.position;
+      if (position == null || !position.hasContentDimensions) return;
+      final delta = value.clamp(-800.0, 800.0);
+      position.pointerScroll(position.axisDirection == AxisDirection.up ? -delta : delta);
+    } else if (event == 'loading') {
       // Hidden/offscreen platform views may not attach until later. Measure
       // startup from navigation, not from preparing their saved HTML.
       final revision = _revision;
@@ -178,12 +186,15 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
     } else if (event == 'error') {
       _timeout?.cancel();
       setState(() => _error = '示例运行出错');
-    } else if (event == 'height' && height != null && height.isFinite) {
+    } else if (event == 'height' && value != null && value.isFinite) {
       // The fullscreen frame sizes the canvas from the overlay's constraints,
       // so only inline measurements resize the card. A `fullscreen-height`
       // report (including one arriving after exit) is a deliberate no-op.
       if (_full) return;
-      final next = height.clamp(180.0, 560.0);
+      // Follow document flow rather than creating a second scroll viewport.
+      // Retain a ceiling only for runaway/generated layouts; fullscreen can
+      // still scroll those documents without allocating an enormous surface.
+      final next = value.clamp(80.0, 12000.0);
       if ((next - _height).abs() > 2) setState(() => _height = next);
     }
   }
@@ -200,6 +211,7 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
         if (widget.complete) unawaited(_load());
       }
     }
+    context.getInheritedWidgetOfExactType<GenAiVisualScope>()?.onFullscreenChanged?.call(value);
     setState(() => _full = value);
     if (value) {
       _overlay.show();
@@ -346,7 +358,7 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
     List<PopupMenuEntry<String>> items,
   ) async {
     final revision = _revision;
-    final action = await genAiShowAnchoredMenu<String>(
+    final action = await genAiShowMenu<String>(
       context: context,
       anchorContext: anchorContext,
       items: items,
@@ -374,80 +386,19 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
     return title == null || title.isEmpty ? null : title;
   }
 
-  Widget _cardHeader() => LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth <= _cardCompactBreakpoint;
-          final title = _explicitTitle;
-          final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-          return ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 48),
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(compact ? 4 : 8, 5, compact ? 5 : 10, 5),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: _toggleCollapsed,
-                      style: TextButton.styleFrom(
-                        alignment: Alignment.centerLeft,
-                        foregroundColor: Theme.of(context).colorScheme.onSurface,
-                        padding: const EdgeInsets.all(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AnimatedRotation(
-                            turns: _collapsed ? -0.25 : 0,
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOutCubic,
-                            child: GenAiIcon(
-                              GenAiGlyph.down,
-                              size: 15,
-                              color: muted,
-                            ),
-                          ),
-                          SizedBox(width: compact ? 7 : 9),
-                          Flexible(
-                            child: Text(
-                              title ?? GenAiVisualDocument.defaultTitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: title == null ? 11 : 13,
-                                fontWeight: FontWeight.w400,
-                                color: title == null ? muted : null,
-                              ),
-                            ),
-                          ),
-                          if (title != null) ...[
-                            const SizedBox(width: 5),
-                            Text(
-                              GenAiVisualDocument.defaultTitle,
-                              maxLines: 1,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w400,
-                                color: muted,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                  // Fullscreen and more stay in the header while folded; only
-                  // the body is hidden.
-                  IconButton(
-                    tooltip: '全屏',
-                    onPressed: () => _fullscreen(true),
-                    icon: const GenAiIcon(GenAiGlyph.full, size: 20),
-                  ),
-                  _moreMenu(enabled: widget.complete),
-                ],
-              ),
-            ),
-          );
-        },
+  Widget _cardHeader() => GenAiContentHeader(
+        title: _explicitTitle ?? GenAiVisualDocument.defaultTitle,
+        expanded: !_collapsed,
+        onToggle: _toggleCollapsed,
+        divider: false,
+        actions: [
+          IconButton(
+            tooltip: '全屏',
+            onPressed: () => _fullscreen(true),
+            icon: const GenAiIcon(GenAiGlyph.full, size: 20),
+          ),
+          _moreMenu(enabled: widget.complete),
+        ],
       );
 
   Widget _fullscreenHeader() => ConstrainedBox(
@@ -532,7 +483,6 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
                             brightness: Theme.of(dialogContext).brightness,
                           ).highlight(code: widget.code, language: 'html'),
                         ),
-                        contextMenuBuilder: genAiTextSelectionContextMenu,
                         style: TextStyle(
                           fontFamily: kGenAiMonospaceFamily,
                           fontFamilyFallback: kGenAiMonospaceFallback,
@@ -565,19 +515,9 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
     }
   }
 
-  EdgeInsets _inlinePadding(bool compact) => compact
-      ? const EdgeInsets.fromLTRB(14, 18, 14, 16)
-      : const EdgeInsets.fromLTRB(24, 24, 24, 18);
-
-  Widget _inlineBody() => LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth <= _cardCompactBreakpoint;
-          return Padding(
-            padding: _inlinePadding(compact),
-            child: SizedBox(height: _height, child: _canvas()),
-          );
-        },
-      );
+  // The document owns its responsive inset. A second Flutter inset wastes
+  // chart space and makes an otherwise fitting mobile layout wrap again.
+  Widget _inlineBody() => SizedBox(height: _height, child: _canvas());
 
   Widget _fullscreenBody() => LayoutBuilder(
         builder: (context, constraints) {
@@ -612,41 +552,47 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
   @override
   Widget build(BuildContext context) {
     final palette = GenAiPalette.of(context);
-    return OverlayPortal(
-      controller: _overlay,
-      overlayChildBuilder: (context) {
-        final view = MediaQuery.sizeOf(context);
-        final compact = view.width <= _mobileBreakpoint;
-        final width = compact ? view.width : math.min(view.width - 40, _fullscreenMaxWidth);
-        final height = compact ? view.height : view.height - 40;
-        return Positioned.fill(
-          child: CallbackShortcuts(
-            bindings: {const SingleActivator(LogicalKeyboardKey.escape): () => _fullscreen(false)},
-            child: FocusScope(
-              node: _fullscreenFocus,
-              autofocus: true,
-              child: PopScope(
-                canPop: false,
-                onPopInvokedWithResult: (didPop, _) {
-                  if (!didPop) _fullscreen(false);
-                },
-                child: BlockSemantics(
-                  child: Material(
-                    color: compact
-                        ? palette.canvas
-                        : Theme.of(context).colorScheme.scrim.withValues(alpha: .32),
-                    child: Center(
-                      child: SizedBox(
-                        width: width,
-                        height: height,
-                        child: Material(
-                          key: const ValueKey('genai-visual-fullscreen'),
-                          color: palette.raised,
-                          clipBehavior: Clip.antiAlias,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(compact ? 0 : 18),
+    // The embedded page owns its selection. Keep the moving fullscreen canvas
+    // and card controls out of the surrounding answer's prose selection tree.
+    return SelectionContainer.disabled(
+      child: OverlayPortal(
+        controller: _overlay,
+        overlayChildBuilder: (context) {
+          final view = MediaQuery.sizeOf(context);
+          final compact = view.width <= _mobileBreakpoint;
+          final width = compact ? view.width : math.min(view.width - 40, _fullscreenMaxWidth);
+          final height = compact ? view.height : view.height - 40;
+          return Positioned.fill(
+            child: CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.escape): () => _fullscreen(false),
+              },
+              child: FocusScope(
+                node: _fullscreenFocus,
+                autofocus: true,
+                child: PopScope(
+                  canPop: false,
+                  onPopInvokedWithResult: (didPop, _) {
+                    if (!didPop) _fullscreen(false);
+                  },
+                  child: BlockSemantics(
+                    child: Material(
+                      color: compact
+                          ? palette.canvas
+                          : Theme.of(context).colorScheme.scrim.withValues(alpha: .32),
+                      child: Center(
+                        child: SizedBox(
+                          width: width,
+                          height: height,
+                          child: Material(
+                            key: const ValueKey('genai-visual-fullscreen'),
+                            color: palette.raised,
+                            clipBehavior: Clip.antiAlias,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(compact ? 0 : 18),
+                            ),
+                            child: SafeArea(child: _content(full: true)),
                           ),
-                          child: SafeArea(child: _content(full: true)),
                         ),
                       ),
                     ),
@@ -654,23 +600,24 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
                 ),
               ),
             ),
-          ),
-        );
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth <= _cardCompactBreakpoint;
-          return Container(
-            clipBehavior: Clip.antiAlias,
-            margin: const EdgeInsets.symmetric(vertical: 16),
-            decoration: BoxDecoration(
-              color: palette.raised,
-              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-              borderRadius: BorderRadius.circular(compact ? _cardRadiusCompact : _cardRadius),
-            ),
-            child: _full ? SizedBox(height: _inlineHeight ?? _height + 49) : _content(full: false),
           );
         },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth <= _cardCompactBreakpoint;
+            return Container(
+              clipBehavior: Clip.antiAlias,
+              margin: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                color: palette.raised,
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                borderRadius: BorderRadius.circular(compact ? _cardRadiusCompact : _cardRadius),
+              ),
+              child:
+                  _full ? SizedBox(height: _inlineHeight ?? _height + 49) : _content(full: false),
+            );
+          },
+        ),
       ),
     );
   }

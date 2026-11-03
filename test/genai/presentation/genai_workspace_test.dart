@@ -208,6 +208,7 @@ void main() {
     WidgetTester tester, {
     Size size = const Size(1200, 900),
     bool connected = true,
+    TargetPlatform? platform,
     double scale = 1,
     double keyboard = 0,
     Duration delay = const Duration(milliseconds: 1),
@@ -223,6 +224,7 @@ void main() {
     addTearDown(demo.dispose);
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(platform: platform),
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(
             textScaler: TextScaler.linear(scale),
@@ -785,8 +787,19 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('IME composition and Shift Enter do not submit a message', (tester) async {
+  testWidgets('token rejection retains a same-owner composer draft', (tester) async {
     final demo = await show(tester);
+    await tester.enterText(find.byKey(const ValueKey('genai-prompt')), 'Keep my draft');
+    await demo.sessions.reject(demo.sessions.session!);
+    await tester.pumpAndSettle();
+    await demo.sessions.connect(const GenAiCredential(token: FakeGenAiServer.token));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byKey(const ValueKey('genai-prompt')));
+    expect(field.controller!.text, 'Keep my draft');
+  });
+
+  testWidgets('desktop IME composition and Shift Enter do not submit a message', (tester) async {
+    final demo = await show(tester, platform: TargetPlatform.macOS);
     final input = find.byKey(const ValueKey('genai-prompt'));
     await tester.enterText(input, 'hello');
     final controller = tester.widget<TextField>(input).controller!;
@@ -1033,8 +1046,8 @@ void main() {
     expect(demo.workspace.turns.length, 1);
     final turn = demo.workspace.turns.first;
     expect(turn.prompt, '请分析这张图片');
-    expect(turn.attachedImageBytes, equals(sampleBytes));
-    expect(turn.attachedImageUrl, isNotNull);
+    expect(turn.attachedImageBytesList.firstOrNull, equals(sampleBytes));
+    expect(turn.attachedImageUrls.firstOrNull, isNotNull);
 
     expect(
       find.descendant(

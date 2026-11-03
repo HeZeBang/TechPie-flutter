@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../../utils/adaptive_motion.dart';
-import '../../../utils/platform.dart';
 import '../domain/genai_image_caption.dart';
 import '../domain/genai_platform_contract.dart';
 import 'genai_hover_region.dart';
 import 'genai_icons.dart';
 import 'genai_image_actions.dart';
+import 'genai_image_dimensions.dart';
 import 'genai_theme.dart';
 
 /// A lazy image-history sliver whose tile sizes follow the decoded images.
@@ -83,14 +83,7 @@ class _GenAiImageGalleryState extends State<GenAiImageGallery> {
     _ratios = List<double>.unmodifiable(next);
   }
 
-  /// Touch layouts keep the caption visible. The OHOS fork reports its own
-  /// TargetPlatform, which the stock enum cannot name.
-  bool get _touch =>
-      isOhos() ||
-      switch (defaultTargetPlatform) {
-        TargetPlatform.android || TargetPlatform.iOS || TargetPlatform.fuchsia => true,
-        _ => false,
-      };
+  bool get _touch => GenAiLayout.touchPlatform;
 
   @override
   void didUpdateWidget(covariant GenAiImageGallery oldWidget) {
@@ -358,85 +351,33 @@ class _ImageUnavailable extends StatelessWidget {
       );
 }
 
-/// Observe only the first decoded frame; Image owns its separate display handle.
-class _MeasuredImage extends StatefulWidget {
+class _MeasuredImage extends StatelessWidget {
   const _MeasuredImage({super.key, required this.image, required this.onAspectRatio});
-
   final ImageProvider<Object> image;
   final ValueChanged<double> onAspectRatio;
 
   @override
-  State<_MeasuredImage> createState() => _MeasuredImageState();
-}
-
-class _MeasuredImageState extends State<_MeasuredImage> {
-  ImageStream? _stream;
-  ImageStreamListener? _listener;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _resolveImage();
-  }
-
-  @override
-  void didUpdateWidget(covariant _MeasuredImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.image != widget.image) _resolveImage();
-  }
-
-  void _resolveImage() {
-    _stopListening();
-    final stream = widget.image.resolve(createLocalImageConfiguration(context));
-    final listener = ImageStreamListener(
-      (info, _) {
-        final width = info.image.width;
-        final height = info.image.height;
-        info.dispose();
-        if (!mounted || !identical(_stream, stream)) return;
-        _stopListening();
-        widget.onAspectRatio(width > 0 && height > 0 ? width / height : 1.0);
-      },
-      onError: (Object error, StackTrace? stackTrace) {
-        if (!mounted || !identical(_stream, stream)) return;
-        _stopListening();
-        widget.onAspectRatio(1.0);
-      },
-    );
-    _stream = stream;
-    _listener = listener;
-    stream.addListener(listener);
-  }
-
-  void _stopListening() {
-    final listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
-    _stream = null;
-    _listener = null;
-  }
-
-  @override
-  void dispose() {
-    _stopListening();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => Image(
-        image: widget.image,
-        fit: BoxFit.contain,
-        excludeFromSemantics: true,
-        frameBuilder: (context, child, frame, synchronouslyLoaded) =>
-            frame != null || synchronouslyLoaded
-                ? child
-                : Center(
-                    child: GenAiIcon(
-                      GenAiGlyph.image,
-                      size: 28,
-                      color: Theme.of(context).colorScheme.outlineVariant,
+  Widget build(BuildContext context) => GenAiImageDimensions(
+        image: image,
+        onSize: (size) => onAspectRatio(
+          size != null && size.width > 0 && size.height > 0 ? size.width / size.height : 1.0,
+        ),
+        builder: (context, _) => Image(
+          image: image,
+          fit: BoxFit.contain,
+          excludeFromSemantics: true,
+          frameBuilder: (context, child, frame, synchronouslyLoaded) =>
+              frame != null || synchronouslyLoaded
+                  ? child
+                  : Center(
+                      child: GenAiIcon(
+                        GenAiGlyph.image,
+                        size: 28,
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
                     ),
-                  ),
-        errorBuilder: (_, __, ___) => const _ImageUnavailable(),
+          errorBuilder: (_, __, ___) => const _ImageUnavailable(),
+        ),
       );
 }
 

@@ -1,25 +1,47 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/genai/application/genai_chat_service.dart';
-import 'package:techpie/features/genai/application/genai_conversation_archive.dart';
+import 'package:techpie/features/genai/application/genai_conversation_snapshot.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
 import 'package:techpie/features/genai/application/genai_transcript_export.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
-import 'package:techpie/features/genai/domain/genai_contract.dart';
+import 'package:techpie/features/genai/domain/genai_failure.dart';
 
 void main() {
-  GenAiConversationArchive archive(GenAiConversationTurn turn) => GenAiConversationArchive(
+  GenAiConversationSnapshot archive(GenAiConversationTurn turn) => GenAiConversationSnapshot(
         id: 'fixture-conversation',
         title: '校园计划',
         updatedAt: DateTime(2026),
         turns: [turn],
         agentEnabled: true,
-        netSearchEnabled: false,
         thinkingEnabled: false,
         modelAiType: 'demo',
         modelRootAiType: 'demo',
         mutations: const {'version': 1, 'effects': <String, Object?>{}},
       );
+
+  test('snapshot detaches nested receipts and cannot execute a saved approval', () async {
+    var executed = false;
+    final result = <String, Object?>{
+      'result': <String, Object?>{'seats': 144},
+    };
+    final turn = GenAiConversationTurn('Reserve')
+      ..agentEvents['booking'] = GenAiAgentEvent(
+        kind: GenAiAgentEventKind.approvalRequired,
+        turn: 1,
+        result: result,
+        prepared: GenAiAgentPreparedTool(
+          execute: () async {
+            executed = true;
+            return null;
+          },
+        ),
+      );
+    final saved = archive(turn).turns.single.agentEvents['booking']!;
+    (result['result']! as Map)['seats'] = 99;
+    expect((saved.result!['result']! as Map)['seats'], 144);
+    await expectLater(saved.prepared!.execute(), throwsA(isA<GenAiFailure>()));
+    expect(executed, false);
+  });
 
   test('readable snapshot retains real conversation and images, omits protocol', () {
     final call = GenAiAgentToolCall(
@@ -30,10 +52,7 @@ void main() {
     final turn = GenAiConversationTurn('为校园计划生成图片', isAgent: true)
       ..phase = GenAiChatPhase.completed
       ..answer = '校园图片已经生成。'
-      ..attachedFileNames = ['计划.txt']
-      ..agentHistory = const [
-        GenAiMessage(role: GenAiRole.assistant, content: 'old-wire-format'),
-      ]
+      ..files = [const GenAiTurnFile(id: 'file', name: '计划.txt')]
       ..agentTranscript = [GenAiAgentHistoryEntry.call(call)]
       ..agentEvents[call.id] = GenAiAgentEvent(
         kind: GenAiAgentEventKind.toolFinished,

@@ -24,8 +24,7 @@ final class NativeGenAiIdsExchange {
     void Function()? remove;
     try {
       final cookies = <Cookie>[];
-      if (provider.cookies.length > 65536 ||
-          provider.cookies.codeUnits.any((c) => c < 32 || c == 127)) {
+      if (!GenAiLoginPolicy.hasCampusCookie(provider.cookies)) {
         throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
       }
       for (final part in provider.cookies.split(';')) {
@@ -36,9 +35,6 @@ final class NativeGenAiIdsExchange {
             ..path = '/'
             ..secure = true,
         );
-      }
-      if (!cookies.any((c) => c.name == 'CASTGC' && c.value.isNotEmpty)) {
-        throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
       }
       final jar = <String, List<Cookie>>{'ids.shanghaitech.edu.cn': cookies};
       final activeClient = _createClient();

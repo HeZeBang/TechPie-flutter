@@ -5,6 +5,13 @@ import 'package:techpie/features/genai/platform/genai_login_policy.dart';
 import '../support/fakes.dart';
 
 void main() {
+  test('campus eligibility rejects empty and malformed CASTGC consistently', () {
+    for (final header in ['', 'CASTGC=', 'CASTGC=   ', 'XCASTGC=ticket', 'CASTGC=ticket\r\n']) {
+      expect(GenAiLoginPolicy.hasCampusCookie(header), isFalse, reason: header);
+    }
+    expect(GenAiLoginPolicy.hasCampusCookie('other=x; CASTGC=ticket==; next=y'), isTrue);
+  });
+
   test('accepts only the documented university landing URL', () {
     expect(
       GenAiLoginPolicy.callback(

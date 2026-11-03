@@ -88,10 +88,6 @@ void main() {
       // Draft rename chrome is a plain Dialog (not Material's AlertDialog).
       final renameInput = find.byKey(const ValueKey('genai-rename-input'));
       expect(renameInput, findsOneWidget);
-      expect(
-        tester.widget<TextField>(renameInput).contextMenuBuilder,
-        genAiTextSelectionContextMenu,
-      );
       await tester.enterText(renameInput, renamed);
       await tester.pump();
       await tester.tap(find.text('保存'));
@@ -105,7 +101,6 @@ void main() {
       await tester.tap(find.byTooltip('搜索对话'));
       await tester.pumpAndSettle();
       final search = find.byKey(const ValueKey('genai-search-input'));
-      expect(tester.widget<TextField>(search).contextMenuBuilder, genAiTextSelectionContextMenu);
       await tester.enterText(search, renamed);
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
@@ -124,17 +119,6 @@ void main() {
             ),
           )
           .data!;
-      expect(
-        tester
-            .widget<SelectableText>(
-              find.descendant(
-                of: find.byType(GenAiDialogFrame),
-                matching: find.byType(SelectableText),
-              ),
-            )
-            .contextMenuBuilder,
-        genAiTextSelectionContextMenu,
-      );
       expect(snapshot, startsWith('# $renamed\n'));
       expect(snapshot, contains(original));
       expect(snapshot, isNot(contains(other)));

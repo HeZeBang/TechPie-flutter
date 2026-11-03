@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui' show SemanticsAction;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
@@ -127,6 +126,7 @@ Future<List<String>> _pumpComposer(
   bool agent = false,
   bool supportsThinking = true,
   bool agentAvailable = true,
+  TargetPlatform? platform,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -139,6 +139,7 @@ Future<List<String>> _pumpComposer(
   addTearDown(focus.dispose);
   await tester.pumpWidget(
     MaterialApp(
+      theme: ThemeData(platform: platform),
       home: Scaffold(
         body: Align(
           alignment: alignment,
@@ -165,7 +166,7 @@ Future<List<String>> _pumpComposer(
             recording: false,
             startingRecording: false,
             recordingSeconds: 0,
-            onSend: () {},
+            onSend: () => actions.add('send'),
             onStop: () {},
             onThinkingChanged: (_) {},
             onAgentChanged: (_) {},
@@ -239,6 +240,28 @@ RenderParagraph _paragraphFor(WidgetTester tester, Finder text) =>
     );
 
 void main() {
+  testWidgets('composer keeps mobile return and IME confirmation separate from desktop send',
+      (tester) async {
+    for (final platform in [TargetPlatform.android, TargetPlatform.iOS, TargetPlatform.macOS]) {
+      await tester.pumpWidget(const SizedBox());
+      final actions = await _pumpComposer(tester, size: const Size(390, 844), platform: platform);
+      final field = find.byKey(const ValueKey('genai-prompt'));
+      await tester.enterText(field, 'draft');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(actions.where((a) => a == 'send').length, platform == TargetPlatform.macOS ? 1 : 0);
+      final controller = tester.widget<TextField>(field).controller!;
+      controller.value = const TextEditingValue(
+        text: 'pinyin',
+        selection: TextSelection.collapsed(offset: 6),
+        composing: TextRange(start: 0, end: 6),
+      );
+      actions.clear();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(actions, isEmpty);
+    }
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('selectable text and model controls cannot cover the chat with semantics',
       (tester) async {
     final semantics = tester.ensureSemantics();
@@ -578,7 +601,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('375 drawer search dialog uses compact inset, radius and field size', (tester) async {
+  testWidgets('drawer search stays within a narrow viewport and closes', (tester) async {
     await _show(tester, size: const Size(375, 812));
     await tester.tap(find.byTooltip('打开导航与历史'));
     await tester.pumpAndSettle();
@@ -586,27 +609,8 @@ void main() {
     await tester.pumpAndSettle();
     final dialogFinder = find.byType(Dialog);
     expect(dialogFinder, findsOneWidget);
-    final dialog = tester.widget<Dialog>(dialogFinder);
-    // Overlay routes follow the screen, not the chat column.
-    expect(dialog.insetPadding, const EdgeInsets.all(12));
-    final shape = dialog.shape! as RoundedRectangleBorder;
-    expect(shape.borderRadius, BorderRadius.circular(14));
     final search = find.widgetWithText(TextField, '搜索历史对话');
     expect(search, findsOneWidget);
-    final searchField = tester.widget<TextField>(search);
-    expect(searchField.style?.fontSize, 16);
-    expect(searchField.style?.height, 1.5);
-    expect(searchField.textAlignVertical, TextAlignVertical.center);
-    expect(searchField.strutStyle?.fontSize, 16);
-    expect(searchField.strutStyle?.height, 1.5);
-    expect(searchField.strutStyle?.forceStrutHeight, isTrue);
-    final searchHint = searchField.decoration!.hintStyle!;
-    expect(searchHint.fontSize, 16);
-    expect(searchHint.height, 1.5);
-    // Draft search field: a 1px outline with the 9px search radius.
-    final searchBorder = searchField.decoration!.enabledBorder! as OutlineInputBorder;
-    expect(searchBorder.borderRadius, BorderRadius.circular(9));
-    expect(searchBorder.borderSide.width, 1);
     final searchRect = tester.getRect(search);
     expect(searchRect.left, greaterThanOrEqualTo(12));
     expect(searchRect.right, lessThanOrEqualTo(375 - 12));
@@ -655,8 +659,21 @@ void main() {
     expect(tester.widget<TextField>(find.byKey(_prompt)).controller!.text, '我的未发送草稿');
     expect(demo.workspace.thinkingEnabled, isTrue);
     expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('打开导航与历史'));
+    await tester.pumpAndSettle();
+    final scaffold = tester.state<ScaffoldState>(
+      find.ancestor(of: find.byKey(_prompt), matching: find.byType(Scaffold)).first,
+    );
+    expect(scaffold.isDrawerOpen, isTrue);
     // Crossing the sidebar breakpoint rebuilds both header and composer;
     // it must not reset the draft for the same conversation.
+    tester.view.physicalSize = const Size(1200, 900);
+    await tester.pumpAndSettle();
+    expect(scaffold.isDrawerOpen, isFalse);
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpAndSettle();
+    expect(scaffold.isDrawerOpen, isFalse);
+    expect(tester.widget<TextField>(find.byKey(_prompt)).controller!.text, '我的未发送草稿');
     tester.view.physicalSize = const Size(1200, 900);
     await tester.pumpAndSettle();
     expect(find.byKey(_wideNew), findsOneWidget);
@@ -844,8 +861,7 @@ void main() {
     }
   });
 
-  testWidgets('native selection popover matches the draft and reuses the copy callback',
-      (tester) async {
+  testWidgets('composer platform selection menu copies the selected text', (tester) async {
     await _show(tester, size: const Size(900, 1000));
     final copies = <String>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -874,27 +890,10 @@ void main() {
     editable.toggleToolbar();
     await tester.pumpAndSettle();
 
-    final popover = find.byKey(const ValueKey('genai-selection-popover'));
+    final popover = find.byType(AdaptiveTextSelectionToolbar);
     expect(popover, findsOneWidget);
-    final palette = GenAiPalette.of(tester.element(find.byKey(_prompt)));
-    final surface = tester.widget<Material>(popover);
-    final shape = surface.shape! as RoundedRectangleBorder;
-    expect(surface.color, palette.raised);
-    expect(shape.borderRadius, BorderRadius.circular(12));
-    expect(shape.side.color, palette.line);
-    expect(shape.side.width, 1);
-
-    final copy = find.byKey(const ValueKey('genai-selection-copy'));
+    final copy = find.text('Copy');
     expect(copy, findsOneWidget);
-    expect(tester.getSize(copy).height, 42);
-    expect(find.descendant(of: copy, matching: find.byType(GenAiIcon)), findsOneWidget);
-    final label = tester.widget<Text>(find.descendant(of: copy, matching: find.byType(Text)));
-    expect(label.data, 'Copy');
-    expect(label.style!.fontSize, 13);
-    expect(
-      tester.widget<TextField>(find.byKey(_prompt)).contextMenuBuilder,
-      genAiTextSelectionContextMenu,
-    );
 
     // The row runs the same callback Flutter's own toolbar would.
     await tester.tap(copy);
@@ -940,68 +939,12 @@ void main() {
       expect(find.text('添加图片'), findsNothing, reason: 'width $width');
       expect(find.text('音频文件'), findsNothing, reason: 'width $width');
 
-      // The popover row follows the draft: 17px sprite, 13px label and a
-      // 10px gap; selection is a 17px accent check.
       final thinkingItem = find.byKey(const ValueKey('genai-thinking-menu-toggle'));
-      final thinkingIcon = find.descendant(of: thinkingItem, matching: find.byType(GenAiIcon));
-      expect(tester.getSize(thinkingIcon.first), const Size(17, 17), reason: 'width $width');
-      final thinkingLabel = tester.widget<Text>(
-        find.descendant(of: thinkingItem, matching: find.text('深度思考')),
-      );
-      expect(thinkingLabel.style!.fontSize, 13, reason: 'width $width');
-      expect(
-        thinkingLabel.style!.color,
-        Theme.of(tester.element(find.byKey(_prompt))).colorScheme.onSurface,
-      );
-      final iconBox = tester.getRect(thinkingIcon.first);
-      final labelBox = tester.getRect(
-        find.descendant(of: thinkingItem, matching: find.text('深度思考')),
-      );
-      expect(labelBox.left - iconBox.right, closeTo(10, .5), reason: 'width $width');
-      expect(
-        tester.widget<PopupMenuItem<String>>(thinkingItem).height,
-        42,
-        reason: 'width $width',
-      );
-      expect(
-        tester.widget<PopupMenuItem<String>>(thinkingItem).padding,
-        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        reason: 'width $width',
-      );
-      // The draft row's 7px radius comes from the shared entry wrapper, which
-      // lets the native hover highlight clip instead of painting square.
-      final rowMaterial = find.ancestor(of: thinkingItem, matching: find.byType(Material)).first;
-      expect(
-        tester.widget<Material>(rowMaterial).borderRadius,
-        BorderRadius.circular(7),
-        reason: 'width $width',
-      );
-      expect(find.byKey(const ValueKey('genai-thinking-menu-check')), findsNothing);
-      expect(find.byKey(const ValueKey('genai-agent-menu-check')), findsNothing);
-
-      // Measured surface, not configuration: whichever side has room, the
-      // shared anchored menu stays exactly 7px clear of the "+" control.
-      final anchorRect = tester.getRect(more);
-      final menuRect = _popupMenuRect(tester);
-      expect(menuRect.overlaps(anchorRect), isFalse, reason: 'width $width');
-      final below = menuRect.top >= anchorRect.bottom;
-      final gap = below ? menuRect.top - anchorRect.bottom : anchorRect.top - menuRect.bottom;
-      expect(
-        gap,
-        closeTo(7, .01),
-        reason: 'width $width: ${below ? 'below' : 'above'} '
-            'anchor ${anchorRect.top}-${anchorRect.bottom}, '
-            'menu ${menuRect.top}-${menuRect.bottom}',
-      );
-      // A bottom-anchored composer with no room below must place the menu
-      // above its anchor rather than clamp it over the control.
-      if (scenario.name == 'short landscape') {
-        expect(below, isFalse, reason: scenario.name);
-        expect(
-          anchorRect.top - menuRect.bottom,
-          closeTo(7, .01),
-          reason: '${scenario.name}: anchor ${anchorRect.top}, menu ${menuRect.bottom}',
-        );
+      if (width <= 680) {
+        expect(find.byType(BottomSheet), findsOneWidget);
+      } else {
+        final menuRect = _popupMenuRect(tester);
+        expect(menuRect.overlaps(tester.getRect(more)), isFalse);
       }
 
       await tester.tap(thinkingItem);
@@ -1016,16 +959,6 @@ void main() {
         reason: 'width $width',
       );
       expect(find.byKey(const ValueKey('genai-agent-menu-check')), findsNothing);
-      // Selection adds the accent check but never recolors the leading icon.
-      final selectedIcon =
-          find.descendant(of: thinkingItem, matching: find.byType(GenAiIcon)).first;
-      final leadingTheme = find.ancestor(of: selectedIcon, matching: find.byType(IconTheme)).first;
-      expect(
-        tester.widget<IconTheme>(leadingTheme).data.color,
-        Theme.of(tester.element(find.byKey(_prompt))).colorScheme.onSurfaceVariant,
-        reason: 'width $width',
-      );
-
       await tester.tap(find.byKey(const ValueKey('genai-agent-menu-toggle')));
       await tester.pumpAndSettle();
       expect(demo.workspace.agentEnabled, isTrue, reason: 'width $width');
@@ -1046,7 +979,7 @@ void main() {
   });
 
   testWidgets('anchored menu opens below with 7px clearance when space allows', (tester) async {
-    await _pumpComposer(tester, size: const Size(375, 900));
+    await _pumpComposer(tester, size: const Size(900, 900));
     final more = find.byKey(_more);
     await tester.tap(more);
     await tester.pumpAndSettle();
@@ -1180,8 +1113,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('model menu clears its anchor and clips selected and hovered rows',
-      (tester) async {
+  testWidgets('model menu clears its anchor and clips selected and hovered rows', (tester) async {
     final picked = await _pumpModelPicker(tester, width: 600);
     final model = find.byKey(const ValueKey('genai-model'));
     await tester.tap(model);
@@ -1246,35 +1178,4 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
-
-  test('owned GenAI surfaces avoid stock dialog and menu controls', () {
-    const files = [
-      'lib/features/genai/presentation/genai_composer.dart',
-      'lib/features/genai/presentation/genai_model_picker.dart',
-      'lib/features/genai/presentation/genai_tools_page.dart',
-      'lib/features/genai/presentation/genai_history_sidebar.dart',
-      'lib/features/genai/presentation/genai_conversation_menu.dart',
-      'lib/features/genai/presentation/genai_workspace.dart',
-      'lib/features/genai/presentation/genai_image_gallery.dart',
-      'lib/features/genai/presentation/genai_image_actions.dart',
-      // Theme declares DropdownMenuThemeData; the grep targets invocations.
-      'lib/features/genai/presentation/genai_theme.dart',
-    ];
-    final forbidden = <String, RegExp>{
-      'AlertDialog': RegExp(r'\bAlertDialog\s*\('),
-      'MenuAnchor': RegExp(r'\bMenuAnchor\s*\('),
-      'PopupMenuButton': RegExp(r'\bPopupMenuButton\s*\('),
-      'DropdownButton': RegExp(r'\bDropdownButton\s*(?:<[^>\n]+>)?\s*\('),
-    };
-    for (final path in files) {
-      final source = File(path).readAsStringSync();
-      for (final entry in forbidden.entries) {
-        expect(
-          entry.value.hasMatch(source),
-          isFalse,
-          reason: '$path must use the shared GenAI helper instead of ${entry.key}(',
-        );
-      }
-    }
-  });
 }

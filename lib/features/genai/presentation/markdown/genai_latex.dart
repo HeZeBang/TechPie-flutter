@@ -3,13 +3,13 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:markdown/markdown.dart' as md;
 
-import '../genai_theme.dart';
 import 'genai_code_font.dart';
 
 /// Converts display math into `latex` fences without changing code examples.
 String preprocessLatexBlocks(String input) {
   final output = StringBuffer();
   final prose = StringBuffer();
+  final quote = <String>[];
   String? fence;
   void flush() {
     if (prose.isNotEmpty) {
@@ -18,7 +18,26 @@ String preprocessLatexBlocks(String input) {
     }
   }
 
+  void flushQuote() {
+    if (quote.isEmpty) return;
+    final converted = preprocessLatexBlocks(quote.join('\n'));
+    for (final line in converted.split('\n')) {
+      output.writeln('> $line');
+    }
+    quote.clear();
+  }
+
   for (final line in input.split('\n')) {
+    // Strip one Markdown container level before processing math. Otherwise
+    // quote markers become part of the TeX and the inserted fence leaves its
+    // quote. Recursion also preserves fenced source inside nested quotations.
+    final quoted = fence == null ? RegExp(r'^ {0,3}> ?(.*)$').firstMatch(line) : null;
+    if (quoted != null) {
+      flush();
+      quote.add(quoted[1]!);
+      continue;
+    }
+    flushQuote();
     final opening = RegExp(r'^ {0,3}(`{3,}|~{3,})').firstMatch(line);
     if (fence == null && opening != null) {
       flush();
@@ -31,6 +50,7 @@ String preprocessLatexBlocks(String input) {
       prose.writeln(line);
     }
   }
+  flushQuote();
   flush();
   final result = output.toString();
   return result.endsWith('\n') ? result.substring(0, result.length - 1) : result;
@@ -75,7 +95,11 @@ String _preprocessLatexProse(String input) {
     final formulaWithPunctuation =
         punctuation.isNotEmpty && !formula.endsWith(punctuation) ? '$formula$punctuation' : formula;
     output.write(input.substring(literalStart, token.start));
-    output.write('\n\n```latex\n$formulaWithPunctuation\n```\n\n');
+    final lineStart = token.start == 0 ? 0 : input.lastIndexOf('\n', token.start - 1) + 1;
+    final before = input.substring(lineStart, token.start);
+    final indent = before.trim().isEmpty ? before : '';
+    final body = formulaWithPunctuation.split('\n').map((line) => '$indent$line').join('\n');
+    output.write('\n\n$indent```latex\n$body\n$indent```\n\n');
     consumed = afterFormula + punctuation.length;
     literalStart = consumed;
   }
@@ -108,7 +132,10 @@ class LatexInlineSyntax extends md.InlineSyntax {
   bool onMatch(md.InlineParser parser, Match match) {
     final inlineFormula = (match[1] ?? match[2] ?? '').trim();
     if (inlineFormula.isEmpty) {
-      return false;
+      // InlineSyntax.onMatch controls consumption, not whether the regex
+      // matched. Returning false here retries the same position forever.
+      parser.addNode(md.Text(match[0]!));
+      return true;
     }
 
     parser.addNode(
@@ -237,7 +264,6 @@ class GenAiLatexBlockView extends StatelessWidget {
                   textStyle: textStyle,
                   onErrorFallback: (error) => SelectableText(
                     cleanFormula,
-                    contextMenuBuilder: genAiTextSelectionContextMenu,
                     style: TextStyle(
                       fontFamily: kGenAiMonospaceFamily,
                       fontFamilyFallback: kGenAiMonospaceFallback,

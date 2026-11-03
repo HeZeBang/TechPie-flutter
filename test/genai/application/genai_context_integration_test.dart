@@ -50,6 +50,9 @@ void main() {
     var stage = 0;
     server.onGenerate = (body) {
       final nonce = server.nonce(body);
+      final persisted = decodeGenAiRemoteRecord(body['chatInfo']! as String)!;
+      expect(persisted['reply_format'], contains(nonce));
+      expect(persisted['input'], isNot(contains('Respond only with')));
       if (stage++ == 0) {
         expect(body['messages'].toString(), contains('record_id'));
         return encodeGenAiCompactCall(
@@ -58,7 +61,18 @@ void main() {
           nonce: nonce,
         );
       }
-      final receipt = decodeGenAiAgentRecord(server.input(body))!.result!;
+      final control = (body['messages'] as List)
+          .whereType<Map<dynamic, dynamic>>()
+          .map((m) {
+            final content = m['content'];
+            if (content is! String || !content.startsWith('{')) return null;
+            final decoded = jsonDecode(content);
+            return decoded is Map && decoded['kind'] == 'techpie_agent_context_v1' ? decoded : null;
+          })
+          .whereType<Map<dynamic, dynamic>>()
+          .single;
+      final receipt = control['current_feedback'] as Map? ??
+          decodeGenAiAgentRecord(server.input(body))!.result!;
       expect(receipt['ok'], true);
       final result = receipt['result'] as Map;
       if (stage == 2) {
@@ -100,7 +114,18 @@ void main() {
           nonce: server.nonce(body),
         );
       }
-      final receipt = decodeGenAiAgentRecord(server.input(body))!.result!;
+      final control = (body['messages'] as List)
+          .whereType<Map<dynamic, dynamic>>()
+          .map((m) {
+            final content = m['content'];
+            if (content is! String || !content.startsWith('{')) return null;
+            final decoded = jsonDecode(content);
+            return decoded is Map && decoded['kind'] == 'techpie_agent_context_v1' ? decoded : null;
+          })
+          .whereType<Map<dynamic, dynamic>>()
+          .single;
+      final receipt = control['current_feedback'] as Map? ??
+          decodeGenAiAgentRecord(server.input(body))!.result!;
       expect((receipt['error'] as Map)['code'], 'record_not_found');
       return server.finalAnswer(body, 'Record removed');
     };

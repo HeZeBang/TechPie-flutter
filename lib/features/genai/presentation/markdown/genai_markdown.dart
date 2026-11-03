@@ -6,7 +6,6 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../genai_image.dart';
-import '../genai_theme.dart';
 import '../visuals/genai_visual_syntax.dart';
 import '../visuals/genai_visual_view.dart';
 import 'genai_code_block.dart';
@@ -58,15 +57,14 @@ class GenAiMarkdown extends StatelessWidget {
     // Always retain the complete theme sheet: MarkdownBuilder requires styles
     // for inline emphasis, links, tables and lists even on compact screens.
     final baseStyle = MarkdownStyleSheet.fromTheme(theme).merge(styleSheet);
-    // The draft's thread runs at 15/1.75, gives paragraphs an 18px bottom
-    // margin and spaces every other block by 13px (its h2 margins). The
-    // paragraph padding below tops the block spacing up to 18.
+    // Shared reading rhythm for prose, lists and tables, without adding a
+    // paragraph inset inside every list item.
     final effectiveStyleSheet = baseStyle.copyWith(
-      blockSpacing: styleSheet?.blockSpacing ?? 13,
-      pPadding: styleSheet?.pPadding ?? const EdgeInsets.only(bottom: 5),
+      blockSpacing: styleSheet?.blockSpacing ?? 12,
+      pPadding: styleSheet?.pPadding ?? EdgeInsets.zero,
       p: TextStyle(
         fontSize: compact ? 14 : 15,
-        height: 1.75,
+        height: 1.6,
         leadingDistribution: TextLeadingDistribution.even,
         color: theme.colorScheme.onSurface,
       ).merge(styleSheet?.p),
@@ -119,8 +117,8 @@ class GenAiMarkdown extends StatelessWidget {
       blockquote: styleSheet?.blockquote ??
           TextStyle(
             fontSize: compact ? 14 : 15,
-            height: 1.75,
-            color: accent,
+            height: 1.6,
+            color: theme.colorScheme.onSurfaceVariant,
           ),
       blockquoteDecoration: styleSheet?.blockquoteDecoration ??
           BoxDecoration(
@@ -129,18 +127,11 @@ class GenAiMarkdown extends StatelessWidget {
                 color: isDark
                     ? theme.colorScheme.outline.withValues(alpha: .5)
                     : theme.colorScheme.outlineVariant,
-                width: 3.5,
+                width: 2,
               ),
             ),
-            color: isDark
-                ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: .28)
-                : theme.colorScheme.surfaceContainerHighest.withValues(alpha: .38),
-            borderRadius: const BorderRadius.only(
-              topRight: Radius.circular(8),
-              bottomRight: Radius.circular(8),
-            ),
           ),
-      blockquotePadding: styleSheet?.blockquotePadding ?? const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      blockquotePadding: styleSheet?.blockquotePadding ?? const EdgeInsets.fromLTRB(12, 8, 12, 8),
       code: styleSheet?.code ??
           TextStyle(
             fontFamily: kGenAiMonospaceFamily,
@@ -155,19 +146,21 @@ class GenAiMarkdown extends StatelessWidget {
       // Answer tables retain the browser's bold <th> default.
       tableHead: TextStyle(
         fontWeight: FontWeight.w700,
-        fontSize: 12,
-        height: 1.75,
+        fontSize: compact ? 13 : 14,
+        height: 1.6,
         leadingDistribution: TextLeadingDistribution.even,
         color: theme.colorScheme.onSurface,
       ).merge(styleSheet?.tableHead),
       tableBody: TextStyle(
-        fontSize: 12,
-        height: 1.75,
+        fontSize: compact ? 13 : 14,
+        height: 1.6,
         leadingDistribution: TextLeadingDistribution.even,
         color: theme.colorScheme.onSurface,
       ).merge(styleSheet?.tableBody),
+      tableColumnWidth: styleSheet?.tableColumnWidth ?? const _ReadableTableColumnWidth(),
+      tableScrollbarThumbVisibility: true,
       tableHeadAlign: styleSheet?.tableHeadAlign ?? TextAlign.left,
-      tablePadding: styleSheet?.tablePadding ?? const EdgeInsets.symmetric(vertical: 4),
+      tablePadding: styleSheet?.tablePadding ?? const EdgeInsets.only(top: 4, bottom: 12),
       tableBorder: styleSheet?.tableBorder ??
           TableBorder(
             horizontalInside: BorderSide(color: tableLineColor, width: 1),
@@ -176,16 +169,14 @@ class GenAiMarkdown extends StatelessWidget {
       tableCellsPadding:
           styleSheet?.tableCellsPadding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       strong: const TextStyle(fontWeight: FontWeight.w700).merge(styleSheet?.strong),
-      // The draft leaves answer ul/ol at the browser defaults (40px indent,
-      // normal-weight markers inheriting the thread's 14/15px type and 1.75
-      // line-height). Give markers the same leading as the first content line
-      // rather than inheriting Material bodyMedium's different line metrics.
-      listIndent: styleSheet?.listIndent ?? 40,
-      listBulletPadding: styleSheet?.listBulletPadding ?? EdgeInsets.zero,
+      // Separate the marker from its content (including multi-digit numbers),
+      // while sharing the first line's font metrics and accessibility scaling.
+      listIndent: styleSheet?.listIndent ?? 24,
+      listBulletPadding: styleSheet?.listBulletPadding ?? const EdgeInsets.only(right: 10),
       listBullet: TextStyle(
         fontSize: compact ? 14 : 15,
         fontWeight: FontWeight.w400,
-        height: 1.75,
+        height: 1.6,
         leadingDistribution: TextLeadingDistribution.even,
         color: theme.colorScheme.onSurface,
       ).merge(styleSheet?.p).merge(styleSheet?.listBullet),
@@ -211,12 +202,8 @@ class GenAiMarkdown extends StatelessWidget {
       codeblockPadding: EdgeInsets.zero,
     );
 
-    // flutter_markdown 0.7.6's MarkdownBuilder exposes no contextMenuBuilder
-    // hook: selectable: true builds a bare SelectableText whose menu cannot be
-    // themed. A SelectionArea owns prose selection instead, so the body is
-    // always built non-selectable to avoid a competing inner selection region.
-    // No caller places GenAiMarkdown inside a SelectionArea, so this does not
-    // nest selection areas.
+    // One SelectionArea owns prose selection; inner Markdown spans remain
+    // non-selectable to avoid competing selection regions.
     final body = _GenAiMarkdownBody(
       data: data,
       selectable: false,
@@ -226,18 +213,79 @@ class GenAiMarkdown extends StatelessWidget {
       onTapLink: onTapLink,
     );
 
-    return GenAiVisualScope(
-      latest: latestVisual,
+    return _MarkdownSelection(
+      enabled: selectable,
+      styleSheet: effectiveStyleSheet,
+      latestVisual: latestVisual,
       answerId: visualAnswerId,
-      child: selectable
+      child: body,
+    );
+  }
+}
+
+/// A fullscreen visual owns interaction until it closes. Suspend background
+/// prose selection without replacing the document or its running visuals.
+class _MarkdownSelection extends StatefulWidget {
+  const _MarkdownSelection({
+    required this.enabled,
+    required this.styleSheet,
+    required this.latestVisual,
+    required this.answerId,
+    required this.child,
+  });
+
+  final bool enabled;
+  final MarkdownStyleSheet styleSheet;
+  final (String, int)? latestVisual;
+  final String answerId;
+  final Widget child;
+
+  @override
+  State<_MarkdownSelection> createState() => _MarkdownSelectionState();
+}
+
+class _MarkdownSelectionState extends State<_MarkdownSelection> {
+  StaticSelectionContainerDelegate _selection = StaticSelectionContainerDelegate();
+  bool _fullscreen = false;
+
+  @override
+  void didUpdateWidget(_MarkdownSelection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.styleSheet != oldWidget.styleSheet) {
+      // MarkdownBuilder replaces keyed spans when typography changes. Start a
+      // fresh registrar without reparenting the document or its platform views.
+      final previous = _selection;
+      _selection = StaticSelectionContainerDelegate();
+      // Descendants unregister from the old delegate during this frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
+    }
+  }
+
+  @override
+  void dispose() {
+    _selection.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final body = DefaultTextHeightBehavior(
+      textHeightBehavior: const TextHeightBehavior(
+        leadingDistribution: TextLeadingDistribution.even,
+      ),
+      child: widget.child,
+    );
+    return GenAiVisualScope(
+      latest: widget.latestVisual,
+      answerId: widget.answerId,
+      onFullscreenChanged: (value) {
+        if (_fullscreen != value) setState(() => _fullscreen = value);
+      },
+      child: widget.enabled
           ? SelectionArea(
-              contextMenuBuilder: genAiRegionSelectionContextMenu,
-              child: DefaultTextHeightBehavior(
-                textHeightBehavior: const TextHeightBehavior(
-                  leadingDistribution: TextLeadingDistribution.even,
-                ),
-                child: body,
-              ),
+              child: _fullscreen
+                  ? SelectionContainer.disabled(child: body)
+                  : SelectionContainer(delegate: _selection, child: body),
             )
           : body,
     );
@@ -276,12 +324,6 @@ class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody> implements Markd
   Widget? _content;
   bool _needsBuild = true;
   final List<GestureRecognizer> _recognizers = <GestureRecognizer>[];
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _needsBuild = true;
-  }
 
   @override
   void didUpdateWidget(_GenAiMarkdownBody oldWidget) {
@@ -360,7 +402,24 @@ class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody> implements Markd
       imageDirectory: null,
       imageBuilder: widget.imageBuilder,
       checkboxBuilder: null,
-      bulletBuilder: null,
+      bulletBuilder: (parameters) {
+        final unordered = parameters.style == BulletStyle.unorderedList;
+        final style = widget.styleSheet.listBullet!;
+        // List markers are layout, not part of the selectable prose.
+        return SelectionContainer.disabled(
+          child: Text(
+            unordered ? '•' : '${parameters.index + 1}.',
+            textAlign: TextAlign.right,
+            // Enlarge dots while retaining the body's line box and numbers.
+            style: unordered
+                ? style.copyWith(
+                    fontSize: (style.fontSize ?? 15) * 1.2,
+                    height: (style.height ?? 1.6) / 1.2,
+                  )
+                : style,
+          ),
+        );
+      },
       builders: {
         'latex-inline': GenAiLatexInlineBuilder(),
         'pre': GenAiPreBuilder(),
@@ -421,4 +480,18 @@ class _GenAiMarkdownBodyState extends State<_GenAiMarkdownBody> implements Markd
     }
     return _content!;
   }
+}
+
+/// Keep short columns compact and long prose readable without forcing the
+/// entire table into the chat width. Markdown owns scrolling and its controller.
+class _ReadableTableColumnWidth extends IntrinsicColumnWidth {
+  const _ReadableTableColumnWidth();
+
+  @override
+  double minIntrinsicWidth(Iterable<RenderBox> cells, double containerWidth) =>
+      super.minIntrinsicWidth(cells, containerWidth).clamp(48.0, 280.0);
+
+  @override
+  double maxIntrinsicWidth(Iterable<RenderBox> cells, double containerWidth) =>
+      super.maxIntrinsicWidth(cells, containerWidth).clamp(48.0, 280.0);
 }

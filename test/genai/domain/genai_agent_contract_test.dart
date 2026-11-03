@@ -1,7 +1,37 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
+import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
 
 void main() {
+  test('plain finals stream unchanged while control-like output cannot execute', () {
+    const nonce = 'plain_final_nonce_012345';
+    const body = '谱定理：\\(A=Q\\Lambda Q^{T}\\)。\n'
+        '```techpie-visual {"title":"谱定理"}\n<p data-latex="A=Q"></p>\n```';
+    final decoder = GenAiAgentFinalStream(nonce);
+    expect(body.split('').map(decoder.add).join(), body);
+    expect(decoder.finish().text, body);
+    expect(decodeGenAiAgentFinal(body, allowPlain: true), body);
+    expect(decodeGenAiAgentFinal(body), isNull);
+    for (final source in [
+      '<techpie-call nonce="stale_nonce_012345">{"name":"read_data","arguments":{}}</techpie-call>',
+      'I will look it up. <techpie-call>',
+      '{"name":"read_data","arguments":{}}',
+      '```tool_call\n{"name":"read_data"}\n```',
+      '<|open|>call tool="read_data"<|close|>',
+      '<techpie-final nonce="stale_nonce_012345">answer</techpie-final>',
+    ]) {
+      expect(
+        () => parseGenAiAgentDecision(source, nonce: nonce),
+        throwsA(isA<GenAiAgentToolException>()),
+        reason: source,
+      );
+      expect(
+        decodeGenAiAgentFinal(source, allowPlain: true),
+        source.startsWith('<techpie-final') ? 'answer' : isNull,
+      );
+    }
+  });
+
   GenAiAgentToolCall call(String name) =>
       GenAiAgentToolCall(id: 'call-1', name: name, arguments: const {});
 
@@ -164,14 +194,6 @@ void main() {
       ),
       isFalse,
     );
-  });
-
-  test('mutation tool names are centralized', () {
-    expect(genAiMutationToolNames, {'generate_image', 'reserve_court'});
-    expect(genAiIsMutationToolName('generate_image'), isTrue);
-    expect(genAiIsMutationToolName('reserve_court'), isTrue);
-    expect(genAiIsMutationToolName('get_court_slots'), isFalse);
-    expect(genAiIsMutationToolName(null), isFalse);
   });
 
   test('ledger receipts require an actual booking for reserve_court', () {

@@ -77,7 +77,7 @@ class _GenAiVisualSurfaceState extends State<GenAiVisualSurface> {
       if (value is! Map || value['kind'] != 'techpie-visual') return;
       final kind = value['event'];
       if (kind is! String ||
-          !const ['ready', 'height', 'fullscreen-height', 'error', 'escape'].contains(kind)) {
+          (!GenAiVisualDocument.statusEvents.contains(kind) && kind != 'scroll')) {
         return;
       }
       if (kind == 'ready') {
@@ -85,8 +85,9 @@ class _GenAiVisualSurfaceState extends State<GenAiVisualSurface> {
         _updateTheme();
         _updateLayout();
       }
-      final height = value['height'];
-      widget.onEvent(kind, height is num ? height.toDouble() : null);
+      if (kind == 'scroll' && (_inputBlocked || !widget.active || widget.fullscreen)) return;
+      final amount = value[kind == 'scroll' ? 'delta' : 'height'];
+      widget.onEvent(kind, amount is num ? amount.toDouble() : null);
     }).toJS;
     web.window.addEventListener('message', _listener);
     _visibilityListener = ((web.Event _) => _updateActivity()).toJS;
@@ -103,21 +104,21 @@ class _GenAiVisualSurfaceState extends State<GenAiVisualSurface> {
 
   void _updateLayout() {
     _frame?.contentWindow?.postMessage(
-      {'kind': 'techpie-visual-layout', 'fullscreen': widget.fullscreen}.jsify(),
+      GenAiVisualDocument.layoutMessage(widget.fullscreen).jsify(),
       '*'.toJS,
     );
   }
 
   void _updateTheme() {
     _frame?.contentWindow?.postMessage(
-      {'kind': 'techpie-visual-theme', 'theme': widget.theme}.jsify(),
+      GenAiVisualDocument.themeMessage(widget.theme).jsify(),
       '*'.toJS,
     );
   }
 
   void _updateActivity() {
     _frame?.contentWindow?.postMessage(
-      {'kind': 'techpie-visual-active', 'active': _active}.jsify(),
+      GenAiVisualDocument.activityMessage(_active).jsify(),
       '*'.toJS,
     );
   }

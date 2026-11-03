@@ -38,9 +38,10 @@ class GenAiThinkingView extends StatelessWidget {
             ? '已完成思考 · ${seconds < 1 ? 1 : seconds} 秒'
             : '已完成思考';
     return GenAiDisclosure(
-      // Live reasoning opens itself; finishing never collapses it under the reader.
+      // Automatic progress folds on completion; an explicit reader choice wins.
       initiallyExpanded: initiallyExpanded,
       expandWhen: isThinking && autoExpandWhileThinking,
+      collapseWhen: !isThinking,
       color: muted,
       leading: isThinking
           ? SizedBox.square(

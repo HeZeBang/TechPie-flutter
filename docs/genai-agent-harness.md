@@ -12,7 +12,10 @@ Paths are relative to `lib/features/genai/`.
 | --- | --- |
 | `application/genai_workspace_controller.dart` | Current chat, attachments, cancellation and account ownership |
 | `application/genai_remote_history.dart` | Server-history projection shared by display, export and model context |
-| `application/genai_agent_runner.dart` | Bounded sequential loop, validation, confirmation and duplicate prevention |
+| `application/genai_agent_runner.dart` | Sequential coordination, budgets and canonical transcript |
+| `application/genai_agent_model.dart` | Provisional streaming and completed, transport-confirmed decisions |
+| `application/genai_agent_execution.dart` | Approval, account checks, deadlines, duplicate and progress policy |
+| `application/genai_agent_projection.dart` | Bounded model context without modifying authoritative receipts |
 | `application/genai_repository.dart` | Authenticated requests, context preparation and read-back confirmation |
 | `application/genai_context_compactor.dart` | Source-attributed memory, budgets and reusable prefix boundaries |
 | `domain/genai_agent_protocol.dart`, `genai_remote_record.dart` | Live decision framing and portable records |
@@ -20,15 +23,17 @@ Paths are relative to `lib/features/genai/`.
 
 ## Agent protocol
 
-The school endpoint has no native tool calling. The leading system message contains
-identity and available tool schemas. A concise system guide is the last `messages`
-entry, immediately before the gateway appends the current `chatInfo` input. The
-active task (on continuation), image references and rejected candidate are transient
-step data. Both guide and data count toward the budget but are never archived or
-summarized. The original request is not duplicated on the first step.
+The school endpoint has no native tool calling. The leading system message is stable
+across agent steps. Live tool schemas, optional visual guidance and the current nonce
+are in the final system guide, immediately before the gateway appends `chatInfo`.
+Attachment flags, the active task (on continuation), image references and rejected
+candidate are transient step data. This preserves the reusable history prefix when
+capabilities change; cache hits still depend on the upstream deployment. Both guide and data count toward the budget but are never archived or
+summarized. Repair prose is transient; its durable feedback retains the error code.
+A brief `reply_format` reminder follows the current input in the stored envelope; recovery reads only `input`. Long original tasks are referenced rather than copied into every continuation.
 
-Version 4 uses one current-nonce frame. Tool arguments remain JSON; final answers
-are ordinary Markdown and stream without JSON escaping:
+Version 5 requires a current-nonce frame only for executable tool requests. Final
+answers are ordinary Markdown, streamed without JSON escaping or a mandatory wrapper:
 
 ```xml
 <techpie-call nonce="CURRENT_STEP">
@@ -42,29 +47,69 @@ Answer, clarification question, or explanation of a blocker.
 </techpie-final>
 ```
 
-The host derives new call IDs from the step nonce. Version 3 calls/finals remain
-readable. The decoder accepts harmless whitespace, attribute order/quote variation
-and one outer Markdown fence, but never extracts calls from prose, accepts stale
+The optional final wrapper above disambiguates answers quoting protocol syntax or
+action-shaped JSON. Plain answers do not execute tools; malformed or foreign
+control syntax still requires repair. A promise to act is a model task-completion
+error, not something syntax validation can reliably detect.
+
+The host derives new call IDs from the step nonce. Version 3/4 calls/finals remain
+readable. Each new server record carries `agent_format: 5`, so a fresh client
+recovers plain answers while preserving the strict interpretation of old records. The decoder accepts harmless whitespace, attribute order/quote variation
+and one outer Markdown fence. A confirmed end of response may terminate an otherwise valid final answer without a closing tag; tool calls still require complete framing and JSON. The decoder never extracts calls from prose, accepts stale
 nonces, repairs argument values or executes foreign harness syntax. Schema checks
 and confirmation remain mandatory.
 
 Malformed output receives a specific validation error and a bounded repair request
 with the active task and completed results. Foreign tokenizer control delimiters
-are neutralized only in the rejected candidate. Repair omits images and can request
+are neutralized only in the rejected candidate. Repair disables thinking, omits images and the full visual authoring guide, and asks only for correction of the reported error. It can request
 `inspect_image` again when needed. Consecutive errors reset after a valid decision;
-repair does not consume the valid-decision budget. The overall deadline still bounds
-the run. Truncated/failed streams never authorize tools. Rejected previews are cleared.
+repair does not consume the valid-decision budget. A separate total repair budget
+bounds alternating valid/invalid responses. Repeated identical reads pause only after
+fresh executions return unchanged results; changed observations or successful
+mutations reset that check. New user runs start fresh. The deadline still bounds
+the run. Reasoning and answer text have separate bounded allowances. Truncated/failed streams never authorize tools. Rejected previews are cleared;
+exhausted format recovery retains the candidate as explicitly unverified, inert
+source with the existing continuation action.
 
 Model history contains user input, final answers and compact inert call/result pairs
-in `techpie-history`; it excludes reasoning, rejected candidates and protocol-repair
-feedback. Tool arguments, results, attachments and original user evidence remain
-available for compaction and recall. Server records keep recovery metadata separately;
-reconstructed turn boundaries prevent resuming old interrupted tasks.
+in `techpie-history`; it excludes reasoning, intermediate rejected attempts and
+protocol-repair feedback. A terminal unverified candidate remains inert source. Tool arguments, full results, attachments and original user evidence remain
+available in the canonical transcript reconstructed from school records. Large
+successful receipts stay successful. Past model-context copies use bounded previews
+and content-addressed `read_conversation_records` references; UI and recovery use the
+originals. Primary tool receipts travel once in `chatInfo`, since the school does not
+save `messages`. Retrieval receipts instead store validated source IDs and Unicode
+slice offsets/lengths (`techpie_excerpt_v1`); the current step receives the expanded
+evidence transiently. Reopening expands those references from original school
+records. Missing sources create a history gap rather than fabricated evidence. Context projection is not a server-record size limit;
+tool adapters still need bounded results or source-service pagination. Server
+records keep recovery metadata separately; reconstructed turn boundaries prevent resuming old interrupted tasks.
 
 Normal chat accepts ordinary streamed answers. Both modes share attachments,
 context preparation and history recovery. Both disable upstream web search.
 
+## Native tool registration
+
+Native tools use MCP-style descriptors (`name`, `description`, `inputSchema`,
+optional `outputSchema` and `annotations`) and results (`content`,
+`structuredContent`, `isError`). The agent guide is generated from the registry.
+Handlers execute directly in Dart; there is no MCP server, connection or transport.
+This is a native contract, not a claim of full MCP protocol compatibility. Schemas
+use the existing supported object/array/scalar constraints, not arbitrary JSON Schema.
+
+`GenAiAgentPreparedTool.execute()` normalizes native service JSON into an immutable
+`GenAiToolResult`; handlers may also return that type explicitly for tool errors.
+Declared output schemas are checked for successful results. The runner stores the
+structured native value in existing receipts, omitting its duplicate text fallback;
+additional content blocks are retained. Old server records remain readable.
+Approval requirements, account checks, execution limits and effect identities stay
+host-owned. Annotations are descriptive hints and never override these controls.
+
 ## Server records and recovery
+
+Reconstruction produces a typed `GenAiConversationSnapshot`, with detached turns
+and inert tool receipts. There is no local JSON archive or archive migration layer.
+The decoder still accepts existing school records, including attachment checkpoints.
 
 The school persists `chatInfo` and the answer, not the supplied `messages` context.
 Real exchanges therefore carry `<techpie-record version="2">` JSON in `chatInfo`.
@@ -127,6 +172,12 @@ account and selected semester. Unverified caches or explicit refresh requests us
 the normal service first. Late responses from another account/selection cannot
 establish ownership. Network failure and unverified ownership remain distinct.
 
+`generate_image` accepts aspect-ratio/resolution presets or an explicit width/height
+pair, plus quality, model, title and PNG/JPEG output. JPEG compression defaults to
+80 (1–100). Mixed sizing modes and unsupported presets are rejected before approval;
+resolved dimensions and output settings appear in the proposal and result. Each
+approved call still generates one image.
+
 Reservations and paid image generation require a host-prepared proposal and
 explicit confirmation. Validation, identity checks, reservation limits and
 pre-dispatch availability checks run in code. Prompts and historical approvals
@@ -139,8 +190,12 @@ old denials do not block new confirmation. Deleting text does not undo external 
 Declining an image blocks further proposals until the next user message.
 
 Before dispatch, a GET read-back barrier verifies that the proposal is saved.
-Missing proposals fail closed. Unknown outcomes are not automatically repeated;
-check the underlying service. They warn on subsequent image confirmations without
+Missing proposals fail closed before approval. `confirmProposalSaved` is a read-back
+barrier, not a snapshot writer. Approval is local; immediately before dispatch the
+in-memory ledger marks the outcome unknown, then records the actual result. The
+next ordinary model request durably carries that receipt. A crash in between leaves
+only the saved proposal, which a fresh reader treats as uncertain. Unknown outcomes
+are not automatically repeated; check the underlying service. They warn on subsequent image confirmations without
 blocking unrelated actions. Completed/denied receipts suppress scoped duplicates.
 Exactly-once execution and cross-device locking require upstream support and are
 not guaranteed. Model rounds, repairs, outputs, tool deadlines and total runtime
@@ -151,7 +206,8 @@ are bounded. Cancellation and identity are checked across asynchronous boundarie
 Uploaded images and successful generation receipts build a recoverable catalog.
 Each run starts with the newest image; `inspect_image` selects an earlier entry.
 The school endpoint does not reliably honor historical/multiple visual inputs,
-so selection sends one known URL in both current-image fields. Comparison notes
+so selection uses one catalog image. Canonical trusted URLs stay in server records;
+transient multimodal bytes belong only in `messages`, not persisted `chatInfo`. Comparison notes
 remain assistant observations, never tool facts. Inspection uses ordinary steps
 in the same conversation, without auxiliary chats. See the [API contract](genai-api-contract.md)
 for upload validation and trusted image URLs.
@@ -182,6 +238,13 @@ and past approvals remain inert history, never permission to execute an action.
 
 
 ## Inline interactive answers
+
+The normal agent core advertises visual/LaTeX capabilities briefly.
+`get_visual_guide` lets the model elect to load the full authoring instructions for
+the current run. Its receipt stores only the capability identifier; the guide is
+host-injected context, not repeated archival text. Plain chat receives the guide
+directly because it has no tool discovery loop. This keeps routine campus steps
+small without keyword-based intent routing or removing visual capabilities.
 
 An assistant-only `techpie-visual` fenced block contains a complete HTML document.
 Ordinary HTML fences and user messages remain source text. Execution waits for the

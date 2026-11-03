@@ -82,6 +82,89 @@ void main() {
         },
       );
 
+  GenAiResponse numberedPage(int page) => response(
+        json: {
+          'success': true,
+          'code': 200,
+          'result': {
+            'records': [
+              for (var i = (page - 1) * 20; i < page * 20; i++)
+                {'chatGroupId': 'group-$i', 'question': 'Question $i'},
+            ],
+            'total': 60,
+          },
+        },
+      );
+
+  test('failed replacement query cannot append a stale page number', () async {
+    final history = GenAiHistoryController(workspace);
+    addTearDown(history.dispose);
+    await settle();
+    final pages = <int>[];
+    var fail = false;
+    transport.handle = (request) async {
+      if (request.uri.path.endsWith('/listByContentGroup')) {
+        final page = int.parse(request.uri.queryParameters['pageNo']!);
+        pages.add(page);
+        if (fail) throw const GenAiFailure(GenAiFailureKind.transport);
+        return numberedPage(page);
+      }
+      if (request.uri.path.endsWith('/getByChatGroupId')) {
+        return detail(request.uri.queryParameters['chatGroupId']!);
+      }
+      return forward(request);
+    };
+    await history.load(query: 'old');
+    await history.load(more: true);
+    expect(history.conversations, hasLength(40));
+    fail = true;
+    await history.load(query: 'new');
+    expect(history.conversations, isEmpty);
+    expect(history.hasMore, isFalse);
+    fail = false;
+    await history.load(more: true);
+    expect(pages, [1, 2, 1, 1]);
+    expect(history.conversations, hasLength(20));
+  });
+
+  test('finished turn queues refresh until paging ends and retains all loaded pages', () async {
+    final history = GenAiHistoryController(workspace);
+    addTearDown(history.dispose);
+    await settle();
+    final gate = Completer<GenAiResponse>();
+    RecordedRequest? pending;
+    final pages = <int>[];
+    transport.handle = (request) async {
+      if (request.uri.path.endsWith('/listByContentGroup')) {
+        final page = int.parse(request.uri.queryParameters['pageNo']!);
+        pages.add(page);
+        if (page == 2 && pending == null) {
+          pending = request;
+          return gate.future;
+        }
+        return numberedPage(page);
+      }
+      if (request.uri.path.endsWith('/getByChatGroupId')) {
+        return detail(request.uri.queryParameters['chatGroupId']!);
+      }
+      return forward(request);
+    };
+    await history.load();
+    final paging = history.load(more: true);
+    await settle();
+    await workspace.send('Finish while paging');
+    expect(pending!.cancellation.isCancelled, isFalse);
+    expect(pages, [1, 2]);
+    gate.complete(numberedPage(2));
+    await paging;
+    for (var i = 0; i < 20 && history.loading; i++) {
+      await settle();
+    }
+    expect(pages, [1, 2, 1, 2]);
+    expect(history.conversations, hasLength(40));
+    expect(history.hasMore, isTrue);
+  });
+
   test('history summaries use four concurrent reads and preserve logical titles and order',
       () async {
     final gates = <String, Completer<GenAiResponse>>{};

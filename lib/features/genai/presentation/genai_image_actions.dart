@@ -88,6 +88,7 @@ class GenAiImageActions extends StatefulWidget {
     required this.child,
     this.link,
     this.showMenuButton = true,
+    this.toolbar = false,
     this.onOpen,
     this.onReference,
   });
@@ -97,8 +98,11 @@ class GenAiImageActions extends StatefulWidget {
   final Widget child;
 
   /// Gallery tiles leave the visible button to the preview they open; the
-  /// context menu and long-press stay available on the tile itself.
+  /// right-click menu stays available on the tile itself.
   final bool showMenuButton;
+
+  /// Common copy/share/save controls below the chat and gallery viewer.
+  final bool toolbar;
 
   /// When either callback is set the menu becomes the gallery tile variant:
   /// open, use as reference, copy link and save. Chat keeps its image menu.
@@ -122,8 +126,8 @@ class _GenAiImageActionsState extends State<GenAiImageActions> {
   /// The PNG encoding starts here but is deliberately not awaited: the popover
   /// opens immediately with its loading row and rebuilds when the bytes land.
   /// [anchorContext] is the visible button for a click, and the whole tile for
-  /// a long press or right click, so the route never overlaps the image.
-  Future<void> _open(BuildContext anchorContext) async {
+  /// a right click.
+  Future<void> _open(BuildContext anchorContext, {bool pointerMenu = false}) async {
     if (_working || _menuOpen) return;
     final image = widget.image;
     // The overlay route can outlive this tile, so its rows must not read
@@ -136,7 +140,8 @@ class _GenAiImageActionsState extends State<GenAiImageActions> {
     _menuOpen = true;
     _ImageAction? action;
     try {
-      action = await genAiShowAnchoredMenu<_ImageAction>(
+      action = await genAiShowMenu<_ImageAction>(
+        pointerMenu: pointerMenu,
         context: context,
         anchorContext: anchorContext,
         items: _items(
@@ -376,39 +381,95 @@ class _GenAiImageActionsState extends State<GenAiImageActions> {
         ),
       ];
 
+  Widget _toolbar() => Wrap(
+        spacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (widget.link != null)
+            IconButton(
+              tooltip: '复制链接',
+              onPressed: _working
+                  ? null
+                  : () => _run(
+                        () => Clipboard.setData(ClipboardData(text: widget.link.toString())),
+                        success: '已复制链接',
+                      ),
+              icon: const GenAiIcon(GenAiGlyph.copy),
+            ),
+          IconButton(
+            tooltip: '分享图片',
+            onPressed: _working
+                ? null
+                : () {
+                    final image = widget.image;
+                    unawaited(
+                      _run(
+                        () => shareGenAiImagePng(
+                          image: image,
+                          context: context,
+                          link: widget.link,
+                          isCurrent: () => mounted && image == widget.image,
+                        ),
+                      ),
+                    );
+                  },
+            icon: const GenAiIcon(GenAiGlyph.share),
+          ),
+          IconButton(
+            tooltip: '下载图片',
+            onPressed:
+                _working ? null : () => _execute(_ImageAction.save, _loadPng(), widget.image),
+            icon: _working
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const GenAiIcon(GenAiGlyph.download),
+          ),
+          if (widget.showMenuButton)
+            Builder(
+              builder: (anchor) => IconButton(
+                tooltip: '图片操作',
+                onPressed: _working ? null : () => _open(anchor),
+                icon: const GenAiIcon(GenAiGlyph.more),
+              ),
+            ),
+          widget.child,
+        ],
+      );
+
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        // The visible menu button exposes these secondary actions. Giving the
-        // whole image long-press semantics intercepts web preview activation.
-        excludeFromSemantics: true,
-        behavior: HitTestBehavior.opaque,
-        onSecondaryTapDown: (_) => unawaited(_open(context)),
-        onLongPressStart: (_) => unawaited(_open(context)),
-        child: Stack(
-          children: [
-            widget.child,
-            if (widget.showMenuButton)
-              PositionedDirectional(
-                top: 4,
-                end: 4,
-                child: Builder(
-                  builder: (anchorContext) => IconButton.filledTonal(
-                    tooltip: '图片操作',
-                    onPressed: _working
-                        ? null
-                        : () => unawaited(_open(anchorContext)),
-                    icon: _working
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const GenAiIcon(GenAiGlyph.more),
+  Widget build(BuildContext context) => widget.toolbar
+      ? _toolbar()
+      : GestureDetector(
+          // The visible menu button exposes these secondary actions without
+          // overriding the image preview semantics.
+          excludeFromSemantics: true,
+          behavior: HitTestBehavior.opaque,
+          onSecondaryTapDown: (_) => unawaited(_open(context, pointerMenu: true)),
+          child: Stack(
+            children: [
+              widget.child,
+              if (widget.showMenuButton)
+                PositionedDirectional(
+                  top: 4,
+                  end: 4,
+                  child: Builder(
+                    builder: (anchorContext) => IconButton.filledTonal(
+                      tooltip: '图片操作',
+                      onPressed: _working ? null : () => unawaited(_open(anchorContext)),
+                      icon: _working
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const GenAiIcon(GenAiGlyph.more),
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
-      );
+            ],
+          ),
+        );
 }
 
 /// A menu entry whose rows are built as the PNG encoding finishes.

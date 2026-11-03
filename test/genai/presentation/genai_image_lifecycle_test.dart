@@ -15,7 +15,7 @@ import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/genai_image_actions.dart';
-import 'package:techpie/features/genai/presentation/genai_tools_page.dart';
+import 'package:techpie/features/genai/presentation/genai_image_studio_page.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 
 import '../support/fakes.dart';
@@ -75,9 +75,8 @@ void main() {
           key: adaptiveFeedbackHostKey,
           child: child!,
         ),
-        home: GenAiToolsPage(
+        home: GenAiImageStudioPage(
           workspace: workspace,
-          initialTab: 1,
         ),
       ),
     );
@@ -171,7 +170,12 @@ void main() {
       ),
     );
     final actions = tester.widget<GenAiImageActions>(
-      find.descendant(of: preview, matching: find.byType(GenAiImageActions)),
+      find.descendant(
+        of: preview,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is GenAiImageActions && !widget.toolbar,
+        ),
+      ),
     );
     // The preview supplies its own footer, so the reusable action widget must
     // not add a second visible menu button over the image.

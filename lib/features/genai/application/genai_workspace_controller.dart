@@ -15,7 +15,7 @@ import '../domain/genai_platform_contract.dart';
 import '../domain/genai_session.dart';
 import 'genai_agent_runner.dart';
 import 'genai_chat_service.dart';
-import 'genai_conversation_archive.dart';
+import 'genai_conversation_snapshot.dart';
 import 'genai_conversation_turn.dart';
 import 'genai_history_edit.dart';
 import 'genai_image_studio_controller.dart';
@@ -100,6 +100,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   late final imageStudio = GenAiImageStudioController(_repository);
   final GenAiChatService _chat;
   final _turns = <GenAiConversationTurn>[];
+  final _stoppedRequests = <String>{};
   GenAiOwner? _owner;
   GenAiSession? _catalogSession;
   GenAiCancellation? _catalogOperation;
@@ -540,9 +541,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       newConversation();
       _loginFailure = null;
       _agentRunner?.clear();
-    } else if (revisionChanged && _agentRunner != null) {
-      newConversation();
-      _agentRunner?.clear();
+    } else if (revisionChanged) {
+      // Credential renewal/rejection is not an account change. Cancel work
+      // under the old credential, retaining drafts, receipts and visible turns.
+      stop();
     }
     final session = sessions.session;
     if (!identical(session, _catalogSession)) {
@@ -690,7 +692,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _notify();
   }
 
-  Future<GenAiConversationArchive> conversationForExport(
+  Future<GenAiConversationSnapshot> conversationForExport(
     String id,
     GenAiCancellation cancellation,
   ) async =>
@@ -706,10 +708,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _notify();
   }
 
-  void _applyRemote(GenAiConversationArchive archive, {bool restoreModes = true}) {
+  void _applyRemote(GenAiConversationSnapshot archive, {bool restoreModes = true}) {
     _turns
       ..clear()
-      ..addAll(archive.restoreTurns());
+      ..addAll(archive.turns);
     _titleOverride = _draftTitles[archive.id] ?? archive.title;
     _repository.restoreContext(archive.id, archive.contextMemory);
     _restoredMutations = archive.mutations;
@@ -759,6 +761,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _refreshOperation = operation;
     _notify();
     try {
+      if (_agentDrain != null) await operation.race(_agentDrain!);
+      if (generation != _generation || operation.isCancelled) return false;
       final remote = await _readConversation(_groupId, operation);
       if (generation != _generation || operation.isCancelled) return false;
       if (historyEdited) {
@@ -774,7 +778,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         _conversationRevision++;
         return true;
       }
-      final recovered = remote.archive.restoreTurns();
+      final recovered = remote.archive.turns;
       final missing = _turns.where((t) => !recovered.any((r) => r.id == t.id)).toList();
       if (missing.any((t) => t.phase == GenAiChatPhase.completed)) {
         _recoveryFailure = const GenAiFailure(GenAiFailureKind.interrupted);
@@ -785,9 +789,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       final interrupted = _turns
           .where(
             (t) =>
-                t.phase == GenAiChatPhase.cancelled ||
-                t.phase == GenAiChatPhase.interrupted ||
-                t.phase == GenAiChatPhase.failed,
+                (t.phase == GenAiChatPhase.cancelled ||
+                    t.phase == GenAiChatPhase.interrupted ||
+                    t.phase == GenAiChatPhase.failed) &&
+                !recovered.any((r) => r.id == t.id && r.phase == GenAiChatPhase.completed),
           )
           .toList();
       for (final turn in interrupted) {
@@ -795,7 +800,9 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       }
       _interruptedTurns.removeWhere(
         (id, _) => recovered.any(
-          (r) => r.id == id && r.phase == GenAiChatPhase.cancelled,
+          (r) =>
+              r.id == id &&
+              (r.phase == GenAiChatPhase.cancelled || r.phase == GenAiChatPhase.completed),
         ),
       );
       _applyRemote(remote.archive, restoreModes: false);
@@ -805,6 +812,14 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           _turns[index] = turn;
         } else {
           _turns.add(turn);
+        }
+      }
+      if (reconcileHistoryEdit) {
+        // An absent row may still be arriving after cancellation. Do not claim
+        // synchronization succeeded or authorize deleting an unidentifiable turn.
+        if (missing.isNotEmpty) {
+          _recoveryFailure = const GenAiFailure(GenAiFailureKind.historyChanged);
+          return false;
         }
       }
       _recoveryFailure = null;
@@ -867,16 +882,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     if (prompt.trim().isEmpty && _attachments.isEmpty) {
       return;
     }
-    final fileIds = _attachments.where((a) => a.fileId != null).map((a) => a.fileId!).toList();
     final imageAttachments = _attachments.where((a) => a.isImage).toList();
-    final imageUrl = imageAttachments.where((a) => a.imageUrl != null).firstOrNull?.imageUrl;
     final imageUrls = imageAttachments.map((a) => a.imageUrl).whereType<String>().toList();
-    final attachedFileNames = _attachments.where((a) => !a.isImage).map((a) => a.name).toList();
-    final attachedImageBytes = imageAttachments.where((a) => a.bytes.isNotEmpty).firstOrNull != null
-        ? Uint8List.fromList(
-            imageAttachments.firstWhere((a) => a.bytes.isNotEmpty).bytes,
-          )
-        : null;
     final attachedImageBytesList = [
       for (final a in imageAttachments)
         if (a.bytes.isNotEmpty) Uint8List.fromList(a.bytes),
@@ -888,15 +895,12 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       isAgent: _agentEnabled,
     )
       ..thinkingStartTime = DateTime.now()
-      ..attachedFileNames = attachedFileNames
-      ..attachedFileIds = fileIds
-      ..attachedFileContents = {
+      ..files = [
         for (final a in _attachments)
-          if (a.fileId != null && a.documentContent != null) a.fileId!: a.documentContent!,
-      }
-      ..attachedImageUrl = imageUrl
+          if (a.fileId != null)
+            GenAiTurnFile(id: a.fileId!, name: a.name, content: a.documentContent),
+      ]
       ..attachedImageUrls = imageUrls
-      ..attachedImageBytes = attachedImageBytes
       ..attachedImageBytesList = attachedImageBytesList;
     _attachments.clear();
     if (turn.isAgent) {
@@ -904,6 +908,40 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     } else {
       await _executeSendTurn(turn, model, onAccepted: onAccepted);
     }
+  }
+
+  bool _matchesHistoryForEdit(List<GenAiConversationTurn> remote) {
+    if (remote.length != _turns.length) return false;
+    Map<String, Object?> request(GenAiConversationTurn turn) => {
+          'id': turn.id,
+          'parentId': turn.parentId,
+          'actionScopeId': turn.actionScopeId ?? turn.id,
+          'prompt': turn.prompt,
+          'isAgent': turn.isAgent,
+          'files': [for (final file in turn.files) file.toJson()],
+          'images': turn.attachedImageUrls,
+        };
+    String output(GenAiConversationTurn turn) => jsonEncode({
+          'answer': turn.answer,
+          'evidence': [for (final entry in turn.evidenceEntries) entry.message.content],
+        });
+    for (var i = 0; i < remote.length; i++) {
+      final local = _turns[i];
+      final saved = remote[i];
+      if (saved.isHistoryGap || jsonEncode(request(local)) != jsonEncode(request(saved))) {
+        return false;
+      }
+      // Cancelling the client does not stop the school's generation/persistence.
+      // Later output from this exact request is expected, even after check-sync.
+      // All user input and the conversation path must still match; completed
+      // turns retain the normal output conflict check.
+      final stopped = _stoppedRequests.contains(local.id) ||
+          local.phase == GenAiChatPhase.cancelled ||
+          local.phase == GenAiChatPhase.interrupted ||
+          local.phase == GenAiChatPhase.failed;
+      if (!stopped && output(local) != output(saved)) return false;
+    }
+    return true;
   }
 
   /// Permanent suffix editing. UI confirmation must describe the complete
@@ -941,23 +979,30 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       }
     }
 
-    String visible(List<GenAiConversationTurn> turns) => jsonEncode([
-          for (final turn in turns)
-            {
-              'id': turn.id,
-              'prompt': turn.prompt,
-              'answer': turn.answer,
-              'evidence': [for (final entry in turn.evidenceEntries) entry.message.content],
-            },
-        ]);
     try {
       if (_agentDrain != null) await operation.race(_agentDrain!);
       check();
       final rows = await _repository.loadConversation(group, operation);
       check();
       final before = decodeGenAiConversation(group, rows).archive;
-      if (visible(before.restoreTurns()) != visible(_turns)) {
+      if (!_matchesHistoryForEdit(before.turns)) {
         throw const GenAiFailure(GenAiFailureKind.historyChanged);
+      }
+      // A stopped tool may have executed after its last saved model step. Keep
+      // its confirmed/uncertain receipt when an edit removes that step.
+      final priorEffects = Map<String, Object?>.from(before.mutations['effects']! as Map);
+      for (final snapshot in [
+        _restoredMutations,
+        if (_agentRunner != null) _agentRunner!.snapshotConversation(group),
+      ]) {
+        for (final entry in (snapshot['effects']! as Map<String, Object?>).entries) {
+          if (entry.value case {'ok': true} || {'error': {'code': 'outcome_unknown'}}) {
+            if ((entry.value as Map)['ok'] == true ||
+                (priorEffects[entry.key] as Map?)?['ok'] != true) {
+              priorEffects[entry.key] = entry.value;
+            }
+          }
+        }
       }
       final plan = GenAiHistoryEdit.plan(group, rows, turnId, keepTurn: keepTurn);
       if (plan.removedIds.isEmpty) return;
@@ -990,7 +1035,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         _restoredMutations = {
           'version': 1,
           'effects': {
-            for (final entry in (before.mutations['effects']! as Map<String, Object?>).entries)
+            for (final entry in priorEffects.entries)
               if (entry.value case {'ok': true} || {'error': {'code': 'outcome_unknown'}})
                 entry.key: entry.value,
           },
@@ -1001,12 +1046,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           parentId: _turns.lastOrNull?.id,
           isAgent: target.isAgent,
         )
-          ..attachedFileIds = List.of(target.attachedFileIds)
-          ..attachedFileNames = List.of(target.attachedFileNames)
-          ..attachedFileContents = Map.of(target.attachedFileContents)
+          ..files = List.of(target.files)
           ..attachedImageUrls = List.of(target.attachedImageUrls)
-          ..attachedImageUrl = target.attachedImageUrl
-          ..attachedImageBytes = target.attachedImageBytes
           ..attachedImageBytesList = List.of(target.attachedImageBytesList)
           ..thinkingStartTime = DateTime.now();
         if (edited.isAgent) {
@@ -1048,12 +1089,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       return;
     }
     final prompt = target.prompt;
-    final fileNames = target.attachedFileNames;
-    final fileIds = target.attachedFileIds;
-    final fileContents = target.attachedFileContents;
-    final imageUrl = target.attachedImageUrl;
+    final files = target.files;
     final imageUrls = target.attachedImageUrls;
-    final imageBytes = target.attachedImageBytes;
     final imageBytesList = target.attachedImageBytesList;
 
     _turns.removeLast();
@@ -1067,12 +1104,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     )
       ..approvalBudget.addAll(target.approvalBudget)
       ..thinkingStartTime = DateTime.now()
-      ..attachedFileNames = fileNames
-      ..attachedFileIds = fileIds
-      ..attachedFileContents = fileContents
-      ..attachedImageUrl = imageUrl
+      ..files = List.of(files)
       ..attachedImageUrls = imageUrls
-      ..attachedImageBytes = imageBytes
       ..attachedImageBytesList = imageBytesList;
 
     if (turn.isAgent) {
@@ -1113,10 +1146,9 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   }) {
     turn.agentTranscript =
         runner.transcriptForConversation(groupId).skip(transcriptStart).toList(growable: false);
-    turn.agentTranscriptIsDelta = true;
-    // Checkpoints precede the next yielded UI event. Reconcile already-known
-    // calls from the typed receipt so a crash cannot lose its successful image
-    // URL or turn an already-dispatched operation back into an approval.
+    // Reconcile execution receipts into the live projection, including terminal
+    // cancellation. This updates memory only; the next normal exchange carries
+    // the receipt to the school server.
     for (final entry in turn.agentTranscript) {
       final result = entry.result;
       if (result == null) continue;
@@ -1128,8 +1160,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           )
           .lastOrNull;
       if (existing == null) continue;
-      // The pre-dispatch receipt protects crash recovery; it is not a completed
-      // outcome while the live tool is still running. Promote it only when the
+      // A dispatched receipt is uncertain, not a completed outcome while the
+      // live tool is still running. Promote it only when the
       // run terminates or the runner actually reports a finished tool.
       if (!terminal &&
           existing.value.kind != GenAiAgentEventKind.toolFinished &&
@@ -1211,6 +1243,14 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           aiType: model.aiType,
           rootAiType: model.rootAiType,
           history: const [],
+          stepContext: attachments.fileIds.isEmpty && attachments.imageUrls.isEmpty
+              ? null
+              : jsonEncode({
+                  'attached_content': {
+                    'documents': attachments.fileIds.isNotEmpty,
+                    'images': attachments.imageUrls.isNotEmpty,
+                  },
+                }),
           thinking: thinking,
           fileIds: attachments.fileIds,
           documentContents: attachments.documentContents,
@@ -1221,7 +1261,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         isCurrent: current,
         transcript: transcript,
         approvalBudget: turn.approvalBudget,
-        checkpoint: (mutations) async {
+        confirmProposalSaved: () async {
           if (!current()) throw const GenAiFailure(GenAiFailureKind.cancelled);
           _captureAgentTranscript(turn, runner, groupId, transcriptStart);
           final step = _repository.lastStepFor(groupId);
@@ -1312,6 +1352,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           case GenAiAgentEventKind.cancelled:
             turn.contextUsage = null;
             turn.failure = event.failure;
+            if (event.partialText != null) turn.answer = event.partialText!;
             turn.agentStatus = event.text ?? '任务未完成，请检查工具记录后再继续。已提交的操作不要重复执行。';
             turn.phase = event.kind == GenAiAgentEventKind.cancelled
                 ? GenAiChatPhase.cancelled
@@ -1363,7 +1404,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         fileIds.addAll(turn.attachedFileIds);
         documentContents.addAll(turn.attachedFileContents);
         for (final image in [
-          if (turn.attachedImageUrl case final image? when image.isNotEmpty) image,
           ...turn.attachedImageUrls,
           for (final event in turn.agentEvents.values) ...genAiGeneratedImages(event.result),
         ]) {
@@ -1386,12 +1426,30 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   }) async {
     final history = <GenAiMessage>[];
     final attachments = _conversationAttachments([..._turns, turn]);
+    // Bound automatic history, but never silently discard this turn's explicit
+    // attachments. Oversized explicit input still follows the normal budget check.
+    final currentImages = turn.attachedImageUrls.toSet();
+    final historyImageBudget = currentImages.length < 8 ? 8 - currentImages.length : 0;
+    final visibleImages = [
+      ...attachments.imageUrls
+          .where((url) => !currentImages.contains(url))
+          .toList()
+          .reversed
+          .take(historyImageBudget)
+          .toList()
+          .reversed,
+      ...currentImages,
+    ];
     for (final previous in _turns) {
       if (previous.isHistoryGap) {
         history.clear();
       } else if (previous.phase == GenAiChatPhase.completed ||
           (previous.isAgent && previous.agentEvents.isNotEmpty)) {
-        history.addAll(previous.evidenceEntries.map((entry) => entry.message));
+        history.addAll(
+          previous.evidenceEntries.map(
+            (entry) => GenAiMessage(role: entry.message.role, content: entry.message.content),
+          ),
+        );
       }
     }
     final generation = ++_generation;
@@ -1428,16 +1486,30 @@ final class GenAiWorkspaceController extends ChangeNotifier {
                 campusTools: false,
                 documents: attachments.fileIds.isNotEmpty,
                 images: attachments.imageUrls.isNotEmpty,
+                includeAttachmentState: false,
               ),
             ),
             ...history,
           ],
+          stepContext: attachments.fileIds.isEmpty && attachments.imageUrls.isEmpty
+              ? null
+              : jsonEncode({
+                  'attached_content': {
+                    'documents': attachments.fileIds.isNotEmpty,
+                    'images': visibleImages.isNotEmpty,
+                    'visible_images': visibleImages,
+                    if (attachments.imageUrls.length > visibleImages.length)
+                      'earlier_images_not_attached':
+                          attachments.imageUrls.length - visibleImages.length,
+                  },
+                }),
           thinking: thinking,
           fileIds: attachments.fileIds,
           documentContents: attachments.documentContents,
-          imageUrl: attachments.imageUrls.lastOrNull,
-          imageUrls: attachments.imageUrls,
+          imageUrl: visibleImages.lastOrNull,
+          imageUrls: visibleImages,
         ),
+        target: turn,
       );
     } finally {
       operation.cancel();
@@ -1453,13 +1525,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   void _chatChanged() {
     final turn = _active;
     if (_disposed || turn == null || turn.isAgent) return;
-    turn.contextCompacted = _chat.contextCompacted;
-    turn.contextUsage = _chat.contextUsage;
-    turn.answer = _chat.answer;
-    turn.reasoning = _chat.reasoning;
-    turn.phase = _chat.phase;
-    turn.failure = _chat.failure;
-    turn.finishReason = _chat.finishReason;
     if (turn.thinkingStartTime != null &&
         turn.thinkingDurationMs == null &&
         (_chat.answer.isNotEmpty || _chat.phase == GenAiChatPhase.completed)) {
@@ -1479,6 +1544,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     _sendOperation = null;
     _chat.stop();
     if (_active case final turn?) {
+      _stoppedRequests.add(turn.id);
       _finishedTurnRevision++;
       turn.contextUsage = null;
       turn.isAgentThinking = false;
@@ -1497,6 +1563,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     stop();
     _chat.clear();
     _turns.clear();
+    _stoppedRequests.clear();
     _interruptedTurns.clear();
     _cancelAttachments();
     _groupId = createGroupId();

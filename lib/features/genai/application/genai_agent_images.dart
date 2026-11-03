@@ -40,7 +40,7 @@ final class GenAiAgentImages {
             'is attached for vision; other URLs are a catalog. New images become visible '
             'after generation. Compare actual observations, not generation prompts. '
             '${imageAttached ? 'Before switching, record your observation of visible_image (or that it is unreadable). These are assistant notes, not verified tool facts.' : 'No image is attached on this step; select one to inspect it next.'}',
-        parameters: {
+        inputSchema: {
           'type': 'object',
           'properties': {
             'image_id': {'type': 'string', 'maxLength': 40},

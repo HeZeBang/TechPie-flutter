@@ -60,64 +60,68 @@ class GenAiModelPicker extends StatelessWidget {
 
   Future<void> _openMenu(BuildContext context, BuildContext anchorContext) async {
     final palette = GenAiPalette.of(context);
+    final compact = GenAiLayout.of(context).compactControls;
     // Draft popover width: 220 px minimum, never wider than the workspace
     // minus the 12 px side insets.
     final menuWidth =
         ((workspaceWidth ?? MediaQuery.sizeOf(context).width) - 24).clamp(220.0, 300.0);
-    final picked = await genAiShowAnchoredMenu<GenAiModel>(
+    final picked = await genAiShowMenu<GenAiModel>(
       context: context,
       anchorContext: anchorContext,
       minWidth: menuWidth,
       semanticLabel: '选择模型',
       items: [
-        PopupMenuItem<GenAiModel>(
-          enabled: false,
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Text('选择模型', style: TextStyle(fontSize: 11, color: palette.muted)),
-        ),
+        if (!compact)
+          PopupMenuItem<GenAiModel>(
+            enabled: false,
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Text('选择模型', style: TextStyle(fontSize: 11, color: palette.muted)),
+          ),
         for (final model in models)
           PopupMenuItem<GenAiModel>(
             key: ValueKey('genai-model-${model.aiType}'),
             value: model,
             enabled: enabled,
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          model.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            height: compact ? 44 : 42,
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: compact ? 4 : 8),
+            child: compact
+                ? _compactRow(model, palette)
+                : Row(
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                model.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                [
+                                  cost(model),
+                                  if (model.supportsThinking) '支持深度思考',
+                                ].join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11, color: palette.muted),
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          [
-                            cost(model),
-                            if (model.supportsThinking) '支持深度思考',
-                          ].join(' · '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11, color: palette.muted),
-                        ),
-                      ],
-                    ),
+                      ),
+                      if (model == selected)
+                        GenAiIcon(GenAiGlyph.check, size: 17, color: palette.accent)
+                      else
+                        const SizedBox(width: 17),
+                    ],
                   ),
-                ),
-                if (model == selected)
-                  GenAiIcon(GenAiGlyph.check, size: 17, color: palette.accent)
-                else
-                  const SizedBox(width: 17),
-              ],
-            ),
           ),
       ],
     );
@@ -126,6 +130,36 @@ class GenAiModelPicker extends StatelessWidget {
     if (picked == null || !context.mounted || !enabled || !models.contains(picked)) return;
     onSelected(picked);
   }
+
+  Widget _compactRow(GenAiModel model, GenAiPalette palette) => Row(
+        children: [
+          Expanded(
+            child: Text(
+              model.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(cost(model), style: TextStyle(fontSize: 11, color: palette.muted)),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 15,
+            child: model.supportsThinking
+                ? Semantics(
+                    label: '支持深度思考',
+                    child: GenAiIcon(GenAiGlyph.brain, size: 15, color: palette.muted),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 8),
+          if (model == selected)
+            GenAiIcon(GenAiGlyph.check, size: 17, color: palette.accent)
+          else
+            const SizedBox(width: 17),
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {

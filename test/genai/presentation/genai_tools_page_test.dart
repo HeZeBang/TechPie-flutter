@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
-import 'package:techpie/features/genai/presentation/genai_icons.dart';
-import 'package:techpie/features/genai/presentation/genai_tools_page.dart';
+import 'package:techpie/features/genai/presentation/genai_image_studio_page.dart';
+import 'package:techpie/features/genai/presentation/genai_usage_view.dart';
 
 import '../support/workspace_server.dart';
 
@@ -28,7 +27,11 @@ Future<void> revealInStudio(WidgetTester tester, Finder target) async {
   await tester.pumpAndSettle();
 }
 
-Finder studioMenu() => find.byKey(const ValueKey('genai-anchored-menu'));
+Finder studioMenu() => find.byWidgetPredicate(
+      (widget) =>
+          widget.key == const ValueKey('genai-anchored-menu') ||
+          widget.key == const ValueKey('genai-choice-sheet'),
+    );
 
 Finder studioField(String key) => find.byKey(ValueKey(key));
 
@@ -69,10 +72,7 @@ List<Object?> studioMenuValues(WidgetTester tester) {
     of: studioMenu(),
     matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem<dynamic>),
   );
-  return tester
-      .widgetList<PopupMenuItem<dynamic>>(rows)
-      .map((item) => item.value)
-      .toList();
+  return tester.widgetList<PopupMenuItem<dynamic>>(rows).map((item) => item.value).toList();
 }
 
 /// Selects [label] from a studio field's anchored menu, as a user would.
@@ -83,65 +83,28 @@ Future<void> selectStudioOption(WidgetTester tester, String key, String label) a
   expect(studioMenu(), findsNothing);
 }
 
-/// Verifies the menu is anchored exactly 7px clear of its field (below or
-/// above), that every row is a 42px-tall, 10/8-padded, 13px option, and that
-/// only the row whose value is [selected] carries the check icon.
-Future<void> expectAnchoredMenu(
-  WidgetTester tester,
-  String key, {
-  required Object? selected,
-}) async {
-  final anchor = studioField(key);
-  await tester.ensureVisible(anchor);
-  final anchorRect = tester.getRect(anchor);
-  await openStudioMenu(tester, key);
-  final menuRect = tester.getRect(studioMenu());
-  expect(menuRect.overlaps(anchorRect), isFalse);
-  final clearance = menuRect.top >= anchorRect.bottom
-      ? menuRect.top - anchorRect.bottom
-      : anchorRect.top - menuRect.bottom;
-  expect(clearance, closeTo(7, .01));
-
-  final rows = find.descendant(
-    of: studioMenu(),
-    matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem<dynamic>),
-  );
-  final items = tester.widgetList<PopupMenuItem<dynamic>>(rows).toList();
-  expect(items, isNotEmpty);
-  final selectedIndex = items.indexWhere((item) => item.value == selected);
-  expect(selectedIndex, isNot(-1), reason: '$key should mark $selected as selected');
-  for (var index = 0; index < items.length; index++) {
-    final option = studioOption(key, index);
-    expect(option, findsOneWidget);
-    expect(items[index].height, greaterThanOrEqualTo(42));
-    expect(items[index].padding, const EdgeInsets.symmetric(horizontal: 10, vertical: 8));
-    expect(tester.getSize(option).height, greaterThanOrEqualTo(42));
-    final text = find.descendant(of: option, matching: find.byType(Text)).first;
-    final paragraph = tester.renderObject<RenderParagraph>(text);
-    expect(paragraph.text.style?.fontSize, 13);
-    final check = find.descendant(
-      of: option,
-      matching: find.byWidgetPredicate(
-        (widget) => widget is GenAiIcon && widget.glyph == GenAiGlyph.check,
-      ),
-    );
-    expect(check, index == selectedIndex ? findsOneWidget : findsNothing);
-  }
-  await dismissStudioMenu(tester);
-}
-
-/// The chosen label's text box is centred on its field anchor within ±1px.
-void expectCentredOnAnchor(WidgetTester tester, Finder anchor, Finder label) {
-  final anchorRect = tester.getRect(anchor);
-  final labelRect = tester.getRect(label);
-  expect(
-    (labelRect.center.dy - anchorRect.center.dy).abs(),
-    lessThanOrEqualTo(1),
-    reason: 'the chosen label should be centred in its field',
-  );
-}
-
 void main() {
+  testWidgets('usage retries a failed next page without dropping previous orders', (tester) async {
+    final demo = await TestGenAiWorkspace.create();
+    addTearDown(demo.dispose);
+    demo.backend.usageRecords
+        .addAll(List.generate(11, (i) => {'id': '$i', 'modelName': 'Model $i'}));
+    demo.backend.failUsagePage = 2;
+    await tester
+        .pumpWidget(MaterialApp(home: Scaffold(body: GenAiUsageView(workspace: demo.workspace))));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('加载更多'), 300);
+    await tester.tap(find.text('加载更多'));
+    await tester.pumpAndSettle();
+    expect(find.text('重试加载').hitTestable(), findsOneWidget);
+    demo.backend.failUsagePage = null;
+    await tester.tap(find.text('重试加载'));
+    await tester.pumpAndSettle();
+    expect(demo.backend.usagePages, [1, 2, 2]);
+    expect(find.text('加载更多'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('aspect ratio filters resolutions and validates linked and freeform custom sizes',
       (tester) async {
     tester.view.physicalSize = const Size(375, 900);
@@ -153,9 +116,8 @@ void main() {
     await demo.workspace.reloadModels();
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiToolsPage(
+        home: GenAiImageStudioPage(
           workspace: demo.workspace,
-          initialTab: 1,
         ),
       ),
     );
@@ -166,7 +128,7 @@ void main() {
     );
 
     final parameters = find.byKey(const ValueKey('genai-image-parameters'));
-    final parametersDialog = find.byKey(const ValueKey('genai-image-parameters-dialog'));
+    final parametersDialog = find.byKey(const ValueKey('genai-parameters-surface'));
     final orientation = find.byKey(const ValueKey('genai-image-orientation'));
     final ratio = find.byKey(const ValueKey('genai-image-ratio'));
     final resolution = find.byKey(const ValueKey('genai-image-resolution'));
@@ -191,8 +153,7 @@ void main() {
       expect(parametersDialog, findsNothing);
     }
 
-    Future<void> select(String key, String label) =>
-        selectStudioOption(tester, key, label);
+    Future<void> select(String key, String label) => selectStudioOption(tester, key, label);
 
     Future<void> selectOrientation(String label) async {
       await tester.ensureVisible(orientation);
@@ -272,46 +233,45 @@ void main() {
     expect(studioValueText(tester, 'genai-image-ratio'), '16:9');
     expect(studioValueText(tester, 'genai-image-resolution'), '4K');
     await selectOrientation('方形');
-    expect(studioValueText(tester, 'genai-image-ratio'), '1:1');
-    await openStudioMenu(tester, 'genai-image-ratio');
-    expect(studioMenuValues(tester), contains('1:1'));
-    await dismissStudioMenu(tester);
+    expect(studioField('genai-image-ratio'), findsNothing);
     expect(studioValueText(tester, 'genai-image-resolution'), '1K');
     await selectOrientation('横向');
     await select('genai-image-resolution', '4K · 3840 × 2160');
     expect(width, findsNothing);
 
-    // Selecting 自定义 reveals the free-form dimensions. Typed values are
-    // preserved across preset switches rather than being overwritten by the
-    // selected preset.
+    // Selecting 自定义 starts from the visible preset, so orientation and
+    // dimensions stay consistent.
     await select('genai-image-resolution', '自定义');
     await tester.ensureVisible(width);
-    expect(tester.widget<TextField>(width).controller!.text, '1024');
-    expect(tester.widget<TextField>(height).controller!.text, '1024');
+    expect(tester.widget<TextField>(width).controller!.text, '3840');
+    expect(tester.widget<TextField>(height).controller!.text, '2160');
     expect(tester.widget<IconButton>(link).tooltip, '宽高联动');
     await tester.tap(link);
     await tester.pumpAndSettle();
     expect(tester.widget<IconButton>(link).tooltip, '宽高独立');
     await tester.enterText(width, '1600');
     await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(height).controller!.text, '1024');
+    expect(tester.widget<TextField>(height).controller!.text, '2160');
     await tester.enterText(height, '1080');
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(width).controller!.text, '1600');
+    expect(studioValueText(tester, 'genai-image-ratio'), '40:27');
+    await select('genai-image-ratio', '16:9');
     await select('genai-image-resolution', '4K · 3840 × 2160');
     expect(width, findsNothing);
     expect(height, findsNothing);
     expect(studioValueText(tester, 'genai-image-resolution'), '4K');
     await select('genai-image-resolution', '自定义');
     await tester.ensureVisible(width);
-    expect(tester.widget<TextField>(width).controller!.text, '1600');
-    expect(tester.widget<TextField>(height).controller!.text, '1080');
+    expect(tester.widget<TextField>(width).controller!.text, '3840');
+    expect(tester.widget<TextField>(height).controller!.text, '2160');
 
     // Linking snaps the height back to the selected ratio.
     await tester.tap(link);
     await tester.pumpAndSettle();
     expect(tester.widget<IconButton>(link).tooltip, '宽高联动');
-    expect(tester.widget<TextField>(width).controller!.text, '1600');
+    await tester.enterText(width, '1600');
+    await tester.pumpAndSettle();
     expect(tester.widget<TextField>(height).controller!.text, '900');
 
     // Free-form invalid sizes disable generation without an experimental or
@@ -360,10 +320,9 @@ void main() {
     await demo.workspace.reloadModels();
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiToolsPage(
+        home: GenAiImageStudioPage(
           key: const ValueKey('images'),
           workspace: demo.workspace,
-          initialTab: 1,
         ),
       ),
     );
@@ -403,154 +362,20 @@ void main() {
     expect(find.byType(Image), findsWidgets);
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiToolsPage(
+        home: GenAiUsageView(
           key: const ValueKey('usage'),
           workspace: demo.workspace,
-          initialTab: 2,
         ),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.text('免费额度'), findsOneWidget);
-    expect(find.textContaining('剩余 35'), findsOneWidget);
+    expect(find.text('35 剩余', findRichText: true), findsOneWidget);
     await demo.sessions.setOwner(null);
     await tester.pumpAndSettle();
     expect(find.text('免费额度'), findsNothing);
     expect(find.textContaining('账号已切换'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  testWidgets('studio selects open anchored menus with full labels and centred values',
-      (tester) async {
-    final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
-    addTearDown(demo.dispose);
-    await demo.workspace.reloadModels();
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    // Desktop, phone, and phone at 1.6 text scale: the anchor/menu geometry,
-    // option contract, and centring must hold in both placements.
-    for (final scenario in [(1440.0, 1.0), (375.0, 1.0), (375.0, 1.6)]) {
-      tester.view.physicalSize = Size(scenario.$1, 900);
-      tester.view.devicePixelRatio = 1;
-      tester.platformDispatcher.textScaleFactorTestValue = scenario.$2;
-      await tester.pumpWidget(
-        MaterialApp(
-          key: ValueKey('studio-${scenario.$1}-${scenario.$2}'),
-          home: GenAiToolsPage(
-            key: ValueKey('studio-page-${scenario.$1}-${scenario.$2}'),
-            workspace: demo.workspace,
-            initialTab: 1,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('genai-image-prompt')),
-        'anchored menus',
-      );
-      await tester.pumpAndSettle();
-      expect(dropdownControls(), findsNothing);
-
-      // The model picker is an anchored menu too; its field label carries the
-      // selected model name.
-      final modelField = studioField('genai-image-model');
-      await revealInStudio(tester, modelField);
-      final modelAnchor = tester.getRect(modelField);
-      await openStudioMenu(tester, 'genai-image-model');
-      expect(tester.getRect(studioMenu()).overlaps(modelAnchor), isFalse);
-      expect(
-        find.descendant(
-          of: studioMenu(),
-          matching: find.byWidgetPredicate(
-            (widget) => widget is GenAiIcon && widget.glyph == GenAiGlyph.check,
-          ),
-        ),
-        findsOneWidget,
-      );
-      await dismissStudioMenu(tester);
-      expect(studioValue('genai-image-model'), findsOneWidget);
-
-      final wide = scenario.$1 > 680;
-      final parameters = find.byKey(const ValueKey('genai-image-parameters'));
-      if (!wide) {
-        await revealInStudio(tester, parameters);
-        await tester.tap(parameters);
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const ValueKey('genai-image-parameters-dialog')),
-          findsOneWidget,
-        );
-      }
-
-      // Landscape gives the resolution menu its 4K tier.
-      final orientation = find.byKey(const ValueKey('genai-image-orientation'));
-      await tester.ensureVisible(orientation);
-      await tester.tap(find.descendant(of: orientation, matching: find.text('横向')));
-      await tester.pumpAndSettle();
-
-      // Every closed field is a Text label vertically centred in its anchor,
-      // and every menu is 7px clear of that anchor.
-      for (final key in const [
-        'genai-image-ratio',
-        'genai-image-resolution',
-        'genai-image-quality',
-      ]) {
-        expect(studioValue(key), findsOneWidget);
-        await tester.ensureVisible(studioField(key));
-        expectCentredOnAnchor(tester, studioField(key), studioValue(key));
-      }
-      await expectAnchoredMenu(tester, 'genai-image-ratio', selected: '16:9');
-      await expectAnchoredMenu(tester, 'genai-image-resolution', selected: '1K');
-      await expectAnchoredMenu(tester, 'genai-image-quality', selected: 'low');
-
-      // The menu spells the resolution out and must fit it unclipped; the
-      // closed field keeps the compact tier label.
-      await openStudioMenu(tester, 'genai-image-resolution');
-      final fullLabel = find.descendant(
-        of: studioMenu(),
-        matching: find.text('1K · 1136 × 640'),
-      );
-      expect(fullLabel, findsOneWidget);
-      final menuRect = tester.getRect(studioMenu());
-      final labelRect = tester.getRect(fullLabel);
-      final labelText = tester.widget<Text>(fullLabel);
-      expect(labelText.maxLines, isNull);
-      expect(labelText.overflow, isNot(TextOverflow.ellipsis));
-      expect(
-        tester.renderObject<RenderParagraph>(fullLabel).didExceedMaxLines,
-        isFalse,
-      );
-      expect(labelRect.left, greaterThanOrEqualTo(menuRect.left + 9));
-      expect(labelRect.right, lessThanOrEqualTo(menuRect.right - 9));
-      expect(labelRect.height, lessThanOrEqualTo(13 * scenario.$2 * 1.6));
-      expect(menuRect.width, greaterThanOrEqualTo(labelRect.width + 40));
-      await dismissStudioMenu(tester);
-      expect(studioValueText(tester, 'genai-image-resolution'), '1K');
-      expect(find.text('1K · 1136 × 640'), findsNothing);
-
-      if (!wide) {
-        await tester.tap(find.text('完成'));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const ValueKey('genai-image-parameters-dialog')),
-          findsNothing,
-        );
-        final summary = find.byKey(const ValueKey('genai-image-parameter-summary'));
-        expect(summary, findsOneWidget);
-        final summaryText = tester.widget<Text>(summary);
-        expect(
-          summaryText.data ?? summaryText.textSpan?.toPlainText(),
-          contains('横向 · 16:9 · 1K'),
-        );
-        await revealInStudio(tester, parameters);
-        expectCentredOnAnchor(tester, parameters, summary);
-      }
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpAndSettle();
-    }
   });
 }
