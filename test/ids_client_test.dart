@@ -5,11 +5,101 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/models/ids_passkey.dart';
+import 'package:techpie/services/debug_logger.dart';
 import 'package:techpie/services/ids/campus_http.dart';
 import 'package:techpie/services/ids/ids_client.dart';
 import 'package:techpie/services/ids/software_passkey.dart';
 
 void main() {
+  test('local authentication logs cover the lifecycle without recording credentials', () async {
+    final adapter = _School()..recheckCodes.addAll(['2106010003', '0']);
+    final logger = DebugLogger()..enabled = true;
+    final client = IdsClient(http: Dio()..httpClientAdapter = adapter, logger: logger);
+    final registered = await client.register(
+      '20240001',
+      'synthetic-password',
+      promptCaptcha: (_, __, {required refresh}) async => 'manual-code',
+      saveCandidate: (key) async => adapter.key = key,
+    );
+    for (final node in ['eams', 'elearning', 'egateApp', 'oa']) {
+      await client.mintCookie(node, registered.session.raw);
+    }
+    await client.revoke(
+      registered.credential,
+      promptVerification: (_, __, {required refresh}) async =>
+          (password: 'synthetic-password', captcha: 'manual-code'),
+    );
+    final completed = logger.entries.where((e) => e.statusCode != null).toList();
+    expect(completed, hasLength(adapter.requests.length));
+    expect(
+        completed.map((e) => e.url), adapter.requests.map((r) => '${r.uri.origin}${r.uri.path}'),);
+    expect(completed.every((e) => e.tag == 'IDS' && e.durationMicros! >= 0), true);
+    expect(completed.any((e) => e.statusCode == 302), true);
+    expect(
+        completed.any((e) => e.statusCode == 500 && e.responseBody == '{"code":2106010003}'), true,);
+    final logs = jsonEncode(logger.entries
+        .map((e) => {
+              'url': e.url,
+              'request': e.requestBody,
+              'response': e.responseBody,
+              'error': e.error,
+            },)
+        .toList(),);
+    for (final secret in [
+      '20240001',
+      'synthetic-password',
+      'manual-code',
+      'CASTGC',
+      'REFERERCE_TOKEN',
+      'registration-request',
+      'assertion-',
+      'authenticatorData',
+      registered.credential.privateKey,
+      registered.credential.credentialId,
+    ]) {
+      expect(logs, isNot(contains(secret)));
+    }
+  });
+
+  test('authentication logs omit query secrets and sanitize transport failures', () async {
+    final logger = DebugLogger()..enabled = true;
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        if (options.uri.path == '/authserver/login') {
+          handler.resolve(Response<List<int>>(
+            requestOptions: options,
+            statusCode: 302,
+            data: const [],
+            headers: Headers.fromMap({
+              'location': ['/authserver/next?ticket=ST-synthetic-ticket'],
+            }),
+          ),);
+        } else {
+          handler
+              .reject(DioException(requestOptions: options, error: 'synthetic-transport-secret'));
+        }
+      },),);
+    final client = CampusHttp(dio, logger: logger);
+    Future<Response<List<int>>> request() => client.request(
+          Uri.parse('${SoftwarePasskey.origin}/authserver/login?username=synthetic-user'),
+          method: 'POST',
+          data: 'password=synthetic-password&captcha=manual-code',
+        );
+    await expectLater(request(), throwsA(isA<IdsException>()));
+    expect(logger.entries, hasLength(4));
+    expect(logger.entries[1].statusCode, 302);
+    expect(logger.entries.last.method, 'GET');
+    expect(logger.entries.last.url, '${SoftwarePasskey.origin}/authserver/next');
+    expect(logger.entries.last.error, '无法连接学校认证服务，请检查网络后重试');
+    expect(logger.entries.last.durationMicros, isNotNull);
+    expect(logger.entries.every((e) => Uri.parse(e.url).query.isEmpty), true);
+    expect(logger.entries.every((e) => e.requestBody == null && e.responseBody == null), true);
+    logger.clear();
+    logger.enabled = false;
+    await expectLater(request(), throwsA(isA<IdsException>()));
+    expect(logger.entries, isEmpty);
+  });
+
   test('distinguishes a rejected password and asks for captcha after repeated failures', () async {
     final adapter = _School()..passwordErrors.addAll(['您提供的用户名或者密码有误', '用户名或密码错误']);
     final client = IdsClient(http: Dio()..httpClientAdapter = adapter);

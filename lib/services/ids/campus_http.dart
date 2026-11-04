@@ -5,6 +5,7 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 
 import '../campus_user_agent.dart';
+import '../debug_logger.dart';
 
 class IdsException implements Exception {
   final String message;
@@ -15,9 +16,11 @@ class IdsException implements Exception {
 }
 
 /// App-owned HTTP session with host, path, expiry and Secure cookie scoping.
+/// Authentication logs contain diagnostics only, never payloads or cookies.
 class CampusHttp {
-  CampusHttp(this.http);
+  CampusHttp(this.http, {DebugLogger? logger}) : _logger = logger;
   final Dio http;
+  final DebugLogger? _logger;
   final CookieJar jar = CookieJar();
   final Map<String, Map<String, String>> _stored = {};
   static const hosts = {
@@ -85,6 +88,11 @@ class CampusHttp {
         throw const IdsException('学校登录跳转到了不支持的地址');
       }
       Response<List<int>> response;
+      // Query parameters can contain a username or CAS ticket. Request bodies,
+      // headers and HTML can contain passwords, captcha or assertion material.
+      final logUrl = '${uri.origin}${uri.path}';
+      final timer = Stopwatch()..start();
+      _logger?.log(method: method, url: logUrl, tag: 'IDS');
       try {
         response = await http.request<List<int>>(
           uri.toString(),
@@ -102,7 +110,24 @@ class CampusHttp {
           ),
         );
       } on DioException {
+        _logger?.log(
+          method: method,
+          url: logUrl,
+          error: '无法连接学校认证服务，请检查网络后重试',
+          durationMicros: timer.elapsedMicroseconds,
+          tag: 'IDS',
+        );
         throw const IdsException('无法连接学校认证服务，请检查网络后重试');
+      }
+      if (_logger?.enabled == true) {
+        _logger!.log(
+          method: method,
+          url: logUrl,
+          statusCode: response.statusCode,
+          responseBody: _responseCode(response),
+          durationMicros: timer.elapsedMicroseconds,
+          tag: 'IDS',
+        );
       }
       await _save(uri, response.headers['set-cookie'] ?? []);
       final status = response.statusCode ?? 0;
@@ -129,6 +154,17 @@ class CampusHttp {
 
   static String text(Response<List<int>> response) =>
       utf8.decode(response.data ?? [], allowMalformed: true);
+
+  String? _responseCode(Response<List<int>> response) {
+    if (!(response.headers.value('content-type') ?? '').contains('application/json')) return null;
+    try {
+      final data = jsonDecode(text(response));
+      final code = data is Map ? int.tryParse('${data['code']}') : null;
+      return code == null ? null : jsonEncode({'code': code});
+    } on FormatException {
+      return null;
+    }
+  }
 
   Future<Map<String, dynamic>> object(String path, [Map<String, dynamic>? body]) async {
     final uri = Uri.parse('https://ids.shanghaitech.edu.cn$path');

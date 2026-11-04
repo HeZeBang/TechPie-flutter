@@ -8,6 +8,7 @@ import 'package:html/parser.dart';
 import 'package:pointycastle/export.dart';
 
 import '../../models/ids_passkey.dart';
+import '../debug_logger.dart';
 import 'campus_http.dart';
 import 'software_passkey.dart';
 
@@ -57,7 +58,7 @@ class IdsSession {
 }
 
 class IdsClient {
-  IdsClient({Dio? http, Random? nameRandom})
+  IdsClient({Dio? http, Random? nameRandom, DebugLogger? logger})
       : _http = http ??
             Dio(
               BaseOptions(
@@ -65,9 +66,11 @@ class IdsClient {
                 receiveTimeout: const Duration(seconds: 20),
               ),
             ),
-        _nameRandom = nameRandom ?? Random.secure();
+        _nameRandom = nameRandom ?? Random.secure(),
+        _logger = logger;
   final Dio _http;
   final Random _nameRandom;
+  final DebugLogger? _logger;
   static final _login = Uri.parse('${SoftwarePasskey.origin}/authserver/login');
 
   Map<String, String> _fields(String html) {
@@ -165,7 +168,7 @@ class IdsClient {
 
   Future<void> revoke(IdsPasskey key, {required IdsVerificationPrompt promptVerification}) async {
     final session = await login(key);
-    final client = CampusHttp(_http);
+    final client = CampusHttp(_http, logger: _logger);
     await client.restore(session.raw['cookieJar'] as List);
     final devices = await _devices(client);
     // IDS's device ID is the anonbiometricsd registered alongside this key.
@@ -218,7 +221,7 @@ class IdsClient {
     required IdsCaptchaPrompt promptCaptcha,
     required Future<void> Function(IdsPasskey credential) saveCandidate,
   }) async {
-    final client = CampusHttp(_http);
+    final client = CampusHttp(_http, logger: _logger);
     var fields = _fields(CampusHttp.text(await client.request(_login)));
     final needed = await client
         .object('/authserver/checkNeedCaptcha.htl?username=${Uri.encodeQueryComponent(username)}');
@@ -338,7 +341,7 @@ class IdsClient {
   }
 
   Future<IdsSession> login(IdsPasskey secret, {bool backedUp = false}) async {
-    final client = CampusHttp(_http);
+    final client = CampusHttp(_http, logger: _logger);
     final fields = _fields(CampusHttp.text(await client.request(_login)));
     final started = await client.object(
       '/authserver/startAssertion',
@@ -387,7 +390,7 @@ class IdsClient {
   }
 
   Future<String> mintCookie(String nodeId, Map<String, dynamic> root) async {
-    final client = CampusHttp(_http);
+    final client = CampusHttp(_http, logger: _logger);
     await client.restore(
       (root['cookieJar'] as List?) ??
           [

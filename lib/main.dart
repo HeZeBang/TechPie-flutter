@@ -19,6 +19,7 @@ import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
 import 'services/http_client.dart';
+import 'services/ids/ids_client.dart';
 import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
@@ -76,6 +77,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final thirdPartyAuthService = ThirdPartyAuthService(
     storageService,
     httpClient,
+    idsClient: IdsClient(logger: debugLogger),
   );
   final scheduleService = ScheduleService(
     storageService,
