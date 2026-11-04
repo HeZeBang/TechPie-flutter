@@ -149,6 +149,33 @@ async function versions() {
   return body.versionList ?? [];
 }
 
+/// The fields AMIS expects on a version record but the Publishing API will not
+/// default: the content rating, the ICP filing (备案) and the privacy links all
+/// live on the app, and a version created through the API starts without them —
+/// which is why a submit is refused field by field
+/// (`contentRating in amis is invalid`, then
+/// `registeredIdType and registeredIdNumber can not be null`). Copy what the app
+/// has; send nothing it does not, because AMIS distinguishes absent from null.
+async function extInfoFromAppInfo() {
+  const info = await call(`/api/publish/v3/app-info?appId=${appId}&lang=zh-CN`);
+  const app = info.appInfo ?? {};
+  const ext = {};
+  const copy = (to, from = to) => {
+    if (app[from] != null && app[from] !== '') ext[to] = app[from];
+  };
+  copy('contentRating', 'contentRate');
+  copy('registeredDclType');
+  copy('registeredIdType');
+  copy('registeredIdNumber');
+  copy('registeredEntity');
+  copy('registeredEntityName');
+  copy('privacyPolicy');
+  copy('privacyRightsUrl');
+  copy('privacyAgreementId');
+  copy('userAgreementIds');
+  return ext;
+}
+
 async function uploadPackage() {
   const bytes = readFileSync(appFile);
   const fileName = basename(appFile);
@@ -304,6 +331,9 @@ async function test() {
         { deviceType: 19, appAdapters: '' },
       ],
       distCountryList: 'CN',
+      // AMIS reads the filing and the privacy links from here; a version made by
+      // the API has none of them, and the submit is refused field by field.
+      extInfo: await extInfoFromAppInfo(),
       openTestInfo: {
         startTime: Date.now(),
         endTime: Date.now() + testDays * 86400_000,
@@ -327,12 +357,12 @@ async function test() {
     if (error.agc?.code === 204144692) {
       console.error(
         `AGC refused the test submission: ${error.agc.msg}\n` +
-          'A test version carries its own age rating (keyed by the version serial), and\n' +
-          'the Publishing API cannot write that record: `extInfo.contentRating` on the\n' +
-          'version PUT is accepted and ignored, and app-age-rating only covers\n' +
-          'releaseType 1/7, never the test channel. Confirm 内容分级 for this test\n' +
-          'version in the console (分发 → 版本信息 → 测试版本 → 内容分级), then re-run\n' +
-          'with --submit.',
+          'AMIS validates the version record and names the field it wants; the fields it\n' +
+          'reads live on the app, which is why this script copies them into `extInfo`\n' +
+          '(content rating, 备案 and privacy links). A field still named above is one the\n' +
+          'app does not carry either — fill it in the console once, for the app, and the\n' +
+          'copy picks it up on the next run. Nothing here can be sent from the API client\n' +
+          'alone.',
       );
       return 2;
     }
