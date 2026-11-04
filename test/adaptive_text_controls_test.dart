@@ -4,15 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/widgets/adaptive_text_area.dart';
 import 'package:techpie/widgets/adaptive_text_field_group.dart';
+import 'package:techpie/widgets/secure_password_field.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  testWidgets(
-      'iOS grouped fields use Flutter text input and update controllers', (
+  testWidgets('iOS grouped fields use Flutter text input and update controllers', (
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    tester.binding.platformDispatcher.brieflyShowPasswordTestValue = true;
+    addTearDown(tester.binding.platformDispatcher.resetBrieflyShowPassword);
     final account = TextEditingController();
     final password = TextEditingController();
     addTearDown(account.dispose);
@@ -40,7 +42,8 @@ void main() {
     );
 
     expect(find.byType(UiKitView), findsNothing);
-    expect(find.byType(CupertinoTextField), findsNWidgets(2));
+    expect(find.byType(CupertinoTextField), findsOneWidget);
+    expect(find.byType(SecurePasswordField), findsOneWidget);
     final groupRect = tester.getRect(find.byType(AdaptiveTextFieldGroup));
     final lineRect = tester.getRect(
       find.descendant(
@@ -54,6 +57,23 @@ void main() {
     expect(lineRect.center.dy, closeTo(groupRect.center.dy, 0.01));
     await tester.enterText(find.byType(CupertinoTextField).first, '20260001');
     expect(account.text, '20260001');
+    final secureEditable = find.descendant(
+      of: find.byType(SecurePasswordField),
+      matching: find.byWidgetPredicate((widget) => widget is EditableText),
+    );
+    await tester.tap(secureEditable);
+    await tester.pump();
+    const secret = 'aB9!secret';
+    for (var i = 1; i <= secret.length; i++) {
+      tester.testTextInput.enterText(secret.substring(0, i));
+      await tester.pump();
+      expect(
+        tester.state<EditableTextState>(secureEditable).renderEditable.text!.toPlainText(),
+        '•' * i,
+      );
+    }
+    expect(password.text, secret);
+    expect(tester.state<EditableTextState>(secureEditable).copyEnabled, false);
     debugDefaultTargetPlatformOverride = null;
   });
 
