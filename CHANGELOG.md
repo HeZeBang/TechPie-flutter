@@ -14,6 +14,13 @@ TechPie 的所有重要变更。每个版本一节，按产品版本号排列（
 - 日期不必写在这里（tag 和 Release 自带时间）。
 -->
 
+## [1.0.4]
+
+### 修复
+
+- 鸿蒙：修复启动白屏。OHOS 平台实现（shared_preferences / path_provider / url_launcher / image_picker）此前只写在 `dependency_overrides` 里，Flutter 3.41 生成插件注册表时只扫描根依赖闭包，导致它们没有被注册，`SharedPreferences.getInstance()` 在 `main()` 里抛 `MissingPluginException`，`runApp` 从未执行
+- 鸿蒙：补齐上述四个插件后，本地设置、路径、外链与选图在 OHOS 上恢复可用
+
 ## [1.0.3]
 
 ### 修复
