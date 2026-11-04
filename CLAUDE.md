@@ -494,6 +494,20 @@ distinguishable in git, and the file names deliberately do not try to.
   scripts surface that code instead of pretending success — `errorCode 991` on the
   package compile is "invalid package, possibly unsigned", which is exactly what
   an unsigned upload produces.
+
+  A **test** version needs one extra record the Publishing API cannot write: the
+  age rating lives per version serial (`srvSerialNo` = the versionId), and the
+  console copies the app's questionnaire onto each version through its edge API.
+  A version created by API has no such record, and the submit is refused with
+  `[AppGalleryConnectAppMetaInfoService]contentRating in amis is invalid` — while
+  the app itself already answers `contentRate` (`{"HW":"3+","ClassInd":"L"}`).
+  Sending `extInfo.contentRating` on the version PUT is accepted and ignored
+  (measured on v1.0.4-rc.1+19). `scripts/agc-console-age-rating.mjs` performs the
+  copy (`POST /agc/edge/ars/app-agerating-service/v2/appAgeRating` with
+  `save`/`submit`, then `/confirm`), but those endpoints authenticate with the
+  developer console's session cookie, which lasts about an hour — so it is a step
+  run around a release, not something a tagged CI run can hold. The 全网 channel
+  needs nothing extra: its rating is the app's.
 - **One concurrency group per platform.** Group names are repository-wide and a
   group holds only one *pending* entry, so platform workflows that share a group
   cancel each other's queued jobs: 1.0.1-rc.2's Windows job was cancelled one

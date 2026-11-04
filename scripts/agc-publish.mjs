@@ -327,8 +327,15 @@ async function test() {
     if (error.agc?.code === 204144692) {
       console.error(
         `AGC refused the test submission: ${error.agc.msg}\n` +
-          'contentRating / 备案 fields are written by the console, not by Connect API — ' +
-          'open 分发 → 版本信息 → 测试版本 → 内容分级, confirm it there, then re-run with --submit.',
+          'The rating is stored per version serial (`srvSerialNo` = the versionId) in\n' +
+          'AMIS, and only the console writes that record: it copies the app\'s\n' +
+          'questionnaire (app-info.contentRate) onto the version through the edge API\n' +
+          '`POST /agc/edge/ars/app-agerating-service/v2/appAgeRating` with\n' +
+          '`{action: save|submit, srvSerialNo, questionnaireId, feedbackId}`, then\n' +
+          '`…/appAgeRating/confirm`. The public Connect API has no equivalent, and\n' +
+          'sending `extInfo.contentRating` on the version PUT is accepted and ignored —\n' +
+          'measured. Either confirm 内容分级 for this version in the console, or run\n' +
+          '`scripts/agc-console-age-rating.mjs --version-id <id>` with a console cookie.',
       );
       return 2;
     }
