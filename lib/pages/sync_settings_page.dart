@@ -89,7 +89,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   _actionButton(
                     id: 'pull',
                     label: '立即从云端恢复',
-                    subtitle: '用云端备份覆盖本设备绑定',
+                    subtitle: '恢复云端绑定，保留本设备独有账号',
                     icon: Icons.download_for_offline_outlined,
                     sfSymbol: 'arrow.down.circle',
                     onPressed: () => unawaited(_pull(sync)),
@@ -97,7 +97,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
                   _actionButton(
                     id: 'push',
                     label: '立即备份到云端',
-                    subtitle: '用本设备绑定覆盖云端备份',
+                    subtitle: '合并并备份本设备绑定',
                     icon: Icons.upload_outlined,
                     sfSymbol: 'arrow.up.circle',
                     role: AdaptiveButtonRole.prominent,
@@ -413,11 +413,9 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   Future<void> _pull(SyncService sync) async {
     await _guard('pull', () async {
       try {
-        await sync.pull();
-        _toast('已从云端恢复绑定');
-        unawaited(_loadCloudVersion(sync));
-      } on NeedMasterPassword {
-        _toast('需要主密码，请在下方输入');
+        final outcome = await sync.restoreFromCloud();
+        _feedback(outcome);
+        if (outcome.ok) unawaited(_loadCloudVersion(sync));
       } catch (_) {
         _toast('恢复失败，请检查网络或重新登录');
       }
@@ -439,12 +437,12 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   void _feedback(SyncOutcome outcome) {
-    _toast(outcome.message);
+    _toast(outcome.message, isError: !outcome.ok);
   }
 
-  void _toast(String message) {
+  void _toast(String message, {bool? isError}) {
     if (!mounted) return;
-    final isError = message.contains('失败') ||
+    isError ??= message.contains('失败') ||
         message.contains('不正确') ||
         message.contains('不能为空') ||
         message.contains('过期') ||

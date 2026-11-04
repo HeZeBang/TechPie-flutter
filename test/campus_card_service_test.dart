@@ -53,7 +53,13 @@ void main() {
     expect(auth.signInCalls, 1);
     expect(await service.readOpenId(), openId);
     expect(service.configured, isTrue);
+    var syncCompleted = false;
+    service.onBindingChanged = () async {
+      await service.applySyncBinding(await service.readSyncBinding()).timeout(const Duration(seconds: 1));
+      syncCompleted = true;
+    };
     await service.connect(openId, channel: EcardOpenIdChannel.alipay);
+    expect(syncCompleted, true, reason: 'Sync must run after releasing the binding lock');
     expect(await sessionStore.readOpenIdChannel(), EcardOpenIdChannel.alipay);
     expect(service.openIdChannel, EcardOpenIdChannel.alipay);
     expect((await service.readSyncBinding())!.channel, EcardOpenIdChannel.alipay);

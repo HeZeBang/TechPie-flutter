@@ -24,6 +24,226 @@ import 'package:techpie/services/uni_auth_service.dart';
 import 'support/fake_ids_client.dart';
 
 void main() {
+  test('a stale backup preserves cloud-only accounts and deletion records', () async {
+    final first = await _Fixture.withSession();
+    await first.tpAuth.replaceAll([
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.gradescope,
+        account: 'old-local',
+        token: 'old-token',
+        boundAt: DateTime.utc(2026),
+      ),
+    ]);
+    expect((await first.sync.setupWithMasterPassword('pw')).ok, true);
+    final second = await _Fixture.withSession(server: first.server);
+    expect((await second.sync.restoreWithMasterPassword('pw')).ok, true);
+    second.tpAuth.onBindingsChanged = null;
+    await second.tpAuth.unbind(ThirdPartyPlatform.gradescope);
+    await second.tpAuth.applySyncMerge(
+      [
+        ThirdPartyAccount(
+          platform: ThirdPartyPlatform.hydro,
+          account: 'cloud-only',
+          token: 'hydro-cloud-token',
+          boundAt: DateTime.utc(2026, 2),
+        ),
+      ],
+      {},
+    );
+    expect((await second.sync.push()).ok, true);
+    expect((await first.sync.push()).ok, true);
+    final plain = (await SyncCrypto.decryptWithSalt(
+      first.server.properties['techpie_sync']!,
+      'pw',
+    ))!;
+    final saved = SyncEnvelope.decode(plain)!;
+    expect(saved.accounts.single.platform, ThirdPartyPlatform.hydro);
+    expect(saved.tombstones.single.platform, ThirdPartyPlatform.gradescope);
+  });
+
+  test('manual restore recovers locally deleted bindings without writing the backup', () async {
+    final ecard = _EcardStore(
+      EcardSyncBinding(
+        openId: 'SYNTHETIC_OPENID_RESTORE_1234',
+        updatedAt: DateTime.utc(2026),
+        deviceId: 'cloud',
+      ),
+    );
+    final fixture = await _Fixture.withSession(ecard: ecard);
+    await fixture.tpAuth.applyIdsSyncBinding(
+      IdsSyncBinding(
+        credential: FakeIdsClient.key('restore-user'),
+        updatedAt: DateTime.utc(2026),
+        deviceId: 'cloud',
+      ),
+    );
+    await fixture.tpAuth.applySyncMerge(
+      [
+        ThirdPartyAccount(
+          platform: ThirdPartyPlatform.gradescope,
+          account: 'cloud-user',
+          token: 'cloud-token',
+          boundAt: DateTime.utc(2026),
+        ),
+      ],
+      {},
+    );
+    expect((await fixture.sync.setupWithMasterPassword('pw')).ok, true);
+    fixture.tpAuth.onBindingsChanged = null;
+    await fixture.tpAuth.unbind(ThirdPartyPlatform.ids);
+    await fixture.tpAuth.unbind(ThirdPartyPlatform.gradescope);
+    ecard.value = EcardSyncBinding(
+      openId: null,
+      updatedAt: DateTime.now(),
+      deviceId: 'local',
+    );
+    final cloudBefore = fixture.server.properties['techpie_sync'];
+    final writesBefore = fixture.server.writeCount;
+    // Exercise the production hook as well as the explicit restore path.
+    fixture.tpAuth.onBindingsChanged = ({force = false}) =>
+        force ? fixture.sync.forcePush() : fixture.sync.pushIfDue(throttle: Duration.zero);
+    final outcome = await fixture.sync.restoreWithMasterPassword('pw');
+    expect(outcome.ok, true, reason: outcome.message);
+    expect(fixture.tpAuth.idsBinding?.credential?.username, 'restore-user');
+    expect(fixture.tpAuth.account(ThirdPartyPlatform.gradescope)?.account, 'cloud-user');
+    expect(ecard.value?.openId, 'SYNTHETIC_OPENID_RESTORE_1234');
+    expect(fixture.server.writeCount, writesBefore);
+    expect(fixture.server.properties['techpie_sync'] == cloudBefore, true);
+    fixture.tpAuth.onBindingsChanged = null;
+    await fixture.tpAuth.unbind(ThirdPartyPlatform.ids);
+    await fixture.tpAuth.unbind(ThirdPartyPlatform.gradescope);
+    fixture.tpAuth.onBindingsChanged = ({force = false}) => fixture.sync.forcePush();
+    expect((await fixture.sync.restoreFromCloud()).ok, true);
+    expect(fixture.tpAuth.idsBinding?.credential?.username, 'restore-user');
+    expect(fixture.tpAuth.account(ThirdPartyPlatform.gradescope)?.account, 'cloud-user');
+    expect(fixture.server.writeCount, writesBefore);
+  });
+
+  test('manual restore reports absent, unreadable and invalid backups', () async {
+    final fixture = await _Fixture.withSession();
+    expect((await fixture.sync.setupWithMasterPassword('pw')).ok, true);
+    final emptyBackup = fixture.server.properties.remove('techpie_sync')!;
+    expect((await fixture.sync.restoreFromCloud()).ok, false);
+    fixture.server.getAccountError = http.Response('unavailable', 503);
+    expect((await fixture.sync.restoreFromCloud()).message, contains('无法读取'));
+    fixture.server.getAccountError = http.Response('{"status":"error"}', 200);
+    expect((await fixture.sync.restoreWithMasterPassword('pw')).message, contains('无法读取'));
+    fixture.server.getAccountError = null;
+    fixture.server.properties['techpie_sync'] = 'invalid-format';
+    expect((await fixture.sync.restoreFromCloud()).message, contains('格式'));
+    fixture.server.properties['techpie_sync'] = emptyBackup;
+    expect((await fixture.sync.restoreFromCloud()).message, contains('没有已绑定账号'));
+    expect(fixture.server.writeCount, 1);
+  });
+
+  test('an old password renewal cannot replace an account restored from cloud', () async {
+    final started = Completer<void>();
+    final response = Completer<http.Response>();
+    final fixture = await _Fixture.withSession(
+      campusClient: MockClient((_) async {
+        started.complete();
+        return response.future;
+      }),
+    );
+    ThirdPartyAccount hydro(String user) => ThirdPartyAccount(
+          platform: ThirdPartyPlatform.hydro,
+          account: user,
+          token: '$user-token',
+          autoRenew: true,
+          password: 'synthetic-password',
+          boundAt: DateTime.utc(2026),
+        );
+    await fixture.tpAuth.applySyncMerge([hydro('cloud')], {});
+    expect((await fixture.sync.setupWithMasterPassword('pw')).ok, true);
+    fixture.tpAuth.onBindingsChanged = null;
+    await fixture.tpAuth.applySyncMerge([hydro('old-local')], {});
+    final renewal = fixture.tpAuth.hydroNode.renew();
+    await started.future;
+    expect((await fixture.sync.restoreFromCloud()).ok, true);
+    response.complete(
+      http.Response(
+        jsonEncode(
+          {
+            'success': true,
+            'data': {'token': 'late-old-token'},
+          },
+        ),
+        200,
+      ),
+    );
+    expect(await renewal, false);
+    expect(fixture.tpAuth.hydroNode.account?.account, 'cloud');
+    expect(
+      (await fixture.storage.loadThirdPartyAccount(ThirdPartyPlatform.hydro))?.account,
+      'cloud',
+    );
+  });
+
+  test('a pending renewal save finishes before a restored account is committed', () async {
+    final fixture = await _Fixture.withSession(
+      campusClient: MockClient(
+        (_) async => http.Response(
+          '{"success":true,"data":{"token":"renewed-token"}}',
+          200,
+        ),
+      ),
+    );
+    fixture.tpAuth.onBindingsChanged = null;
+    ThirdPartyAccount account(String user) => ThirdPartyAccount(
+          platform: ThirdPartyPlatform.hydro,
+          account: user,
+          token: '$user-token',
+          boundAt: DateTime.utc(2026),
+          autoRenew: true,
+          password: 'synthetic-password',
+        );
+    await fixture.tpAuth.applySyncMerge([account('old-local')], {});
+    fixture.storage.pauseNextAccountSave();
+    final release = fixture.storage.releaseAccountSave!;
+    final renewal = fixture.tpAuth.hydroNode.renew();
+    await fixture.storage.accountSaveStarted!.future;
+    final restore = fixture.tpAuth.applySyncMerge([account('cloud')], {});
+    release.complete();
+    await Future.wait([renewal, restore]);
+    expect(fixture.tpAuth.hydroNode.account?.account, 'cloud');
+    expect(
+      (await fixture.storage.loadThirdPartyAccount(ThirdPartyPlatform.hydro))?.account,
+      'cloud',
+    );
+  });
+
+  test('restore rejects malformed backups without caching a key or writing to cloud', () async {
+    for (final damaged in [
+      {'notBackup': true},
+      {'accounts': 'damaged'},
+      {
+        'accounts': [123],
+      },
+      [123],
+      {
+        'accounts': <dynamic>[],
+        'tombstones': [<String, dynamic>{}],
+      },
+      {
+        'accounts': <dynamic>[],
+        'tombstones': [
+          {'platform': 'unknown', 'deletedAt': '2026-01-01'},
+        ],
+      },
+    ]) {
+      final fixture = await _Fixture.withSession();
+      fixture.server.properties['techpie_sync'] = await SyncCrypto.encryptWithSalt(
+        jsonEncode(damaged),
+        'pw',
+      );
+      final outcome = await fixture.sync.restoreWithMasterPassword('pw');
+      expect(outcome.ok, false);
+      expect(outcome.message, contains('格式'));
+      expect(fixture.sync.hasLocalKey, false);
+      expect(fixture.server.writeCount, 0);
+    }
+  });
+
   test('a legacy cloud configuration is preserved and requests Passkey migration', () async {
     final fixture = await _Fixture.withSession();
     final legacy = ThirdPartyAccount(
@@ -51,6 +271,7 @@ void main() {
     expect(restored.tpAuth.needsIdsRebind, true);
     expect(restored.tpAuth.idsAccount!.name, 'Legacy User');
     expect(restored.tpAuth.idsAccount!.password, 'synthetic-password');
+    expect((await restored.sync.push()).ok, true);
     final rewritten = jsonDecode(
       (await SyncCrypto.decryptWithSalt(
         fixture.server.properties['techpie_sync']!,
@@ -387,8 +608,9 @@ void main() {
       'hydro-sid=legacy',
     );
 
-    // …and the cloud is rewritten in this build's schema, tombstones included,
-    // so no later read has to translate it again.
+    // An explicit backup writes the migrated schema; restore itself is read-only.
+    expect(fx.server.properties['techpie_sync'] == legacyBlob, true);
+    expect((await fx.sync.push()).ok, true);
     Future<Map<String, dynamic>> storedEnvelope() async {
       final plain = await SyncCrypto.decryptWithSalt(
         fx.server.properties['techpie_sync']!,
@@ -579,6 +801,8 @@ void main() {
 /// `owner/name` is denied — mirroring Casbin's self-update matcher.
 class _FakeCasdoor {
   final Map<String, String> properties = {};
+  int writeCount = 0;
+  http.Response? getAccountError;
   bool enforceAuthz = true;
   Completer<void>? nextWriteStarted;
   Completer<void>? releaseNextWrite;
@@ -590,6 +814,7 @@ class _FakeCasdoor {
   http.Client toHttpClient() {
     return MockClient((request) async {
       if (request.method == 'GET' && request.url.path == '/api/get-account') {
+        if (getAccountError != null) return getAccountError!;
         final body = jsonEncode({
           'status': 'ok',
           'data': {
@@ -602,6 +827,7 @@ class _FakeCasdoor {
         return http.Response(body, 200);
       }
       if (request.method == 'POST' && request.url.path == '/api/update-user') {
+        writeCount++;
         final decoded = jsonDecode(request.body) as Map<String, dynamic>;
         // Casbin self-update authz: id query must match body owner/name.
         if (enforceAuthz) {
@@ -646,7 +872,7 @@ class _FakeCasdoor {
 }
 
 class _Fixture {
-  final StorageService storage;
+  final _TestStorage storage;
   final AuthService auth;
   final ThirdPartyAuthService tpAuth;
   final SyncService sync;
@@ -654,11 +880,15 @@ class _Fixture {
 
   _Fixture(this.storage, this.auth, this.tpAuth, this.sync, this.server);
 
-  static Future<_Fixture> withSession({_FakeCasdoor? server, EcardSyncStore? ecard}) async {
+  static Future<_Fixture> withSession({
+    _FakeCasdoor? server,
+    EcardSyncStore? ecard,
+    http.Client? campusClient,
+  }) async {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final storage = StorageService(prefs);
+    final storage = _TestStorage(prefs);
     await storage.saveSession(
       UserSession(
         userId: 'user',
@@ -670,7 +900,7 @@ class _Fixture {
     );
     final srv = server ?? _FakeCasdoor();
     final logger = DebugLogger();
-    final httpClient = LoggingHttpClient(logger);
+    final httpClient = LoggingHttpClient(logger, inner: campusClient);
     final uniAuth = UniAuthService();
     final auth = AuthService(storage, httpClient, uniAuth);
     final tpAuth = ThirdPartyAuthService(storage, httpClient, idsClient: FakeIdsClient());
@@ -684,6 +914,28 @@ class _Fixture {
     await tpAuth.initialize();
     await sync.loadCachedKey();
     return _Fixture(storage, auth, tpAuth, sync, srv);
+  }
+}
+
+class _TestStorage extends StorageService {
+  _TestStorage(super.prefs);
+  Completer<void>? accountSaveStarted;
+  Completer<void>? releaseAccountSave;
+
+  void pauseNextAccountSave() {
+    accountSaveStarted = Completer<void>();
+    releaseAccountSave = Completer<void>();
+  }
+
+  @override
+  Future<void> saveThirdPartyAccount(ThirdPartyAccount account) async {
+    final pause = releaseAccountSave;
+    if (pause != null) {
+      releaseAccountSave = null;
+      accountSaveStarted!.complete();
+      await pause.future;
+    }
+    await super.saveThirdPartyAccount(account);
   }
 }
 

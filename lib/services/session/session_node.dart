@@ -687,6 +687,8 @@ class SessionNode extends ChangeNotifier {
       final d = (data['data'] as Map?)?.cast<String, dynamic>() ?? const {};
       final token = d['token'] as String?;
       if (token == null || token.isEmpty) return false;
+      // A restore or rebind may have replaced the owner during this request.
+      if (!identical(_account, acc)) return false;
       final renewed = ThirdPartyAccount(
         platform: acc.platform,
         account: acc.account,
