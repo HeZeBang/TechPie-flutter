@@ -162,7 +162,10 @@ jobs:
           mkdir -p "$unpack"
           unzip -q "$work/input.app" -d "$unpack/input"
           unzip -q "TechPie-${RELEASE_NAME}-ohos-arm64v8.app" -d "$unpack/signed"
-          diff -r "$unpack/input" "$unpack/signed" >/dev/null ||
+          # `diff` is a system binary, and this image's LD_LIBRARY_PATH points at
+          # the SDK's libraries, which shadow one of its dependencies
+          # (`libatomic.so.1`); the JDK above is the reason that path is set.
+          env -u LD_LIBRARY_PATH diff -r "$unpack/input" "$unpack/signed" >/dev/null ||
             { echo "::error::signing changed the package payload"; exit 1; }
 
           sha256sum "TechPie-${RELEASE_NAME}-ohos-arm64v8.app" | tee sha256.txt
