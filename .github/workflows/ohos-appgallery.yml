@@ -94,8 +94,10 @@ jobs:
           set -euo pipefail
           name="$(scripts/release-name.sh "$TAG")"
           case "$name" in
-            *-rc.*) channel=test ;;
-            *)      channel=stable ;;
+            # Quoted: `test` is also a shell command, and shellcheck reads a bare
+            # `channel=test` as an assignment from its output.
+            *-rc.*) channel="test" ;;
+            *)      channel="stable" ;;
           esac
           {
             echo "name=$name"
