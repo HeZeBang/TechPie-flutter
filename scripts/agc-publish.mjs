@@ -327,15 +327,12 @@ async function test() {
     if (error.agc?.code === 204144692) {
       console.error(
         `AGC refused the test submission: ${error.agc.msg}\n` +
-          'The rating is stored per version serial (`srvSerialNo` = the versionId) in\n' +
-          'AMIS, and only the console writes that record: it copies the app\'s\n' +
-          'questionnaire (app-info.contentRate) onto the version through the edge API\n' +
-          '`POST /agc/edge/ars/app-agerating-service/v2/appAgeRating` with\n' +
-          '`{action: save|submit, srvSerialNo, questionnaireId, feedbackId}`, then\n' +
-          '`…/appAgeRating/confirm`. The public Connect API has no equivalent, and\n' +
-          'sending `extInfo.contentRating` on the version PUT is accepted and ignored —\n' +
-          'measured. Either confirm 内容分级 for this version in the console, or run\n' +
-          '`scripts/agc-console-age-rating.mjs --version-id <id>` with a console cookie.',
+          'A test version carries its own age rating (keyed by the version serial), and\n' +
+          'the Publishing API cannot write that record: `extInfo.contentRating` on the\n' +
+          'version PUT is accepted and ignored, and app-age-rating only covers\n' +
+          'releaseType 1/7, never the test channel. Confirm 内容分级 for this test\n' +
+          'version in the console (分发 → 版本信息 → 测试版本 → 内容分级), then re-run\n' +
+          'with --submit.',
       );
       return 2;
     }
