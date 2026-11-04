@@ -71,7 +71,6 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   GenAiFailure? _loadFailure;
   GenAiCancellation? _loadOperation;
   int _imageCompletion = 0;
-  final _previewMoreKey = GlobalKey();
   bool get _generating => _workspace.imageStudio.generating;
   bool get _currentScope =>
       mounted &&
@@ -799,7 +798,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   }) {
     final palette = GenAiPalette.of(context);
     final textStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
-          fontSize: 13,
+          fontSize: 14,
           height: 1.4,
           color: onChanged == null ? palette.muted : palette.text,
         );
@@ -874,8 +873,8 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                     onChanged(selected);
                   },
             child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: compact ? 30 : 44,
+              constraints: const BoxConstraints(
+                minHeight: 48,
               ),
               child: Padding(
                 padding:
@@ -893,7 +892,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                           overflow: TextOverflow.ellipsis,
                           style: textStyle,
                           strutStyle:
-                              const StrutStyle(fontSize: 13, height: 1.4, forceStrutHeight: true),
+                              const StrutStyle(fontSize: 14, height: 1.4, forceStrutHeight: true),
                           textHeightBehavior: const TextHeightBehavior(
                             applyHeightToFirstAscent: false,
                             applyHeightToLastDescent: false,
@@ -1076,8 +1075,8 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
               controller: controller,
               enabled: enabled,
               textAlignVertical: TextAlignVertical.center,
-              style: const TextStyle(fontSize: 13, height: 1.4),
-              strutStyle: const StrutStyle(fontSize: 13, height: 1.4, forceStrutHeight: true),
+              style: const TextStyle(fontSize: 14, height: 1.4),
+              strutStyle: const StrutStyle(fontSize: 14, height: 1.4, forceStrutHeight: true),
               keyboardType: TextInputType.number,
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
@@ -1093,8 +1092,8 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
       children: [
         Expanded(child: dimension(_customWidth, true)),
         SizedBox(
-          width: 40,
-          height: 44,
+          width: 48,
+          height: 48,
           child: Center(
             child: IconButton(
               key: const ValueKey('genai-image-link'),
@@ -1102,7 +1101,9 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
               visualDensity: VisualDensity.compact,
               color: _linked ? palette.accent : palette.muted,
               onPressed: enabled ? () => _toggleLinked(notify: onChanged) : null,
-              icon: const GenAiIcon(GenAiGlyph.link, size: 18),
+              isSelected: _linked,
+              selectedIcon: const GenAiIcon(GenAiGlyph.link, size: 18),
+              icon: const GenAiIcon(GenAiGlyph.unlink, size: 18),
             ),
           ),
         ),
@@ -1132,7 +1133,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                   padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
                   sliver: SliverList(
                     delegate: SliverChildListDelegate([
-                      ..._studioForm(compact: true),
+                      ..._studioForm(compact: true, short: constraints.maxHeight < 360),
                       const SizedBox(height: 26),
                     ]),
                   ),
@@ -1148,7 +1149,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
           final short = GenAiLayout(Size(localWidth, constraints.maxHeight)).short;
           final wide = stage > 1100;
           final mid = stage > 959;
-          final formWidth = wide ? 290.0 : (mid ? 255.0 : 260.0);
+          final formWidth = (localWidth * .4).clamp(280.0, 440.0);
           final gap = wide ? 42.0 : (mid ? 26.0 : 28.0);
           final padding = short
               ? const EdgeInsets.symmetric(horizontal: 18, vertical: 8)
@@ -1252,39 +1253,49 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
         SliverToBoxAdapter(child: SizedBox(height: bottom)),
       ];
 
-  List<Widget> _studioForm({required bool compact, bool includeGenerate = true}) {
+  List<Widget> _studioForm({
+    required bool compact,
+    bool includeGenerate = true,
+    bool short = false,
+  }) {
     final models = _workspace.imageModels;
     return [
       if (models.isEmpty) const Text('当前模型目录没有可用的生图模型。') else _modelField(models, compact: compact),
-      SizedBox(height: compact ? 12 : 18),
+      SizedBox(
+        height: short
+            ? 4
+            : compact
+                ? 12
+                : 18,
+      ),
       Semantics(
         label: '画面描述',
-        child: SizedBox(
-          height: compact ? 90 : 140,
-          child: TextField(
-            key: const ValueKey('genai-image-prompt'),
-            controller: _prompt,
-            enabled: !_editingBlocked,
-            expands: true,
-            minLines: null,
-            maxLines: null,
-            textAlignVertical: TextAlignVertical.top,
-            style: const TextStyle(fontSize: 13, height: 1.7),
-            onChanged: (_) => setState(() {}),
-            decoration: _studioDecoration(hint: '描述你想创作的画面…'),
-          ),
+        child: TextField(
+          key: const ValueKey('genai-image-prompt'),
+          controller: _prompt,
+          enabled: !_editingBlocked,
+          minLines: short
+              ? 1
+              : compact
+                  ? 4
+                  : 6,
+          maxLines: compact ? 10 : 14,
+          textAlignVertical: TextAlignVertical.top,
+          style: const TextStyle(fontSize: 14, height: 1.7),
+          onChanged: (_) => setState(() {}),
+          decoration: _studioDecoration(hint: '描述你想创作的画面…'),
         ),
       ),
-      const SizedBox(height: 12),
+      SizedBox(height: short ? 2 : 12),
       _referenceImageControls(),
       if (compact) ...[
-        const SizedBox(height: 12),
+        SizedBox(height: short ? 2 : 12),
         _mobileParametersButton(),
       ] else ...[
-        const SizedBox(height: 16),
+        SizedBox(height: short ? 4 : 16),
         _imageSizeControls(),
       ],
-      const SizedBox(height: 16),
+      SizedBox(height: short ? 4 : 16),
       if (includeGenerate) _generateButton(),
       if (_workspace.imageStudio.failure case final failure?)
         Padding(
@@ -1359,13 +1370,6 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                 GenAiContentHeader(
                   key: const ValueKey('genai-parameters-header'),
                   title: _currentScope ? '图片参数' : '账号已切换',
-                  actions: [
-                    IconButton(
-                      tooltip: '关闭',
-                      onPressed: () => Navigator.pop(dialogContext),
-                      icon: const GenAiIcon(GenAiGlyph.close),
-                    ),
-                  ],
                 ),
                 Flexible(
                   child: Scrollbar(
@@ -1498,64 +1502,6 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
     );
   }
 
-  Widget _previewMenuRow(GenAiGlyph glyph, String label) => Row(
-        children: [
-          GenAiIcon(glyph, size: 18),
-          const SizedBox(width: 10),
-          Text(label),
-        ],
-      );
-
-  Future<void> _showPreviewMoreMenu(
-    BuildContext dialogContext,
-    GenAiImageRecord record,
-    int index, {
-    required bool canDelete,
-  }) async {
-    if (!_currentScope) return;
-    final anchorContext = _previewMoreKey.currentContext;
-    if (anchorContext == null) return;
-    final action = await genAiShowMenu<String>(
-      context: context,
-      anchorContext: anchorContext,
-      minWidth: 170,
-      preferAbove: true,
-      alignEnd: true,
-      gap: 8,
-      menuPadding: 5,
-      radius: 9,
-      items: [
-        PopupMenuItem(
-          value: 'info',
-          child: _previewMenuRow(GenAiGlyph.file, '查看描述'),
-        ),
-        PopupMenuItem(
-          value: 'reuse',
-          enabled: !_editingBlocked && record.prompt.trim().isNotEmpty,
-          child: _previewMenuRow(GenAiGlyph.edit, '复用描述'),
-        ),
-        if (canDelete)
-          PopupMenuItem(
-            value: 'delete',
-            enabled: !_busy,
-            child: _previewMenuRow(GenAiGlyph.trash, '删除图片'),
-          ),
-      ],
-    );
-    if (!mounted || !_currentScope || !dialogContext.mounted) return;
-    if (action == 'info') {
-      Navigator.pop(dialogContext);
-      unawaited(_showImageDescription(record, index: index));
-    } else if (action == 'reuse') {
-      if (_editingBlocked) return;
-      Navigator.pop(dialogContext);
-      _reuseImagePrompt(record.prompt);
-    } else if (action == 'delete' && canDelete && !_busy) {
-      Navigator.pop(dialogContext);
-      unawaited(_deleteImage(record.id));
-    }
-  }
-
   Future<void> _previewImage(GenAiImageRecord record, {int index = 0}) async {
     if (!_currentScope) return;
     var current = index;
@@ -1626,6 +1572,9 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                       ),
                     ),
               leadingAction: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: Size(0, GenAiLayout.touchPlatform ? 48 : 32),
+                ),
                 onPressed: uri == null ||
                         _editingBlocked ||
                         _pickingReference ||
@@ -1643,25 +1592,42 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                           updatePreview(() {});
                         }
                       },
-                child: const Text('用作参考'),
+                child: const Text('用作参考', maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
-              trailingAction: SizedBox.square(
-                key: const ValueKey('genai-preview-more'),
-                dimension: 40,
-                child: IconButton(
-                  key: _previewMoreKey,
-                  tooltip: '更多图片操作',
-                  onPressed: () => unawaited(
-                    _showPreviewMoreMenu(
-                      dialogContext,
-                      record,
-                      current,
-                      canDelete: canDelete,
-                    ),
-                  ),
-                  icon: const GenAiIcon(GenAiGlyph.more),
+              moreActions: [
+                (
+                  label: '查看描述',
+                  icon: GenAiGlyph.file,
+                  run: () {
+                    if (!_currentScope || !dialogContext.mounted) return;
+                    Navigator.pop(dialogContext);
+                    unawaited(_showImageDescription(record, index: current));
+                  }
                 ),
-              ),
+                (
+                  label: '复用描述',
+                  icon: GenAiGlyph.edit,
+                  run: _editingBlocked || record.prompt.trim().isEmpty
+                      ? null
+                      : () {
+                          if (_editingBlocked || !dialogContext.mounted) return;
+                          Navigator.pop(dialogContext);
+                          _reuseImagePrompt(record.prompt);
+                        }
+                ),
+                if (canDelete)
+                  (
+                    label: '删除图片',
+                    icon: GenAiGlyph.trash,
+                    run: _busy
+                        ? null
+                        : () {
+                            if (!_currentScope || _busy || !dialogContext.mounted) return;
+                            Navigator.pop(dialogContext);
+                            unawaited(_deleteImage(record.id));
+                          }
+                  ),
+              ],
             );
           },
         ),

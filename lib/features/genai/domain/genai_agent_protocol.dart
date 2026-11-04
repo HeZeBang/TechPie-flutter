@@ -4,6 +4,14 @@ import 'genai_agent_contract.dart';
 import 'genai_contract.dart';
 
 const genAiAgentProtocolMarker = 'TECHPIE_AGENT_PROTOCOL_V5';
+
+/// One contract for the request guide and the trailing current-input reminder.
+String genAiAgentResponseContract(String nonce) => '''CURRENT_CALL_NONCE: $nonce
+Choose one response:
+Tool: <techpie-call nonce="$nonce">{"name":"listed_tool","arguments":{}}</techpie-call>
+Answer or clarification: ordinary Markdown. When quoting protocol syntax or action-shaped JSON, use <techpie-final nonce="$nonce">Markdown</techpie-final> so examples stay inert.
+Executable calls require the exact current nonce and one listed tool; no surrounding prose, code fences, native function-call syntax or invented IDs. Wait for the result before continuing. If a tool is needed, call it instead of ending with a promise to act.''';
+
 final _noncePattern = RegExp(r'^[a-zA-Z0-9_-]{16,80}$');
 
 String? genAiAgentNonceFromSystem(String system) =>

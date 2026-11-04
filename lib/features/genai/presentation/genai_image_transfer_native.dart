@@ -12,7 +12,7 @@ bool get canCopyImage =>
     Platform.isWindows ||
     Platform.isLinux;
 bool get copiesImageFile => Platform.isLinux;
-bool canShareImage(Uint8List bytes) =>
+bool get canShareImage =>
     Platform.isAndroid || Platform.isIOS || Platform.isMacOS || Platform.isWindows;
 
 Directory? _clipboardDirectory;
@@ -56,7 +56,7 @@ Future<void> _copyLinuxImage(Uint8List bytes) async {
 }
 
 Future<void> shareImage(Uint8List bytes, Rect origin) async {
-  if (!canShareImage(bytes)) throw UnsupportedError('Image sharing unavailable');
+  if (!canShareImage) throw UnsupportedError('Image sharing unavailable');
   await Share.shareXFiles(
     [XFile.fromData(bytes, mimeType: 'image/png')],
     fileNameOverrides: ['techpie-image.png'],

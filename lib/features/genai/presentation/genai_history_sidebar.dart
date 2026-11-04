@@ -62,6 +62,7 @@ class GenAiHistorySidebar extends StatelessWidget {
   Widget _sidebar(BuildContext context) {
     final palette = GenAiPalette.of(context);
     final theme = Theme.of(context);
+    final short = MediaQuery.sizeOf(context).height < 480;
     return Container(
       width: width,
       decoration: BoxDecoration(
@@ -72,56 +73,67 @@ class GenAiHistorySidebar extends StatelessWidget {
         right: false,
         child: Padding(
           // Draft rail: 18 top, 14 sides, 12 bottom.
-          padding: const EdgeInsets.fromLTRB(14, 18, 14, 12),
+          padding: EdgeInsets.fromLTRB(14, short ? 4 : 18, 14, short ? 4 : 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsetsDirectional.only(start: 4, end: 4, bottom: 24),
-                child: Row(
-                  children: [
-                    Image.asset(
-                      'assets/icon/icon.png',
-                      width: 29,
-                      height: 33,
-                      fit: BoxFit.contain,
-                      semanticLabel: '',
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'GenAI',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -.5,
+              Expanded(
+                child: CustomScrollView(
+                  slivers: [
+                    SliverList.list(
+                      children: [
+                        Padding(
+                          padding:
+                              EdgeInsetsDirectional.only(start: 4, end: 4, bottom: short ? 2 : 24),
+                          child: Row(
+                            children: [
+                              Image.asset(
+                                'assets/icon/icon.png',
+                                width: 29,
+                                height: 33,
+                                fit: BoxFit.contain,
+                                semanticLabel: '',
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'GenAI',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -.5,
+                                  ),
+                                ),
+                              ),
+                              accountMenu,
+                            ],
+                          ),
                         ),
-                      ),
+                        _NavButton(
+                          key: const ValueKey('genai-new-chat-wide'),
+                          icon: const GenAiIcon(GenAiGlyph.plus),
+                          label: '新对话',
+                          shortcut: touch ? null : shortcutLabel,
+                          onPressed: sending ? null : onNewChat,
+                        ),
+                        _NavButton(
+                          icon: const GenAiIcon(GenAiGlyph.image),
+                          label: '图片创作',
+                          selected: imagesActive,
+                          onPressed: connected && !sending ? onImages : null,
+                        ),
+                        // Draft spacing above the history label.
+                        SizedBox(height: short ? 2 : 28),
+                      ],
                     ),
-                    accountMenu,
+                    ..._historySection(context, palette),
                   ],
                 ),
               ),
-              _NavButton(
-                key: const ValueKey('genai-new-chat-wide'),
-                icon: const GenAiIcon(GenAiGlyph.plus),
-                label: '新对话',
-                shortcut: touch ? null : shortcutLabel,
-                onPressed: sending ? null : onNewChat,
-              ),
-              _NavButton(
-                icon: const GenAiIcon(GenAiGlyph.image),
-                label: '图片创作',
-                selected: imagesActive,
-                onPressed: connected && !sending ? onImages : null,
-              ),
-              // Draft spacing above the history label.
-              const SizedBox(height: 28),
-              Expanded(child: _historySection(context, palette)),
               if (onExit != null) ...[
-                const SizedBox(height: 15),
+                SizedBox(height: short ? 2 : 15),
                 _NavButton(
                   icon: const GenAiIcon(GenAiGlyph.back),
                   label: '返回 TechPie',
@@ -136,79 +148,91 @@ class GenAiHistorySidebar extends StatelessWidget {
     );
   }
 
-  Widget _historySection(BuildContext context, GenAiPalette palette) {
+  List<Widget> _historySection(BuildContext context, GenAiPalette palette) {
     final caption = Theme.of(context).textTheme.labelSmall?.copyWith(
           color: palette.muted,
           fontSize: 12,
           fontWeight: FontWeight.w500,
         );
     if (!connected) {
-      return Center(child: Text('未连接 GenAI', style: caption));
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsetsDirectional.only(start: 12, end: 2, bottom: 4),
-          child: Row(
-            children: [
-              Expanded(child: Text('对话', style: caption)),
-              IconButton(
-                icon: const GenAiIcon(GenAiGlyph.search, size: 18),
-                color: palette.muted,
-                tooltip: '搜索对话',
-                constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-                onPressed: onSearch,
-              ),
-              if (history.loading)
-                const SizedBox.square(
-                  dimension: 36,
-                  child: Center(
-                    child: SizedBox.square(
-                      dimension: 14,
-                      child: CircularProgressIndicator(strokeWidth: 1.5),
-                    ),
-                  ),
-                )
-              else
-                IconButton(
-                  icon: const GenAiIcon(GenAiGlyph.refresh, size: 18),
-                  color: palette.muted,
-                  constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-                  tooltip: '刷新历史',
-                  onPressed: () => unawaited(history.load()),
-                ),
-            ],
-          ),
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(child: Text('未连接 GenAI', style: caption)),
         ),
-        if (history.failure case final failure?)
+      ];
+    }
+    return [
+      SliverList.list(
+        children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsetsDirectional.only(start: 12, end: 2, bottom: 4),
+            child: Row(
               children: [
-                Text(genAiFailureText(failure), style: caption?.copyWith(height: 1.6)),
-                TextButton(
-                  onPressed: () => unawaited(history.load()),
-                  child: const Text('重试加载历史'),
+                Expanded(child: Text('对话', style: caption)),
+                IconButton(
+                  icon: const GenAiIcon(GenAiGlyph.search, size: 18),
+                  color: palette.muted,
+                  tooltip: '搜索对话',
+                  constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+                  onPressed: onSearch,
                 ),
+                if (history.loading)
+                  const SizedBox.square(
+                    dimension: 48,
+                    child: Center(
+                      child: SizedBox.square(
+                        dimension: 14,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      ),
+                    ),
+                  )
+                else
+                  IconButton(
+                    icon: const GenAiIcon(GenAiGlyph.refresh, size: 18),
+                    color: palette.muted,
+                    constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+                    tooltip: '刷新历史',
+                    onPressed: () => unawaited(history.load()),
+                  ),
               ],
             ),
           ),
-        Expanded(child: _historyList(context, palette, caption)),
-      ],
-    );
+          if (history.failure case final failure?)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(genAiFailureText(failure), style: caption?.copyWith(height: 1.6)),
+                  TextButton(
+                    onPressed: () => unawaited(history.load()),
+                    child: const Text('重试加载历史'),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      _historyList(context, palette, caption),
+    ];
   }
 
   Widget _historyList(BuildContext context, GenAiPalette palette, TextStyle? caption) {
     final conversations = history.conversations;
     if (history.loading && conversations.isEmpty) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
     }
     if (conversations.isEmpty) {
-      if (history.failure != null) return const SizedBox.shrink();
-      return Center(
-        child: Text(history.query.isNotEmpty ? '未找到相关对话' : '暂无历史对话', style: caption),
+      if (history.failure != null) return const SliverToBoxAdapter();
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: Text(history.query.isNotEmpty ? '未找到相关对话' : '暂无历史对话', style: caption),
+        ),
       );
     }
     final rows = <Object>[];
@@ -218,8 +242,7 @@ class GenAiHistorySidebar extends StatelessWidget {
       if (label != group) rows.add(group = label);
       rows.add(item);
     }
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 8),
+    return SliverList.builder(
       itemCount: rows.length + (history.hasMore ? 1 : 0),
       itemBuilder: (context, index) {
         if (index >= rows.length) {
@@ -246,9 +269,7 @@ class GenAiHistorySidebar extends StatelessWidget {
   Widget _historyRow(BuildContext context, GenAiPalette palette, GenAiConversationSummary item) {
     final active = item.id == activeId;
     final title = item.title.isEmpty ? '未命名对话' : item.title;
-    // Draft row: a 40 px, 8 px-radius plate inset 14 px by the rail padding,
-    // with a 2 px gap before the next plate. Active and hovered both use the
-    // palette hover wash.
+    // Keep a full touch target even when the action glyph is visually quiet.
     return GenAiHoverRegion(
       always: touch,
       builder: (context, revealed) => Padding(
@@ -263,7 +284,7 @@ class GenAiHistorySidebar extends StatelessWidget {
             hoverColor: palette.hover,
             onTap: sending ? null : () => onOpen(item),
             child: SizedBox(
-              height: 40,
+              height: 48,
               child: Row(
                 children: [
                   Expanded(
@@ -285,17 +306,12 @@ class GenAiHistorySidebar extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Draft row gap between the title and the 28 px menu target.
                   const SizedBox(width: 2),
-                  // The 28 px target is a square centered in the 40 px row and
-                  // inset 6 px from the row's clipped end, so its hover plate
-                  // reads as its own control instead of touching the selected
-                  // row's rounded corner.
                   Padding(
                     padding: const EdgeInsetsDirectional.only(end: 6),
                     child: SizedBox(
-                      width: 28,
-                      height: 28,
+                      width: 48,
+                      height: 48,
                       child: IconButtonTheme(
                         // Draft row menu: its own 6 px-radius square hover wash
                         // inside the row, never the circular default. The wash

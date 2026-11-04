@@ -20,7 +20,6 @@ GenAiTurnActions _actions() => GenAiTurnActions(
       openLink: (_) {},
       changeTurn: (_, __) {},
       retry: (_) {},
-      exportConversation: () {},
       openImages: () {},
       showImage: ({Uint8List? bytes, String? url}) {},
       imageDisplayUri: (url) => Uri.parse(url),

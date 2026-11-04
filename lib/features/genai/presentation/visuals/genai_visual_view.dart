@@ -12,6 +12,8 @@ import '../genai_theme.dart';
 import '../markdown/genai_code_font.dart';
 import '../markdown/genai_syntax_highlighter.dart';
 import 'genai_visual_document.dart';
+import 'genai_visual_external_native.dart'
+    if (dart.library.js_interop) 'genai_visual_external_web.dart' as visual_platform;
 import 'genai_visual_surface.dart';
 
 /// The latest complete visual is expanded on reopen. User overrides last until
@@ -75,6 +77,10 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
   bool _full = false;
   bool _collapsed = false;
   bool _activated = false;
+  bool _openingExternal = false;
+  bool get _externalOnly =>
+      !kIsWeb &&
+      const [TargetPlatform.windows, TargetPlatform.linux].contains(defaultTargetPlatform);
   (String, int)? _latestVisual;
 
   /// Inline canvas height. Fullscreen frames the canvas from their own
@@ -139,17 +145,13 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
       _document = null;
       _surfaceKey = GlobalKey();
     });
-    if (!kIsWeb &&
-        const [TargetPlatform.windows, TargetPlatform.linux].contains(defaultTargetPlatform)) {
-      setState(() {
-        _error = '此平台暂不支持内嵌交互示例';
-      });
-      return;
-    }
     try {
       final document = await GenAiVisualDocument.prepare(widget.code);
       if (!mounted || revision != _revision) return;
-      setState(() => _document = document);
+      setState(() {
+        _document = document;
+        if (_externalOnly) _height = 160;
+      });
     } on GenAiVisualException catch (error) {
       if (mounted && revision == _revision) setState(() => _error = error.message);
     } catch (_) {
@@ -253,19 +255,26 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
     if (_document == null) {
       return Center(child: _error == null ? const CircularProgressIndicator() : Text(_error!));
     }
-    final colors = Theme.of(context).colorScheme;
-    String hex(Color color) =>
-        '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
-    final theme = <String, String>{
-      'mode': Theme.of(context).brightness == Brightness.dark ? 'dark' : 'light',
-      'bg': hex(colors.surface),
-      'surface': hex(colors.surfaceContainerLow),
-      'text': hex(colors.onSurface),
-      'muted': hex(colors.onSurfaceVariant),
-      'primary': hex(colors.primary),
-      'on-primary': hex(colors.onPrimary),
-      'border': hex(colors.outlineVariant),
-    };
+    if (_externalOnly) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('在浏览器中交互，内容仍保存在此对话。', textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: _openingExternal ? null : _openExternal,
+                icon: const GenAiIcon(GenAiGlyph.openExternal, size: 18),
+                label: Text(_openingExternal ? '正在打开…' : '在浏览器打开'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final theme = _visualTheme();
     final revision = _revision;
     final error = _error ?? (_timedOut ? '示例未能启动' : null);
     return Stack(
@@ -296,6 +305,42 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
           ),
       ],
     );
+  }
+
+  Map<String, String> _visualTheme() {
+    final colors = Theme.of(context).colorScheme;
+    String hex(Color color) =>
+        '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+    return <String, String>{
+      'mode': Theme.of(context).brightness == Brightness.dark ? 'dark' : 'light',
+      'bg': hex(colors.surface),
+      'surface': hex(colors.surfaceContainerLow),
+      'text': hex(colors.onSurface),
+      'muted': hex(colors.onSurfaceVariant),
+      'primary': hex(colors.primary),
+      'on-primary': hex(colors.onPrimary),
+      'border': hex(colors.outlineVariant),
+    };
+  }
+
+  Future<void> _openExternal() async {
+    final document = _document;
+    if (document == null || _openingExternal) return;
+    setState(() => _openingExternal = true);
+    try {
+      await visual_platform.openGenAiVisual(
+        GenAiVisualDocument.shell(
+          document,
+          native: false,
+          fullscreen: true,
+          theme: _visualTheme(),
+        ),
+      );
+    } catch (_) {
+      if (mounted) showAdaptiveFeedback(context: context, message: '无法打开浏览器，请稍后重试');
+    } finally {
+      if (mounted) setState(() => _openingExternal = false);
+    }
   }
 
   Future<void> _copySource() async {
@@ -337,7 +382,7 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
   Widget _moreMenu({required bool enabled}) {
     final palette = GenAiPalette.of(context);
     final items = <PopupMenuEntry<String>>[
-      _menuItem(palette, 'rerun', '重新运行', GenAiGlyph.retry, enabled: enabled),
+      if (!_externalOnly) _menuItem(palette, 'rerun', '重新运行', GenAiGlyph.retry, enabled: enabled),
       _menuItem(palette, 'source', '查看源代码', GenAiGlyph.code),
       _menuItem(palette, 'copy', '复制内容', GenAiGlyph.copy),
     ];
@@ -392,11 +437,12 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
         onToggle: _toggleCollapsed,
         divider: false,
         actions: [
-          IconButton(
-            tooltip: '全屏',
-            onPressed: () => _fullscreen(true),
-            icon: const GenAiIcon(GenAiGlyph.full, size: 20),
-          ),
+          if (!_externalOnly)
+            IconButton(
+              tooltip: '全屏',
+              onPressed: () => _fullscreen(true),
+              icon: const GenAiIcon(GenAiGlyph.full, size: 20),
+            ),
           _moreMenu(enabled: widget.complete),
         ],
       );
@@ -465,7 +511,7 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
                         ),
                         IconButton(
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                          constraints: const BoxConstraints.tightFor(width: 48, height: 48),
                           tooltip: '关闭',
                           onPressed: () => Navigator.pop(dialogContext),
                           icon: const GenAiIcon(GenAiGlyph.close, size: 20),

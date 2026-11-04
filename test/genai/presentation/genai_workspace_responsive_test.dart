@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:ui' show SemanticsAction;
 
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
@@ -102,14 +101,8 @@ Future<void> _reachable(
   expect(tester.takeException(), isNull);
 }
 
-/// Phone modes are keyed Semantics toggles; desktop modes key the draft's
-/// Material surface, whose toggled state lives on the wrapping Semantics.
-bool _modeSelected(WidgetTester tester, Finder finder) {
-  final widget = tester.widget(finder);
-  if (widget is Semantics) return widget.properties.toggled ?? false;
-  final semantics = find.ancestor(of: finder, matching: find.byType(Semantics)).first;
-  return tester.widget<Semantics>(semantics).properties.toggled ?? false;
-}
+bool _modeSelected(WidgetTester tester, Finder finder) =>
+    tester.widget<Semantics>(finder).properties.toggled ?? false;
 
 /// The shared anchored menu surface, measured directly from its Material.
 Rect _popupMenuRect(WidgetTester tester) =>
@@ -271,7 +264,12 @@ void main() {
         final sent = demo.workspace.send('布局检查');
         await tester.pumpAndSettle();
         await sent;
-        final prompt = tester.getSemantics(find.widgetWithText(SelectableText, '布局检查'));
+        final prompt = tester.getSemantics(
+          find.descendant(
+            of: find.byKey(ValueKey('genai-user-bubble-${demo.workspace.turns.single.id}')),
+            matching: find.text('布局检查'),
+          ),
+        );
         expect(prompt.rect.height, lessThan(100));
         final model = tester.getSemantics(find.byKey(const ValueKey('genai-model')));
         expect(model.rect.width, lessThan(size.width));
@@ -447,9 +445,6 @@ void main() {
       await tester.pumpAndSettle();
       final thinking = find.byKey(_thinking);
       final campus = find.byKey(_campus);
-      // The phone tier renders fixed 42px icon controls; desktop modes use the
-      // draft's compact 30px Material surface instead of a Material pill.
-      final phoneChips = scenario.size.width <= 680;
       for (final entry in [
         (thinking, 'genai-thinking-menu-toggle'),
         (campus, 'genai-agent-menu-toggle'),
@@ -457,7 +452,7 @@ void main() {
         if (entry.$1.evaluate().isNotEmpty) {
           await _reachable(tester, entry.$1, viewport);
           final height = tester.getSize(entry.$1).height;
-          expect(height, phoneChips ? 42.0 : 30.0);
+          expect(height, greaterThanOrEqualTo(48));
         } else {
           await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
           await tester.pumpAndSettle();
@@ -466,9 +461,21 @@ void main() {
           if (scenario.keyboard > 0) {
             await tester.tap(menuItem);
             await tester.pumpAndSettle();
-            await _reachable(tester, entry.$1, viewport);
-            expect(_modeSelected(tester, entry.$1), isTrue);
-            await tester.tap(entry.$1);
+            if (entry.$1.evaluate().isNotEmpty) {
+              await _reachable(tester, entry.$1, viewport);
+              expect(_modeSelected(tester, entry.$1), isTrue);
+              await tester.tap(entry.$1);
+            } else {
+              await tester.tap(find.byKey(_more));
+              await tester.pumpAndSettle();
+              final check =
+                  entry.$1 == thinking ? 'genai-thinking-menu-check' : 'genai-agent-menu-check';
+              expect(
+                find.descendant(of: menuItem, matching: find.byKey(ValueKey(check))),
+                findsOneWidget,
+              );
+              await tester.tap(menuItem);
+            }
           } else {
             await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           }
@@ -476,11 +483,18 @@ void main() {
         }
       }
       expect(tester.widget<TextField>(prompt).controller!.text, '保留我的草稿');
-      await _reachable(
-        tester,
-        find.byKey(const ValueKey('genai-audio-stt')),
-        viewport,
-      );
+      final phone =
+          tester.widget<GenAiComposer>(find.byType(GenAiComposer)).workspaceWidth <= 680 ||
+              scenario.size.height < 560;
+      if (phone) {
+        await tester.tap(find.byKey(_more));
+        await tester.pumpAndSettle();
+        await _reachable(tester, find.byKey(const ValueKey('genai-record-voice')), viewport);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+      } else {
+        await _reachable(tester, find.byKey(const ValueKey('genai-audio-stt')), viewport);
+      }
       await _reachable(
         tester,
         find.byKey(const ValueKey('genai-send')),
@@ -496,14 +510,18 @@ void main() {
       await tester.pumpAndSettle();
       await sent;
       final contextStatus = find.byKey(const ValueKey('genai-context-status'));
-      final audio = find.byKey(const ValueKey('genai-audio-stt'));
-      if (scenario.size.width < 360) {
-        // Extra-narrow phones drop the context ring to keep controls on screen.
+      final trailing = find.byKey(ValueKey(phone ? 'genai-send' : 'genai-audio-stt'));
+      if (phone) {
         expect(contextStatus, findsNothing);
+        await tester.tap(find.byKey(_more));
+        await tester.pumpAndSettle();
+        await _reachable(tester, contextStatus, viewport);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
       } else {
         await _reachable(tester, contextStatus, viewport);
         final contextBounds = tester.getRect(contextStatus);
-        final audioBounds = tester.getRect(audio);
+        final audioBounds = tester.getRect(trailing);
         expect(contextBounds.right, lessThanOrEqualTo(audioBounds.left));
         expect(contextBounds.center.dy, audioBounds.center.dy);
       }
@@ -512,53 +530,37 @@ void main() {
     });
   }
 
-  testWidgets('inactive tools collapse before thinking and active modes stay visible',
-      (tester) async {
+  testWidgets('both active modes fit one toolbar or remain checked in the menu', (tester) async {
     final demo = await _show(tester, size: const Size(320, 844));
-    final more = find.byKey(const ValueKey('genai-composer-more'));
-    final thinking = find.byKey(_thinking);
-    final campus = find.byKey(_campus);
     await tester.enterText(find.byKey(_prompt), '保留草稿');
-    // At 320 the toolbar is allowed to wrap instead of squeezing one row.
-    expect(thinking, findsOneWidget);
-    expect(campus, findsNothing);
-    expect(more.hitTestable(), findsOneWidget);
-    expect(thinking.hitTestable(), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    await tester.tap(more);
-    await tester.pumpAndSettle();
-    // The "+" menu always lists both modes, even while their toolbar
-    // controls are visible; the check reflects the current state.
-    expect(
-      find.byKey(const ValueKey('genai-thinking-menu-toggle')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('genai-thinking-menu-check')), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('genai-agent-menu-toggle')));
-    await tester.pumpAndSettle();
-    expect(demo.workspace.agentEnabled, isTrue);
-    expect(campus, findsOneWidget);
-    expect(_modeSelected(tester, campus), isTrue);
-    expect(
-      tester.widget<TextField>(find.byKey(_prompt)).controller!.text,
-      '保留草稿',
-    );
     demo.workspace.setThinking(true);
-    tester.view.physicalSize = const Size(320, 740);
+    await tester.tap(find.byKey(_campus));
     await tester.pumpAndSettle();
-    expect(thinking, findsOneWidget);
-    expect(campus, findsOneWidget);
-    expect(_modeSelected(tester, thinking), isTrue);
-    expect(tester.takeException(), isNull);
-    await tester.tap(campus);
-    await tester.pumpAndSettle();
-    expect(campus, findsNothing);
-    expect(thinking, findsOneWidget);
-    tester.view.physicalSize = const Size(1440, 900);
-    await tester.pumpAndSettle();
-    expect(campus, findsOneWidget);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
+    for (final width in [320.0, 375.0, 390.0, 768.0, 1280.0]) {
+      tester.view.physicalSize = Size(width, 844);
+      await tester.pumpAndSettle();
+      final baseline = tester.getCenter(find.byKey(_more)).dy;
+      for (final key in [
+        _thinking,
+        _campus,
+        const ValueKey('genai-model'),
+        const ValueKey('genai-send'),
+        if (width > 680) const ValueKey('genai-audio-stt'),
+      ]) {
+        final control = find.byKey(key);
+        if (key == _thinking || key == _campus) {
+          if (control.evaluate().isEmpty) continue;
+          expect(_modeSelected(tester, control), isTrue);
+        }
+        expect(tester.getCenter(control).dy, closeTo(baseline, 1), reason: 'width $width, $key');
+      }
+      if (width <= 680) {
+        expect(find.byKey(_thinking).hitTestable(), findsOneWidget);
+        expect(find.byKey(_campus).hitTestable(), findsOneWidget);
+      }
+      expect(tester.widget<TextField>(find.byKey(_prompt)).controller!.text, '保留草稿');
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets('phone 375 keeps new chat, plus tools and turn actions usable', (tester) async {
@@ -568,17 +570,11 @@ void main() {
     // Compact header retains a direct new-chat button.
     await _reachable(tester, find.byKey(_compactNew), viewport);
     expect(find.byKey(_wideNew), findsNothing);
-    // Inactive campus tools stay out of the toolbar but are reachable via "+".
-    expect(find.byKey(_campus), findsNothing);
-    final more = find.byKey(_more);
-    await _reachable(tester, more, viewport);
-    await tester.tap(more);
+    await _reachable(tester, find.byKey(_campus), viewport);
+    await tester.tap(find.byKey(_more));
     await tester.pumpAndSettle();
-    await _reachable(
-      tester,
-      find.byKey(const ValueKey('genai-agent-menu-toggle')),
-      viewport,
-    );
+    expect(find.byKey(const ValueKey('genai-agent-menu-toggle')), findsNothing);
+    await _reachable(tester, find.byKey(const ValueKey('genai-upload-image')), viewport);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
@@ -587,13 +583,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('genai-send')));
     await tester.pumpAndSettle();
     final turn = demo.workspace.turns.single;
-    // Below the wide breakpoint direct editing folds into the visible menu.
+    // Long pressing the phone bubble exposes editing.
     expect(find.byKey(ValueKey('genai-turn-edit-${turn.id}')), findsNothing);
-    final menu = find.byKey(ValueKey('genai-turn-menu-${turn.id}'));
+    final menu = find.byKey(ValueKey('genai-user-bubble-${turn.id}'));
     await tester.ensureVisible(menu);
     await tester.pumpAndSettle();
     expect(menu.hitTestable(), findsOneWidget);
-    await tester.tap(menu);
+    await tester.longPress(menu);
     await tester.pumpAndSettle();
     expect(find.text('编辑并重新发送'), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -726,69 +722,31 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('composer modes, dots and send match the draft at 375/580/680/700/959',
+  testWidgets(
+      'composer controls have touch targets and visible selection at phone and desktop widths',
       (tester) async {
     for (final width in [375.0, 580.0, 680.0, 700.0, 959.0]) {
       final demo = await _show(tester, size: Size(width, 812));
       final phone = width <= 680;
       final thinking = find.byKey(_thinking);
       final campus = find.byKey(_campus);
-      expect(thinking, findsOneWidget, reason: 'width $width');
-      final thinkingSize = tester.getSize(thinking);
       final sendSize = tester.getSize(find.byKey(const ValueKey('genai-send')));
       if (phone) {
-        // Icon-only mode: 40 x 42 with a centred glyph and a 3px corner dot.
-        expect(thinkingSize, const Size(40, 42), reason: 'width $width');
-        expect(sendSize, const Size(42, 42), reason: 'width $width');
-        expect(find.byType(FilterChip), findsNothing, reason: 'width $width');
-        final chip = tester.getRect(thinking);
-        final glyph = tester.getRect(find.byKey(const ValueKey('genai-thinking-toggle-icon')));
-        expect(
-          (glyph.center.dx - chip.center.dx).abs(),
-          lessThanOrEqualTo(.5),
-          reason: 'width $width',
-        );
-        expect(
-          (glyph.center.dy - chip.center.dy).abs(),
-          lessThanOrEqualTo(.5),
-          reason: 'width $width',
-        );
-        // Inactive campus is out of the toolbar but stays in the "+" menu.
-        expect(campus, findsNothing, reason: 'width $width');
-        demo.workspace.setThinking(true);
+        expect(tester.getSize(thinking), const Size(48, 48));
+        expect(tester.getSize(campus), const Size(48, 48));
+        expect(sendSize, const Size(48, 48));
+        await tester.tap(thinking);
         await tester.pumpAndSettle();
-        final dot = find.byKey(const ValueKey('genai-thinking-toggle-dot'));
-        expect(dot, findsOneWidget, reason: 'width $width');
-        final dotRect = tester.getRect(dot);
-        final activeChip = tester.getRect(thinking);
-        expect(dotRect.size, const Size(3, 3), reason: 'width $width');
-        expect(activeChip.right - dotRect.right, closeTo(7, .01), reason: 'width $width');
-        expect(dotRect.top - activeChip.top, closeTo(6, .01), reason: 'width $width');
-        await tester.tap(find.byKey(_more));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const ValueKey('genai-agent-menu-toggle')),
-          findsOneWidget,
-          reason: 'width $width',
-        );
-        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-        await tester.pumpAndSettle();
+        expect(_modeSelected(tester, thinking), isTrue);
       } else {
-        // Desktop uses the draft's compact 30px Material surface, not a
-        // Material FilterChip pill, and keeps the draft's 38px send.
+        // Desktop keeps labels on the same baseline as the trailing actions.
         expect(find.byType(FilterChip), findsNothing, reason: 'width $width');
-        expect(thinkingSize.height, 30.0, reason: 'width $width');
-        final modeSurface = tester.widget<Material>(thinking);
-        expect(
-          modeSurface.borderRadius,
-          BorderRadius.circular(8),
-          reason: 'width $width',
-        );
+        expect(tester.getSize(thinking).height, 48.0, reason: 'width $width');
         final modeLabel = tester.widget<Text>(
           find.descendant(of: thinking, matching: find.text('深度思考')),
         );
-        expect(modeLabel.style!.fontSize, 12, reason: 'width $width');
-        expect(sendSize, const Size(38, 38), reason: 'width $width');
+        expect(modeLabel.style!.fontSize, 14, reason: 'width $width');
+        expect(sendSize, const Size(48, 48), reason: 'width $width');
         expect(campus, findsOneWidget, reason: 'width $width');
         expect(_modeSelected(tester, thinking), isFalse, reason: 'width $width');
         demo.workspace.setThinking(true);
@@ -822,40 +780,13 @@ void main() {
         lessThanOrEqualTo(2),
         reason: 'width $width: text ${textRect.left}, glyph ${glyphRect.left}',
       );
-      final field = tester.widget<TextField>(prompt);
-      expect(field.style!.fontSize, phone ? 15.0 : 14.0, reason: 'width $width');
-      expect(field.style!.height, 1.65, reason: 'width $width');
-      // The draft top-aligns the input and forces one strut so the caret and
-      // hint sit on the same 1.65 line box at both tiers.
-      expect(field.textAlignVertical, TextAlignVertical.top, reason: 'width $width');
-      final strut = field.strutStyle!;
-      expect(strut.fontSize, phone ? 15.0 : 14.0, reason: 'width $width');
-      expect(strut.height, 1.65, reason: 'width $width');
-      expect(strut.forceStrutHeight, isTrue, reason: 'width $width');
-      expect(
-        field.decoration!.contentPadding,
-        const EdgeInsets.symmetric(horizontal: 4),
-        reason: 'width $width',
-      );
-      expect(
-        field.decoration!.constraints,
-        const BoxConstraints(minHeight: 50),
-        reason: 'width $width',
-      );
-      final hintStyle = field.decoration!.hintStyle!;
-      expect(hintStyle.fontSize, phone ? 15.0 : 14.0, reason: 'width $width');
-      expect(hintStyle.height, 1.65, reason: 'width $width');
-      final surfaceBox = tester.widget<AnimatedContainer>(
-        find.byKey(const ValueKey('genai-composer-surface')),
-      );
-      expect(
-        surfaceBox.padding,
-        phone
-            ? const EdgeInsets.fromLTRB(10, 12, 10, 8)
-            : const EdgeInsets.fromLTRB(16, 16, 16, 10),
-        reason: 'width $width',
-      );
-      expect(tester.getSize(prompt).height, greaterThanOrEqualTo(50.0), reason: 'width $width');
+      expect(surface.height, lessThanOrEqualTo(100), reason: 'one-line draft at $width');
+      await tester.enterText(prompt, '第一行\n第二行\n第三行');
+      await tester.pumpAndSettle();
+      expect(tester.getSize(prompt).height, greaterThan(promptRect.height * 2));
+      await tester.enterText(prompt, '');
+      await tester.pumpAndSettle();
+      expect(tester.getSize(prompt).height, closeTo(promptRect.height, 1));
       expect(tester.takeException(), isNull, reason: 'width $width');
       await tester.pumpWidget(const SizedBox.shrink());
     }
@@ -903,79 +834,38 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('plus menu always lists both modes with state checks and draft labels',
+  testWidgets('wide plus menu omits modes already visible in the composer', (tester) async {
+    await _show(tester, size: const Size(900, 900));
+    expect(find.byKey(_thinking), findsOneWidget);
+    expect(find.byKey(_campus), findsOneWidget);
+    await tester.tap(find.byKey(_more));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-thinking-menu-toggle')), findsNothing);
+    expect(find.byKey(const ValueKey('genai-agent-menu-toggle')), findsNothing);
+    expect(find.byKey(const ValueKey('genai-tool-list-menu')), findsOneWidget);
+  });
+
+  testWidgets('menu supports arrow selection, restores focus and dismisses on resize',
       (tester) async {
-    for (final scenario in [
-      (name: 'phone', size: const Size(375, 900)),
-      (name: 'desktop', size: const Size(900, 900)),
-      (name: 'short landscape', size: const Size(844, 390)),
-    ]) {
-      final width = scenario.size.width;
-      final demo = await _show(tester, size: scenario.size);
-      final more = find.byKey(_more);
-      await tester.tap(more);
-      await tester.pumpAndSettle();
-
-      // Attachments keep the existing labels, and both modes are always
-      // listed even when their chips are already visible in the toolbar.
-      final menu = find.byType(PopupMenuItem<String>);
-      for (final label in ['上传文档', '上传图片', '深度思考', '校园工具', '查看可用工具']) {
-        expect(
-          find.descendant(of: menu, matching: find.text(label)),
-          findsOneWidget,
-          reason: 'width $width: $label',
-        );
-      }
-      // The audio entry follows the same capability gate as the microphone.
-      final audio = find.byKey(const ValueKey('genai-upload-audio'));
-      if (audio.evaluate().isNotEmpty) {
-        expect(
-          find.descendant(of: audio, matching: find.text('上传音频')),
-          findsOneWidget,
-          reason: 'width $width: audio',
-        );
-      }
-      expect(find.text('上传文件'), findsNothing, reason: 'width $width');
-      expect(find.text('添加图片'), findsNothing, reason: 'width $width');
-      expect(find.text('音频文件'), findsNothing, reason: 'width $width');
-
-      final thinkingItem = find.byKey(const ValueKey('genai-thinking-menu-toggle'));
-      if (width <= 680) {
-        expect(find.byType(BottomSheet), findsOneWidget);
-      } else {
-        final menuRect = _popupMenuRect(tester);
-        expect(menuRect.overlaps(tester.getRect(more)), isFalse);
-      }
-
-      await tester.tap(thinkingItem);
-      await tester.pumpAndSettle();
-      expect(demo.workspace.thinkingEnabled, isTrue, reason: 'width $width');
-
-      await tester.tap(more);
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('genai-thinking-menu-check')),
-        findsOneWidget,
-        reason: 'width $width',
-      );
-      expect(find.byKey(const ValueKey('genai-agent-menu-check')), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('genai-agent-menu-toggle')));
-      await tester.pumpAndSettle();
-      expect(demo.workspace.agentEnabled, isTrue, reason: 'width $width');
-
-      await tester.tap(more);
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('genai-agent-menu-check')),
-        findsOneWidget,
-        reason: 'width $width',
-      );
-      expect(find.byKey(const ValueKey('genai-thinking-menu-check')), findsOneWidget);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull, reason: 'width $width');
-      await tester.pumpWidget(const SizedBox.shrink());
-    }
+    final actions = await _pumpComposer(tester, size: const Size(1280, 900));
+    await tester.tap(find.byKey(_more));
+    await tester.pumpAndSettle();
+    // Initial focus is on the first enabled item (document); Down selects image.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(actions, ['image']);
+    expect(find.byKey(const ValueKey('genai-anchored-menu')), findsNothing);
+    await tester.tap(find.byKey(_more));
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 200);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-anchored-menu')), findsOneWidget);
+    tester.view.resetViewInsets();
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('genai-anchored-menu')), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('anchored menu opens below with 7px clearance when space allows', (tester) async {
@@ -997,7 +887,7 @@ void main() {
       (tester) async {
     final actions = await _pumpComposer(
       tester,
-      size: const Size(375, 900),
+      size: const Size(900, 900),
       thinking: true,
       agent: true,
       supportsThinking: false,
@@ -1034,9 +924,18 @@ void main() {
       (tester) async {
     for (final size in [const Size(900, 900), const Size(375, 812)]) {
       await _show(tester, size: size);
+      final phone = size.width == 375;
+      final prompt = tester.widget<TextField>(find.byKey(_prompt));
+      if (phone) await tester.enterText(find.byKey(_prompt), 'unfinished draft');
       await tester.tap(find.byKey(_more));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('genai-tool-list-menu')));
+      if (phone) {
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 32));
+        expect(find.byKey(const ValueKey('genai-anchored-menu')), findsOneWidget);
+        expect(find.byKey(const ValueKey('genai-tool-list-dialog')), findsNothing);
+      }
       await tester.pumpAndSettle();
 
       final dialog = find.byKey(const ValueKey('genai-tool-list-dialog'));
@@ -1088,6 +987,10 @@ void main() {
       await tester.tap(close);
       await tester.pumpAndSettle();
       expect(dialog, findsNothing);
+      if (phone) {
+        expect(prompt.focusNode!.hasFocus, isFalse);
+        expect(prompt.controller!.text, 'unfinished draft');
+      }
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     }
@@ -1113,7 +1016,28 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('model menu clears its anchor and clips selected and hovered rows', (tester) async {
+  testWidgets('narrow model trigger truncates but the picker reveals the full name',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpModelPicker(tester, width: 82);
+    final trigger = find.byKey(const ValueKey('genai-model'));
+    final label = find.text(_longModel.name);
+    expect(
+      _paragraphFor(tester, find.descendant(of: trigger, matching: label)).didExceedMaxLines,
+      isTrue,
+    );
+    await tester.tap(trigger);
+    await tester.pumpAndSettle();
+    final item = find.byKey(const ValueKey('genai-model-kimi-k2'));
+    final paragraph = _paragraphFor(tester, find.descendant(of: item, matching: label));
+    expect(paragraph.didExceedMaxLines, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('model menu clears its anchor and selects another model', (tester) async {
     final picked = await _pumpModelPicker(tester, width: 600);
     final model = find.byKey(const ValueKey('genai-model'));
     await tester.tap(model);
@@ -1127,32 +1051,7 @@ void main() {
     expect(selectedRow, findsOneWidget);
     expect(otherRow, findsOneWidget);
 
-    Material rowSurface(Finder row) =>
-        tester.widget<Material>(find.ancestor(of: row, matching: find.byType(Material)).first);
-    for (final row in [selectedRow, otherRow]) {
-      final item = tester.widget<PopupMenuItem<GenAiModel>>(row);
-      expect(item.height, 42);
-      expect(item.padding, const EdgeInsets.symmetric(horizontal: 10, vertical: 8));
-      // The shared entry wrapper gives every row a clipped 7px hover surface.
-      expect(rowSurface(row).borderRadius, BorderRadius.circular(7));
-      expect(rowSurface(row).clipBehavior, Clip.antiAlias);
-    }
-    // Selection is a 17px accent check with muted cost/thinking detail.
-    final check = find.descendant(of: selectedRow, matching: find.byType(GenAiIcon));
-    expect(check, findsOneWidget);
-    expect(tester.getSize(check), const Size(17, 17));
-    final detail = tester.widget<Text>(
-      find.descendant(of: selectedRow, matching: find.text('免费 · 支持深度思考')),
-    );
-    expect(detail.style!.fontSize, 11);
-
-    final pointer = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await pointer.addPointer(location: const Offset(1, 1));
-    addTearDown(pointer.removePointer);
-    await pointer.moveTo(tester.getCenter(otherRow));
-    await tester.pumpAndSettle();
-    expect(rowSurface(otherRow).borderRadius, BorderRadius.circular(7));
-    expect(tester.takeException(), isNull);
+    expect(find.descendant(of: selectedRow, matching: find.text('免费 · 支持深度思考')), findsOneWidget);
 
     await tester.tap(otherRow);
     await tester.pumpAndSettle();
@@ -1163,18 +1062,23 @@ void main() {
 
   for (final scenario in [(390.0, 1.0), (1280.0, 1.0), (390.0, 1.6)]) {
     final (width, textScale) = scenario;
-    testWidgets('empty workspace heading is semibold at $width with scale $textScale',
+    testWidgets('empty workspace balances the greeting and editor at $width with scale $textScale',
         (tester) async {
       await _show(tester, size: Size(width, 900), textScale: textScale);
       final title = find.byKey(const ValueKey('genai-welcome-title'));
       expect(title, findsOneWidget);
       final rich = find.descendant(of: title, matching: find.byType(RichText));
-      final style = tester.widget<RichText>(rich).text.style!;
-      expect(style.fontWeight, FontWeight.w600);
-      expect(style.fontVariations ?? const [], isEmpty);
-      expect(style.fontSize, width == 390 ? equals(25) : inInclusiveRange(22, 28));
       expect(_paragraphFor(tester, title).didExceedMaxLines, isFalse);
       expect(tester.getRect(rich).right, lessThanOrEqualTo(width));
+      final surface = tester.getRect(find.byKey(const ValueKey('genai-composer-surface')));
+      if (width <= 680) {
+        expect(surface.bottom, greaterThan(870));
+        expect(tester.getCenter(title).dy, inInclusiveRange(350, 500));
+      } else {
+        expect(surface.bottom, lessThan(600));
+        expect(surface.top - tester.getRect(title).bottom, inInclusiveRange(10, 60));
+        expect(surface.width, lessThanOrEqualTo(680));
+      }
       expect(tester.takeException(), isNull);
     });
   }

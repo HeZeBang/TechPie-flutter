@@ -563,20 +563,35 @@ final class TechPieGenAiTools {
       }
     }
 
-    void requireProfile() {
+    List<String> missingContactFields() {
       final profile = gym.bookingProfile();
-      if (profile.name.trim().isEmpty ||
-          profile.phone.trim().isEmpty ||
-          gym.bookingStudentId.isEmpty) {
-        throw const GenAiAgentToolException(
-          'profile_required',
-          '请先在场馆预约的个人信息中补全姓名、手机号与校园身份。',
-        );
-      }
+      return [
+        if (profile.name.trim().isEmpty) '姓名',
+        if (profile.phone.trim().isEmpty) '手机号',
+        if (gym.bookingStudentId.isEmpty) '学号',
+      ];
     }
 
     requireAvailable(checked);
-    requireProfile();
+    if (missingContactFields().isNotEmpty) {
+      // The venue page and this tool share the account-scoped profile. Join
+      // an in-flight sync or fill missing fields without overwriting edits.
+      await context.cancellation.race(gym.syncBookingProfile());
+      guard();
+      final missing = missingContactFields();
+      if (missing.isNotEmpty) {
+        if (gym.profileSyncError != null) {
+          throw const GenAiAgentToolException(
+            'profile_sync_failed',
+            '场馆个人信息同步失败，请在「场馆预约 → 个人信息」查看原因并重试。',
+          );
+        }
+        throw GenAiAgentToolException(
+          'profile_required',
+          '场馆个人信息缺少${missing.join('、')}，请在「场馆预约 → 个人信息」中核对。',
+        );
+      }
+    }
     final approvedProfile = gym.bookingProfile().toJson();
     final approvedStudent = gym.bookingStudentId;
     var approvedAt = _now();
@@ -626,7 +641,6 @@ final class TechPieGenAiTools {
           requireAvailable(await availability());
           requireFreshApproval();
           guard();
-          requireProfile();
           if (jsonEncode(gym.bookingProfile().toJson()) != jsonEncode(approvedProfile) ||
               gym.bookingStudentId != approvedStudent) {
             throw const GenAiAgentToolException(

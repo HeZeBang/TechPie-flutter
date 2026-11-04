@@ -73,7 +73,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   final _draft = TextEditingController();
   final _inputFocus = FocusNode();
   // Keep composing state and keyboard focus when the empty view becomes a thread.
-  final _composerKey = GlobalKey();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _scroll = ScrollController();
   bool _followingLatest = true;
@@ -95,6 +94,11 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   Duration _streamPaintInterval = const Duration(milliseconds: 40);
   bool _openingLogin = false;
   GenAiCancellation? _deletionCheck;
+  final _editAnchor = GlobalKey();
+  Size? _editViewport;
+  bool _editAway = false;
+  final _replacementDraft = TextEditingController();
+  ({String turnId, _WorkspaceScope scope, Widget editor})? _editing;
   GenAiOwner? _draftOwner;
   Object? _draftAccountScope;
   GenAiWorkspaceController get _state => widget.controller;
@@ -113,6 +117,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   late ThemeData _theme;
   GenAiPalette get _palette => GenAiPalette.of(context);
   bool get _canSend =>
+      _editing == null &&
       _state.connected &&
       _state.selectedModel != null &&
       !_state.sending &&
@@ -189,6 +194,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     if (_state.turns.isEmpty) {
       _chatCopyIndex = (_chatCopyIndex + 1) % genAiChatCopy.length;
     }
+    _editing = null;
     _draft.clear();
     _state.addListener(_changed);
     unawaited(_state.restore());
@@ -200,6 +206,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
 
   void _changed() {
     if (!mounted) return;
+    if (_editing != null && !_isCurrent(_editing!.scope)) _editing = null;
     if (_copyGroupId != _state.groupId) {
       _followingLatest = true;
       _scrollRevision++;
@@ -244,6 +251,13 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     }
   }
 
+  void _revealEditor() {
+    final anchor = _editAnchor.currentContext;
+    if (mounted && _editing != null && anchor != null) {
+      unawaited(Scrollable.ensureVisible(anchor, alignment: .5));
+    }
+  }
+
   void _scrolled() {
     final following = _scroll.position.extentBefore < 120;
     if (following != _followingLatest && mounted) {
@@ -253,7 +267,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
 
   void _paint() {
     setState(() {});
-    if (_followingLatest) _scrollToEnd(followingOnly: true);
+    if (_followingLatest && _editing == null) _scrollToEnd(followingOnly: true);
   }
 
   void _scrollToEnd({bool followingOnly = false}) {
@@ -502,49 +516,63 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   }
 
   Future<void> _changeTurn(int index, String action) async {
-    if (_state.sending || index >= _state.turns.length) return;
+    if (_editing != null || _state.sending || index >= _state.turns.length) return;
     final scope = _scope;
     final controller = _state;
     final turn = controller.turns[index];
     final keep = action == 'revert';
     final removed = controller.turns.skip(index + (keep ? 1 : 0)).toList();
     if (removed.isEmpty) return;
-    await genAiShowDialog<void>(
-      context: context,
-      builder: (dialogContext) => GenAiTurnEditDialog(
-        prompt: turn.prompt,
-        action: action,
-        hasComposerDraft: _draft.text.isNotEmpty || controller.attachments.isNotEmpty,
-        hasAttachments: turn.attachedFileIds.isNotEmpty ||
-            turn.attachedFileNames.isNotEmpty ||
-            turn.attachedFileContents.isNotEmpty ||
-            turn.attachedImageUrls.isNotEmpty ||
-            turn.attachedImageBytesList.isNotEmpty,
-        onSubmit: (result, onCommitted) async {
-          if (!_isCurrent(scope)) {
-            throw const GenAiFailure(GenAiFailureKind.historyChanged);
-          }
-          try {
-            await controller.changeTurn(
-              turn.id,
-              keepTurn: keep,
-              replacement: action == 'edit' ? result : null,
-              onCommitted: onCommitted,
-            );
-          } finally {
-            if (mounted && identical(_state, controller)) unawaited(_history.load());
-          }
-        },
-        removedTurns: removed.length,
-        hasExternalActions: removed.any(
-          (t) => t.agentEvents.values.any(genAiHasExternalEffect),
-        ),
+    final form = GenAiTurnEditDialog(
+      key: action == 'edit' ? _editAnchor : null,
+      prompt: turn.prompt,
+      action: action,
+      controller: action == 'edit' ? _replacementDraft : null,
+      onClose: action == 'edit'
+          ? () {
+              if (mounted && _editing?.turnId == turn.id) setState(() => _editing = null);
+            }
+          : null,
+      hasAttachments: turn.attachedFileIds.isNotEmpty ||
+          turn.attachedFileNames.isNotEmpty ||
+          turn.attachedFileContents.isNotEmpty ||
+          turn.attachedImageUrls.isNotEmpty ||
+          turn.attachedImageBytesList.isNotEmpty,
+      onSubmit: (result, onCommitted) async {
+        if (!_isCurrent(scope) || controller.turns.lastOrNull?.id != removed.last.id) {
+          throw const GenAiFailure(GenAiFailureKind.historyChanged);
+        }
+        try {
+          await controller.changeTurn(
+            turn.id,
+            keepTurn: keep,
+            replacement: action == 'edit' ? result : null,
+            onCommitted: onCommitted,
+          );
+        } finally {
+          if (mounted && identical(_state, controller)) unawaited(_history.load());
+        }
+      },
+      removedTurns: removed.length,
+      hasExternalActions: removed.any(
+        (t) => t.agentEvents.values.any(genAiHasExternalEffect),
       ),
     );
+    if (action == 'edit') {
+      _replacementDraft.value = TextEditingValue(
+        text: turn.prompt,
+        selection: TextSelection.collapsed(offset: turn.prompt.length),
+      );
+      _editViewport = null;
+      _editAway = false;
+      setState(() => _editing = (turnId: turn.id, scope: scope, editor: form));
+    } else {
+      await genAiShowDialog<void>(context: context, builder: (_) => form);
+    }
   }
 
   Future<void> _retryTurn(int index) async {
-    if (_state.sending || !_state.connected || _state.selectedModel == null) {
+    if (_editing != null || _state.sending || !_state.connected || _state.selectedModel == null) {
       return;
     }
     final sending = _state.retryTurn(index);
@@ -595,6 +623,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     _state.removeListener(_changed);
     _state.cancelAgentForPageExit();
     _refresh?.cancel();
+    _replacementDraft.dispose();
     _draft.dispose();
     _inputFocus.dispose();
     _scroll.removeListener(_scrolled);
@@ -704,90 +733,99 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                       ),
                       const SizedBox(height: 14),
                       Flexible(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (_history.loading)
-                                const Padding(
+                        child: ListView.builder(
+                          itemCount: _history.conversations.length + 2,
+                          itemBuilder: (context, index) {
+                            if (index == 0) {
+                              if (_history.loading) {
+                                return const Padding(
                                   padding: EdgeInsets.all(16),
                                   child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                                ),
-                              if (_history.failure case final failure?)
-                                Text(
-                                  genAiFailureText(failure),
-                                  style: TextStyle(color: _palette.muted),
-                                ),
-                              if (!_history.loading &&
-                                  _history.failure == null &&
-                                  _history.conversations.isEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Text('没有匹配的对话', style: TextStyle(color: _palette.muted)),
-                                ),
-                              for (final item in _history.conversations)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 2),
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: InkWell(
-                                      key: ValueKey('genai-search-result-${item.id}'),
-                                      borderRadius: BorderRadius.circular(8),
-                                      onTap: _state.sending
+                                );
+                              }
+                              if (_history.failure case final failure?) {
+                                return Column(
+                                  children: [
+                                    Text(genAiFailureText(failure)),
+                                    TextButton(
+                                      onPressed: () => unawaited(_history.load()),
+                                      child: const Text('重试'),
+                                    ),
+                                  ],
+                                );
+                              }
+                              return _history.conversations.isEmpty
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: Text('没有匹配的对话'),
+                                    )
+                                  : const SizedBox.shrink();
+                            }
+                            if (index > _history.conversations.length) {
+                              return _history.hasMore
+                                  ? TextButton(
+                                      onPressed: _history.loading
                                           ? null
-                                          : () {
-                                              if (current()) {
-                                                Navigator.pop(dialogContext, item);
-                                              }
-                                            },
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 12,
+                                          : () => unawaited(_history.load(more: true)),
+                                      child: const Text('加载更多'),
+                                    )
+                                  : const SizedBox.shrink();
+                            }
+                            final item = _history.conversations[index - 1];
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Material(
+                                color: Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                child: InkWell(
+                                  key: ValueKey('genai-search-result-${item.id}'),
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: _state.sending
+                                      ? null
+                                      : () {
+                                          if (current()) {
+                                            Navigator.pop(dialogContext, item);
+                                          }
+                                        },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 12,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          item.title.isEmpty ? '未命名对话' : item.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontSize: 13),
                                         ),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              item.title.isEmpty ? '未命名对话' : item.title,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(fontSize: 13),
+                                        // The server returns only the
+                                        // question and createTime, so the
+                                        // draft preview line uses the
+                                        // available time rather than
+                                        // fetching every conversation.
+                                        if (item.time.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            genAiHistoryTime(item.time),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: _palette.muted,
                                             ),
-                                            // The server returns only the
-                                            // question and createTime, so the
-                                            // draft preview line uses the
-                                            // available time rather than
-                                            // fetching every conversation.
-                                            if (item.time.isNotEmpty) ...[
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                genAiHistoryTime(item.time),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: _palette.muted,
-                                                ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ),
                                 ),
-                              if (_history.hasMore)
-                                TextButton(
-                                  onPressed: _history.loading
-                                      ? null
-                                      : () => unawaited(_history.load(more: true)),
-                                  child: const Text('加载更多'),
-                                ),
-                            ],
-                          ),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ],
@@ -1069,48 +1107,46 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             child: LayoutBuilder(
               builder: (context, body) {
                 if (!_state.connected) return _loginPanel(compact: phone);
-                if (_state.turns.isEmpty && !keyboardOpen && body.maxHeight > 420) {
-                  // The composer sits under the greeting, slightly above center.
-                  return Center(
-                    child: SingleChildScrollView(
-                      padding: EdgeInsets.only(bottom: body.maxHeight * .08),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Notices belong to the conversation column, not the
-                          // top chrome, so they keep the composer's geometry.
-                          if (noticeArea != null)
-                            ConstrainedBox(
-                              constraints: BoxConstraints(maxHeight: body.maxHeight * .4),
-                              child: SingleChildScrollView(child: noticeArea),
-                            ),
-                          _welcome(body.maxWidth),
-                          const SizedBox(height: 20),
-                          _composer(gutter: gutter),
-                        ],
-                      ),
-                    ),
-                  );
+                if (_editing != null && _editViewport != body.biggest) {
+                  _editViewport = body.biggest;
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _revealEditor());
                 }
+                final centerComposer =
+                    !phone && _state.turns.isEmpty && !keyboardOpen && body.maxHeight > 420;
+                // Keep the editor in the same element slot across first send,
+                // stop, new chat and keyboard changes. Reparenting a GlobalKey
+                // from a LayoutBuilder can mutate a sibling during layout.
                 return Column(
                   children: [
                     if (noticeArea != null)
                       ConstrainedBox(
-                        constraints: BoxConstraints(maxHeight: body.maxHeight * .4),
+                        constraints: BoxConstraints(maxHeight: body.maxHeight * .25),
                         child: SingleChildScrollView(child: noticeArea),
                       ),
                     Expanded(
-                      child: _state.turns.isEmpty ? _welcome(body.maxWidth) : _threadArea(gutter),
+                      child: _state.turns.isEmpty
+                          ? Align(
+                              alignment: centerComposer ? Alignment.bottomCenter : Alignment.center,
+                              child: _welcome(body.maxWidth),
+                            )
+                          : _threadArea(gutter),
                     ),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: body.maxHeight * (keyboardOpen ? .85 : .65),
+                    if (_editing == null)
+                      Padding(
+                        key: const ValueKey('genai-editor-slot'),
+                        padding: EdgeInsets.only(top: centerComposer ? 12 : 0),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: centerComposer ? 680 + gutter * 2 : double.infinity,
+                            maxHeight: body.maxHeight * (keyboardOpen ? .85 : .65),
+                          ),
+                          child: SingleChildScrollView(
+                            reverse: true,
+                            child: _composer(gutter: gutter),
+                          ),
+                        ),
                       ),
-                      child: SingleChildScrollView(
-                        reverse: true,
-                        child: _composer(gutter: gutter),
-                      ),
-                    ),
+                    if (centerComposer) const Spacer(),
                   ],
                 );
               },
@@ -1146,8 +1182,8 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
           tooltip: tooltip,
           onPressed: onPressed,
           padding: EdgeInsets.zero,
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+          visualDensity: _platformTouch ? VisualDensity.standard : VisualDensity.compact,
+          constraints: const BoxConstraints.tightFor(width: 48, height: 48),
           color: color,
           iconSize: 18,
           icon: icon,
@@ -1202,7 +1238,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
                 tooltip: '新对话',
                 color: palette.muted,
                 onPressed: _state.sending ? null : _newConversation,
-                icon: const GenAiIcon(GenAiGlyph.edit, size: 18),
+                icon: const GenAiIcon(GenAiGlyph.plus, size: 18),
               ),
             if (_state.connected && !_showImages && _state.turns.isNotEmpty) _conversationMenu(),
           ],
@@ -1240,7 +1276,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   Widget _accountMenu() => IconButton(
         tooltip: 'GenAI 账户',
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
         onPressed: () => unawaited(_openAccount()),
         icon: _accountAvatar(_state.connected ? _state.sessions.session!.profile.username : ''),
       );
@@ -1301,105 +1337,107 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             current() ? '校园账号' : '账号已切换',
             !current()
                 ? const Text('请在当前账号下重新打开账号操作。')
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          _accountAvatar(name, radius: 20),
-                          const SizedBox(width: 13),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(connected ? name : '尚未连接'),
-                                const SizedBox(height: 5),
-                                Text(
-                                  connected ? '校园 GenAI · 已连接' : '连接后可同步学校对话记录',
-                                  style: TextStyle(fontSize: 12, color: _palette.muted),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      if (connected)
-                        row(const GenAiIcon(GenAiGlyph.clock), '用量与额度', () {
-                          if (!current()) return;
-                          Navigator.pop(dialogContext);
-                          unawaited(_openUsage());
-                        }),
-                      if (widget.onBindCampus != null)
-                        row(const GenAiIcon(GenAiGlyph.user), '管理校园账号', () {
-                          if (!current()) return;
-                          Navigator.pop(dialogContext);
-                          widget.onBindCampus?.call();
-                        }),
-                      if (!connected)
-                        row(
-                          const GenAiIcon(GenAiGlyph.logout),
-                          '连接 GenAI',
-                          controller.sessions.owner == null
-                              ? null
-                              : () {
-                                  if (!current()) return;
-                                  Navigator.pop(dialogContext);
-                                  unawaited(_login());
-                                },
-                        ),
-                      if (connected)
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: TextButton(
-                            style: TextButton.styleFrom(
-                              foregroundColor: _palette.muted,
-                              textStyle: const TextStyle(fontSize: 12),
-                            ),
-                            onPressed: () async {
-                              if (!current()) return;
-                              final confirmed = await genAiShowDialog<bool>(
-                                context: dialogContext,
-                                builder: (confirmContext) => AnimatedBuilder(
-                                  animation: controller,
-                                  builder: (_, __) => GenAiDialogFrame(
-                                    title: Text(current() ? '断开校园 GenAI？' : '账号已切换'),
-                                    content: Text(
-                                      current()
-                                          ? '保留 TechPie 已绑定的 IDS 账号。你可以随时重新连接。'
-                                          : '请在当前账号下重新打开账号操作。',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(confirmContext, false),
-                                        child: const Text('取消'),
-                                      ),
-                                      FilledButton(
-                                        onPressed: !current()
-                                            ? null
-                                            : () {
-                                                if (current()) {
-                                                  Navigator.pop(confirmContext, true);
-                                                }
-                                              },
-                                        child: const Text('断开'),
-                                      ),
-                                    ],
+                : SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            _accountAvatar(name, radius: 20),
+                            const SizedBox(width: 13),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(connected ? name : '尚未连接'),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    connected ? '校园 GenAI · 已连接' : '连接后可同步学校对话记录',
+                                    style: TextStyle(fontSize: 12, color: _palette.muted),
                                   ),
-                                ),
-                              );
-                              if (confirmed != true || !current() || !dialogContext.mounted) {
-                                return;
-                              }
-                              Navigator.pop(dialogContext);
-                              _draft.clear();
-                              await controller.disconnect();
-                            },
-                            child: const Text('断开 GenAI 连接'),
-                          ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                    ],
+                        const SizedBox(height: 10),
+                        if (connected)
+                          row(const GenAiIcon(GenAiGlyph.clock), '用量与额度', () {
+                            if (!current()) return;
+                            Navigator.pop(dialogContext);
+                            unawaited(_openUsage());
+                          }),
+                        if (widget.onBindCampus != null)
+                          row(const GenAiIcon(GenAiGlyph.user), '管理校园账号', () {
+                            if (!current()) return;
+                            Navigator.pop(dialogContext);
+                            widget.onBindCampus?.call();
+                          }),
+                        if (!connected)
+                          row(
+                            const GenAiIcon(GenAiGlyph.logout),
+                            '连接 GenAI',
+                            controller.sessions.owner == null
+                                ? null
+                                : () {
+                                    if (!current()) return;
+                                    Navigator.pop(dialogContext);
+                                    unawaited(_login());
+                                  },
+                          ),
+                        if (connected)
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                foregroundColor: _palette.muted,
+                                textStyle: const TextStyle(fontSize: 12),
+                              ),
+                              onPressed: () async {
+                                if (!current()) return;
+                                final confirmed = await genAiShowDialog<bool>(
+                                  context: dialogContext,
+                                  builder: (confirmContext) => AnimatedBuilder(
+                                    animation: controller,
+                                    builder: (_, __) => GenAiDialogFrame(
+                                      title: Text(current() ? '断开校园 GenAI？' : '账号已切换'),
+                                      content: Text(
+                                        current()
+                                            ? '保留 TechPie 已绑定的 IDS 账号。你可以随时重新连接。'
+                                            : '请在当前账号下重新打开账号操作。',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(confirmContext, false),
+                                          child: const Text('取消'),
+                                        ),
+                                        FilledButton(
+                                          onPressed: !current()
+                                              ? null
+                                              : () {
+                                                  if (current()) {
+                                                    Navigator.pop(confirmContext, true);
+                                                  }
+                                                },
+                                          child: const Text('断开'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                                if (confirmed != true || !current() || !dialogContext.mounted) {
+                                  return;
+                                }
+                                Navigator.pop(dialogContext);
+                                _draft.clear();
+                                await controller.disconnect();
+                              },
+                              child: const Text('断开 GenAI 连接'),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
           );
         },
@@ -1499,42 +1537,38 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     final phone = width <= 680;
     final logo = phone ? 49.0 : 44.0;
     final greeting = phone ? 25.0 : (width * .022).clamp(22.0, 28.0);
-    return Center(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.symmetric(
-          horizontal: width < 360
-              ? 14
-              : phone
-                  ? 18
-                  : 24,
-          vertical: 12,
-        ),
-        // The draft keeps the greeting and its composer side by side at every
-        // width: the wordmark is a row, the composer sits underneath.
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
-              'assets/icon/icon.png',
-              width: logo,
-              height: logo,
-              semanticLabel: 'TechPie',
-            ),
-            SizedBox(width: phone ? 10 : 14),
-            Flexible(
-              child: Text(
-                _chatCopy.title,
-                key: const ValueKey('genai-welcome-title'),
-                style: TextStyle(
-                  fontSize: greeting,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -.6,
-                  color: _palette.text,
-                ),
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(
+        horizontal: width < 360
+            ? 14
+            : phone
+                ? 18
+                : 24,
+        vertical: 12,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            'assets/icon/icon.png',
+            width: logo,
+            height: logo,
+            semanticLabel: 'TechPie',
+          ),
+          SizedBox(width: phone ? 10 : 14),
+          Flexible(
+            child: Text(
+              _chatCopy.title,
+              key: const ValueKey('genai-welcome-title'),
+              style: TextStyle(
+                fontSize: greeting,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -.6,
+                color: _palette.text,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1542,24 +1576,39 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
   Widget _threadArea(double gutter) => Column(
         children: [
           Expanded(
-            child: NotificationListener<ScrollStartNotification>(
+            child: NotificationListener<ScrollNotification>(
               onNotification: (notification) {
-                if (notification.depth == 0) _scrollRevision++;
+                if (notification.depth != 0) return false;
+                if (notification is ScrollStartNotification) _scrollRevision++;
+                if (_editing != null && notification is ScrollEndNotification) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    final anchor = _editAnchor.currentContext;
+                    if (!mounted || _editing == null || anchor == null) return;
+                    final editor = anchor.findRenderObject();
+                    final viewport = Scrollable.of(anchor).context.findRenderObject();
+                    if (editor is! RenderBox || viewport is! RenderBox || !editor.attached) return;
+                    final top = editor.localToGlobal(Offset.zero, ancestor: viewport).dy;
+                    final away = !top.isFinite ||
+                        top >= viewport.size.height ||
+                        top + editor.size.height <= 0;
+                    if (_editAway != away) setState(() => _editAway = away);
+                  });
+                }
                 return false;
               },
               child: _thread(gutter),
             ),
           ),
-          if (!_followingLatest)
+          if (_editing != null ? _editAway : !_followingLatest)
             Padding(
               padding: EdgeInsets.symmetric(horizontal: gutter, vertical: 2),
               child: Align(
                 alignment: Alignment.centerRight,
                 child: IconButton.filledTonal(
                   key: const ValueKey('genai-scroll-latest'),
-                  tooltip: '回到最新',
-                  onPressed: _scrollToEnd,
-                  icon: const GenAiIcon(GenAiGlyph.down, size: 18),
+                  tooltip: _editing != null ? '返回编辑' : '回到最新',
+                  onPressed: _editing != null ? _revealEditor : _scrollToEnd,
+                  icon: GenAiIcon(_editing != null ? GenAiGlyph.edit : GenAiGlyph.down, size: 18),
                 ),
               ),
             ),
@@ -1587,14 +1636,6 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
     openLink: (link) => unawaited(_openLink(link)),
     changeTurn: (index, action) => unawaited(_changeTurn(index, action)),
     retry: (index) => unawaited(_retryTurn(index)),
-    exportConversation: () => unawaited(
-      showGenAiConversationExport(
-        context,
-        _state,
-        GenAiConversationSummary(id: _state.groupId, title: _state.title),
-        workspaceWidth: _workspaceWidth,
-      ),
-    ),
     openImages: _openImages,
     showImage: _showImageDialog,
     imageDisplayUri: (url) => _state.repository.imageDisplayUri(url),
@@ -1651,12 +1692,14 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             child: GenAiTurnView(
               turn: turn,
               actions: _turnActions,
+              editor: _editing?.turnId == turn.id ? _editing?.editor : null,
               context: GenAiTurnContext(
                 index: index,
                 count: turns.length,
+                editing: _editing != null,
                 sending: _state.sending,
                 connected: _state.connected,
-                touch: _touch,
+                touch: _platformTouch,
                 workspaceWidth: _workspaceWidth,
                 pendingApproval: _state.pendingAgentApproval,
                 latestVisual: latestVisual,
@@ -1682,7 +1725,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       _state.selectedModel?.name ?? (_state.loadingModels ? '正在加载模型…' : '选择模型'),
     );
     return GenAiComposer(
-      key: _composerKey,
+      key: const ValueKey('genai-composer'),
       draft: _draft,
       inputFocus: _inputFocus,
       hint: _chatCopy.hint,
@@ -1729,7 +1772,7 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
       onStop: _stop,
       contextStatus: _state.turns.isEmpty && _state.contextUsage == null
           ? null
-          : GenAiContextStatus(usage: _state.contextUsage),
+          : GenAiContextStatus(usage: _state.contextUsage, showLabel: workspaceWidth <= 680),
       onThinkingChanged: _state.setThinking,
       onAgentChanged: _state.setAgentEnabled,
       onMenuAction: (action) {
@@ -1743,6 +1786,8 @@ class _GenAiWorkspaceState extends State<GenAiWorkspace> {
             unawaited(_media.pickDocument());
           case 'image':
             unawaited(_media.pickImage());
+          case 'record':
+            unawaited(_media.startAudioRecording());
           case 'audio':
             if (!_state.recognizingAudio && !_media.recording && !_media.startingRecording) {
               unawaited(_media.pickAudioFile());

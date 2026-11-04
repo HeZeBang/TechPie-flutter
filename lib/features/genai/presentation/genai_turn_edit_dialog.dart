@@ -17,7 +17,8 @@ class GenAiTurnEditDialog extends StatefulWidget {
     required this.removedTurns,
     required this.hasExternalActions,
     required this.onSubmit,
-    this.hasComposerDraft = false,
+    this.controller,
+    this.onClose,
     this.hasAttachments = false,
   });
 
@@ -25,7 +26,8 @@ class GenAiTurnEditDialog extends StatefulWidget {
   final String action;
   final int removedTurns;
   final bool hasExternalActions;
-  final bool hasComposerDraft;
+  final TextEditingController? controller;
+  final VoidCallback? onClose;
 
   /// Whether the edited turn carries attachments that resend with it. The
   /// workspace owner supplies the real value from the turn's media.
@@ -36,8 +38,19 @@ class GenAiTurnEditDialog extends StatefulWidget {
   State<GenAiTurnEditDialog> createState() => _GenAiTurnEditDialogState();
 }
 
-class _GenAiTurnEditDialogState extends State<GenAiTurnEditDialog> {
-  late final _text = TextEditingController(text: widget.prompt);
+class _GenAiTurnEditDialogState extends State<GenAiTurnEditDialog>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => widget.action == 'edit';
+  late final _text = widget.controller ?? TextEditingController(text: widget.prompt);
+
+  void _close() {
+    if (widget.onClose case final close?) {
+      close();
+    } else {
+      Navigator.pop(context);
+    }
+  }
 
   bool _submitting = false;
   bool _committed = false;
@@ -57,7 +70,7 @@ class _GenAiTurnEditDialogState extends State<GenAiTurnEditDialog> {
       await widget.onSubmit(editing ? _text.text : '', () {
         if (mounted) {
           _committed = true;
-          Navigator.pop(context);
+          _close();
         }
       });
       if (mounted && !_committed) {
@@ -75,19 +88,64 @@ class _GenAiTurnEditDialogState extends State<GenAiTurnEditDialog> {
 
   @override
   void dispose() {
-    _text.dispose();
+    if (widget.controller == null) _text.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final palette = GenAiPalette.of(context);
     final editing = widget.action == 'edit';
-    final title = editing
-        ? '编辑消息'
-        : widget.action == 'revert'
-            ? '回退到此处'
-            : '删除此轮及后续';
+    if (editing) {
+      return CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter, control: true): _submit,
+          const SingleActivator(LogicalKeyboardKey.enter, meta: true): _submit,
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (!_submitting) _close();
+          },
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              key: const ValueKey('genai-inline-edit'),
+              controller: _text,
+              autofocus: true,
+              readOnly: _submitting,
+              minLines: 1,
+              maxLines: 8,
+              decoration: const InputDecoration.collapsed(hintText: '编辑消息'),
+              style: TextStyle(color: palette.text, height: 1.6),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _warning(),
+              key: const ValueKey('genai-turn-dialog-warning'),
+              style: TextStyle(fontSize: 12, color: palette.muted),
+            ),
+            if (_error != null)
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            const SizedBox(height: 6),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 6,
+              children: [
+                TextButton(onPressed: _submitting ? null : _close, child: const Text('取消')),
+                FilledButton(
+                  onPressed: _submitting || _text.text.trim().isEmpty ? null : _submit,
+                  child: Text(_submitting ? '处理中…' : '保存并重发'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+    final title = widget.action == 'revert' ? '回退到此处' : '删除此轮及后续';
     final width = math.min(500.0, MediaQuery.sizeOf(context).width - 32);
     return PopScope(
       canPop: !_submitting,
@@ -134,7 +192,7 @@ class _GenAiTurnEditDialogState extends State<GenAiTurnEditDialog> {
                         style: IconButton.styleFrom(
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
                         onPressed: _submitting ? null : () => Navigator.pop(context),
                       ),
                     ],
@@ -149,38 +207,6 @@ class _GenAiTurnEditDialogState extends State<GenAiTurnEditDialog> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (editing) ...[
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(minHeight: 120),
-                            child: TextField(
-                              controller: _text,
-                              readOnly: _submitting,
-                              autofocus: true,
-                              minLines: 4,
-                              maxLines: 8,
-                              style: TextStyle(height: 1.5, color: palette.text),
-                              decoration: InputDecoration(
-                                filled: true,
-                                fillColor: palette.soft,
-                                contentPadding: const EdgeInsets.all(12),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(9),
-                                  borderSide: BorderSide(color: palette.line),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(9),
-                                  borderSide: BorderSide(color: palette.line),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(9),
-                                  borderSide: BorderSide(color: palette.accent),
-                                ),
-                              ),
-                              onChanged: (_) => setState(() {}),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
                         Text(
                           _warning(),
                           key: const ValueKey('genai-turn-dialog-warning'),
@@ -209,15 +235,8 @@ class _GenAiTurnEditDialogState extends State<GenAiTurnEditDialog> {
                       ),
                       const SizedBox(width: 9),
                       FilledButton(
-                        onPressed:
-                            _submitting || editing && _text.text.trim().isEmpty ? null : _submit,
-                        child: Text(
-                          _submitting
-                              ? '处理中…'
-                              : editing
-                                  ? '保存并重发'
-                                  : '确认',
-                        ),
+                        onPressed: _submitting ? null : _submit,
+                        child: Text(_submitting ? '处理中…' : '确认'),
                       ),
                     ],
                   ),
@@ -233,8 +252,7 @@ class _GenAiTurnEditDialogState extends State<GenAiTurnEditDialog> {
   /// One short paragraph: what the confirmed action replaces, plus only the
   /// consequences that actually apply. Attachments survive an edit (the
   /// controller copies them onto the replacement turn), so the clause says so
-  /// instead of inventing a removal. [GenAiTurnEditDialog.hasComposerDraft]
-  /// stays as an input for callers, but no longer lengthens the warning.
+  /// instead of inventing a removal.
   String _warning() {
     final buffer = StringBuffer(
       widget.action == 'edit'

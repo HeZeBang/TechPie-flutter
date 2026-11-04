@@ -17,8 +17,8 @@ web.ShareData _shareData(Uint8List bytes) => web.ShareData(
       ].toJS,
     );
 
-bool canShareImage(Uint8List bytes) =>
-    web.window.navigator.has('canShare') && web.window.navigator.canShare(_shareData(bytes));
+final bool canShareImage =
+    web.window.navigator.has('canShare') && web.window.navigator.canShare(_shareData(Uint8List(0)));
 
 Future<void> copyImage(Uint8List bytes) async {
   final blob = web.Blob([bytes.toJS].toJS, web.BlobPropertyBag(type: 'image/png'));

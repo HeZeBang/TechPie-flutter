@@ -4,9 +4,6 @@ import 'package:techpie/features/genai/presentation/genai_theme.dart';
 import 'package:techpie/features/genai/presentation/genai_turn_edit_dialog.dart';
 
 const _dialogKey = ValueKey('genai-turn-dialog');
-const _headerKey = ValueKey('genai-turn-dialog-header');
-const _bodyKey = ValueKey('genai-turn-dialog-body');
-const _footerKey = ValueKey('genai-turn-dialog-footer');
 const _warningKey = ValueKey('genai-turn-dialog-warning');
 const _closeKey = ValueKey('genai-turn-dialog-close');
 
@@ -15,7 +12,6 @@ GenAiTurnEditDialog _dialog({
   String action = 'edit',
   bool hasAttachments = false,
   bool hasExternalActions = false,
-  bool hasComposerDraft = false,
   Future<void> Function(String, VoidCallback)? onSubmit,
 }) =>
     GenAiTurnEditDialog(
@@ -24,7 +20,6 @@ GenAiTurnEditDialog _dialog({
       removedTurns: 1,
       hasAttachments: hasAttachments,
       hasExternalActions: hasExternalActions,
-      hasComposerDraft: hasComposerDraft,
       onSubmit: onSubmit ?? (_, __) async {},
     );
 
@@ -45,10 +40,13 @@ Future<void> _pump(
         builder: (context) => Scaffold(
           body: Center(
             child: TextButton(
-              onPressed: () => genAiShowDialog<void>(
-                context: context,
-                builder: (_) => dialog,
-              ),
+              onPressed: () => dialog.action == 'edit'
+                  ? Navigator.of(context)
+                      .push<void>(MaterialPageRoute(builder: (_) => Scaffold(body: dialog)))
+                  : genAiShowDialog<void>(
+                      context: context,
+                      builder: (_) => dialog,
+                    ),
               child: const Text('open'),
             ),
           ),
@@ -68,7 +66,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'Keep this replacement');
     await tester.tap(find.widgetWithText(FilledButton, '保存并重发'));
     await tester.pumpAndSettle();
-    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.byType(Dialog), findsNothing);
     expect(find.text('Keep this replacement'), findsOneWidget);
     expect(
       tester.widget<FilledButton>(find.widgetWithText(FilledButton, '保存并重发')).onPressed,
@@ -76,64 +74,8 @@ void main() {
     );
   });
 
-  testWidgets('edit dialog uses an unpadded Dialog with the draft geometry', (tester) async {
-    await _pump(tester, _dialog());
-
-    // The custom shell replaces the default padded AlertDialog.
-    expect(find.byType(AlertDialog), findsNothing);
-    expect(find.byType(Dialog), findsOneWidget);
-    expect(tester.getSize(find.byKey(_dialogKey)).width, 500);
-    expect(
-      tester.widget<Dialog>(find.byType(Dialog)).shape,
-      const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(18)),
-      ),
-    );
-
-    // Header: 18/22 padding, 17px title, and a 36px close X.
-    final header = tester.widget<Padding>(find.byKey(_headerKey));
-    expect(header.padding, const EdgeInsets.symmetric(horizontal: 22, vertical: 18));
-    expect(tester.widget<Text>(find.text('编辑消息')).style?.fontSize, 17);
-    expect(tester.getSize(find.byKey(_closeKey)), const Size(36, 36));
-    expect(find.byType(Divider), findsOneWidget);
-
-    // Body padding and a textarea at least 120px tall with the draft field
-    // treatment: 12px padding, radius 9, soft background and 1.5 line height.
-    final body = tester.widget<SingleChildScrollView>(find.byKey(_bodyKey));
-    expect(body.padding, const EdgeInsets.all(24));
-    expect(tester.getSize(find.byType(TextField)).height, greaterThanOrEqualTo(120));
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.style?.height, 1.5);
-    final decoration = field.decoration!;
-    expect(decoration.filled, isTrue);
-    expect(decoration.contentPadding, const EdgeInsets.all(12));
-    expect(
-      decoration.fillColor,
-      Theme.of(tester.element(find.byType(TextField))).colorScheme.surfaceContainerHigh,
-    );
-    expect(
-      (decoration.border! as OutlineInputBorder).borderRadius,
-      BorderRadius.circular(9),
-    );
-    // The warning follows the textarea with a 12px top margin.
-    expect(
-      tester.getRect(find.byKey(_warningKey)).top - tester.getRect(find.byType(TextField)).bottom,
-      closeTo(12, 0.01),
-    );
-
-    // Footer padding, 9px gap and the edit-specific primary label.
-    final footer = tester.widget<Padding>(find.byKey(_footerKey));
-    expect(footer.padding, const EdgeInsets.fromLTRB(24, 0, 24, 22));
-    final cancel = tester.getRect(find.widgetWithText(TextButton, '取消'));
-    final primary = tester.getRect(find.widgetWithText(FilledButton, '保存并重发'));
-    expect(primary.left - cancel.right, closeTo(9, 0.01));
-
-    expect(find.text('这条消息及之后的回答将被替换。'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('dialog width shrinks to the screen minus 32 on narrow screens', (tester) async {
-    await _pump(tester, _dialog(), size: const Size(375, 812));
+    await _pump(tester, _dialog(action: 'delete'), size: const Size(375, 812));
 
     expect(tester.getSize(find.byKey(_dialogKey)).width, 375 - 32);
     expect(tester.takeException(), isNull);
@@ -169,11 +111,6 @@ void main() {
       '原附件会保留并随新消息重新发送。'
       '删除记录不会撤销已提交的预约或图片任务。',
     );
-
-    // The composer-draft input stays accepted for callers but no longer
-    // lengthens the warning.
-    await _pump(tester, _dialog(hasComposerDraft: true));
-    expect(_warningText(tester), '这条消息及之后的回答将被替换。');
   });
 
   testWidgets('delete and revert keep their own warning and confirmation label', (tester) async {
@@ -204,6 +141,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(submitted, 'replacement');
+    expect(find.byKey(const ValueKey('genai-inline-edit')), findsNothing);
     expect(find.byType(Dialog), findsNothing);
   });
 
@@ -217,7 +155,7 @@ void main() {
   });
 
   testWidgets('close X dismisses the dialog', (tester) async {
-    await _pump(tester, _dialog());
+    await _pump(tester, _dialog(action: 'revert'));
 
     await tester.tap(find.byKey(_closeKey));
     await tester.pumpAndSettle();

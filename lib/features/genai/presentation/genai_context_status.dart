@@ -5,9 +5,10 @@ import 'genai_icons.dart';
 
 /// The last prepared request's budget, not a per-keystroke token counter.
 class GenAiContextStatus extends StatelessWidget {
-  const GenAiContextStatus({super.key, required this.usage});
+  const GenAiContextStatus({super.key, required this.usage, this.showLabel = false});
 
   final GenAiContextUsage? usage;
+  final bool showLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +24,13 @@ class GenAiContextStatus extends StatelessWidget {
           : '正在整理上下文',
       GenAiContextStage.ready => '${usage!.compacted ? '已整理上下文' : '上下文'} · 估算 $percent%',
     };
+    if (showLabel) {
+      return Text(
+        label,
+        key: const ValueKey('genai-context-status'),
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
     final scheme = Theme.of(context).colorScheme;
     return Semantics(
       key: const ValueKey('genai-context-status'),

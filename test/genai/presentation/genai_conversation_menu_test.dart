@@ -110,7 +110,7 @@ void main() {
       await tester.tap(find.byTooltip('关闭'));
       await tester.pumpAndSettle();
 
-      await choose(renamed, '导出 Markdown');
+      await choose(renamed, '导出对话');
       final snapshot = tester
           .widget<SelectableText>(
             find.descendant(
@@ -298,7 +298,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('对话操作'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('导出 Markdown'));
+    await tester.tap(find.text('导出对话'));
     await tester.pumpAndSettle();
     final snapshot = tester
         .widget<SelectableText>(
@@ -365,7 +365,7 @@ void main() {
     await tester.tap(find.byTooltip('对话操作'));
     await tester.pumpAndSettle();
     expect(find.text('重命名'), findsOneWidget);
-    expect(find.text('导出 Markdown'), findsOneWidget);
+    expect(find.text('导出对话'), findsOneWidget);
     expect(find.text('检查同步'), findsNothing);
     expect(find.text('删除对话'), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);

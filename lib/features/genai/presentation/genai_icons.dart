@@ -39,6 +39,9 @@ enum GenAiGlyph {
   lock('M8 10V6a4 4 0 0 1 8 0v4M12 14v3', rects: [_Rect(5, 10, 14, 11, 2)]),
 
   link('M10 14a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-2 2M14 10a4 4 0 0 0-6 0l-4 4a4 4 0 0 0 6 6l2-2'),
+  unlink(
+    'M8 3v3M3 8h3M16 18v3M18 16h3M9 15l-1 1a4 4 0 0 1-6-6l3-3M15 9l1-1a4 4 0 0 1 6 6l-3 3M3 3l18 18',
+  ),
   openExternal('M14 3h7v7M21 3l-11 11M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5'),
   stop('', rects: [_Rect(5, 5, 14, 14, 3)]),
   refresh('M20 10a8 8 0 1 0 0 6M20 4v6h-6'),

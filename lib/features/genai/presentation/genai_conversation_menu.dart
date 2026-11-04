@@ -183,7 +183,7 @@ class _GenAiConversationMenuState extends State<GenAiConversationMenu> {
         );
     return [
       item('rename', const GenAiIcon(GenAiGlyph.edit), '重命名'),
-      item('export', const GenAiIcon(GenAiGlyph.share), '导出 Markdown'),
+      item('export', const GenAiIcon(GenAiGlyph.download), '导出对话'),
       if (widget.showSync) item('sync', const GenAiIcon(GenAiGlyph.sync), '检查同步'),
       const PopupMenuDivider(height: 11),
       item('delete', const GenAiIcon(GenAiGlyph.trash), '删除对话', danger: true),
@@ -228,7 +228,7 @@ class _GenAiConversationMenuState extends State<GenAiConversationMenu> {
     final icon = GenAiIcon(GenAiGlyph.more, size: widget.iconSize, color: palette.muted);
     // The compact history row gives the menu a 28 px hover target.
     final buttonStyle = IconButton.styleFrom(
-      minimumSize: const Size(28, 28),
+      minimumSize: const Size(48, 48),
       padding: const EdgeInsets.all(4),
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
@@ -426,7 +426,7 @@ class _RenameDialogState extends State<_RenameDialog> {
                     tooltip: '关闭',
                     icon: const GenAiIcon(GenAiGlyph.close, size: 18),
                     color: palette.muted,
-                    constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                    constraints: const BoxConstraints.tightFor(width: 48, height: 48),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],

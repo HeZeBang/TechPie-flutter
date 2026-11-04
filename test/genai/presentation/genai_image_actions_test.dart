@@ -101,7 +101,7 @@ void main() {
         // Image encoding is a real engine operation, outside the fake clock.
         await tester.runAsync(() async => Future<void>.delayed(const Duration(milliseconds: 30)));
         await tester.pumpAndSettle();
-        final surface = find.byKey(ValueKey(mobile ? 'genai-choice-sheet' : 'genai-anchored-menu'));
+        final surface = find.byKey(const ValueKey('genai-anchored-menu'));
         expect(surface, findsOneWidget);
         if (!mobile) {
           final menu = tester.getRect(surface);
@@ -118,7 +118,7 @@ void main() {
         expect(tester.getRect(action).right, lessThanOrEqualTo(tester.view.physicalSize.width));
         final png = await tester.runAsync(() async {
           await tester.tap(action);
-          await tester.pump();
+          await tester.pumpAndSettle();
           return copied.future.timeout(const Duration(seconds: 5));
         });
         await tester.pumpAndSettle();
@@ -132,8 +132,7 @@ void main() {
       final buttonRect = tester.getRect(button);
       await tester.tap(button);
       await tester.pump();
-      final buttonSurface =
-          find.byKey(ValueKey(mobile ? 'genai-choice-sheet' : 'genai-anchored-menu'));
+      final buttonSurface = find.byKey(const ValueKey('genai-anchored-menu'));
       expect(buttonSurface, findsOneWidget);
       if (!mobile) expect(tester.getRect(buttonSurface).overlaps(buttonRect), isFalse);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -190,49 +189,6 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(surface, findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('share helper checks the caller scope before sharing or copying', (tester) async {
-    final png = (await tester.runAsync(() => _picture(16)))!;
-    var clipboardWrites = 0;
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') clipboardWrites++;
-        return null;
-      },
-    );
-    addTearDown(() {
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      );
-    });
-    late BuildContext hostContext;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) {
-            hostContext = context;
-            return const Scaffold(body: Text('share host'));
-          },
-        ),
-      ),
-    );
-    // A stale scope must return before either effect runs; on a platform that
-    // cannot share, an ignored guard would have written the link to the
-    // clipboard, and on one that can it would have invoked the share channel.
-    await tester.runAsync(
-      () => shareGenAiImagePng(
-        image: MemoryImage(png),
-        context: hostContext,
-        link: Uri.parse('https://example.test/image.png'),
-        isCurrent: () => false,
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(clipboardWrites, 0);
     expect(tester.takeException(), isNull);
   });
 }

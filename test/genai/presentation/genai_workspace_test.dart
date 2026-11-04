@@ -257,10 +257,10 @@ void main() {
       }
       final group = demo.workspace.groupId;
       final target = demo.workspace.turns.last.id;
-      final menu = find.byKey(ValueKey('genai-turn-menu-$target'));
+      final menu = find.byKey(ValueKey('genai-user-bubble-$target'));
       await tester.ensureVisible(menu);
       await tester.pumpAndSettle();
-      await tester.tap(menu);
+      await tester.longPress(menu);
       await tester.pumpAndSettle();
       await tester.tap(find.text('删除此轮及后续'));
       await tester.pumpAndSettle();
@@ -268,12 +268,31 @@ void main() {
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       expect(demo.workspace.turns, hasLength(2));
-      await tester.tap(menu);
+      await tester.longPress(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑并重新发送'));
+      await tester.pumpAndSettle();
+      final editor = find.byKey(const ValueKey('genai-inline-edit'));
+      expect(find.descendant(of: menu, matching: editor), findsOneWidget);
+      expect(find.byType(Dialog), findsNothing);
+      await tester.enterText(editor, 'discard this');
+      final originalSize = tester.view.physicalSize;
+      tester.view.physicalSize = Size(originalSize.height, originalSize.width);
+      await tester.pumpAndSettle();
+      expect(find.text('保存并重发').hitTestable(), findsOneWidget);
+      expect(find.byKey(const ValueKey('genai-send')), findsNothing);
+      tester.view.physicalSize = originalSize;
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(demo.workspace.turns.last.prompt, 'second');
+      expect(editor, findsNothing);
+      await tester.longPress(menu);
       await tester.pumpAndSettle();
       await tester.tap(find.text('编辑并重新发送'));
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.descendant(of: find.byType(Dialog), matching: find.byType(TextField)),
+        find.byKey(const ValueKey('genai-inline-edit')),
         'edited',
       );
       await tester.tap(find.text('保存并重发'));
@@ -304,10 +323,10 @@ void main() {
       }
       final group = demo.workspace.groupId;
       demo.backend.loseDeleteResponse = true;
-      final menu = find.byKey(ValueKey('genai-turn-menu-${demo.workspace.turns.last.id}'));
+      final menu = find.byKey(ValueKey('genai-user-bubble-${demo.workspace.turns.last.id}'));
       await tester.ensureVisible(menu);
       await tester.pumpAndSettle();
-      await tester.tap(menu);
+      await tester.longPress(menu);
       await tester.pumpAndSettle();
       await tester.tap(find.text('删除此轮及后续'));
       await tester.pumpAndSettle();
@@ -350,11 +369,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('genai-prompt')), 'composer draft');
     demo.backend.loseDeleteResponse = true;
-    await tester.tap(find.byKey(ValueKey('genai-turn-menu-${demo.workspace.turns.single.id}')));
+    await tester
+        .longPress(find.byKey(ValueKey('genai-user-bubble-${demo.workspace.turns.single.id}')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('编辑并重新发送'));
     await tester.pumpAndSettle();
-    final editor = find.descendant(of: find.byType(Dialog), matching: find.byType(TextField));
+    final editor = find.byKey(const ValueKey('genai-inline-edit'));
+    expect(find.byType(Dialog), findsNothing);
     await tester.enterText(editor, 'valuable replacement');
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -362,10 +383,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(demo.workspace.archiveFailure, isNotNull);
     expect(find.text('valuable replacement'), findsOneWidget);
-    expect(find.text('composer draft'), findsOneWidget);
+    expect(find.byKey(const ValueKey('genai-send')), findsNothing);
     expect(demo.workspace.attachments.single.name, 'draft.png');
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
+    expect(find.text('composer draft'), findsOneWidget);
+    expect(demo.workspace.attachments.single.name, 'draft.png');
   });
 
   testWidgets('reopening saved vision chat builds network thumbnails and image viewer',
@@ -877,9 +900,13 @@ void main() {
     final recorder = FakeGenAiAudioRecorder(
       recordedBytes: Uint8List.fromList([1, 2, 3, 4]),
     );
-    await show(tester, audioRecorder: recorder);
+    await show(tester, size: const Size(390, 844), audioRecorder: recorder);
 
-    await tester.tap(find.byKey(const ValueKey('genai-audio-stt')));
+    await tester.tap(find.byKey(const ValueKey('genai-composer-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('genai-record-voice')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.pump();
     expect(recorder.isRecording, isTrue);
 

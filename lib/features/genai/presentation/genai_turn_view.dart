@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -23,7 +22,6 @@ final class GenAiTurnActions {
     required this.openLink,
     required this.changeTurn,
     required this.retry,
-    required this.exportConversation,
     required this.openImages,
     required this.showImage,
     required this.imageDisplayUri,
@@ -37,7 +35,6 @@ final class GenAiTurnActions {
   final void Function(String? link) openLink;
   final void Function(int index, String action) changeTurn;
   final void Function(int index) retry;
-  final VoidCallback exportConversation;
   final VoidCallback openImages;
   final void Function({Uint8List? bytes, String? url}) showImage;
   final Uri Function(String) imageDisplayUri;
@@ -60,12 +57,14 @@ final class GenAiTurnContext {
     required this.supportsPlayback,
     required this.playingTtsIndex,
     required this.loadingTts,
+    this.editing = false,
     this.workspaceWidth = 960,
   });
 
   final int index;
   final int count;
   final bool sending;
+  final bool editing;
   final bool connected;
   final bool touch;
   final GenAiPendingAgentApproval? pendingApproval;
@@ -120,8 +119,10 @@ class GenAiTurnView extends StatelessWidget {
     required this.turn,
     required this.context,
     required this.actions,
+    this.editor,
   });
 
+  final Widget? editor;
   final GenAiConversationTurn turn;
   final GenAiTurnContext context;
   final GenAiTurnActions actions;
@@ -151,20 +152,20 @@ class GenAiTurnView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _UserMessage(turn: turn, turnContext: context, actions: actions),
+          _UserMessage(turn: turn, turnContext: context, actions: actions, editor: editor),
           Semantics(
             container: true,
             // Keep selectable text semantics from covering embedded visuals.
             explicitChildNodes: true,
             label: turn.isAgent ? '校园工具回复' : 'AI 回复',
-            child: _answer(buildContext, palette),
+            child: _answer(palette),
           ),
         ],
       ),
     );
   }
 
-  Widget _answer(BuildContext buildContext, GenAiPalette palette) {
+  Widget _answer(GenAiPalette palette) {
     final index = context.index;
     final pending = context.isLast && turn.isAgent ? context.pendingApproval : null;
     final note = TextStyle(color: palette.muted, fontSize: 12.5, height: 1.7);
@@ -261,7 +262,7 @@ class GenAiTurnView extends StatelessWidget {
             padding: const EdgeInsets.only(top: 10),
             child: Text('平台已结束本次回复', style: note),
           ),
-        _answerActions(buildContext, palette, index),
+        _answerActions(palette, index),
       ],
     );
   }
@@ -306,7 +307,8 @@ class GenAiTurnView extends StatelessWidget {
     final retry = _campusFailure && context.connected
         ? OutlinedButton(
             key: ValueKey('genai-retry-${context.index}'),
-            onPressed: context.sending ? null : () => actions.retry(context.index),
+            onPressed:
+                context.sending || context.editing ? null : () => actions.retry(context.index),
             child: const Text('重试', style: TextStyle(fontSize: 12)),
           )
         : null;
@@ -336,13 +338,14 @@ class GenAiTurnView extends StatelessWidget {
     );
   }
 
-  Widget _answerActions(BuildContext hostContext, GenAiPalette palette, int index) {
+  Widget _answerActions(GenAiPalette palette, int index) {
     final playing = context.playingTtsIndex == index;
     final retry = _incomplete && !_campusFailure && context.isLast && context.connected;
-    final actionSize = context.phone ? 40.0 : 32.0;
+    final actionSize = context.touch ? 48.0 : 32.0;
     final canRegenerate = context.isLast &&
         context.connected &&
         !context.sending &&
+        !context.editing &&
         !_incomplete &&
         turn.phase == GenAiChatPhase.completed &&
         turn.answer.isNotEmpty;
@@ -390,29 +393,18 @@ class GenAiTurnView extends StatelessWidget {
                       ),
                 onPressed: () => actions.toggleTts(index, turn.answer),
               ),
-            SizedBox.square(
-              dimension: actionSize,
-              child: Builder(
-                builder: (anchorContext) => IconButton(
-                  key: ValueKey('genai-answer-menu-$index'),
-                  tooltip: '回答操作',
-                  icon: GenAiIcon(GenAiGlyph.more, color: palette.muted),
-                  iconSize: 16,
-                  color: palette.muted,
-                  padding: EdgeInsets.zero,
-                  style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                  constraints: BoxConstraints.tightFor(width: actionSize, height: actionSize),
-                  onPressed: () => unawaited(
-                    _openAnswerMenu(anchorContext, hostContext, index, canRegenerate),
-                  ),
-                ),
+            if (canRegenerate)
+              action(
+                key: ValueKey('genai-regenerate-$index'),
+                tooltip: '重新生成',
+                icon: const GenAiIcon(GenAiGlyph.refresh),
+                onPressed: () => actions.retry(index),
               ),
-            ),
           ],
           if (retry)
             TextButton.icon(
               key: ValueKey('genai-retry-$index'),
-              onPressed: context.sending ? null : () => actions.retry(index),
+              onPressed: context.sending || context.editing ? null : () => actions.retry(index),
               style: TextButton.styleFrom(foregroundColor: palette.muted),
               icon: const GenAiIcon(GenAiGlyph.refresh, size: 16),
               label: const Text('重试', style: TextStyle(fontSize: 12.5)),
@@ -421,68 +413,17 @@ class GenAiTurnView extends StatelessWidget {
       ),
     );
   }
-
-  /// The anchored popover outlives the action row: hover can hide it while the
-  /// menu is still open. The turn's own element is therefore the unit of
-  /// currency — a rebuild that changed the turn, its index or its answer (or a
-  /// disposed turn) drops the late choice instead of acting on stale state.
-  Future<void> _openAnswerMenu(
-    BuildContext anchorContext,
-    BuildContext hostContext,
-    int index,
-    bool canRegenerate,
-  ) async {
-    final answer = turn.answer;
-    final palette = GenAiPalette.of(hostContext);
-    final value = await genAiShowMenu<String>(
-      context: hostContext,
-      anchorContext: anchorContext,
-      items: [
-        _turnMenuItem(
-          palette,
-          'retry',
-          const GenAiIcon(GenAiGlyph.refresh),
-          '重新生成',
-          enabled: canRegenerate,
-        ),
-        _turnMenuItem(
-          palette,
-          'export',
-          const GenAiIcon(GenAiGlyph.download),
-          '导出对话',
-        ),
-      ],
-      minWidth: 220,
-      gap: 7,
-      semanticLabel: '回答操作',
-    );
-    if (value == null || !hostContext.mounted) return;
-    final host = hostContext.widget;
-    if (host is! GenAiTurnView ||
-        !identical(host.actions, actions) ||
-        host.turn.id != turn.id ||
-        host.context.index != index ||
-        host.turn.answer != answer) {
-      return;
-    }
-    if (value == 'retry') {
-      final canRetryNow = canRegenerate &&
-          host.context.isLast &&
-          host.context.connected &&
-          !host.context.sending &&
-          !host._incomplete &&
-          host.turn.phase == GenAiChatPhase.completed &&
-          host.turn.answer.isNotEmpty;
-      if (!canRetryNow) return;
-      actions.retry(index);
-    } else if (value == 'export') {
-      actions.exportConversation();
-    }
-  }
 }
 
 class _UserMessage extends StatelessWidget {
-  const _UserMessage({required this.turn, required this.turnContext, required this.actions});
+  const _UserMessage({
+    required this.turn,
+    required this.turnContext,
+    required this.actions,
+    this.editor,
+  });
+
+  final Widget? editor;
 
   final GenAiConversationTurn turn;
   final GenAiTurnContext turnContext;
@@ -491,131 +432,122 @@ class _UserMessage extends StatelessWidget {
   @override
   Widget build(BuildContext hostContext) {
     final palette = GenAiPalette.of(hostContext);
-    final index = turnContext.index;
-    return GenAiHoverRegion(
-      always: turnContext.touch || turnContext.compact,
-      builder: (context, revealed) {
-        final bubble = LayoutBuilder(
-          builder: (context, constraints) => Container(
-            key: ValueKey('genai-user-bubble-${turn.id}'),
-            constraints: BoxConstraints(
-              maxWidth: constraints.maxWidth * (turnContext.compact ? .9 : .86),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            decoration: BoxDecoration(
-              color: palette.soft,
-              borderRadius: const BorderRadiusDirectional.only(
-                topStart: Radius.circular(16),
-                topEnd: Radius.circular(16),
-                bottomStart: Radius.circular(16),
-                bottomEnd: Radius.circular(4),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                ..._attachments(context, palette),
-                Semantics(
-                  container: true,
-                  child: SelectableText(
-                    turn.prompt,
-                    style: TextStyle(
-                      fontSize: turnContext.phone ? 13 : 14,
-                      height: 1.7,
-                      color: palette.text,
-                    ),
+    final enabled =
+        !turnContext.editing && editor == null && !turnContext.sending && !turn.isHistoryGap;
+    final options = [
+      ('copy', GenAiGlyph.copy, '复制内容'),
+      ('edit', GenAiGlyph.edit, '编辑并重新发送'),
+      if (!turnContext.isLast) ('revert', GenAiGlyph.undo, '回退到此处'),
+      ('delete', GenAiGlyph.delete, '删除此轮及后续'),
+    ];
+    final style =
+        TextStyle(fontSize: turnContext.phone ? 13 : 14, height: 1.7, color: palette.text);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bubble = Builder(
+          builder: (anchorContext) => Semantics(
+            container: true,
+            child: GestureDetector(
+              onLongPressStart: !enabled
+                  ? null
+                  : (details) => _openMenu(anchorContext, hostContext, details.globalPosition, [
+                        if (turnContext.touch && turn.prompt.isNotEmpty)
+                          _turnMenuItem(palette, 'select', const Icon(Icons.select_all), '选择文本'),
+                        for (final (value, glyph, label) in options)
+                          _turnMenuItem(
+                            palette,
+                            value,
+                            GenAiIcon(glyph),
+                            label,
+                            danger: value == 'delete',
+                          ),
+                      ]),
+              child: Container(
+                key: ValueKey('genai-user-bubble-${turn.id}'),
+                constraints: BoxConstraints(
+                  maxWidth: constraints.maxWidth * (turnContext.compact ? .9 : .86),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                decoration: BoxDecoration(
+                  color: palette.soft,
+                  borderRadius: const BorderRadiusDirectional.only(
+                    topStart: Radius.circular(16),
+                    topEnd: Radius.circular(16),
+                    bottomStart: Radius.circular(16),
+                    bottomEnd: Radius.circular(4),
                   ),
                 ),
-              ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    ..._attachments(context, palette),
+                    if (editor != null)
+                      editor!
+                    else if (turnContext.touch)
+                      Text(turn.prompt, style: style)
+                    else
+                      SelectableText(turn.prompt, style: style),
+                  ],
+                ),
+              ),
             ),
           ),
         );
-        final buttons = _actions(palette, index, hostContext);
-        if (turnContext.compact) {
-          // Compact layouts keep the actions beside the bubble, bottom-aligned,
-          // rather than in a separate row below it.
-          return Padding(
-            padding: EdgeInsets.only(bottom: turnContext.phone ? 24 : 25),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              crossAxisAlignment: CrossAxisAlignment.end,
+        return Align(
+          alignment: AlignmentDirectional.topEnd,
+          child: GenAiHoverRegion(
+            builder: (context, revealed) => Stack(
+              alignment: AlignmentDirectional.topEnd,
               children: [
-                Flexible(child: bubble),
-                const SizedBox(width: 6),
-                buttons,
+                Padding(
+                  padding: EdgeInsets.only(bottom: turnContext.touch ? 24 : 32),
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(minWidth: !turnContext.touch ? options.length * 28.0 : 0),
+                    child: Align(
+                      alignment: AlignmentDirectional.topEnd,
+                      widthFactor: 1,
+                      child: bubble,
+                    ),
+                  ),
+                ),
+                if (revealed && enabled && !turnContext.touch)
+                  PositionedDirectional(
+                    end: 0,
+                    bottom: 2,
+                    child: Row(
+                      key: ValueKey('genai-user-actions-${turn.id}'),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final (value, glyph, label) in options)
+                          IconButton(
+                            key: ValueKey('genai-turn-$value-${turn.id}'),
+                            tooltip: label,
+                            icon: GenAiIcon(glyph, size: 15, color: palette.muted),
+                            padding: EdgeInsets.zero,
+                            style: IconButton.styleFrom(
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+                            onPressed: () => _perform(value),
+                          ),
+                      ],
+                    ),
+                  ),
               ],
             ),
-          );
-        }
-        // The fixed strip is the draft's 32px message margin. Actions are
-        // positioned inside it, so revealing them never moves the bubble or the
-        // answer, and they stay hit-testable and focusable.
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [bubble, const SizedBox(height: 32)],
-            ),
-            if (revealed) Positioned(right: 0, bottom: 2, child: buttons),
-          ],
+          ),
         );
       },
     );
   }
 
-  Widget _actions(GenAiPalette palette, int index, BuildContext hostContext) => Row(
-        key: ValueKey('genai-user-actions-${turn.id}'),
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!turnContext.compact)
-            IconButton(
-              key: ValueKey('genai-turn-edit-${turn.id}'),
-              tooltip: '编辑消息',
-              icon: const GenAiIcon(GenAiGlyph.edit),
-              iconSize: 15,
-              color: palette.muted,
-              padding: EdgeInsets.zero,
-              style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-              onPressed: turnContext.sending ? null : () => actions.changeTurn(index, 'edit'),
-            ),
-          _menu(palette, hostContext),
-        ],
-      );
-
-  Widget _menu(GenAiPalette palette, BuildContext hostContext) {
-    final items = <PopupMenuEntry<String>>[
-      _turnMenuItem(palette, 'copy', const GenAiIcon(GenAiGlyph.copy), '复制内容'),
-      _turnMenuItem(palette, 'edit', const GenAiIcon(GenAiGlyph.edit), '编辑并重新发送'),
-      if (!turnContext.isLast)
-        _turnMenuItem(palette, 'revert', const GenAiIcon(GenAiGlyph.undo), '回退到此处'),
-      _turnMenuItem(
-        palette,
-        'delete',
-        const GenAiIcon(GenAiGlyph.delete),
-        '删除此轮及后续',
-        danger: true,
-      ),
-    ];
-    final enabled = !turnContext.sending && !turn.isHistoryGap;
-    return SizedBox.square(
-      dimension: 28,
-      child: Builder(
-        builder: (anchorContext) => IconButton(
-          key: ValueKey('genai-turn-menu-${turn.id}'),
-          tooltip: '消息操作',
-          icon: GenAiIcon(GenAiGlyph.more, size: 16, color: palette.muted),
-          iconSize: 18,
-          color: palette.muted,
-          padding: EdgeInsets.zero,
-          style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-          constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-          onPressed: enabled ? () => unawaited(_openMenu(anchorContext, hostContext, items)) : null,
-        ),
-      ),
-    );
+  void _perform(String value) {
+    if (value == 'copy') {
+      actions.copy(turn.prompt, '已复制内容');
+    } else {
+      actions.changeTurn(turnContext.index, value);
+    }
   }
 
   /// The shared menu can outlive the row that opened it, so a late choice is
@@ -625,6 +557,7 @@ class _UserMessage extends StatelessWidget {
   Future<void> _openMenu(
     BuildContext anchorContext,
     BuildContext hostContext,
+    Offset pressPosition,
     List<PopupMenuEntry<String>> items,
   ) async {
     final prompt = turn.prompt;
@@ -633,6 +566,8 @@ class _UserMessage extends StatelessWidget {
       context: hostContext,
       anchorContext: anchorContext,
       items: items,
+      pressPosition: pressPosition,
+      alignEnd: true,
       minWidth: 200,
       gap: 7,
       semanticLabel: '消息操作',
@@ -648,12 +583,19 @@ class _UserMessage extends StatelessWidget {
         host.turn.isHistoryGap) {
       return;
     }
-    if (value == 'copy') {
-      actions.copy(prompt, '已复制内容');
+    if (value == 'revert' && host.turnContext.isLast) return;
+    if (value == 'select') {
+      await genAiShowDialog<void>(
+        context: hostContext,
+        builder: (context) => AlertDialog(
+          title: const Text('选择文本'),
+          content: SingleChildScrollView(child: SelectableText(prompt, autofocus: true)),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('完成'))],
+        ),
+      );
       return;
     }
-    if (value == 'revert' && host.turnContext.isLast) return;
-    actions.changeTurn(index, value);
+    host._perform(value);
   }
 
   List<Widget> _attachments(BuildContext context, GenAiPalette palette) {

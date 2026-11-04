@@ -9,7 +9,7 @@ import 'genai_image_actions.dart';
 import 'genai_theme.dart';
 
 /// Shared chat/gallery preview. The image uses the available stage; controls
-/// stay outside the zoomable surface and wrap on narrow screens.
+/// stay outside the zoomable surface on one row.
 class GenAiImageViewer extends StatefulWidget {
   const GenAiImageViewer({
     super.key,
@@ -18,7 +18,7 @@ class GenAiImageViewer extends StatefulWidget {
     this.title = '图片预览',
     this.navigation,
     this.leadingAction,
-    this.trailingAction,
+    this.moreActions = const [],
     this.error,
   });
 
@@ -27,7 +27,7 @@ class GenAiImageViewer extends StatefulWidget {
   final String title;
   final Widget? navigation;
   final Widget? leadingAction;
-  final Widget? trailingAction;
+  final List<GenAiPreviewAction> moreActions;
   final Widget? error;
 
   @override
@@ -150,23 +150,30 @@ class _GenAiImageViewerState extends State<GenAiImageViewer> {
             Padding(
               key: const ValueKey('genai-preview-footer'),
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-              child: Wrap(
-                alignment:
-                    widget.leadingAction == null ? WrapAlignment.end : WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  if (widget.leadingAction != null) widget.leadingAction!,
-                  if (image != null)
-                    GenAiImageActions(
-                      image: image!,
-                      link: link,
-                      toolbar: true,
-                      showMenuButton: widget.trailingAction == null,
-                      child: widget.trailingAction ?? const SizedBox.shrink(),
-                    ),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) => Row(
+                  children: [
+                    if (widget.leadingAction != null) ...[
+                      ConstrainedBox(
+                        constraints:
+                            BoxConstraints(maxWidth: math.max(0, constraints.maxWidth - 56)),
+                        child: widget.leadingAction,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    if (image != null)
+                      Expanded(
+                        child: GenAiImageActions(
+                          image: image!,
+                          link: link,
+                          toolbar: true,
+                          moreActions: widget.moreActions,
+                          showMenuButton: widget.moreActions.isEmpty,
+                          child: const SizedBox.shrink(),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ],

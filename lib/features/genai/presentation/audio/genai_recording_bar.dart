@@ -20,6 +20,34 @@ class GenAiRecordingBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = (seconds ~/ 60).toString().padLeft(2, '0');
     final s = (seconds % 60).toString().padLeft(2, '0');
+    final duration = Text(
+      '正在录音 $m:$s',
+      key: const ValueKey('genai-recording-duration'),
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: Colors.redAccent,
+      ),
+    );
+    if (MediaQuery.sizeOf(context).width <= 680) {
+      return Row(
+        children: [
+          Expanded(child: duration),
+          IconButton(
+            key: const ValueKey('genai-cancel-recording'),
+            tooltip: '取消录音',
+            onPressed: onCancel,
+            icon: const GenAiIcon(GenAiGlyph.close, size: 18),
+          ),
+          IconButton(
+            key: const ValueKey('genai-finish-recording'),
+            tooltip: '完成录音',
+            onPressed: onComplete,
+            icon: const GenAiIcon(GenAiGlyph.check, size: 18),
+          ),
+        ],
+      );
+    }
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -39,18 +67,10 @@ class GenAiRecordingBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
-            '正在录音 $m:$s',
-            key: const ValueKey('genai-recording-duration'),
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.redAccent,
-            ),
-          ),
+          duration,
           const SizedBox(width: 12),
           const Expanded(
-            child: _AudioWaveformVisualizer(),
+            child: FittedBox(fit: BoxFit.scaleDown, child: _AudioWaveformVisualizer()),
           ),
           TextButton(
             key: const ValueKey('genai-cancel-recording'),

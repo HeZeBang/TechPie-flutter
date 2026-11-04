@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../utils/platform.dart';
 
@@ -347,7 +348,7 @@ class GenAiDialogFrame extends StatelessWidget {
                   const SizedBox(width: 12),
                   IconButton(
                     tooltip: '关闭',
-                    constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                    constraints: const BoxConstraints.tightFor(width: 48, height: 48),
                     padding: EdgeInsets.zero,
                     style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                     onPressed: () => Navigator.pop(context),
@@ -400,7 +401,7 @@ class GenAiLayout {
   bool get compactControls => narrow || short;
 }
 
-/// Short choices use a sheet on phones and an anchored menu on wider windows.
+/// Short menus stay by their trigger. Longer lists use a sheet on phones.
 /// Both return the same value and support dismissal without changing selection.
 Future<T?> genAiShowMenu<T>({
   required BuildContext context,
@@ -411,15 +412,20 @@ Future<T?> genAiShowMenu<T>({
   bool preferAbove = false,
   bool alignEnd = false,
   bool pointerMenu = false,
+  Offset? pressPosition,
   double gap = 7,
   double menuPadding = 6,
   double radius = 12,
 }) {
-  if (pointerMenu || !GenAiLayout.of(context).narrow) {
+  final layout = GenAiLayout.of(context);
+  final compact = layout.narrow || GenAiLayout.touchPlatform && layout.short;
+  final menuHeight = items.fold<double>(menuPadding * 2, (height, item) => height + item.height);
+  if (!compact || pointerMenu || menuHeight <= 300) {
     return genAiShowAnchoredMenu<T>(
       context: context,
       anchorContext: anchorContext,
       items: items,
+      pressPosition: pressPosition,
       minWidth: minWidth,
       semanticLabel: semanticLabel,
       preferAbove: preferAbove,
@@ -452,12 +458,14 @@ Future<T?> genAiShowMenu<T>({
               role: ui.SemanticsRole.menu,
               explicitChildNodes: true,
               label: semanticLabel ?? '选项',
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: items.map(genAiMenuEntry).toList(),
+              child: _GenAiMenuInteraction(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: items.map(genAiMenuEntry).toList(),
+                  ),
                 ),
               ),
             ),
@@ -559,34 +567,36 @@ Future<T?> genAiShowModalBottomSheet<T>({
   Offset? anchorPoint,
   AnimationStyle? sheetAnimationStyle,
   bool? requestFocus,
-}) {
+}) async {
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
   final localizations = MaterialLocalizations.of(context);
-  return navigator.push<T>(
-    ModalBottomSheetRoute<T>(
-      builder: (context) => genAiThemeScope(context, builder(context)),
-      capturedThemes: InheritedTheme.capture(from: context, to: navigator.context),
-      barrierLabel: barrierLabel ?? localizations.scrimLabel,
-      barrierOnTapHint: localizations.scrimOnTapHint(localizations.bottomSheetLabel),
-      modalBarrierColor: genAiOverlayScrim(),
-      backgroundColor: backgroundColor,
-      elevation: elevation,
-      shape: shape,
-      clipBehavior: clipBehavior,
-      constraints: constraints,
-      isScrollControlled: isScrollControlled,
-      scrollControlDisabledMaxHeightRatio: scrollControlDisabledMaxHeightRatio,
-      isDismissible: isDismissible,
-      enableDrag: enableDrag,
-      showDragHandle: showDragHandle,
-      useSafeArea: useSafeArea,
-      settings: routeSettings,
-      transitionAnimationController: transitionAnimationController,
-      anchorPoint: anchorPoint,
-      sheetAnimationStyle: sheetAnimationStyle,
-      requestFocus: requestFocus,
-    ),
+  final route = ModalBottomSheetRoute<T>(
+    builder: (context) => genAiThemeScope(context, builder(context)),
+    capturedThemes: InheritedTheme.capture(from: context, to: navigator.context),
+    barrierLabel: barrierLabel ?? localizations.scrimLabel,
+    barrierOnTapHint: localizations.scrimOnTapHint(localizations.bottomSheetLabel),
+    modalBarrierColor: genAiOverlayScrim(),
+    backgroundColor: backgroundColor,
+    elevation: elevation,
+    shape: shape,
+    clipBehavior: clipBehavior,
+    constraints: constraints,
+    isScrollControlled: isScrollControlled,
+    scrollControlDisabledMaxHeightRatio: scrollControlDisabledMaxHeightRatio,
+    isDismissible: isDismissible,
+    enableDrag: enableDrag,
+    showDragHandle: showDragHandle,
+    useSafeArea: useSafeArea,
+    settings: routeSettings,
+    transitionAnimationController: transitionAnimationController,
+    anchorPoint: anchorPoint,
+    sheetAnimationStyle: sheetAnimationStyle,
+    requestFocus: requestFocus,
   );
+  final result = await navigator.push(route);
+  // A selection can open another modal. Finish removing this sheet first.
+  await route.completed;
+  return result;
 }
 
 /// Shows a popover using the draft's anchor rule rather than Material's
@@ -599,6 +609,7 @@ Future<T?> genAiShowAnchoredMenu<T>({
   required BuildContext context,
   required BuildContext anchorContext,
   required List<PopupMenuEntry<T>> items,
+  Offset? pressPosition,
   double minWidth = 220,
   String? semanticLabel,
   bool preferAbove = false,
@@ -606,29 +617,41 @@ Future<T?> genAiShowAnchoredMenu<T>({
   double gap = 7,
   double menuPadding = 6,
   double radius = 12,
-}) {
+}) async {
   final navigator = Navigator.of(context, rootNavigator: true);
   final overlay = navigator.overlay!.context.findRenderObject()! as RenderBox;
   final anchor = anchorContext.findRenderObject()! as RenderBox;
   final scaffold = Scaffold.maybeOf(anchorContext)?.context.findRenderObject();
   final stage = scaffold is RenderBox ? scaffold : overlay;
   Rect bounds(RenderBox box) => box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
-  return navigator.push<T>(
-    _GenAiAnchoredMenuRoute<T>(
-      anchor: bounds(anchor),
-      stage: bounds(stage).intersect(Offset.zero & overlay.size),
-      items: items,
-      width: minWidth,
-      semanticLabel: semanticLabel ?? MaterialLocalizations.of(context).popupMenuLabel,
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      themes: InheritedTheme.capture(from: context, to: navigator.context),
-      preferAbove: preferAbove,
-      alignEnd: alignEnd,
-      gap: gap,
-      menuPadding: menuPadding,
-      radius: radius,
-    ),
+  final media = MediaQuery.of(navigator.context);
+  final available =
+      media.padding.deflateRect(media.viewInsets.deflateRect(Offset.zero & overlay.size));
+  final visibleStage = bounds(stage).intersect(available);
+  var target = bounds(anchor);
+  if (pressPosition != null && target.height > 96) {
+    // A tall message can extend past the viewport. Keep its menu by the finger.
+    target = overlay.globalToLocal(pressPosition) & Size.zero;
+  }
+  final route = _GenAiAnchoredMenuRoute<T>(
+    anchor: target,
+    stage: visibleStage,
+    items: items,
+    width: minWidth,
+    semanticLabel: semanticLabel ?? MaterialLocalizations.of(context).popupMenuLabel,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    themes: InheritedTheme.capture(from: context, to: navigator.context),
+    preferAbove: preferAbove,
+    alignEnd: alignEnd,
+    gap: gap,
+    menuPadding: menuPadding,
+    radius: radius,
   );
+  final layout = GenAiLayout.of(context);
+  final waitForDismissal = layout.narrow || GenAiLayout.touchPlatform && layout.short;
+  final result = await navigator.push(route);
+  if (waitForDismissal) await route.completed;
+  return result;
 }
 
 /// Clips each native menu row's hover and ink to the draft's 7px corners.
@@ -716,11 +739,13 @@ class _GenAiAnchoredMenuRoute<T> extends PopupRoute<T> {
                     side: BorderSide(color: palette.line),
                   ),
                   clipBehavior: Clip.antiAlias,
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.all(menuPadding),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: items.map(genAiMenuEntry).toList(),
+                  child: _GenAiMenuInteraction(
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.all(menuPadding),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: items.map(genAiMenuEntry).toList(),
+                      ),
                     ),
                   ),
                 ),
@@ -740,6 +765,85 @@ class _GenAiAnchoredMenuRoute<T> extends PopupRoute<T> {
     Widget child,
   ) =>
       FadeTransition(opacity: animation, child: child);
+}
+
+/// A menu is one keyboard group, independent of whether it is a sheet or
+/// popover. Close on window/keyboard geometry changes rather than retain a
+/// stale anchor. The next opening uses the new layout and presentation mode.
+class _GenAiMenuInteraction extends StatefulWidget {
+  const _GenAiMenuInteraction({required this.child});
+  final Widget child;
+
+  @override
+  State<_GenAiMenuInteraction> createState() => _GenAiMenuInteractionState();
+}
+
+class _GenAiMenuInteractionState extends State<_GenAiMenuInteraction> with WidgetsBindingObserver {
+  final _focus = FocusScopeNode(traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop);
+  ui.FlutterView? _view;
+  Size? _physicalSize;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _view = View.of(context);
+    _physicalSize ??= _view!.physicalSize;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.nextFocus();
+    });
+  }
+
+  @override
+  void didChangeMetrics() {
+    // Web text-field focus also emits metrics notifications. Only a real
+    // window resize invalidates the anchor; hiding the keyboard to open a
+    // menu must not immediately close that menu again.
+    final size = _view?.physicalSize;
+    if (size == null || size == _physicalSize) return;
+    _physicalSize = size;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) Navigator.pop(context);
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _edge(bool last) {
+    final nodes = _focus.traversalDescendants.where((node) => node.canRequestFocus).toList();
+    if (nodes.isNotEmpty) (last ? nodes.last : nodes.first).requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) => FocusTraversalGroup(
+        policy: WidgetOrderTraversalPolicy(),
+        child: FocusScope(
+          node: _focus,
+          child: CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.arrowDown): _focus.nextFocus,
+              const SingleActivator(LogicalKeyboardKey.arrowUp): _focus.previousFocus,
+              const SingleActivator(LogicalKeyboardKey.home): () => _edge(false),
+              const SingleActivator(LogicalKeyboardKey.end): () => _edge(true),
+              const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.pop(context),
+              const SingleActivator(LogicalKeyboardKey.tab): () => Navigator.pop(context),
+              const SingleActivator(LogicalKeyboardKey.tab, shift: true): () =>
+                  Navigator.pop(context),
+            },
+            child: widget.child,
+          ),
+        ),
+      );
 }
 
 class _GenAiAnchoredMenuLayout extends SingleChildLayoutDelegate {

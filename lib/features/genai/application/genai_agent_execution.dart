@@ -32,11 +32,22 @@ final class GenAiAgentToolExecution {
   final _callIds = <String, String>{};
   final _callResults = <String, Map<String, Object?>>{};
   final _readCalls = <String>{};
+  final _noEffects = <String, Map<String, Object?>>{};
+  final _readFailures = <String, ({String code, int count})>{};
   final _reads = <String, ({String value, int count})>{};
   bool noProgress = false;
   GenAiCancellation get cancellation => context.cancellation;
 
   void _observeRead(String key, Map<String, Object?> result) {
+    if (result['ok'] != true) {
+      final code = (result['error'] as Map?)?['code']?.toString() ?? 'tool_failed';
+      final previous = _readFailures[key];
+      final count = previous?.code == code ? previous!.count + 1 : 1;
+      _readFailures[key] = (code: code, count: count);
+      noProgress = count >= limits.maxUnchangedReads;
+      return;
+    }
+    _readFailures.remove(key);
     final value = genAiCanonicalJson(result['result']);
     final previous = _reads[key];
     if (previous?.value != value) {
@@ -85,9 +96,17 @@ final class GenAiAgentToolExecution {
         'reused_call_id',
         'Use a fresh call_id for different arguments.',
       );
+    } else if (_readCalls.contains(call.id)) {
+      // Legacy frames supply their own IDs. A replay is not a new observation.
+      result = genAiToolError(
+        call,
+        'duplicate_observation',
+        'This call ID was already used. For current data, issue a new techpie-call '
+            'using the current nonce and omit call_id.',
+      );
+      _observeRead(fingerprint, result);
     } else if (_callResults.containsKey(call.id)) {
       result = _reusedReceipt(call, _callResults[call.id]!);
-      if (_readCalls.contains(call.id)) _observeRead(fingerprint, result);
     } else {
       _callIds[call.id] = fingerprint;
       var mutationAttempted = false;
@@ -147,8 +166,9 @@ final class GenAiAgentToolExecution {
           if (!ledger.containsKey(effectKey) && recovered != null) {
             ledger[effectKey] = recovered;
           }
-          if (ledger.containsKey(effectKey)) {
-            result = _reusedReceipt(call, ledger[effectKey]!);
+          final previous = _noEffects[effectKey] ?? ledger[effectKey];
+          if (previous != null) {
+            result = _reusedReceipt(call, previous);
             _callResults[call.id] = result;
             onReceipt(result);
             yield GenAiAgentEvent(
@@ -226,7 +246,7 @@ final class GenAiAgentToolExecution {
               'approval_denied',
               '用户已取消，未执行。',
             );
-            ledger[effectKey] = result;
+            _noEffects[effectKey] = result;
             _callResults[call.id] = result;
             onReceipt(result);
             yield GenAiAgentEvent(
@@ -293,17 +313,18 @@ final class GenAiAgentToolExecution {
         toolCancellation.cancel();
       }
       if (mutationAttempted) {
-        if (effectNotDispatched) {
+        if (effectNotDispatched || genAiMutationDidNotExecute(result)) {
+          if (genAiMutationDidNotExecute(result)) _noEffects[effectKey!] = result;
           ledger.remove(effectKey);
         } else {
           ledger[effectKey!] = result;
         }
         if (result['ok'] == true) _reads.clear();
-      } else if (result['ok'] == true) {
+      } else {
         _readCalls.add(call.id);
         _observeRead(fingerprint, result);
       }
-      _callResults[call.id] = result;
+      if (mutationAttempted) _callResults[call.id] = result;
     }
     context.checkActive();
     onReceipt(result);

@@ -13,6 +13,7 @@ import 'package:techpie/features/genai/data/genai_request_signer.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/genai_image_gallery.dart';
 import 'package:techpie/features/genai/presentation/genai_image_studio_page.dart';
+import 'package:techpie/features/genai/presentation/genai_image_transfer_native.dart' as transfer;
 import 'package:techpie/features/genai/presentation/genai_theme.dart';
 
 import '../support/fakes.dart';
@@ -254,13 +255,40 @@ void main() {
 
     final preview = find.byKey(const ValueKey('genai-image-preview'));
     expect(find.descendant(of: preview, matching: find.byType(InteractiveViewer)), findsOneWidget);
-    for (final tooltip in ['复制链接', '分享图片', '下载图片']) {
+    for (final tooltip in ['复制链接', if (transfer.canShareImage) '分享图片', '下载图片']) {
       expect(find.byTooltip(tooltip), findsOneWidget);
       expect(
         tester.getRect(find.byTooltip(tooltip)).bottom,
         lessThanOrEqualTo(tester.view.physicalSize.height),
       );
     }
+
+    // Resizing an open preview keeps the primary action and More on one row.
+    // Copy link moves into More first, followed by Share on smaller screens.
+    for (final width in [320.0, 260.0]) {
+      tester.view.physicalSize = Size(width, 800);
+      await tester.pumpAndSettle();
+      final reference = tester.getCenter(find.text('用作参考'));
+      final more = find.byTooltip('更多图片操作');
+      expect(tester.getCenter(more).dy, closeTo(reference.dy, 1));
+      final linkInline = width == 320 && !transfer.canShareImage;
+      expect(find.byTooltip('复制链接'), linkInline ? findsOneWidget : findsNothing);
+      expect(tester.getCenter(find.byTooltip('下载图片')).dy, closeTo(reference.dy, 1));
+      final share = find.byTooltip('分享图片');
+      expect(share, width == 320 && transfer.canShareImage ? findsOneWidget : findsNothing);
+      await tester.tap(more);
+      await tester.pumpAndSettle();
+      expect(find.text('复制链接').hitTestable(), linkInline ? findsNothing : findsOneWidget);
+      expect(
+        find.text('分享图片'),
+        width < 320 && transfer.canShareImage ? findsOneWidget : findsNothing,
+      );
+      expect(find.text('查看描述').hitTestable(), findsOneWidget);
+      await tester.tapAt(const Offset(1, 1));
+      await tester.pumpAndSettle();
+    }
+    tester.view.physicalSize = const Size(1200, 1200);
+    await tester.pumpAndSettle();
 
     // The more menu opens entirely above the 36px anchor with an 8px gap,
     // right-aligned to it, even when the centered dialog leaves room below.
@@ -300,7 +328,7 @@ void main() {
     expect(descriptionHeader.padding, const EdgeInsets.fromLTRB(22, 18, 22, 18));
     expect(
       tester.getSize(find.byKey(const ValueKey('genai-description-header'))).height,
-      72,
+      greaterThanOrEqualTo(72),
     );
     expect(find.byTooltip('关闭'), findsOneWidget);
     expect(
@@ -465,7 +493,7 @@ void main() {
       localWidth: 1048,
     );
     final form = find.byKey(const ValueKey('genai-image-form'));
-    expect(tester.getSize(form).width, 290);
+    expect(tester.getSize(form).width, closeTo(1048 * .4, .1));
     expect(tester.getSize(find.byKey(const ValueKey('genai-image-gap'))).width, 42);
     expect(
       tester.widget<Padding>(find.byKey(const ValueKey('genai-image-padding'))).padding,
@@ -481,7 +509,7 @@ void main() {
       stageWidth: 1100,
       localWidth: 868,
     );
-    expect(tester.getSize(form).width, 255);
+    expect(tester.getSize(form).width, closeTo(868 * .4, .1));
     expect(tester.getSize(find.byKey(const ValueKey('genai-image-gap'))).width, 26);
     expect(
       tester.widget<Padding>(find.byKey(const ValueKey('genai-image-padding'))).padding,

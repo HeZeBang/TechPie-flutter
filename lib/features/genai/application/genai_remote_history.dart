@@ -202,18 +202,33 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
         turn.answer = '';
         turn.failure = null;
       }
-      final call = decodeGenAiAgentRecord(row.answer)?.call;
+      GenAiAgentDecision? decision;
+      GenAiAgentToolException? rejection;
+      final currentFormat = turn.isAgent && record['agent_format'] == 5;
+      if (currentFormat) {
+        try {
+          // A saved response has no more authority than it had live. In
+          // particular, a stale nonce must not become an unknown operation.
+          decision = parseGenAiAgentDecision(row.answer, nonce: record['step_id']! as String);
+        } on GenAiAgentToolException catch (error) {
+          rejection = error;
+        }
+      }
+      final call = currentFormat ? decision?.call : decodeGenAiAgentRecord(row.answer)?.call;
       if (turn.isAgent && call != null) {
         addCall(turn, call);
         turn.phase = GenAiChatPhase.interrupted;
       } else {
-        final answer = turn.isAgent
-            ? decodeGenAiAgentFinal(row.answer, allowPlain: record['agent_format'] == 5)
-            : row.answer;
+        final answer = currentFormat
+            ? decision?.text
+            : turn.isAgent
+                ? decodeGenAiAgentFinal(row.answer)
+                : row.answer;
         if (answer == null || answer.isEmpty) {
           turn.phase = GenAiChatPhase.interrupted;
           if (turn.isAgent && row.answer.trim().isNotEmpty) {
             try {
+              if (rejection != null) throw rejection;
               parseGenAiAgentDecision(
                 row.answer,
                 nonce: record['step_id']! as String,

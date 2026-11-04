@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -51,6 +52,29 @@ void main() {
     }
     fail('No menu control found for "$label"');
   }
+
+  testWidgets('unsupported desktop renderer offers browser fallback without futile retry',
+      (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: GenAiVisualView(code: '<p>Example</p>', complete: true),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('在浏览器打开'), findsOneWidget);
+      expect(find.byTooltip('全屏'), findsNothing);
+      await openActions(tester);
+      expect(find.text('重新运行'), findsNothing);
+      expect(find.text('查看源代码'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 
   test('streamed fences stay inert and preserve JavaScript until the actual closing fence', () {
     for (final fence in ['```', '~~~~']) {
@@ -322,7 +346,7 @@ void main() {
           .padding,
       const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
     );
-    expect(tester.getSize(find.byTooltip('关闭')), const Size(36, 36));
+    expect(tester.getSize(find.byTooltip('关闭')), const Size(48, 48));
     final code = tester.widget<SelectableText>(find.byType(SelectableText));
     expect(code.textSpan!.toPlainText(), '<p>Example</p>');
     expect(code.style?.fontSize, 12);

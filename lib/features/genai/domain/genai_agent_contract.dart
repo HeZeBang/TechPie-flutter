@@ -363,6 +363,18 @@ bool genAiIsMutationToolName(String? name) => name != null && genAiMutationToolN
 bool genAiRecordsMutationReceipt(String name, Map<String, Object?> arguments) =>
     name == 'generate_image' || name == 'reserve_court' && arguments['action'] == 'book';
 
+/// Explicit non-execution outcomes must not become cross-request duplicate locks.
+/// Recognize the legacy court adapter shape as well as user cancellation.
+bool genAiMutationDidNotExecute(Map<String, Object?> receipt) {
+  if ((receipt['error'] as Map?)?['code'] == 'approval_denied') return true;
+  final value = receipt['result'];
+  return receipt['name'] == 'reserve_court' &&
+      receipt['ok'] == true &&
+      value is Map &&
+      value['success'] == false &&
+      value['status'] == 'rejected';
+}
+
 /// True when a mutation-capable tool finished successfully, or with an unknown
 /// outcome that may still have been dispatched. Proposed, pending, rejected,
 /// cancelled, and failed events never count as external effects.
@@ -370,7 +382,7 @@ bool genAiHasExternalEffect(GenAiAgentEvent event) {
   if (event.kind != GenAiAgentEventKind.toolFinished) return false;
   if (!genAiIsMutationToolName(event.call?.name)) return false;
   final result = event.result;
-  if (result == null) return false;
+  if (result == null || genAiMutationDidNotExecute(result)) return false;
   if (result['ok'] == true) return true;
   final error = result['error'];
   return error is Map && error['code'] == 'outcome_unknown';

@@ -45,29 +45,6 @@ Future<Uint8List> loadGenAiImagePng(
   }
 }
 
-/// Shares [image] as PNG where the platform can share image bytes, otherwise
-/// copies [link]. The caller owns the account guard: [isCurrent] runs
-/// immediately before any effect, so a stale scope can neither share nor copy.
-Future<void> shareGenAiImagePng({
-  required ImageProvider<Object> image,
-  required BuildContext context,
-  Uri? link,
-  Rect? origin,
-  bool Function()? isCurrent,
-}) async {
-  final bounds = origin ?? _shareOriginFor(context);
-  final bytes = await loadGenAiImagePng(image, context);
-  if (isCurrent != null && !isCurrent()) return;
-  if (platform.canShareImage(bytes)) {
-    await platform.shareImage(bytes, bounds);
-    return;
-  }
-  if (link == null) {
-    throw StateError('Image sharing and the link fallback are unavailable');
-  }
-  await Clipboard.setData(ClipboardData(text: link.toString()));
-}
-
 Rect _shareOriginFor(BuildContext context) {
   final screen = Offset.zero & MediaQuery.sizeOf(context);
   final box = context.findRenderObject();
@@ -79,6 +56,8 @@ Rect _shareOriginFor(BuildContext context) {
   return visible.isEmpty ? Rect.fromLTWH(screen.center.dx, screen.center.dy, 1, 1) : visible;
 }
 
+typedef GenAiPreviewAction = ({String label, GenAiGlyph icon, VoidCallback? run});
+
 /// The same image actions for chat, Markdown, gallery tiles and image viewers.
 /// Decode the displayed provider, not a URL inferred from model prose.
 class GenAiImageActions extends StatefulWidget {
@@ -89,6 +68,7 @@ class GenAiImageActions extends StatefulWidget {
     this.link,
     this.showMenuButton = true,
     this.toolbar = false,
+    this.moreActions = const [],
     this.onOpen,
     this.onReference,
   });
@@ -103,6 +83,7 @@ class GenAiImageActions extends StatefulWidget {
 
   /// Common copy/share/save controls below the chat and gallery viewer.
   final bool toolbar;
+  final List<GenAiPreviewAction> moreActions;
 
   /// When either callback is set the menu becomes the gallery tile variant:
   /// open, use as reference, copy link and save. Chat keeps its image menu.
@@ -359,7 +340,7 @@ class _GenAiImageActionsState extends State<GenAiImageActions> {
                   ),
                 );
               }
-              if (data != null && platform.canShareImage(data)) {
+              if (data != null && platform.canShareImage) {
                 rows.add(
                   _actionItem(
                     palette,
@@ -381,61 +362,110 @@ class _GenAiImageActionsState extends State<GenAiImageActions> {
         ),
       ];
 
-  Widget _toolbar() => Wrap(
-        spacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          if (widget.link != null)
-            IconButton(
-              tooltip: '复制链接',
-              onPressed: _working
-                  ? null
-                  : () => _run(
-                        () => Clipboard.setData(ClipboardData(text: widget.link.toString())),
-                        success: '已复制链接',
-                      ),
-              icon: const GenAiIcon(GenAiGlyph.copy),
+  Widget _toolbar() => LayoutBuilder(
+        builder: (context, constraints) {
+          final image = widget.image;
+          final link = widget.link;
+          // Most useful first: each available slot promotes one action out of More.
+          final actions = <GenAiPreviewAction>[
+            (
+              label: '下载图片',
+              icon: GenAiGlyph.download,
+              run: () => _execute(_ImageAction.save, _loadPng(), image)
             ),
-          IconButton(
-            tooltip: '分享图片',
-            onPressed: _working
-                ? null
-                : () {
-                    final image = widget.image;
-                    unawaited(
-                      _run(
-                        () => shareGenAiImagePng(
-                          image: image,
-                          context: context,
-                          link: widget.link,
-                          isCurrent: () => mounted && image == widget.image,
-                        ),
-                      ),
-                    );
-                  },
-            icon: const GenAiIcon(GenAiGlyph.share),
-          ),
-          IconButton(
-            tooltip: '下载图片',
-            onPressed:
-                _working ? null : () => _execute(_ImageAction.save, _loadPng(), widget.image),
-            icon: _working
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const GenAiIcon(GenAiGlyph.download),
-          ),
-          if (widget.showMenuButton)
-            Builder(
-              builder: (anchor) => IconButton(
-                tooltip: '图片操作',
-                onPressed: _working ? null : () => _open(anchor),
-                icon: const GenAiIcon(GenAiGlyph.more),
+            if (platform.canShareImage)
+              (
+                label: '分享图片',
+                icon: GenAiGlyph.share,
+                run: () => _execute(_ImageAction.shareImage, _loadPng(), image)
               ),
-            ),
-          widget.child,
-        ],
+            if (link != null)
+              (
+                label: '复制链接',
+                icon: GenAiGlyph.copy,
+                run: () => _run(
+                      () => Clipboard.setData(ClipboardData(text: link.toString())),
+                      success: '已复制链接',
+                    )
+              ),
+          ];
+          final extra = <GenAiPreviewAction>[
+            if (widget.showMenuButton && platform.canCopyImage)
+              (
+                label: platform.copiesImageFile ? '复制图片文件' : '复制图片',
+                icon: GenAiGlyph.copy,
+                run: () => _execute(_ImageAction.copyImage, _loadPng(), image)
+              ),
+            ...widget.moreActions,
+          ];
+          const slot = 48.0;
+          final slots = (constraints.maxWidth / slot).floor();
+          final needsMenu = extra.isNotEmpty || slots < actions.length;
+          final visible = (slots - (needsMenu ? 1 : 0)).clamp(0, actions.length);
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              for (final action in actions.take(visible).toList().reversed)
+                SizedBox.square(
+                  dimension: slot,
+                  child: IconButton(
+                    tooltip: action.label,
+                    onPressed: _working ? null : action.run,
+                    icon: _working && action.icon == GenAiGlyph.download
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : GenAiIcon(action.icon),
+                  ),
+                ),
+              if (needsMenu)
+                Builder(
+                  builder: (anchor) => SizedBox.square(
+                    key: const ValueKey('genai-preview-more'),
+                    dimension: slot,
+                    child: IconButton(
+                      tooltip: '更多图片操作',
+                      icon: _working && visible == 0
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const GenAiIcon(GenAiGlyph.more),
+                      onPressed: _working
+                          ? null
+                          : () async {
+                              final picked = await genAiShowMenu<GenAiPreviewAction>(
+                                context: context,
+                                anchorContext: anchor,
+                                minWidth: 170,
+                                preferAbove: true,
+                                alignEnd: true,
+                                gap: 8,
+                                menuPadding: 5,
+                                radius: 9,
+                                semanticLabel: '更多图片操作',
+                                items: [
+                                  for (final action in [...actions.skip(visible), ...extra])
+                                    PopupMenuItem(
+                                      value: action,
+                                      enabled: action.run != null,
+                                      child: _menuRow(
+                                        GenAiPalette.of(context),
+                                        GenAiIcon(action.icon),
+                                        action.label,
+                                      ),
+                                    ),
+                                ],
+                              );
+                              if (mounted && image == widget.image) picked?.run?.call();
+                            },
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       );
 
   @override

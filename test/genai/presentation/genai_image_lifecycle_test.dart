@@ -16,6 +16,7 @@ import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
 import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/genai_image_actions.dart';
 import 'package:techpie/features/genai/presentation/genai_image_studio_page.dart';
+import 'package:techpie/features/genai/presentation/genai_image_transfer_native.dart' as transfer;
 import 'package:techpie/widgets/adaptive_feedback.dart';
 
 import '../support/fakes.dart';
@@ -143,7 +144,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byTooltip('复制链接'), findsOneWidget);
-    expect(find.byTooltip('分享图片'), findsOneWidget);
+    expect(find.byTooltip('分享图片'), transfer.canShareImage ? findsOneWidget : findsNothing);
     final downloadAction = find.byTooltip('下载图片');
     expect(downloadAction, findsOneWidget);
     // The separate "open original" action is gone; the preview itself is the

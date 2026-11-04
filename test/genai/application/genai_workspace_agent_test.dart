@@ -39,6 +39,96 @@ Future<void> until(bool Function() ready) async {
 }
 
 void main() {
+  test('final allowed mutation survives fresh server-only recovery without replay', () async {
+    final server = JournalServer();
+    var reads = 0;
+    var bookings = 0;
+    final tools = [
+      testTool(execute: () async => {'observation': ++reads}),
+      testTool(
+        mutation: true,
+        execute: () async {
+          bookings++;
+          return {'success': true, 'status': 'booked'};
+        },
+      ),
+    ];
+    final client = await JournalClient.create(server, tools: tools);
+    addTearDown(client.dispose);
+    client.workspace.setAgentEnabled(true);
+    server.onGenerate = (body) {
+      if (reads < 11) return server.call(body);
+      if (bookings == 0) {
+        return server.call(body, name: 'reserve_court', arguments: {'action': 'book'});
+      }
+      expect(body['messages'].toString(), contains('AVAILABLE_TOOLS:\n[]'));
+      expect(server.input(body), contains('booked'));
+      return server.finalAnswer(body, 'Reservation confirmed.');
+    };
+    final send = client.workspace.send('Read observations, then book one slot.');
+    await until(() => client.workspace.pendingAgentApproval != null);
+    client.workspace.resolveAgentApproval(true);
+    await send;
+    expect(client.workspace.turns.single.phase, GenAiChatPhase.completed);
+    expect(bookings, 1);
+    expect(server.generations, hasLength(13));
+    final fresh = await JournalClient.create(server, tools: tools);
+    addTearDown(fresh.dispose);
+    expect(
+      await fresh.workspace.openConversation(client.workspace.groupId, GenAiCancellation()),
+      true,
+    );
+    expect(fresh.workspace.turns.single.answer, 'Reservation confirmed.');
+    final receipt = fresh.workspace.turns.single.agentEvents.values
+        .singleWhere((e) => e.call?.name == 'reserve_court')
+        .result!;
+    expect(receipt['result'], containsPair('status', 'booked'));
+    server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+        ? server.call(body, name: 'reserve_court', arguments: {'action': 'book'})
+        : server.finalAnswer(body, 'Already reserved.');
+    await fresh.workspace.send('Check that same reservation again');
+    expect(fresh.workspace.pendingAgentApproval, isNull);
+    expect(bookings, 1);
+    expect(fresh.workspace.turns.last.agentEvents.values.single.result!['reused'], true);
+  });
+
+  for (final declined in [true, false]) {
+    test('fresh client can request a booking after ${declined ? 'denial' : 'explicit rejection'}',
+        () async {
+      final server = JournalServer();
+      var executions = 0;
+      final tools = [
+        testTool(
+          mutation: true,
+          execute: () async {
+            executions++;
+            return {'success': false, 'status': 'rejected'};
+          },
+        ),
+      ];
+      final client = await JournalClient.create(server, tools: tools);
+      addTearDown(client.dispose);
+      client.workspace.setAgentEnabled(true);
+      server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+          ? server.call(body, name: 'reserve_court', arguments: {'action': 'book'})
+          : server.finalAnswer(body, 'No reservation made.');
+      final first = client.workspace.send('Book one slot.');
+      await until(() => client.workspace.pendingAgentApproval != null);
+      client.workspace.resolveAgentApproval(!declined);
+      await first;
+      final fresh = await JournalClient.create(server, tools: tools);
+      addTearDown(fresh.dispose);
+      await fresh.workspace.openConversation(client.workspace.groupId, GenAiCancellation());
+      final second = fresh.workspace.send('Try that slot again, with a new confirmation.');
+      await until(() => fresh.workspace.pendingAgentApproval != null);
+      fresh.workspace.resolveAgentApproval(true);
+      await second;
+      expect(fresh.workspace.turns.last.phase, GenAiChatPhase.completed);
+      expect(executions, declined ? 1 : 2);
+      expect(fresh.workspace.turns.last.agentEvents.values.single.result!['reused'], isNull);
+    });
+  }
+
   test('same-owner token rejection retains transcript but cancels active work', () async {
     final client = await JournalClient.create(JournalServer(), tools: [testTool()]);
     addTearDown(client.dispose);

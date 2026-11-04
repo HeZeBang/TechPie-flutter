@@ -15,7 +15,6 @@ GenAiTurnActions _actions({
   void Function(String text, String message)? copy,
   void Function(int index, String action)? changeTurn,
   void Function(int index)? retry,
-  VoidCallback? exportConversation,
   Uri Function(String)? imageDisplayUri,
 }) =>
     GenAiTurnActions(
@@ -23,7 +22,6 @@ GenAiTurnActions _actions({
       openLink: (_) {},
       changeTurn: changeTurn ?? (_, __) {},
       retry: retry ?? (_) {},
-      exportConversation: exportConversation ?? () {},
       openImages: () {},
       showImage: ({Uint8List? bytes, String? url}) {},
       imageDisplayUri: imageDisplayUri ?? (url) => Uri.parse(url),
@@ -99,8 +97,6 @@ bool _menuItemEnabled(WidgetTester tester, String label) {
   return tester.widget<PopupMenuItem<String>>(popup.first).enabled;
 }
 
-Finder get _anchoredMenu => find.byKey(const ValueKey('genai-anchored-menu'));
-
 void _sizeTo(WidgetTester tester, Size size) {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -111,7 +107,7 @@ void _sizeTo(WidgetTester tester, Size size) {
 Finder get _bubble => find.byKey(const ValueKey('genai-user-bubble-$_turnId'));
 Finder get _actionsRow => find.byKey(const ValueKey('genai-user-actions-$_turnId'));
 Finder get _edit => find.byKey(const ValueKey('genai-turn-edit-$_turnId'));
-Finder get _menu => find.byKey(const ValueKey('genai-turn-menu-$_turnId'));
+Finder get _copy => find.byKey(const ValueKey('genai-turn-copy-$_turnId'));
 
 void main() {
   testWidgets('unsafe restored image URLs leave the prompt and answer readable', (tester) async {
@@ -220,46 +216,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('compact layouts keep the action row beside the bubble, bottom-aligned', (
-    tester,
-  ) async {
-    _sizeTo(tester, const Size(390, 844));
-    await tester.pumpWidget(_host(width: 390, touch: true));
-    await tester.pumpAndSettle();
-
-    final bubble = tester.getRect(_bubble);
-    final actions = tester.getRect(_actionsRow);
-
-    // The row sits to the right of the bubble with a 6px gap and shares its
-    // bottom edge, rather than occupying a separate row below it.
-    expect(actions.left, closeTo(bubble.right + 6, 0.01));
-    expect(actions.bottom, closeTo(bubble.bottom, 0.01));
-    expect(actions.top, greaterThanOrEqualTo(bubble.top));
-
-    // Below the wide breakpoint the edit action folds into the visible menu.
-    expect(_edit, findsNothing);
-    expect(_menu.hitTestable(), findsOneWidget);
-    expect(tester.getSize(_menu), const Size(28, 28));
-  });
-
-  testWidgets('touch layouts keep 28px actions reachable without hovering', (tester) async {
-    _sizeTo(tester, const Size(1280, 900));
-    await tester.pumpWidget(_host(width: 1280, touch: true));
-    await tester.pumpAndSettle();
-
-    expect(_edit, findsOneWidget);
-    expect(_edit.hitTestable(), findsOneWidget);
-    expect(_menu.hitTestable(), findsOneWidget);
-    expect(tester.getSize(_edit), const Size(28, 28));
-    expect(tester.getSize(_menu), const Size(28, 28));
-
-    // Wide layouts still overlay the row in the fixed margin after the bubble,
-    // never beside it.
-    final bubble = tester.getRect(_bubble);
-    final actions = tester.getRect(_actionsRow);
-    expect(actions.top, closeTo(bubble.bottom + 2, 0.01));
-  });
-
   testWidgets('desktop hover reveals actions without moving the bubble or answer', (
     tester,
   ) async {
@@ -271,6 +227,7 @@ void main() {
     expect(_actionsRow, findsNothing);
     final hiddenHeight = tester.getSize(find.byType(GenAiTurnView)).height;
     final hiddenBubble = tester.getRect(_bubble);
+    expect(hiddenBubble.right, tester.getRect(find.byType(GenAiTurnView)).right);
 
     final pointer = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await pointer.addPointer(location: Offset.zero);
@@ -281,68 +238,35 @@ void main() {
 
     expect(_actionsRow, findsOneWidget);
     expect(_edit.hitTestable(), findsOneWidget);
-    expect(_menu.hitTestable(), findsOneWidget);
+    expect(_copy.hitTestable(), findsOneWidget);
     expect(tester.getSize(_edit), const Size(28, 28));
-    expect(tester.getSize(_menu), const Size(28, 28));
+    expect(tester.getSize(_copy), const Size(28, 28));
 
     // The actions overlay the fixed margin: nothing shifts on reveal.
+    expect(tester.getRect(_actionsRow).right, hiddenBubble.right);
     expect(tester.getRect(_bubble), hiddenBubble);
     expect(tester.getSize(find.byType(GenAiTurnView)).height, hiddenHeight);
   });
 
-  testWidgets('answer menu opens clear of its button and keeps its actions', (tester) async {
-    _sizeTo(tester, const Size(1280, 900));
+  testWidgets('reply actions regenerate while export belongs to the conversation', (tester) async {
     final retried = <int>[];
-    final exported = <String>[];
-    await tester.pumpWidget(
-      _host(
-        width: 1280,
-        touch: true,
-        actions: _actions(
-          retry: retried.add,
-          exportConversation: () => exported.add('export'),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final anchor = find.byKey(const ValueKey('genai-answer-menu-0'));
-    final anchorRect = tester.getRect(anchor);
-    await tester.tap(anchor);
-    await tester.pumpAndSettle();
-
-    expect(_anchoredMenu, findsOneWidget);
-    final menuRect = tester.getRect(_anchoredMenu);
-    expect(menuRect.overlaps(anchorRect), isFalse);
-    expect(menuRect.top, closeTo(anchorRect.bottom + 7, 0.01));
-    expect(find.text('重新生成'), findsOneWidget);
-    expect(find.text('导出对话'), findsOneWidget);
-    expect(_menuItemEnabled(tester, '重新生成'), isTrue);
-    expect(_menuItemEnabled(tester, '导出对话'), isTrue);
-
-    await tester.tap(find.text('重新生成'));
-    await tester.pumpAndSettle();
+    final actions = _actions(retry: retried.add);
+    await tester.pumpWidget(_host(width: 375, touch: true, actions: actions));
+    await tester.tap(find.byTooltip('重新生成'));
     expect(retried, [0]);
-    expect(exported, isEmpty);
-
-    // Regenerate is unavailable without a campus connection, while export is not.
-    await tester.pumpWidget(
-      _host(width: 1280, touch: true, connected: false, actions: _actions()),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('genai-answer-menu-0')));
-    await tester.pumpAndSettle();
-    expect(_menuItemEnabled(tester, '重新生成'), isFalse);
-    expect(_menuItemEnabled(tester, '导出对话'), isTrue);
+    await tester.pumpWidget(_host(width: 375, touch: true, connected: false, actions: actions));
+    expect(find.byTooltip('重新生成'), findsNothing);
+    expect(find.byTooltip('导出对话'), findsNothing);
   });
 
-  testWidgets('message menu opens clear of its button and preserves its rows', (tester) async {
-    _sizeTo(tester, const Size(1280, 900));
+  testWidgets('long pressing prompt text opens its actions and respects sending state',
+      (tester) async {
+    _sizeTo(tester, const Size(390, 844));
     final copied = <(String, String)>[];
     final changed = <(int, String)>[];
     await tester.pumpWidget(
       _host(
-        width: 1280,
+        width: 390,
         touch: true,
         count: 2,
         actions: _actions(
@@ -351,17 +275,13 @@ void main() {
         ),
       ),
     );
+    expect(_actionsRow, findsNothing);
+    await tester.longPress(find.text('User prompt'));
     await tester.pumpAndSettle();
-
-    final anchor = _menu;
-    final anchorRect = tester.getRect(anchor);
-    await tester.tap(anchor);
-    await tester.pumpAndSettle();
-
-    expect(_anchoredMenu, findsOneWidget);
-    final menuRect = tester.getRect(_anchoredMenu);
-    expect(menuRect.overlaps(anchorRect), isFalse);
-    expect(menuRect.top, closeTo(anchorRect.bottom + 7, 0.01));
+    final bubble = tester.getRect(_bubble);
+    final menu = tester.getRect(find.byKey(const ValueKey('genai-anchored-menu')));
+    expect(menu.top, closeTo(bubble.bottom + 7, .01));
+    expect(menu.right, lessThanOrEqualTo(390));
     for (final label in ['复制内容', '编辑并重新发送', '回退到此处', '删除此轮及后续']) {
       expect(find.text(label), findsOneWidget);
       expect(_menuItemEnabled(tester, label), isTrue);
@@ -375,7 +295,8 @@ void main() {
     // A sending workspace disables the message menu from opening at all.
     await tester.pumpWidget(_host(width: 1280, touch: true, sending: true));
     await tester.pumpAndSettle();
-    final disabled = tester.widget<IconButton>(_menu);
-    expect(disabled.onPressed, isNull);
+    await tester.longPress(find.text('User prompt'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑并重新发送'), findsNothing);
   });
 }

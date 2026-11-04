@@ -16,6 +16,54 @@ import 'package:techpie/features/genai/domain/genai_remote_record.dart';
 const nonce = 'remote_test_nonce_012345';
 
 void main() {
+  test('a rejected stale-nonce call stays inert after server-only recovery', () {
+    final turn = GenAiConversationTurn('Read the archive', id: 'nonce-repair', isAgent: true);
+    const stale = 'old_step_nonce_0123456789';
+    final rejected = GenAiAgentToolCall(
+      id: 'read9600',
+      name: 'read_conversation_records',
+      arguments: {'record_id': 'r_0123456789abcdef01234567', 'offset': 9600},
+    );
+    final first = GenAiSavedTurn(
+      prompt: encodeGenAiRemoteRecord({
+        'step_id': nonce,
+        'agent_format': 5,
+        'turn': turn.toRemoteInput(),
+        'input': turn.prompt,
+      }),
+      answer: encodeGenAiAgentCall(rejected, nonce: stale),
+    );
+    final initial = decodeGenAiConversation('group', [first]).archive;
+    expect(initial.turns.single.agentEvents, isEmpty);
+    expect(initial.turns.single.failure?.kind, GenAiFailureKind.protocol);
+    expect(initial.turns.single.answer, contains('read9600'));
+    final corrected = GenAiSavedTurn(
+      prompt: encodeGenAiRemoteRecord({
+        'step_id': '${nonce}2',
+        'agent_format': 5,
+        'turn_id': turn.id,
+        'input': encodeGenAiAgentResult(
+          {
+            'call_id': null,
+            'name': null,
+            'ok': false,
+            'error': {'code': 'wrong_nonce', 'message': 'wrong_nonce'},
+          },
+          nonce: '${nonce}2',
+        ),
+      }),
+      answer: 'Archive inspected.',
+    );
+    final recovered = decodeGenAiConversation('group', [first, corrected]).archive.turns.single;
+    expect(recovered.answer, 'Archive inspected.');
+    expect(recovered.phase, GenAiChatPhase.completed);
+    expect(recovered.agentEvents, isEmpty);
+    expect(
+      recovered.agentActivity.where((e) => e.kind == GenAiAgentEventKind.protocolError),
+      hasLength(1),
+    );
+  });
+
   test('versioned plain answer recovers after a tool receipt without local state', () {
     final turn = GenAiConversationTurn('Read then explain', id: 'plain', isAgent: true);
     final call = GenAiAgentToolCall(id: 'read', name: 'get_current_time', arguments: {});

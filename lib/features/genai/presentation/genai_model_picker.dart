@@ -29,7 +29,7 @@ class GenAiModelPicker extends StatelessWidget {
   /// draft caps it at `100% - 24`. Falls back to the window width.
   final double? workspaceWidth;
 
-  static const _labelStyle = TextStyle(fontSize: 12, fontWeight: FontWeight.w400, letterSpacing: 0);
+  static const _labelStyle = TextStyle(fontSize: 14, fontWeight: FontWeight.w400, letterSpacing: 0);
 
   /// The button's natural width, so the composer reserves only what the model
   /// name needs and gives the rest to the mode toggles. The sum mirrors the
@@ -83,7 +83,7 @@ class GenAiModelPicker extends StatelessWidget {
             key: ValueKey('genai-model-${model.aiType}'),
             value: model,
             enabled: enabled,
-            height: compact ? 44 : 42,
+            height: 48,
             padding: EdgeInsets.symmetric(horizontal: 10, vertical: compact ? 4 : 8),
             child: compact
                 ? _compactRow(model, palette)
@@ -98,9 +98,7 @@ class GenAiModelPicker extends StatelessWidget {
                             children: [
                               Text(
                                 model.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                               ),
                               const SizedBox(height: 3),
                               Text(
@@ -136,9 +134,7 @@ class GenAiModelPicker extends StatelessWidget {
           Expanded(
             child: Text(
               model.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
           ),
           const SizedBox(width: 8),

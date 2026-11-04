@@ -25,9 +25,13 @@ final class GenAiAgentModelExchange {
   final int maxOutputCharacters;
   final int maxReasoningCharacters;
   bool _confirmed = false;
+  GenAiFinishReason? _finish;
   String get source => _decoder.source.trim();
 
   GenAiAgentDecision decision() {
+    if (_finish == GenAiFinishReason.length) {
+      throw const GenAiAgentToolException('output_limit', '回复达到输出上限，请缩短后继续。');
+    }
     if (!_confirmed) throw const GenAiFailure(GenAiFailureKind.interrupted);
     return _decoder.finish();
   }
@@ -38,13 +42,12 @@ final class GenAiAgentModelExchange {
     int turn,
   ) async* {
     final iterator = StreamIterator(_streamChat(request, context.cancellation));
-    GenAiFinishReason? finish;
     var length = 0;
     var reasoningLength = 0;
     try {
       while (await context.cancellation.race(iterator.moveNext())) {
         context.checkActive();
-        if (finish != null) throw const GenAiFailure(GenAiFailureKind.protocol);
+        if (_finish != null) throw const GenAiFailure(GenAiFailureKind.protocol);
         final event = iterator.current;
         if (event is GenAiTextDelta) length += event.text.length;
         if (event is GenAiReasoningDelta) reasoningLength += event.text.length;
@@ -68,14 +71,15 @@ final class GenAiAgentModelExchange {
           case GenAiContextCompacted():
             yield GenAiAgentEvent(kind: GenAiAgentEventKind.contextCompacted, turn: turn);
           case GenAiChatFinished(:final reason):
-            finish = reason;
+            _finish = reason;
         }
       }
     } finally {
       iterator.cancel().ignore();
     }
     context.checkActive();
-    if (finish != GenAiFinishReason.stop && finish != GenAiFinishReason.done) {
+    if (_finish == GenAiFinishReason.length) return;
+    if (_finish != GenAiFinishReason.stop && _finish != GenAiFinishReason.done) {
       throw const GenAiFailure(GenAiFailureKind.interrupted);
     }
     _confirmed = true;

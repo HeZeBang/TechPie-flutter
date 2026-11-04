@@ -30,7 +30,7 @@ Attachment flags, the active task (on continuation), image references and reject
 candidate are transient step data. This preserves the reusable history prefix when
 capabilities change; cache hits still depend on the upstream deployment. Both guide and data count toward the budget but are never archived or
 summarized. Repair prose is transient; its durable feedback retains the error code.
-A brief `reply_format` reminder follows the current input in the stored envelope; recovery reads only `input`. Long original tasks are referenced rather than copied into every continuation.
+A brief `reply_format` reminder follows the current input in the stored envelope; recovery reads only `input`. Long tasks retain exact beginning/end excerpts plus a reference to the complete original; omitted requirements must be retrieved before acting. The current-input reminder and request guide share one response contract, including final envelopes for quoted protocol examples.
 
 Version 5 requires a current-nonce frame only for executable tool requests. Final
 answers are ordinary Markdown, streamed without JSON escaping or a mandatory wrapper:
@@ -61,13 +61,17 @@ and confirmation remain mandatory.
 
 Malformed output receives a specific validation error and a bounded repair request
 with the active task and completed results. Foreign tokenizer control delimiters
-are neutralized only in the rejected candidate. Repair disables thinking, omits images and the full visual authoring guide, and asks only for correction of the reported error. It can request
+are neutralized only in the rejected candidate. Repair disables thinking, omits images and the full visual authoring guide, and targets framing, argument validation, unavailable tools or incomplete answers separately. It can request
 `inspect_image` again when needed. Consecutive errors reset after a valid decision;
 repair does not consume the valid-decision budget. A separate total repair budget
-bounds alternating valid/invalid responses. Repeated identical reads pause only after
-fresh executions return unchanged results; changed observations or successful
-mutations reset that check. New user runs start fresh. The deadline still bounds
-the run. Reasoning and answer text have separate bounded allowances. Truncated/failed streams never authorize tools. Rejected previews are cleared;
+bounds alternating valid/invalid responses. Repeated identical read results or failures pause after a bounded number of attempts.
+Successful evidence resets its failure streak; new observations or successful mutations
+reset unchanged-result counters. After the decision budget is spent, one answer-only
+exchange carries the last receipt to the server; further tool calls are rejected. New user runs start fresh. The deadline still bounds
+the run. Reasoning and answer text have separate bounded allowances. Truncated/failed streams never authorize tools. Output-limit termination gets bounded
+repair with the partial candidate and thinking disabled. Other interruptions retain
+inert partial output without replaying the request. Loaded visual guidance lasts for
+the run, including after intervening tool reads. Rejected previews are cleared;
 exhausted format recovery retains the candidate as explicitly unverified, inert
 source with the existing continuation action.
 
@@ -187,6 +191,8 @@ host-created task scope and normalized generation parameters: retries retain the
 scope; new user messages and explicit edit-and-resend start a fresh approval scope.
 Edits carry completed and uncertain external outcomes into the replacement record;
 old denials do not block new confirmation. Deleting text does not undo external actions.
+Confirmed booking rejections and user denials prevent repeats within the current run,
+not new user requests. Successful or uncertain outcomes retain cross-request protection.
 Declining an image blocks further proposals until the next user message.
 
 Before dispatch, a GET read-back barrier verifies that the proposal is saved.
@@ -242,8 +248,9 @@ and past approvals remain inert history, never permission to execute an action.
 The normal agent core advertises visual/LaTeX capabilities briefly.
 `get_visual_guide` lets the model elect to load the full authoring instructions for
 the current run. Its receipt stores only the capability identifier; the guide is
-host-injected context, not repeated archival text. Plain chat receives the guide
-directly because it has no tool discovery loop. This keeps routine campus steps
+host-injected context, not repeated archival text. Plain chat receives only the minimal
+visual format/runtime contract; detailed design instructions and the working example
+are loaded through the guide tool in agent mode. General LaTeX guidance applies in both modes. This keeps routine campus steps
 small without keyword-based intent routing or removing visual capabilities.
 
 An assistant-only `techpie-visual` fenced block contains a complete HTML document.

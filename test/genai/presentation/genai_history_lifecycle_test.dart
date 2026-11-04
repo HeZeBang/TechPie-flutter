@@ -308,9 +308,9 @@ void main() {
 
     final first = tester.getRect(rows.at(0));
     final second = tester.getRect(rows.at(1));
-    // Draft row: 40 px plate, 2 px gap to the next plate.
-    expect(first.height, 40);
-    expect(second.height, 40);
+    // Draft row: 48 px plate, 2 px gap to the next plate.
+    expect(first.height, 48);
+    expect(second.height, 48);
     expect(second.top - first.bottom, greaterThanOrEqualTo(2));
     // Only the first row is selected; the idle plate stays transparent.
     expect(tester.widget<Material>(rows.at(0)).color, isNot(Colors.transparent));
@@ -324,12 +324,12 @@ void main() {
     final menu = find.descendant(of: rows.at(0), matching: find.byType(GenAiConversationMenu));
     expect(menu, findsOneWidget);
     final menuRect = tester.getRect(menu);
-    // The 28 px menu target is a square centered in the 40 px row, inset 6 px
+    // The 48 px menu target fills the row height, inset 6 px
     // from the row's clipped end instead of sitting flush against it.
-    expect(menuRect.size, const Size(28, 28));
+    expect(menuRect.size, const Size(48, 48));
     expect(first.right - menuRect.right, 6);
-    expect(menuRect.top - first.top, 6);
-    expect(first.bottom - menuRect.bottom, 6);
+    expect(menuRect.top - first.top, 0);
+    expect(first.bottom - menuRect.bottom, 0);
     expect(menuRect.left, greaterThanOrEqualTo(first.left));
     // Both the selected plate and a hovered more button paint into the clipped
     // rounded row, never its neighbour or the rail padding.

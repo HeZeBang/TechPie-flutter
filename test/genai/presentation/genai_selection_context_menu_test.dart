@@ -17,7 +17,6 @@ GenAiTurnActions _actions() => GenAiTurnActions(
       openLink: (_) {},
       changeTurn: (_, __) {},
       retry: (_) {},
-      exportConversation: () {},
       openImages: () {},
       showImage: ({Uint8List? bytes, String? url}) {},
       imageDisplayUri: (url) => Uri.parse(url),
@@ -131,21 +130,23 @@ void main() {
   );
 
   testWidgets(
-    'the edit dialog field exposes the platform menu with working copy and cut',
+    'the inline edit field exposes the platform menu with working copy and cut',
     (tester) async {
       final copies = _captureClipboard(tester);
 
       String? submitted;
       await tester.pumpWidget(
         MaterialApp(
-          home: GenAiTurnEditDialog(
-            prompt: 'Edit me text',
-            action: 'edit',
-            removedTurns: 1,
-            hasExternalActions: false,
-            onSubmit: (value, commit) async {
-              submitted = value;
-            },
+          home: Scaffold(
+            body: GenAiTurnEditDialog(
+              prompt: 'Edit me text',
+              action: 'edit',
+              removedTurns: 1,
+              hasExternalActions: false,
+              onSubmit: (value, commit) async {
+                submitted = value;
+              },
+            ),
           ),
         ),
       );
