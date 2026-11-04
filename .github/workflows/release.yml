@@ -290,13 +290,16 @@ jobs:
     # either way it is submitted, because a version the store has not reviewed
     # cannot be installed.
     #
-    # Deliberately not a `needs` of `publish`: the job sits behind the `ohos`
-    # environment and waits for its reviewer, and the GitHub release must not be
-    # held up by a store approval.
-    needs: [plan, tag, ohos]
+    # `publish` is in `needs` for a mechanical reason: the pack has to be fetched
+    # from the release, `gh release download` cannot see a draft, and the release
+    # is a draft until that job flips it. The dependency runs one way only — the
+    # store job waits for the release, never the other way round — so a reviewer
+    # holding the approval cannot hold up the GitHub release.
+    needs: [plan, tag, ohos, publish]
     if: >-
       needs.plan.outputs.skip == 'false'
       && needs.ohos.result == 'success'
+      && needs.publish.result == 'success'
       && inputs.dry_run != true
     permissions:
       contents: read
