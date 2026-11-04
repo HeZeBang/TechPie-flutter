@@ -460,14 +460,40 @@ distinguishable in git, and the file names deliberately do not try to.
 
 ### Operating the pipeline
 
-- CI signs and publishes every platform's artifacts and stops there: **uploading
-  to Play, AppGallery and the App Store is manual**, from those artifacts. Android
+- CI signs and publishes every platform's artifacts, and now also pushes the OHOS
+  pack to AppGallery Connect. **Uploading to Play and the App Store is still
+  manual**, from those artifacts. Android
   gets three APKs (arm64 and arm32 splits plus a universal one), Linux a `tar.gz`
   of the bundle, Windows a `zip` of the release directory, OHOS the unsigned hap.
   The `publish` job waits for all of them and is what writes the SHA-256 block —
   once, over every asset, since a platform job only knows its own files. The
   Android signing material lives in the `android-release` environment; the iOS
   dispatch needs `RELEASE_APP_*` and the signing repo.
+
+- **AppGallery** (`ohos-appgallery.yml`, called by `release.yml` after the OHOS
+  job, and dispatchable on its own with `-f tag=v1.0.5-rc.1+20`) closes that loop
+  for OHOS: it downloads the *unsigned* `.app` the release already carries,
+  verifies its sha256, signs it with the release certificate, checks that signing
+  changed no payload entry, and pushes it through `scripts/agc-publish.mjs`. The
+  channel is not an input, it follows the release name: `X.Y.Z-rc.N` goes to the
+  **test** channel (releaseType 6), `X.Y.Z` to the 全网 one (releaseType 1), and
+  either is submitted for review, because an unreviewed version cannot be
+  installed. Three write levels are separate because only one is reversible:
+  `publish=false` reads AGC and writes nothing, `publish=true` uploads and stops
+  at 待提交, `submit=true` adds the review request.
+
+  The job runs behind the **`ohos` environment**, whose required reviewer is what
+  turns a run into a store action, and it is deliberately not a `needs` of
+  `publish` — a store approval must not hold up the GitHub release. It needs, on
+  that environment: secrets `OHOS_STORE_B64`, `OHOS_CERT_B64`,
+  `OHOS_PROFILE_B64`, `OHOS_STORE_PASSWORD`, `OHOS_KEY_PASSWORD`,
+  `AGC_CLIENT_ID`, `AGC_CLIENT_SECRET`, `AGC_APP_ID`, and variables
+  `OHOS_KEY_ALIAS`, `OHOS_SIGN_ALG`. The pack is the one from the tag, never a
+  rebuild: a rebuilt pack has different bytes, and what gets signed has to be what
+  shipped. AGC answers a business refusal with HTTP 200 and a `ret.code`, so the
+  scripts surface that code instead of pretending success — `errorCode 991` on the
+  package compile is "invalid package, possibly unsigned", which is exactly what
+  an unsigned upload produces.
 - **One concurrency group per platform.** Group names are repository-wide and a
   group holds only one *pending* entry, so platform workflows that share a group
   cancel each other's queued jobs: 1.0.1-rc.2's Windows job was cancelled one
@@ -500,8 +526,10 @@ distinguishable in git, and the file names deliberately do not try to.
   `OHOS_UNSIGNED=1`: the generator writes a profile with no signing material, so
   hvigor packs `-unsigned` artifacts while flutter exits non-zero looking for the
   signed ones, which is why both scripts judge the build by the artifact rather
-  than by its exit code. Signing happens on the device owner's machine, never in
-  CI — so an AppGallery upload is a maintainer step: sign the pack, then upload it.
+  than by its exit code. The *build* stays unsigned — the material is not on the
+  runner — and the signature is added afterwards by the AppGallery job (above)
+  with the release certificate, which is why the upload takes the pack from the
+  release and not from a fresh build.
   The toolchain reaches CI as a container image, not as a self-hosted runner:
   `ci/Dockerfile.ohos-buildenv` bakes the OHOS Flutter fork and the DevEco
   command-line tools — neither can be installed on a hosted runner, because the

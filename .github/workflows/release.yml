@@ -282,6 +282,32 @@ jobs:
       tag: ${{ needs.plan.outputs.tag }}
     secrets: inherit
 
+  appgallery:
+    name: AppGallery
+    # Signs the pack the OHOS job attached to the release and pushes it to
+    # AppGallery Connect. The channel follows the release name — a candidate
+    # (`-rc.N`) goes to the test channel, a stable release to the 全网 one — and
+    # either way it is submitted, because a version the store has not reviewed
+    # cannot be installed.
+    #
+    # Deliberately not a `needs` of `publish`: the job sits behind the `ohos`
+    # environment and waits for its reviewer, and the GitHub release must not be
+    # held up by a store approval.
+    needs: [plan, tag, ohos]
+    if: >-
+      needs.plan.outputs.skip == 'false'
+      && needs.ohos.result == 'success'
+      && inputs.dry_run != true
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/ohos-appgallery.yml
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+      publish: true
+      submit: true
+    secrets: inherit
+
   publish:
     name: Publish the release
     # Nothing is visible until every asset is in: the Android job opens the
