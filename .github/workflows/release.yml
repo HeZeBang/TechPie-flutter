@@ -79,6 +79,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Where this commit stands against the newest released tags, printed
+          # before the plan: a refusal below then reads next to the numbers that
+          # caused it (version line and build number, newest tag, what to write).
+          node scripts/release-plan.mjs --check --ref "$REF" || true
+
           args=(--ref "$REF")
           if [[ "$EVENT" == "push" ]]; then
             args+=(--base "$BASE")
