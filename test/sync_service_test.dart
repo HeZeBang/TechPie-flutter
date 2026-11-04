@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
@@ -7,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/campus_card/domain/models/auth_models.dart';
 import 'package:techpie/models/ecard_sync_binding.dart';
+import 'package:techpie/models/ids_passkey.dart';
 import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/services/auth_service.dart';
@@ -19,11 +21,220 @@ import 'package:techpie/services/sync_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 
+import 'support/fake_ids_client.dart';
+
 void main() {
+  test('a legacy cloud configuration is preserved and requests Passkey migration', () async {
+    final fixture = await _Fixture.withSession();
+    final legacy = ThirdPartyAccount(
+      platform: ThirdPartyPlatform.ids,
+      account: '20240001',
+      sid: '20240001',
+      name: 'Legacy User',
+      token: 'legacy-token',
+      raw: const {'tgc': 'legacy-tgc'},
+      boundAt: DateTime.utc(2026),
+      autoRenew: true,
+      password: 'synthetic-password',
+    ).toJson()
+      ..['platform'] = 'cpdaily';
+    fixture.server.properties['techpie_sync'] = await SyncCrypto.encryptWithSalt(
+      jsonEncode({
+        'v': 3,
+        'accounts': [legacy],
+        'tombstones': <dynamic>[],
+      }),
+      'synthetic-password',
+    );
+    final restored = await _Fixture.withSession(server: fixture.server);
+    expect((await restored.sync.restoreWithMasterPassword('synthetic-password')).ok, true);
+    expect(restored.tpAuth.needsIdsRebind, true);
+    expect(restored.tpAuth.idsAccount!.name, 'Legacy User');
+    expect(restored.tpAuth.idsAccount!.password, 'synthetic-password');
+    final rewritten = jsonDecode(
+      (await SyncCrypto.decryptWithSalt(
+        fixture.server.properties['techpie_sync']!,
+        'synthetic-password',
+      ))!,
+    ) as Map<String, dynamic>;
+    expect(rewritten['v'], 4);
+    expect((rewritten['accounts'] as List<dynamic>).single['platform'], 'ids');
+  });
+
+  test('an old legacy upload cannot restore a configuration deleted while uploading', () async {
+    final fixture = await _Fixture.withSession();
+    await fixture.tpAuth.replaceAll([
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.ids,
+        account: '20240001',
+        name: 'Legacy User',
+        token: 'legacy',
+        raw: const {'tgc': 'old'},
+        boundAt: DateTime.now().subtract(const Duration(days: 1)),
+      ),
+    ]);
+    expect((await fixture.sync.setupWithMasterPassword('synthetic-password')).ok, true);
+    fixture.server.pauseNextWrite();
+    final release = fixture.server.releaseNextWrite!;
+    final upload = fixture.sync.push();
+    await fixture.server.nextWriteStarted!.future;
+    await fixture.tpAuth.unbind(ThirdPartyPlatform.ids);
+    release.complete();
+    expect((await upload).ok, true);
+    expect(fixture.tpAuth.idsAccount, isNull);
+    expect(await fixture.storage.loadThirdPartyAccount(ThirdPartyPlatform.ids), isNull);
+    final plain = (await SyncCrypto.decryptWithSalt(
+        fixture.server.properties['techpie_sync']!, 'synthetic-password',))!;
+    expect(SyncEnvelope.decode(plain)!.accounts, isEmpty);
+  });
+
+  test('a deletion created during a queued upload is retained for the next upload', () async {
+    final fixture = await _Fixture.withSession();
+    await fixture.tpAuth.replaceAll([
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.gradescope,
+        account: 'synthetic',
+        token: 'synthetic-token',
+        boundAt: DateTime.now(),
+      ),
+    ]);
+    expect((await fixture.sync.setupWithMasterPassword('synthetic-password')).ok, true);
+    fixture.server.pauseNextWrite();
+    final release = fixture.server.releaseNextWrite!;
+    final pending = fixture.sync.push();
+    await fixture.server.nextWriteStarted!.future;
+    await fixture.tpAuth.unbind(ThirdPartyPlatform.gradescope);
+    release.complete();
+    expect((await pending).ok, true);
+    final plain = (await SyncCrypto.decryptWithSalt(
+        fixture.server.properties['techpie_sync']!, 'synthetic-password',))!;
+    final envelope = SyncEnvelope.decode(plain)!;
+    expect(envelope.accounts, isEmpty);
+    expect(envelope.tombstones.single.platform, ThirdPartyPlatform.gradescope);
+  });
+
+  for (final replace in [false, true]) {
+    test('an old push response cannot overwrite a newer IDS ${replace ? "binding" : "deletion"}',
+        () async {
+      final fixture = await _Fixture.withSession();
+      await fixture.tpAuth.applyIdsSyncBinding(
+        IdsSyncBinding(
+          credential: FakeIdsClient.key('A'),
+          updatedAt: DateTime.now().subtract(const Duration(days: 1)),
+          deviceId: 'first',
+        ),
+      );
+      expect((await fixture.sync.setupWithMasterPassword('synthetic-password')).ok, true);
+      fixture.server.pauseNextWrite();
+      final release = fixture.server.releaseNextWrite!;
+      final firstPush = fixture.sync.push();
+      await fixture.server.nextWriteStarted!.future;
+      if (replace) {
+        await fixture.tpAuth.bindIds(
+            account: 'B',
+            password: 'synthetic-password',
+            promptCaptcha: (_, __, {required refresh}) async => null,);
+      } else {
+        await fixture.tpAuth.unbind(ThirdPartyPlatform.ids);
+      }
+      release.complete();
+      expect((await firstPush).ok, true);
+      final expected = replace ? 'B' : null;
+      expect(fixture.tpAuth.idsBinding!.credential?.username, expected);
+      expect(
+          IdsSyncBinding.fromAccount(
+                  await fixture.storage.loadThirdPartyAccount(ThirdPartyPlatform.ids),)
+              ?.credential
+              ?.username,
+          expected,);
+      final plain = (await SyncCrypto.decryptWithSalt(
+          fixture.server.properties['techpie_sync']!, 'synthetic-password',))!;
+      expect(SyncEnvelope.decode(plain)!.ids!.credential?.username, expected);
+    });
+  }
+
+  test(
+      'IDS sync carries the encrypted key, keeps cookies local, and merges deletions independently',
+      () async {
+    final first = await _Fixture.withSession();
+    final credential = FakeIdsClient.key('20240001');
+    final boundAt = DateTime.now().subtract(const Duration(days: 1));
+    await first.tpAuth.applyIdsSyncBinding(
+        IdsSyncBinding(credential: credential, updatedAt: boundAt, deviceId: 'first'),);
+    await first.tpAuth.idsNode.renew();
+    await first.tpAuth.updateRaw(
+        ThirdPartyPlatform.ids, {'tgc': 'LOCAL_ONLY_CASTGC', 'cookies': 'LOCAL_ONLY_COOKIE'},);
+    expect(first.tpAuth.idsBinding!.updatedAt, boundAt);
+    expect((await first.sync.setupWithMasterPassword('synthetic-password')).ok, true);
+    final blob = first.server.properties['techpie_sync']!;
+    expect(blob, isNot(contains(credential.privateKey)));
+    final plain = (await SyncCrypto.decryptWithSalt(blob, 'synthetic-password'))!;
+    expect(plain, contains(credential.privateKey));
+    expect(plain, isNot(contains('LOCAL_ONLY')));
+    final envelope = jsonDecode(plain) as Map;
+    expect(envelope.containsKey('ids'), false);
+    final account = (envelope['accounts'] as List).single as Map;
+    expect(account['platform'], 'ids');
+    expect((account['raw'] as Map)['credential'], isNotNull);
+    expect(account.containsKey('password'), false);
+    expect(DateTime.parse(account['updatedAt'] as String), boundAt.toUtc());
+    expect(account['deviceId'], 'first');
+
+    final second = await _Fixture.withSession(server: first.server);
+    expect((await second.sync.restoreWithMasterPassword('synthetic-password')).ok, true);
+    expect(second.tpAuth.idsBinding!.credential!.credentialId, credential.credentialId);
+    expect(second.tpAuth.idsNode.cookieProvider, isNull);
+    // A new device can obtain its own session using the restored software key.
+    expect(await second.tpAuth.idsNode.renew(), true);
+    expect(second.tpAuth.idsNode.cookieProvider!.cookies, contains('CASTGC='));
+    await second.sync.pull();
+    expect(second.tpAuth.idsNode.cookieProvider!.cookies, contains('CASTGC='));
+    await second.tpAuth.unbind(ThirdPartyPlatform.ids);
+    await second.sync.push();
+    // An old device's local renewal or backup cannot resurrect the Passkey.
+    await first.sync.push();
+    await first.sync.pull();
+    expect(first.tpAuth.idsBinding!.credential, isNull);
+    expect(first.tpAuth.idsAccount, isNull);
+  });
+
+  test('offline Passkey deletion survives a restart before an old cloud backup is read', () async {
+    final first = await _Fixture.withSession();
+    await first.tpAuth.applyIdsSyncBinding(
+      IdsSyncBinding(
+        credential: FakeIdsClient.key('20240001'),
+        updatedAt: DateTime.now().subtract(const Duration(days: 1)),
+        deviceId: 'first',
+      ),
+    );
+    expect((await first.sync.setupWithMasterPassword('synthetic-password')).ok, true);
+    first.tpAuth.onBindingsChanged = null;
+    await first.tpAuth.unbind(ThirdPartyPlatform.ids);
+    expect(first.storage.loadThirdPartyTombstones().single.platform, ThirdPartyPlatform.ids);
+
+    final api = LoggingHttpClient(DebugLogger());
+    final restarted = ThirdPartyAuthService(first.storage, api, idsClient: FakeIdsClient());
+    await restarted.initialize();
+    final sync =
+        SyncService(first.auth, restarted, first.storage, client: first.server.toHttpClient());
+    restarted.onUnbind = sync.recordTombstone;
+    await sync.loadCachedKey();
+    await sync.pull();
+    expect(restarted.idsBinding!.credential, isNull);
+    expect(restarted.idsAccount, isNull);
+    expect(await first.storage.loadThirdPartyAccount(ThirdPartyPlatform.ids), isNull);
+  });
+
   test('encrypted cloud backup restores eCard and propagates its deletion', () async {
     const openId = 'SYNTHETIC_OPENID_CLOUD_123456';
-    final firstStore = _EcardStore(EcardSyncBinding(openId: openId, channel: EcardOpenIdChannel.alipay,
-      updatedAt: DateTime.utc(2026), deviceId: 'first',),);
+    final firstStore = _EcardStore(
+      EcardSyncBinding(
+        openId: openId,
+        channel: EcardOpenIdChannel.alipay,
+        updatedAt: DateTime.utc(2026),
+        deviceId: 'first',
+      ),
+    );
     final first = await _Fixture.withSession(ecard: firstStore);
     expect((await first.sync.setupWithMasterPassword('synthetic-password')).ok, isTrue);
     expect(first.server.properties['techpie_sync'], isNot(contains(openId)));
@@ -32,8 +243,11 @@ void main() {
     expect((await second.sync.restoreWithMasterPassword('synthetic-password')).ok, isTrue);
     expect(secondStore.value!.openId, openId);
     expect(secondStore.value!.channel, EcardOpenIdChannel.alipay);
-    secondStore.value = EcardSyncBinding(openId: null,
-      updatedAt: DateTime.utc(2026, 1, 2), deviceId: 'second',);
+    secondStore.value = EcardSyncBinding(
+      openId: null,
+      updatedAt: DateTime.utc(2026, 1, 2),
+      deviceId: 'second',
+    );
     await second.sync.push();
     // An older offline device must not resurrect a remote deletion by pushing.
     await first.sync.push();
@@ -43,8 +257,7 @@ void main() {
 
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('setup -> cloud has blob; restore on a fresh device recovers bindings',
-      () async {
+  test('setup -> cloud has blob; restore on a fresh device recovers bindings', () async {
     final fx = await _Fixture.withSession();
     await fx.tpAuth.replaceAll([
       ThirdPartyAccount(
@@ -84,7 +297,7 @@ void main() {
     final fx = await _Fixture.withSession();
     await fx.tpAuth.replaceAll([
       ThirdPartyAccount(
-        platform: ThirdPartyPlatform.cpdaily,
+        platform: ThirdPartyPlatform.ids,
         account: '13800000000',
         sid: '20240001',
         token: 'tgc-secret',
@@ -98,7 +311,7 @@ void main() {
     final outcome = await fx2.sync.restoreWithMasterPassword('wrong');
     expect(outcome.ok, isFalse);
     expect(outcome.message, contains('不正确'));
-    expect(fx2.tpAuth.account(ThirdPartyPlatform.cpdaily), isNull);
+    expect(fx2.tpAuth.account(ThirdPartyPlatform.ids), isNull);
   });
 
   test('setup replaces an existing cloud backup only when confirmed', () async {
@@ -148,8 +361,7 @@ void main() {
     expect(withOldPassword.message, contains('不正确'));
   });
 
-  test('a legacy cloud blob is migrated and rewritten in the current schema',
-      () async {
+  test('a legacy cloud blob is migrated and rewritten in the current schema', () async {
     // A device running an older build wrote the pre-tombstone (v1) envelope.
     final legacyPlain = jsonEncode({
       'v': 1,
@@ -193,8 +405,7 @@ void main() {
     expect((await storedEnvelope())['v'], SyncSchema.current);
   });
 
-  test('push writes current bindings; disable clears the cloud blob',
-      () async {
+  test('push writes current bindings; disable clears the cloud blob', () async {
     final fx = await _Fixture.withSession();
     await fx.sync.setupWithMasterPassword('pw');
     expect(fx.server.properties['techpie_sync'], isNotNull);
@@ -243,9 +454,7 @@ void main() {
   });
   // -- LWW merge behavior (the bug these guard against) ----------------------
 
-  test(
-      'pull does NOT overwrite a locally-newer binding with an older cloud copy',
-      () async {
+  test('pull does NOT overwrite a locally-newer binding with an older cloud copy', () async {
     // Device A: set up sync with a gradescope binding (old updatedAt).
     final fx = await _Fixture.withSession();
     await fx.tpAuth.replaceAll([
@@ -285,9 +494,7 @@ void main() {
     );
   });
 
-  test(
-      'a deletion (tombstone) on device A is not resurrected when device B pulls',
-      () async {
+  test('a deletion (tombstone) on device A is not resurrected when device B pulls', () async {
     // Device A: bind gradescope, set up sync.
     final fx = await _Fixture.withSession();
     await fx.tpAuth.replaceAll([
@@ -322,7 +529,9 @@ void main() {
     final fx = await _Fixture.withSession(ecard: ecard);
     // What a newer build left behind: the eCard login parameter plus a field
     // this build has never heard of.
-    const futureField = {'accountList': ['one', 'two']};
+    const futureField = {
+      'accountList': ['one', 'two'],
+    };
     final seeded = SyncEnvelope(
       v: 3,
       accounts: const [],
@@ -334,8 +543,7 @@ void main() {
       ),
       unknown: const {'futureField': futureField},
     ).encode();
-    fx.server.properties['techpie_sync'] =
-        await SyncCrypto.encryptWithSalt(seeded, 'pw');
+    fx.server.properties['techpie_sync'] = await SyncCrypto.encryptWithSalt(seeded, 'pw');
 
     // This device restores (adopting the binding) and then pushes its own
     // state back.
@@ -372,6 +580,12 @@ void main() {
 class _FakeCasdoor {
   final Map<String, String> properties = {};
   bool enforceAuthz = true;
+  Completer<void>? nextWriteStarted;
+  Completer<void>? releaseNextWrite;
+  void pauseNextWrite() {
+    nextWriteStarted = Completer<void>();
+    releaseNextWrite = Completer<void>();
+  }
 
   http.Client toHttpClient() {
     return MockClient((request) async {
@@ -387,14 +601,12 @@ class _FakeCasdoor {
         });
         return http.Response(body, 200);
       }
-      if (request.method == 'POST' &&
-          request.url.path == '/api/update-user') {
+      if (request.method == 'POST' && request.url.path == '/api/update-user') {
         final decoded = jsonDecode(request.body) as Map<String, dynamic>;
         // Casbin self-update authz: id query must match body owner/name.
         if (enforceAuthz) {
           final idQuery = request.url.queryParameters['id'] ?? '';
-          final bodyId =
-              '${decoded['owner'] ?? ''}/${decoded['name'] ?? ''}';
+          final bodyId = '${decoded['owner'] ?? ''}/${decoded['name'] ?? ''}';
           if (idQuery != bodyId) {
             return http.Response(
               jsonEncode({
@@ -405,8 +617,13 @@ class _FakeCasdoor {
             );
           }
         }
-        final props =
-            (decoded['properties'] as Map?)?.cast<String, String>();
+        final pause = releaseNextWrite;
+        if (pause != null) {
+          releaseNextWrite = null;
+          nextWriteStarted!.complete();
+          await pause.future;
+        }
+        final props = (decoded['properties'] as Map?)?.cast<String, String>();
         if (props != null) {
           properties
             ..clear()
@@ -456,7 +673,7 @@ class _Fixture {
     final httpClient = LoggingHttpClient(logger);
     final uniAuth = UniAuthService();
     final auth = AuthService(storage, httpClient, uniAuth);
-    final tpAuth = ThirdPartyAuthService(storage, httpClient);
+    final tpAuth = ThirdPartyAuthService(storage, httpClient, idsClient: FakeIdsClient());
     final sync = SyncService(auth, tpAuth, storage, client: srv.toHttpClient(), ecard: ecard);
     // Mirror main.dart wiring so tombstones are recorded + pushes fire.
     tpAuth.onBindingsChanged = ({force = false}) {
@@ -473,8 +690,10 @@ class _Fixture {
 class _EcardStore implements EcardSyncStore {
   _EcardStore(this.value);
   EcardSyncBinding? value;
-  @override Future<EcardSyncBinding?> readSyncBinding() async => value;
-  @override Future<void> applySyncBinding(EcardSyncBinding? binding) async {
+  @override
+  Future<EcardSyncBinding?> readSyncBinding() async => value;
+  @override
+  Future<void> applySyncBinding(EcardSyncBinding? binding) async {
     value = value?.merge(binding) ?? binding;
   }
 }

@@ -1,5 +1,5 @@
 /// Outcome of the most recent renewal attempt for a session node (top-level
-/// bindings cpdaily/gradescope/hydro, or derived children eams/elearning).
+/// bindings ids/gradescope/hydro, or derived children eams/elearning).
 /// Local-only — never part of the cloud-sync envelope (renewal history is
 /// device-specific and irrelevant to restoring bindings on another device).
 class RenewStatus {

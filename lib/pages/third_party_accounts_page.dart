@@ -20,11 +20,12 @@ import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/schedule_picker_sheet.dart';
 import 'campus_card_account_page.dart';
+import 'ids_bind_page.dart';
 import 'third_party_bind_page.dart';
 
 /// The three states the linked-accounts status dot can show. `null` (no
 /// dot) means "not applicable" — unbound top-level platform, or a derived
-/// child whose parent (cpdaily) isn't bound yet.
+/// child whose parent (ids) isn't bound yet.
 enum _LinkHealth { normal, recentFailure, error }
 
 Color _healthColor(BuildContext context, _LinkHealth health) {
@@ -36,7 +37,7 @@ Color _healthColor(BuildContext context, _LinkHealth health) {
   };
 }
 
-/// Health for a top-level binding (cpdaily/gradescope/hydro): null when
+/// Health for a top-level binding (ids/gradescope/hydro): null when
 /// unbound (no dot — that's a distinct "not configured" state, not an
 /// error).
 _LinkHealth? _topLevelHealth(ThirdPartyAccount? account, RenewStatus? status) {
@@ -47,20 +48,19 @@ _LinkHealth? _topLevelHealth(ThirdPartyAccount? account, RenewStatus? status) {
 }
 
 /// Health for a derived child (eams/elearning): null when the parent
-/// (cpdaily) isn't bound — there's nothing to evaluate yet.
+/// (ids) isn't bound — there's nothing to evaluate yet.
 _LinkHealth? _childHealth({
-  required bool cpdailyBound,
+  required bool idsBound,
   required bool nodeAvailable,
   required RenewStatus? status,
 }) {
-  if (!cpdailyBound) return null;
+  if (!idsBound) return null;
   if (!nodeAvailable && status?.success != true) return _LinkHealth.error;
   if (status?.success == false) return _LinkHealth.recentFailure;
   return _LinkHealth.normal;
 }
 
-String _formatDateTime(DateTime dt) =>
-    DateFormat('yyyy-MM-dd HH:mm').format(dt);
+String _formatDateTime(DateTime dt) => DateFormat('yyyy-MM-dd HH:mm').format(dt);
 
 class ThirdPartyAccountsPage extends StatelessWidget {
   const ThirdPartyAccountsPage({super.key});
@@ -102,28 +102,28 @@ class ThirdPartyAccountsPage extends StatelessWidget {
       body: ListenableBuilder(
         listenable: Listenable.merge([tpAuth, auth, campusCard]),
         builder: (context, _) {
-          final cpdailyBound = tpAuth.hasCpdailyBinding;
+          final idsBound = tpAuth.hasIdsBinding;
           return ListView(
             padding: EdgeInsets.only(
               top: topInset,
               bottom: AppShellMetrics.bottomContentPaddingOf(context),
             ),
             children: [
-              // CpDaily/IDS is the parent session — Blackboard (elearning),
+              // IDS is the parent session — Blackboard (elearning),
               // 教务系统 (eams), and eGate 签到 (egateApp) below are all
               // derived from its tgc, not independent bindings, hence the
               // nested/indented rendering.
               _TopLevelTile(
-                platform: ThirdPartyPlatform.cpdaily,
-                account: tpAuth.account(ThirdPartyPlatform.cpdaily),
-                node: tpAuth.cpdailyNode,
-                renewStatus: tpAuth.renewStatus('cpdaily'),
+                platform: ThirdPartyPlatform.ids,
+                account: tpAuth.account(ThirdPartyPlatform.ids),
+                node: tpAuth.idsNode,
+                renewStatus: tpAuth.renewStatus('ids'),
               ),
               _ChildSessionTile(
                 nodeId: 'elearning',
                 label: 'Blackboard',
                 icon: Icons.school_outlined,
-                cpdailyBound: cpdailyBound,
+                idsBound: idsBound,
                 node: tpAuth.elearningNode,
                 renewStatus: tpAuth.renewStatus('elearning'),
               ),
@@ -131,7 +131,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                 nodeId: 'eams',
                 label: '教务系统',
                 icon: Icons.account_balance_outlined,
-                cpdailyBound: cpdailyBound,
+                idsBound: idsBound,
                 node: tpAuth.eamsNode,
                 renewStatus: tpAuth.renewStatus('eams'),
               ),
@@ -139,7 +139,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                 nodeId: 'egateApp',
                 label: 'eGate',
                 icon: Icons.apps_outlined,
-                cpdailyBound: cpdailyBound,
+                idsBound: idsBound,
                 node: tpAuth.egateAppNode,
                 renewStatus: tpAuth.renewStatus('egateApp'),
               ),
@@ -221,8 +221,12 @@ class _StatusDot extends StatelessWidget {
 }
 
 Widget _dottedIcon(
-    BuildContext context, IconData icon, Color? color, _LinkHealth? health,
-    {double size = 24,}) {
+  BuildContext context,
+  IconData icon,
+  Color? color,
+  _LinkHealth? health, {
+  double size = 24,
+}) {
   return Stack(
     clipBehavior: Clip.none,
     children: [
@@ -259,7 +263,7 @@ class _TopLevelTileState extends State<_TopLevelTile> {
   IconData get _icon => switch (widget.platform) {
         ThirdPartyPlatform.gradescope => Icons.grading_outlined,
         ThirdPartyPlatform.hydro => Icons.terminal_outlined,
-        ThirdPartyPlatform.cpdaily => Icons.vpn_key_outlined,
+        ThirdPartyPlatform.ids => Icons.vpn_key_outlined,
       };
 
   @override
@@ -282,11 +286,14 @@ class _TopLevelTileState extends State<_TopLevelTile> {
       );
     }
 
-    final health = _topLevelHealth(acc, widget.renewStatus);
+    final needsUpgrade =
+        widget.platform == ThirdPartyPlatform.ids && acc.raw['authMethod'] != 'passkey';
+    final health = needsUpgrade ? _LinkHealth.error : _topLevelHealth(acc, widget.renewStatus);
     final subtitleParts = <String>[
       acc.displayName,
+      if (needsUpgrade) '需要升级为 Passkey',
       if (acc.expireAt != null) _expireLabel(acc.expireAt!),
-      if (acc.autoRenew) '自动更新 Token 已开启',
+      if (acc.autoRenew && !needsUpgrade) '自动更新 Token 已开启',
     ];
     if (widget.platform == ThirdPartyPlatform.hydro) {
       final origin = acc.hydroOrigin ?? '';
@@ -315,22 +322,23 @@ class _TopLevelTileState extends State<_TopLevelTile> {
               : IconButton(
                   icon: const Icon(Icons.refresh, size: 20),
                   tooltip: '立即刷新',
-                  onPressed: () => unawaited(_refresh(context)),
+                  onPressed: needsUpgrade ? null : () => unawaited(_refresh(context)),
                 ),
           isIos()
               ? AdaptiveConfirmationButton(
                   label: 'Unbind',
-                  confirmTitle: '解绑 ${widget.platform.label}?',
+                  confirmTitle: widget.platform == ThirdPartyPlatform.ids &&
+                          acc.raw['authMethod'] == 'passkey'
+                      ? '解绑本地及 IDS Passkey?'
+                      : '解绑 ${widget.platform.label}?',
                   confirmLabel: '解绑',
                   destructive: true,
-                  onConfirmed: () =>
-                      unawaited(_unbind(context, widget.platform)),
+                  onConfirmed: () => unawaited(_unbind(context, widget.platform)),
                 )
               : TextButton.icon(
                   icon: const Icon(Icons.link_off, size: 18),
                   label: const Text('Unbind'),
-                  onPressed: () =>
-                      unawaited(_confirmUnbind(context, widget.platform)),
+                  onPressed: () => unawaited(_confirmUnbind(context, widget.platform)),
                 ),
         ],
       ),
@@ -339,14 +347,14 @@ class _TopLevelTileState extends State<_TopLevelTile> {
 
   Future<void> _refresh(BuildContext context) async {
     setState(() => _refreshing = true);
-    final ok = await widget.node.renew();
+    final ok = await ServiceProvider.of(context).thirdPartyAuthService.refreshNode(widget.node);
     if (!context.mounted) return;
     setState(() => _refreshing = false);
     showAdaptiveFeedback(
       context: context,
       message: ok
           ? '${widget.platform.label} 刷新成功'
-          : '${widget.platform.label} 刷新失败',
+          : (widget.node.lastRenewError ?? '${widget.platform.label} 刷新失败'),
       style: ok ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.error,
     );
   }
@@ -361,9 +369,7 @@ class _TopLevelTileState extends State<_TopLevelTile> {
       message: result.success
           ? '${widget.platform.label} 检测成功: ${result.display}'
           : '${widget.platform.label} 检测失败: ${result.display}',
-      style: result.success
-          ? AdaptiveFeedbackStyle.success
-          : AdaptiveFeedbackStyle.error,
+      style: result.success ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.error,
     );
   }
 
@@ -372,32 +378,50 @@ class _TopLevelTileState extends State<_TopLevelTile> {
     if (acc == null) return;
     final rows = <MapEntry<String, String>>[
       MapEntry('账号', acc.displayName),
-      if (acc.sid != null && acc.sid!.isNotEmpty) MapEntry('学号', acc.sid!),
+      if (widget.platform == ThirdPartyPlatform.ids && acc.idsStudentId.isNotEmpty)
+        MapEntry('学号', acc.idsStudentId)
+      else if (acc.sid != null && acc.sid!.isNotEmpty)
+        MapEntry('学号', acc.sid!),
+      if (widget.platform == ThirdPartyPlatform.ids)
+        MapEntry('登录方式', acc.raw['authMethod'] == 'passkey' ? 'Passkey' : '待升级为 Passkey'),
       MapEntry('绑定时间', _formatDateTime(acc.boundAt)),
       MapEntry('更新时间', _formatDateTime(acc.updatedAt)),
       MapEntry('最近刷新', _renewStatusLabel(widget.renewStatus)),
       MapEntry('下次刷新', _nextRenewLabel(widget.node.nextRenewTimestamp)),
-      MapEntry('Token 有效期',
-          acc.expireAt != null ? _formatDateTime(acc.expireAt!) : '无',),
-      MapEntry('自动续期', acc.autoRenew ? '已开启' : '未开启'),
+      MapEntry(
+        'Token 有效期',
+        acc.expireAt != null ? _formatDateTime(acc.expireAt!) : '无',
+      ),
+      MapEntry(
+        '自动续期',
+        widget.platform == ThirdPartyPlatform.ids
+            ? (acc.raw['authMethod'] == 'passkey' ? '已开启' : '未开启')
+            : (acc.autoRenew ? '已开启' : '未开启'),
+      ),
       if (widget.platform == ThirdPartyPlatform.hydro) ...[
         MapEntry('Hydro 站点', acc.hydroOrigin ?? ''),
         MapEntry('Hydro 域名', (acc.hydroDomains ?? const []).join(', ')),
       ],
     ];
-    await _showAccountDetailSheet(
+    final upgrade = await _showAccountDetailSheet(
       context,
       title: widget.platform.label,
       rows: rows,
+      needsUpgrade: widget.platform == ThirdPartyPlatform.ids && acc.raw['authMethod'] != 'passkey',
+      idsNotice: widget.platform == ThirdPartyPlatform.ids && acc.raw['authMethod'] == 'passkey',
       onRefresh: () => unawaited(_refresh(context)),
       onUnbind: () => unawaited(_confirmUnbind(context, widget.platform)),
-      onProbe: widget.node.keepaliveConfig != null
-          ? () => unawaited(_probe(context))
-          : null,
+      onProbe: widget.node.keepaliveConfig != null ? () => unawaited(_probe(context)) : null,
       cookieText: ServiceProvider.of(context).storageService.debugMode
           ? widget.node.cookieProvider?.cookies
           : null,
     );
+    if (upgrade == true && context.mounted) {
+      await pushAdaptivePage<void>(
+        context,
+        builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
+      );
+    }
   }
 }
 
@@ -405,7 +429,7 @@ class _ChildSessionTile extends StatefulWidget {
   final String nodeId; // 'eams' | 'elearning'
   final String label;
   final IconData icon;
-  final bool cpdailyBound;
+  final bool idsBound;
   final SessionNode node;
   final RenewStatus? renewStatus;
 
@@ -413,7 +437,7 @@ class _ChildSessionTile extends StatefulWidget {
     required this.nodeId,
     required this.label,
     required this.icon,
-    required this.cpdailyBound,
+    required this.idsBound,
     required this.node,
     required this.renewStatus,
   });
@@ -429,33 +453,34 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    if (!widget.cpdailyBound) {
+    if (!widget.idsBound) {
       return ListTile(
         dense: true,
         contentPadding: const EdgeInsets.only(left: 40, right: 16),
-        leading: Icon(widget.icon,
-            size: 20, color: theme.colorScheme.onSurfaceVariant,),
+        leading: Icon(
+          widget.icon,
+          size: 20,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
         title: Text(
           widget.label,
           style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
         ),
         subtitle: Text(
-          '需要先绑定 CpDaily/IDS',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          '需要先绑定校园账号',
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         onTap: () => unawaited(
           pushAdaptivePage<void>(
             context,
-            builder: (_) =>
-                const ThirdPartyBindPage(platform: ThirdPartyPlatform.cpdaily),
+            builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
           ),
         ),
       );
     }
 
     final health = _childHealth(
-      cpdailyBound: widget.cpdailyBound,
+      idsBound: widget.idsBound,
       nodeAvailable: widget.node.isAvailable,
       status: widget.renewStatus,
     );
@@ -464,8 +489,12 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
       dense: true,
       contentPadding: const EdgeInsets.only(left: 40, right: 16),
       leading: _dottedIcon(
-          context, widget.icon, theme.colorScheme.primary, health,
-          size: 20,),
+        context,
+        widget.icon,
+        theme.colorScheme.primary,
+        health,
+        size: 20,
+      ),
       title: Text(widget.label),
       subtitle: Text(widget.node.displayName),
       onTap: () => unawaited(_openDetails(context)),
@@ -488,7 +517,7 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
 
   Future<void> _refresh(BuildContext context) async {
     setState(() => _refreshing = true);
-    final ok = await widget.node.renew();
+    final ok = await ServiceProvider.of(context).thirdPartyAuthService.refreshNode(widget.node);
     if (!context.mounted) return;
     setState(() => _refreshing = false);
     showAdaptiveFeedback(
@@ -508,19 +537,16 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
       message: result.success
           ? '${widget.label} 检测成功: ${result.display}'
           : '${widget.label} 检测失败: ${result.display}',
-      style: result.success
-          ? AdaptiveFeedbackStyle.success
-          : AdaptiveFeedbackStyle.error,
+      style: result.success ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.error,
     );
   }
 
   Future<void> _openDetails(BuildContext context) async {
     final rows = <MapEntry<String, String>>[
       MapEntry('状态', widget.node.isAvailable ? '可用' : '不可用'),
-      MapEntry('保活探测', widget.node.displayName),
+      MapEntry('保活探测', widget.node.probeDisplay),
       MapEntry('最近刷新', _renewStatusLabel(widget.renewStatus)),
       MapEntry('下次刷新', _nextRenewLabel(widget.node.nextRenewTimestamp)),
-      const MapEntry('说明', '由 CpDaily/IDS 会话派生，不单独绑定账号'),
     ];
     await _showAccountDetailSheet(
       context,
@@ -565,7 +591,9 @@ Future<void> _confirmUnbind(
   final ok = await showAdaptiveAlertDialog<bool>(
     context: context,
     title: '解绑 ${platform.label}?',
-    message: '将清除本地保存的 token 与账号信息,不会注销远端账号。',
+    message: platform == ThirdPartyPlatform.ids && tpAuth.usesIdsPasskey
+        ? '将删除本地绑定，并尝试在 IDS 解绑此 Passkey。学校验证取消或删除失败时，本地绑定仍会删除。'
+        : '将清除本地保存的 token 与账号信息,不会注销远端账号。',
     actions: const [
       AdaptiveAlertAction<bool>(label: '取消', value: false),
       AdaptiveAlertAction<bool>(
@@ -575,9 +603,7 @@ Future<void> _confirmUnbind(
       ),
     ],
   );
-  if (ok == true) {
-    await tpAuth.unbind(platform);
-  }
+  if (ok == true && context.mounted) await _unbind(context, platform);
 }
 
 Future<void> _unbind(
@@ -585,10 +611,28 @@ Future<void> _unbind(
   ThirdPartyPlatform platform,
 ) async {
   final tpAuth = ServiceProvider.of(context).thirdPartyAuthService;
-  await tpAuth.unbind(platform);
+  if (platform != ThirdPartyPlatform.ids || !tpAuth.usesIdsPasskey) {
+    await tpAuth.unbind(platform);
+    return;
+  }
+  final prompts = IdsDialogSession(context, withPassword: true);
+  final bool removed;
+  try {
+    removed = await tpAuth.unbindIdsWithRemote(promptVerification: prompts.verification);
+  } finally {
+    await prompts.close();
+    prompts.dispose();
+  }
+  if (!context.mounted) return;
+  showAdaptiveFeedback(
+    context: context,
+    message: removed ? '本地与 IDS Passkey 均已解绑' : '本地绑定已删除，IDS 解绑未完成，可在账号安全页面手动删除',
+    style: removed ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.info,
+  );
 }
 
-Future<void> _showAccountDetailSheet(
+/// Returns true when the user chooses to upgrade the stored IDS account.
+Future<bool?> _showAccountDetailSheet(
   BuildContext context, {
   required String title,
   required List<MapEntry<String, String>> rows,
@@ -596,6 +640,8 @@ Future<void> _showAccountDetailSheet(
   VoidCallback? onUnbind,
   VoidCallback? onProbe,
   String? cookieText,
+  bool idsNotice = false,
+  bool needsUpgrade = false,
 }) {
   if (isIos()) {
     return _showIosAccountDetailSheet(
@@ -606,10 +652,12 @@ Future<void> _showAccountDetailSheet(
       onUnbind: onUnbind,
       onProbe: onProbe,
       cookieText: cookieText,
+      idsNotice: idsNotice,
+      needsUpgrade: needsUpgrade,
     );
   }
   final theme = Theme.of(context);
-  return CNBottomSheet.show<void>(
+  return CNBottomSheet.show<bool>(
     context: context,
     useRootNavigator: true,
     showDragHandle: true,
@@ -640,12 +688,18 @@ Future<void> _showAccountDetailSheet(
                           ),
                         ),
                         Expanded(
-                          child: Text(row.value,
-                              style: theme.textTheme.bodyMedium,),
+                          child: Text(
+                            row.value,
+                            style: theme.textTheme.bodyMedium,
+                          ),
                         ),
                       ],
                     ),
                   ),
+              if (idsNotice) ...[
+                const SizedBox(height: 12),
+                const IdsPasskeyHelp(),
+              ],
               if (cookieText != null && cookieText.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Row(
@@ -697,14 +751,20 @@ Future<void> _showAccountDetailSheet(
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('立即刷新'),
-                      onPressed: () {
-                        Navigator.pop(sheetContext);
-                        onRefresh();
-                      },
-                    ),
+                    child: needsUpgrade
+                        ? FilledButton.icon(
+                            icon: const Icon(Icons.key_outlined),
+                            label: const Text('升级为 Passkey'),
+                            onPressed: () => Navigator.pop(sheetContext, true),
+                          )
+                        : OutlinedButton.icon(
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('立即刷新'),
+                            onPressed: () {
+                              Navigator.pop(sheetContext);
+                              onRefresh();
+                            },
+                          ),
                   ),
                   if (onProbe != null) ...[
                     const SizedBox(width: 12),
@@ -723,10 +783,14 @@ Future<void> _showAccountDetailSheet(
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton.icon(
-                        icon: Icon(Icons.link_off,
-                            color: theme.colorScheme.error,),
-                        label: Text('解绑',
-                            style: TextStyle(color: theme.colorScheme.error),),
+                        icon: Icon(
+                          Icons.link_off,
+                          color: theme.colorScheme.error,
+                        ),
+                        label: Text(
+                          '解绑',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
                         onPressed: () {
                           Navigator.pop(sheetContext);
                           onUnbind();
@@ -748,7 +812,7 @@ Future<void> _showAccountDetailSheet(
 /// and its actions as a second group of tappable rows — unbinding last, in the
 /// destructive red — under a sheet toolbar with a ✕ to close. No grabber: the
 /// sheet has one height.
-Future<void> _showIosAccountDetailSheet(
+Future<bool?> _showIosAccountDetailSheet(
   BuildContext context, {
   required String title,
   required List<MapEntry<String, String>> rows,
@@ -756,8 +820,10 @@ Future<void> _showIosAccountDetailSheet(
   VoidCallback? onUnbind,
   VoidCallback? onProbe,
   String? cookieText,
+  bool idsNotice = false,
+  bool needsUpgrade = false,
 }) {
-  return CNBottomSheet.show<void>(
+  return CNBottomSheet.show<bool>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
@@ -829,13 +895,27 @@ Future<void> _showIosAccountDetailSheet(
                             ),
                         ],
                       ),
+                      if (idsNotice)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 20),
+                          child: Column(
+                            children: [
+                              IdsPasskeyHelp(),
+                            ],
+                          ),
+                        ),
                       CupertinoListSection.insetGrouped(
                         children: [
-                          actionRow(CupertinoIcons.arrow_clockwise, '立即刷新', tint, onRefresh),
-                          if (onProbe != null)
-                            actionRow(CupertinoIcons.heart, '检测', tint, onProbe),
-                          if (onUnbind != null)
-                            actionRow(CupertinoIcons.link, '解绑', red, onUnbind),
+                          if (needsUpgrade)
+                            CupertinoListTile(
+                              leading: Icon(CupertinoIcons.lock, color: tint),
+                              title: Text('升级为 Passkey', style: TextStyle(color: tint)),
+                              onTap: () => Navigator.pop(sheetContext, true),
+                            )
+                          else
+                            actionRow(CupertinoIcons.arrow_clockwise, '立即刷新', tint, onRefresh),
+                          if (onProbe != null) actionRow(CupertinoIcons.heart, '检测', tint, onProbe),
+                          if (onUnbind != null) actionRow(CupertinoIcons.link, '解绑', red, onUnbind),
                         ],
                       ),
                     ],

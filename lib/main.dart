@@ -40,6 +40,7 @@ void main(List<String> args) async {
 
   WidgetsFlutterBinding.ensureInitialized();
   await initializePlatformCapabilities();
+  await initializeCampusUserAgent();
   // OHOS white-screen probe disabled to speed up startup. Re-enable by
   // restoring the runApp(_BootProbe...) calls and wrapping init in try/catch.
   // runApp(const _BootProbe(message: '启动中…'));
@@ -124,7 +125,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // state (throttled). Wired via post-construction setter to avoid a circular
   // dependency between ThirdPartyAuthService and SyncService.
   thirdPartyAuthService.onBindingsChanged = ({force = false}) {
-    // The timetable is drawn from the eGate binding, and `fetchAll` does nothing
+    // The timetable is drawn from the IDS binding, and `fetchAll` does nothing
     // at all while there is none — silently, which is how a freshly bound account
     // used to sit on an empty table with nothing to suggest it should reload. This
     // runs for every binding, though, and a timetable does not care about
@@ -238,7 +239,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       );
     }
 
-    if (thirdPartyAuthService.hasCpdailyBinding) {
+    if (thirdPartyAuthService.hasIdsBinding) {
       // Through the funnel: the token renewals just above fire the same trigger,
       // and this used to be a second round on top of theirs.
       scheduleService.requestFetch(force: true);

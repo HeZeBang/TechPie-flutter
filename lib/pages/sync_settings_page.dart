@@ -477,7 +477,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 }
 
 const String _e2eExplanation =
-    '启用后，你的 eGate 会话(含 CASTGC)、Gradescope/Hydro token 及(若开启自动续期)密码'
+    '启用后，你的 IDS Passkey、Gradescope/Hydro token 及(若开启自动续期)密码'
     '将以端到端加密形式存于 Casdoor，仅你能用主密码解密，TechPie 与 Casdoor 服务器均无法读取。'
     '请妥善保管主密码——遗忘将无法在其它设备恢复。';
 

@@ -7,13 +7,14 @@ import 'package:http/http.dart' as http_pkg;
 import '../../models/renew_status.dart';
 import '../../models/third_party_account.dart';
 import '../http_client.dart';
+import '../ids/campus_http.dart';
 import 'cookie_provider.dart';
 
 /// Callback the facade ([ThirdPartyAuthService]) installs so a top-level
 /// node can persist a refreshed [ThirdPartyAccount] back into secure storage
 /// and fire the external change notification (listeners + cloud-sync push
 /// hook) in one place. Returns nothing; the node owns the in-memory account
-/// afterwards. Only meaningful for top-level nodes (renewMode cpdailySession
+/// afterwards. Only meaningful for top-level nodes (renewMode idsPasskey
 /// or password); non-top-level nodes skip persist (derived cookies are
 /// ephemeral). [force] requests the cloud-sync push bypass its throttle —
 /// set by renew() call sites since a successful renew must not wait for the
@@ -51,7 +52,7 @@ typedef BaseUrlGetter = String Function();
 /// Determines how a node calculates its next scheduled renewal.
 enum RenewSchedule {
   none,
-  cpdailyDefault,
+  idsDefault,
   accountExpiry,
   derivedCookie,
 }
@@ -146,8 +147,7 @@ String _mergeSetCookie(String existing, String setCookieHeader) {
     final trimmed = part.trim();
     final eq = trimmed.indexOf('=');
     if (eq > 0) {
-      updated[trimmed.substring(0, eq).trim()] =
-          trimmed.substring(eq + 1).trim();
+      updated[trimmed.substring(0, eq).trim()] = trimmed.substring(eq + 1).trim();
     }
   }
   // Apply updates from Set-Cookie.  Multiple cookies may be present in
@@ -167,16 +167,14 @@ String _mergeSetCookie(String existing, String setCookieHeader) {
 
 /// How a [SessionNode] renews its credentials.
 enum RenewMode {
-  /// CpDaily session keep-alive: POST /auth/renew with stored
-  /// sessionToken/tgc/userId/tenantId. Top-level only.
-  cpdailySession,
+  /// Local IDS software Passkey login. Top-level campus session only.
+  idsPasskey,
 
   /// Password re-authentication: POST /auth/third-party/`<apiPath>` with
   /// account/password. Top-level only (gradescope, hydro).
   password,
 
-  /// Downstream cookie minting: POST /auth/third-party/`<id>` with the parent
-  /// node's tgc. Non-top-level only (eams, elearning).
+  /// Local CAS cookie exchange using the parent IDS session.
   parentCookie,
 }
 
@@ -185,17 +183,18 @@ enum RenewMode {
 /// Topology:
 /// ```
 /// SessionTree
-/// ├── cpdaily     (top-level, account+password/SMS bind, /auth/renew)
-/// │   ├── eams        (child, /auth/third-party/eams, parent tgc)
-/// │   ├── elearning   (child, /auth/third-party/elearning, parent tgc)
-/// │   └── egateApp    (child, /auth/third-party/egate-app, parent tgc)
+/// ├── ids         (local IDS software Passkey login)
+/// │   ├── eams        (child, local CAS login)
+/// │   ├── elearning   (child, local CAS login)
+/// │   ├── egateApp    (child, local CAS login)
+/// │   └── oa          (child, local CAS login)
 /// ├── gradescope  (top-level, account+password bind, bearer token)
 /// └── hydro       (top-level, account+password bind, sid cookie)
 /// ```
 ///
 /// Every node exposes:
 /// - [cookieProvider] — the [CookieProvider] view downstream apps read. For
-///   top-level nodes the credential comes from the bound account (cpdaily:
+///   top-level nodes the credential comes from the bound account (ids:
 ///   CASTGC+cookies; gradescope/hydro: bearer token). For non-top-level
 ///   nodes it comes from the derived downstream cookie string.
 /// - [renew()] — refresh this node's credentials. Single-flighted: concurrent
@@ -217,6 +216,9 @@ class SessionNode extends ChangeNotifier {
     this.renewPath,
     this.renewMode,
     this.apiPath,
+    this.localAccountRenew,
+    this.localCanRenew,
+    this.localCookieMint,
     this.persistDerived,
     this.recordRenewStatus,
     this.persistProbe,
@@ -225,25 +227,25 @@ class SessionNode extends ChangeNotifier {
     this.keepaliveConfig,
   });
 
-  /// Stable identifier (matches storage key / platform id, except cpdaily
-  /// whose storage id is 'cpdaily' but whose backend bind route is 'egate').
+  /// Stable identifier matching the platform id for top-level nodes.
   final String id;
 
   /// Optional parent — set when this node's session is derived from another
-  /// (e.g. eams/elearning cookies are minted from the cpdaily CASTGC). Null
+  /// (e.g. eams/elearning cookies are minted from the ids CASTGC). Null
   /// for roots.
   SessionNode? parent;
 
-  /// Full backend renew path (e.g. '/auth/renew', '/auth/third-party/eams').
+  /// Backend renew path for non-campus token services (Gradescope/Hydro).
   final String? renewPath;
 
   /// How this node renews. Null only for nodes that never renew.
   final RenewMode? renewMode;
 
-  /// Backend bind route name. For cpdaily this is 'egate' (the backend route
-  /// was not renamed); for gradescope/hydro it equals [id]. Null for
-  /// non-top-level nodes.
+  /// Backend bind route name for password services (Gradescope/Hydro).
   final String? apiPath;
+  final Future<ThirdPartyAccount> Function(ThirdPartyAccount current)? localAccountRenew;
+  final bool Function()? localCanRenew;
+  final Future<String> Function(String nodeId, Map<String, dynamic> root)? localCookieMint;
   final PersistAccount persist;
   final PersistDerivedCookie? persistDerived;
   final PersistRenewStatus? recordRenewStatus;
@@ -278,11 +280,7 @@ class SessionNode extends ChangeNotifier {
   /// (OA gym) and child nodes read tgc/sessionToken/userId/tenantId through
   /// this. Returns an empty map for non-top-level nodes.
   Map<String, dynamic> get rawFields {
-    final acc = _account;
-    if (id == 'cpdaily' && acc != null && acc.cpdailyUserId.isNotEmpty) {
-      return {...acc.raw, 'userId': acc.cpdailyUserId};
-    }
-    return acc?.raw ?? const {};
+    return _account?.raw ?? const {};
   }
 
   void setAccount(ThirdPartyAccount? acc) {
@@ -296,9 +294,9 @@ class SessionNode extends ChangeNotifier {
   void setDerivedCookie(String? cookie) {
     if (parent == null) return; // top-level: no derived cookie
     _derivedCookie = (cookie != null && cookie.isNotEmpty) ? cookie : null;
-    _nextRenewTimestamp = _derivedCookie == null
-        ? null
-        : (_nextRenewTimestamp ?? _defaultNextRenewTimestamp());
+    if (_derivedCookie == null) _lastProbeDisplay = null;
+    _nextRenewTimestamp =
+        _derivedCookie == null ? null : (_nextRenewTimestamp ?? _defaultNextRenewTimestamp());
   }
 
   void attachChild(SessionNode child) {
@@ -326,34 +324,35 @@ class SessionNode extends ChangeNotifier {
       if (cookie.isEmpty) return null;
       return CookieProvider(
         cookies: cookie,
-        studentId: id == 'cpdaily' ? acc.cpdailyStudentId : acc.sid ?? '',
+        studentId: id == 'ids' ? acc.idsStudentId : acc.sid ?? '',
         domain: _domain,
       );
     }
     // Non-top-level: derived cookie
     final c = _derivedCookie;
-    if (c == null || c.isEmpty) return null;
+    if (parent?.isAvailable != true || c == null || c.isEmpty) return null;
     return CookieProvider(cookies: c, domain: _domain);
   }
 
-  /// Top-level credential extraction: cpdaily concatenates CASTGC onto the
+  /// Top-level credential extraction: ids concatenates CASTGC onto the
   /// session cookies; gradescope/hydro use the bearer token directly.
   String _cookieFromAccount(ThirdPartyAccount acc) {
-    if (id == 'cpdaily') {
+    if (id == 'ids') {
+      if (acc.raw['authMethod'] != 'passkey') return '';
       final base = (acc.raw['cookies'] as String?) ?? '';
+      if (RegExp(r'(^|;)\s*CASTGC=').hasMatch(base)) return base;
       final tgc = (acc.raw['tgc'] as String?) ?? '';
-      return tgc.isEmpty
-          ? base
-          : (base.isNotEmpty ? '$base; CASTGC=$tgc' : 'CASTGC=$tgc');
+      return tgc.isEmpty ? base : (base.isNotEmpty ? '$base; CASTGC=$tgc' : 'CASTGC=$tgc');
     }
     return acc.token;
   }
 
   String get _domain => switch (id) {
-        'cpdaily' => 'ids.shanghaitech.edu.cn',
+        'ids' => 'ids.shanghaitech.edu.cn',
         'eams' => 'eams.shanghaitech.edu.cn',
         'elearning' => 'elearning.shanghaitech.edu.cn',
         'egateApp' => 'egate.shanghaitech.edu.cn',
+        'oa' => 'oa.shanghaitech.edu.cn',
         _ => '',
       };
 
@@ -363,22 +362,36 @@ class SessionNode extends ChangeNotifier {
       final cp = cookieProvider;
       return _account != null && cp != null && !cp.isEmpty;
     }
-    return (parent?.isAvailable ?? false) &&
-        _derivedCookie != null &&
-        _derivedCookie!.isNotEmpty;
+    return (parent?.isAvailable ?? false) && _derivedCookie != null && _derivedCookie!.isNotEmpty;
   }
 
   bool get canRenew {
-    if (parent != null) return parent!.isAvailable;
-    if (renewMode == RenewMode.cpdailySession) return _account != null;
-    return _account?.autoRenew == true &&
-        _account?.password?.isNotEmpty == true;
+    if (parent != null) return parent!.isAvailable || parent!.canRenew;
+    if (renewMode == RenewMode.idsPasskey) {
+      return _account?.raw['authMethod'] == 'passkey' && (localCanRenew?.call() ?? true);
+    }
+    return _account?.autoRenew == true && _account?.password?.isNotEmpty == true;
   }
 
   /// Human-readable display name for this node, suitable for UI labels.
   ///
-  /// Priority: most recent successful probe display > account name > id.
-  String get displayName => _lastProbeDisplay ?? _account?.name ?? id;
+  /// Campus identities come from the authenticated root profile. Probe text
+  /// describes connectivity and must never replace a user name or student ID.
+  String get displayName {
+    final owner = parent?.account;
+    if (parent != null) {
+      if (owner == null) return '未绑定';
+      if (id == 'eams' || id == 'egateApp') {
+        final studentId = owner.idsStudentId;
+        if (studentId.isNotEmpty) return studentId;
+      }
+      return owner.displayName;
+    }
+    if (_account != null) return _account!.displayName;
+    return '未绑定';
+  }
+
+  String get probeDisplay => _lastProbeDisplay ?? '尚未检测';
 
   /// The next scheduled renewal event for this node.
   DateTime? _nextRenewTimestamp;
@@ -392,9 +405,7 @@ class SessionNode extends ChangeNotifier {
   DateTime? _defaultNextRenewTimestamp() {
     final now = DateTime.now();
     return switch (renewSchedule) {
-      RenewSchedule.cpdailyDefault => _account?.expireAt?.subtract(
-          const Duration(days: 3),
-        ),
+      RenewSchedule.idsDefault => now.add(const Duration(minutes: 10)),
       RenewSchedule.accountExpiry => _account?.expireAt?.subtract(
           const Duration(hours: 48),
         ),
@@ -414,7 +425,8 @@ class SessionNode extends ChangeNotifier {
   }
 
   Future<bool> renewIfDue() async {
-    if (!isAvailable || !canRenew) return false;
+    if (!canRenew) return false;
+    if (!isAvailable) return renew();
     if (!isRenewDue) return true;
     return renew();
   }
@@ -437,6 +449,7 @@ class SessionNode extends ChangeNotifier {
   /// downstream endpoint won't be fixed by re-minting the parent tgc, so we
   /// skip the escalation entirely.
   bool _lastRenewWasCredentialError = false;
+  String? lastRenewError;
   bool get lastRenewWasCredentialError => _lastRenewWasCredentialError;
 
   /// Outcome of the most recent renew attempt (this session, or seeded from
@@ -510,14 +523,23 @@ class SessionNode extends ChangeNotifier {
     if (cp == null || cp.isEmpty) {
       return const KeepaliveResult(false, display: 'no session');
     }
+    final owner = _account;
+    final parentOwner = parent?.account;
+    final beforeEpoch = _epoch;
+    final parentEpoch = parent?.epoch;
+    bool stillCurrent() =>
+        identical(_account, owner) &&
+        identical(parent?.account, parentOwner) &&
+        _epoch == beforeEpoch &&
+        parent?.epoch == parentEpoch;
     String cookies = cp.cookies;
     // Pre-flight: hit config endpoint to refresh session tokens (e.g. _WEU).
     if (cfg.preFlightPath != null) {
       try {
-        final preUri = cfg.preFlightPath!.startsWith('http://') ||
-                cfg.preFlightPath!.startsWith('https://')
-            ? Uri.parse(cfg.preFlightPath!)
-            : Uri.parse('${baseUrl()}${cfg.preFlightPath}');
+        final preUri =
+            cfg.preFlightPath!.startsWith('http://') || cfg.preFlightPath!.startsWith('https://')
+                ? Uri.parse(cfg.preFlightPath!)
+                : Uri.parse('${baseUrl()}${cfg.preFlightPath}');
         final preResp = await http.get(
           preUri,
           headers: {'Cookie': cookies},
@@ -531,10 +553,9 @@ class SessionNode extends ChangeNotifier {
         // Pre-flight failure is non-fatal — proceed with original cookies.
       }
     }
-    final uri =
-        cfg.path.startsWith('http://') || cfg.path.startsWith('https://')
-            ? Uri.parse(cfg.path)
-            : Uri.parse('${baseUrl()}${cfg.path}');
+    final uri = cfg.path.startsWith('http://') || cfg.path.startsWith('https://')
+        ? Uri.parse(cfg.path)
+        : Uri.parse('${baseUrl()}${cfg.path}');
     final baseHeaders = <String, String>{
       'Cookie': cookies,
       if (cfg.headers != null) ...cfg.headers!,
@@ -565,6 +586,7 @@ class SessionNode extends ChangeNotifier {
             tag: 'keepalive:$id',
           );
       }
+      if (!stillCurrent()) return const KeepaliveResult(false, display: 'session changed');
       final ok = cfg.successCheck?.call(resp) ??
           cfg.bodyRegex?.hasMatch(resp.body) ??
           (resp.statusCode == 200);
@@ -577,8 +599,13 @@ class SessionNode extends ChangeNotifier {
       } else {
         display = 'HTTP ${resp.statusCode}';
       }
+      if (display.trim().isEmpty) display = 'HTTP ${resp.statusCode}';
+      _lastProbeDisplay = ok
+          ? display
+          : resp.statusCode == 403
+              ? 'HTTP 403（当前账号无此页面权限）'
+              : 'HTTP ${resp.statusCode}';
       if (ok) {
-        _lastProbeDisplay = display;
         if (silent && parent != null && cookies.isNotEmpty) {
           _derivedCookie = cookies;
           await scheduleNextRenew();
@@ -587,7 +614,7 @@ class SessionNode extends ChangeNotifier {
       }
       return KeepaliveResult(
         ok,
-        display: ok ? display : 'HTTP ${resp.statusCode}',
+        display: _lastProbeDisplay!,
         statusCode: resp.statusCode,
         rawBody: resp.body,
         cookies: cookies,
@@ -602,8 +629,8 @@ class SessionNode extends ChangeNotifier {
   /// success. Returns true on success, false on failure.
   Future<bool> doRenew() async {
     switch (renewMode) {
-      case RenewMode.cpdailySession:
-        return _renewCpdailySession();
+      case RenewMode.idsPasskey:
+        return _renewIdsSession();
       case RenewMode.password:
         return _renewWithPassword();
       case RenewMode.parentCookie:
@@ -613,56 +640,21 @@ class SessionNode extends ChangeNotifier {
     }
   }
 
-  /// CpDaily keep-alive: POST /auth/renew with stored session fields.
-  Future<bool> _renewCpdailySession() async {
-    final acc = _account;
-    if (acc == null) return false;
+  /// Refresh IDS directly with the app-owned software credential.
+  Future<bool> _renewIdsSession() async {
+    final current = _account;
+    if (current == null || localAccountRenew == null) return false;
     try {
-      final resp = await http.post(
-        Uri.parse('${baseUrl()}${renewPath ?? '/auth/renew'}'),
-        headers: {'Content-Type': 'application/json; charset=UTF-8'},
-        body: jsonEncode({
-          'sessionToken': acc.raw['sessionToken'] ?? '',
-          'tgc': acc.raw['tgc'] ?? '',
-          'userId': acc.cpdailyUserId,
-          'tenantId': acc.raw['tenantId'] ?? '',
-        }),
-        tag: 'cpdailyRenew',
-      );
-      if (resp.statusCode != 200) return false;
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      if (data['success'] != true) return false;
-
-      final newRaw = {
-        ...acc.raw,
-        'sessionToken':
-            data['sessionToken'] as String? ?? acc.raw['sessionToken'] ?? '',
-        'tgc': data['tgc'] as String? ?? acc.raw['tgc'] ?? '',
-        'userId': data['userId'] as String? ?? acc.cpdailyUserId,
-        'tenantId': data['tenantId'] as String? ?? acc.raw['tenantId'] ?? '',
-        'cookies': data['cookies'] as String? ?? acc.raw['cookies'] ?? '',
-      };
-      final updated = ThirdPartyAccount(
-        platform: acc.platform,
-        account: acc.account,
-        sid: data['sid'] as String? ?? acc.sid,
-        name: data['name'] as String? ?? acc.name,
-        email: data['email'] as String? ?? acc.email,
-        token: acc.token,
-        expire: acc.expire,
-        raw: newRaw,
-        hydroOrigin: acc.hydroOrigin,
-        hydroDomains: acc.hydroDomains,
-        boundAt: acc.boundAt,
-        autoRenew: acc.autoRenew,
-        password: acc.password,
-      );
+      final updated = await localAccountRenew!(current);
+      if (!identical(_account, current)) return false;
       _account = updated;
-      // force: true — a successful renew must push to the cloud immediately,
-      // not wait for the pushIfDue throttle window.
-      await persist(updated, force: true);
       markRenewed();
+      await persist(updated);
       return true;
+    } on IdsException catch (error) {
+      _lastRenewWasCredentialError = error.credentialRejected;
+      lastRenewError = error.message;
+      return false;
     } catch (_) {
       return false;
     }
@@ -680,9 +672,7 @@ class SessionNode extends ChangeNotifier {
         'account': acc.account,
         'password': pw,
       };
-      if (id == 'hydro' &&
-          acc.hydroOrigin != null &&
-          acc.hydroOrigin!.isNotEmpty) {
+      if (id == 'hydro' && acc.hydroOrigin != null && acc.hydroOrigin!.isNotEmpty) {
         body['args'] = {'url': acc.hydroOrigin};
       }
       final resp = await http.post(
@@ -723,42 +713,29 @@ class SessionNode extends ChangeNotifier {
     }
   }
 
-  /// Downstream cookie minting (eams, elearning): POST the parent's tgc,
-  /// receive a downstream cookie string.
+  /// Obtain the downstream session locally through its existing CAS flow.
   Future<bool> _renewWithParentCookie() async {
-    final tgc = parent?.rawFields['tgc'] as String? ?? '';
-    if (tgc.isEmpty) {
+    final root = parent?.account;
+    final parentEpoch = parent?.epoch;
+    if (root == null || parent?.isAvailable != true || (root.raw['tgc'] as String? ?? '').isEmpty) {
       _lastRenewWasCredentialError = true;
       return false;
     }
+    if (localCookieMint == null) return false;
     try {
-      final resp = await http.post(
-        Uri.parse('${baseUrl()}${renewPath ?? '/auth/third-party/$id'}'),
-        headers: {'Content-Type': 'application/json; charset=UTF-8'},
-        body: jsonEncode({'tgc': tgc}),
-        tag: 'downstreamRenew:$id',
-      );
-      // 401 → parent tgc is stale/invalid → credential error (worth
-      // escalating to parent renew). 5xx → server/transient failure →
-      // NOT a credential error (escalation won't help).
-      _lastRenewWasCredentialError = resp.statusCode == 401;
-      if (resp.statusCode != 200) return false;
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      if (data['success'] != true) return false;
-      final d = (data['data'] as Map?)?.cast<String, dynamic>() ?? const {};
-      final cookie = d['token'] as String?;
-      if (cookie == null || cookie.isEmpty) return false;
+      final cookie = await localCookieMint!(id, root.raw);
+      if (!identical(parent?.account, root) || parent?.epoch != parentEpoch) return false;
       _derivedCookie = cookie;
-      // Persist so cold start can skip the SSO bounce.
       final pd = persistDerived;
-      if (pd != null) {
-        unawaited(pd(id, cookie));
-      }
-      // markRenewed cascades to children (none here) but does NOT notify
-      // this node — notify explicitly for the downstream cookie change.
+      if (pd != null) await pd(id, cookie);
+      if (!identical(parent?.account, root) || parent?.epoch != parentEpoch) return false;
       markRenewed();
       notifyListeners();
       return true;
+    } on IdsException catch (error) {
+      _lastRenewWasCredentialError = error.credentialRejected;
+      lastRenewError = error.message;
+      return false;
     } catch (_) {
       _lastRenewWasCredentialError = false;
       return false;
@@ -786,10 +763,22 @@ class SessionNode extends ChangeNotifier {
   /// new notify here, to avoid the double-notify storm [markRenewed]'s doc
   /// comment already explains avoiding.
   Future<bool> _renewTracked() async {
+    _lastRenewWasCredentialError = false;
+    lastRenewError = null;
     final ok = await doRenew();
     if (ok) await scheduleNextRenew();
     if (ok && keepaliveConfig != null) {
+      final owner = _account;
+      final parentOwner = parent?.account;
+      final beforeEpoch = _epoch;
+      final parentEpoch = parent?.epoch;
       final result = await probe(silent: true);
+      if (!identical(_account, owner) ||
+          !identical(parent?.account, parentOwner) ||
+          _epoch != beforeEpoch ||
+          parent?.epoch != parentEpoch) {
+        return false;
+      }
       if (result.success) {
         final persist = persistProbe;
         if (persist != null) await persist(id, result);
@@ -800,7 +789,7 @@ class SessionNode extends ChangeNotifier {
       success: ok,
       error: ok
           ? null
-          : (_lastRenewWasCredentialError ? 'credential' : 'transient'),
+          : (lastRenewError ?? (_lastRenewWasCredentialError ? 'credential' : 'transient')),
     );
     _lastRenewAt = status.at;
     _lastRenewSucceeded = ok;
@@ -819,7 +808,7 @@ class SessionNode extends ChangeNotifier {
   /// concurrent caller (epoch advanced). Returns false only when a renew
   /// actually ran and failed, or the node is unavailable.
   Future<bool> renewIfNeeded(int beforeEpoch) async {
-    if (!isAvailable) return false;
+    if (!isAvailable && !canRenew) return false;
     // A concurrent renew already advanced past the caller's snapshot —
     // the cookies the caller will re-read are already fresh. Skip.
     if (_epoch > beforeEpoch) return true;

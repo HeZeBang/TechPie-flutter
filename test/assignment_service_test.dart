@@ -16,6 +16,8 @@ import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 
+import 'support/fake_ids_client.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -45,23 +47,10 @@ void main() {
         createdAt: DateTime.utc(2026),
       ),
     );
-    // Blackboard/exam fetches are gated on the eGate binding, not on the
+    // Blackboard/exam fetches are gated on the IDS binding, not on the
     // primary UserSession. Bind one with the tgc the test expects.
     await storage.saveThirdPartyAccount(
-      ThirdPartyAccount(
-        platform: ThirdPartyPlatform.cpdaily,
-        account: 'student',
-        sid: 'student',
-        token: 'session',
-        raw: const {
-          'tgc': 'tgc',
-          'cookies': '',
-          'sessionToken': 'session',
-          'userId': 'user',
-          'tenantId': 'tenant',
-        },
-        boundAt: DateTime.utc(2026),
-      ),
+      FakeIdsClient.account('20240001'),
     );
     await storage.saveThirdPartyAccount(
       ThirdPartyAccount(
@@ -73,15 +62,6 @@ void main() {
     );
 
     final httpClient = _AssignmentHttpClient((url, _) {
-      if (url.path.endsWith('/auth/third-party/elearning')) {
-        return http.Response(
-          jsonEncode({
-            'success': true,
-            'data': {'token': 'session_id=elearning-mock'},
-          }),
-          200,
-        );
-      }
       if (url.path.endsWith('/deadlines/blackboard')) {
         return http.Response(
           jsonEncode({
@@ -106,7 +86,7 @@ void main() {
       return http.Response('not found', 404);
     });
     final auth = AuthService(storage, httpClient, UniAuthService());
-    final tpAuth = ThirdPartyAuthService(storage, httpClient);
+    final tpAuth = ThirdPartyAuthService(storage, httpClient, idsClient: FakeIdsClient());
     final schedule = ScheduleService(storage, httpClient, auth, tpAuth);
     await auth.loadSession();
     await tpAuth.initialize();
@@ -147,45 +127,14 @@ void main() {
         createdAt: DateTime.utc(2026),
       ),
     );
-    // Exam fetch reads cookies from the eGate binding, not UserSession.
+    // Exam fetch reads cookies from the IDS binding, not UserSession.
     await storage.saveThirdPartyAccount(
-      ThirdPartyAccount(
-        platform: ThirdPartyPlatform.cpdaily,
-        account: 'student',
-        sid: 'student',
-        token: 'session',
-        raw: const {
-          'tgc': 'tgc',
-          'cookies': 'SESSION=abc',
-          'sessionToken': 'session',
-          'userId': 'user',
-          'tenantId': 'tenant',
-        },
-        boundAt: DateTime.utc(2026),
-      ),
+      FakeIdsClient.account('20240001'),
     );
 
     final seenBodies = <Map<String, dynamic>>[];
     final httpClient = _AssignmentHttpClient((url, body) {
       seenBodies.add(body);
-      if (url.path.endsWith('/auth/third-party/elearning')) {
-        return http.Response(
-          jsonEncode({
-            'success': true,
-            'data': {'token': 'session_id=elearning-mock'},
-          }),
-          200,
-        );
-      }
-      if (url.path.endsWith('/auth/third-party/eams')) {
-        return http.Response(
-          jsonEncode({
-            'success': true,
-            'data': {'token': 'JSESSIONID=eams-mock'},
-          }),
-          200,
-        );
-      }
       if (url.path.endsWith('/deadlines/blackboard')) {
         return http.Response(
           jsonEncode({'success': true, 'data': <Object?>[]}),
@@ -225,7 +174,7 @@ void main() {
       return http.Response('not found', 404);
     });
     final auth = AuthService(storage, httpClient, UniAuthService());
-    final tpAuth = ThirdPartyAuthService(storage, httpClient);
+    final tpAuth = ThirdPartyAuthService(storage, httpClient, idsClient: FakeIdsClient());
     final schedule = ScheduleService(storage, httpClient, auth, tpAuth);
     await auth.loadSession();
     await tpAuth.initialize();

@@ -14,11 +14,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/assignment_overrides.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
+import '../models/ids_passkey.dart';
 import '../models/oa_gym.dart';
 import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import '../models/user_session.dart';
 import '../utils/secure_storage.dart';
+import 'sync_envelope.dart';
 
 class StorageService {
   static const _sessionKey = 'user_session';
@@ -57,8 +59,32 @@ class StorageService {
     await _secure.delete(key: _sessionKey);
   }
 
+  Future<void> saveIdsCandidate(String account, IdsPasskey credential) =>
+      _secure.write(key: 'third_party_ids_pending', value: jsonEncode({'account': account, 'credential': credential.toJson()}));
+
+  Future<({String account, IdsPasskey credential})?> loadIdsCandidate() async {
+    final value = await _secure.read(key: 'third_party_ids_pending');
+    if (value == null) return null;
+    final json = jsonDecode(value) as Map<String, dynamic>;
+    return (account: json['account'] as String, credential: IdsPasskey.fromJson((json['credential'] as Map).cast<String, dynamic>()));
+  }
+
+  Future<void> clearIdsCandidate() => _secure.delete(key: 'third_party_ids_pending');
+  String? get idsBackedUpId => _prefs.getString('third_party_ids_backed_up_id');
+  Future<void> markIdsBackedUp(String id) => _prefs.setString('third_party_ids_backed_up_id', id);
+
+  List<SyncTombstone> loadThirdPartyTombstones() =>
+      (jsonDecode(_prefs.getString('third_party_tombstones') ?? '[]') as List)
+          .map((entry) => SyncTombstone.fromJson((entry as Map).cast<String, dynamic>())).toList();
+  Future<void> saveThirdPartyTombstones(List<SyncTombstone> tombstones) =>
+      _prefs.setString('third_party_tombstones', jsonEncode(tombstones.map((t) => t.toJson()).toList()));
+
   // Secure third-party account storage (one secure key per platform)
   static const _thirdPartyKeyPrefix = 'third_party_';
+  static const _legacyCampusKeys = [
+    '${_thirdPartyKeyPrefix}cpdaily',
+    '${_thirdPartyKeyPrefix}egate',
+  ];
   String _thirdPartyKey(ThirdPartyPlatform p) => '$_thirdPartyKeyPrefix${p.id}';
 
   Future<void> saveThirdPartyAccount(ThirdPartyAccount acc) async {
@@ -84,23 +110,21 @@ class StorageService {
     final result = <ThirdPartyAccount>[];
     for (final p in ThirdPartyPlatform.values) {
       var acc = await loadThirdPartyAccount(p);
-      // One-time migration: cpdaily was previously stored under the legacy
-      // 'egate' key (platform id before the rename). If the new key is empty
-      // but the legacy key has data, adopt it and delete the old key.
-      if (p == ThirdPartyPlatform.cpdaily && acc == null) {
-        const legacyKey = '${_thirdPartyKeyPrefix}egate';
-        final raw = await _secure.read(key: legacyKey);
-        if (raw != null) {
+      // Read published campus accounts under their old keys. All writes use ids.
+      if (p == ThirdPartyPlatform.ids && acc == null) {
+        for (final legacyKey in _legacyCampusKeys) {
+          final raw = await _secure.read(key: legacyKey);
+          if (raw == null) continue;
           try {
             acc = ThirdPartyAccount.fromJson(
               jsonDecode(raw) as Map<String, dynamic>,
             );
-            await _secure.write(key: _thirdPartyKey(p), value: raw);
-            await _secure.delete(key: legacyKey);
           } catch (_) {
-            // Corrupt legacy entry — leave it; clearThirdPartyAccount can
-            // still remove it via the fromId alias path.
+            continue;
           }
+          await saveThirdPartyAccount(acc);
+          await _secure.delete(key: legacyKey);
+          break;
         }
       }
       if (acc != null) result.add(acc);
@@ -110,11 +134,16 @@ class StorageService {
 
   Future<void> clearThirdPartyAccount(ThirdPartyPlatform p) async {
     await _secure.delete(key: _thirdPartyKey(p));
+    if (p == ThirdPartyPlatform.ids) {
+      for (final key in _legacyCampusKeys) {
+        await _secure.delete(key: key);
+      }
+    }
   }
 
   Future<void> clearAllThirdPartyAccounts() async {
     for (final p in ThirdPartyPlatform.values) {
-      await _secure.delete(key: _thirdPartyKey(p));
+      await clearThirdPartyAccount(p);
     }
   }
 
@@ -138,12 +167,12 @@ class StorageService {
   }
 
   Future<void> clearAllDerivedCookies() async {
-    for (final id in const ['eams', 'elearning', 'egateApp']) {
+    for (final id in const ['eams', 'elearning', 'egateApp', 'oa']) {
       await _secure.delete(key: '$_derivedCookieKeyPrefix$id');
     }
   }
 
-  // Renew status (last attempt outcome per session-node id: cpdaily,
+  // Renew status (last attempt outcome per session-node id: ids,
   // gradescope, hydro, eams, elearning). Local-only UI signal, never synced.
   static const _renewStatusKeyPrefix = 'renew_status_';
 
@@ -186,6 +215,11 @@ class StorageService {
   bool get debugMode =>
       !kReleaseMode && (_prefs.getBool(_debugModeKey) ?? false);
   Future<void> setDebugMode(bool value) => _prefs.setBool(_debugModeKey, value);
+
+  bool get debugForceIdsRebindBanner =>
+      !kReleaseMode && (_prefs.getBool('debug_force_ids_rebind_banner') ?? false);
+  Future<void> setDebugForceIdsRebindBanner(bool value) =>
+      _prefs.setBool('debug_force_ids_rebind_banner', value);
 
   String get cachedSchoolName => _prefs.getString(_schoolNameKey) ?? '';
   Future<void> setCachedSchoolName(String name) => _prefs.setString(_schoolNameKey, name);

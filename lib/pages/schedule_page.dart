@@ -667,7 +667,7 @@ class _SchedulePageState extends State<SchedulePage> {
                 if (isDesktop())
                   PageRefreshButton(
                     onRefresh: _refresh,
-                    enabled: auth.isLoggedIn && tpAuth.hasCpdailyBinding,
+                    enabled: auth.isLoggedIn && tpAuth.hasIdsBinding,
                     refreshing: _schedule.loading || _assignments.loading,
                   ),
                 IconButton(
@@ -739,7 +739,7 @@ class _SchedulePageState extends State<SchedulePage> {
               ? 0
               : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top,
         ),
-        child: !auth.isLoggedIn || !tpAuth.hasCpdailyBinding
+        child: !auth.isLoggedIn || !tpAuth.hasIdsBinding
             ? Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -751,14 +751,14 @@ class _SchedulePageState extends State<SchedulePage> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      auth.isLoggedIn ? '绑定 eGate 以查看课表' : '登录以查看课表',
+                      auth.isLoggedIn ? '绑定 IDS 以查看课表' : '登录以查看课表',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 20),
                     AdaptiveButton(
-                      label: auth.isLoggedIn ? '去绑定 eGate' : '登录',
+                      label: auth.isLoggedIn ? '去绑定 IDS' : '登录',
                       icon: auth.isLoggedIn ? Icons.account_tree_outlined : Icons.login,
                       sfSymbol: auth.isLoggedIn
                           ? 'person.crop.circle.badge.plus'
@@ -777,7 +777,7 @@ class _SchedulePageState extends State<SchedulePage> {
                           unawaited(startUniAuthLogin(context));
                         }
                       },
-                      accessibilityLabel: auth.isLoggedIn ? '绑定 eGate 账号' : '登录 TechPie',
+                      accessibilityLabel: auth.isLoggedIn ? '绑定 IDS 账号' : '登录 TechPie',
                     ),
                   ],
                 ),

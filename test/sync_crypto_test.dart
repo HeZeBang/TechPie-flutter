@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/services/sync_crypto.dart';
 
 void main() {
@@ -9,7 +8,7 @@ void main() {
     test('encryptWithSalt -> decryptWithSalt recovers plaintext', () async {
       const password = 'correct horse battery staple';
       const payload =
-          '[{"platform":"cpdaily","account":"13800000000","token":"tgc-secret"}]';
+          '[{"platform":"ids","account":"13800000000","token":"tgc-secret"}]';
 
       final blob = await SyncCrypto.encryptWithSalt(payload, password);
       expect(blob.contains('.'), isTrue);
@@ -17,12 +16,6 @@ void main() {
       final recovered = await SyncCrypto.decryptWithSalt(blob, password);
       expect(recovered, payload);
     });
-    test('ThirdPartyPlatform.fromId resolves legacy egate alias to cpdaily',
-        () {
-      expect(ThirdPartyPlatform.fromId('egate'), ThirdPartyPlatform.cpdaily);
-      expect(ThirdPartyPlatform.fromId('cpdaily'), ThirdPartyPlatform.cpdaily);
-    });
-
     test('wrong master password fails authentication (returns null)',
         () async {
       const payload = 'secret bindings';

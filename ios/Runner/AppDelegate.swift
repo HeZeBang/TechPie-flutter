@@ -6,6 +6,7 @@ import WidgetKit
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private var ecardDeepLinkChannel: FlutterMethodChannel?
+  private var platformChannel: FlutterMethodChannel?
   private var pendingEcardRoute: String?
   private var ecardFeedback: EcardFeedback?
   private var ecardBindTunnel: EcardBindTunnelPlugin?
@@ -58,6 +59,23 @@ import WidgetKit
     ecardFeedback = EcardFeedback(registrar: registrar)
     ecardBindTunnel = EcardBindTunnelPlugin(messenger: registrar.messenger())
     watchBridge = WatchConnectivityBridge(registrar: registrar)
+
+    let platformChannel = FlutterMethodChannel(
+      name: "techpie/platform", binaryMessenger: registrar.messenger()
+    )
+    platformChannel.setMethodCallHandler { call, result in
+      guard call.method == "getUserAgentInfo" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      result([
+        "device": UIDevice.current.model,
+        "system": UIDevice.current.systemName,
+        "systemVersion": UIDevice.current.systemVersion,
+        "scale": window.screen.scale,
+      ])
+    }
+    self.platformChannel = platformChannel
 
     let deepLinkChannel = FlutterMethodChannel(
       name: "techpie/ecard_deep_link",

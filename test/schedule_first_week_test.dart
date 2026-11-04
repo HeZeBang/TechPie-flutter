@@ -37,7 +37,7 @@ class _Bound extends ThirdPartyAuthService {
   _Bound(super.storage, super.http);
 
   @override
-  bool get hasCpdailyBinding => true;
+  bool get hasIdsBinding => true;
 }
 
 void main() {

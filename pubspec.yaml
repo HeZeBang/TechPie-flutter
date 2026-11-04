@@ -30,8 +30,10 @@ environment:
 dependencies:
   animations: ^2.0.11
   casdoor_flutter_sdk: ^1.0.0
+  cbor: 6.3.5
   clock: ">=1.1.1 <1.2.0"
   connectivity_plus: 6.1.4
+  cookie_jar: ^4.0.8
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   crypto: 3.0.7
@@ -50,6 +52,7 @@ dependencies:
       url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
       path: flutter_secure_storage_ohos
       ref: br_v9.2.2_ohos
+  html: ^0.15.6
   http: ^1.4.0
   image_picker:
     git:
@@ -202,6 +205,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/help/ids_passkey.png
     - assets/campus_card/audio/
     - assets/campus_card/data/
     - assets/campus_card/images/card-full.png

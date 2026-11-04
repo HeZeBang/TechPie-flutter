@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:webview_flutter/webview_flutter.dart'
-    show WebViewController, WebViewCookieManager;
+import 'package:webview_flutter/webview_flutter.dart' show WebViewController, WebViewCookieManager;
 
 import 'auth_service.dart';
 import 'session/session_node.dart';
@@ -15,7 +14,7 @@ import 'storage_service.dart';
 /// It is deliberately *not* a credential store — credentials live in the
 /// [SessionNode] tree, and pages read their cookies from there (see
 /// `CampusSessionHandle`). What this class does is reset that shared store when
-/// the primary account or its eGate binding changes, so a page opened under a
+/// the primary account or its IDS binding changes, so a page opened under a
 /// new account cannot inherit the previous one's campus session.
 ///
 /// The reset is a full wipe of the store: Android and OHOS cannot enumerate
@@ -49,7 +48,7 @@ class CampusWebSession {
   String get _owner {
     final userId = _auth?.session?.userId;
     if (userId == null) return 'signed-out';
-    final binding = node.account == null
+    final binding = node.account == null || node.account!.raw['authMethod'] != 'passkey'
         ? 'unbound'
         : '${node.account!.account}:${node.account!.boundAt.toIso8601String()}';
     return jsonEncode([userId, binding]);
@@ -84,8 +83,7 @@ class CampusWebSession {
 
   Future<T> _queue<T>(Future<T> Function() action) {
     final operation = _pending.then((_) => action());
-    _pending =
-        operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _pending = operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     return operation;
   }
 
