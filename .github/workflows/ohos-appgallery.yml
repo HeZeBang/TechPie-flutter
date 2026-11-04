@@ -1,0 +1,192 @@
+name: AppGallery publish
+
+# Signs a release's *unsigned* .app with the release certificate and pushes it to
+# AppGallery Connect. Split out from ohos-release.yml on purpose: that workflow
+# produces artifacts anyone can inspect, this one touches a store account and
+# therefore runs behind an environment with secrets and a reviewer.
+#
+# The two write levels are separate inputs, because only one of them is
+# reversible:
+#
+#   publish=false  plan only — reads AGC, writes nothing
+#   publish=true   upload + fill the version; it waits at 待提交
+#   submit=true    also submit for review (implies publish)
+#
+# release.yml calls this after the OHOS job, with publish and submit both on: the
+# channel follows the release name (`-rc.N` → test, stable → 全网), and a version
+# that is not reviewed cannot be installed, so both are submitted. The approval
+# on the `ohos` environment is the human step, not a separate dispatch.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag whose unsigned .app should be published
+        required: true
+        type: string
+      publish:
+        description: Upload the signed package and fill the version (stops at 待提交)
+        required: false
+        default: true
+        type: boolean
+      submit:
+        description: Also submit for review (implies publish)
+        required: false
+        default: false
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose unsigned .app should be published
+        required: true
+        type: string
+      publish:
+        description: Upload and fill the version (stops at 待提交)
+        required: false
+        default: true
+        type: boolean
+      submit:
+        description: Submit for review
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: appgallery-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to AppGallery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # The reviewer gate. Secrets live here rather than at repository level, so a
+    # pull request cannot read them; the approval is what turns a run into a
+    # store action.
+    environment: ohos
+    defaults:
+      run:
+        shell: bash
+    container:
+      # Same toolchain image as ohos-release.yml: it carries hap-sign-tool.
+      image: ghcr.io/hezebang/techpie-ohos-buildenv:26.0.0.851-3.41.9_ohos-1.0.2
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+
+      - name: Resolve the release
+        id: release
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          name="$(scripts/release-name.sh "$TAG")"
+          case "$name" in
+            *-rc.*) channel=test ;;
+            *)      channel=stable ;;
+          esac
+          {
+            echo "name=$name"
+            echo "channel=$channel"
+          } >> "$GITHUB_OUTPUT"
+          echo "release $name → $channel channel"
+
+      - name: Fetch the unsigned package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # The release is the input, never a rebuild: a rebuilt pack has
+          # different bytes, and what gets signed must be what shipped.
+          mkdir -p unsigned
+          gh release download "$TAG" \
+            --pattern 'TechPie-*-ohos-arm64v8-unsigned.app.zip*' \
+            --dir unsigned --clobber
+          (cd unsigned && sha256sum -c ./*.app.zip.sha256)
+
+      - name: Sign the package
+        shell: bash
+        env:
+          OHOS_STORE_B64: ${{ secrets.OHOS_STORE_B64 }}
+          OHOS_CERT_B64: ${{ secrets.OHOS_CERT_B64 }}
+          OHOS_PROFILE_B64: ${{ secrets.OHOS_PROFILE_B64 }}
+          OHOS_STORE_PASSWORD: ${{ secrets.OHOS_STORE_PASSWORD }}
+          OHOS_KEY_PASSWORD: ${{ secrets.OHOS_KEY_PASSWORD }}
+          OHOS_KEY_ALIAS: ${{ vars.OHOS_KEY_ALIAS }}
+          OHOS_SIGN_ALG: ${{ vars.OHOS_SIGN_ALG }}
+          RELEASE_NAME: ${{ steps.release.outputs.name }}
+        run: |
+          set -euo pipefail
+          umask 077
+          work="$RUNNER_TEMP/sign"
+          mkdir -p "$work"
+          trap 'rm -rf "$work"' EXIT
+
+          printf '%s' "$OHOS_STORE_B64" | base64 -d > "$work/store.p12"
+          printf '%s' "$OHOS_CERT_B64" | base64 -d > "$work/cert.cer"
+          printf '%s' "$OHOS_PROFILE_B64" | base64 -d > "$work/profile.p7b"
+
+          shopt -s nullglob
+          packs=(unsigned/*-unsigned.app.zip)
+          (( ${#packs[@]} == 1 )) || { echo "::error::expected exactly one unsigned app, got ${#packs[@]}"; exit 1; }
+          cp "${packs[0]}" "$work/input.app"
+
+          tool="$HOS_SDK_HOME/default/openharmony/toolchains/lib/hap-sign-tool.jar"
+          java -jar "$tool" sign-app -mode localSign \
+            -keyAlias "$OHOS_KEY_ALIAS" -keyPwd "$OHOS_KEY_PASSWORD" \
+            -appCertFile "$work/cert.cer" -profileFile "$work/profile.p7b" \
+            -signAlg "$OHOS_SIGN_ALG" -keystoreFile "$work/store.p12" -keystorePwd "$OHOS_STORE_PASSWORD" \
+            -inFile "$work/input.app" -inForm zip \
+            -outFile "TechPie-${RELEASE_NAME}-ohos-arm64v8.app"
+          java -jar "$tool" verify-app -inFile "TechPie-${RELEASE_NAME}-ohos-arm64v8.app" \
+            -outCertChain "$work/out.cer" -outProfile "$work/out.p7b"
+
+          # The signature is a block appended to the container; the entries must be
+          # untouched, otherwise what we publish is not what shipped.
+          unpack="$work/unpacked"
+          mkdir -p "$unpack"
+          unzip -q "$work/input.app" -d "$unpack/input"
+          unzip -q "TechPie-${RELEASE_NAME}-ohos-arm64v8.app" -d "$unpack/signed"
+          diff -r "$unpack/input" "$unpack/signed" >/dev/null ||
+            { echo "::error::signing changed the package payload"; exit 1; }
+
+          sha256sum "TechPie-${RELEASE_NAME}-ohos-arm64v8.app" | tee sha256.txt
+          {
+            echo "### AppGallery package"
+            echo ''
+            echo '```'
+            cat sha256.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push to AppGallery
+        shell: bash
+        env:
+          AGC_CLIENT_ID: ${{ secrets.AGC_CLIENT_ID }}
+          AGC_CLIENT_SECRET: ${{ secrets.AGC_CLIENT_SECRET }}
+          AGC_APP_ID: ${{ secrets.AGC_APP_ID }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
+          NAME: ${{ steps.release.outputs.name }}
+          PUBLISH: ${{ inputs.publish }}
+          SUBMIT: ${{ inputs.submit }}
+        run: |
+          set -euo pipefail
+          args=(--channel "$CHANNEL" --app "TechPie-${NAME}-ohos-arm64v8.app")
+          [[ "$PUBLISH" == 'true' || "$SUBMIT" == 'true' ]] && args+=(--publish)
+          [[ "$SUBMIT" == 'true' ]] && args+=(--submit)
+          node scripts/agc-publish.mjs "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
