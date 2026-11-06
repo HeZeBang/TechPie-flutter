@@ -54,6 +54,7 @@ class StorageService {
   }
 
   Future<void> clearSession() async {
+    await clearLiveClassrooms();
     await _secure.delete(key: _sessionKey);
   }
 
@@ -109,10 +110,12 @@ class StorageService {
   }
 
   Future<void> clearThirdPartyAccount(ThirdPartyPlatform p) async {
+    await clearLiveClassrooms();
     await _secure.delete(key: _thirdPartyKey(p));
   }
 
   Future<void> clearAllThirdPartyAccounts() async {
+    await clearLiveClassrooms();
     for (final p in ThirdPartyPlatform.values) {
       await _secure.delete(key: _thirdPartyKey(p));
     }
@@ -138,7 +141,7 @@ class StorageService {
   }
 
   Future<void> clearAllDerivedCookies() async {
-    for (final id in const ['eams', 'elearning', 'egateApp']) {
+    for (final id in const ['eams', 'elearning', 'egateApp', 'elrc']) {
       await _secure.delete(key: '$_derivedCookieKeyPrefix$id');
     }
   }
@@ -244,6 +247,31 @@ class StorageService {
       await _prefs.setString(_deviceIdKey, id);
     }
     return id;
+  }
+
+  static const _liveClassroomsPrefix = 'live_classrooms_';
+  int _liveCacheGeneration = 0;
+  int get liveCacheGeneration => _liveCacheGeneration;
+
+  Map<String, dynamic>? loadLiveClassrooms(String key) {
+    final raw = _prefs.getString('$_liveClassroomsPrefix$key');
+    if (raw == null) return null;
+    try {
+      final value = jsonDecode(raw);
+      return value is Map<String, dynamic> ? value : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveLiveClassrooms(String key, Map<String, dynamic> value) =>
+      _prefs.setString('$_liveClassroomsPrefix$key', jsonEncode(value));
+
+  Future<void> clearLiveClassrooms() async {
+    _liveCacheGeneration++;
+    for (final key in _prefs.getKeys().where((key) => key.startsWith(_liveClassroomsPrefix))) {
+      await _prefs.remove(key);
+    }
   }
 
   // Schedule cache

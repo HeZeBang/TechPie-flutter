@@ -21,6 +21,7 @@ const List<String> _allSessionNodeIds = [
   'eams',
   'elearning',
   'egateApp',
+  'elrc',
 ];
 
 class ThirdPartyBindException implements Exception {
@@ -97,6 +98,9 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// Convenience: the egate-app (xshdapp activity check-in) downstream node
   /// (child of cpdaily).
   SessionNode get egateAppNode => _tree.egateApp;
+
+  /// ELRC session cookies minted by the backend from the parent CASTGC.
+  SessionNode get elrcNode => _tree.elrc;
 
   /// Convenience: the Gradescope top-level node.
   SessionNode get gradescopeNode => _tree.gradescope;
@@ -201,6 +205,11 @@ class ThirdPartyAuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _clearElrcCookie() async {
+    _tree.setDerivedCookie('elrc', null);
+    await _storage.clearDerivedCookie('elrc');
+  }
+
   Future<void> _persistRenewTimestamp(
     String nodeId,
     DateTime? timestamp,
@@ -241,6 +250,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
         'eams' => _tree.eams,
         'elearning' => _tree.elearning,
         'egateApp' => _tree.egateApp,
+        'elrc' => _tree.elrc,
         _ => _tree.cpdaily,
       };
 
@@ -290,7 +300,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     // Hydrate child node derived cookies so cold start can skip the SSO
     // bounce. These are best-effort — if stale, withCookie's 401 retry will
     // re-mint transparently.
-    for (final id in const ['eams', 'elearning', 'egateApp']) {
+    for (final id in const ['eams', 'elearning', 'egateApp', 'elrc']) {
       final cookie = await _storage.loadDerivedCookie(id);
       _tree.setDerivedCookie(id, cookie);
     }
@@ -313,6 +323,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
       _tree.eams,
       _tree.elearning,
       _tree.egateApp,
+      _tree.elrc,
     ]) {
       if (node.isAvailable && node.nextRenewTimestamp == null) {
         await node.scheduleNextRenew();
@@ -331,6 +342,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
         'eams' => _tree.eams,
         'elearning' => _tree.elearning,
         'egateApp' => _tree.egateApp,
+        'elrc' => _tree.elrc,
         _ => null,
       };
 
@@ -409,6 +421,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     );
 
     final touched = _touch(acc);
+    if (platform == ThirdPartyPlatform.cpdaily) await _clearElrcCookie();
     await _storage.saveThirdPartyAccount(touched);
     if (forceSyncPush) _pendingForcePush = true;
     _tree.setAccount(platform, touched);
@@ -420,7 +433,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     await _storage.clearThirdPartyAccount(platform);
     // Unbinding cpdaily invalidates all downstream derived cookies.
     if (platform == ThirdPartyPlatform.cpdaily) {
-      for (final id in const ['eams', 'elearning', 'egateApp']) {
+      for (final id in const ['eams', 'elearning', 'egateApp', 'elrc']) {
         _tree.setDerivedCookie(id, null);
         await _storage.clearDerivedCookie(id);
       }
@@ -446,7 +459,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
       await _storage.clearThirdPartyAccount(p);
     }
     // Downstream derived cookies are invalidated when bindings are replaced.
-    for (final id in const ['eams', 'elearning', 'egateApp']) {
+    for (final id in const ['eams', 'elearning', 'egateApp', 'elrc']) {
       _tree.setDerivedCookie(id, null);
       await _storage.clearDerivedCookie(id);
     }
@@ -484,17 +497,16 @@ class ThirdPartyAuthService extends ChangeNotifier {
         // (same token, same updatedAt), don't touch storage or fire notifies.
         if (next != null && cur != null && _accountEqual(cur, next)) continue;
         if (next == null && cur == null) continue;
+        if (p == ThirdPartyPlatform.cpdaily) {
+          for (final id in const ['eams', 'elearning', 'egateApp', 'elrc']) {
+            _tree.setDerivedCookie(id, null);
+            await _storage.clearDerivedCookie(id);
+          }
+        }
         if (next != null) {
           await _storage.saveThirdPartyAccount(next);
           _tree.setAccount(p, next);
         } else {
-          // Clearing cpdaily invalidates downstream derived cookies.
-          if (p == ThirdPartyPlatform.cpdaily && cur != null) {
-            for (final id in const ['eams', 'elearning', 'egateApp']) {
-              _tree.setDerivedCookie(id, null);
-              await _storage.clearDerivedCookie(id);
-            }
-          }
           _tree.setAccount(p, null);
           await _storage.clearThirdPartyAccount(p);
         }
@@ -526,6 +538,9 @@ class ThirdPartyAuthService extends ChangeNotifier {
   ) async {
     final acc = _nodeAccount(platform);
     if (acc == null) return;
+    if (platform == ThirdPartyPlatform.cpdaily && acc.raw['tgc'] != newRaw['tgc']) {
+      await _clearElrcCookie();
+    }
     final touched = _touch(acc.copyWith(raw: newRaw));
     await _storage.saveThirdPartyAccount(touched);
     _tree.setAccount(platform, touched);
@@ -619,6 +634,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
     );
 
     final touched = _touch(acc);
+    await _clearElrcCookie();
     await _storage.saveThirdPartyAccount(touched);
     _tree.setAccount(ThirdPartyPlatform.cpdaily, touched);
     _cpdailySmsContext = null;
