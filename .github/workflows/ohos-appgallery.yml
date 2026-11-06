@@ -187,6 +187,10 @@ jobs:
           AGC_CLIENT_ID: ${{ secrets.AGC_CLIENT_ID }}
           AGC_CLIENT_SECRET: ${{ secrets.AGC_CLIENT_SECRET }}
           AGC_APP_ID: ${{ secrets.AGC_APP_ID }}
+          # The store wants an account it can sign in with; the value lives per
+          # version, so it comes from here and not from app-info.
+          AGC_TEST_USER: ${{ secrets.AGC_TEST_USER }}
+          AGC_TEST_PASSWORD: ${{ secrets.AGC_TEST_PASSWORD }}
           CHANNEL: ${{ steps.release.outputs.channel }}
           NAME: ${{ steps.release.outputs.name }}
           PUBLISH: ${{ inputs.publish }}

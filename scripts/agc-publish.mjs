@@ -173,6 +173,15 @@ async function extInfoFromAppInfo() {
   copy('privacyRightsUrl');
   copy('privacyAgreementId');
   copy('userAgreementIds');
+  // The review needs an account it can sign in with, and that field is stored per
+  // version — app-info does not carry it, so it comes from the environment (a
+  // secret in CI) rather than from anything this repository keeps.
+  if (process.env.AGC_TEST_USER && process.env.AGC_TEST_PASSWORD) {
+    ext.testUserName = process.env.AGC_TEST_USER;
+    ext.testUserPassword = process.env.AGC_TEST_PASSWORD;
+  } else {
+    console.log('warning: AGC_TEST_USER / AGC_TEST_PASSWORD are unset; the version will ship without a test account');
+  }
   return ext;
 }
 
@@ -321,8 +330,18 @@ async function test() {
     body: {
       versionId,
       pkgId,
+      // Store copy is reviewed text, not something a release script should invent:
+      // it is overridable (`AGC_APP_NAME` / `AGC_APP_DESC`), and the default keeps
+      // the wording the review accepted (no university name).
       languages: [
-        { language: 'zh-CN', appName: 'TechPie', appDesc: '上海科技大学校园第三方服务客户端。', newFeatures: readNotes() || name },
+        {
+          language: 'zh-CN',
+          appName: process.env.AGC_APP_NAME ?? 'TechPie',
+          appDesc:
+            process.env.AGC_APP_DESC ??
+            'TechPie 是面向上科大的开源校园工具，集中展示课表、课程任务和截止时间，提供课程录播等校园服务入口。',
+          newFeatures: readNotes() || name,
+        },
       ],
       // 智慧屏 is not a valid device type for releaseType 6.
       deviceTypes: [
