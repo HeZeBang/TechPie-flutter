@@ -12,8 +12,10 @@ import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/assignment_overrides.dart';
+import '../models/campus_identity.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
+import '../models/graduate_schedule.dart';
 import '../models/oa_gym.dart';
 import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
@@ -251,6 +253,62 @@ class StorageService {
   static const _courseTablePrefix = 'schedule_course_table_';
   static const _termBeginPrefix = 'schedule_term_begin_';
   static const _selectedSemesterKey = 'schedule_selected_semester';
+
+  CampusIdentity? loadCampusIdentity(String owner) {
+    final raw = _prefs.getString('schedule_campus_identity');
+    if (raw == null) return null;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      return data['owner'] == owner ? CampusIdentity.fromJson(data) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveCampusIdentity(String owner, CampusIdentity identity) => _prefs.setString(
+        'schedule_campus_identity',
+        jsonEncode({'owner': owner, ...identity.toJson()}),
+      );
+
+  CampusScheduleSource scheduleSourceFor(String? owner) {
+    final raw = _prefs.getString('schedule_source_preference');
+    if (raw == null || owner == null) return CampusScheduleSource.automatic;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      return data['owner'] == owner
+          ? CampusScheduleSource.values.firstWhere((v) => v.name == data['source'])
+          : CampusScheduleSource.automatic;
+    } catch (_) {
+      return CampusScheduleSource.automatic;
+    }
+  }
+
+  Future<void> setScheduleSource(String owner, CampusScheduleSource source) => _prefs.setString(
+        'schedule_source_preference',
+        jsonEncode({'owner': owner, 'source': source.name}),
+      );
+
+  String? get graduateScheduleOwner => _prefs.getString('graduate_schedule_owner');
+
+  String? graduateSchemeFor(String semesterId) => _prefs.getString('graduate_scheme_$semesterId');
+
+  Future<void> setGraduateScheme(String semesterId, String scheme) =>
+      _prefs.setString('graduate_scheme_$semesterId', scheme);
+
+  GraduateSchedule? loadGraduateSchedule() {
+    final raw = _prefs.getString('graduate_schedule');
+    if (raw == null) return null;
+    try {
+      return GraduateSchedule.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveGraduateSchedule(String owner, GraduateSchedule schedule) async {
+    await _prefs.setString('graduate_schedule', jsonEncode(schedule.toJson()));
+    await _prefs.setString('graduate_schedule_owner', owner);
+  }
 
   Future<void> saveSemesters(SemesterInfo info) =>
       _prefs.setString(_semestersKey, jsonEncode(info.toJson()));
