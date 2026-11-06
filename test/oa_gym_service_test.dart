@@ -652,6 +652,104 @@ void main() {
     expect(calls, 1);
   });
 
+  test('booking guard runs immediately before initial POST', () async {
+    final fixture = await _serviceFixture();
+    var calls = 0;
+    final service = _profileService(fixture, (request) async {
+      calls++;
+      return _jsonResponse({
+        'success': true,
+        'data': {'success': true},
+      });
+    });
+    await expectLater(
+      service.bookCourt(
+        sport: OaSport.tennis,
+        date: '2026-10-23',
+        timeSlot: 8,
+        courtNumber: 1,
+        playersCount: 2,
+        shouldContinue: () => false,
+      ),
+      throwsA(isA<OaGymException>()),
+    );
+    expect(calls, 0);
+  });
+
+  test('booking 401 never automatically retries a mutation', () async {
+    var renewals = 0;
+    final fixture = await _serviceFixture(
+      authClient: _FakeClient((request) async {
+        renewals++;
+        return _jsonResponse({'success': true});
+      }),
+    );
+    var calls = 0;
+    final service = _profileService(fixture, (request) async {
+      calls++;
+      return http.Response('{"success":false}', 401);
+    });
+    await expectLater(
+      service.bookCourt(
+        sport: OaSport.tennis,
+        date: '2026-10-23',
+        timeSlot: 8,
+        courtNumber: 1,
+        playersCount: 2,
+        shouldContinue: () => true,
+      ),
+      throwsA(isA<OaGymException>()),
+    );
+    expect(calls, 1);
+    expect(renewals, 0);
+  });
+
+  test('booking guard checks cancellation after initial session renewal',
+      () async {
+    final renewal = Completer<http.Response>();
+    final started = Completer<void>();
+    final fixture = await _serviceFixture(
+      authClient: _FakeClient((request) {
+        started.complete();
+        return renewal.future;
+      }),
+    );
+    fixture.tpAuth.cpdailyNode.setAccount(
+      fixture.tpAuth.cpdailyBinding!.copyWith(expire: 1),
+    );
+    var active = true;
+    var calls = 0;
+    final service = _profileService(fixture, (request) async {
+      calls++;
+      return _jsonResponse({
+        'success': true,
+        'data': {'success': true},
+      });
+    });
+    final pending = service.bookCourt(
+      sport: OaSport.tennis,
+      date: '2026-10-23',
+      timeSlot: 8,
+      courtNumber: 1,
+      playersCount: 2,
+      shouldContinue: () => active,
+    );
+    await started.future;
+    active = false;
+    renewal.complete(
+      _jsonResponse({
+        'success': true,
+        'sessionToken': 'fresh-session',
+        'tgc': 'fresh-tgc',
+        'userId': 'user',
+        'tenantId': 'tenant',
+        'cookies': 'happyVoyage=fresh',
+      }),
+    );
+    await expectLater(pending, throwsA(isA<OaGymException>()));
+    expect(calls, 0);
+  });
+
   group('OA personal information', () {
     test('syncs immediately after binding against the legacy UUID response',
         () async {

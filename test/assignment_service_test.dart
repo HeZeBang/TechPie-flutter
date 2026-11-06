@@ -115,6 +115,8 @@ void main() {
         AssignmentService(storage, httpClient, auth, tpAuth, schedule)
           ..loadCached();
 
+    expect(service.hasVerifiedAccountData, isFalse);
+    expect(service.verifiedVisibleAssignments, isEmpty);
     await service.fetchAssignments();
 
     expect(
@@ -126,6 +128,14 @@ void main() {
       isNot(contains('blackboard-old')),
     );
     expect(service.platformErrors['gradescope'], 'upstream failed');
+    expect(service.hasVerifiedAccountData, isTrue);
+    expect(
+      service.verifiedVisibleAssignments.map((item) => item.id),
+      ['blackboard-new'],
+    );
+    tpAuth.gradescopeNode.setAccount(null);
+    expect(service.hasVerifiedAccountData, isFalse);
+    expect(service.verifiedVisibleAssignments, isEmpty);
 
     final cachedIds =
         storage.loadCachedAssignments().map((a) => a['id']).toList();

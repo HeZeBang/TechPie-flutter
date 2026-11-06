@@ -46,6 +46,32 @@ class AssignmentService extends ChangeNotifier {
   String? get error => _error;
   Map<String, String> get platformErrors => Map.unmodifiable(_platformErrors);
 
+  String? _verifiedScope;
+  Set<String> _verifiedPlatforms = {};
+  String get _currentDataScope => jsonEncode([
+        _auth.session?.userId,
+        _schedule.selectedSemesterId,
+        for (final account in _tpAuth.accounts)
+          [
+            account.platform.id,
+            account.account,
+            account.sid,
+            account.boundAt.toIso8601String(),
+          ],
+      ]);
+
+  bool get hasVerifiedAccountData =>
+      _verifiedScope == _currentDataScope && _verifiedPlatforms.isNotEmpty;
+
+  /// Failed/unbound-platform caches are excluded from model-visible data.
+  List<Assignment> get verifiedVisibleAssignments => hasVerifiedAccountData
+      ? visibleAssignments
+          .where(
+            (item) => _verifiedPlatforms.contains(item.platform.toLowerCase()),
+          )
+          .toList()
+      : const [];
+
   bool isCompleted(Assignment a) => _overrides.effectiveCompleted(a);
   bool hasCompletionOverride(Assignment a) =>
       _overrides.hasCompletionOverride(a);
@@ -112,9 +138,10 @@ class AssignmentService extends ChangeNotifier {
     super.dispose();
   }
 
-
   /// Clear cached + in-memory deadlines (called on primary logout).
   Future<void> clearCache() async {
+    _verifiedScope = null;
+    _verifiedPlatforms = {};
     _assignments = [];
     _platformErrors.clear();
     _error = null;
@@ -125,6 +152,8 @@ class AssignmentService extends ChangeNotifier {
   /// Hydrate from local cache so the UI doesn't flash empty on app start
   /// or tab switch. Safe to call before login. Also loads overrides.
   void loadCached() {
+    _verifiedScope = null;
+    _verifiedPlatforms = {};
     _overrides = _storage.loadAssignmentOverrides();
     final raw = _storage.loadCachedAssignments();
     if (raw.isEmpty) {
@@ -203,6 +232,9 @@ class AssignmentService extends ChangeNotifier {
     _loading = true;
     _error = null;
     _platformErrors.clear();
+    final dataScope = _currentDataScope;
+    _verifiedScope = null;
+    _verifiedPlatforms = {};
     notifyListeners();
 
     final successfulResults = <String, List<Assignment>>{};
@@ -246,6 +278,11 @@ class AssignmentService extends ChangeNotifier {
 
     try {
       await Future.wait(futures);
+      if (dataScope == _currentDataScope) {
+        _verifiedScope = dataScope;
+        _verifiedPlatforms =
+            successfulResults.keys.map((value) => value.toLowerCase()).toSet();
+      }
       final merged = _mergeAssignments(
         successfulResults: successfulResults,
       );
@@ -278,6 +315,8 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<void> fetchPlatform(String platformId) async {
+    _verifiedScope = null;
+    _verifiedPlatforms = {};
     _loading = true;
     _error = null;
     _platformErrors.remove(platformId);
@@ -314,6 +353,8 @@ class AssignmentService extends ChangeNotifier {
     if (future != null) {
       try {
         await future;
+        _verifiedScope = null;
+        _verifiedPlatforms = {};
         final merged = _mergeAssignments(
           successfulResults: successfulResults,
         );

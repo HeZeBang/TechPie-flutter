@@ -41,8 +41,18 @@ dependencies:
   desktop_webview_window: any
   dio: ^5.8.0
   dynamic_color: ">=1.7.0 <1.8.0"
+  file_selector:
+    git:
+      url: https://gitee.com/openharmony-sig/flutter_packages.git
+      path: packages/file_selector/file_selector
+      ref: da5906bd4416c5ec5cb4d0840dbc197efeb2e208
+  file_selector_ohos: any # Direct for OHOS registration; pinned below.
+  fl_chart: 0.69.2
   flutter:
     sdk: flutter
+  flutter_markdown: 0.7.6
+  flutter_math_fork: 0.7.4
+  flutter_mermaid: 0.1.0
   flutter_riverpod: 2.6.1
   flutter_secure_storage: ^9.2.4
   flutter_secure_storage_ohos: # HarmonyOS 安全存储
@@ -50,7 +60,8 @@ dependencies:
       url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
       path: flutter_secure_storage_ohos
       ref: br_v9.2.2_ohos
-  http: ^1.4.0
+  html: ^0.15.6
+  http: ^1.6.0
   image_picker:
     git:
       url: https://gitee.com/openharmony-sig/flutter_packages.git
@@ -68,9 +79,11 @@ dependencies:
       path: packages/image_picker/image_picker_ohos
       ref: 4500f9da7c8223eb92ddc1fc2bff5ada36cf5cbe
   intl: ^0.20.2
+  markdown: ^7.3.0
   mobile_scanner: ^7.0.1
   open_filex: ^4.5.0
   package_info_plus: ^8.0.2
+  pasteboard: 0.4.0
   path_provider: ^2.1.5
   path_provider_ohos:
     git:
@@ -81,6 +94,7 @@ dependencies:
   qr_flutter: 4.1.0
   reel_text: ^0.4.3
   screen_brightness: 2.1.11
+  share_plus: 10.1.4
   shared_preferences: ^2.3.0
   shared_preferences_ohos:
     git:
@@ -119,10 +133,18 @@ dependency_overrides:
       url: https://github.com/HeZeBang/desktop_webview_window_fork.git
       ref: feature/techpie-bridge
 
-  # The OHOS platform implementations are direct dependencies above, not
-  # overrides: the 3.41 tool only scans the root dependency closure, so an
-  # override-only implementation is never registered and its channel throws
-  # MissingPluginException at boot.
+  # Keep the picker platform versions aligned with the supported SDKs.
+  file_selector_android: 0.5.1+15
+  file_selector_ios: 0.5.3+1
+  # The facade requests this git dependency at HEAD; override to the tested commit.
+  file_selector_ohos:
+    git:
+      url: https://gitee.com/openharmony-sig/flutter_packages.git
+      path: packages/file_selector/file_selector_ohos
+      ref: da5906bd4416c5ec5cb4d0840dbc197efeb2e208
+  file_selector_web: 0.9.4+2
+
+  # OHOS implementations are direct dependencies above so Flutter registers them.
   mobile_scanner:
     # mobile_scanner 7.0.1 with OHOS support and TechPie's preview/Android
     # patches, plus the iPhone 17 pixel-format fix. Apple's Vision backend
@@ -202,6 +224,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/icon/icon.png
     - assets/campus_card/audio/
     - assets/campus_card/data/
     - assets/campus_card/images/card-full.png
