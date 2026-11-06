@@ -1,3 +1,12 @@
 "widget.title" = "Pay Code";
 "widget.subtitle" = "Pay in a tap";
 "widget.description" = "Open your campus Pay Code in TechPie";
+"deadline.widget.title" = "Deadlines";
+"deadline.widget.description" = "Upcoming assignments and exams";
+"deadline.widget.empty" = "No upcoming deadlines";
+"deadline.widget.notSynced" = "Open TechPie to sync";
+"deadline.widget.unavailable" = "Deadline data unavailable";
+"deadline.widget.hours" = "%ldh";
+"deadline.widget.daysHours" = "%ldd %ldh";
+"deadline.widget.remaining" = "Remaining";
+"deadline.widget.dueSoon" = "Due soon";
