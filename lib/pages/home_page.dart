@@ -24,6 +24,7 @@ import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/privacy_consent.dart';
 import '../widgets/uni_auth_login.dart';
 import 'generic_webview_page.dart';
 
@@ -418,6 +419,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         subtitle: '连接你的教务系统账号',
         actionLabel: '登录',
         actionSfSymbol: 'person.crop.circle.badge.checkmark',
+        footer: const PrivacyNotice(),
         onTap: () async {
           await startUniAuthLogin(context);
           if (!mounted) return;
@@ -689,6 +691,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     String? actionLabel,
     String? actionSfSymbol,
     VoidCallback? onTap,
+    Widget? footer,
   }) {
     final inner = SizedBox(
       width: double.infinity,
@@ -729,6 +732,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 onPressed: onTap,
                 accessibilityLabel: actionLabel,
               ),
+            ],
+            if (footer != null) ...[
+              const SizedBox(height: 12),
+              footer,
             ],
           ],
         ),

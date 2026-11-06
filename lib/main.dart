@@ -30,6 +30,7 @@ import 'services/uni_auth_service.dart';
 import 'services/update_service.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
+import 'widgets/privacy_consent.dart';
 import 'widgets/update_dialogs.dart';
 
 void main(List<String> args) async {
@@ -469,7 +470,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
           theme: widget.themeService.lightTheme,
           darkTheme: widget.themeService.darkTheme,
           themeMode: widget.themeService.themeMode,
-          home: const AppShell(),
+          home: const PrivacyGate(child: AppShell()),
         ),
       ),
     );
