@@ -21,37 +21,30 @@ class AccountDeletionPage extends StatefulWidget {
 
 class _AccountDeletionPageState extends State<AccountDeletionPage> {
   late final String _userId;
-  AccountDeletionRequest? _request;
-  bool _busy = true;
-  bool _loaded = false;
+  bool _submitted = false;
+  bool _busy = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _userId = widget.auth.session?.userId ?? '';
-    unawaited(_load());
   }
 
-  Future<void> _load({bool submit = false}) async {
+  Future<void> _submit() async {
+    if (_busy || _submitted) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final request = submit
-          ? await widget.auth.submitAccountDeletionRequest(expectedUserId: _userId)
-          : await widget.auth.getAccountDeletionRequest(expectedUserId: _userId);
+      await widget.auth.submitAccountDeletionRequest(expectedUserId: _userId);
       if (!mounted) return;
-      setState(() {
-        _request = request;
-        _loaded = true;
-      });
+      setState(() => _submitted = true);
     } on AccountDeletionRequestException catch (error) {
       if (mounted) {
         setState(() {
           _error = error.message;
-          _loaded = false;
         });
       }
     } finally {
@@ -65,7 +58,6 @@ class _AccountDeletionPageState extends State<AccountDeletionPage> {
     final topInset = useIosChrome || usesLegacyIosChrome()
         ? 0.0
         : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
-    final request = _request;
     return Scaffold(
       extendBodyBehindAppBar: !useIosChrome && !usesLegacyIosChrome(),
       appBar: useIosChrome
@@ -91,7 +83,7 @@ class _AccountDeletionPageState extends State<AccountDeletionPage> {
           AppShellMetrics.bottomContentPaddingOf(context) + 20,
         ),
         children: [
-          if (request == null) ...[
+          if (!_submitted) ...[
             Text('注销整个 GeekPieAuth 账号', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
             const Text(
@@ -100,44 +92,25 @@ class _AccountDeletionPageState extends State<AccountDeletionPage> {
             const SizedBox(height: 12),
             const Text('确认后直接提交申请，由管理员在 7 个工作日内完成删除，并通过账号登记的邮箱通知结果。无需另行发送邮件。'),
             const SizedBox(height: 12),
-            const Text('提交申请不会立即退出登录。删除完成前仍可在此查看受理记录。'),
+            const Text('提交申请不会立即退出登录。提交成功后无需重复申请，处理结果将通过邮箱通知。'),
           ] else ...[
-            Text(
-              request.completed ? '注销已处理完成' : '注销申请已受理',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            Text('注销申请已提交', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
-            SelectableText('申请编号：${request.id}'),
-            const SizedBox(height: 8),
-            Text('申请时间：${request.requestedAt.toLocal().toString().split('.').first}'),
-            const SizedBox(height: 12),
-            Text(
-              request.completed
-                  ? '管理员已完成账号与数据删除，结果将通过账号登记的邮箱通知。'
-                  : '管理员将在申请后 7 个工作日内完成账号与数据删除，并通过账号登记的邮箱通知结果。无需再次提交或发送邮件。',
-            ),
+            const Text('管理员将在 7 个工作日内完成账号与数据删除，并通过账号登记的邮箱通知结果。无需再次提交或发送邮件。'),
           ],
           if (_error != null) ...[
             const SizedBox(height: 20),
             Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ],
           const SizedBox(height: 24),
-          if (_loaded && request == null)
+          if (!_submitted)
             AdaptiveButton(
               label: '确认提交注销申请',
               icon: Icons.person_remove_outlined,
               sfSymbol: 'person.crop.circle.badge.minus',
               role: AdaptiveButtonRole.destructive,
               loading: _busy,
-              onPressed: _busy ? null : () => unawaited(_load(submit: true)),
-            ),
-          if (!_loaded || request != null)
-            AdaptiveButton(
-              label: '刷新申请状态',
-              icon: Icons.refresh,
-              sfSymbol: 'arrow.clockwise',
-              loading: _busy,
-              onPressed: _busy ? null : () => unawaited(_load()),
+              onPressed: _busy ? null : () => unawaited(_submit()),
             ),
         ],
       ),

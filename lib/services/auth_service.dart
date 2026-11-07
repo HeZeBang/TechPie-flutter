@@ -187,27 +187,8 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<AccountDeletionRequest?> getAccountDeletionRequest({
+  Future<void> submitAccountDeletionRequest({
     required String expectedUserId,
-  }) =>
-      _accountDeletionRequest(expectedUserId: expectedUserId, submit: false);
-
-  Future<AccountDeletionRequest> submitAccountDeletionRequest({
-    required String expectedUserId,
-  }) async {
-    final request = await _accountDeletionRequest(
-      expectedUserId: expectedUserId,
-      submit: true,
-    );
-    if (request == null) {
-      throw const AccountDeletionRequestException('未收到受理结果，请刷新状态后重试。');
-    }
-    return request;
-  }
-
-  Future<AccountDeletionRequest?> _accountDeletionRequest({
-    required String expectedUserId,
-    required bool submit,
   }) async {
     void checkIdentity() {
       if (expectedUserId.isEmpty || _session?.userId != expectedUserId) {
@@ -225,36 +206,37 @@ class AuthService extends ChangeNotifier {
     final uri = Uri.parse('$_baseUrl/account/deletion-request');
     final headers = {..._jsonHeaders(), 'Authorization': 'Bearer $token'};
     try {
-      final response = await (submit
-              ? _http.post(
-                  uri,
-                  headers: headers,
-                  body: jsonEncode({'scope': 'geekpie-account'}),
-                  tag: 'accountDeletionRequest',
-                )
-              : _http.get(uri, headers: headers, tag: 'accountDeletionRequest'))
-          .timeout(const Duration(seconds: 30));
+      final response = await _http.post(
+        uri,
+        headers: headers,
+        body: jsonEncode({'scope': 'geekpie-account'}),
+        tag: 'accountDeletionRequest',
+      ).timeout(const Duration(seconds: 30));
       checkIdentity();
       if (response.statusCode == 401) {
         throw const AccountDeletionRequestException('登录已失效，请重新登录后重试。');
+      }
+      if (response.statusCode == 429) {
+        final seconds = int.tryParse(response.headers['retry-after'] ?? '');
+        throw AccountDeletionRequestException(
+          seconds != null && seconds > 0
+              ? '提交过于频繁，请在 $seconds 秒后重试。'
+              : '提交过于频繁，请稍后重试。',
+        );
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw const AccountDeletionRequestException('注销申请服务暂不可用，请稍后重试。');
       }
       final body = jsonDecode(response.body) as Map<String, dynamic>;
-      if (body['success'] != true || body['data'] is! Map<String, dynamic>) {
-        throw const FormatException('Missing receipt');
+      if (body['success'] != true ||
+          body['data'] is! Map<String, dynamic> ||
+          (body['data'] as Map<String, dynamic>)['accepted'] != true) {
+        throw const FormatException('Missing submission acknowledgement');
       }
-      final data = body['data'] as Map<String, dynamic>;
-      if (!data.containsKey('request')) throw const FormatException('Missing request');
-      final request = data['request'];
-      return request == null
-          ? null
-          : AccountDeletionRequest.fromJson(request as Map<String, dynamic>);
     } on AccountDeletionRequestException {
       rethrow;
     } catch (_) {
-      throw const AccountDeletionRequestException('未能确认申请状态，请刷新后重试；重复提交不会重复受理。');
+      throw const AccountDeletionRequestException('未能确认申请已提交，请稍后重试；重复提交不会重复受理。');
     }
   }
 
