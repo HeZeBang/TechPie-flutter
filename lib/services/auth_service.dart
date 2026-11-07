@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/account_deletion_request.dart';
 import '../models/user_session.dart';
 import 'api_base_url.dart';
 import 'debug_logger.dart';
@@ -40,8 +41,7 @@ class AuthService extends ChangeNotifier {
   /// main.dart to avoid a circular construction dependency.
   Future<void> Function()? onLogin;
 
-  AuthService(this._storage, this._http, this._uniAuth, {DebugLogger? logger})
-      : _logger = logger;
+  AuthService(this._storage, this._http, this._uniAuth, {DebugLogger? logger}) : _logger = logger;
 
   final DebugLogger? _logger;
 
@@ -184,6 +184,77 @@ class AuthService extends ChangeNotifier {
     } finally {
       _loading = false;
       notifyListeners();
+    }
+  }
+
+  Future<AccountDeletionRequest?> getAccountDeletionRequest({
+    required String expectedUserId,
+  }) =>
+      _accountDeletionRequest(expectedUserId: expectedUserId, submit: false);
+
+  Future<AccountDeletionRequest> submitAccountDeletionRequest({
+    required String expectedUserId,
+  }) async {
+    final request = await _accountDeletionRequest(
+      expectedUserId: expectedUserId,
+      submit: true,
+    );
+    if (request == null) {
+      throw const AccountDeletionRequestException('未收到受理结果，请刷新状态后重试。');
+    }
+    return request;
+  }
+
+  Future<AccountDeletionRequest?> _accountDeletionRequest({
+    required String expectedUserId,
+    required bool submit,
+  }) async {
+    void checkIdentity() {
+      if (expectedUserId.isEmpty || _session?.userId != expectedUserId) {
+        throw const AccountDeletionRequestException('登录账号已变化，请重新打开注销页面。');
+      }
+    }
+
+    checkIdentity();
+    await tryRenewSession();
+    checkIdentity();
+    final token = _session?.geekpieToken;
+    if (token == null || token.isEmpty) {
+      throw const AccountDeletionRequestException('登录已失效，请重新登录。');
+    }
+    final uri = Uri.parse('$_baseUrl/account/deletion-request');
+    final headers = {..._jsonHeaders(), 'Authorization': 'Bearer $token'};
+    try {
+      final response = await (submit
+              ? _http.post(
+                  uri,
+                  headers: headers,
+                  body: jsonEncode({'scope': 'geekpie-account'}),
+                  tag: 'accountDeletionRequest',
+                )
+              : _http.get(uri, headers: headers, tag: 'accountDeletionRequest'))
+          .timeout(const Duration(seconds: 30));
+      checkIdentity();
+      if (response.statusCode == 401) {
+        throw const AccountDeletionRequestException('登录已失效，请重新登录后重试。');
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw const AccountDeletionRequestException('注销申请服务暂不可用，请稍后重试。');
+      }
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (body['success'] != true || body['data'] is! Map<String, dynamic>) {
+        throw const FormatException('Missing receipt');
+      }
+      final data = body['data'] as Map<String, dynamic>;
+      if (!data.containsKey('request')) throw const FormatException('Missing request');
+      final request = data['request'];
+      return request == null
+          ? null
+          : AccountDeletionRequest.fromJson(request as Map<String, dynamic>);
+    } on AccountDeletionRequestException {
+      rethrow;
+    } catch (_) {
+      throw const AccountDeletionRequestException('未能确认申请状态，请刷新后重试；重复提交不会重复受理。');
     }
   }
 
