@@ -564,12 +564,10 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                 ),
               ),
             ),
+            // One list child per card, not a Column of them: a single tall
+            // child skews the list's extent estimate until it is laid out.
             if (!_pastCollapsed)
-              Column(
-                children: overdue
-                    .map((a) => _buildItem(context, service, a))
-                    .toList(),
-              ),
+              ...overdue.map((a) => _buildItem(context, service, a)),
             const SizedBox(height: 4),
           ],
           Padding(
