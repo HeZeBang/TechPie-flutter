@@ -28,6 +28,7 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/course_block_label.dart';
 import '../widgets/course_detail_panel.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/desktop_select_popover.dart';
@@ -1595,72 +1596,14 @@ class _CourseBlock extends StatelessWidget {
         child: InkWell(
           onTap: () => _showCourseDetail(context),
           borderRadius: BorderRadius.circular(8),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final maxH = constraints.maxHeight - 8; // account for padding
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Course name: up to 70% of block height
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: maxH * 0.7),
-                      child: Text(
-                        course.name,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          height: 1.2,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: (maxH * 0.7 / 14.4).floor().clamp(1, 20),
-                      ),
-                    ),
-                    if (course.usesCustomTime) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        '${course.startTime}–${course.endTime}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontSize: 9,
-                          height: 1.1,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    if (maxH >= 48 && course.teachers != null && course.teachers!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        course.teachers!,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontSize: 12,
-                          height: 1.2,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    if (maxH >= 42 && course.location.isNotEmpty) ...[
-                      const Spacer(),
-                      Text(
-                        course.location,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontSize: 10,
-                          height: 1.2,
-                        ),
-                        maxLines: (maxH * 0.2 / 12).floor().clamp(1, 5),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            },
+          child: CourseBlockLabel(
+            name: course.name,
+            color: textColor,
+            time: course.usesCustomTime
+                ? '${course.startTime}–${course.endTime}'
+                : null,
+            teachers: course.teachers,
+            location: course.location,
           ),
         ),
       ),
