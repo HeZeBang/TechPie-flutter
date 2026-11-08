@@ -58,7 +58,7 @@ struct DeadlineWidgetView: View {
         VStack(alignment: .leading, spacing: 12) {
           ForEach(sections) { section in
             VStack(alignment: .leading, spacing: 6) {
-              Text(section.title).font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary)
+              Text(section.title).font(.system(size: 11, weight: .semibold)).foregroundColor(.accentColor)
               ForEach(section.items) { row($0, timeOnly: section.day <= .tomorrow) }
             }
           }
@@ -74,9 +74,13 @@ struct DeadlineWidgetView: View {
     }
   }
 
+  /// The app's accent colour sits on structure — this header and the large
+  /// widget's day headings — where it makes the widget recognisable without
+  /// competing with the deadlines themselves, which stay neutral.
   private func header(more: Int) -> some View {
     HStack(alignment: .firstTextBaseline) {
       Text("deadline.widget.title").font(.system(size: 13, weight: .semibold))
+        .foregroundColor(.accentColor).accentable()
       Spacer(minLength: 4)
       if more > 0 {
         Text(String.localizedStringWithFormat(NSLocalizedString("deadline.widget.more", comment: "Deadlines not shown"), more))
@@ -87,7 +91,7 @@ struct DeadlineWidgetView: View {
 
   private func message(_ text: LocalizedStringKey, icon: String) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("deadline.widget.title").font(.system(size: 13, weight: .semibold))
+      header(more: 0)
       Spacer(minLength: 0)
       Image(systemName: icon).font(.system(size: 22)).foregroundColor(.secondary).accessibilityHidden(true)
       Text(text).font(.system(size: 13)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -99,13 +103,12 @@ struct DeadlineWidgetView: View {
 
   private func row(_ item: DeadlineItem, timeOnly: Bool) -> some View {
     HStack(alignment: .center, spacing: 8) {
-      marker(item).frame(height: 28)
       VStack(alignment: .leading, spacing: 1) {
         Text(item.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-        Text(secondary(item, timeOnly: timeOnly)).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
+        detail(item, secondary(item, timeOnly: timeOnly), size: 11)
       }
       Spacer(minLength: 8)
-      remaining(item, size: 14)
+      remaining(item, size: 14, prominent: false)
     }
     .accessibilityElement(children: .ignore).accessibilityLabel(accessibility(item))
   }
@@ -125,12 +128,9 @@ struct DeadlineWidgetView: View {
             .lineLimit(2)
         }
       }
-      .padding(.leading, 9)
-      .overlay(alignment: .leading) { marker(item) }
       Spacer(minLength: large ? 12 : 6)
-      remaining(item, size: large ? 44 : 30).layoutPriority(1)
-      Text(date(item, timeOnly: false, weekday: true)).font(.system(size: large ? 13 : 11))
-        .foregroundColor(.secondary).lineLimit(1).layoutPriority(1)
+      remaining(item, size: large ? 44 : 30, prominent: true).layoutPriority(1)
+      detail(item, date(item, timeOnly: false, weekday: true), size: large ? 13 : 11).layoutPriority(1)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .accessibilityElement(children: .ignore).accessibilityLabel(accessibility(item))
@@ -138,12 +138,11 @@ struct DeadlineWidgetView: View {
 
   private func wideHero(_ item: DeadlineItem) -> some View {
     HStack(alignment: .center, spacing: 12) {
-      marker(item).frame(height: 44)
       VStack(alignment: .leading, spacing: 4) {
         Text(item.title).font(.system(size: 17, weight: .semibold)).lineLimit(2)
-        Text(secondary(item, timeOnly: false)).font(.system(size: 12)).foregroundColor(.secondary).lineLimit(1)
+        detail(item, secondary(item, timeOnly: false), size: 12)
       }.frame(maxWidth: .infinity, alignment: .leading)
-      remaining(item, size: 30)
+      remaining(item, size: 30, prominent: true)
     }
     .frame(maxHeight: .infinity)
     .accessibilityElement(children: .ignore).accessibilityLabel(accessibility(item))
@@ -151,10 +150,16 @@ struct DeadlineWidgetView: View {
 
   // MARK: - Pieces
 
-  /// Assignments in the accent colour, exams in orange — the kind at a glance
-  /// without an icon on every row.
-  private func marker(_ item: DeadlineItem) -> some View {
-    Capsule().fill(item.kind == .exam ? Color.orange : Color.accentColor).frame(width: 3)
+  /// A secondary line, led by a symbol for the item's kind. The shape alone
+  /// tells the kinds apart — in grey, like the line it leads, so colour is
+  /// left to urgency and survives a tinted or clear appearance unchanged.
+  private func detail(_ item: DeadlineItem, _ text: String, size: CGFloat) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 3) {
+      Image(systemName: item.kind == .exam ? "calendar" : "doc.text")
+        .font(.system(size: size - 1, weight: .semibold))
+        .foregroundColor(.secondary).accessibilityHidden(true)
+      Text(text).font(.system(size: size)).foregroundColor(.secondary).lineLimit(1)
+    }
   }
 
   /// Date first, so a long course name or location truncates instead of it.
@@ -170,13 +175,17 @@ struct DeadlineWidgetView: View {
                                  calendar: calendar, locale: locale)
   }
 
+  /// Red is kept for the one thing worth interrupting for: less than a day
+  /// left. In a list the countdown otherwise steps back behind the titles, so
+  /// each row has one heavy element; the hero's countdown is its focus.
   @ViewBuilder
-  private func remaining(_ item: DeadlineItem, size: CGFloat) -> some View {
+  private func remaining(_ item: DeadlineItem, size: CGFloat, prominent: Bool) -> some View {
     if let hours = DeadlineSnapshot.remainingHours(item, at: entry.date) {
       let value = DeadlineRemaining(hours: hours)
       Text(label(value))
-        .font(.system(size: size, weight: .semibold, design: .rounded))
-        .foregroundColor(value.isUrgent ? .red : .primary)
+        .font(.system(size: size, weight: prominent || value.isUrgent ? .semibold : .medium, design: .rounded))
+        .foregroundColor(value.isUrgent ? .red : prominent ? .primary : .secondary)
+        .accentable(value.isUrgent)
         .lineLimit(1).minimumScaleFactor(0.6).fixedSize(horizontal: size < 20, vertical: false)
     }
   }
@@ -225,10 +234,10 @@ struct DeadlineWidgetView: View {
     }
   }
 
-  /// Up to six rows, fewer when they spread over many days: a row and a
+  /// Up to seven rows, fewer when they spread over many days: a row and a
   /// section heading cost about the same height, and nine of them fill it.
   private func sections(_ all: [DeadlineItem]) -> [Section] {
-    var shown = Array(all.prefix(6))
+    var shown = Array(all.prefix(7))
     while true {
       let groups = DeadlineDay.group(shown, at: entry.date, calendar: calendar)
       if shown.count + groups.count <= 9 || shown.count <= 1 {
@@ -236,6 +245,14 @@ struct DeadlineWidgetView: View {
       }
       shown.removeLast()
     }
+  }
+}
+
+private extension View {
+  /// In a tinted or clear appearance the system splits the widget into an
+  /// accent and a primary group; this puts a view in the accent group.
+  @ViewBuilder func accentable(_ isAccent: Bool = true) -> some View {
+    if #available(iOS 16.0, macOS 13.0, *) { widgetAccentable(isAccent) } else { self }
   }
 }
 

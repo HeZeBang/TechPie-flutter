@@ -6,14 +6,22 @@ Widgets display future, incomplete assignments and exams from local data,
 respecting hidden items and completion overrides. Items are ordered by deadline,
 then internal identifier. Small shows the next deadline alone: its title and
 subtitle (two lines each, the subtitle giving up its second line first), then
-the countdown and a date that includes the weekday; medium lists up to three; large lists up to six under Today,
+the countdown and a date that includes the weekday; medium lists up to three; large lists up to seven under Today,
 Tomorrow, Next 7 days and Later headings, fewer when they spread over many days.
 A medium or large widget with a single deadline shows it the way small does.
 The header counts deadlines that did not fit.
 
-Each item shows its title, a subtitle, its kind as a coloured bar (assignments
-in the accent colour, exams in orange), its absolute deadline and the remaining
-time. The subtitle is the course for an assignment and the location for an exam,
+Each item shows its title, a subtitle, its absolute deadline and the remaining
+time. A grey symbol before the date names the kind: a document for an
+assignment, a calendar for an exam. Following Apple's widget guidance, colour
+never carries meaning: the shapes tell the kinds apart in every appearance.
+Only titles are bold and list countdowns are secondary. Colour sits on
+structure, as Apple's guidance on brand colour suggests: the app's accent colour
+marks the header and the large widget's day headings, so the widget is
+recognisable while the deadlines themselves stay neutral. Red is reserved for
+less than a day left. The header and an urgent countdown are the accent group in
+the accented (tinted/clear) rendering mode.
+The subtitle is the course for an assignment and the location for an exam,
 whose title already names the course — the same choice the Deadlines and Home
 pages make; it is decided in Dart and may be empty. The date comes before the
 subtitle so that a long subtitle truncates first. Truncated text retains the
