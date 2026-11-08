@@ -127,7 +127,10 @@ void main() {
       (tester) async {
     appShellPendingDeadlines.value = true;
     addTearDown(() => appShellPendingDeadlines.value = false);
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      // These tests are about the shell, not the first-launch consent.
+      'privacy_accepted_v1': true,
+    });
     final storage = StorageService(await SharedPreferences.getInstance());
     final logger = DebugLogger();
     final http = LoggingHttpClient(logger);
