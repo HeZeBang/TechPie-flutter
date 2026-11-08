@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-import '../features/campus_card/core/async_mutex.dart';
 import '../models/ids_passkey.dart';
 import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
@@ -14,7 +13,7 @@ import 'ids/ids_client.dart';
 import 'session/session_node.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
-import 'sync_envelope.dart' show SyncTombstone, nextSyncTimestamp;
+import 'sync_envelope.dart' show SyncTombstone;
 
 /// Every session-node id, top-level and derived, in a stable order. Used to
 /// bulk-load persisted renew status at boot.
@@ -51,7 +50,6 @@ class ThirdPartyAuthService extends ChangeNotifier {
   IdsSyncBinding? _idsBinding;
   int _idsGeneration = 0;
   Future<void> _idsWrites = Future.value();
-  final _accountWrites = AsyncMutex();
 
   // Serialize the short persistence/commit phase, never network or captcha waits.
   Future<T> _writeIds<T>(Future<T> Function() action) {
@@ -216,13 +214,10 @@ class ThirdPartyAuthService extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    await _accountWrites.protect(() async {
-      if (!identical(_nodeAccount(updated.platform), updated)) return;
-      final touched = _touch(updated);
-      await _storage.saveThirdPartyAccount(touched);
-      if (force) _pendingForcePush = true;
-      _tree.setAccount(touched.platform, touched);
-    });
+    final touched = _touch(updated);
+    await _storage.saveThirdPartyAccount(touched);
+    if (force) _pendingForcePush = true;
+    _tree.setAccount(touched.platform, touched);
   }
 
   /// Persist a session node's renew outcome (in-memory + storage) for the
@@ -272,18 +267,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
 
   /// Stamp [acc] with this device's id + current time, for LWW merge.
   ThirdPartyAccount _touch(ThirdPartyAccount acc) {
-    return acc.copyWith(updatedAt: _nextUpdate(acc.platform, acc.updatedAt), deviceId: _deviceId);
+    return acc.copyWith(updatedAt: DateTime.now(), deviceId: _deviceId);
   }
-
-  DateTime _nextUpdate(ThirdPartyPlatform platform, [DateTime? previous]) => nextSyncTimestamp([
-        if (previous != null) previous,
-        if (_nodeAccount(platform) case final account?) account.updatedAt,
-        if (platform == ThirdPartyPlatform.ids && _idsBinding != null) _idsBinding!.updatedAt,
-        ..._storage
-            .loadThirdPartyTombstones()
-            .where((t) => t.platform == platform)
-            .map((t) => t.deletedAt),
-      ]);
 
   // -- IDS binding (single source of CASTGC / IDS session) --
   //
@@ -539,11 +524,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
     final credential = key;
     final bound = await _writeIds(() async {
       ensureCurrent();
-      _idsBinding = IdsSyncBinding(
-        credential: credential,
-        updatedAt: _nextUpdate(ThirdPartyPlatform.ids),
-        deviceId: _deviceId,
-      );
+      _idsBinding =
+          IdsSyncBinding(credential: credential, updatedAt: DateTime.now(), deviceId: _deviceId);
       _suppressSyncPush = true;
       final account = _idsAccount(session!.raw, name: session.name);
       try {
@@ -722,40 +704,38 @@ class ThirdPartyAuthService extends ChangeNotifier {
   Future<void> applySyncMerge(
     List<ThirdPartyAccount> kept,
     Set<ThirdPartyPlatform> removed,
-  ) =>
-      _accountWrites.protect(() async {
-        _suppressSyncPush = true;
-        try {
-          final byPlatform = {
-            for (final a in kept) a.platform: a,
-          };
-          for (final p in ThirdPartyPlatform.values) {
-            // IDS is merged separately from local sessions.
-            if (p == ThirdPartyPlatform.ids) continue;
-            final next = byPlatform[p];
-            final cur = _nodeAccount(p);
-            // Skip no-op writes: if the merged account equals the current one
-            // (same token, same updatedAt), don't touch storage or fire notifies.
-            if (next != null && cur != null && _accountEqual(cur, next)) continue;
-            if (next == null && cur == null) continue;
-            if (next != null) {
-              _tree.setAccount(p, next);
-              await _storage.saveThirdPartyAccount(next);
-            } else {
-              _tree.setAccount(p, null);
-              await _storage.clearThirdPartyAccount(p);
-            }
-          }
-        } finally {
-          _suppressSyncPush = false;
+  ) async {
+    _suppressSyncPush = true;
+    try {
+      final byPlatform = {
+        for (final a in kept) a.platform: a,
+      };
+      for (final p in ThirdPartyPlatform.values) {
+        if (p == ThirdPartyPlatform.ids) continue; // IDS is merged separately from local sessions.
+        final next = byPlatform[p];
+        final cur = _nodeAccount(p);
+        // Skip no-op writes: if the merged account equals the current one
+        // (same token, same updatedAt), don't touch storage or fire notifies.
+        if (next != null && cur != null && _accountEqual(cur, next)) continue;
+        if (next == null && cur == null) continue;
+        if (next != null) {
+          await _storage.saveThirdPartyAccount(next);
+          _tree.setAccount(p, next);
+        } else {
+          _tree.setAccount(p, null);
+          await _storage.clearThirdPartyAccount(p);
         }
-        // One notification for the whole merge — through the funnel, so the same
-        // downstream effects a manual binding change gets happen for a merge too.
-        // It used to notify listeners only, which left everything wired to
-        // onBindingsChanged (the cloud push, and the services that refetch when a
-        // binding appears) blind to a merge that replaced the account.
-        _onTreeChanged();
-      });
+      }
+    } finally {
+      _suppressSyncPush = false;
+    }
+    // One notification for the whole merge — through the funnel, so the same
+    // downstream effects a manual binding change gets happen for a merge too.
+    // It used to notify listeners only, which left everything wired to
+    // onBindingsChanged (the cloud push, and the services that refetch when a
+    // binding appears) blind to a merge that replaced the account.
+    _onTreeChanged();
+  }
 
   /// Cheap structural equality used by [applySyncMerge] to skip no-op writes.
   static bool _accountEqual(ThirdPartyAccount a, ThirdPartyAccount b) {

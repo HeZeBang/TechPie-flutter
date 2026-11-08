@@ -130,10 +130,6 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     }
     final binding = EcardSyncBinding(openId: openId, channel: await _sessionStore.readOpenIdChannel(), updatedAt: now, deviceId: await _syncDeviceId());
     await _secureStore.write(_bindingKey, jsonEncode(binding.toJson()));
-  }
-
-  Future<void> _notifyBindingChanged() async {
-    // The sync callback may apply a cloud binding and acquire _bindingMutex.
     // Sync failures do not undo a successful local account change.
     try { await onBindingChanged?.call(); } catch (_) {}
   }
@@ -216,10 +212,7 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     }
   }
 
-  Future<void> connect(String openId, {EcardOpenIdChannel channel = EcardOpenIdChannel.wechat}) async {
-    await _bindingMutex.protect(() => _connect(openId, channel));
-    await _notifyBindingChanged();
-  }
+  Future<void> connect(String openId, {EcardOpenIdChannel channel = EcardOpenIdChannel.wechat}) => _bindingMutex.protect(() => _connect(openId, channel));
 
   Future<void> _connect(String openId, EcardOpenIdChannel channel) async {
     final credential = OpenIdAuthCredential(openId: openId.trim(), channel: channel);
@@ -238,10 +231,7 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     }
   }
 
-  Future<void> disconnect() async {
-    await _bindingMutex.protect(_disconnect);
-    await _notifyBindingChanged();
-  }
+  Future<void> disconnect() => _bindingMutex.protect(_disconnect);
 
   Future<void> _disconnect() async {
     _setBusy(true);

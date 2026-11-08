@@ -4,15 +4,6 @@ import '../models/ecard_sync_binding.dart';
 import '../models/ids_passkey.dart';
 import '../models/third_party_account.dart';
 
-/// A local binding change must follow versions already observed on this device.
-DateTime nextSyncTimestamp(Iterable<DateTime> previous) {
-  var next = DateTime.now().toUtc();
-  for (final time in previous) {
-    if (!next.isAfter(time)) next = time.add(const Duration(microseconds: 1));
-  }
-  return next;
-}
-
 /// Schema version of the cloud-sync blob's plaintext envelope.
 ///
 /// History:
@@ -55,18 +46,6 @@ class SyncSchema {
 
   SyncSchema._();
 
-  static bool _isAccount(dynamic entry) =>
-      entry is Map &&
-      ThirdPartyPlatform.fromId(entry['platform'] as String? ?? '') != null &&
-      entry['account'] is String &&
-      entry['token'] is String;
-
-  static bool _isTombstone(dynamic entry) =>
-      entry is Map &&
-      ThirdPartyPlatform.fromId(entry['platform'] as String? ?? '') != null &&
-      entry['deletedAt'] is String &&
-      DateTime.tryParse(entry['deletedAt'] as String) != null;
-
   /// Migrate a decoded plaintext JSON value to [current] and return the
   /// normalized envelope. Accepts any historical shape:
   ///   - a [List] (v0 bare array) → wrapped as v1 then migrated
@@ -75,7 +54,6 @@ class SyncSchema {
   static SyncEnvelope? migrate(dynamic decoded) {
     // v0: bare array of account objects.
     if (decoded is List) {
-      if (!decoded.every(_isAccount)) return null;
       final accounts = decoded
           .whereType<Map<dynamic, dynamic>>()
           .map((e) => ThirdPartyAccount.fromJson(e.cast<String, dynamic>()))
@@ -88,14 +66,6 @@ class SyncSchema {
     }
     if (decoded is! Map) return null;
     final m = decoded.cast<String, dynamic>();
-    if (m['accounts'] is! List ||
-        !(m['accounts'] as List).every(_isAccount) ||
-        (m.containsKey('tombstones') &&
-            (m['tombstones'] is! List || !(m['tombstones'] as List).every(_isTombstone)))) {
-      return null;
-    }
-    final ecard = EcardSyncBinding.fromJson(m['ecard']);
-    if (m['ecard'] != null && ecard == null) return null;
     var v = (m['v'] as num?)?.toInt() ?? 1;
     // v1 → v2: add empty tombstones list. Accounts already carry
     // updatedAt/deviceId with back-compat defaults from fromJson.
@@ -104,7 +74,8 @@ class SyncSchema {
       // shape only adds the tombstones field.
       v = 2;
     }
-    final rawAccounts = m['accounts'] as List;
+    final rawAccounts =
+        m['accounts'] is List ? m['accounts'] as List : const <dynamic>[];
     final accounts = rawAccounts
         .whereType<Map<dynamic, dynamic>>()
         .map((e) => ThirdPartyAccount.fromJson(e.cast<String, dynamic>()))
@@ -119,7 +90,7 @@ class SyncSchema {
       v: current,
       accounts: accounts,
       tombstones: tombstones,
-      ecard: ecard,
+      ecard: EcardSyncBinding.fromJson(m['ecard']),
       // Anything this build does not interpret belongs to a newer build. Keep
       // it verbatim rather than let this device's write delete it.
       unknown: {
@@ -217,20 +188,13 @@ class SyncEnvelope {
       });
 
   static SyncEnvelope? decode(String plaintext) {
+    dynamic decoded;
     try {
-      final envelope = SyncSchema.migrate(jsonDecode(plaintext));
-      // Validate credentials before any of the accounts are applied locally.
-      for (final account in envelope?.accounts ?? <ThirdPartyAccount>[]) {
-        if (account.platform == ThirdPartyPlatform.ids &&
-            account.raw['authMethod'] == 'passkey' &&
-            IdsSyncBinding.fromAccount(account) == null) {
-          return null;
-        }
-      }
-      return envelope;
+      decoded = jsonDecode(plaintext);
     } catch (_) {
       return null;
     }
+    return SyncSchema.migrate(decoded);
   }
 
   /// Build an envelope from the local account list, preserving tombstones
@@ -360,8 +324,8 @@ class SyncEnvelope {
       // local duplicate of it; either way it survives the merge.
       unknown: {...unknown, ...remote.unknown},
     );
-
   }
+
 }
 
 class _MergeCandidate {
