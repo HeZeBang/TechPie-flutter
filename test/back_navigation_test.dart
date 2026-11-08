@@ -34,7 +34,10 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      // These tests are about the shell, not the first-launch consent.
+      'privacy_accepted_v1': true,
+    });
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
     // The settings page hides its debug tiles unless debug mode is on, and those

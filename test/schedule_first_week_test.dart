@@ -47,6 +47,8 @@ void main() {
     // Seven weeks and a day into term: the current week is the 8th.
     final termBegin = DateTime.now().subtract(const Duration(days: 7 * 7 + 1));
     SharedPreferences.setMockInitialValues({
+      // This test is about the timetable's first frame, not the consent gate.
+      'privacy_accepted_v1': true,
       'schedule_selected_semester': 'term',
       'schedule_term_begin_term': jsonEncode(
         TermCalendar(

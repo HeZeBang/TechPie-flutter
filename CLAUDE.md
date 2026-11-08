@@ -91,7 +91,24 @@ tag must agree with it or the release workflow refuses to publish.
 `scripts/release-plan.mjs` implements the policy below and runs standalone
 (`node scripts/release-plan.mjs --ref master`) to show what a dispatch would
 release — the same thing the workflow prints into its run summary before it
-tags anything.
+tags anything. It has two more modes, and they are how a stale `version:` is
+spotted and fixed instead of guessed:
+
+```bash
+node scripts/release-plan.mjs --check          # 已发布 tag 对照：version 行 / build number / 建议值
+node scripts/release-plan.mjs --check --strict # 同上，但“从这里发布会被拒”时退出 1
+node scripts/release-plan.mjs --require-version 1.0.4 --ref master   # 硬闸，prepare-release 用它
+```
+
+`--check` 从不阻断：master 的版本行落后于最新 stable 是**合法待发状态**（那条线还没开新版本），
+它只把「pubspec 的 `X.Y.Z` 与最高 stable 版本」「`+B` 与最高已发布 build」「建议写什么」并排打印出来，
+`chore: bump version` 那次提交就照它写。`--require-version` 才是闸：从 `master` 发一个**更老**的版本线、
+或重发一个**已经 stable 发布过**的 `X.Y.Z`，都会被拒（旧线维护走 `release/1.0.1` 这类分支，
+重发 stable 走 `release/X.Y.Z` + 更高的 `+B`）。`prepare-release.yml` 两步都跑：先报告，再闸，
+所以准备 PR 之前就能看到数字，而提出来的版本一定合规。
+
+同一个闸还有一条对应的候选版规则：在 `master` 上 dispatch 一个**已落后于最新 stable** 的版本线会直接
+被 `release-plan` 拒绝——候选版是“尚未冻结的那条线”，否则会得到 `1.0.1-rc.10` 这种已发布版本线的 rc。
 
 ### Hard rules
 
@@ -443,14 +460,53 @@ distinguishable in git, and the file names deliberately do not try to.
 
 ### Operating the pipeline
 
-- CI signs and publishes every platform's artifacts and stops there: **uploading
-  to Play, AppGallery and the App Store is manual**, from those artifacts. Android
+- CI signs and publishes every platform's artifacts, and now also pushes the OHOS
+  pack to AppGallery Connect. **Uploading to Play and the App Store is still
+  manual**, from those artifacts. Android
   gets three APKs (arm64 and arm32 splits plus a universal one), Linux a `tar.gz`
   of the bundle, Windows a `zip` of the release directory, OHOS the unsigned hap.
   The `publish` job waits for all of them and is what writes the SHA-256 block —
   once, over every asset, since a platform job only knows its own files. The
   Android signing material lives in the `android-release` environment; the iOS
   dispatch needs `RELEASE_APP_*` and the signing repo.
+
+- **AppGallery** (`ohos-appgallery.yml`, called by `release.yml` after the OHOS
+  job, and dispatchable on its own with `-f tag=v1.0.5-rc.1+20`) closes that loop
+  for OHOS: it downloads the *unsigned* `.app` the release already carries,
+  verifies its sha256, signs it with the release certificate, checks that signing
+  changed no payload entry, and pushes it through `scripts/agc-publish.mjs`. The
+  channel is not an input, it follows the release name: `X.Y.Z-rc.N` goes to the
+  **test** channel (releaseType 6), `X.Y.Z` to the 全网 one (releaseType 1), and
+  either is submitted for review, because an unreviewed version cannot be
+  installed. Three write levels are separate because only one is reversible:
+  `publish=false` reads AGC and writes nothing, `publish=true` uploads and stops
+  at 待提交, `submit=true` adds the review request.
+
+  The job runs behind the **`ohos` environment**, whose required reviewer is what
+  turns a run into a store action, and it is deliberately not a `needs` of
+  `publish` — a store approval must not hold up the GitHub release. It needs, on
+  that environment: secrets `OHOS_STORE_B64`, `OHOS_CERT_B64`,
+  `OHOS_PROFILE_B64`, `OHOS_STORE_PASSWORD`, `OHOS_KEY_PASSWORD`,
+  `AGC_CLIENT_ID`, `AGC_CLIENT_SECRET`, `AGC_APP_ID`, and variables
+  `OHOS_KEY_ALIAS`, `OHOS_SIGN_ALG`. The pack is the one from the tag, never a
+  rebuild: a rebuilt pack has different bytes, and what gets signed has to be what
+  shipped. AGC answers a business refusal with HTTP 200 and a `ret.code`, so the
+  scripts surface that code instead of pretending success — `errorCode 991` on the
+  package compile is "invalid package, possibly unsigned", which is exactly what
+  an unsigned upload produces.
+
+  A **test** version needs one record the Publishing API cannot write. The age
+  rating lives per version serial (`srvSerialNo` = the versionId), not per app: the
+  app answers a questionnaire once (`contentRate`, here `{"HW":"3+","ClassInd":"L"}`)
+  and the console copies it onto each version. A version created by API has no such
+  record, and the submit is refused with
+  `[AppGalleryConnectAppMetaInfoService]contentRating in amis is invalid`.
+  `extInfo.contentRating` on the version PUT is accepted and ignored (measured on
+  v1.0.4-rc.1+19), and `POST /api/publish/v2/app-age-rating` only rates the app for
+  `releaseType` 1/7 — never 6, the test channel. So the test version's rating is
+  confirmed in the console (分发 → 版本信息 → 测试版本 → 内容分级) once per version;
+  the workflow stops at 待提交 with exit 2 and says so. The 全网 channel needs
+  nothing extra: its rating is the app's.
 - **One concurrency group per platform.** Group names are repository-wide and a
   group holds only one *pending* entry, so platform workflows that share a group
   cancel each other's queued jobs: 1.0.1-rc.2's Windows job was cancelled one
@@ -483,8 +539,10 @@ distinguishable in git, and the file names deliberately do not try to.
   `OHOS_UNSIGNED=1`: the generator writes a profile with no signing material, so
   hvigor packs `-unsigned` artifacts while flutter exits non-zero looking for the
   signed ones, which is why both scripts judge the build by the artifact rather
-  than by its exit code. Signing happens on the device owner's machine, never in
-  CI — so an AppGallery upload is a maintainer step: sign the pack, then upload it.
+  than by its exit code. The *build* stays unsigned — the material is not on the
+  runner — and the signature is added afterwards by the AppGallery job (above)
+  with the release certificate, which is why the upload takes the pack from the
+  release and not from a fresh build.
   The toolchain reaches CI as a container image, not as a self-hosted runner:
   `ci/Dockerfile.ohos-buildenv` bakes the OHOS Flutter fork and the DevEco
   command-line tools — neither can be installed on a hosted runner, because the
@@ -517,7 +575,7 @@ distinguishable in git, and the file names deliberately do not try to.
 
 ## OHOS-Specific Gotchas
 
-- Many upstream pub packages lack OHOS platform implementations. The `dependency_overrides` in `pubspec.yaml` point to OpenHarmony-SIG forks that add OHOS MethodChannel bindings. Don't remove these overrides without testing on OHOS.
+- Many upstream pub packages lack OHOS platform implementations. The OpenHarmony-SIG forks that add their MethodChannel bindings (`shared_preferences_ohos`, `path_provider_ohos`, `url_launcher_ohos`, `image_picker_ohos`, `flutter_secure_storage_ohos`) are **direct dependencies** in `pubspec.yaml`, not `dependency_overrides` — each pinned by its git `ref` (the four OpenHarmony-SIG forks added here are pinned by commit; `flutter_secure_storage_ohos` still tracks its branch). From Flutter 3.41 `findPlugins` resolves the registrant from `.dart_tool/package_graph.json` and only walks the root dependency closure, so an override-only implementation is never registered — its channel then throws `MissingPluginException` at boot and the app never reaches `runApp` (white start window). Adding such a fork means adding a `dependencies:` entry; check `GeneratedPluginRegistrant.ets` afterwards. The 3.27 fork scanned every package in `package_config.json` instead, which is why this used to work.
 - Two Flutter SDKs ship this app: the platform workflows pin upstream **3.41.9**, and the OHOS build uses the fork **3.41.9+ohos-1.0.2**. The fork is a patch of that same upstream release (`3.41.9-ohos`), so the two are the same engine and the same Dart — a lockfile generated by either is byte-identical, which is what lets `pubspec.lock` be shared. Keep it that way when bumping: pin the platform workflows to the upstream release the fork is based on, or `Verify dependency graph` will fail in CI.
 - `flutter_secure_storage_ohos` is NOT a federated plugin — it's a full fork with its own `FlutterSecureStorage` class. Importing the upstream package will crash on OHOS.
 - The OHOS CI image (`ci/Dockerfile.ohos-buildenv`) still carries no C++ toolchain, although `ohos/entry/src/main/cpp/` is real native code (the bind tunnel's packet I/O): hvigor never compiles it, because the module ships `ohos/entry/libs/arm64-v8a/libecardbind_reader.so` as a committed prebuilt — no `externalNativeOptions` — which `ohos/scripts/build-ecardbind-reader.sh` rebuilds whenever that source changes, with a digest of the source embedded in the .so and asserted by `test/campus_card/architecture/ecard_bind_reader_artifact_test.dart`, so an edit that was never compiled cannot pass unnoticed. Dropping the toolchain is therefore worth its 4.7 GB (clang, its sysroots, the bundled cmake/ninja, and the 1.9 GB BiSheng compiler this build never selects); native code that has to be compiled *at build time* is the one thing that would need the block back. It still drops the previewer's device variant and HMS resource bundle, the linter/emulator/API-docs CLIs, and the Flutter fork's web SDK, to stay inside a hosted runner's disk budget. Two things that look droppable are not: the fork's 1.9 GB `.git` (`bin/internal/shared.sh` refuses to run without it, and the framework version comes from a git tag) and `openharmony/previewer/common` (the resource compiler dlopens `hms/toolchains/lib/libimage_transcoder_shared.so`, whose RUNPATH points into it; the image build asserts that chain resolves). The image has to be republished (`ci/publish-buildenv.sh`) and its new tag set in `ohos-release.yml` whenever the toolchain it carries changes, or a release keeps building with the old one.
