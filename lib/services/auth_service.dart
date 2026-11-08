@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-import '../models/account_deletion_request.dart';
 import '../models/user_session.dart';
 import 'api_base_url.dart';
 import 'debug_logger.dart';
@@ -187,12 +186,12 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<void> submitAccountDeletionRequest({
+  Future<void> deleteAccount({
     required String expectedUserId,
   }) async {
     void checkIdentity() {
       if (expectedUserId.isEmpty || _session?.userId != expectedUserId) {
-        throw const AccountDeletionRequestException('登录账号已变化，请重新打开注销页面。');
+        throw Exception('登录账号已变化，请重新打开注销页面。');
       }
     }
 
@@ -201,42 +200,14 @@ class AuthService extends ChangeNotifier {
     checkIdentity();
     final token = _session?.geekpieToken;
     if (token == null || token.isEmpty) {
-      throw const AccountDeletionRequestException('登录已失效，请重新登录。');
+      throw Exception('登录已失效，请重新登录。');
     }
-    final uri = Uri.parse('$_baseUrl/account/deletion-request');
-    final headers = {..._jsonHeaders(), 'Authorization': 'Bearer $token'};
-    try {
-      final response = await _http.post(
-        uri,
-        headers: headers,
-        body: jsonEncode({'scope': 'geekpie-account'}),
-        tag: 'accountDeletionRequest',
-      ).timeout(const Duration(seconds: 30));
-      checkIdentity();
-      if (response.statusCode == 401) {
-        throw const AccountDeletionRequestException('登录已失效，请重新登录后重试。');
-      }
-      if (response.statusCode == 429) {
-        final seconds = int.tryParse(response.headers['retry-after'] ?? '');
-        throw AccountDeletionRequestException(
-          seconds != null && seconds > 0
-              ? '提交过于频繁，请在 $seconds 秒后重试。'
-              : '提交过于频繁，请稍后重试。',
-        );
-      }
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw const AccountDeletionRequestException('注销申请服务暂不可用，请稍后重试。');
-      }
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      if (body['success'] != true ||
-          body['data'] is! Map<String, dynamic> ||
-          (body['data'] as Map<String, dynamic>)['accepted'] != true) {
-        throw const FormatException('Missing submission acknowledgement');
-      }
-    } on AccountDeletionRequestException {
-      rethrow;
-    } catch (_) {
-      throw const AccountDeletionRequestException('未能确认申请已提交，请稍后重试；重复提交不会重复受理。');
+    await _uniAuth.deleteAccount(token, expectedUserId);
+    if (_session?.userId == expectedUserId) {
+      await _storage.setSyncEnabled(false);
+      await _storage.clearSyncMasterKey();
+      await _storage.setSyncLastAt('');
+      await logout();
     }
   }
 

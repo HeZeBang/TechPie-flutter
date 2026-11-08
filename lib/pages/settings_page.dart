@@ -263,7 +263,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.person_remove_outlined),
-                title: const Text('申请注销账号'),
+                title: const Text('注销账号'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
                   pushAdaptivePage<void>(
