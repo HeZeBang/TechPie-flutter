@@ -20,6 +20,9 @@ class FeedbackPage extends StatefulWidget {
 
 class _FeedbackPageState extends State<FeedbackPage> {
   final _message = TextEditingController();
+  final _contact = TextEditingController();
+  bool _includeUsername = false;
+  bool _includeEmail = false;
   bool _busy = false;
   bool _sent = false;
   String? _error;
@@ -27,6 +30,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
   @override
   void dispose() {
     _message.dispose();
+    _contact.dispose();
     super.dispose();
   }
 
@@ -38,7 +42,12 @@ class _FeedbackPageState extends State<FeedbackPage> {
       _error = null;
     });
     try {
-      await widget.service.submit(_message.text);
+      await widget.service.submit(
+        _message.text,
+        includeUsername: _includeUsername,
+        includeEmail: _includeEmail,
+        contact: _contact.text,
+      );
       if (mounted) setState(() => _sent = true);
     } catch (error) {
       if (mounted) {
@@ -100,12 +109,36 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   maxLines: 12,
                   maxLength: 2000,
                   decoration: const InputDecoration(
-                    hintText: '描述问题或建议，需要回复可留下联系方式。',
+                    hintText: '描述问题或建议',
                     border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text('提交时附带账号 ID、App 版本和平台。'),
+                CheckboxListTile(
+                  title: const Text('发送用户名'),
+                  value: _includeUsername,
+                  onChanged: _busy ? null : (value) => setState(() => _includeUsername = value!),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                CheckboxListTile(
+                  title: const Text('发送邮箱'),
+                  value: _includeEmail,
+                  onChanged: _busy ? null : (value) => setState(() => _includeEmail = value!),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                TextField(
+                  controller: _contact,
+                  enabled: !_busy,
+                  maxLength: 200,
+                  decoration: const InputDecoration(
+                    labelText: '补充联系方式（选填）',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('自动附带 App 版本和平台。'),
                 if (_error != null) ...[
                   const SizedBox(height: 16),
                   Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),

@@ -12,11 +12,17 @@ class FeedbackService {
   final AuthService _auth;
   final String _baseUrl;
 
-  Future<void> submit(String message) async {
+  Future<void> submit(
+    String message, {
+    bool includeUsername = false,
+    bool includeEmail = false,
+    String contact = '',
+  }) async {
     final text = message.trim();
     if (text.isEmpty || text.length > 2000) {
       throw Exception('请填写 1–2000 字的反馈内容');
     }
+    if (contact.trim().length > 200) throw Exception('联系方式请勿超过 200 字');
     final userId = _auth.session?.userId;
     if (userId == null || userId.isEmpty) throw Exception('请先登录 TechPie');
     final info = await PackageInfo.fromPlatform();
@@ -38,6 +44,9 @@ class FeedbackService {
             'message': text,
             'version': '${info.version}+${info.buildNumber}',
             'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
+            'includeUsername': includeUsername,
+            'includeEmail': includeEmail,
+            'contact': contact.trim(),
           }),
         )
         .timeout(const Duration(seconds: 25));
