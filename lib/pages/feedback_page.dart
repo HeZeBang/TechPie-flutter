@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/feedback_service.dart';
 import '../utils/platform.dart';
@@ -21,6 +23,8 @@ class FeedbackPage extends StatefulWidget {
 class _FeedbackPageState extends State<FeedbackPage> {
   final _message = TextEditingController();
   final _contact = TextEditingController();
+  final _images = <Uint8List>[];
+  bool _picking = false;
   bool _includeUsername = false;
   bool _includeEmail = false;
   bool _busy = false;
@@ -35,7 +39,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
   }
 
   Future<void> _submit() async {
-    if (_busy || _sent) return;
+    if (_busy || _picking || _sent) return;
     FocusScope.of(context).unfocus();
     setState(() {
       _busy = true;
@@ -47,6 +51,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
         includeUsername: _includeUsername,
         includeEmail: _includeEmail,
         contact: _contact.text,
+        images: _images,
       );
       if (mounted) setState(() => _sent = true);
     } catch (error) {
@@ -61,6 +66,41 @@ class _FeedbackPageState extends State<FeedbackPage> {
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pickImages() async {
+    if (_picking || _busy || _images.length >= 9) return;
+    setState(() {
+      _picking = true;
+      _error = null;
+    });
+    try {
+      final files = await ImagePicker().pickMultiImage(
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+        requestFullMetadata: false,
+      );
+      final selected = <Uint8List>[];
+      for (final file in files.take(9 - _images.length)) {
+        if (await file.length() > 4 * 1024 * 1024) throw Exception('每张图片请勿超过 4 MB');
+        final bytes = await file.readAsBytes();
+        final decoded = await decodeImageFromList(bytes);
+        decoded.dispose();
+        selected.add(bytes);
+      }
+      if (mounted) setState(() => _images.addAll(selected));
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error is Exception && error.toString().startsWith('Exception: ')
+              ? error.toString().substring(11)
+              : '未能添加图片，请重试',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _picking = false);
     }
   }
 
@@ -114,6 +154,39 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                if (_images.isNotEmpty)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (var i = 0; i < _images.length; i++)
+                        Stack(
+                          children: [
+                            Image.memory(_images[i], width: 88, height: 88, fit: BoxFit.cover),
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: IconButton.filledTonal(
+                                tooltip: '移除第 ${i + 1} 张图片',
+                                icon: const Icon(Icons.close, size: 18),
+                                onPressed: _busy || _picking
+                                    ? null
+                                    : () => setState(() => _images.removeAt(i)),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                AdaptiveButton(
+                  label: '添加图片（${_images.length}/9）',
+                  icon: Icons.add_photo_alternate_outlined,
+                  sfSymbol: 'photo.badge.plus',
+                  loading: _picking,
+                  onPressed: _busy || _picking || _images.length >= 9
+                      ? null
+                      : () => unawaited(_pickImages()),
+                ),
                 CheckboxListTile(
                   title: const Text('发送用户名'),
                   value: _includeUsername,
@@ -150,7 +223,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   sfSymbol: 'paperplane',
                   role: AdaptiveButtonRole.prominent,
                   loading: _busy,
-                  onPressed: _busy ? null : () => unawaited(_submit()),
+                  onPressed: _busy || _picking ? null : () => unawaited(_submit()),
                 ),
               ],
       ),

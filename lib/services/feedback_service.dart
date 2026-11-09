@@ -17,12 +17,17 @@ class FeedbackService {
     bool includeUsername = false,
     bool includeEmail = false,
     String contact = '',
+    List<Uint8List> images = const [],
   }) async {
     final text = message.trim();
     if (text.isEmpty || text.length > 2000) {
       throw Exception('请填写 1–2000 字的反馈内容');
     }
     if (contact.trim().length > 200) throw Exception('联系方式请勿超过 200 字');
+    if (images.length > 9) throw Exception('最多添加 9 张图片');
+    if (images.any((image) => image.isEmpty || image.length > 4 * 1024 * 1024)) {
+      throw Exception('每张图片需在 4 MB 以内且不能为空');
+    }
     final userId = _auth.session?.userId;
     if (userId == null || userId.isEmpty) throw Exception('请先登录 TechPie');
     final info = await PackageInfo.fromPlatform();
@@ -33,6 +38,17 @@ class FeedbackService {
       throw Exception('登录已变化，请重新登录后提交');
     }
     // Feedback is user-authored private text; keep it out of diagnostic logs.
+    final uploaded = <Map<String, dynamic>>[];
+    for (final image in images) {
+      if (_auth.session?.userId != userId) throw Exception('登录已变化，请重新提交');
+      final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl/feedback/images'))
+        ..headers['Authorization'] = 'Bearer $token'
+        ..files.add(http.MultipartFile.fromBytes('image', image, filename: 'feedback-image'));
+      final response =
+          await request.send().then(http.Response.fromStream).timeout(const Duration(seconds: 35));
+      uploaded.add(_result(response)['data'] as Map<String, dynamic>);
+    }
+    if (_auth.session?.userId != userId) throw Exception('登录已变化，请重新提交');
     final response = await http
         .post(
           Uri.parse('$_baseUrl/feedback'),
@@ -47,13 +63,20 @@ class FeedbackService {
             'includeUsername': includeUsername,
             'includeEmail': includeEmail,
             'contact': contact.trim(),
+            'images': uploaded,
           }),
         )
         .timeout(const Duration(seconds: 25));
+    _result(response);
+  }
+
+  Map<String, dynamic> _result(http.Response response) {
     if (response.statusCode == 401) throw Exception('登录已失效，请重新登录');
-    if (response.statusCode == 429) throw Exception('提交太频繁，请稍后再试');
-    if (response.statusCode != 200 || jsonDecode(response.body)['success'] != true) {
-      throw Exception('反馈未发送成功，请稍后再试');
+    if (response.statusCode == 413) throw Exception('每张图片请勿超过 4 MB');
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || body['success'] != true) {
+      throw Exception(body['error'] as String? ?? '反馈未发送成功，请稍后再试');
     }
+    return body;
   }
 }
