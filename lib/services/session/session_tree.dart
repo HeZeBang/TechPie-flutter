@@ -130,9 +130,6 @@ class SessionTree extends ChangeNotifier {
         method: 'POST',
         path:
             'https://egate.shanghaitech.edu.cn/xsfw/sys/jbxxapp/modules/jbxx/hqdlxsjpcxx.do',
-        preFlightPath:
-            'https://egate.shanghaitech.edu.cn/xsfw/sys/funauthapp/api/getAppConfig/'
-            'xshdapp-4770201649822494.do?v=0918614558578972',
         successCheck: (r) {
           if (r.statusCode != 200) return false;
           final data = jsonDecode(r.body);

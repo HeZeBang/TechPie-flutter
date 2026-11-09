@@ -274,9 +274,9 @@ class SessionNode extends ChangeNotifier {
   /// through account.name -> id when this is null.
   String? _lastProbeDisplay;
 
-  /// Raw fields from the bound account (top-level only). Downstream services
-  /// (OA gym) and child nodes read tgc/sessionToken/userId/tenantId through
-  /// this. Returns an empty map for non-top-level nodes.
+  /// Raw fields from the bound account (top-level only). Child nodes read
+  /// tgc/sessionToken/userId/tenantId through this. Returns an empty map for
+  /// non-top-level nodes.
   Map<String, dynamic> get rawFields {
     final acc = _account;
     if (id == 'cpdaily' && acc != null && acc.cpdailyUserId.isNotEmpty) {

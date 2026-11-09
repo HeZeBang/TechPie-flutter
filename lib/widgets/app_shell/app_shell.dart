@@ -3,9 +3,7 @@ import 'dart:async';
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 
-import '../../features/campus_card/app/app_providers.dart';
 import '../../pages/assignments_page.dart';
-import '../../pages/campus_card_page.dart';
 import '../../pages/home_page.dart';
 import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
@@ -16,15 +14,6 @@ import 'app_destination.dart';
 import 'desktop/desktop_shell.dart';
 import 'mobile_shell.dart';
 
-/// A campus-card entry the host asked for — a home-screen widget tap, a
-/// shortcut, a `techpie://ecard/pay` link — that has not been shown yet.
-///
-/// The shell owns the push because the shell is what knows where the page
-/// belongs: in the Home tab on iOS — where the feature grid opens it, whatever
-/// tab the user left the app on — or the selected destination on a wide
-/// window, and on the root navigator otherwise. A value set before the shell
-/// mounts waits for it, which is what a cold start needs.
-final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
 final appShellPendingDeadlines = ValueNotifier<bool>(false);
 
 class AppShell extends StatefulWidget {
@@ -41,11 +30,6 @@ class _AppShellState extends State<AppShell> {
   // nav-bar-clearance check in adaptive_feedback.dart was changed to match —
   // re-enabling this alone is not enough, see that call site as well.
   static const bool _desktopShellEnabled = false;
-
-  /// The tab the campus card lives in on iOS: it is entered from Home's feature
-  /// grid, so a widget or shortcut opens it there too, the way a system app's
-  /// widget opens its content where that content belongs.
-  static const int _campusCardTab = 0;
 
   int _selectedIndex = 0;
   int _previousSelectedIndex = 0;
@@ -102,22 +86,15 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
-    appShellPendingEcardEntry.addListener(_showPendingEcardEntry);
     appShellPendingDeadlines.addListener(_showDeadlines);
     if (appShellPendingDeadlines.value) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showDeadlines());
     }
-    if (appShellPendingEcardEntry.value != null) {
-      // Deferred: a push during the first build is a build-time side effect.
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _showPendingEcardEntry(),
-      );
-    }
+
   }
 
   @override
   void dispose() {
-    appShellPendingEcardEntry.removeListener(_showPendingEcardEntry);
     appShellPendingDeadlines.removeListener(_showDeadlines);
     for (final controller in _tabHeroControllers.values) {
       controller.dispose();
@@ -134,38 +111,6 @@ class _AppShellState extends State<AppShell> {
     _contentNavigatorKeys[2]?.currentState?.popUntil((route) => route.isFirst);
     _tabNavigatorKeys[2]?.currentState?.popUntil((route) => route.isFirst);
     _onDestinationSelected(2);
-  }
-
-  /// Pushes the entry onto the visible navigation stack.
-  void _showPendingEcardEntry() {
-    final entry = appShellPendingEcardEntry.value;
-    if (entry == null || !mounted) return;
-    appShellPendingEcardEntry.value = null;
-    // Login and playback pages can cover the entire tab shell: the code then
-    // opens above that page, and back returns to it.
-    final shellCovered = !ModalRoute.of(context)!.isCurrent;
-    final BuildContext? nested;
-    if (isIos() && !shellCovered) {
-      // Straight above Home, as the feature grid would have opened it, so one
-      // back lands on Home rather than on whatever that tab was showing.
-      if (_selectedIndex != _campusCardTab) {
-        _onDestinationSelected(_campusCardTab);
-      }
-      final navigator = _tabNavigatorKeys[_campusCardTab]?.currentState;
-      navigator?.popUntil((route) => route.isFirst);
-      nested = navigator?.context;
-    } else if (isIos()) {
-      nested = _tabNavigatorKeys[_selectedIndex]?.currentContext;
-    } else {
-      nested = _contentNavigatorKeys[_selectedIndex]?.currentContext;
-    }
-    unawaited(
-      pushAdaptivePage<void>(
-        nested ?? context,
-        rootNavigator: shellCovered,
-        builder: (_) => CampusCardPage(entry: entry),
-      ),
-    );
   }
 
   void _onDestinationSelected(int index) {

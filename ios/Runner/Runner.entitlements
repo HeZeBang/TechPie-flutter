@@ -4,9 +4,5 @@
 <dict>
   <key>com.apple.security.application-groups</key>
   <array><string>$(TECHPIE_DEADLINE_APP_GROUP)</string></array>
-	<key>com.apple.developer.networking.networkextension</key>
-	<array>
-		<string>packet-tunnel-provider</string>
-	</array>
 </dict>
 </plist>

@@ -11,7 +11,7 @@ import UIKit
 /// what to play rather than asked to decide, so one action feels the same on
 /// every device — including the durations, which is where a platform default
 /// hurts: a motor held on for a quarter of a second reads as an alarm.
-final class EcardFeedback {
+final class AppFeedback {
   private struct Pulse {
     let atMs: Double
     let durationMs: Double

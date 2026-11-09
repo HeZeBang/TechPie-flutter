@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import '../models/ecard_sync_binding.dart';
 import '../models/third_party_account.dart';
 
 /// Schema version of the cloud-sync blob's plaintext envelope.
@@ -15,10 +14,7 @@ import '../models/third_party_account.dart';
 ///        so per-platform LWW merge can distinguish "deleted on device A"
 ///        from "never had it on device A". Per-account `updatedAt` +
 ///        `deviceId` drive the merge.
-///   v3 — current: adds the optional `ecard` binding, which carries the eCard
-///        *login parameter* only — cookies, identity pins and keys stay on the
-///        device — and keeps top-level fields this build does not know, so a
-///        blob written by a newer build survives a round trip through this one.
+///   v3 — preserves top-level fields this build does not interpret.
 ///
 /// Reading is one-way compatible in both directions, deliberately: every
 /// version is accepted and normalised up to [current] (a v0 bare array, a v1 or
@@ -37,7 +33,6 @@ class SyncSchema {
     'v',
     'accounts',
     'tombstones',
-    'ecard',
   };
 
   SyncSchema._();
@@ -86,7 +81,6 @@ class SyncSchema {
       v: current,
       accounts: accounts,
       tombstones: tombstones,
-      ecard: EcardSyncBinding.fromJson(m['ecard']),
       // Anything this build does not interpret belongs to a newer build. Keep
       // it verbatim rather than let this device's write delete it.
       unknown: {
@@ -147,7 +141,6 @@ class SyncEnvelope {
   final int v;
   final List<ThirdPartyAccount> accounts;
   final List<SyncTombstone> tombstones;
-  final EcardSyncBinding? ecard;
 
   /// Top-level fields a newer build wrote and this one does not interpret.
   /// Decoded from the cloud blob and written back unchanged: an older build
@@ -159,7 +152,6 @@ class SyncEnvelope {
     required this.v,
     required this.accounts,
     required this.tombstones,
-    this.ecard,
     this.unknown = const {},
   });
 
@@ -168,7 +160,6 @@ class SyncEnvelope {
         // by a stale copy of itself.
         ...unknown,
         'v': v,
-        if (ecard != null) 'ecard': ecard!.toJson(),
         'accounts': accounts.map((a) => a.toJson()).toList(),
         'tombstones': tombstones.map((t) => t.toJson()).toList(),
       });
@@ -189,14 +180,12 @@ class SyncEnvelope {
   factory SyncEnvelope.fromLocal({
     required Iterable<ThirdPartyAccount> accounts,
     required Iterable<SyncTombstone> tombstones,
-    EcardSyncBinding? ecard,
     Map<String, dynamic> unknown = const {},
   }) {
     return SyncEnvelope(
       v: SyncSchema.current,
       accounts: accounts.toList(),
       tombstones: tombstones.toList(),
-      ecard: ecard,
       unknown: unknown,
     );
   }
@@ -303,7 +292,6 @@ class SyncEnvelope {
       v: SyncSchema.current,
       accounts: mergedAccounts,
       tombstones: mergedTombstones,
-      ecard: ecard?.merge(remote.ecard) ?? remote.ecard,
       // The cloud is the shared copy, so a newer build's field outranks the
       // local duplicate of it; either way it survives the merge.
       unknown: {...unknown, ...remote.unknown},

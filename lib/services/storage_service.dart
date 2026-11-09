@@ -14,7 +14,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/assignment_overrides.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
-import '../models/oa_gym.dart';
 import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import '../models/user_session.dart';
@@ -361,50 +360,4 @@ class StorageService {
   }
 
   Future<void> clearAssignmentOverrides() => _prefs.remove(_assignmentOverridesKey);
-
-  // Local reservation contact details, scoped to the primary and eGate
-  // accounts. Keep the old unscoped record, but do not assign it to a new user.
-  static const _oaBookingProfileKey = 'oa_booking_profile';
-
-  String _bookingProfileKey(String? owner) => owner == null
-      ? _oaBookingProfileKey
-      : '${_oaBookingProfileKey}_v2_${Uri.encodeComponent(owner)}';
-
-  Future<void> saveOaBookingProfile(
-    OaBookingProfile profile, {
-    String? owner,
-    OaBookingProfile? schoolProfile,
-  }) {
-    final data = profile.toJson();
-    final school =
-        schoolProfile?.toJson() ?? _bookingProfileRecord(owner)['school'];
-    if (school is Map) data['school'] = school;
-    return _prefs.setString(_bookingProfileKey(owner), jsonEncode(data));
-  }
-
-  Map<String, dynamic> _bookingProfileRecord(String? owner) {
-    final raw = _prefs.getString(_bookingProfileKey(owner));
-    if (raw == null) return const {};
-    try {
-      return jsonDecode(raw) as Map<String, dynamic>;
-    } catch (_) {
-      return const {};
-    }
-  }
-
-  OaBookingProfile loadOaBookingProfile({String? owner}) =>
-      _parseBookingProfile(_bookingProfileRecord(owner));
-
-  OaBookingProfile loadOaSchoolProfile({required String owner}) =>
-      _parseBookingProfile(_bookingProfileRecord(owner)['school']);
-
-  OaBookingProfile _parseBookingProfile(Object? value) {
-    try {
-      return OaBookingProfile.fromJson(
-        (value as Map?)?.cast<String, dynamic>() ?? const {},
-      );
-    } catch (_) {
-      return const OaBookingProfile(name: '', phone: '', email: '');
-    }
-  }
 }

@@ -1,9 +1,6 @@
 
 {
   "apiType": 'stageMode',
-  // src/main/cpp is NOT built here: hvigor packages the committed
-  // libs/arm64-v8a/libecardbind_reader.so instead, so no C++ toolchain is
-  // needed to build a hap. Rebuild it with ohos/scripts/build-ecardbind-reader.sh.
   "buildOption": {},
   "targets": [
     {

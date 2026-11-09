@@ -94,7 +94,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// Convenience: the eLearning downstream node (child of cpdaily).
   SessionNode get elearningNode => _tree.elearning;
 
-  /// Convenience: the egate-app (xshdapp activity check-in) downstream node
+  /// Convenience: the egate-app downstream node for campus web services
   /// (child of cpdaily).
   SessionNode get egateAppNode => _tree.egateApp;
 
@@ -253,7 +253,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
   //
   // The cpdaily binding is the ONLY place CASTGC lives in the new
   // architecture. The primary GeekPie SSO session has no tgc/cookies; every
-  // campus-system feature (schedule, blackboard, exam, oa-gym, webview
+  // campus-system feature (schedule, blackboard, exam, webview
   // features) must read its CpDaily session through these accessors instead
   // of touching `AuthService.session` fields directly.
 

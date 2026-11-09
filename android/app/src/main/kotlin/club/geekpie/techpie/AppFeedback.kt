@@ -26,7 +26,7 @@ import io.flutter.plugin.common.MethodChannel
  * few milliseconds of motor rather than whatever a platform default happens to
  * be.
  */
-class EcardFeedback(activity: Activity, messenger: BinaryMessenger) {
+class AppFeedback(activity: Activity, messenger: BinaryMessenger) {
     private val context = activity.applicationContext
     private val handler = Handler(Looper.getMainLooper())
     private val channel = MethodChannel(messenger, "techpie/feedback")
