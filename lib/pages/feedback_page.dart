@@ -100,12 +100,12 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   maxLines: 12,
                   maxLength: 2000,
                   decoration: const InputDecoration(
-                    hintText: '遇到了什么问题，或希望增加什么功能？需要回复可留下联系方式。',
+                    hintText: '描述问题或建议，需要回复可留下联系方式。',
                     border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text('发送给 TechPie 运维群，附账号 ID、版本与平台；请勿填写密码。'),
+                const Text('提交时附带账号 ID、App 版本和平台。'),
                 if (_error != null) ...[
                   const SizedBox(height: 16),
                   Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
