@@ -28,6 +28,7 @@ import '../widgets/desktop_popup.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/uni_auth_login.dart';
 import '../widgets/update_dialogs.dart';
+import 'account_deletion_page.dart';
 import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
@@ -262,13 +263,12 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.person_remove_outlined),
-                title: const Text('申请注销账号'),
-                trailing: const Icon(Icons.open_in_new),
+                title: const Text('注销账号'),
+                trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  launchUrl(
-                    Uri.parse(
-                        'https://techpie.geekpie.club/privacy#account-deletion',),
-                    mode: LaunchMode.externalApplication,
+                  pushAdaptivePage<void>(
+                    context,
+                    builder: (_) => AccountDeletionPage(auth: auth),
                   ),
                 ),
               ),
