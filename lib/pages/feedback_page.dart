@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -23,7 +22,7 @@ class FeedbackPage extends StatefulWidget {
 class _FeedbackPageState extends State<FeedbackPage> {
   final _message = TextEditingController();
   final _contact = TextEditingController();
-  final _images = <Uint8List>[];
+  final _images = <FeedbackImage>[];
   bool _picking = false;
   bool _includeUsername = false;
   bool _includeEmail = false;
@@ -52,6 +51,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
         includeEmail: _includeEmail,
         contact: _contact.text,
         images: _images,
+        onImageChanged: _refreshImages,
       );
       if (mounted) setState(() => _sent = true);
     } catch (error) {
@@ -82,13 +82,13 @@ class _FeedbackPageState extends State<FeedbackPage> {
         imageQuality: 85,
         requestFullMetadata: false,
       );
-      final selected = <Uint8List>[];
+      final selected = <FeedbackImage>[];
       for (final file in files.take(9 - _images.length)) {
-        if (await file.length() > 4 * 1024 * 1024) throw Exception('每张图片请勿超过 4 MB');
+        if (await file.length() > FeedbackService.imageLimit) throw Exception('每张图片请勿超过 4 MB');
         final bytes = await file.readAsBytes();
         final decoded = await decodeImageFromList(bytes);
         decoded.dispose();
-        selected.add(bytes);
+        selected.add(FeedbackImage(bytes));
       }
       if (mounted) setState(() => _images.addAll(selected));
     } catch (error) {
@@ -101,6 +101,25 @@ class _FeedbackPageState extends State<FeedbackPage> {
       }
     } finally {
       if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  void _refreshImages() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _retryImage(FeedbackImage image) async {
+    if (_busy || _picking) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.service.uploadImage(image, onChanged: _refreshImages);
+    } catch (_) {
+      if (mounted) setState(() => _error = '图片上传失败，可重试或移除');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -162,7 +181,33 @@ class _FeedbackPageState extends State<FeedbackPage> {
                       for (var i = 0; i < _images.length; i++)
                         Stack(
                           children: [
-                            Image.memory(_images[i], width: 88, height: 88, fit: BoxFit.cover),
+                            Image.memory(
+                              _images[i].bytes,
+                              width: 88,
+                              height: 88,
+                              fit: BoxFit.cover,
+                            ),
+                            if (_images[i].uploading)
+                              const Positioned.fill(
+                                child: Center(child: CircularProgressIndicator()),
+                              ),
+                            if (_images[i].failed)
+                              Positioned(
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                child: FilledButton(
+                                  onPressed:
+                                      _busy ? null : () => unawaited(_retryImage(_images[i])),
+                                  child: const Text('重试'),
+                                ),
+                              )
+                            else if (_images[i].uploaded)
+                              const Positioned(
+                                bottom: 0,
+                                left: 0,
+                                child: Icon(Icons.check_circle, color: Colors.green),
+                              ),
                             Positioned(
                               top: 0,
                               right: 0,
