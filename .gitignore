@@ -56,8 +56,11 @@ app.*.map.json
 .vscode/
 .claude/
 
-# Environment files
+# Environment files — `.envrc` holds the OHOS signing passwords (see CLAUDE.md),
+# so anything derived from it (backups, copies) must stay out of the tree too.
 .envrc
+.envrc*
+!.envrc.example
 # Local AGC credentials for scripts/appgallery-publish.mjs (never commit secrets)
 .env
 # Local Xcode overrides
