@@ -116,7 +116,6 @@ class FeedbackService {
   }
 
   Map<String, dynamic> _result(http.Response response) {
-    if (response.statusCode == 401) throw Exception('登录已失效，请重新登录');
     if (response.statusCode == 413) throw Exception('每张图片请勿超过 4 MB');
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode != 200 || body['success'] != true) {
