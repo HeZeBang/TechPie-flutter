@@ -82,12 +82,17 @@ class _FeedbackPageState extends State<FeedbackPage> {
         imageQuality: 85,
         requestFullMetadata: false,
       );
+      if (files.length > 9 - _images.length) throw Exception('最多添加 9 张图片');
       final selected = <FeedbackImage>[];
-      for (final file in files.take(9 - _images.length)) {
+      for (final file in files) {
         if (await file.length() > FeedbackService.imageLimit) throw Exception('每张图片请勿超过 4 MB');
         final bytes = await file.readAsBytes();
-        final decoded = await decodeImageFromList(bytes);
-        decoded.dispose();
+        try {
+          final decoded = await decodeImageFromList(bytes);
+          decoded.dispose();
+        } catch (_) {
+          throw Exception('图片无法读取，请换一张图片');
+        }
         selected.add(FeedbackImage(bytes));
       }
       if (mounted) setState(() => _images.addAll(selected));
