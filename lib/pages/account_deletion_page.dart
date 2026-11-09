@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
@@ -32,6 +33,16 @@ class _AccountDeletionPageState extends State<AccountDeletionPage> {
 
   Future<void> _delete() async {
     if (_busy || _deleted) return;
+    final confirmed = await showAdaptiveAlertDialog<bool>(
+      context: context,
+      title: '永久注销账号？',
+      message: '将永久删除整个 GeekPieAuth 账号，无法恢复',
+      actions: const [
+        AdaptiveAlertAction<bool>(label: '取消', value: false, isDefault: true),
+        AdaptiveAlertAction<bool>(label: '永久注销', value: true, isDestructive: true),
+      ],
+    );
+    if (confirmed != true || !mounted || _busy || _deleted) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -91,7 +102,7 @@ class _AccountDeletionPageState extends State<AccountDeletionPage> {
           const SizedBox(height: 24),
           Text(
             _deleted
-                ? '账号已注销。'
+                ? '账号已注销'
                 : '将立即永久删除整个 GeekPieAuth 账号及 TechPie 云备份，无法恢复。其他 GeekPie 服务也将无法使用该账号登录。校园账号不受影响。',
             textAlign: TextAlign.center,
           ),
