@@ -60,10 +60,40 @@ class GraduateSchedule {
 
   Map<String, dynamic> toJson() => data;
   List<Map<String, dynamic>> _rows(String key) => (data[key] as List).cast<Map<String, dynamic>>();
-  List<Map<String, dynamic>> get rows => _rows('results');
+  late final List<Map<String, dynamic>> rows = _scheduleRows();
   String _text(dynamic value) => value?.toString().trim() ?? '';
+  String _classId(Map<String, dynamic> row) =>
+      _text(row['BJDM']).isEmpty ? _text(row['KCDM']) : _text(row['BJDM']);
   String rawTerm(String semesterId) => semesterId.substring(graduateSemesterPrefix.length);
   bool _inTerm(Map<dynamic, dynamic> row, String term) => _text(row['XNXQDM']) == term;
+
+  // Historical enrollments can carry their entire timetable as display text.
+  // Expand only classes missing from the structured timetable for that term.
+  List<Map<String, dynamic>> _scheduleRows() {
+    final result = [..._rows('results')];
+    final structuredClasses = {for (final row in result) (row['XNXQDM'], _classId(row))};
+    final separator = RegExp(r'[;；\n]|<br\s*/?>', caseSensitive: false);
+    final session = RegExp(r'^(.+?)\s*星期([一二三四五六日天])\s*\[(\d+)(?:-(\d+))?节\]\s*(.*)$');
+    for (final course in _rows('xkjgList')) {
+      if (structuredClasses.contains((course['XNXQDM'], _classId(course)))) continue;
+      final plain = _text(course['PKSJDD']);
+      final schedule = plain.isEmpty ? _text(course['PKSJDDMS']) : plain;
+      for (final part in schedule.split(separator)) {
+        final match = session.firstMatch(part.trim());
+        if (match == null) continue;
+        result.add({
+          ...course,
+          'ZCMC': match[1]!.trim(),
+          'XQ': match[2] == '天' ? 7 : '一二三四五六日'.indexOf(match[2]!) + 1,
+          'KSJCDM': match[3],
+          'JSJCDM': match[4] ?? match[3],
+          'JASMC': match[5]!.trim(),
+          if (_text(course['JCFADM']).isEmpty) 'JCFADM': data['mrjcfadm'],
+        });
+      }
+    }
+    return result;
+  }
 
   SemesterInfo get semesterInfo {
     final labels = <String, String>{};
@@ -76,16 +106,17 @@ class GraduateSchedule {
     }
     final current = _text(data['currentTerm']);
     if (current.isNotEmpty) {
-      labels[current] =
-          _text(data['currentTermName']).isEmpty ? current : _text(data['currentTermName']);
+      final name = _text(data['currentTermName']);
+      labels[current] = name.isEmpty ? (labels[current] ?? current) : name;
     }
     if (labels.isEmpty) throw const FormatException('学校没有返回可识别的研究生学期');
     final semesters = <String, Map<String, String>>{};
     for (final entry in labels.entries) {
-      final match = RegExp(r'(\d{4})\s*[-—–~～]\s*(\d{4})').firstMatch(entry.value);
-      final year = match == null ? entry.value : '${match[1]}-${match[2]}';
-      final term = ['秋', '春', '暑'].where(entry.value.contains).firstOrNull ?? entry.value;
-      // Keep unknown official labels instead of guessing numeric term codes.
+      final match = RegExp(r'(\d{4})\s*[-—–~～]\s*(\d{4})(?:\s*学年)?').firstMatch(entry.value);
+      final year = match == null ? entry.key : '${match[1]}-${match[2]}';
+      final name = match == null ? entry.value : entry.value.replaceRange(match.start, match.end, '');
+      final termName = name.trim().replaceFirst(RegExp(r'学期$'), '').trim();
+      final term = kSemesterTermNames.where(termName.contains).firstOrNull ?? termName;
       semesters.putIfAbsent(year, () => {})[term] = '$graduateSemesterPrefix${entry.key}';
     }
     final defaultId = labels.containsKey(current) ? current : (labels.keys.toList()..sort()).last;
@@ -119,14 +150,14 @@ class GraduateSchedule {
 
   List<Map<String, dynamic>> unarrangedFor(String semesterId) {
     final term = rawTerm(semesterId);
-    final arranged = rows.where((r) => _inTerm(r, term)).map((r) => _text(r['BJDM'])).toSet();
-    final cancelled = cancelledFor(semesterId).map((r) => _text(r['BJDM'])).toSet();
+    final arranged = rows.where((r) => _inTerm(r, term)).map(_classId).toSet();
+    final cancelled = cancelledFor(semesterId).map(_classId).toSet();
     return _rows('xkjgList')
         .where(
           (r) =>
               _inTerm(r, term) &&
-              !arranged.contains(_text(r['BJDM'])) &&
-              !cancelled.contains(_text(r['BJDM'])),
+              !arranged.contains(_classId(r)) &&
+              !cancelled.contains(_classId(r)),
         )
         .toList();
   }
@@ -150,12 +181,12 @@ class GraduateSchedule {
     }
     periods.sort((a, b) => a.index.compareTo(b.index));
     final cancelled =
-        cancelledFor(semesterId).map((r) => _text(r['BJDM'])).where((id) => id.isNotEmpty).toSet();
+        cancelledFor(semesterId).map(_classId).where((id) => id.isNotEmpty).toSet();
     final courses = <EamsCourse>[];
     final anchor = firstMonday ?? firstMondayFor(semesterId);
     for (final row in rows.where((r) => _inTerm(r, rawTerm(semesterId)))) {
       if (_text(row['JCFADM']).isNotEmpty && _text(row['JCFADM']) != scheme) continue;
-      if (cancelled.contains(_text(row['BJDM']))) continue;
+      if (cancelled.contains(_classId(row))) continue;
       final day = int.tryParse(_text(row['XQ']));
       final first = int.tryParse(_text(row['KSJCDM']));
       final last = int.tryParse(_text(row['JSJCDM']));
@@ -173,9 +204,9 @@ class GraduateSchedule {
       if (units.any((n) => !periods.any((p) => p.index == n))) {
         throw const FormatException('研究生课表的排课与节次方案不匹配');
       }
-      final dates = _datesFor(row, semesterId);
+      final dates = _datesFor(row, semesterId, firstMonday: anchor);
       final weeksByDay = <int, Set<int>>{};
-      if (anchor != null && dates.isNotEmpty) {
+      if (anchor != null && dates != null) {
         final monday = DateTime.utc(anchor.year, anchor.month, anchor.day);
         for (final date in dates) {
           final offset = date.difference(monday).inDays;
@@ -186,7 +217,7 @@ class GraduateSchedule {
         }
       } else if (_text(row['ZCMC']).isNotEmpty) {
         weeksByDay[day] = graduateWeeks(_text(row['ZCMC'])).toSet();
-      } else if (dates.isEmpty) {
+      } else if (dates == null) {
         throw const FormatException('研究生课程缺少可识别的周次和日期');
       }
       // Date-only records wait for a confirmed first Monday; they must not be
@@ -211,40 +242,61 @@ class GraduateSchedule {
     return CourseTable(periods: periods, courses: courses);
   }
 
-  List<DateTime> _datesFor(Map<String, dynamic> row, String semesterId) {
-    var values = <dynamic>[];
+  /// Null means use the recurring schedule. An empty list means the dated
+  /// calendar covers this group but has no sessions for this segment.
+  List<DateTime>? _datesFor(Map<String, dynamic> row, String semesterId, {DateTime? firstMonday}) {
     if (_text(row['RQ']).isNotEmpty) {
-      values = [row['RQ']];
-    } else if (row['rqs'] is List && (row['rqs'] as List).isNotEmpty) {
-      values = row['rqs'] as List;
-    } else if (_text(row['BJDM']).isNotEmpty &&
-        rows
-                .where(
-                  (r) =>
-                      _inTerm(r, rawTerm(semesterId)) &&
-                      r['BJDM'] == row['BJDM'] &&
-                      _text(r['KSJCDM']) == _text(row['KSJCDM']) &&
-                      _text(r['JSJCDM']) == _text(row['JSJCDM']),
-                )
-                .length ==
-            1) {
-      final scheme =
-          _text(row['JCFADM']).isEmpty ? defaultScheme(semesterId) : _text(row['JCFADM']);
-      final periods = _rows('skjcList').where((p) => _text(p['JCFADM']) == scheme);
-      final first = periods.where((p) => _text(p['DM']) == _text(row['KSJCDM'])).firstOrNull;
-      final last = periods.where((p) => _text(p['DM']) == _text(row['JSJCDM'])).firstOrNull;
-      if (first != null && last != null) {
-        for (final record in _rows('rqpkjgallList')) {
-          if (record['bjdm'] == row['BJDM'] &&
-              graduateTime(record['kssj']) == graduateTime(first['KSSJ']) &&
-              graduateTime(record['jssj']) == graduateTime(last['JSSJ'])) {
-            if (_text(record['rq']).isNotEmpty) values.add(record['rq']);
-            if (record['rqs'] is List) values.addAll(record['rqs'] as List);
-          }
-        }
-      }
+      return _parseDates([row['RQ']]);
     }
-    return _parseDates(values);
+    if (row['rqs'] is List && (row['rqs'] as List).isNotEmpty) {
+      return _parseDates(row['rqs'] as List);
+    }
+    final records = _rows('rqpkjgallList');
+    if (records.isEmpty) return null;
+    final key = _rowClockKey(row, semesterId);
+    if (key == null) return null;
+    final dates = _parseDates([
+      for (final r in records)
+        if (r['bjdm'] == row['BJDM'] && _clockKey(_text(r['bjdm']), r['kssj'], r['jssj']) == key) ...[
+          if (_text(r['rq']).isNotEmpty) r['rq'],
+          if (r['rqs'] is List) ...(r['rqs'] as List),
+        ],
+    ]);
+    if (dates.isEmpty) return null;
+    final segments = rows.where(
+      (r) => _inTerm(r, rawTerm(semesterId)) &&
+          r['BJDM'] == row['BJDM'] &&
+          _rowClockKey(r, semesterId) == key,
+    ).toList();
+    if (segments.length == 1) return dates;
+    if (firstMonday == null || segments.any((r) => _text(r['ZCMC']).isEmpty)) return null;
+
+    final monday = DateTime.utc(firstMonday.year, firstMonday.month, firstMonday.day);
+    final weeks = {for (final segment in segments) segment: graduateWeeks(_text(segment['ZCMC']))};
+    final assigned = <DateTime>[];
+    for (final date in dates) {
+      final offset = date.difference(monday).inDays;
+      final candidates = segments.where((s) => offset >= 0 && weeks[s]!.contains(offset ~/ 7 + 1));
+      // A shifted weekday is attributable when just one segment teaches that week.
+      final owner = candidates.singleOrNull ??
+          candidates.where((s) => _text(s['XQ']) == date.weekday.toString()).singleOrNull;
+      if (owner == null) return null;
+      if (identical(owner, row)) assigned.add(date);
+    }
+    return assigned;
+  }
+
+  String _clockKey(String id, dynamic first, dynamic last) =>
+      '$id|${graduateTime(first)}|${graduateTime(last)}';
+
+  String? _rowClockKey(Map<String, dynamic> row, String semesterId) {
+    final id = _text(row['BJDM']);
+    if (id.isEmpty) return null;
+    final scheme = _text(row['JCFADM']).isEmpty ? defaultScheme(semesterId) : _text(row['JCFADM']);
+    final periods = _rows('skjcList').where((p) => _text(p['JCFADM']) == scheme);
+    final first = periods.where((p) => _text(p['DM']) == _text(row['KSJCDM'])).firstOrNull;
+    final last = periods.where((p) => _text(p['DM']) == _text(row['JSJCDM'])).firstOrNull;
+    return first == null || last == null ? null : _clockKey(id, first['KSSJ'], last['JSSJ']);
   }
 
   List<DateTime> _parseDates(List<dynamic> values) => values
@@ -279,7 +331,7 @@ class GraduateSchedule {
       if (_text(row['ZCMC']).isEmpty) continue;
       final dates = _datesFor(row, semesterId);
       final weeks = graduateWeeks(_text(row['ZCMC']));
-      if (dates.isEmpty || dates.length != weeks.length) continue;
+      if (dates == null || dates.length != weeks.length) continue;
       final day = int.tryParse(_text(row['XQ']));
       for (var i = 0; i < dates.length; i++) {
         final date = dates[i];
@@ -298,24 +350,17 @@ class GraduateSchedule {
   DateTime? _firstMondayFromCalendarRecords(String semesterId) {
     final cancelled = cancelledFor(semesterId).map((r) => _text(r['BJDM'])).toSet();
     final groups = <String, List<Map<String, dynamic>>>{};
-    String clockKey(String id, dynamic first, dynamic last) =>
-        '$id|${graduateTime(first)}|${graduateTime(last)}';
     for (final row in rows.where((r) => _inTerm(r, rawTerm(semesterId)))) {
       final id = _text(row['BJDM']);
       if (id.isEmpty || cancelled.contains(id) || _text(row['ZCMC']).isEmpty) continue;
-      final scheme =
-          _text(row['JCFADM']).isEmpty ? defaultScheme(semesterId) : _text(row['JCFADM']);
-      final periods = _rows('skjcList').where((p) => _text(p['JCFADM']) == scheme);
-      final first = periods.where((p) => _text(p['DM']) == _text(row['KSJCDM'])).firstOrNull;
-      final last = periods.where((p) => _text(p['DM']) == _text(row['JSJCDM'])).firstOrNull;
-      if (first == null || last == null) continue;
-      groups.putIfAbsent(clockKey(id, first['KSSJ'], last['JSSJ']), () => []).add(row);
+      final key = _rowClockKey(row, semesterId);
+      if (key != null) groups.putIfAbsent(key, () => []).add(row);
     }
     final dates = <String, List<DateTime>>{};
     for (final record in _rows('rqpkjgallList')) {
       final id = _text(record['bjdm']);
       if (id.isEmpty || cancelled.contains(id)) continue;
-      final key = clockKey(id, record['kssj'], record['jssj']);
+      final key = _clockKey(id, record['kssj'], record['jssj']);
       if (!groups.containsKey(key)) continue;
       dates.putIfAbsent(key, () => []).addAll(_parseDates([
             if (_text(record['rq']).isNotEmpty) record['rq'],

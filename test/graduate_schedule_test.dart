@@ -242,7 +242,22 @@ void main() {
       'jssj': '0955',
       'rq': '2026-09-22',
     });
-    expect(GraduateSchedule.fromJson(raw).firstMondayFor(semester), DateTime(2026, 9, 14));
+    final snapshot = GraduateSchedule.fromJson(raw);
+    expect(snapshot.firstMondayFor(semester), DateTime(2026, 9, 14));
+    final table = snapshot.tableFor(semester, 'A');
+    final meetings = [
+      for (final course in table.courses.where((c) => c.name == '合成研究生课程'))
+        for (var week = 1; week <= 4; week++)
+          if (course.isActiveInWeek(week)) (week, course.times.keys.single, course.classroom),
+    ];
+    expect(meetings, unorderedEquals([(1, 1, '示例教室'), (2, 2, '示例教室'), (4, 1, '后半学期教室')]));
+
+    // All sessions of the second segment were cancelled in the dated calendar.
+    (raw['rqpkjgallList'] as List)
+        .removeWhere((r) => r['bjdm'] == 'g1' && r['rq'] == '2026-10-05');
+    final partial = GraduateSchedule.fromJson(raw)
+        .tableFor(semester, 'A', firstMonday: DateTime(2026, 9, 14));
+    expect(partial.courses.map((course) => course.classroom), isNot(contains('后半学期教室')));
   });
 
   test('graduate refresh automatically stores the inferred start without an EAMS request',
@@ -600,6 +615,55 @@ void main() {
       isFalse,
     );
     expect(h.storage.scheduleSourceFor('different-account'), CampusScheduleSource.automatic);
+    expect(h.storage.selectedSemester, 'undergrad-term');
+    final restarted = ScheduleService(h.storage, h.httpClient, h.auth, h.tp);
+    addTearDown(restarted.dispose);
+    await restarted.loadCachedData();
+    expect(restarted.selectedSemesterId, 'undergrad-term');
+    expect(restarted.courseTable!.courses, isEmpty);
+
+    // Repair stale selections written by an older version at cache hydration.
+    await h.storage.setSelectedSemester(semester);
+    await restarted.loadCachedData();
+    expect(restarted.isGraduate, isFalse);
+    expect(restarted.selectedSemesterId, 'undergrad-term');
+    expect(h.storage.selectedSemester, 'undergrad-term');
+    expect(restarted.courseTable!.courses, isEmpty);
+  });
+
+  test('a failed source switch shows only the target timetable during and after refresh', () async {
+    final h = await harness();
+    addTearDown(h.schedule.dispose);
+    await h.schedule.selectScheduleSource(CampusScheduleSource.graduate);
+    h.overrides['semesters'] = http.Response('offline', 503);
+    final switching = h.schedule.selectScheduleSource(CampusScheduleSource.undergraduate);
+    expect(h.schedule.semesterInfo, isNull);
+    expect(h.schedule.courseTable, isNull);
+    expect(h.schedule.termCalendar, isNull);
+    await switching;
+    expect(h.schedule.error, isNotNull);
+    expect(h.schedule.courseTable, isNull);
+    final restarted = ScheduleService(h.storage, h.httpClient, h.auth, h.tp);
+    addTearDown(restarted.dispose);
+    await restarted.loadCachedData();
+    expect(restarted.courseTable, isNull);
+
+    h.overrides.remove('semesters');
+    await h.schedule.fetchAll();
+    await h.schedule.selectScheduleSource(CampusScheduleSource.graduate);
+    h.overrides['semesters'] = http.Response('offline', 503);
+    final cachedSwitch = h.schedule.selectScheduleSource(CampusScheduleSource.undergraduate);
+    expect(h.schedule.selectedSemesterId, 'undergrad-term');
+    expect(h.schedule.courseTable!.courses, isEmpty);
+    await cachedSwitch;
+    expect(h.schedule.error, isNotNull);
+    expect(h.schedule.selectedSemesterId, 'undergrad-term');
+    expect(h.schedule.courseTable!.courses, isEmpty);
+
+    // A semester ID can be shared by two undergraduate accounts.
+    await h.storage.saveCourseTable('undergrad-term', h.schedule.courseTable!, owner: 'other-user');
+    await restarted.loadCachedData();
+    expect(restarted.courseTable, isNull);
   });
 
   test('cached IDS identity belongs to one account and survives only availability failures',
@@ -670,6 +734,43 @@ void main() {
     h.requests.clear();
     await assignments.fetchPlatform('exam');
     expect(h.requests, isEmpty);
+  });
+
+  test('a new campus account fetches once after the previous account finishes', () async {
+    final h = await harness();
+    addTearDown(h.schedule.dispose);
+    h.tableGate = Completer<void>();
+    final oldFetch = h.schedule.fetchAll();
+    await h.tableEntered.future;
+
+    const owner = '20260002|20260002';
+    await h.storage.setScheduleSource(owner, CampusScheduleSource.graduate);
+    await h.tp.replaceAll([
+      ThirdPartyAccount(
+        platform: ThirdPartyPlatform.cpdaily,
+        account: '20260002',
+        sid: '20260002',
+        token: 'session-b',
+        raw: const {'tgc': 'test-tgc-b'},
+        boundAt: DateTime(2026),
+      ),
+    ]);
+    // Let B's debounce expire while A is still waiting for the timetable.
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    final refreshed = Completer<void>();
+    h.schedule.addListener(() {
+      if (!h.schedule.loading && h.storage.graduateScheduleOwner == owner && !refreshed.isCompleted) {
+        refreshed.complete();
+      }
+    });
+    h.tableGate!.complete();
+    h.tableGate = null;
+    await oldFetch;
+    await refreshed.future.timeout(const Duration(seconds: 3));
+    h.schedule.requestFetch(force: true);
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    expect(h.requests.where((r) => r.url.path.endsWith('/loadKbxx.do')), hasLength(2));
+    expect(h.schedule.error, isNull);
   });
 
   test('an unbind discards a late graduate response instead of caching it', () async {

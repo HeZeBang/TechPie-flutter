@@ -301,22 +301,28 @@ class StorageService {
     await _prefs.setString('graduate_schedule_owner', owner);
   }
 
-  Future<void> saveSemesters(SemesterInfo info) =>
-      _prefs.setString(_semestersKey, jsonEncode(info.toJson()));
+  Future<void> saveSemesters(SemesterInfo info, {String? owner}) =>
+      _prefs.setString(_semestersKey, jsonEncode({...info.toJson(), 'owner': owner}));
 
-  SemesterInfo? loadSemesters() {
+  ({SemesterInfo info, String? owner})? loadSemesters() {
     final raw = _prefs.getString(_semestersKey);
     if (raw == null) return null;
-    return SemesterInfo.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    final json = jsonDecode(raw) as Map<String, dynamic>;
+    return (info: SemesterInfo.fromJson(json), owner: json['owner'] as String?);
   }
 
-  Future<void> saveCourseTable(String semesterId, CourseTable table) =>
-      _prefs.setString('$_courseTablePrefix$semesterId', jsonEncode(table.toJson()));
+  Future<void> saveCourseTable(String semesterId, CourseTable table, {String? owner}) =>
+      _prefs.setString(
+        '$_courseTablePrefix$semesterId',
+        jsonEncode({...table.toJson(), if (owner != null) 'owner': owner}),
+      );
 
-  CourseTable? loadCourseTable(String semesterId) {
+  CourseTable? loadCourseTable(String semesterId, {String? owner}) {
     final raw = _prefs.getString('$_courseTablePrefix$semesterId');
     if (raw == null) return null;
-    return CourseTable.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    final json = jsonDecode(raw) as Map<String, dynamic>;
+    if (json['owner'] != null && json['owner'] != owner) return null;
+    return CourseTable.fromJson(json);
   }
 
   Future<void> saveTermCalendar(String key, TermCalendar info) =>
