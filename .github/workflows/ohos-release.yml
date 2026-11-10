@@ -112,7 +112,21 @@ jobs:
       - uses: ./.github/actions/pub-cache
 
       - name: Resolve dependencies
-        run: flutter pub get
+        run: |
+          set -euo pipefail
+
+          log_file="$(mktemp)"
+          if flutter pub get --enforce-lockfile 2>&1 | tee "$log_file"; then
+            exit 0
+          fi
+
+          if grep -q 'wrong content-hash' "$log_file"; then
+            echo "::warning::Mirror returned a package with the wrong content hash. Retrying with https://pub.dev."
+            PUB_HOSTED_URL=https://pub.dev flutter pub get --enforce-lockfile
+            exit 0
+          fi
+
+          exit 1
 
       - name: Build unsigned hap
         run: scripts/build-unsigned-hap.sh
