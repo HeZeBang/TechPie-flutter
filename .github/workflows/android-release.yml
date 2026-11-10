@@ -1,4 +1,4 @@
-name: Android Release
+name: Android APK (artifact only)
 
 on:
   # Tags are created by release.yml from pubspec.yaml, which then calls this
@@ -19,7 +19,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   # The platform name is part of the group on purpose: concurrency groups are
@@ -64,7 +64,7 @@ jobs:
           # Group 1 is the legacy `android-` prefix, 2-4 are X.Y.Z, 5 the
           # pre-release name, 6 the build number: POSIX ERE has no
           # non-capturing groups, hence the offset.
-          if [[ ! "$REQUESTED_TAG" =~ ^(android-)?v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z][0-9A-Za-z.-]*)?\+([0-9]+)$ ]]; then
+          if [[ ! "$REQUESTED_TAG" =~ ^(android-|ios-)?v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z][0-9A-Za-z.-]*)?\+([0-9]+)$ ]]; then
             echo "::error::Invalid release tag: $REQUESTED_TAG"
             echo "Expected format: vX.Y.Z+B, or vX.Y.Z-rc.N+B for a pre-release"
             exit 1
@@ -76,7 +76,7 @@ jobs:
           # The release name every artifact file is named after, from the one
           # place that rule lives: `1.0.1`, or `1.0.1-rc.2` for a candidate. The
           # build number is not part of it (CLAUDE.md → Artifact names).
-          release_name="$(scripts/release-name.sh "$REQUESTED_TAG")"
+          release_name="$(scripts/release-name.sh "${REQUESTED_TAG#ios-}")"
 
           # pubspec.yaml is the single source of the app version; the tag only
           # names an already-versioned commit. Refuse to publish a build whose
@@ -155,9 +155,8 @@ jobs:
       - uses: ./.github/actions/pub-cache
 
       - name: Resolve locked dependencies
-        # The committed lock resolves through the China mirror (see .envrc).
         env:
-          PUB_HOSTED_URL: https://pub.flutter-io.cn
+          PUB_HOSTED_URL: https://pub.dev
         run: flutter pub get --enforce-lockfile
 
       - name: Restore signing key
@@ -178,7 +177,7 @@ jobs:
           test -s "$keystore_path"
           echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
 
-      - name: Build signed ARM64 and ARM32 split APKs, plus the universal APK
+      - name: Build signed ARM64 APK
         shell: bash
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -201,18 +200,7 @@ jobs:
             --release \
             --no-pub \
             --split-per-abi \
-            --target-platform android-arm64,android-arm \
-            --build-name "$BUILD_NAME" \
-            --build-number "$BUILD_NUMBER"
-
-          # The universal APK: one file carrying every ABI, for the devices the
-          # two splits do not cover — x86_64 emulators above all. Its versionCode
-          # is `+B` itself while the splits carry ABI×1000 + B, so replacing a
-          # split install with this one is a downgrade the installer refuses
-          # (CLAUDE.md → Artifact names).
-          flutter build apk \
-            --release \
-            --no-pub \
+            --target-platform android-arm64 \
             --build-name "$BUILD_NAME" \
             --build-number "$BUILD_NUMBER"
 
@@ -272,8 +260,6 @@ jobs:
 
           apks=build/app/outputs/flutter-apk
           check_and_collect "$apks/app-arm64-v8a-release.apk" arm64v8 arm64-v8a
-          check_and_collect "$apks/app-armeabi-v7a-release.apk" arm32v7 armeabi-v7a
-          check_and_collect "$apks/app-release.apk" universal ""
 
       - name: Upload signed APKs
         uses: actions/upload-artifact@v7
@@ -282,34 +268,3 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 30
-
-      - name: Attach the APKs
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-
-          title="$(git for-each-ref --format='%(contents:subject)' "refs/tags/$TAG_NAME")"
-
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            # The normal path: release.yml opened the draft, so this only adds
-            # the assets. A published release refuses the upload, which is the
-            # intended refusal — its assets are what the tag published. The
-            # checksums for *every* platform's assets are the publish job's,
-            # written once the last of them has attached.
-            scripts/attach-release-asset.sh "$TAG_NAME" dist/*.apk
-            echo "Attached the APKs to the existing release $TAG_NAME."
-          else
-            # Standalone replay of this workflow (workflow_dispatch with a tag
-            # whose release never got created). Still a draft on purpose:
-            # release.yml is what publishes a release.
-            gh release create "$TAG_NAME" dist/*.apk \
-              --verify-tag \
-              --draft \
-              --title "$title" \
-              --notes "$(git for-each-ref --format='%(contents:body)' "refs/tags/$TAG_NAME")" \
-              --prerelease="$PRERELEASE"
-            echo "Draft release $TAG_NAME created; release.yml publishes it."
-          fi
