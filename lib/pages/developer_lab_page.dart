@@ -7,8 +7,10 @@ import '../services/ecard_bind_service.dart';
 import '../services/service_provider.dart';
 import '../utils/haptics.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import 'live_player_page.dart';
 
 /// A place to exercise the device APIs the app depends on, reached from the
 /// developer section of the settings page: every waveform the app can play, every
@@ -97,6 +99,7 @@ final class DeveloperLabPage extends StatelessWidget {
             ],
           ),
           const _EcardBindProbe(),
+          const _LiveProbe(),
         ],
       ),
     );
@@ -252,4 +255,70 @@ final class _EcardBindProbeState extends State<_EcardBindProbe> {
       ],
     );
   }
+}
+
+final class _LiveProbe extends StatefulWidget {
+  const _LiveProbe();
+  @override
+  State<_LiveProbe> createState() => _LiveProbeState();
+}
+
+final class _LiveProbeState extends State<_LiveProbe> {
+  final _id = TextEditingController();
+  String? _error;
+  @override
+  void dispose() {
+    _id.dispose();
+    super.dispose();
+  }
+
+  void _play() {
+    final id = int.tryParse(_id.text.trim());
+    if (id == null || id <= 0 || id > 9007199254740991) {
+      setState(() => _error = '请输入正整数教室 ID');
+      return;
+    }
+    setState(() => _error = null);
+    if (!supportsLivePlayback) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('当前平台暂不支持直播播放')));
+      return;
+    }
+    unawaited(
+      pushAdaptivePage<void>(
+        context,
+        builder: (_) => LivePlayerPage(title: '直播调试', roomId: id),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => _Section(
+        key: const Key('lab-live'),
+        header: 'Live',
+        footer: 'Enter a classroom ID to play the live stream.',
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _id,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(labelText: '教室 ID', errorText: _error),
+                    onSubmitted: (_) => _play(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.icon(
+                  onPressed: _play,
+                  icon: const Icon(Icons.live_tv),
+                  label: const Text('播放直播'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
 }
