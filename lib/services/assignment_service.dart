@@ -369,7 +369,7 @@ class AssignmentService extends ChangeNotifier {
         _schedule.isGraduate ||
         semesterId?.startsWith(graduateSemesterPrefix) == true) {
       _platformErrors.remove('exam');
-      return null;
+      return [];
     }
     final node = _tpAuth.eamsNode;
     if (!_tpAuth.hasCpdailyBinding ||

@@ -266,6 +266,7 @@ class ScheduleService extends ChangeNotifier {
       );
 
   Future<void> loadCachedData() async {
+    if (_campusAccount() == null) await _storage.clearGraduateScheduleCache();
     _restoreCachedSchedule(scheduleSource, onStartup: true);
     final selected = _selectedSemesterId;
     if (selected != null && _storage.selectedSemester != selected) {
@@ -460,8 +461,10 @@ class ScheduleService extends ChangeNotifier {
     _selectedSemesterId = semester;
     _courseTable = table;
     await _storage.saveGraduateSchedule(account, snapshot);
+    if (revision != _accountRevision) return true;
     await _storage.setSelectedSemester(semester);
-    await _storage.saveCourseTable(semester, table);
+    if (revision != _accountRevision) return true;
+    await _storage.saveCourseTable(semester, table, owner: account);
     if (revision != _accountRevision) return true;
     await _loadGraduateCalendar(semester);
     return true;
@@ -495,13 +498,16 @@ class ScheduleService extends ChangeNotifier {
     if (!isGraduate || _selectedSemesterId == null || date.weekday != DateTime.monday) {
       throw const FormatException('请选择研究生学期第 1 周的周一');
     }
+    final semester = _selectedSemesterId!;
+    final revision = _accountRevision;
+    final owner = _campusAccount();
     final table =
-        _graduateSchedule!.tableFor(_selectedSemesterId!, _graduateScheme!, firstMonday: date);
+        _graduateSchedule!.tableFor(semester, _graduateScheme!, firstMonday: date);
     final weeks =
         table.courses.fold<int>(_fallbackTotalWeeks, (n, c) => math.max(n, c.weeks.length - 1));
     _termCalendar = TermCalendar(
       code: 200,
-      schoolYearTerm: _selectedSemesterId!,
+      schoolYearTerm: semester,
       termBegin: DateTime(date.year, date.month, date.day),
       snapshotDate: null,
       snapshotWeekOfTerm: null,
@@ -511,9 +517,11 @@ class ScheduleService extends ChangeNotifier {
       pmClasses: 0,
       eveClasses: 0,
     );
-    await _storage.saveTermCalendar(_selectedSemesterId!, _termCalendar!);
+    await _storage.saveTermCalendar(semester, _termCalendar!);
+    if (revision != _accountRevision) return;
     _courseTable = table;
-    await _storage.saveCourseTable(_selectedSemesterId!, table);
+    await _storage.saveCourseTable(semester, table, owner: owner);
+    if (revision != _accountRevision) return;
     notifyListeners();
   }
 
@@ -522,11 +530,15 @@ class ScheduleService extends ChangeNotifier {
     if (_graduateSchedule == null || semester == null || !graduateSchemes.containsKey(scheme)) {
       return;
     }
+    final revision = _accountRevision;
+    final owner = _campusAccount();
     final table = _graduateTable(_graduateSchedule!, semester, scheme);
     _graduateScheme = scheme;
     _courseTable = table;
     await _storage.setGraduateScheme(semester, scheme);
-    await _storage.saveCourseTable(semester, table);
+    if (revision != _accountRevision) return;
+    await _storage.saveCourseTable(semester, table, owner: owner);
+    if (revision != _accountRevision) return;
     notifyListeners();
   }
 
@@ -550,11 +562,14 @@ class ScheduleService extends ChangeNotifier {
   Future<void> fetchCourseTable(String semesterId) async {
     if (semesterId.startsWith(graduateSemesterPrefix)) {
       if (_graduateSchedule == null) throw const FormatException('请先刷新研究生课表');
+      final revision = _accountRevision;
+      final owner = _campusAccount();
       final scheme = _schemeFor(_graduateSchedule!, semesterId);
       final table = _graduateTable(_graduateSchedule!, semesterId, scheme);
       _graduateScheme = scheme;
       _courseTable = table;
-      await _storage.saveCourseTable(semesterId, table);
+      await _storage.saveCourseTable(semesterId, table, owner: owner);
+      if (revision != _accountRevision) return;
       notifyListeners();
       return;
     }

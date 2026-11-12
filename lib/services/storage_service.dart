@@ -279,7 +279,17 @@ class StorageService {
         jsonEncode({'owner': owner, 'source': source.name}),
       );
 
-  String? get graduateScheduleOwner => _prefs.getString('graduate_schedule_owner');
+  String? get graduateScheduleOwner {
+    final current = _prefs.getString('graduate_schedule_v2');
+    final raw = current ?? _prefs.getString('graduate_schedule');
+    if (raw == null) return null;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      return current == null ? _prefs.getString('graduate_schedule_owner') : data['owner'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
 
   String? graduateSchemeFor(String semesterId) => _prefs.getString('graduate_scheme_$semesterId');
 
@@ -287,7 +297,7 @@ class StorageService {
       _prefs.setString('graduate_scheme_$semesterId', scheme);
 
   GraduateSchedule? loadGraduateSchedule() {
-    final raw = _prefs.getString('graduate_schedule');
+    final raw = _prefs.getString('graduate_schedule_v2') ?? _prefs.getString('graduate_schedule');
     if (raw == null) return null;
     try {
       return GraduateSchedule.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -296,9 +306,25 @@ class StorageService {
     }
   }
 
-  Future<void> saveGraduateSchedule(String owner, GraduateSchedule schedule) async {
-    await _prefs.setString('graduate_schedule', jsonEncode(schedule.toJson()));
-    await _prefs.setString('graduate_schedule_owner', owner);
+  Future<void> saveGraduateSchedule(String owner, GraduateSchedule schedule) =>
+      // Keep the owner and response in one preference write.
+      _prefs.setString('graduate_schedule_v2', jsonEncode({...schedule.toJson(), 'owner': owner}));
+
+  Future<void> clearGraduateScheduleCache() async {
+    final keys = _prefs.getKeys().where(
+      (key) =>
+        key == 'graduate_schedule' ||
+        key == 'graduate_schedule_v2' ||
+        key == 'graduate_schedule_owner' ||
+        key.startsWith('$_courseTablePrefix$graduateSemesterPrefix') ||
+        key.startsWith('$_termBeginPrefix$graduateSemesterPrefix') ||
+        key.startsWith('graduate_scheme_'),
+    ).toList();
+    if (loadSemesters()?.info.tableId == graduateTableId) keys.add(_semestersKey);
+    if (selectedSemester?.startsWith(graduateSemesterPrefix) == true) {
+      keys.add(_selectedSemesterKey);
+    }
+    await Future.wait(keys.map(_prefs.remove));
   }
 
   Future<void> saveSemesters(SemesterInfo info, {String? owner}) =>
@@ -321,6 +347,9 @@ class StorageService {
     final raw = _prefs.getString('$_courseTablePrefix$semesterId');
     if (raw == null) return null;
     final json = jsonDecode(raw) as Map<String, dynamic>;
+    if (semesterId.startsWith(graduateSemesterPrefix) && (owner == null || json['owner'] != owner)) {
+      return null;
+    }
     if (json['owner'] != null && json['owner'] != owner) return null;
     return CourseTable.fromJson(json);
   }
