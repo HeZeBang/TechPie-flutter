@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
+import '../models/graduate_schedule.dart';
 import '../models/third_party_account.dart';
 import 'api_base_url.dart';
 import 'auth_service.dart';
@@ -452,6 +453,14 @@ class AssignmentService extends ChangeNotifier {
 
   Future<List<Assignment>?> _fetchExamTable() async {
     final semesterId = _selectedSemesterId();
+    // Graduate term ids belong to a different school system. Sending one to
+    // EAMS would query the wrong term and can disturb its stateful session.
+    if (_schedule.hasGraduateIdentity ||
+        _schedule.isGraduate ||
+        semesterId?.startsWith(graduateSemesterPrefix) == true) {
+      _platformErrors.remove('exam');
+      return [];
+    }
     final node = _tpAuth.eamsNode;
     if (!_tpAuth.hasCpdailyBinding ||
         semesterId == null ||

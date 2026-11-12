@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/assignment.dart';
+import '../models/campus_identity.dart';
 import '../models/course.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
@@ -601,6 +602,16 @@ class _SchedulePageState extends State<SchedulePage> {
                       title: '切换学期',
                       sfSymbol: 'calendar',
                     ),
+                    const IosNativeNavigationBarMenuItem(
+                      value: 'source',
+                      title: '课表来源',
+                    ),
+                    if (_schedule.isGraduate)
+                      const IosNativeNavigationBarMenuItem(
+                        value: 'termStart',
+                        title: '设置学期起始日',
+                        sfSymbol: 'calendar',
+                      ),
                     IosNativeNavigationBarMenuItem(
                       value: 'saturday',
                       title: '显示周六',
@@ -733,6 +744,9 @@ class _SchedulePageState extends State<SchedulePage> {
                         value: 'semester',
                         child: Text('切换学期'),
                       ),
+                      const PopupMenuItem(value: 'source', child: Text('课表来源')),
+                      if (_schedule.isGraduate)
+                        const PopupMenuItem(value: 'termStart', child: Text('设置学期起始日')),
                       CheckedPopupMenuItem(
                         value: 'saturday',
                         checked: _showSaturday,
@@ -853,8 +867,8 @@ class _SchedulePageState extends State<SchedulePage> {
     return ListView(
       key: ValueKey<String>('empty-$week'),
       children: [
-        SizedBox(
-          height: 300,
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 300),
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -881,6 +895,35 @@ class _SchedulePageState extends State<SchedulePage> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (state == EmptyWeekState.failed) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      child: SelectableText(
+                        (_schedule.error ?? '').replaceFirst(RegExp(r'^FormatException:\s*'), ''),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _schedule.loading ? null : _refresh,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('重试'),
+                      ),
+                      TextButton.icon(
+                        onPressed: _schedule.loading ? null : _showScheduleSource,
+                        icon: const Icon(Icons.school_outlined),
+                        label: const Text('课表来源'),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -915,6 +958,13 @@ class _SchedulePageState extends State<SchedulePage> {
 
     return Column(
       children: [
+        if (_schedule.isGraduate) _buildGraduateControls(theme),
+        if (_schedule.error != null && visibleCourses.isNotEmpty)
+          TextButton.icon(
+            icon: const Icon(Icons.info_outline, size: 18),
+            label: const Text('刷新失败，正在显示上次课表 · 查看原因'),
+            onPressed: _showScheduleError,
+          ),
         _DayHeader(
           weekStart: _weekStartForWeek(week),
           today: today,
@@ -938,12 +988,173 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
+  Widget _buildGraduateControls(ThemeData theme) {
+    final schemes = _schedule.graduateSchemes;
+    final extraCount = _schedule.graduateUnarranged.length + _schedule.graduateCancelled.length;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Wrap(
+        spacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('研究生课表', style: theme.textTheme.labelLarge),
+          if (_schedule.identityWarning != null) Text(_schedule.identityWarning!),
+          if (schemes.length > 1)
+            DropdownButton<String>(
+              value: _schedule.graduateScheme,
+              items: schemes.entries
+                  .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                  .toList(),
+              onChanged: (value) async {
+                if (value == null) return;
+                try {
+                  await _schedule.selectGraduateScheme(value);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+                  }
+                }
+              },
+            ),
+          if (extraCount > 0)
+            TextButton(
+              onPressed: _showGraduateExtraCourses,
+              child: Text(
+                '未排课 ${_schedule.graduateUnarranged.length} · 停开 ${_schedule.graduateCancelled.length}',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showScheduleSource() async {
+    final source = await showDialog<CampusScheduleSource>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('课表来源'),
+        children: [
+          for (final option in [
+            (CampusScheduleSource.automatic, '自动识别（IDS 身份）'),
+            (CampusScheduleSource.undergraduate, '本科教务课表'),
+            (CampusScheduleSource.graduate, '研究生课表'),
+          ])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, option.$1),
+              child: Row(
+                children: [
+                  Icon(
+                    _schedule.scheduleSource == option.$1
+                        ? Icons.check_circle_outline
+                        : Icons.circle_outlined,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(child: Text(option.$2)),
+                ],
+              ),
+            ),
+          if (_schedule.identityLabel != null)
+            Padding(padding: const EdgeInsets.all(24), child: Text(_schedule.identityLabel!)),
+          if (_schedule.identityWarning != null)
+            Padding(padding: const EdgeInsets.all(24), child: Text(_schedule.identityWarning!)),
+        ],
+      ),
+    );
+    if (source == null || !mounted) return;
+    try {
+      await _schedule.selectScheduleSource(source);
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+    }
+  }
+
+  Future<void> _showScheduleError() => showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('课表刷新失败'),
+          content: SelectableText(
+            (_schedule.error ?? '').replaceFirst(RegExp(r'^FormatException:\s*'), ''),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
+        ),
+      );
+
+  Future<void> _setGraduateFirstMonday() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      helpText: '选择本学期第 1 周的周一（仅保存在本机）',
+      initialDate: _schedule.termBegin ?? now.subtract(Duration(days: now.weekday - 1)),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      selectableDayPredicate: (date) => date.weekday == DateTime.monday,
+    );
+    if (date != null && mounted) {
+      try {
+        await _schedule.setGraduateFirstMonday(date);
+      } catch (error) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+      }
+    }
+  }
+
+  Future<void> _showGraduateExtraCourses() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('研究生课程信息'),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final section in [
+                  ('已选但未排课', _schedule.graduateUnarranged),
+                  ('已停开', _schedule.graduateCancelled),
+                ]) ...[
+                  Text(section.$1, style: Theme.of(context).textTheme.titleSmall),
+                  for (final course in section.$2)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${course['KCMC'] ?? ''}'),
+                      subtitle: Text(
+                        [
+                          course['BJMC'],
+                          course['RKJS'] ?? course['JSXM'],
+                          course['PKSJDDMS'] ?? course['PKSJDD'],
+                        ]
+                            .whereType<Object>()
+                            .map((v) => '$v'.replaceAll(RegExp(r'<[^>]*>'), ''))
+                            .where((v) => v.isNotEmpty)
+                            .join(' · '),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭')),
+        ],
+      ),
+    );
+  }
+
   void _onMenuSelected(String value) {
     switch (value) {
       case 'currentWeek':
         _goToCurrentWeek();
       case 'semester':
         _showSemesterPicker();
+      case 'source':
+        unawaited(_showScheduleSource());
+      case 'termStart':
+        unawaited(_setGraduateFirstMonday());
       case 'saturday':
         setState(() => _showSaturday = !_showSaturday);
       case 'sunday':
@@ -1081,6 +1292,23 @@ class _SchedulePageState extends State<SchedulePage> {
                       _showDesktopSemesterWheelPopover();
                     },
                   ),
+                  DesktopMenuRow(
+                    leading: const Icon(Icons.school_outlined, size: 20),
+                    title: Text('课表来源', style: theme.textTheme.bodyMedium),
+                    onTap: () {
+                      close();
+                      unawaited(_showScheduleSource());
+                    },
+                  ),
+                  if (_schedule.isGraduate)
+                    DesktopMenuRow(
+                      leading: const Icon(Icons.event_outlined, size: 20),
+                      title: Text('设置学期起始日', style: theme.textTheme.bodyMedium),
+                      onTap: () {
+                        close();
+                        unawaited(_setGraduateFirstMonday());
+                      },
+                    ),
                   const Divider(height: 1),
                   DesktopMenuRow(
                     leading: Icon(

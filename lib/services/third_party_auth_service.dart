@@ -417,6 +417,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
 
   Future<void> unbind(ThirdPartyPlatform platform) async {
     _tree.setAccount(platform, null);
+    if (platform == ThirdPartyPlatform.cpdaily) await _storage.clearGraduateScheduleCache();
     await _storage.clearThirdPartyAccount(platform);
     // Unbinding cpdaily invalidates all downstream derived cookies.
     if (platform == ThirdPartyPlatform.cpdaily) {
@@ -441,6 +442,13 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// existing platform binding, writes each entry in [next] to secure storage,
   /// and rebuilds the in-memory map. Fires a single notification.
   Future<void> replaceAll(List<ThirdPartyAccount> next) async {
+    final currentCampus = _tree.cpdaily.account;
+    final nextCampus = next.where((a) => a.platform == ThirdPartyPlatform.cpdaily).firstOrNull;
+    if (currentCampus != null &&
+        (nextCampus?.sid != currentCampus.sid || nextCampus?.account != currentCampus.account)) {
+      _tree.setAccount(ThirdPartyPlatform.cpdaily, null);
+      await _storage.clearGraduateScheduleCache();
+    }
     // Clear storage for every platform first.
     for (final p in ThirdPartyPlatform.values) {
       await _storage.clearThirdPartyAccount(p);
@@ -485,6 +493,12 @@ class ThirdPartyAuthService extends ChangeNotifier {
         if (next != null && cur != null && _accountEqual(cur, next)) continue;
         if (next == null && cur == null) continue;
         if (next != null) {
+          if (p == ThirdPartyPlatform.cpdaily &&
+              cur != null &&
+              (next.sid != cur.sid || next.account != cur.account)) {
+            _tree.setAccount(p, null);
+            await _storage.clearGraduateScheduleCache();
+          }
           await _storage.saveThirdPartyAccount(next);
           _tree.setAccount(p, next);
         } else {
@@ -496,6 +510,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
             }
           }
           _tree.setAccount(p, null);
+          if (p == ThirdPartyPlatform.cpdaily) await _storage.clearGraduateScheduleCache();
           await _storage.clearThirdPartyAccount(p);
         }
       }
@@ -657,6 +672,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
       }
       _tree.setAccount(p, null);
     }
+    await _storage.clearGraduateScheduleCache();
     await _storage.clearAllThirdPartyAccounts();
     await _storage.clearAllDerivedCookies();
     _onTreeChanged(force: true);
