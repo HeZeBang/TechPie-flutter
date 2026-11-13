@@ -134,7 +134,7 @@ WatchConnection.prototype.tick = function() {
   }
   for (var key in this.pending) {
     if (this.now() - this.pending[key].at >= 30000) {
-      delete this.pending[key]; this.error = '唔…手机怎么没有响应呢(⊙ω⊙?)';
+      delete this.pending[key]; this.error = '手机未响应，请检查连接后重试';
     }
   }
   this.publish();
@@ -348,9 +348,9 @@ WatchConnection.prototype.reject = function(m, code) {
   this.reply(m, 'result', {status: 'error', code: code, retryable: false});
 };
 function failureText(code) {
-  if (code === 'ACCOUNT_NOT_READY') return '你还没在手机端绑定校园卡哦~';
-  if (code === 'RATE_LIMITED') return '唔诶~!你点的太快了┭┮﹏┭┮';
-  if (code === 'PAYLOAD_TOO_LARGE') return '你の校园码太大了……我展示不了呢，问问开发者吧';
-  if (code === 'CODE_EXPIRED') return '校园码过期了呢，重新获取吧！';
-  return '更新失败了呢，检查一下手机后重试吧！';
+  if (code === 'ACCOUNT_NOT_READY') return '请在手机中完成账号绑定后重试';
+  if (code === 'RATE_LIMITED') return '请求过于频繁，请稍后重试';
+  if (code === 'PAYLOAD_TOO_LARGE') return '校园码数据过大，请使用手机校园码';
+  if (code === 'CODE_EXPIRED') return '校园码已过期，请刷新';
+  return '更新失败，请检查手机连接后重试';
 }
