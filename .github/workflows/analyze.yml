@@ -56,6 +56,27 @@ jobs:
         with:
           args: -color
 
+      - name: Reject committed environment files
+        # `.gitignore` keeps `.envrc` (the OHOS signing passwords) and
+        # `ohos/signature/` (the keystore) out of the tree, but a pattern only
+        # covers the names it names and `git add -A` takes everything else —
+        # that is how `.envrc.release-backup-*` reached master in 10d8ead. So
+        # check what is actually tracked instead of trusting the patterns, and
+        # do it on every push: a secret that lands on master once stays in the
+        # history and in the tags cut from it.
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files)"
+          bad="$(grep -E '(^|/)\.envrc($|\.)|(^|/)signature/|\.(p12|p7b|jks|keystore)$' <<<"$tracked" \
+            | grep -vE '(^|/)\.envrc\.example$' || true)"
+          if [[ -n "$bad" ]]; then
+            echo "::error::environment or signing material is tracked; remove it from the branch:"
+            while IFS= read -r f; do printf '  %s\n' "$f"; done <<<"$bad"
+            exit 1
+          fi
+          echo "no environment or signing material tracked"
+
       - name: Analyze
         run: flutter analyze --no-pub
 

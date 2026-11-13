@@ -327,7 +327,7 @@ final class _ScanConfirmationOverlay extends StatelessWidget {
                       const SizedBox(width: 12),
                       const Expanded(
                         child: Text(
-                          '上海科技大学 eCard',
+                          '校园卡',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -453,7 +453,7 @@ final class _PayAuthorizationOverlay extends StatelessWidget {
                         const SizedBox(width: 12),
                         const Expanded(
                           child: Text(
-                            '上海科技大学 eCard',
+                            '校园卡',
                             style: TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),

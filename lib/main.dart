@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:desktop_webview_window/desktop_webview_window.dart'
     show runWebViewTitleBarWidget;
 import 'package:dynamic_color/dynamic_color.dart';
@@ -13,6 +14,7 @@ import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
 import 'services/campus_card_service.dart';
+import 'services/deadline_widget_service.dart';
 import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
@@ -33,6 +35,7 @@ import 'services/wear/wear_engine_service.dart';
 import 'services/wear/wear_protocol.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
+import 'widgets/privacy_consent.dart';
 import 'widgets/update_dialogs.dart';
 
 void main(List<String> args) async {
@@ -114,6 +117,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
           ),
         )
       : null;
+  final deadlineWidgetService = DeadlineWidgetService(assignmentService);
   final syncService = SyncService(
     authService,
     thirdPartyAuthService,
@@ -200,10 +204,16 @@ Future<void> _realMain(SharedPreferences prefs) async {
       ecardBindService: ecardBindService,
       ecardWidgetService: ecardWidgetService,
       wearEngineService: wearEngineService,
+      deadlineWidgetService: deadlineWidgetService,
     ),
   );
 
   bootMark('cached data ready');
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS)) {
+    deadlineWidgetService.initialize();
+  }
 
   oaGymService.startProfileSync();
   unawaited(campusCardService.refreshAccount());
@@ -352,6 +362,7 @@ class TechPieApp extends StatefulWidget {
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
   final WearEngineService? wearEngineService;
+  final DeadlineWidgetService? deadlineWidgetService;
 
   const TechPieApp({
     super.key,
@@ -371,6 +382,7 @@ class TechPieApp extends StatefulWidget {
     required this.ecardBindService,
     this.ecardWidgetService,
     this.wearEngineService,
+    this.deadlineWidgetService,
   });
 
   @override
@@ -379,6 +391,7 @@ class TechPieApp extends StatefulWidget {
 
 class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
+  final _nativeChromeObserver = CNTabBarRouteObserver();
 
   /// The silent check runs at launch and whenever the app comes back to the
   /// foreground, but not more often than this: a resume is not a reason to hit
@@ -394,11 +407,16 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     unawaited(_checkForUpdatesQuietly());
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
+    widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
   }
 
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.deadlineWidgetService != widget.deadlineWidgetService) {
+      oldWidget.deadlineWidgetService?.clearOpenHandler();
+      widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
+    }
     if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
     oldWidget.ecardWidgetService?.clearOpenPayHandler();
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
@@ -408,6 +426,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.ecardWidgetService?.clearOpenPayHandler();
+    widget.deadlineWidgetService?.dispose();
     widget.campusCardService.dispose();
     widget.wearEngineService?.dispose();
     super.dispose();
@@ -448,14 +467,26 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     }
     if (release == null || !mounted) return;
 
+    // This State sits above the MaterialApp, so its own context has no
+    // MaterialLocalizations and no navigator to put a dialog on; ask the app's
+    // navigator instead.
+    final dialogContext = _navigatorKey.currentContext;
+    if (dialogContext == null || !dialogContext.mounted) return;
     _promptedThisLaunch = true;
-    await showUpdateAvailableDialog(context, release);
+    await showUpdateAvailableDialog(dialogContext, release);
+  }
+
+  Future<void> _openDeadlines() async {
+    // Only dialogs and sheets are dismissed: a login or player covering the
+    // shell stays, and back from it lands on the Deadlines tab.
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
+    appShellPendingDeadlines.value = true;
   }
 
   Future<void> _openEcardPayCode() async {
-    // The shell performs the push: it knows whether the entry belongs inside the
-    // selected destination's stack or on the root navigator, and it is still
-    // there after a cold start.
+    // The shell performs the push: it knows which stack the entry belongs in —
+    // the Home tab's on iOS — and it is still there after a cold start.
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
     appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
   }
 
@@ -497,7 +528,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
-          navigatorObservers: [FeedbackRouteObserver()],
+          navigatorObservers: [FeedbackRouteObserver(), _nativeChromeObserver],
           builder: (context, child) => AdaptiveFeedbackHost(
             key: adaptiveFeedbackHostKey,
             child: child ?? const SizedBox.shrink(),
@@ -506,7 +537,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
           theme: widget.themeService.lightTheme,
           darkTheme: widget.themeService.darkTheme,
           themeMode: widget.themeService.themeMode,
-          home: const AppShell(),
+          home: const PrivacyGate(child: AppShell()),
         ),
       ),
     );

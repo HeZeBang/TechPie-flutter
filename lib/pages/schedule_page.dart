@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -21,17 +23,20 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/course_block_label.dart';
 import '../widgets/course_detail_panel.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/desktop_select_popover.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/page_refresh.dart';
 import '../widgets/schedule_picker_sheet.dart';
+import '../widgets/uni_auth_login.dart';
 import 'custom_course_editor_page.dart';
-import 'login_page.dart';
 import 'third_party_accounts_page.dart';
 
 /// What an empty week actually is, given what the timetable knows about itself.
@@ -43,7 +48,7 @@ enum EmptyWeekState {
   /// Nothing fetched yet — a fresh login, or a binding whose fetch is in flight.
   loading,
 
-  /// A fetch ran and failed. Pull-to-refresh is the way out.
+  /// A fetch ran and failed. Refreshing lets the user retry.
   failed,
 
   /// The timetable is in hand, and this week is genuinely empty.
@@ -75,6 +80,8 @@ class _SchedulePageState extends State<SchedulePage> {
   int _currentWeek = 1;
   bool _initialized = false;
   bool _exportingCalendar = false;
+  bool _hasBuiltCourses = false;
+  String? _displayedSemesterId;
 
   // Settings
   bool _showSaturday = true;
@@ -84,7 +91,15 @@ class _SchedulePageState extends State<SchedulePage> {
   // Animation: track slide direction for week transitions
   // 1 = forward (next week), -1 = backward (previous week), 0 = no slide
   int _slideDirection = 0;
-  final PageController _weekPageController = PageController();
+  /// Created once the week to show is known: a controller that starts on page
+  /// 0 draws week 1 for the first frames of the first visit, before the jump
+  /// to the current week lands — most visibly at the weekend, which week 1
+  /// and the current week rarely share.
+  late final PageController _weekPageController;
+
+  /// The week an in-flight [animateToPage] is heading for; see
+  /// [_onWeekPageChanged].
+  int? _pagerTargetWeek;
   final GlobalKey _viewSettingsAnchorKey = GlobalKey();
 
   @override
@@ -98,6 +113,7 @@ class _SchedulePageState extends State<SchedulePage> {
       _schedule.addListener(_onScheduleChanged);
       _assignments.addListener(_onAssignmentsChanged);
       _loadData();
+      _weekPageController = PageController(initialPage: _currentWeek - 1);
     }
   }
 
@@ -172,7 +188,14 @@ class _SchedulePageState extends State<SchedulePage> {
   void _rebuildCourses() {
     if (!mounted) return;
     setState(() {
-      _currentWeek = _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
+      final preserveWeek = isDesktop() &&
+          _hasBuiltCourses &&
+          _displayedSemesterId == _schedule.selectedSemesterId;
+      _currentWeek = (preserveWeek ? _currentWeek : _schedule.currentWeek())
+          .clamp(1, _schedule.totalWeeks)
+          .toInt();
+      _hasBuiltCourses = true;
+      _displayedSemesterId = _schedule.selectedSemesterId;
       final table = _schedule.courseTable;
       if (table != null && table.periods.isNotEmpty) {
         _periods = table.periods.map((p) => p.toPeriod()).toList();
@@ -202,16 +225,36 @@ class _SchedulePageState extends State<SchedulePage> {
   void _setWeek(int week) {
     _setCurrentWeek(week);
     if (!_weekPageController.hasClients) return;
+    final target = _currentWeek;
+    _pagerTargetWeek = target;
     unawaited(
-      _weekPageController.animateToPage(
-        _currentWeek - 1,
-        duration: appAnimationDuration(
-          context,
-          const Duration(milliseconds: 280),
-        ),
-        curve: appAnimationCurve(Curves.easeOutCubic),
-      ),
+      _weekPageController
+          .animateToPage(
+            target - 1,
+            duration: appAnimationDuration(
+              context,
+              const Duration(milliseconds: 280),
+            ),
+            curve: appAnimationCurve(Curves.easeOutCubic),
+          )
+          .whenComplete(() {
+        if (_pagerTargetWeek == target) _pagerTargetWeek = null;
+      }),
     );
+  }
+
+  /// The pager reports every page it passes, including the ones an
+  /// [animateToPage] only flies over. The week is already set to where that
+  /// animation is going, so those intermediate pages must not overwrite it —
+  /// otherwise the title (and the 回到本周 button) lands on the target, jumps
+  /// back to the next page the animation crosses, and counts down to the
+  /// target again. A drag that takes over ends the animation, which clears
+  /// the target, so the pager drives the week again from then on.
+  void _onWeekPageChanged(int index) {
+    final target = _pagerTargetWeek;
+    if (target != null && index + 1 != target) return;
+    if (index + 1 == _currentWeek) return;
+    _setCurrentWeek(index + 1);
   }
 
   void _setCurrentWeek(int week) {
@@ -261,8 +304,9 @@ class _SchedulePageState extends State<SchedulePage> {
     final isInTerm = _schedule.isTodayInTerm;
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
+        useRootNavigator: true,
         showDragHandle: true,
         builder: (context) {
           final sheetTheme = Theme.of(context);
@@ -539,7 +583,7 @@ class _SchedulePageState extends State<SchedulePage> {
     final useIosChrome = isIos();
     final useLegacyIosChrome = usesLegacyIosChrome();
 
-    return Scaffold(
+    return AdaptiveNavigationScaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
           ? IosNativeNavigationBar(
@@ -645,6 +689,12 @@ class _SchedulePageState extends State<SchedulePage> {
                 ],
               ),
               actions: [
+                if (isDesktop())
+                  PageRefreshButton(
+                    onRefresh: _refresh,
+                    enabled: auth.isLoggedIn && tpAuth.hasCpdailyBinding,
+                    refreshing: _schedule.loading || _assignments.loading,
+                  ),
                 IconButton(
                   icon: const Icon(Icons.chevron_left),
                   tooltip: 'Previous week',
@@ -749,7 +799,7 @@ class _SchedulePageState extends State<SchedulePage> {
                             ),
                           );
                         } else {
-                          unawaited(presentLoginPage(context));
+                          unawaited(startUniAuthLogin(context));
                         }
                       },
                       accessibilityLabel: auth.isLoggedIn ? '绑定 eGate 账号' : '登录 TechPie',
@@ -757,15 +807,15 @@ class _SchedulePageState extends State<SchedulePage> {
                   ],
                 ),
               )
-            : RefreshIndicator(
+            : PageRefreshIndicator(
                 onRefresh: _refresh,
+                notificationPredicate: (notification) =>
+                    notification.metrics.axis == Axis.vertical && notification.depth <= 1,
                 child: useIosChrome
                     ? PageView.builder(
                         controller: _weekPageController,
                         itemCount: _schedule.totalWeeks,
-                        onPageChanged: (index) {
-                          _setCurrentWeek(index + 1);
-                        },
+                        onPageChanged: _onWeekPageChanged,
                         itemBuilder: (context, index) {
                           final week = index + 1;
                           return _buildScheduleWeek(
@@ -822,7 +872,9 @@ class _SchedulePageState extends State<SchedulePage> {
                 Text(
                   switch (state) {
                     EmptyWeekState.loading => '正在获取课表…',
-                    EmptyWeekState.failed => '课表加载失败，下拉刷新重试',
+                    EmptyWeekState.failed => isDesktop()
+                        ? '课表加载失败，点击右上角刷新重试'
+                        : '课表加载失败，下拉刷新重试',
                     EmptyWeekState.noClasses => '本周没有课程',
                   },
                   style: theme.textTheme.bodyLarge?.copyWith(
@@ -1544,72 +1596,14 @@ class _CourseBlock extends StatelessWidget {
         child: InkWell(
           onTap: () => _showCourseDetail(context),
           borderRadius: BorderRadius.circular(8),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final maxH = constraints.maxHeight - 8; // account for padding
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Course name: up to 70% of block height
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: maxH * 0.7),
-                      child: Text(
-                        course.name,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          height: 1.2,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: (maxH * 0.7 / 14.4).floor().clamp(1, 20),
-                      ),
-                    ),
-                    if (course.usesCustomTime) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        '${course.startTime}–${course.endTime}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontSize: 9,
-                          height: 1.1,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    if (maxH >= 48 && course.teachers != null && course.teachers!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        course.teachers!,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontSize: 12,
-                          height: 1.2,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    if (maxH >= 42 && course.location.isNotEmpty) ...[
-                      const Spacer(),
-                      Text(
-                        course.location,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontSize: 10,
-                          height: 1.2,
-                        ),
-                        maxLines: (maxH * 0.2 / 12).floor().clamp(1, 5),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            },
+          child: CourseBlockLabel(
+            name: course.name,
+            color: textColor,
+            time: course.usesCustomTime
+                ? '${course.startTime}–${course.endTime}'
+                : null,
+            teachers: course.teachers,
+            location: course.location,
           ),
         ),
       ),
@@ -1636,61 +1630,100 @@ class _CourseBlock extends StatelessWidget {
           children: [
             CourseDetailContent(course: course, compact: compact, padding: EdgeInsets.zero),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: [
-                TextButton.icon(
-                  onPressed: deleting
-                      ? null
-                      : () {
-                          close();
-                          onEditCustomCourse(course);
-                        },
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('编辑'),
-                ),
-                TextButton.icon(
-                  style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
-                  onPressed: deleting
-                      ? null
-                      : () async {
-                          setPreviewState(() => deleting = true);
-                          try {
-                            final confirmed = await showAdaptiveAlertDialog<bool>(
-                              context: context,
-                              title: '删除这节课？',
-                              message: '将删除自定义课程“${course.name}”及其所有重复安排。',
-                              actions: const [
-                                AdaptiveAlertAction(label: '取消', value: false),
-                                AdaptiveAlertAction(label: '删除', value: true, isDestructive: true),
-                              ],
-                            );
-                            if (confirmed != true || !context.mounted) return;
-                            final existing = schedule.findCustomCourse(course.customId!);
-                            if (existing != null) {
-                              final semesterId = existing.semesterId.isEmpty
-                                  ? schedule.selectedSemesterId
-                                  : existing.semesterId;
-                              if (semesterId == null) return;
-                              await schedule.deleteCustomCourse(semesterId, existing.id);
-                            }
-                            if (context.mounted) close();
-                          } catch (_) {
-                            if (context.mounted) {
-                              showAdaptiveFeedback(
-                                context: context,
-                                message: '删除失败，请重试',
-                                style: AdaptiveFeedbackStyle.error,
-                              );
-                            }
-                          } finally {
-                            if (context.mounted) setPreviewState(() => deleting = false);
-                          }
-                        },
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('删除'),
-                ),
-              ],
+            Builder(
+              builder: (context) {
+                void edit() {
+                  close();
+                  onEditCustomCourse(course);
+                }
+
+                Future<void> delete() async {
+                  setPreviewState(() => deleting = true);
+                  try {
+                    final confirmed = await showAdaptiveAlertDialog<bool>(
+                      context: context,
+                      title: '删除这节课？',
+                      message: '将删除自定义课程“${course.name}”及其所有重复安排。',
+                      actions: const [
+                        AdaptiveAlertAction(label: '取消', value: false),
+                        AdaptiveAlertAction(label: '删除', value: true, isDestructive: true),
+                      ],
+                    );
+                    if (confirmed != true || !context.mounted) return;
+                    final existing = schedule.findCustomCourse(course.customId!);
+                    if (existing != null) {
+                      final semesterId = existing.semesterId.isEmpty
+                          ? schedule.selectedSemesterId
+                          : existing.semesterId;
+                      if (semesterId == null) return;
+                      await schedule.deleteCustomCourse(semesterId, existing.id);
+                    }
+                    if (context.mounted) close();
+                  } catch (_) {
+                    if (context.mounted) {
+                      showAdaptiveFeedback(
+                        context: context,
+                        message: '删除失败，请重试',
+                        style: AdaptiveFeedbackStyle.error,
+                      );
+                    }
+                  } finally {
+                    if (context.mounted) setPreviewState(() => deleting = false);
+                  }
+                }
+
+                if (isIos()) {
+                  // Plain system buttons with SF glyphs; delete in the
+                  // destructive red, as in Calendar's event detail.
+                  final red = CupertinoColors.systemRed.resolveFrom(context);
+                  return Row(
+                    children: [
+                      CupertinoButton(
+                        padding: const EdgeInsetsDirectional.only(end: 20),
+                        onPressed: deleting ? null : edit,
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.pencil, size: 20),
+                            SizedBox(width: 6),
+                            Text('编辑'),
+                          ],
+                        ),
+                      ),
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: deleting ? null : delete,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.delete, size: 20, color: red),
+                            const SizedBox(width: 6),
+                            Text('删除', style: TextStyle(color: red)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return Wrap(
+                  spacing: 8,
+                  children: [
+                    TextButton.icon(
+                      onPressed: deleting ? null : edit,
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('编辑'),
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: Theme.of(context).colorScheme.error,
+                      ),
+                      onPressed: deleting ? null : delete,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      label: const Text('删除'),
+                    ),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -1723,15 +1756,17 @@ class _CourseBlock extends StatelessWidget {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
-        showDragHandle: true,
+        useRootNavigator: true,
+        // A fixed-height sheet: iOS shows no grabber on one.
+        showDragHandle: !isIos(),
         builder: (context) {
           return _detailContent(
             context,
             schedule: schedule,
             close: () => Navigator.pop(context),
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+            padding: EdgeInsets.fromLTRB(24, isIos() ? 28 : 0, 24, 32),
           );
         },
       ),

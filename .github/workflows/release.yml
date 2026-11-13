@@ -79,6 +79,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Where this commit stands against the newest released tags, printed
+          # before the plan: a refusal below then reads next to the numbers that
+          # caused it (version line and build number, newest tag, what to write).
+          node scripts/release-plan.mjs --check --ref "$REF" || true
+
           args=(--ref "$REF")
           if [[ "$EVENT" == "push" ]]; then
             args+=(--base "$BASE")
@@ -286,6 +291,35 @@ jobs:
     uses: ./.github/workflows/windows-release.yml
     with:
       tag: ${{ needs.plan.outputs.tag }}
+    secrets: inherit
+
+  appgallery:
+    name: AppGallery
+    # Signs the pack the OHOS job attached to the release and pushes it to
+    # AppGallery Connect. The channel follows the release name — a candidate
+    # (`-rc.N`) goes to the test channel, a stable release to the 全网 one — and
+    # either way it is submitted, because a version the store has not reviewed
+    # cannot be installed.
+    #
+    # `publish` is in `needs` for a mechanical reason: the pack has to be fetched
+    # from the release, `gh release download` cannot see a draft, and the release
+    # is a draft until that job flips it. The dependency runs one way only — the
+    # store job waits for the release, never the other way round — so a reviewer
+    # holding the approval cannot hold up the GitHub release.
+    needs: [plan, tag, ohos, publish]
+    if: >-
+      needs.plan.outputs.skip == 'false'
+      && needs.ohos.result == 'success'
+      && needs.publish.result == 'success'
+      && inputs.dry_run != true
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/ohos-appgallery.yml
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+      publish: true
+      submit: true
     secrets: inherit
 
   publish:
