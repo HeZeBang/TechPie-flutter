@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=TechPie
+Comment=ShanghaiTech campus services
+Exec=techpie %U
+Icon=techpie
+Terminal=false
+Categories=Education;
+MimeType=x-scheme-handler/techpie;
+StartupNotify=true
+StartupWMClass=com.example.techpie
