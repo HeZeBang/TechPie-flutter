@@ -146,7 +146,16 @@ class _GenAiComposerState extends State<GenAiComposer> {
     }
   }
 
+  bool? _hadDraft;
+  bool? _hadFocus;
+  final _thumbnailBytes = Expando<Uint8List>();
+
   void _changed() {
+    final hasDraft = widget.draft.text.trim().isNotEmpty;
+    final hasFocus = widget.inputFocus.hasFocus;
+    if (_hadDraft == hasDraft && _hadFocus == hasFocus) return;
+    _hadDraft = hasDraft;
+    _hadFocus = hasFocus;
     if (mounted) setState(() {});
   }
 
@@ -159,134 +168,90 @@ class _GenAiComposerState extends State<GenAiComposer> {
 
   bool get _audioBusy => widget.recognizingAudio || widget.recording || widget.startingRecording;
 
-  static const _menuRowPadding = EdgeInsets.symmetric(horizontal: 10, vertical: 8);
-
   List<PopupMenuEntry<String>> _menuItems({required bool thinking, required bool campus}) => [
-        if (widget.supportsDocuments)
-          _menuItem(
-            key: const ValueKey('genai-upload-file'),
-            value: 'document',
-            icon: const GenAiIcon(GenAiGlyph.file),
-            label: '上传文档',
-          ),
-        _menuItem(
-          key: const ValueKey('genai-upload-image'),
-          value: 'image',
-          icon: const GenAiIcon(GenAiGlyph.image),
-          label: '上传图片',
+    if (widget.supportsDocuments)
+      genAiActionItem(
+        _palette,
+        'document',
+        const GenAiIcon(GenAiGlyph.file),
+        '上传文档',
+        key: const ValueKey('genai-upload-file'),
+      ),
+    genAiActionItem(
+      _palette,
+      'image',
+      const GenAiIcon(GenAiGlyph.image),
+      '上传图片',
+      key: const ValueKey('genai-upload-image'),
+    ),
+    if (_compact && widget.supportsRecording)
+      genAiActionItem(
+        _palette,
+        'record',
+        const GenAiIcon(GenAiGlyph.mic),
+        '语音输入',
+        key: const ValueKey('genai-record-voice'),
+        enabled: !_audioBusy,
+      ),
+    if (widget.supportsAudio)
+      genAiActionItem(
+        _palette,
+        'audio',
+        const GenAiIcon(GenAiGlyph.audio),
+        '上传音频',
+        key: const ValueKey('genai-upload-audio'),
+        enabled: !_audioBusy,
+      ),
+    if (thinking || campus) ...[
+      const PopupMenuDivider(height: 9),
+      if (thinking)
+        genAiActionItem(
+          _palette,
+          'thinking',
+          const GenAiIcon(GenAiGlyph.brain),
+          '深度思考',
+          key: const ValueKey('genai-thinking-menu-toggle'),
+          enabled: widget.supportsThinking,
+          trailing: widget.thinkingEnabled
+              ? GenAiIcon(
+                  GenAiGlyph.check,
+                  key: const ValueKey('genai-thinking-menu-check'),
+                  color: _accent,
+                  size: 17,
+                )
+              : null,
         ),
-        if (_compact && widget.supportsRecording)
-          _menuItem(
-            key: const ValueKey('genai-record-voice'),
-            value: 'record',
-            icon: const GenAiIcon(GenAiGlyph.mic),
-            label: '语音输入',
-            enabled: !_audioBusy,
-            disabled: _audioBusy,
-          ),
-        if (widget.supportsAudio)
-          _menuItem(
-            key: const ValueKey('genai-upload-audio'),
-            value: 'audio',
-            icon: const GenAiIcon(GenAiGlyph.audio),
-            label: '上传音频',
-            enabled: !_audioBusy,
-            disabled: _audioBusy,
-          ),
-        if (thinking || campus) ...[
-          const PopupMenuDivider(height: 9),
-          if (thinking)
-            _menuItem(
-              key: const ValueKey('genai-thinking-menu-toggle'),
-              value: 'thinking',
-              icon: const GenAiIcon(GenAiGlyph.brain),
-              label: '深度思考',
-              selected: widget.thinkingEnabled,
-              enabled: widget.supportsThinking,
-              disabled: !widget.supportsThinking,
-              checkKey: const ValueKey('genai-thinking-menu-check'),
-            ),
-          if (campus)
-            _menuItem(
-              key: const ValueKey('genai-agent-menu-toggle'),
-              value: 'campus',
-              icon: const GenAiIcon(GenAiGlyph.tools),
-              label: '校园工具',
-              selected: widget.agentEnabled,
-              enabled: widget.agentAvailable,
-              disabled: !widget.agentAvailable,
-              checkKey: const ValueKey('genai-agent-menu-check'),
-            ),
-        ],
-        if (widget.agentAvailable) ...[
-          const PopupMenuDivider(height: 9),
-          _menuItem(
-            key: const ValueKey('genai-tool-list-menu'),
-            value: _toolListAction,
-            icon: const GenAiIcon(GenAiGlyph.info),
-            label: '查看可用工具',
-          ),
-        ],
-        if (_compact && widget.contextStatus != null)
-          PopupMenuItem<String>(
-            enabled: false,
-            height: 36,
-            child: widget.contextStatus!,
-          ),
-      ];
-
-  /// Draft popover row: 42px minimum height, 8/10 padding, a 17px sprite, a
-  /// 10px gap and a 13px label; selection is an accent check on the trailing
-  /// edge and an unavailable capability keeps its current-state check.
-  PopupMenuItem<String> _menuItem({
-    Key? key,
-    required String value,
-    required Widget icon,
-    required String label,
-    bool selected = false,
-    bool enabled = true,
-    bool disabled = false,
-    Key? checkKey,
-  }) =>
-      PopupMenuItem<String>(
-        key: key,
-        value: value,
-        enabled: enabled,
-        height: 42,
-        padding: _menuRowPadding,
-        child: _menuRow(icon, label, selected: selected, disabled: disabled, checkKey: checkKey),
-      );
-
-  Widget _menuRow(
-    Widget icon,
-    String title, {
-    bool selected = false,
-    bool disabled = false,
-    Key? checkKey,
-  }) {
-    final color = disabled ? _muted.withValues(alpha: .4) : _muted;
-    return Row(
-      children: [
-        IconTheme.merge(
-          // The draft keeps leading menu icons muted in every state; only the
-          // trailing check carries the accent when a mode is selected.
-          data: IconThemeData(size: 17, color: color),
-          child: icon,
+      if (campus)
+        genAiActionItem(
+          _palette,
+          'campus',
+          const GenAiIcon(GenAiGlyph.tools),
+          '校园工具',
+          key: const ValueKey('genai-agent-menu-toggle'),
+          enabled: widget.agentAvailable,
+          trailing: widget.agentEnabled
+              ? GenAiIcon(
+                  GenAiGlyph.check,
+                  key: const ValueKey('genai-agent-menu-check'),
+                  color: _accent,
+                  size: 17,
+                )
+              : null,
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            title,
-            style: TextStyle(
-              fontSize: 13,
-              color: disabled ? _muted.withValues(alpha: .5) : _theme.colorScheme.onSurface,
-            ),
-          ),
-        ),
-        if (selected) GenAiIcon(GenAiGlyph.check, key: checkKey, color: _accent, size: 17),
-      ],
-    );
-  }
+    ],
+    if (widget.agentAvailable) ...[
+      const PopupMenuDivider(height: 9),
+      genAiActionItem(
+        _palette,
+        _toolListAction,
+        const GenAiIcon(GenAiGlyph.info),
+        '查看可用工具',
+        key: const ValueKey('genai-tool-list-menu'),
+      ),
+    ],
+    if (_compact && widget.contextStatus != null)
+      PopupMenuItem<String>(enabled: false, height: 36, child: widget.contextStatus!),
+  ];
 
   /// [width] and [height] are the control's fixed tap target; the glyph stays
   /// on the leading edge rather than centred so its left edge lines up with
@@ -356,58 +321,21 @@ class _GenAiComposerState extends State<GenAiComposer> {
   }
 
   Future<void> _showToolList() => genAiShowDialog<void>(
-        context: context,
-        builder: (dialogContext) => Dialog(
-          key: const ValueKey('genai-tool-list-dialog'),
-          // The draft dialog is 500px wide, or the screen minus 32px on phones.
-          insetPadding: const EdgeInsets.all(16),
-          constraints: BoxConstraints(
-            maxWidth: 500,
-            maxHeight: MediaQuery.sizeOf(dialogContext).height * .9,
-          ),
-          child: Column(
-            key: const ValueKey('genai-tool-list-content'),
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '校园工具',
-                        style: _theme.textTheme.titleMedium?.copyWith(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                          color: _theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      key: const ValueKey('genai-tool-list-close'),
-                      tooltip: '关闭',
-                      constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-                      padding: EdgeInsets.zero,
-                      onPressed: () => Navigator.of(dialogContext).pop(),
-                      icon: GenAiIcon(GenAiGlyph.close, size: 18, color: _muted),
-                    ),
-                  ],
-                ),
-              ),
-              Divider(height: 1, thickness: 1, color: _palette.line),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: _toolRows(),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+    context: context,
+    builder: (dialogContext) => GenAiDialogFrame(
+      key: const ValueKey('genai-tool-list-dialog'),
+      surfaceKey: const ValueKey('genai-tool-list-content'),
+      insetPadding: const EdgeInsets.all(16),
+      constraints: BoxConstraints(
+        maxWidth: 500,
+        maxHeight: MediaQuery.sizeOf(dialogContext).height * .9,
+      ),
+      title: const Text('校园工具'),
+      scrollable: true,
+      contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      content: Column(mainAxisSize: MainAxisSize.min, children: _toolRows()),
+    ),
+  );
 
   /// Compact rows mirror the draft's settings list: a 17px icon, a 13px
   /// title and an 11px description, separated at 17px vertical rhythm.
@@ -429,37 +357,32 @@ class _GenAiComposerState extends State<GenAiComposer> {
   }
 
   Widget _toolRow(Widget icon, String title, String subtitle) => Padding(
-        key: ValueKey('genai-tool-row-$title'),
-        padding: const EdgeInsets.symmetric(vertical: 17),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            IconTheme.merge(data: IconThemeData(size: 17, color: _muted), child: icon),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(fontSize: 13, color: _theme.colorScheme.onSurface),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: TextStyle(fontSize: 11, color: _muted, height: 1.4),
-                  ),
-                ],
-              ),
-            ),
-          ],
+    key: ValueKey('genai-tool-row-$title'),
+    padding: const EdgeInsets.symmetric(vertical: 17),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        IconTheme.merge(
+          data: IconThemeData(size: 17, color: _muted),
+          child: icon,
         ),
-      );
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: TextStyle(fontSize: 13, color: _theme.colorScheme.onSurface)),
+              const SizedBox(height: 4),
+              Text(subtitle, style: TextStyle(fontSize: 11, color: _muted, height: 1.4)),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 
-  TextStyle get _modeLabelStyle => _theme.textTheme.labelLarge!.copyWith(
-        fontSize: 14,
-        fontWeight: FontWeight.w400,
-      );
+  TextStyle get _modeLabelStyle =>
+      _theme.textTheme.labelLarge!.copyWith(fontSize: 14, fontWeight: FontWeight.w400);
 
   double _modeWidth(String label) {
     final painter = TextPainter(
@@ -478,6 +401,7 @@ class _GenAiComposerState extends State<GenAiComposer> {
     required GenAiGlyph glyph,
     required bool selected,
     required bool iconOnly,
+    required double maxWidth,
     required ValueChanged<bool> onChanged,
   }) {
     final color = selected ? _accent : _muted;
@@ -494,10 +418,13 @@ class _GenAiComposerState extends State<GenAiComposer> {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: action,
-          child: SizedBox(
+          child: Container(
             height: 48,
-            width: iconOnly ? 48 : _modeWidth(label),
+            width: iconOnly ? 48 : null,
+            constraints: iconOnly ? null : BoxConstraints(maxWidth: maxWidth),
+            padding: iconOnly ? null : const EdgeInsets.symmetric(horizontal: 6),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 SizedBox(
@@ -526,7 +453,14 @@ class _GenAiComposerState extends State<GenAiComposer> {
                 if (_compact) SizedBox(width: glyph == GenAiGlyph.tools ? 30 : 22),
                 if (!iconOnly) ...[
                   const SizedBox(width: 6),
-                  Text(label, style: _modeLabelStyle.copyWith(color: color)),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _modeLabelStyle.copyWith(color: color),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -560,25 +494,25 @@ class _GenAiComposerState extends State<GenAiComposer> {
                 ),
               )
             : widget.recording
-                ? GenAiIcon(
-                    GenAiGlyph.stop,
-                    size: 20,
-                    color: _theme.colorScheme.error,
-                    semanticLabel: '完成录音并识别',
-                  )
-                : GenAiIcon(
-                    GenAiGlyph.mic,
-                    size: 19,
-                    color: _muted,
-                    semanticLabel: !widget.supportsRecording ? '选择音频文件' : '语音输入',
-                  ),
+            ? GenAiIcon(
+                GenAiGlyph.stop,
+                size: 20,
+                color: _theme.colorScheme.error,
+                semanticLabel: '完成录音并识别',
+              )
+            : GenAiIcon(
+                GenAiGlyph.mic,
+                size: 19,
+                color: _muted,
+                semanticLabel: !widget.supportsRecording ? '选择音频文件' : '语音输入',
+              ),
         onPressed: widget.sending || widget.recognizingAudio
             ? null
             : !widget.supportsRecording
-                ? widget.onPickAudio
-                : widget.recording
-                    ? widget.onStopRecording
-                    : widget.onStartRecording,
+            ? widget.onPickAudio
+            : widget.recording
+            ? widget.onStopRecording
+            : widget.onStartRecording,
       ),
     );
   }
@@ -593,21 +527,18 @@ class _GenAiComposerState extends State<GenAiComposer> {
       tooltip: widget.hasPendingUploads
           ? '等待附件上传完成'
           : widget.hasFailedUploads
-              ? '请重试或移除失败附件'
-              : null,
+          ? '请重试或移除失败附件'
+          : null,
       onPressed: widget.sending
           ? widget.onStop
           : _canSend
-              ? widget.onSend
-              : null,
+          ? widget.onSend
+          : null,
       icon: Container(
         width: 32,
         height: 32,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: enabled ? _accent : _palette.soft,
-          shape: BoxShape.circle,
-        ),
+        decoration: BoxDecoration(color: enabled ? _accent : _palette.soft, shape: BoxShape.circle),
         child: GenAiIcon(
           widget.sending ? GenAiGlyph.stop : GenAiGlyph.arrow,
           size: widget.sending ? 15 : 18,
@@ -619,79 +550,79 @@ class _GenAiComposerState extends State<GenAiComposer> {
   }
 
   Widget _contextSlot() {
-    return SizedBox(
-      width: 28,
-      height: 48,
-      child: widget.contextStatus,
-    );
+    return SizedBox(width: 28, height: 48, child: widget.contextStatus);
   }
 
   Widget _toolbar() => LayoutBuilder(
-        builder: (context, constraints) {
-          final hasAudio = !_compact && (widget.supportsRecording || widget.supportsAudio);
-          final hasContext = !_compact && widget.contextStatus != null;
-          final modelWidth = widget.modelSelector == null ? 0.0 : widget.modelSelectorWidth;
-          final fixedWidth = 48 + 48 + (hasAudio ? 48 : 0) + (hasContext ? 28 : 0);
-          // Keep the model legible. Modes that do not fit stay in the + menu.
-          final room = constraints.maxWidth - fixedWidth - modelWidth.clamp(0.0, 112.0);
-          var thinking = widget.supportsThinking;
-          var campus = widget.agentAvailable;
-          final labelWidth =
-              (thinking ? _modeWidth('深度思考') : 0) + (campus ? _modeWidth('校园工具') : 0);
-          final iconOnly = _compact || labelWidth > room;
-          if (!_compact && iconOnly) {
-            final slots = (room / 48).floor();
-            if (slots < 2 && thinking && campus) {
-              if (widget.agentEnabled && !widget.thinkingEnabled) {
-                thinking = false;
-              } else {
-                campus = false;
-              }
-            }
-            if (slots < 1) {
-              thinking = false;
-              campus = false;
-            }
+    builder: (context, constraints) {
+      final hasAudio = !_compact && (widget.supportsRecording || widget.supportsAudio);
+      final hasContext = !_compact && widget.contextStatus != null;
+      final modelWidth = widget.modelSelector == null ? 0.0 : widget.modelSelectorWidth;
+      final fixedWidth = 48 + 48 + (hasAudio ? 48 : 0) + (hasContext ? 28 : 0);
+      // Keep the model legible. Modes that do not fit stay in the + menu.
+      final room = constraints.maxWidth - fixedWidth - modelWidth.clamp(0.0, 112.0);
+      var thinking = widget.supportsThinking;
+      var campus = widget.agentAvailable;
+      final labelWidth = (thinking ? _modeWidth('深度思考') : 0) + (campus ? _modeWidth('校园工具') : 0);
+      final iconOnly = _compact || labelWidth > room;
+      if (!_compact && iconOnly) {
+        final slots = (room / 48).floor();
+        if (slots < 2 && thinking && campus) {
+          if (widget.agentEnabled && !widget.thinkingEnabled) {
+            thinking = false;
+          } else {
+            campus = false;
           }
-          return Row(
-            children: [
-              _moreMenu(thinking: !_compact && !thinking, campus: !_compact && !campus),
-              if (thinking)
-                _modeButton(
-                  key: 'genai-thinking-toggle',
-                  label: '深度思考',
-                  glyph: GenAiGlyph.brain,
-                  selected: widget.thinkingEnabled,
-                  iconOnly: iconOnly,
-                  onChanged: widget.onThinkingChanged,
-                ),
-              if (campus)
-                _modeButton(
-                  key: 'genai-agent-toggle',
-                  label: '校园工具',
-                  glyph: GenAiGlyph.tools,
-                  selected: widget.agentEnabled,
-                  iconOnly: iconOnly,
-                  onChanged: widget.onAgentChanged,
-                ),
-              Expanded(
-                child: Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (hasContext) _contextSlot(),
-                      if (widget.modelSelector != null) Flexible(child: widget.modelSelector!),
-                    ],
-                  ),
-                ),
+        }
+        if (slots < 1) {
+          thinking = false;
+          campus = false;
+        }
+      }
+      // Let the rendered label set its width within its share of the toolbar.
+      // A browser can load CJK fallback fonts after the initial TextPainter estimate.
+      final maxModeWidth = thinking && campus ? room / 2 : room;
+      return Row(
+        children: [
+          _moreMenu(thinking: !_compact && !thinking, campus: !_compact && !campus),
+          if (thinking)
+            _modeButton(
+              key: 'genai-thinking-toggle',
+              label: '深度思考',
+              glyph: GenAiGlyph.brain,
+              selected: widget.thinkingEnabled,
+              iconOnly: iconOnly,
+              maxWidth: maxModeWidth,
+              onChanged: widget.onThinkingChanged,
+            ),
+          if (campus)
+            _modeButton(
+              key: 'genai-agent-toggle',
+              label: '校园工具',
+              glyph: GenAiGlyph.tools,
+              selected: widget.agentEnabled,
+              iconOnly: iconOnly,
+              maxWidth: maxModeWidth,
+              onChanged: widget.onAgentChanged,
+            ),
+          Expanded(
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasContext) _contextSlot(),
+                  if (widget.modelSelector != null) Flexible(child: widget.modelSelector!),
+                ],
               ),
-              if (hasAudio) _audioButton(),
-              _sendButton(),
-            ],
-          );
-        },
+            ),
+          ),
+          if (hasAudio) _audioButton(),
+          _sendButton(),
+        ],
       );
+    },
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -769,50 +700,56 @@ class _GenAiComposerState extends State<GenAiComposer> {
     );
   }
 
+  bool get _composing {
+    final range = widget.draft.value.composing;
+    return range.isValid && !range.isCollapsed;
+  }
+
+  void _submitFromKeyboard() {
+    if (!_composing && !widget.sending && _canSend) widget.onSend();
+  }
+
   Widget _input() => Focus(
-        onKeyEvent: (_, event) {
-          if (switch (Theme.of(context).platform) {
-                TargetPlatform.android || TargetPlatform.iOS || TargetPlatform.fuchsia => false,
-                _ => true,
-              } &&
-              event is KeyDownEvent &&
-              event.logicalKey == LogicalKeyboardKey.enter &&
-              !HardwareKeyboard.instance.isShiftPressed &&
-              !(widget.draft.value.composing.isValid &&
-                  !widget.draft.value.composing.isCollapsed)) {
-            if (!widget.sending && _canSend) widget.onSend();
-            return KeyEventResult.handled;
-          }
-          return KeyEventResult.ignored;
-        },
-        child: TextField(
-          key: const ValueKey('genai-prompt'),
-          controller: widget.draft,
-          focusNode: widget.inputFocus,
-          minLines: 1,
-          maxLines: widget.keyboardOpen ? 3 : 6,
-          textAlignVertical: TextAlignVertical.top,
-          strutStyle: StrutStyle(
-            fontSize: _compact ? 15 : 14,
-            height: 1.65,
-            forceStrutHeight: true,
-          ),
-          keyboardType: TextInputType.multiline,
-          textInputAction: TextInputAction.newline,
-          decoration: InputDecoration(
-            hintText: widget.hint,
-            hintStyle: TextStyle(fontSize: _compact ? 15 : 14, height: 1.65, color: _muted),
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-            filled: false,
-            isCollapsed: true,
-            constraints: const BoxConstraints(),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-          ),
-          style: TextStyle(fontSize: _compact ? 15 : 14, height: 1.65),
-        ),
-      );
+    onKeyEvent: (_, event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.enter &&
+          !HardwareKeyboard.instance.isShiftPressed &&
+          !_composing) {
+        _submitFromKeyboard();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    },
+    child: TextField(
+      key: const ValueKey('genai-prompt'),
+      controller: widget.draft,
+      focusNode: widget.inputFocus,
+      minLines: 1,
+      maxLines: widget.keyboardOpen ? 3 : 6,
+      textAlignVertical: TextAlignVertical.top,
+      strutStyle: StrutStyle(fontSize: _compact ? 15 : 14, height: 1.65, forceStrutHeight: true),
+      keyboardType: TextInputType.multiline,
+      textInputAction: switch (_theme.platform) {
+        TargetPlatform.android ||
+        TargetPlatform.iOS ||
+        TargetPlatform.fuchsia => TextInputAction.send,
+        _ => TextInputAction.newline,
+      },
+      onEditingComplete: _submitFromKeyboard,
+      decoration: InputDecoration(
+        hintText: widget.hint,
+        hintStyle: TextStyle(fontSize: _compact ? 15 : 14, height: 1.65, color: _muted),
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        filled: false,
+        isCollapsed: true,
+        constraints: const BoxConstraints(),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      ),
+      style: TextStyle(fontSize: _compact ? 15 : 14, height: 1.65),
+    ),
+  );
 
   Widget _attachmentTray() {
     final errors = widget.attachments.where((a) => a.error != null).map((a) => a.error!).toSet();
@@ -925,7 +862,9 @@ class _GenAiComposerState extends State<GenAiComposer> {
         color: att.error != null ? _theme.colorScheme.error : _accent,
       );
     }
-    final bytes = att.bytes.isNotEmpty ? Uint8List.fromList(att.bytes) : null;
+    final bytes = att.bytes.isEmpty
+        ? null
+        : (_thumbnailBytes[att] ??= Uint8List.fromList(att.bytes));
     final url = att.imageUrl;
     final Widget image = bytes != null
         ? Image.memory(
@@ -936,14 +875,14 @@ class _GenAiComposerState extends State<GenAiComposer> {
             errorBuilder: (_, __, ___) => _thumbnailFallback(),
           )
         : url != null && url.isNotEmpty
-            ? Image.network(
-                url,
-                width: 36,
-                height: 36,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _thumbnailFallback(),
-              )
-            : _thumbnailFallback();
+        ? Image.network(
+            url,
+            width: 36,
+            height: 36,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _thumbnailFallback(),
+          )
+        : _thumbnailFallback();
     return KeyedSubtree(
       key: ValueKey('genai-attachment-thumbnail-${att.id}'),
       child: GestureDetector(
@@ -985,9 +924,9 @@ class _GenAiComposerState extends State<GenAiComposer> {
   }
 
   Widget _thumbnailFallback() => Container(
-        width: 36,
-        height: 36,
-        color: _palette.accentSoft,
-        child: GenAiIcon(GenAiGlyph.image, size: 16, color: _accent),
-      );
+    width: 36,
+    height: 36,
+    color: _palette.accentSoft,
+    child: GenAiIcon(GenAiGlyph.image, size: 16, color: _accent),
+  );
 }

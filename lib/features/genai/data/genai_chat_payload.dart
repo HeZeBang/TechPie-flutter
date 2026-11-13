@@ -44,7 +44,7 @@ Future<Map<String, Object?>> genAiChatPayload(
   for (final url in canonical) {
     cancellation.throwIfCancelled();
     final download = GenAiCancellation();
-    final remove = cancellation.onCancel(download.cancel);
+    final remove = cancellation.forwardTo(download);
     final timer = Timer(const Duration(seconds: 30), () {
       download.cancel(GenAiFailureKind.timeout);
     });

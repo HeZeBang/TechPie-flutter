@@ -4,18 +4,9 @@ import 'package:techpie/features/genai/domain/genai_image_size.dart';
 import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
 
 void main() {
-  const model = GenAiModel(
-    name: 'Image',
-    aiType: 'image',
-    rootAiType: 'fixture',
-    status: 2,
-  );
-  GenAiImageRequest request(String size) => GenAiImageRequest(
-        prompt: 'test',
-        model: model,
-        groupId: 'group',
-        size: size,
-      );
+  const model = GenAiModel(name: 'Image', aiType: 'image', rootAiType: 'fixture', status: 2);
+  GenAiImageRequest request(String size) =>
+      GenAiImageRequest(prompt: 'test', model: model, groupId: 'group', size: size);
 
   test('every offered resolution passes the image request validator', () {
     for (final sizes in GenAiImageSize.presets.values) {
@@ -25,19 +16,19 @@ void main() {
     }
   });
 
-  test('custom size bounds are inclusive and serialize without preset restriction', () {
+  test('custom dimensions are not constrained by school frontend pixel presets', () {
     for (final size in [
       '1024x640',
       '800x820',
       '999x999',
       '3151x1600',
       '3840x2160',
+      '1024x639',
+      '3840x2161',
     ]) {
       expect(request(size).toJson()['size'], size);
     }
     for (final size in [
-      '1024x639',
-      '3840x2161',
       '0x1024',
       '-1000x1000',
       '1024.5x1024',

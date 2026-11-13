@@ -16,18 +16,18 @@ final class GenAiMessage {
   final List<String> imageUrls;
 
   Map<String, Object?> toJson() => {
-        'role': role.name,
-        'content': content,
-        if (imageUrls.isNotEmpty) 'imageUrl': imageUrls.first,
-        if (imageUrls.isNotEmpty) 'imageUrls': imageUrls,
-      };
+    'role': role.name,
+    'content': content,
+    if (imageUrls.isNotEmpty) 'imageUrl': imageUrls.first,
+    if (imageUrls.isNotEmpty) 'imageUrls': imageUrls,
+  };
 }
 
 /// Source-derived text-chat contract. History excludes the current prompt.
 final class GenAiChatRequest {
   GenAiChatRequest({
     required this.chatGroupId,
-    required this.prompt,
+    required String prompt,
     required this.aiType,
     required this.rootAiType,
     List<GenAiMessage> history = const [],
@@ -38,17 +38,21 @@ final class GenAiChatRequest {
     this.contextGoal,
     this.stepContext,
     this.requestGuide,
-    this.responseFormat,
     Map<String, String> documentContents = const {},
     this.imageUrl,
     List<String> imageUrls = const [],
     this.maxTokens,
     this.record = const {},
-  })  : history = List.unmodifiable(history),
-        fileIds = List.unmodifiable(fileIds),
-        documentContents = Map.unmodifiable(documentContents),
-        imageUrls = List.unmodifiable(imageUrls) {
-    if ([chatGroupId, prompt, aiType, rootAiType].any((s) => s.trim().isEmpty) ||
+  }) : prompt =
+           prompt.trim().isEmpty &&
+               (fileIds.isNotEmpty || imageUrls.isNotEmpty || (imageUrl?.isNotEmpty ?? false))
+           ? '请分析所附内容。'
+           : prompt,
+       history = List.unmodifiable(history),
+       fileIds = List.unmodifiable(fileIds),
+       documentContents = Map.unmodifiable(documentContents),
+       imageUrls = List.unmodifiable(imageUrls) {
+    if ([chatGroupId, this.prompt, aiType, rootAiType].any((s) => s.trim().isEmpty) ||
         (maxTokens != null && maxTokens! <= 0)) {
       throw ArgumentError('Invalid GenAI chat request');
     }
@@ -57,19 +61,8 @@ final class GenAiChatRequest {
   /// Host-authored metadata persisted together with this exchange.
   final Map<String, Object?> record;
   String get storedPrompt => record.isEmpty
-      ? responseFormat == null
-          ? prompt
-          : '$prompt\n\n$responseFormat'
-      : encodeGenAiRemoteRecord({
-          ...record,
-          'kind': 'exchange',
-          'input': prompt,
-          if (responseFormat != null) 'reply_format': responseFormat,
-        });
-
-  /// Brief wire-format reminder after the current input, including long uploads.
-  /// Kept separate from input so server recovery never displays it as user text.
-  final String? responseFormat;
+      ? prompt
+      : encodeGenAiRemoteRecord({...record, 'kind': 'exchange', 'input': prompt});
 
   final String chatGroupId;
   final String prompt;
@@ -102,45 +95,47 @@ final class GenAiChatRequest {
   final int? maxTokens;
 
   GenAiChatRequest withRecord(Map<String, Object?> value) => GenAiChatRequest(
-        chatGroupId: chatGroupId,
-        prompt: prompt,
-        aiType: aiType,
-        rootAiType: rootAiType,
-        history: history,
-        thinking: thinking,
-        fileIds: fileIds,
-        documentContents: documentContents,
-        imageUrl: imageUrl,
-        imageUrls: imageUrls,
-        maxTokens: maxTokens,
-        contextGoal: contextGoal,
-        stepContext: stepContext,
-        requestGuide: requestGuide,
-        responseFormat: responseFormat,
-        contextCompacted: contextCompacted,
-        historyRetrieval: historyRetrieval,
-        record: value,
-      );
+    chatGroupId: chatGroupId,
+    prompt: prompt,
+    aiType: aiType,
+    rootAiType: rootAiType,
+    history: history,
+    thinking: thinking,
+    fileIds: fileIds,
+    documentContents: documentContents,
+    imageUrl: imageUrl,
+    imageUrls: imageUrls,
+    maxTokens: maxTokens,
+    contextGoal: contextGoal,
+    stepContext: stepContext,
+    requestGuide: requestGuide,
+    contextCompacted: contextCompacted,
+    historyRetrieval: historyRetrieval,
+    record: value,
+  );
 
-  Map<String, Object?> toJson() => {
-        'chatInfo': storedPrompt,
-        'messages': [
-          ...history.map((m) => m.toJson()),
-          if (stepMessage case final message?) message.toJson(),
-          if (guideMessage case final message?) message.toJson(),
-        ],
-        'chatGroupId': chatGroupId,
-        'aiType': aiType,
-        'rootAiType': rootAiType,
-        'type': '3',
-        'stream': true,
-        'thinking': thinking,
-        'netGo': false,
-        if (fileIds.isNotEmpty) 'fileIds': fileIds,
-        if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
-        if (imageUrls.isNotEmpty) 'imageUrls': imageUrls,
-        if (maxTokens != null) 'maxToken': maxTokens,
-      };
+  Map<String, Object?> toJson() {
+    if (storedPrompt.length > 900000) throw const GenAiFailure(GenAiFailureKind.messageTooLarge);
+    return {
+      'chatInfo': storedPrompt,
+      'messages': [
+        ...history.map((m) => m.toJson()),
+        if (stepMessage case final message?) message.toJson(),
+        if (guideMessage case final message?) message.toJson(),
+      ],
+      'chatGroupId': chatGroupId,
+      'aiType': aiType,
+      'rootAiType': rootAiType,
+      'type': '3',
+      'stream': true,
+      'thinking': thinking,
+      'netGo': false,
+      if (fileIds.isNotEmpty) 'fileIds': fileIds,
+      if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
+      if (imageUrls.isNotEmpty) 'imageUrls': imageUrls,
+      if (maxTokens != null) 'maxToken': maxTokens,
+    };
+  }
 }
 
 final class GenAiProfile {
@@ -158,6 +153,12 @@ final class GenAiModel {
     this.payType,
     this.status,
     this.enableDeepThink = false,
+    this.promptPrice,
+    this.completionPrice,
+    this.cacheTokenPrice,
+    this.longContextTokenThreshold,
+    this.thinkingField,
+    this.thinkingFieldValue,
   });
 
   final String name;
@@ -167,6 +168,14 @@ final class GenAiModel {
   final int? status;
   bool get isImage => status == 2;
   final bool enableDeepThink;
+  final String? promptPrice;
+  final String? completionPrice;
+  final String? cacheTokenPrice;
+
+  /// Billing threshold, not a context-window limit.
+  final int? longContextTokenThreshold;
+  final String? thinkingField;
+  final String? thinkingFieldValue;
   bool get supportsThinking => !isImage && enableDeepThink;
 }
 

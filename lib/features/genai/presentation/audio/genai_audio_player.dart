@@ -10,6 +10,6 @@ abstract interface class GenAiAudioPlayer {
   Future<void> playWav(List<int> bytes);
   Future<void> stop();
   bool get isPlaying;
-  set onFinished(void Function()? callback);
+  set onFinished(void Function(bool completed)? callback);
   void dispose();
 }

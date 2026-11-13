@@ -1,16 +1,25 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/data/native_genai_ids_exchange_io.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
+import 'package:techpie/features/genai/platform/genai_transport.dart';
 import 'package:techpie/services/session/cookie_provider.dart';
 
-import '../support/fakes.dart' show failure;
+import '../support/fakes.dart';
 
 const _provider = CookieProvider(cookies: 'CASTGC=synthetic-ids-cookie; route=ids');
+
+GenAiResponse redirect(String location, {String? setCookie}) => GenAiResponse(
+  statusCode: 302,
+  headers: {'location': location, if (setCookie != null) 'set-cookie': setCookie},
+  bytes: const Stream.empty(),
+  close: () {},
+);
+
+ScriptedTransport sequence(List<GenAiResponse> responses) =>
+    ScriptedTransport((_) async => responses.removeAt(0));
 
 void main() {
   const blockedHtml = '<html>该服务暂不开放外网访问，仅支持校内访问</html>';
@@ -21,18 +30,15 @@ void main() {
     (200, '<html>Login required</html>', GenAiFailureKind.authenticationRequired),
   ]) {
     test('native exchange distinguishes $status $kind from expired login', () async {
-      final client = _Client([
-        _Response(
-          null,
-          statusCode: status,
-          contentType: 'text/html',
-          body: Stream.value(utf8.encode(body)),
-        ),
-      ]);
+      final client = sequence([response(status: status, type: 'text/html', text: body)]);
       await expectLater(
-        NativeGenAiIdsExchange(createClient: () => client).exchange(_provider, GenAiCancellation()),
+        NativeGenAiIdsExchange(
+          createTransport: () => client,
+        ).exchange(_provider, GenAiCancellation()),
         throwsA(
-          isA<GenAiFailure>().having((error) => error.kind, 'kind', kind).having(
+          isA<GenAiFailure>()
+              .having((error) => error.kind, 'kind', kind)
+              .having(
                 (error) => error.effectNotDispatched,
                 'not dispatched',
                 kind == GenAiFailureKind.campusNetworkRequired,
@@ -40,52 +46,44 @@ void main() {
         ),
       );
       expect(client.requests, hasLength(1));
-      expect(client.closed, isTrue);
+      expect(client.disposed, isTrue);
     });
   }
 
   test('native exchange cancellation while inspecting a campus error closes the client', () async {
     final listening = Completer<void>();
     final wire = StreamController<List<int>>(onListen: listening.complete);
-    final client = _Client([
-      _Response(null, statusCode: 404, contentType: 'text/html', body: wire.stream),
-    ]);
+    final client = sequence([response(status: 404, type: 'text/html', bytes: wire.stream)]);
     final cancel = GenAiCancellation();
     final expected = expectLater(
-      NativeGenAiIdsExchange(createClient: () => client).exchange(_provider, cancel),
+      NativeGenAiIdsExchange(createTransport: () => client).exchange(_provider, cancel),
       throwsA(failure(GenAiFailureKind.cancelled)),
     );
     await listening.future;
     cancel.cancel();
     await expected;
-    expect(client.closed, isTrue);
+    expect(client.disposed, isTrue);
     await wire.close();
   });
 
   test('native exchange scopes cookies and intercepts the token callback', () async {
-    final client = _Client([
-      _Response(
+    final client = sequence([
+      redirect(
         'https://ids.shanghaitech.edu.cn/authserver/login?service=genai',
-        cookies: [Cookie('JSESSIONID', 'genai-session')..path = '/'],
+        setCookie: 'JSESSIONID=genai-session; Path=/',
       ),
-      _Response(
-        'https://genai.shanghaitech.edu.cn/htk/user/login?ticket=fixture-ticket',
-      ),
-      _Response('https://genai.shanghaitech.edu.cn/?token=fixture-token'),
+      redirect('https://genai.shanghaitech.edu.cn/htk/user/login?ticket=fixture-ticket'),
+      redirect('https://genai.shanghaitech.edu.cn/?token=fixture-token'),
     ]);
-    final exchange = NativeGenAiIdsExchange(createClient: () => client);
+    final exchange = NativeGenAiIdsExchange(createTransport: () => client);
     final credential = await exchange.exchange(_provider, GenAiCancellation());
     expect(credential.token, 'fixture-token');
     expect(client.requests, hasLength(3));
-    expect(client.requests.first.cookies, isEmpty);
-    expect(client.requests[1].cookies.map((c) => c.name), contains('CASTGC'));
-    expect(client.requests[2].cookies.map((c) => c.name), ['JSESSIONID']);
-    expect(client.requests.every((r) => !r.followRedirects), isTrue);
-    expect(
-      client.uris.every((u) => !u.queryParameters.containsKey('token')),
-      isTrue,
-    );
-    expect(client.closed, isTrue);
+    expect(client.requests.first.headers['cookie'], isNull);
+    expect(client.requests[1].headers['cookie'], _provider.cookies);
+    expect(client.requests[2].headers['cookie'], 'JSESSIONID=genai-session');
+    expect(client.requests.every((r) => !r.uri.queryParameters.containsKey('token')), isTrue);
+    expect(client.disposed, isTrue);
   });
 
   for (final target in [
@@ -96,28 +94,44 @@ void main() {
     'https://user@genai.shanghaitech.edu.cn/?token=a',
   ]) {
     test('native exchange rejects an unsafe redirect $target before requesting it', () async {
-      final client = _Client([_Response(target)]);
+      final client = sequence([redirect(target)]);
       await expectLater(
-        NativeGenAiIdsExchange(createClient: () => client).exchange(_provider, GenAiCancellation()),
+        NativeGenAiIdsExchange(
+          createTransport: () => client,
+        ).exchange(_provider, GenAiCancellation()),
         throwsA(failure(GenAiFailureKind.authenticationRequired)),
       );
       expect(client.requests, hasLength(1));
-      expect(client.closed, isTrue);
+      expect(client.disposed, isTrue);
     });
   }
+
+  test('joined Set-Cookie headers retain Expires dates and cookie paths', () async {
+    final client = sequence([
+      redirect(
+        '/htk/oauth/callback',
+        setCookie:
+            'route=one; Path=/htk; Expires=Wed, 09 Jun 2038 10:18:14 GMT, '
+            'other=two; Path=/elsewhere, CASTGC=must-not-leak; Path=/',
+      ),
+      redirect('https://genai.shanghaitech.edu.cn/?token=fixture-token'),
+    ]);
+    await NativeGenAiIdsExchange(
+      createTransport: () => client,
+    ).exchange(_provider, GenAiCancellation());
+    expect(client.requests[1].headers['cookie'], 'route=one');
+  });
 
   test('malformed IDS cookies fail safely before creating a native client', () async {
     var created = false;
     await expectLater(
       NativeGenAiIdsExchange(
-        createClient: () {
+        createTransport: () {
           created = true;
-          return _Client([]);
+          return sequence([]);
         },
       ).exchange(
-        const CookieProvider(
-          cookies: 'CASTGC=synthetic-secret; invalid name=private-value',
-        ),
+        const CookieProvider(cookies: 'CASTGC=synthetic-secret; invalid name=private-value'),
         GenAiCancellation(),
       ),
       throwsA(failure(GenAiFailureKind.transport)),
@@ -125,114 +139,17 @@ void main() {
     expect(created, isFalse);
   });
 
-  test('a rendered IDS login page requires reauthentication', () async {
-    final client = _Client([_Response(null, statusCode: 200)]);
-    await expectLater(
-      NativeGenAiIdsExchange(createClient: () => client).exchange(_provider, GenAiCancellation()),
-      throwsA(failure(GenAiFailureKind.authenticationRequired)),
-    );
-    expect(client.closed, isTrue);
-  });
-
   test('cancellation while waiting for headers closes the native client', () async {
-    final gate = Completer<HttpClientResponse>();
-    final client = _Client([])..pendingResponse = gate.future;
+    final gate = Completer<GenAiResponse>();
+    final client = ScriptedTransport((request) => request.cancellation.race(gate.future));
     final cancellation = GenAiCancellation();
-    final pending =
-        NativeGenAiIdsExchange(createClient: () => client).exchange(_provider, cancellation);
+    final pending = NativeGenAiIdsExchange(
+      createTransport: () => client,
+    ).exchange(_provider, cancellation);
     await Future<void>.delayed(Duration.zero);
     cancellation.cancel(GenAiFailureKind.accountChanged);
-    await expectLater(
-      pending,
-      throwsA(failure(GenAiFailureKind.accountChanged)),
-    );
-    expect(client.closed, isTrue);
-    gate.complete(_Response(null, statusCode: 200));
+    await expectLater(pending, throwsA(failure(GenAiFailureKind.accountChanged)));
+    expect(client.disposed, isTrue);
+    gate.complete(response());
   });
-}
-
-class _Client implements HttpClient {
-  _Client(this.responses);
-  final List<_Response> responses;
-  final requests = <_Request>[];
-  final uris = <Uri>[];
-  Future<HttpClientResponse>? pendingResponse;
-  bool closed = false;
-  @override
-  Duration? connectionTimeout;
-  @override
-  Future<HttpClientRequest> getUrl(Uri url) async {
-    uris.add(url);
-    final request = _Request(pendingResponse ?? Future.value(responses.removeAt(0)));
-    requests.add(request);
-    return request;
-  }
-
-  @override
-  void close({bool force = false}) {
-    closed = true;
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _Request implements HttpClientRequest {
-  _Request(this.response);
-  final Future<HttpClientResponse> response;
-  @override
-  final cookies = <Cookie>[];
-  @override
-  bool followRedirects = true;
-  @override
-  Future<HttpClientResponse> close() => response;
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _Response extends Stream<List<int>> implements HttpClientResponse {
-  _Response(
-    String? location, {
-    this.cookies = const [],
-    this.statusCode = 302,
-    String? contentType,
-    Stream<List<int>>? body,
-  })  : headers = _Headers(location, contentType),
-        _body = body ?? const Stream<List<int>>.empty();
-  final Stream<List<int>> _body;
-  @override
-  final List<Cookie> cookies;
-  @override
-  final int statusCode;
-  @override
-  final HttpHeaders headers;
-  @override
-  StreamSubscription<List<int>> listen(
-    void Function(List<int>)? onData, {
-    Function? onError,
-    void Function()? onDone,
-    bool? cancelOnError,
-  }) =>
-      _body.listen(
-        onData,
-        onError: onError,
-        onDone: onDone,
-        cancelOnError: cancelOnError,
-      );
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _Headers implements HttpHeaders {
-  _Headers(this.location, this.mediaType);
-  final String? location;
-  final String? mediaType;
-  @override
-  String? value(String name) => name == HttpHeaders.locationHeader
-      ? location
-      : name == HttpHeaders.contentTypeHeader
-          ? mediaType
-          : null;
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -5,18 +5,14 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_mermaid/flutter_mermaid.dart';
 
-import '../../../../widgets/adaptive_feedback.dart';
 import '../../../../widgets/adaptive_page_navigation.dart';
 import '../genai_icons.dart';
 import '../genai_theme.dart';
-import 'genai_code_font.dart';
 import 'genai_mermaid_painter.dart';
+import 'genai_rich_answer_frame.dart';
 
 class GenAiMermaidView extends StatefulWidget {
-  const GenAiMermaidView({
-    super.key,
-    required this.code,
-  });
+  const GenAiMermaidView({super.key, required this.code});
 
   final String code;
 
@@ -26,11 +22,12 @@ class GenAiMermaidView extends StatefulWidget {
 
 class _GenAiMermaidViewState extends State<GenAiMermaidView> {
   final _canvasKey = GlobalKey<_MermaidCanvasState>();
-  bool _showCode = false;
   String? _renderError;
 
   Future<void> _openFullscreen() async {
     final canvasKey = GlobalKey<_MermaidCanvasState>();
+    final source = widget.code;
+    final initialView = _canvasKey.currentState?.view;
     await pushAdaptivePage<void>(
       context,
       rootNavigator: true,
@@ -69,9 +66,9 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
             body: SafeArea(
               child: _MermaidCanvas(
                 key: canvasKey,
-                code: widget.code,
+                code: source,
                 fullscreen: true,
-                initialView: _canvasKey.currentState?.view,
+                initialView: initialView,
               ),
             ),
           ),
@@ -88,127 +85,24 @@ class _GenAiMermaidViewState extends State<GenAiMermaidView> {
     }
   }
 
-  Future<void> _openMenu(BuildContext anchor) async {
-    final code = widget.code;
-    final action = await genAiShowMenu<String>(
-      context: context,
-      anchorContext: anchor,
-      semanticLabel: '图表操作',
-      minWidth: 180,
-      items: [
-        if (!_showCode && _renderError == null)
-          const PopupMenuItem(value: 'fit', child: Text('适应窗口')),
-        PopupMenuItem(value: 'source', child: Text(_showCode ? '切换到图表' : '查看源码')),
-        const PopupMenuItem(value: 'copy', child: Text('复制源码')),
-      ],
-    );
-    if (!mounted || widget.code != code) return;
-    switch (action) {
-      case 'fit':
-        _canvasKey.currentState?.fit();
-      case 'source':
-        setState(() => _showCode = !_showCode);
-      case 'copy':
-        try {
-          await Clipboard.setData(ClipboardData(text: code));
-          if (mounted) showAdaptiveFeedback(context: context, message: '已复制');
-        } catch (_) {
-          if (mounted) showAdaptiveFeedback(context: context, message: '无法复制，请手动选择文字');
-        }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final palette = GenAiPalette.of(context);
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: palette.raised,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: palette.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          GenAiContentHeader(
-            title: 'Mermaid 图表',
-            leading: GenAiIcon(GenAiGlyph.diagram, size: 16, color: palette.accent),
-            actions: [
-              if (!_showCode && _renderError == null)
-                IconButton(
-                  tooltip: '全屏查看',
-                  onPressed: _openFullscreen,
-                  icon: const GenAiIcon(GenAiGlyph.full, size: 20),
-                ),
-              Builder(
-                builder: (anchor) => IconButton(
-                  tooltip: '更多操作',
-                  icon: const GenAiIcon(GenAiGlyph.more, size: 20),
-                  onPressed: () => _openMenu(anchor),
-                ),
-              ),
-            ],
-          ),
-
-          // Body
-          if (_showCode || _renderError != null) ...[
-            if (_renderError != null)
-              Container(
-                margin: const EdgeInsets.all(12),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.error.withValues(alpha: .08),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    GenAiIcon(
-                      GenAiGlyph.warning,
-                      size: 16,
-                      color: theme.colorScheme.error,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Mermaid 图表无法渲染，已显示源码：$_renderError',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: theme.colorScheme.error,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
-              child: SelectableText(
-                widget.code,
-                style: const TextStyle(
-                  fontFamily: kGenAiMonospaceFamily,
-                  fontFamilyFallback: kGenAiMonospaceFallback,
-                  fontSize: 12,
-                  height: 1.5,
-                ),
-              ),
-            ),
-          ] else
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
-              child: _MermaidCanvas(
-                key: _canvasKey,
-                code: widget.code,
-                onError: (error) {
-                  if (_renderError != error) setState(() => _renderError = error);
-                },
-              ),
-            ),
-        ],
-      ),
+    final error = _renderError;
+    return GenAiRichAnswerFrame(
+      title: 'Mermaid 图表',
+      icon: GenAiGlyph.diagram,
+      source: widget.code,
+      sourceLabel: '源码',
+      error: error == null ? null : 'Mermaid 图表无法渲染，已显示源码：$error',
+      onFullscreen: error == null ? _openFullscreen : null,
+      onFit: error == null ? () => _canvasKey.currentState?.fit() : null,
+      preview: error == null
+          ? (_) => _MermaidCanvas(
+              key: _canvasKey,
+              code: widget.code,
+              onError: (error) => setState(() => _renderError = error),
+            )
+          : null,
     );
   }
 }
@@ -226,10 +120,11 @@ MermaidStyle _mermaidStyle(GenAiPalette palette, {required bool dark}) {
   return MermaidStyle(
     backgroundColor: palette.raised.toARGB32(),
     defaultNodeStyle: NodeStyle(
-      fillColor: (dark
-              ? Color.alphaBlend(palette.text.withValues(alpha: .06), palette.raised)
-              : palette.soft)
-          .toARGB32(),
+      fillColor:
+          (dark
+                  ? Color.alphaBlend(palette.text.withValues(alpha: .06), palette.raised)
+                  : palette.soft)
+              .toARGB32(),
       strokeColor: palette.line.toARGB32(),
       strokeWidth: 1,
       textColor: palette.text.toARGB32(),
@@ -285,10 +180,8 @@ class _MermaidCanvasState extends State<_MermaidCanvas> {
 
   String get _normalized => _normalizedCode ??= normalizeMermaid(widget.code);
 
-  (double, Offset) get view => (
-        _transform.value.getMaxScaleOnAxis(),
-        _transform.toScene(_viewport.center(Offset.zero)),
-      );
+  (double, Offset) get view =>
+      (_transform.value.getMaxScaleOnAxis(), _transform.toScene(_viewport.center(Offset.zero)));
 
   void _restoreView((double, Offset) view) {
     final scale = view.$1.clamp(_fitScale, 8.0);
@@ -346,7 +239,8 @@ class _MermaidCanvasState extends State<_MermaidCanvas> {
   MermaidStyle _resolveStyle(BuildContext context) {
     final palette = GenAiPalette.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final key = '${palette.raised.toARGB32()}:${palette.soft.toARGB32()}:'
+    final key =
+        '${palette.raised.toARGB32()}:${palette.soft.toARGB32()}:'
         '${palette.line.toARGB32()}:${palette.text.toARGB32()}:'
         '${palette.muted.toARGB32()}:$dark';
     if (_styleKey != key) {

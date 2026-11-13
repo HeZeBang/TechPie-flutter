@@ -14,10 +14,10 @@ final class GenAiContextUsage {
     this.completedChunks = 0,
     this.totalChunks = 0,
     this.compacted = false,
-  })  : assert(estimatedInputUnits >= 0),
-        assert(allowedInputUnits > 0),
-        assert(originalInputUnits >= 0),
-        assert(completedChunks >= 0 && completedChunks <= totalChunks);
+  }) : assert(estimatedInputUnits >= 0),
+       assert(allowedInputUnits > 0),
+       assert(originalInputUnits >= 0),
+       assert(completedChunks >= 0 && completedChunks <= totalChunks);
 
   /// Only completed accounting is portable; never restore a live progress phase.
   Map<String, Object?>? toRecord() => stage != GenAiContextStage.ready
@@ -25,8 +25,8 @@ final class GenAiContextUsage {
       : {
           'input': estimatedInputUnits,
           'limit': allowedInputUnits,
-          'original': originalInputUnits,
-          'compacted': compacted,
+          if (originalInputUnits != estimatedInputUnits) 'original': originalInputUnits,
+          if (compacted) 'compacted': true,
         };
 
   /// Optional display metadata must not make an otherwise valid chat unreadable.
@@ -34,8 +34,8 @@ final class GenAiContextUsage {
     if (value is! Map) return null;
     final input = value['input'];
     final limit = value['limit'];
-    final original = value['original'];
-    final compacted = value['compacted'];
+    final original = value.containsKey('original') ? value['original'] : input;
+    final compacted = value.containsKey('compacted') ? value['compacted'] : false;
     if (input is! int ||
         input < 0 ||
         limit is! int ||

@@ -16,6 +16,37 @@ import 'package:techpie/features/genai/domain/genai_remote_record.dart';
 const nonce = 'remote_test_nonce_012345';
 
 void main() {
+  test('compact usage defaults and legacy usage recover the same ring state', () {
+    final turn = GenAiConversationTurn('question', id: 'usage');
+    for (final usage in [
+      {'input': 1200, 'limit': 10000},
+      {'input': 1200, 'limit': 10000, 'original': 1200, 'compacted': false},
+      {'input': 1200, 'limit': 10000, 'original': 9000, 'compacted': true},
+    ]) {
+      final recovered = decodeGenAiConversation('group', [
+        GenAiSavedTurn(
+          prompt: encodeGenAiRemoteRecord({
+            'step_id': nonce,
+            'turn': turn.toRemoteInput(),
+            'input': turn.prompt,
+            'contextUsage': usage,
+          }),
+          answer: 'answer',
+        ),
+      ]).archive.turns.single;
+      expect(recovered.contextUsage?.estimatedInputUnits, 1200);
+      expect(recovered.contextUsage?.originalInputUnits, usage['original'] ?? 1200);
+      expect(recovered.contextCompacted, usage['compacted'] ?? false);
+      expect(
+        recovered.contextUsage!.toRecord()!.containsKey('original'),
+        usage['compacted'] == true,
+      );
+    }
+    for (final field in ['original', 'compacted']) {
+      expect(GenAiContextUsage.fromRecord({'input': 1200, 'limit': 10000, field: null}), isNull);
+    }
+  });
+
   test('a rejected stale-nonce call stays inert after server-only recovery', () {
     final turn = GenAiConversationTurn('Read the archive', id: 'nonce-repair', isAgent: true);
     const stale = 'old_step_nonce_0123456789';
@@ -42,15 +73,12 @@ void main() {
         'step_id': '${nonce}2',
         'agent_format': 5,
         'turn_id': turn.id,
-        'input': encodeGenAiAgentResult(
-          {
-            'call_id': null,
-            'name': null,
-            'ok': false,
-            'error': {'code': 'wrong_nonce', 'message': 'wrong_nonce'},
-          },
-          nonce: '${nonce}2',
-        ),
+        'input': encodeGenAiAgentResult({
+          'call_id': null,
+          'name': null,
+          'ok': false,
+          'error': {'code': 'wrong_nonce', 'message': 'wrong_nonce'},
+        }, nonce: '${nonce}2'),
       }),
       answer: 'Archive inspected.',
     );
@@ -82,15 +110,12 @@ void main() {
           'step_id': '${nonce}2',
           'agent_format': 5,
           'turn_id': turn.id,
-          'input': encodeGenAiAgentResult(
-            {
-              'call_id': call.id,
-              'name': call.name,
-              'ok': true,
-              'result': {'utc': '2026-11-02T12:00:00Z'},
-            },
-            nonce: nonce,
-          ),
+          'input': encodeGenAiAgentResult({
+            'call_id': call.id,
+            'name': call.name,
+            'ok': true,
+            'result': {'utc': '2026-11-02T12:00:00Z'},
+          }, nonce: nonce),
         }),
         answer: 'It is 20:00 in Shanghai.\n```techpie-visual\n<p>20:00</p>\n```',
       ),
@@ -120,15 +145,12 @@ void main() {
         prompt: encodeGenAiRemoteRecord({
           'step_id': '${nonce}2',
           'turn_id': turn.id,
-          'input': encodeGenAiAgentResult(
-            {
-              'call_id': null,
-              'name': null,
-              'ok': false,
-              'error': {'code': 'native_tool_format', 'message': 'native_tool_format'},
-            },
-            nonce: nonce,
-          ),
+          'input': encodeGenAiAgentResult({
+            'call_id': null,
+            'name': null,
+            'ok': false,
+            'error': {'code': 'native_tool_format', 'message': 'native_tool_format'},
+          }, nonce: nonce),
         }),
         answer: '<techpie-final nonce="${nonce}2">Unable to retrieve the time.',
       ),
@@ -146,8 +168,12 @@ void main() {
     const text = 'Budget: 42 数学😀; never substitute an assistant guess.';
     const original = GenAiMessage(role: GenAiRole.user, content: text);
     final first = GenAiConversationTurn(text, id: 'original');
-    final next =
-        GenAiConversationTurn('Recall budget', id: 'lookup', parentId: first.id, isAgent: true);
+    final next = GenAiConversationTurn(
+      'Recall budget',
+      id: 'lookup',
+      parentId: first.id,
+      isAgent: true,
+    );
     for (final name in ['search_conversation', 'read_conversation_records']) {
       final page = <String, Object?>{
         'record_id': genAiContextSourceId(original),
@@ -216,14 +242,14 @@ void main() {
     final turn = GenAiConversationTurn('Explain', id: 'unverified', isAgent: true);
     const candidate = 'Useful observation.\n```techpie-visual\n<script>run()</script>\n```';
     GenAiSavedTurn row(String step, String answer, {bool first = false}) => GenAiSavedTurn(
-          prompt: encodeGenAiRemoteRecord({
-            'step_id': step,
-            'turn_id': turn.id,
-            if (first) 'turn': turn.toRemoteInput(),
-            'input': first ? turn.prompt : 'Repair format',
-          }),
-          answer: answer,
-        );
+      prompt: encodeGenAiRemoteRecord({
+        'step_id': step,
+        'turn_id': turn.id,
+        if (first) 'turn': turn.toRemoteInput(),
+        'input': first ? turn.prompt : 'Repair format',
+      }),
+      answer: answer,
+    );
     final initial = row('first', candidate, first: true);
     final recovered = decodeGenAiConversation('group', [initial]).archive.turns.single;
     expect(recovered.phase, GenAiChatPhase.interrupted);
@@ -275,8 +301,7 @@ void main() {
     expect(recovered.last.answer, 'New answer');
   });
 
-  test('server-only recovery joins identified tools, preserves files and selects retry ancestry',
-      () {
+  test('server-only recovery joins identified tools, preserves files and selects retry ancestry', () {
     final source = GenAiConversationTurn('Read my document', id: 'a', isAgent: true)
       ..files = [
         const GenAiTurnFile(
@@ -286,44 +311,39 @@ void main() {
         ),
       ];
     final call = GenAiAgentToolCall(id: 'c1', name: 'get_semesters', arguments: const {});
-    GenAiSavedTurn row(String step, GenAiConversationTurn turn, String input, String answer) =>
-        GenAiSavedTurn(
-          prompt: '【上传文件：notes.txt】\n${encodeGenAiRemoteRecord({
-                'kind': 'exchange',
-                'step_id': step,
-                'turn': step == 's2' ? null : turn.toRemoteInput(),
-                'turn_id': turn.id,
-                'input': input,
-                'agent': turn.isAgent,
-                'thinking': true,
-                'search': false,
-                'aiType': 'Kimi-k3',
-                'rootAiType': 'xinference',
-                'contextUsage': step == 's4'
-                    ? {'input': -1}
-                    : {
-                        'input': step == 's2' ? 2600 : 1500,
-                        'limit': 10000,
-                        'original': 9000,
-                        'compacted': true,
-                      },
-              })}',
-          answer: answer,
-        );
+    GenAiSavedTurn row(
+      String step,
+      GenAiConversationTurn turn,
+      String input,
+      String answer,
+    ) => GenAiSavedTurn(
+      prompt:
+          '【上传文件：notes.txt】\n${encodeGenAiRemoteRecord({
+            'kind': 'exchange',
+            'step_id': step,
+            'turn': step == 's2' ? null : turn.toRemoteInput(),
+            'turn_id': turn.id,
+            'input': input,
+            'agent': turn.isAgent,
+            'thinking': true,
+            'search': false,
+            'aiType': 'Kimi-k3',
+            'rootAiType': 'xinference',
+            'contextUsage': step == 's4' ? {'input': -1} : {'input': step == 's2' ? 2600 : 1500, 'limit': 10000, 'original': 9000, 'compacted': true},
+          })}',
+      answer: answer,
+    );
     final rows = [
       row('s1', source, source.prompt, encodeGenAiAgentCall(call, nonce: nonce)),
       row(
         's2',
         source,
-        encodeGenAiAgentResult(
-          {
-            'call_id': 'c1',
-            'name': 'get_semesters',
-            'ok': true,
-            'result': {'semester': 3},
-          },
-          nonce: nonce,
-        ),
+        encodeGenAiAgentResult({
+          'call_id': 'c1',
+          'name': 'get_semesters',
+          'ok': true,
+          'result': {'semester': 3},
+        }, nonce: nonce),
         encodeGenAiAgentFinal('Semester 3.', nonce: nonce),
       ),
       row(
@@ -354,8 +374,7 @@ void main() {
     expect(recovered.first.evidenceEntries.where((e) => e.result != null), hasLength(1));
   });
 
-  test('mixed record versions recover normalized mutation identities without duplicate receipts',
-      () {
+  test('mixed record versions recover normalized mutation identities without duplicate receipts', () {
     final original = GenAiConversationTurn('Book a court', id: 'a', isAgent: true);
     final call = GenAiAgentToolCall(
       id: 'book',
@@ -370,15 +389,8 @@ void main() {
       'result': {'booking_id': 'booking-314'},
     };
     // Literal v1 framing exercises compatibility, rather than the v2 writer.
-    final old = '<techpie-record version="1">\n${jsonEncode({
-          'kind': 'exchange',
-          'step_id': 'old-step',
-          'turn': original.toRemoteInput(),
-          'input': original.prompt,
-          'agent': true,
-          'aiType': 'Kimi-k3',
-          'rootAiType': 'xinference',
-        })}\n</techpie-record>';
+    final old =
+        '<techpie-record version="1">\n${jsonEncode({'kind': 'exchange', 'step_id': 'old-step', 'turn': original.toRemoteInput(), 'input': original.prompt, 'agent': true, 'aiType': 'Kimi-k3', 'rootAiType': 'xinference'})}\n</techpie-record>';
     final compact = encodeGenAiRemoteRecord({
       'kind': 'exchange',
       'step_id': 'new-step',
@@ -394,7 +406,10 @@ void main() {
       'rootAiType': 'xinference',
     });
     final rows = [
-      GenAiSavedTurn(prompt: old, answer: encodeGenAiAgentCall(call, nonce: nonce)),
+      GenAiSavedTurn(
+        prompt: old,
+        answer: encodeGenAiAgentCall(call, nonce: nonce),
+      ),
       GenAiSavedTurn(
         prompt: compact,
         answer: encodeGenAiAgentFinal('Booked.', nonce: nonce),
@@ -461,33 +476,23 @@ void main() {
       String answer, {
       bool upload = false,
       List<Object?> interrupted = const [],
-    }) =>
-        GenAiSavedTurn(
-          prompt: '${upload ? '【上传文件：notes.txt】\n' : ''}${encodeGenAiRemoteRecord({
-                'kind': 'exchange',
-                'step_id': step,
-                'turn': turn?.toRemoteInput(),
-                'turn_id': turn?.id ?? 'doc',
-                'input': input,
-                'interrupted': interrupted,
-              })}',
-          answer: answer,
-        );
+    }) => GenAiSavedTurn(
+      prompt:
+          '${upload ? '【上传文件：notes.txt】\n' : ''}${encodeGenAiRemoteRecord({'kind': 'exchange', 'step_id': step, 'turn': turn?.toRemoteInput(), 'turn_id': turn?.id ?? 'doc', 'input': input, 'interrupted': interrupted})}',
+      answer: answer,
+    );
     final rows = [
       row('1', first, first.prompt, 'Ready'),
       row('2', document, document.prompt, encodeGenAiAgentCall(call, nonce: nonce), upload: true),
       row(
         '3',
         null,
-        encodeGenAiAgentResult(
-          {
-            'call_id': 'time',
-            'name': 'get_current_time',
-            'ok': true,
-            'result': {'time': '12:00'},
-          },
-          nonce: nonce,
-        ),
+        encodeGenAiAgentResult({
+          'call_id': 'time',
+          'name': 'get_current_time',
+          'ok': true,
+          'result': {'time': '12:00'},
+        }, nonce: nonce),
         encodeGenAiAgentFinal('144 seats', nonce: nonce),
         upload: true,
       ),
@@ -497,8 +502,11 @@ void main() {
         followup.prompt,
         '144',
         interrupted: [
-          GenAiConversationTurn('obsolete raw wrapper', id: 'legacy-1', parentId: 'first')
-              .toArchiveJson(),
+          GenAiConversationTurn(
+            'obsolete raw wrapper',
+            id: 'legacy-1',
+            parentId: 'first',
+          ).toArchiveJson(),
         ],
       ),
     ];
@@ -524,20 +532,17 @@ void main() {
       isAgent: true,
     );
     final call = GenAiAgentToolCall(id: 'image', name: 'generate_image', arguments: const {});
-    final recovered = decodeGenAiConversation(
-      'group',
-      [
-        GenAiSavedTurn(
-          prompt: encodeGenAiRemoteRecord({
-            'kind': 'exchange',
-            'step_id': 'image-step',
-            'turn': turn.toRemoteInput(),
-            'input': turn.prompt,
-          }),
-          answer: encodeGenAiAgentCall(call, nonce: nonce),
-        ),
-      ],
-    ).archive;
+    final recovered = decodeGenAiConversation('group', [
+      GenAiSavedTurn(
+        prompt: encodeGenAiRemoteRecord({
+          'kind': 'exchange',
+          'step_id': 'image-step',
+          'turn': turn.toRemoteInput(),
+          'input': turn.prompt,
+        }),
+        answer: encodeGenAiAgentCall(call, nonce: nonce),
+      ),
+    ]).archive;
     expect(recovered.turns.single.actionScopeId, 'original-task');
     expect(recovered.turns.single.toArchiveJson()['actionScopeId'], 'original-task');
     expect(

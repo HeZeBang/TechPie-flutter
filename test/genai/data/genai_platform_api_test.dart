@@ -18,18 +18,7 @@ import '../support/fakes.dart';
 import '../support/workspace_server.dart';
 
 void main() {
-  test('malformed quota rows do not hide valid numeric-string quotas', () {
-    final summary = GenAiUsageSummary.fromJson({
-      'free': {'total': '100', 'used': '1.5', 'remain': '98.5'},
-      'recharge': {'total': null},
-      'projects': [
-        null,
-        {'name': 'Project', 'total': 10, 'used': 2, 'remain': 8},
-      ],
-    });
-    expect(summary.quotas.map((q) => q.remaining), [98.5, 8]);
-    expect(summary.hasUnavailableQuotas, isTrue);
-  });
+  const imageModel = GenAiModel(name: 'Image', aiType: 'image', rootAiType: 'fixture', status: 2);
 
   test('remote protocol titles become readable without hiding normal titles', () {
     for (final frame in ['call', 'result', 'history']) {
@@ -48,10 +37,7 @@ void main() {
       '<techpie-agent-result-example>',
     ]) {
       expect(
-        GenAiConversationSummary.fromJson({
-          'chatGroupId': 'conversation',
-          'question': title,
-        }).title,
+        GenAiConversationSummary.fromJson({'chatGroupId': 'conversation', 'question': title}).title,
         title,
       );
     }
@@ -59,13 +45,14 @@ void main() {
 
   test('malformed server rows remain explicit gaps in their original positions', () async {
     final api = GenAiApiClient(
+      apiBase: Uri.parse('http://127.0.0.1:18768/htk/'),
       transport: ScriptedTransport(
         (_) async => response(
           json: {
             'success': true,
             'code': 200,
             'result': [
-              {'question': 'Before', 'answer': 'First'},
+              {'question': 'Before', 'answer': 'First', 'imageUrl': 'temp/red.png'},
               null,
               {'question': 42, 'answer': 'Malformed'},
               {'id': 'metadata-without-message'},
@@ -76,12 +63,14 @@ void main() {
       ),
     );
     final rows = await api.loadConversation('token', 'group', GenAiCancellation());
-    expect(rows, hasLength(5));
-    expect(
-      rows.map((row) => row.isHistoryGap),
-      [false, true, true, true, false],
-    );
+    expect(rows.map((row) => row.isHistoryGap), [false, true, true, true, false]);
     expect(rows.first.answer, 'First');
+    final image = rows.first.imageUrls.single;
+    expect(image, 'https://genaipic.shanghaitech.edu.cn/sys/common/static/temp/red.png');
+    expect(
+      api.imageDisplayUri(image).toString(),
+      'http://127.0.0.1:18768/sys/common/static/temp/red.png',
+    );
     expect(rows.last.answer, 'Last');
     expect(
       rows
@@ -126,20 +115,23 @@ void main() {
       'token',
       GenAiImageRequest(
         prompt: 'Synthetic picture',
+        outputFormat: 'jpeg',
+        outputCompression: 65,
         groupId: 'group',
-        model: const GenAiModel(
-          name: 'Image',
-          aiType: 'image',
-          rootAiType: 'fixture',
-          status: 2,
-        ),
+        model: imageModel,
       ),
       GenAiCancellation(),
     );
+    final request = jsonDecode(transport.requests.single.body!) as Map<String, dynamic>;
+    expect(request.containsKey('title'), isFalse);
+    expect(request['quality'], 'low');
+    expect(request['outputCompression'], 65);
     final saved = await first.listImages('token', GenAiCancellation());
     const canonical = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/test/picture.png';
     expect(generated.single.toString(), canonical);
     expect(saved.records.single.images.single.toString(), canonical);
+    final production = GenAiApiClient(transport: transport);
+    expect(production.imageDisplayUri(canonical).toString(), canonical);
     final restarted = GenAiApiClient(
       transport: transport,
       apiBase: Uri.parse('http://127.0.0.1:28768/htk/'),
@@ -150,94 +142,35 @@ void main() {
     );
   });
 
-  test('image records keep optional title and quality across old and new rows', () {
-    final legacy = GenAiImageRecord.fromJson({
-      'id': 'legacy',
-      'question': 'Old prompt',
-      'images': [
-        {'imageUrl': 'old/picture.png'},
-      ],
-    });
-    expect(legacy.title, isNull);
-    expect(legacy.quality, isNull);
-    expect(legacy.toJson().containsKey('title'), isFalse);
-    expect(legacy.toJson().containsKey('quality'), isFalse);
-    final legacyRoundTrip = GenAiImageRecord.fromJson(legacy.toJson());
-    expect(legacyRoundTrip.title, isNull);
-    expect(legacyRoundTrip.quality, isNull);
-
-    final current = GenAiImageRecord.fromJson({
-      'id': 'current',
-      'question': 'New prompt',
-      'title': '  Sunrise over the lake  ',
-      'quality': 'high',
-      'images': [
-        {'imageUrl': 'new/picture.png'},
-      ],
-    });
-    expect(current.title, 'Sunrise over the lake');
-    expect(current.quality, 'high');
-
-    final restored = GenAiImageRecord.fromJson(current.toJson());
-    expect(restored.id, current.id);
-    expect(restored.prompt, current.prompt);
-    expect(restored.title, current.title);
-    expect(restored.quality, current.quality);
-    expect(restored.images.single, current.images.single);
-  });
-
-  test('image records ignore non-string optional metadata', () {
-    final record = GenAiImageRecord.fromJson({
-      'id': 'typed',
+  test('image metadata survives round trips and remains optional for legacy or malformed rows', () {
+    const row = {
+      'id': 'image',
       'question': 'Prompt',
-      'title': 42,
-      'quality': <String>['high'],
       'images': [
-        {'imageUrl': 'typed/picture.png'},
+        {'imageUrl': 'test/picture.png'},
       ],
-    });
-    expect(record.title, isNull);
-    expect(record.quality, isNull);
-    expect(record.toJson().containsKey('title'), isFalse);
-    expect(record.toJson().containsKey('quality'), isFalse);
-  });
-
-  test('image requests send an optional trimmed title only when provided', () {
-    const model = GenAiModel(
-      name: 'Image',
-      aiType: 'image',
-      rootAiType: 'fixture',
-      status: 2,
-    );
-    final without = GenAiImageRequest(
-      prompt: 'A red square',
-      groupId: 'group',
-      model: model,
-      quality: 'medium',
-    );
-    expect(without.title, isNull);
-    expect(without.toJson().containsKey('title'), isFalse);
-    expect(without.toJson()['quality'], 'medium');
-
-    final withTitle = GenAiImageRequest(
-      prompt: 'A red square',
-      title: '  Red square  ',
-      groupId: 'group',
-      model: model,
-      quality: 'high',
-    );
-    expect(withTitle.title, 'Red square');
-    expect(withTitle.toJson()['title'], 'Red square');
-    expect(withTitle.toJson()['quality'], 'high');
-  });
-
-  test('restored reasoning is kept out of assistant history content', () {
-    final turn = GenAiSavedTurn.fromJson({
-      'question': 'test',
-      'answer': '<think>private reasoning</think>Final answer',
-    });
-    expect(turn.answer, 'Final answer');
-    expect(turn.reasoning, 'private reasoning');
+    };
+    for (final metadata in <Map<String, Object?>>[
+      {},
+      {
+        'title': 42,
+        'quality': ['high'],
+      },
+    ]) {
+      final saved = GenAiImageRecord.fromJson({...row, ...metadata}).toJson();
+      expect(saved.containsKey('title'), isFalse);
+      expect(saved.containsKey('quality'), isFalse);
+      final restored = GenAiImageRecord.fromJson(saved);
+      expect(restored.title, isNull);
+      expect(restored.quality, isNull);
+    }
+    final current = GenAiImageRecord.fromJson({...row, 'title': '  Sunrise  ', 'quality': 'high'});
+    final restored = GenAiImageRecord.fromJson(current.toJson());
+    expect(restored.title, 'Sunrise');
+    expect(restored.quality, 'high');
+    expect(restored.id, 'image');
+    expect(restored.prompt, 'Prompt');
+    expect(restored.images.single, current.images.single);
   });
 
   test('reasoning extraction preserves literal think tags in prose and tool JSON', () {
@@ -254,7 +187,7 @@ void main() {
       expect(restored.reasoning, isEmpty);
       final withReasoning = GenAiSavedTurn.fromJson({
         'question': 'Show tags',
-        'answer': '<think>private reasoning</think>\n$example',
+        'answer': '<think>private reasoning</think>$example',
       });
       expect(withReasoning.answer, example);
       expect(withReasoning.reasoning, 'private reasoning');
@@ -292,10 +225,7 @@ void main() {
       });
       expect(turn.imageUrls, ['${cdn}temp/fallback.png']);
     }
-    expect(
-      GenAiSavedTurn.fromJson({'question': 'old text'}).imageUrls,
-      isEmpty,
-    );
+    expect(GenAiSavedTurn.fromJson({'question': 'old text'}).imageUrls, isEmpty);
     expect(
       GenAiSavedTurn.fromJson({
         'answer': 'still readable',
@@ -303,39 +233,6 @@ void main() {
       }).answer,
       'still readable',
     );
-  });
-
-  test('history retains canonical images while preview uses configured bridge', () async {
-    final api = GenAiApiClient(
-      apiBase: Uri.parse('http://127.0.0.1:18768/htk/'),
-      transport: ScriptedTransport(
-        (_) async => response(
-          json: {
-            'success': true,
-            'code': 200,
-            'result': [
-              {
-                'question': 'Describe',
-                'answer': 'Red',
-                'imageUrl': 'temp/red.png',
-              }
-            ],
-          },
-        ),
-      ),
-    );
-    final turns = await api.loadConversation('token', 'group', GenAiCancellation());
-    final canonical = turns.single.imageUrls.single;
-    expect(
-      canonical,
-      'https://genaipic.shanghaitech.edu.cn/sys/common/static/temp/red.png',
-    );
-    expect(
-      api.imageDisplayUri(canonical).toString(),
-      'http://127.0.0.1:18768/sys/common/static/temp/red.png',
-    );
-    final production = GenAiApiClient(transport: ScriptedTransport((_) async => response()));
-    expect(production.imageDisplayUri(canonical).toString(), canonical);
   });
 
   test('signer matches a fixed independent vector with Unicode and numeric query data', () {
@@ -348,12 +245,9 @@ void main() {
     expect(headers['X-TIMESTAMP'], '20261019090807');
   });
 
-  test('history pagination scopes requests to the verified platform user', () async {
+  test('history pagination scopes requests to the verified user and skips corrupt rows', () async {
     final transport = ScriptedTransport((r) async {
-      expect(
-        r.uri.queryParameters,
-        containsPair('userId', 'verified-platform-user'),
-      );
+      expect(r.uri.queryParameters, containsPair('userId', 'verified-platform-user'));
       expect(r.uri.queryParameters, containsPair('question', '测试'));
       return response(
         json: {
@@ -361,7 +255,10 @@ void main() {
           'code': 200,
           'result': {
             'records': [
-              {'chatGroupId': 'group', 'question': '测试会话'},
+              {'chatGroupId': 'first', 'question': '测试会话'},
+              {'chatGroupId': '', 'question': 'Empty id'},
+              {'question': 'Missing id'},
+              {'chatGroupId': 'second', 'question': 'Another conversation'},
             ],
             'total': 21,
           },
@@ -375,48 +272,25 @@ void main() {
       GenAiCancellation(),
       query: '测试',
     );
-    expect(result.records.single.id, 'group');
+    expect(result.records.map((row) => row.id), ['first', 'second']);
     expect(result.hasMore, isTrue);
   });
 
-  test(
-      'listConversations skips corrupt records with empty or missing chatGroupId without failing entire page',
-      () async {
-    final transport = ScriptedTransport(
-      (r) async => response(
-        json: {
-          'success': true,
-          'code': 200,
-          'result': {
-            'records': [
-              {'chatGroupId': 'valid-1', 'question': 'Question 1'},
-              {'chatGroupId': '', 'question': 'Corrupt with empty id'},
-              {'question': 'Corrupt without id'},
-              {'chatGroupId': 'valid-2', 'question': 'Question 2'},
-            ],
-            'total': 4,
-          },
-        },
-      ),
-    );
-    final api = GenAiApiClient(transport: transport);
-    final result = await api.listConversations(
-      'token',
-      'user-1',
-      GenAiCancellation(),
-    );
-    expect(result.records.length, 2);
-    expect(result.records[0].id, 'valid-1');
-    expect(result.records[1].id, 'valid-2');
-  });
-
-  test('image generation is a single synchronous JSON request and checks CDN URLs', () async {
+  test('image generation signs the exact synchronous wire body and checks CDN URLs', () async {
     final transport = ScriptedTransport((r) async {
       final body = jsonDecode(r.body!) as Map<String, dynamic>;
       expect(body['count'], '1');
-      expect(body['quality'], 'low');
+      expect(body['quality'], 'medium');
+      expect(body['title'], 'Blue pie');
+      final keys = body.keys.toList()..sort();
+      final canonical = jsonEncode({for (final key in keys) key: body[key]});
+      final signature = md5
+          .convert(utf8.encode('${canonical}synthetic-salt'))
+          .toString()
+          .toUpperCase();
+      expect(r.headers['X-Sign'], signature);
       expect(body['outputFormat'], 'jpeg');
-      expect(body['outputCompression'], 65);
+      expect(body['outputCompression'], '65');
       expect(body['aiSecType'], '1');
       expect(body.containsKey('stream'), isFalse);
       expect(r.headers['Accept'], 'application/json, text/plain, */*');
@@ -429,23 +303,24 @@ void main() {
         },
       );
     });
-    final api = GenAiApiClient(transport: transport);
+    final api = GenAiApiClient(
+      transport: transport,
+      signer: const GenAiRequestSigner('synthetic-salt'),
+    );
     final result = await api.generateImage(
       'token',
       GenAiImageRequest(
         prompt: 'blue pie',
+        title: '  Blue pie  ',
+        quality: 'medium',
         outputFormat: 'jpeg',
         outputCompression: 65,
         groupId: 'group',
-        model: const GenAiModel(
-          name: 'Image',
-          aiType: 'image',
-          rootAiType: 'fixture',
-          status: 2,
-        ),
+        model: imageModel,
       ),
       GenAiCancellation(),
     );
+    expect(transport.requests, hasLength(1));
     expect(
       result.single.toString(),
       'https://genaipic.shanghaitech.edu.cn/sys/common/static/images/test.png',
@@ -454,17 +329,8 @@ void main() {
       genAiImageUri('/sys/common/static/openai/20261019/test.png').toString(),
       'https://genaipic.shanghaitech.edu.cn/sys/common/static/openai/20261019/test.png',
     );
-    for (final bad in [
-      'https://evil.test/secret.png',
-      '//evil.test/x',
-      '../x',
-      'file:///x',
-      '',
-    ]) {
-      expect(
-        () => genAiImageUri(bad),
-        throwsA(failure(GenAiFailureKind.protocol)),
-      );
+    for (final bad in ['https://evil.test/secret.png', '//evil.test/x', '../x', 'file:///x', '']) {
+      expect(() => genAiImageUri(bad), throwsA(failure(GenAiFailureKind.protocol)));
     }
   });
 
@@ -480,51 +346,7 @@ void main() {
     );
   });
 
-  test('signed image body matches the actual wire signature without numeric coercion by the server',
-      () async {
-    final transport = ScriptedTransport((r) async {
-      final wire = jsonDecode(r.body!) as Map<String, dynamic>;
-      expect(wire['count'], '1');
-      expect(wire['imageBase64'], isNull);
-      expect(wire['imageBase64List'], isNull);
-      final keys = wire.keys.toList()..sort();
-      final canonical = jsonEncode({for (final key in keys) key: wire[key]});
-      final expected =
-          md5.convert(utf8.encode('${canonical}synthetic-salt')).toString().toUpperCase();
-      if (r.headers['X-Sign'] != expected) {
-        return response(json: {'success': false, 'code': 500, 'result': null});
-      }
-      return response(
-        json: {
-          'data': [
-            {'url': 'images/signed.png'},
-          ],
-        },
-      );
-    });
-    final api = GenAiApiClient(
-      transport: transport,
-      signer: const GenAiRequestSigner('synthetic-salt'),
-    );
-    final image = await api.generateImage(
-      'token',
-      GenAiImageRequest(
-        prompt: 'blue pie',
-        groupId: 'group',
-        model: const GenAiModel(
-          name: 'Image',
-          aiType: 'image',
-          rootAiType: 'fixture',
-          status: 2,
-        ),
-      ),
-      GenAiCancellation(),
-    );
-    expect(image.single.path, endsWith('images/signed.png'));
-    expect(transport.requests, hasLength(1));
-  });
-
-  test('usage sends signed requests but never retains API keys from the summary', () async {
+  test('signed usage responses retain valid quotas and flag unreadable rows', () async {
     final transport = ScriptedTransport((r) async {
       expect(r.headers['X-Sign'], matches(RegExp(r'^[0-9A-F]{32}$')));
       expect(r.headers['X-TIMESTAMP'], '20261019090807');
@@ -533,11 +355,15 @@ void main() {
           'success': true,
           'code': 200,
           'result': {
-            'free': {'total': 35, 'used': 0.1, 'remain': 34.9},
+            'free': {'total': '100', 'used': '1.5', 'remain': '98.5'},
+            'recharge': {'total': null},
             'keys': [
               {'appKey': 'must-be-discarded'},
             ],
-            'projects': <Object>[],
+            'projects': [
+              null,
+              {'name': 'Project', 'total': 10, 'used': 2, 'remain': 8},
+            ],
           },
         },
       );
@@ -548,8 +374,9 @@ void main() {
       now: () => DateTime(2026, 10, 19, 9, 8, 7),
     );
     final summary = await api.usageSummary('token', GenAiCancellation());
-    expect(summary.quotas.single.remaining, 34.9);
-    expect(summary.quotas.single.name, '免费额度');
+    expect(summary.quotas.map((q) => q.remaining), [98.5, 8]);
+    expect(summary.quotas.first.name, '免费额度');
+    expect(summary.hasUnavailableQuotas, isTrue);
   });
 
   test('account changes cancel a history request before accepting its late response', () async {
@@ -610,52 +437,22 @@ void main() {
   });
 
   test('deleteConversation sends GET and deleteImage sends DELETE with query params', () async {
-    final calls = <Map<String, dynamic>>[];
-    final transport = ScriptedTransport((r) async {
-      calls.add({
-        'method': r.method,
-        'path': r.uri.path,
-        'query': r.uri.queryParameters,
-        'headers': r.headers,
-        'body': r.body,
-      });
-      return response(
-        json: {
-          'success': true,
-          'code': 200,
-          'message': '删除成功',
-          'result': null,
-        },
-      );
-    });
+    final transport = ScriptedTransport(
+      (_) async => response(json: {'success': true, 'code': 200}),
+    );
     final api = GenAiApiClient(transport: transport);
+    await api.deleteConversation('test-token', 'group-123', GenAiCancellation());
+    await api.deleteImage('test-token', 'img-456', GenAiCancellation());
 
-    await api.deleteConversation(
-      'test-token',
-      'group-123',
-      GenAiCancellation(),
-    );
-    expect(calls, hasLength(1));
-    expect(calls[0]['method'], 'GET');
-    expect(calls[0]['path'], '/htk/ai/history/delete/groupId');
-    expect(calls[0]['query']['id'], 'group-123');
-    expect(calls[0]['query']['_t'], isNotEmpty);
-    expect(calls[0]['headers']['X-Access-Token'], 'test-token');
-    expect(calls[0]['headers']['tenant-id'], '0');
-    expect(calls[0]['body'], isNull);
-
-    await api.deleteImage(
-      'test-token',
-      'img-456',
-      GenAiCancellation(),
-    );
-    expect(calls, hasLength(2));
-    expect(calls[1]['method'], 'DELETE');
-    expect(calls[1]['path'], '/htk/ai-image-history/delete');
-    expect(calls[1]['query']['id'], 'img-456');
-    expect(calls[1]['query']['_t'], isNotEmpty);
-    expect(calls[1]['headers']['X-Access-Token'], 'test-token');
-    expect(calls[1]['headers']['tenant-id'], '0');
-    expect(calls[1]['body'], isNull);
+    expect(transport.requests.map((r) => (r.method, r.uri.path, r.uri.queryParameters['id'])), [
+      ('GET', '/htk/ai/history/delete/groupId', 'group-123'),
+      ('DELETE', '/htk/ai-image-history/delete', 'img-456'),
+    ]);
+    for (final request in transport.requests) {
+      expect(request.uri.queryParameters['_t'], isNotEmpty);
+      expect(request.headers['X-Access-Token'], 'test-token');
+      expect(request.headers['tenant-id'], '0');
+      expect(request.body, isNull);
+    }
   });
 }

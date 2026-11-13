@@ -24,8 +24,10 @@ class _GenAiUsageViewState extends State<GenAiUsageView> {
   bool _loading = false;
   bool _more = false;
   int _page = 1;
-  late final Object? _scope = widget.workspace.accountScope;
-  late final int _revision = widget.workspace.sessions.revision;
+  late Object? _scope = widget.workspace.accountScope;
+  late int _revision = widget.workspace.sessions.revision;
+
+  late bool _connected = widget.workspace.connected;
 
   @override
   void initState() {
@@ -34,21 +36,41 @@ class _GenAiUsageViewState extends State<GenAiUsageView> {
     unawaited(_load());
   }
 
+  @override
+  void didUpdateWidget(covariant GenAiUsageView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.workspace == widget.workspace) return;
+    oldWidget.workspace.removeListener(_changed);
+    widget.workspace.addListener(_changed);
+    _resetSession();
+  }
+
   void _changed() {
     if (_scope == widget.workspace.accountScope &&
-        _revision == widget.workspace.sessions.revision) {
+        _revision == widget.workspace.sessions.revision &&
+        _connected == widget.workspace.connected) {
       return;
     }
+    _resetSession();
+  }
+
+  void _resetSession() {
     _operation?.cancel();
-    if (!mounted) return;
+    _operation = null;
     setState(() {
+      _scope = widget.workspace.accountScope;
+      _revision = widget.workspace.sessions.revision;
+      _connected = widget.workspace.connected;
       _orders.clear();
       _usage = null;
       _more = false;
       _loading = false;
       _pageFailure = false;
-      _loadFailure = const GenAiFailure(GenAiFailureKind.accountChanged);
+      _loadFailure = _connected
+          ? null
+          : const GenAiFailure(GenAiFailureKind.authenticationRequired);
     });
+    if (_connected) unawaited(_load());
   }
 
   Future<void> _load({bool more = false}) async {
@@ -79,8 +101,9 @@ class _GenAiUsageViewState extends State<GenAiUsageView> {
     } catch (error) {
       if (mounted && !operation.isCancelled) {
         _pageFailure = more;
-        _loadFailure =
-            error is GenAiFailure ? error : const GenAiFailure(GenAiFailureKind.transport);
+        _loadFailure = error is GenAiFailure
+            ? error
+            : const GenAiFailure(GenAiFailureKind.transport);
       }
     } finally {
       if (identical(_operation, operation)) {
@@ -99,21 +122,22 @@ class _GenAiUsageViewState extends State<GenAiUsageView> {
 
   @override
   Widget build(BuildContext context) => Column(
-        children: [
-          SizedBox(height: 2, child: _loading ? const LinearProgressIndicator() : null),
-          if (_loadFailure != null && !_pageFailure)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  Text(genAiFailureText(_loadFailure!)),
-                  TextButton(onPressed: _loading ? null : _load, child: const Text('重试加载')),
-                ],
-              ),
-            ),
-          Expanded(child: _statistics()),
-        ],
-      );
+    children: [
+      SizedBox(height: 2, child: _loading ? const LinearProgressIndicator() : null),
+      if (_loadFailure != null && !_pageFailure)
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Text(genAiFailureText(_loadFailure!)),
+              if (_connected)
+                TextButton(onPressed: _loading ? null : _load, child: const Text('重试加载')),
+            ],
+          ),
+        ),
+      Expanded(child: _statistics()),
+    ],
+  );
 
   Widget _loadMore() => _more
       ? TextButton(
@@ -183,7 +207,9 @@ class _GenAiUsageViewState extends State<GenAiUsageView> {
         for (final order in _orders)
           Container(
             padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: line))),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: line)),
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

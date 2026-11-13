@@ -8,16 +8,14 @@ import '../../../widgets/adaptive_feedback.dart';
 import 'genai_icons.dart';
 import 'genai_image_save.dart';
 import 'genai_image_transfer_native.dart'
-    if (dart.library.js_interop) 'genai_image_transfer_web.dart' as platform;
+    if (dart.library.js_interop) 'genai_image_transfer_web.dart'
+    as platform;
 import 'genai_theme.dart';
 
 /// Resolves [image] and returns its PNG encoding.
 ///
 /// Decode the displayed provider, not a URL inferred from model prose.
-Future<Uint8List> loadGenAiImagePng(
-  ImageProvider<Object> image,
-  BuildContext context,
-) async {
+Future<Uint8List> loadGenAiImagePng(ImageProvider<Object> image, BuildContext context) async {
   final stream = image.resolve(createLocalImageConfiguration(context));
   final ready = Completer<ImageInfo>();
   final listener = ImageStreamListener(
@@ -180,20 +178,14 @@ class _GenAiImageActionsState extends State<GenAiImageActions> {
       case _ImageAction.copyLink:
         final link = widget.link;
         if (link == null) return;
-        await _run(
-          () => Clipboard.setData(ClipboardData(text: link.toString())),
-          success: '已复制链接',
-        );
+        await _run(() => Clipboard.setData(ClipboardData(text: link.toString())), success: '已复制链接');
         return;
       case _ImageAction.copyImage:
-        await _run(
-          () async {
-            final data = await bytes;
-            if (!mounted || image != widget.image) return;
-            await platform.copyImage(data);
-          },
-          success: '已复制图片',
-        );
+        await _run(() async {
+          final data = await bytes;
+          if (!mounted || image != widget.image) return;
+          await platform.copyImage(data);
+        }, success: '已复制图片');
         return;
       case _ImageAction.shareImage:
         await _run(() async {
@@ -203,75 +195,24 @@ class _GenAiImageActionsState extends State<GenAiImageActions> {
         });
         return;
       case _ImageAction.save:
-        await _run(
-          () async {
-            final data = await bytes;
-            if (!mounted || image != widget.image) return;
-            await saveGenAiImage(
-              data,
-              'techpie-${DateTime.now().microsecondsSinceEpoch}.png',
-            );
-          },
-          success: '已保存图片',
-        );
+        await _run(() async {
+          final data = await bytes;
+          if (!mounted || image != widget.image) return;
+          await saveGenAiImage(data, 'techpie-${DateTime.now().microsecondsSinceEpoch}.png');
+        }, success: '已保存图片');
         return;
     }
   }
 
   Rect get _shareOrigin => _shareOriginFor(context);
 
-  // Draft menu rows: 42 px, 10/8 px padding, 13 px labels, 17 px muted icons
-  // and a 10 px gap. `genAiMenuEntry` gives every native row its 7 px plate.
-  Widget _menuRow(GenAiPalette palette, Widget icon, String label) => Row(
-        children: [
-          IconTheme.merge(
-            data: IconThemeData(size: 17, color: palette.muted),
-            child: icon,
-          ),
-          const SizedBox(width: 10),
-          Text(label, style: const TextStyle(fontSize: 13)),
-        ],
-      );
-
-  PopupMenuItem<_ImageAction> _actionItem(
-    GenAiPalette palette,
-    _ImageAction action,
-    Widget icon,
-    String label, {
-    bool enabled = true,
-  }) =>
-      PopupMenuItem<_ImageAction>(
-        value: action,
-        enabled: enabled,
-        height: 42,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: _menuRow(palette, icon, label),
-      );
-
-  PopupMenuItem<_ImageAction> _statusItem(GenAiPalette palette, String label) =>
-      PopupMenuItem<_ImageAction>(
-        enabled: false,
-        height: 42,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: _menuRow(palette, const GenAiIcon(GenAiGlyph.image), label),
-      );
-
   PopupMenuItem<_ImageAction> _copyLinkItem(
     GenAiPalette palette, {
     GenAiGlyph glyph = GenAiGlyph.link,
-  }) =>
-      _actionItem(
-        palette,
-        _ImageAction.copyLink,
-        GenAiIcon(glyph),
-        '复制链接',
-      );
+  }) => genAiActionItem(palette, _ImageAction.copyLink, GenAiIcon(glyph), '复制链接');
 
-  PopupMenuItem<_ImageAction> _saveItem(
-    GenAiPalette palette, {
-    required bool enabled,
-  }) =>
-      _actionItem(
+  PopupMenuItem<_ImageAction> _saveItem(GenAiPalette palette, {required bool enabled}) =>
+      genAiActionItem(
         palette,
         _ImageAction.save,
         const GenAiIcon(GenAiGlyph.download),
@@ -289,184 +230,179 @@ class _GenAiImageActionsState extends State<GenAiImageActions> {
     required Uri? link,
     required bool showOpen,
     required bool showReference,
-  }) =>
-      [
-        _GenAiImageMenuEntry<_ImageAction>(
-          future: bytes,
-          builder: (context, snapshot) {
-            final palette = GenAiPalette.of(context);
-            final data = snapshot.data;
-            final rows = <PopupMenuItem<_ImageAction>>[];
-            if (galleryMenu) {
-              if (showOpen) {
-                rows.add(
-                  _actionItem(
-                    palette,
-                    _ImageAction.open,
-                    const GenAiIcon(GenAiGlyph.full),
-                    '查看图片',
-                  ),
-                );
-              }
-              if (showReference) {
-                rows.add(
-                  _actionItem(
-                    palette,
-                    _ImageAction.reference,
-                    const GenAiIcon(GenAiGlyph.image),
-                    '用作参考',
-                  ),
-                );
-              }
-              if (link != null) rows.add(_copyLinkItem(palette, glyph: GenAiGlyph.copy));
-              rows.add(_saveItem(palette, enabled: data != null));
-            } else {
-              if (data == null) {
-                rows.add(
-                  _statusItem(
-                    palette,
-                    snapshot.hasError ? '图片加载失败' : '正在准备图片…',
-                  ),
-                );
-              }
-              if (platform.canCopyImage) {
-                rows.add(
-                  _actionItem(
-                    palette,
-                    _ImageAction.copyImage,
-                    const GenAiIcon(GenAiGlyph.copy),
-                    platform.copiesImageFile ? '复制图片文件' : '复制图片',
-                    enabled: data != null,
-                  ),
-                );
-              }
-              if (data != null && platform.canShareImage) {
-                rows.add(
-                  _actionItem(
-                    palette,
-                    _ImageAction.shareImage,
-                    const GenAiIcon(GenAiGlyph.share),
-                    '分享图片',
-                  ),
-                );
-              }
-              rows.add(_saveItem(palette, enabled: data != null));
-              if (link != null) rows.add(_copyLinkItem(palette));
-            }
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [for (final row in rows) genAiMenuEntry<_ImageAction>(row)],
+  }) => [
+    _GenAiImageMenuEntry<_ImageAction>(
+      future: bytes,
+      builder: (context, snapshot) {
+        final palette = GenAiPalette.of(context);
+        final data = snapshot.data;
+        final rows = <PopupMenuItem<_ImageAction>>[];
+        if (galleryMenu) {
+          if (showOpen) {
+            rows.add(
+              genAiActionItem(palette, _ImageAction.open, const GenAiIcon(GenAiGlyph.full), '查看图片'),
             );
-          },
-        ),
-      ];
+          }
+          if (showReference) {
+            rows.add(
+              genAiActionItem(
+                palette,
+                _ImageAction.reference,
+                const GenAiIcon(GenAiGlyph.image),
+                '用作参考',
+              ),
+            );
+          }
+          if (link != null) rows.add(_copyLinkItem(palette, glyph: GenAiGlyph.copy));
+          rows.add(_saveItem(palette, enabled: data != null));
+        } else {
+          if (data == null) {
+            rows.add(
+              genAiActionItem<_ImageAction>(
+                palette,
+                null,
+                const GenAiIcon(GenAiGlyph.image),
+                snapshot.hasError ? '图片加载失败' : '正在准备图片…',
+                enabled: false,
+              ),
+            );
+          }
+          if (platform.canCopyImage) {
+            rows.add(
+              genAiActionItem(
+                palette,
+                _ImageAction.copyImage,
+                const GenAiIcon(GenAiGlyph.copy),
+                platform.copiesImageFile ? '复制图片文件' : '复制图片',
+                enabled: data != null,
+              ),
+            );
+          }
+          if (data != null && platform.canShareImage) {
+            rows.add(
+              genAiActionItem(
+                palette,
+                _ImageAction.shareImage,
+                const GenAiIcon(GenAiGlyph.share),
+                '分享图片',
+              ),
+            );
+          }
+          rows.add(_saveItem(palette, enabled: data != null));
+          if (link != null) rows.add(_copyLinkItem(palette));
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [for (final row in rows) genAiMenuEntry<_ImageAction>(row)],
+        );
+      },
+    ),
+  ];
 
   Widget _toolbar() => LayoutBuilder(
-        builder: (context, constraints) {
-          final image = widget.image;
-          final link = widget.link;
-          // Most useful first: each available slot promotes one action out of More.
-          final actions = <GenAiPreviewAction>[
-            (
-              label: '下载图片',
-              icon: GenAiGlyph.download,
-              run: () => _execute(_ImageAction.save, _loadPng(), image)
+    builder: (context, constraints) {
+      final image = widget.image;
+      final link = widget.link;
+      // Most useful first: each available slot promotes one action out of More.
+      final actions = <GenAiPreviewAction>[
+        (
+          label: '下载图片',
+          icon: GenAiGlyph.download,
+          run: () => _execute(_ImageAction.save, _loadPng(), image),
+        ),
+        if (platform.canShareImage)
+          (
+            label: '分享图片',
+            icon: GenAiGlyph.share,
+            run: () => _execute(_ImageAction.shareImage, _loadPng(), image),
+          ),
+        if (link != null)
+          (
+            label: '复制链接',
+            icon: GenAiGlyph.copy,
+            run: () => _run(
+              () => Clipboard.setData(ClipboardData(text: link.toString())),
+              success: '已复制链接',
             ),
-            if (platform.canShareImage)
-              (
-                label: '分享图片',
-                icon: GenAiGlyph.share,
-                run: () => _execute(_ImageAction.shareImage, _loadPng(), image)
+          ),
+      ];
+      final extra = <GenAiPreviewAction>[
+        if (widget.showMenuButton && platform.canCopyImage)
+          (
+            label: platform.copiesImageFile ? '复制图片文件' : '复制图片',
+            icon: GenAiGlyph.copy,
+            run: () => _execute(_ImageAction.copyImage, _loadPng(), image),
+          ),
+        ...widget.moreActions,
+      ];
+      const slot = 48.0;
+      final slots = (constraints.maxWidth / slot).floor();
+      final needsMenu = extra.isNotEmpty || slots < actions.length;
+      final visible = (slots - (needsMenu ? 1 : 0)).clamp(0, actions.length);
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          for (final action in actions.take(visible).toList().reversed)
+            SizedBox.square(
+              dimension: slot,
+              child: IconButton(
+                tooltip: action.label,
+                onPressed: _working ? null : action.run,
+                icon: _working && action.icon == GenAiGlyph.download
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : GenAiIcon(action.icon),
               ),
-            if (link != null)
-              (
-                label: '复制链接',
-                icon: GenAiGlyph.copy,
-                run: () => _run(
-                      () => Clipboard.setData(ClipboardData(text: link.toString())),
-                      success: '已复制链接',
-                    )
-              ),
-          ];
-          final extra = <GenAiPreviewAction>[
-            if (widget.showMenuButton && platform.canCopyImage)
-              (
-                label: platform.copiesImageFile ? '复制图片文件' : '复制图片',
-                icon: GenAiGlyph.copy,
-                run: () => _execute(_ImageAction.copyImage, _loadPng(), image)
-              ),
-            ...widget.moreActions,
-          ];
-          const slot = 48.0;
-          final slots = (constraints.maxWidth / slot).floor();
-          final needsMenu = extra.isNotEmpty || slots < actions.length;
-          final visible = (slots - (needsMenu ? 1 : 0)).clamp(0, actions.length);
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              for (final action in actions.take(visible).toList().reversed)
-                SizedBox.square(
-                  dimension: slot,
-                  child: IconButton(
-                    tooltip: action.label,
-                    onPressed: _working ? null : action.run,
-                    icon: _working && action.icon == GenAiGlyph.download
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : GenAiIcon(action.icon),
-                  ),
+            ),
+          if (needsMenu)
+            Builder(
+              builder: (anchor) => SizedBox.square(
+                key: const ValueKey('genai-preview-more'),
+                dimension: slot,
+                child: IconButton(
+                  tooltip: '更多图片操作',
+                  icon: _working && visible == 0
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const GenAiIcon(GenAiGlyph.more),
+                  onPressed: _working
+                      ? null
+                      : () async {
+                          final picked = await genAiShowMenu<GenAiPreviewAction>(
+                            context: context,
+                            anchorContext: anchor,
+                            minWidth: 170,
+                            preferAbove: true,
+                            alignEnd: true,
+                            gap: 8,
+                            menuPadding: 5,
+                            radius: 9,
+                            semanticLabel: '更多图片操作',
+                            items: [
+                              for (final action in [...actions.skip(visible), ...extra])
+                                genAiActionItem(
+                                  GenAiPalette.of(context),
+                                  action,
+                                  GenAiIcon(action.icon),
+                                  action.label,
+                                  enabled: action.run != null,
+                                ),
+                            ],
+                          );
+                          if (mounted && image == widget.image) picked?.run?.call();
+                        },
                 ),
-              if (needsMenu)
-                Builder(
-                  builder: (anchor) => SizedBox.square(
-                    key: const ValueKey('genai-preview-more'),
-                    dimension: slot,
-                    child: IconButton(
-                      tooltip: '更多图片操作',
-                      icon: _working && visible == 0
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const GenAiIcon(GenAiGlyph.more),
-                      onPressed: _working
-                          ? null
-                          : () async {
-                              final picked = await genAiShowMenu<GenAiPreviewAction>(
-                                context: context,
-                                anchorContext: anchor,
-                                minWidth: 170,
-                                preferAbove: true,
-                                alignEnd: true,
-                                gap: 8,
-                                menuPadding: 5,
-                                radius: 9,
-                                semanticLabel: '更多图片操作',
-                                items: [
-                                  for (final action in [...actions.skip(visible), ...extra])
-                                    PopupMenuItem(
-                                      value: action,
-                                      enabled: action.run != null,
-                                      child: _menuRow(
-                                        GenAiPalette.of(context),
-                                        GenAiIcon(action.icon),
-                                        action.label,
-                                      ),
-                                    ),
-                                ],
-                              );
-                              if (mounted && image == widget.image) picked?.run?.call();
-                            },
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
+              ),
+            ),
+        ],
       );
+    },
+  );
 
   @override
   Widget build(BuildContext context) => widget.toolbar

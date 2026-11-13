@@ -2,8 +2,6 @@
 final class GenAiImageSize {
   const GenAiImageSize(this.width, this.height);
 
-  static const minPixels = 655360;
-  static const maxPixels = 8294400;
   static const presets = <String, Map<String, String>>{
     '1:1': {'1K': '1024x1024', '2K': '2048x2048'},
     '3:2': {'1K': '1024x688', '2K': '2048x1360'},
@@ -22,16 +20,14 @@ final class GenAiImageSize {
 
   final int width;
   final int height;
-  int get pixels => width * height;
-  bool get isValid =>
-      width > 0 && height > 0 && pixels >= minPixels && pixels <= maxPixels;
-  bool get isExperimental => width > 2560 || height > 1440;
+  bool get isValid => width > 0 && height > 0;
   String get value => '${width}x$height';
 
   static GenAiImageSize? tryParse(String value) {
-    final match =
-        RegExp(r'^([1-9][0-9]{0,6})x([1-9][0-9]{0,6})$').firstMatch(value);
+    final match = RegExp(r'^([1-9][0-9]*)x([1-9][0-9]*)$').firstMatch(value);
     if (match == null) return null;
-    return GenAiImageSize(int.parse(match[1]!), int.parse(match[2]!));
+    final width = int.tryParse(match[1]!);
+    final height = int.tryParse(match[2]!);
+    return width == null || height == null ? null : GenAiImageSize(width, height);
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 import '../domain/genai_cancellation.dart';
@@ -16,14 +18,75 @@ final class GenAiImageDraft {
   String resolution = '1K';
   String width = '1024';
   String height = '1024';
+  bool linked = true;
   String quality = 'low';
   final references = <GenAiReferenceImage>[];
   final previews = <GenAiReferenceImage, Uint8List>{};
+  bool get custom => resolution == 'custom';
+  String get size => GenAiImageSize.presets[aspectRatio]?[resolution] ?? '${width}x$height';
+
+  void selectResolution(String value) {
+    if (resolution == value) return;
+    if (value == 'custom') {
+      final preset = GenAiImageSize.tryParse(size);
+      if (preset != null) {
+        width = preset.width.toString();
+        height = preset.height.toString();
+      }
+    }
+    resolution = value;
+  }
+
+  void toggleLinked() {
+    linked = !linked;
+    if (linked) _alignDimension((int.tryParse(width) ?? 0) > 0);
+  }
+
+  void editDimension(String value, {required bool isWidth}) {
+    if (isWidth) {
+      width = value;
+    } else {
+      height = value;
+    }
+    if (linked) {
+      _alignDimension(isWidth);
+      return;
+    }
+    final dimensions = GenAiImageSize.tryParse(size);
+    if (dimensions == null) return;
+    final w = dimensions.width;
+    final h = dimensions.height;
+    for (final entry in GenAiImageSize.presets.entries) {
+      final sample = GenAiImageSize.tryParse(entry.value.values.first)!;
+      if (sample.width * h == sample.height * w) {
+        aspectRatio = entry.key;
+        return;
+      }
+    }
+    final divisor = w.gcd(h);
+    aspectRatio = '${w ~/ divisor}:${h ~/ divisor}';
+  }
+
+  void _alignDimension(bool isWidth) {
+    final ratio = aspectRatio.split(':').map(int.parse).toList();
+    final amount = int.tryParse(isWidth ? width : height);
+    final scale = isWidth ? ratio.last / ratio.first : ratio.first / ratio.last;
+    final other = amount == null || amount <= 0
+        ? ''
+        : math.max(1, (amount * scale).round()).toString();
+    if (isWidth) {
+      height = other;
+    } else {
+      width = other;
+    }
+  }
+
   void selectAspectRatio(String value) {
     final options = GenAiImageSize.presets[value];
     if (options == null) return;
     aspectRatio = value;
     if (resolution != 'custom' && !options.containsKey(resolution)) resolution = options.keys.first;
+    if (custom && (int.tryParse(width) ?? 0) > 0) _alignDimension(true);
   }
 
   void selectOrientation(String value) {
@@ -36,8 +99,8 @@ final class GenAiImageDraft {
       GenAiImageSize.presets.containsKey(opposite) && orientationOf(opposite) == value
           ? opposite
           : value == 'landscape'
-              ? '16:9'
-              : '9:16',
+          ? '16:9'
+          : '9:16',
     );
   }
 

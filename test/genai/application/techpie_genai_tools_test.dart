@@ -41,10 +41,7 @@ void main() {
     auth = _Auth();
     bindings = _Bindings();
     now = DateTime.utc(2026, 10, 22, 3);
-    context = GenAiAgentToolContext(
-      cancellation: GenAiCancellation(),
-      isCurrent: () => true,
-    );
+    context = GenAiAgentToolContext(cancellation: GenAiCancellation(), isCurrent: () => true);
     registry = TechPieGenAiTools(
       schedule: schedule,
       assignments: assignments,
@@ -57,18 +54,12 @@ void main() {
   });
   tearDown(() => demo.dispose());
 
-  Future<GenAiAgentPreparedTool> prepare(
-    String name,
-    Map<String, Object?> args,
-  ) async {
+  Future<GenAiAgentPreparedTool> prepare(String name, Map<String, Object?> args) async {
     registry.validate(GenAiAgentToolCall(id: 'test', name: name, arguments: args));
     return registry[name]!.prepare(args, context);
   }
 
-  Future<Map<String, Object?>> run(
-    String name,
-    Map<String, Object?> args,
-  ) async =>
+  Future<Map<String, Object?>> run(String name, Map<String, Object?> args) async =>
       (await (await prepare(name, args)).execute()).structuredContent!;
 
   test('tools reject unknown keys and invalid argument types', () {
@@ -87,12 +78,7 @@ void main() {
         GenAiAgentToolCall(
           id: 'x',
           name: 'reserve_court',
-          arguments: {
-            'action': 'book',
-            'sport': 'tennis',
-            'date': '2026-10-23',
-            'time_slot': '8',
-          },
+          arguments: {'action': 'book', 'sport': 'tennis', 'date': '2026-10-23', 'time_slot': '8'},
         ),
       ),
       throwsA(isA<GenAiAgentToolException>()),
@@ -171,10 +157,7 @@ void main() {
     final result = await run('get_week_schedule', {'week': 2, 'limit': 40});
     expect(jsonEncode(result).length, lessThan(6000));
     expect(result['truncated'], true);
-    final next = await run(
-      'get_week_schedule',
-      {'week': 2, 'offset': result['next_offset']},
-    );
+    final next = await run('get_week_schedule', {'week': 2, 'offset': result['next_offset']});
     expect(next['courses'], isNotEmpty);
   });
 
@@ -183,8 +166,11 @@ void main() {
     await expectLater(
       run('get_week_schedule', {}),
       throwsA(
-        isA<GenAiAgentToolException>()
-            .having((error) => error.code, 'code', 'calendar_unavailable'),
+        isA<GenAiAgentToolException>().having(
+          (error) => error.code,
+          'code',
+          'calendar_unavailable',
+        ),
       ),
     );
     expect((await run('get_week_schedule', {'week': 2}))['week'], 2);
@@ -206,10 +192,7 @@ void main() {
     expect(rows.single, containsPair('due', '2026-10-23T23:00:00.000+08:00'));
     expect(jsonEncode(result), isNot(contains('token=private')));
     expect(
-      (await run(
-        'get_assignments',
-        {'include_completed': true},
-      ))['assignments'],
+      (await run('get_assignments', {'include_completed': true}))['assignments'],
       hasLength(2),
     );
     await expectLater(
@@ -264,11 +247,7 @@ void main() {
     await expectLater(
       future,
       throwsA(
-        isA<GenAiFailure>().having(
-          (error) => error.kind,
-          'kind',
-          GenAiFailureKind.accountChanged,
-        ),
+        isA<GenAiFailure>().having((error) => error.kind, 'kind', GenAiFailureKind.accountChanged),
       ),
     );
   });
@@ -358,10 +337,12 @@ void main() {
   test('shared physical court aliases have the same mutation identity', () async {
     gym.allCourts = true;
     final tennis = await prepare('reserve_court', {...book, 'court_number': 4});
-    final pickleball = await prepare(
-      'reserve_court',
-      {...book, 'sport': 'pickleball', 'court_number': 1, 'players_count': 4},
-    );
+    final pickleball = await prepare('reserve_court', {
+      ...book,
+      'sport': 'pickleball',
+      'court_number': 1,
+      'players_count': 4,
+    });
     expect(tennis.effectKey, pickleball.effectKey);
     expect(gym.bookings, 0);
   });
@@ -400,19 +381,12 @@ void main() {
     await expectLater(
       prepared.execute(),
       throwsA(
-        isA<GenAiFailure>().having(
-          (error) => error.kind,
-          'kind',
-          GenAiFailureKind.accountChanged,
-        ),
+        isA<GenAiFailure>().having((error) => error.kind, 'kind', GenAiFailureKind.accountChanged),
       ),
     );
     expect(gym.bookings, 0);
     auth.loggedIn = true;
-    context = GenAiAgentToolContext(
-      cancellation: GenAiCancellation(),
-      isCurrent: () => true,
-    );
+    context = GenAiAgentToolContext(cancellation: GenAiCancellation(), isCurrent: () => true);
     final again = await prepare('reserve_court', book);
     gym.beforePost = () {
       context.cancellation.cancel();
@@ -429,15 +403,16 @@ void main() {
       ),
     );
     await expectLater(
-      prepare('generate_image', {'prompt': 'test', 'width': 1, 'height': 1}),
+      prepare('generate_image', {'prompt': 'test', 'width': 0, 'height': 1}),
       throwsA(
         isA<GenAiAgentToolException>().having((error) => error.code, 'code', 'invalid_arguments'),
       ),
     );
-    final prepared = await prepare(
-      'generate_image',
-      {'prompt': 'A red square', 'width': 1536, 'height': 1024},
-    );
+    final prepared = await prepare('generate_image', {
+      'prompt': 'A red square',
+      'width': 1536,
+      'height': 1024,
+    });
     expect(prepared.requiresApproval, isTrue);
     expect(prepared.details['size'], '1536x1024');
     final equivalent = await prepare('generate_image', {
@@ -448,110 +423,94 @@ void main() {
       'model': 'test-image',
     });
     expect(prepared.effectKey, equivalent.effectKey);
-    expect(
-      (await demo.workspace.repository.listImages(GenAiCancellation())).records,
-      isEmpty,
-    );
+    expect((await demo.workspace.repository.listImages(GenAiCancellation())).records, isEmpty);
     final result = (await prepared.execute()).structuredContent!;
     expect(result, containsPair('status', 'generated'));
     expect(result, containsPair('size', '1536x1024'));
-    expect(
-      (await demo.workspace.repository.listImages(GenAiCancellation())).records,
-      hasLength(1),
-    );
+    expect((await demo.workspace.repository.listImages(GenAiCancellation())).records, hasLength(1));
   });
 
-  test('image presets and output settings survive approval with distinct effect identities',
-      () async {
-    final preset = await prepare('generate_image', {
-      'prompt': 'A landscape',
-      'aspect_ratio': '16:9',
-      'resolution': '2K',
-      'output_format': 'jpeg',
-      'output_compression': 65,
+  test(
+    'image presets and output settings survive approval with distinct effect identities',
+    () async {
+      final preset = await prepare('generate_image', {
+        'prompt': 'A landscape',
+        'aspect_ratio': '16:9',
+        'resolution': '2K',
+        'output_format': 'jpeg',
+        'output_compression': 65,
+      });
+      final custom = await prepare('generate_image', {
+        'prompt': 'A landscape',
+        'width': 2048,
+        'height': 1152,
+        'output_format': 'jpeg',
+        'output_compression': 65,
+      });
+      final png = await prepare('generate_image', {
+        'prompt': 'A landscape',
+        'width': 2048,
+        'height': 1152,
+      });
+      expect(preset.requiresApproval, isTrue);
+      expect(preset.details['size'], '2048x1152');
+      expect(preset.details['output_compression'], 65);
+      expect(preset.effectKey, custom.effectKey);
+      expect(preset.effectKey, isNot(png.effectKey));
+      final result = (await preset.execute()).structuredContent!;
+      expect(result['output_format'], 'jpeg');
+      expect(result['output_compression'], 65);
+      for (final invalid in <Map<String, Object?>>[
+        {'width': 1024},
+        {'width': 1024, 'height': 1024, 'aspect_ratio': '1:1'},
+        {'aspect_ratio': '1:1', 'resolution': '4K'},
+        {'output_format': 'png', 'output_compression': 80},
+        {'output_format': 'jpeg', 'output_compression': 101},
+      ]) {
+        await expectLater(
+          prepare('generate_image', {'prompt': 'A landscape', ...invalid}),
+          throwsA(isA<GenAiAgentToolException>()),
+        );
+      }
+    },
+  );
+
+  for (final titled in [true, false]) {
+    test('image approval and receipt carry optional title and quality, titled=$titled', () async {
+      final prepared = await prepare('generate_image', {
+        'prompt': 'A red square',
+        if (titled) 'title': '  Red square  ',
+        if (titled) 'quality': 'high',
+      });
+      final receipt = (await prepared.execute()).structuredContent!;
+      for (final metadata in [prepared.details, receipt]) {
+        expect(metadata.containsKey('title'), titled);
+        if (titled) expect(metadata['title'], 'Red square');
+        expect(metadata['quality'], titled ? 'high' : 'low');
+      }
     });
-    final custom = await prepare('generate_image', {
-      'prompt': 'A landscape',
-      'width': 2048,
-      'height': 1152,
-      'output_format': 'jpeg',
-      'output_compression': 65,
-    });
-    final png = await prepare('generate_image', {
-      'prompt': 'A landscape',
-      'width': 2048,
-      'height': 1152,
-    });
-    expect(preset.requiresApproval, isTrue);
-    expect(preset.details['size'], '2048x1152');
-    expect(preset.details['output_compression'], 65);
-    expect(preset.effectKey, custom.effectKey);
-    expect(preset.effectKey, isNot(png.effectKey));
-    final result = (await preset.execute()).structuredContent!;
-    expect(result['output_format'], 'jpeg');
-    expect(result['output_compression'], 65);
-    for (final invalid in <Map<String, Object?>>[
-      {'width': 1024},
-      {'width': 1024, 'height': 1024, 'aspect_ratio': '1:1'},
-      {'aspect_ratio': '1:1', 'resolution': '4K'},
-      {'output_format': 'png', 'output_compression': 80},
-      {'output_format': 'jpeg', 'output_compression': 101},
-    ]) {
+  }
+
+  test(
+    'campus image restriction reports network guidance and a confirmed unexecuted effect',
+    () async {
+      demo.backend.campusImageRestriction = true;
+      final session = demo.sessions.session;
+      final prepared = await prepare('generate_image', {'prompt': 'A red square'});
       await expectLater(
-        prepare('generate_image', {'prompt': 'A landscape', ...invalid}),
-        throwsA(isA<GenAiAgentToolException>()),
+        prepared.execute(),
+        throwsA(
+          isA<GenAiAgentToolException>()
+              .having((error) => error.code, 'code', 'campus_network_required')
+              .having((error) => error.message, 'guidance', contains('校园网或学校 VPN'))
+              .having((error) => error.message, 'not a quota refusal', isNot(contains('额度不足')))
+              .having((error) => error.effectNotDispatched, 'not dispatched', isTrue),
+        ),
       );
-    }
-  });
-
-  test('image title is optional and flows through the request and receipt', () async {
-    final prepared = await prepare('generate_image', {
-      'prompt': 'A red square',
-      'title': '  Red square  ',
-      'width': 1536,
-      'height': 1024,
-      'quality': 'high',
-    });
-    expect(prepared.details['title'], 'Red square');
-    expect(prepared.details['quality'], 'high');
-    final result = (await prepared.execute()).structuredContent!;
-    expect(result['title'], 'Red square');
-    expect(result['quality'], 'high');
-    // The shared fixture models the real gateway, which does not persist
-    // title/quality on image-history rows yet. The receipt is still complete.
-    final records = (await demo.workspace.repository.listImages(GenAiCancellation())).records;
-    expect(records.single.title, isNull);
-    expect(records.single.quality, isNull);
-  });
-
-  test('image requests without a title omit it from details and receipts', () async {
-    final prepared = await prepare('generate_image', {'prompt': 'A red square'});
-    expect(prepared.details.containsKey('title'), isFalse);
-    final result = (await prepared.execute()).structuredContent!;
-    expect(result.containsKey('title'), isFalse);
-    final records = (await demo.workspace.repository.listImages(GenAiCancellation())).records;
-    expect(records.single.title, isNull);
-    expect(records.single.quality, isNull);
-  });
-
-  test('campus image restriction reports network guidance and a confirmed unexecuted effect',
-      () async {
-    demo.backend.campusImageRestriction = true;
-    final session = demo.sessions.session;
-    final prepared = await prepare('generate_image', {'prompt': 'A red square'});
-    await expectLater(
-      prepared.execute(),
-      throwsA(
-        isA<GenAiAgentToolException>()
-            .having((error) => error.code, 'code', 'campus_network_required')
-            .having((error) => error.message, 'guidance', contains('校园网或学校 VPN'))
-            .having((error) => error.message, 'not a quota refusal', isNot(contains('额度不足')))
-            .having((error) => error.effectNotDispatched, 'not dispatched', isTrue),
-      ),
-    );
-    expect(demo.sessions.session, same(session));
-    expect((await demo.workspace.repository.listImages(GenAiCancellation())).records, isEmpty);
-  });
+      expect(demo.sessions.session, same(session));
+      expect((await demo.workspace.repository.listImages(GenAiCancellation())).records, isEmpty);
+    },
+  );
 
   test('image quota refusal clears pending effect but generic errors remain uncertain', () async {
     for (final message in ['账户额度不足', '系统内部错误']) {
@@ -591,10 +550,7 @@ void main() {
     final prepared = await prepare('generate_image', {'prompt': 'A red square'});
     context.cancellation.cancel();
     await expectLater(prepared.execute(), throwsA(isA<GenAiFailure>()));
-    expect(
-      (await demo.workspace.repository.listImages(GenAiCancellation())).records,
-      isEmpty,
-    );
+    expect((await demo.workspace.repository.listImages(GenAiCancellation())).records, isEmpty);
   });
 }
 
@@ -658,12 +614,12 @@ class _Schedule implements ScheduleService {
   );
   @override
   SemesterInfo get semesterInfo => const SemesterInfo(
-        semesters: {
-          '2026': {'秋': 'term'},
-        },
-        defaultSemester: 'term',
-        tableId: 'private-table',
-      );
+    semesters: {
+      '2026': {'秋': 'term'},
+    },
+    defaultSemester: 'term',
+    tableId: 'private-table',
+  );
   @override
   String? get selectedSemesterId => selected;
   @override
@@ -715,15 +671,15 @@ class _Schedule implements ScheduleService {
   TermCalendar? termCalendarFor(String? semesterId) => calendar;
   @override
   List<CustomCourse> customCoursesFor(String? semesterId) => [
-        CustomCourse(
-          id: 'custom',
-          name: 'Tutorial',
-          semesterId: semesterId!,
-          weekdays: const [3],
-          weeks: const [2],
-          time: const ClockCourseTime(startTime: '19:00', endTime: '20:00'),
-        ),
-      ];
+    CustomCourse(
+      id: 'custom',
+      name: 'Tutorial',
+      semesterId: semesterId!,
+      weekdays: const [3],
+      weeks: const [2],
+      time: const ClockCourseTime(startTime: '19:00', endTime: '20:00'),
+    ),
+  ];
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

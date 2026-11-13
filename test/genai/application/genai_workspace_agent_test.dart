@@ -93,40 +93,42 @@ void main() {
   });
 
   for (final declined in [true, false]) {
-    test('fresh client can request a booking after ${declined ? 'denial' : 'explicit rejection'}',
-        () async {
-      final server = JournalServer();
-      var executions = 0;
-      final tools = [
-        testTool(
-          mutation: true,
-          execute: () async {
-            executions++;
-            return {'success': false, 'status': 'rejected'};
-          },
-        ),
-      ];
-      final client = await JournalClient.create(server, tools: tools);
-      addTearDown(client.dispose);
-      client.workspace.setAgentEnabled(true);
-      server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
-          ? server.call(body, name: 'reserve_court', arguments: {'action': 'book'})
-          : server.finalAnswer(body, 'No reservation made.');
-      final first = client.workspace.send('Book one slot.');
-      await until(() => client.workspace.pendingAgentApproval != null);
-      client.workspace.resolveAgentApproval(!declined);
-      await first;
-      final fresh = await JournalClient.create(server, tools: tools);
-      addTearDown(fresh.dispose);
-      await fresh.workspace.openConversation(client.workspace.groupId, GenAiCancellation());
-      final second = fresh.workspace.send('Try that slot again, with a new confirmation.');
-      await until(() => fresh.workspace.pendingAgentApproval != null);
-      fresh.workspace.resolveAgentApproval(true);
-      await second;
-      expect(fresh.workspace.turns.last.phase, GenAiChatPhase.completed);
-      expect(executions, declined ? 1 : 2);
-      expect(fresh.workspace.turns.last.agentEvents.values.single.result!['reused'], isNull);
-    });
+    test(
+      'fresh client can request a booking after ${declined ? 'denial' : 'explicit rejection'}',
+      () async {
+        final server = JournalServer();
+        var executions = 0;
+        final tools = [
+          testTool(
+            mutation: true,
+            execute: () async {
+              executions++;
+              return {'success': false, 'status': 'rejected'};
+            },
+          ),
+        ];
+        final client = await JournalClient.create(server, tools: tools);
+        addTearDown(client.dispose);
+        client.workspace.setAgentEnabled(true);
+        server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+            ? server.call(body, name: 'reserve_court', arguments: {'action': 'book'})
+            : server.finalAnswer(body, 'No reservation made.');
+        final first = client.workspace.send('Book one slot.');
+        await until(() => client.workspace.pendingAgentApproval != null);
+        client.workspace.resolveAgentApproval(!declined);
+        await first;
+        final fresh = await JournalClient.create(server, tools: tools);
+        addTearDown(fresh.dispose);
+        await fresh.workspace.openConversation(client.workspace.groupId, GenAiCancellation());
+        final second = fresh.workspace.send('Try that slot again, with a new confirmation.');
+        await until(() => fresh.workspace.pendingAgentApproval != null);
+        fresh.workspace.resolveAgentApproval(true);
+        await second;
+        expect(fresh.workspace.turns.last.phase, GenAiChatPhase.completed);
+        expect(executions, declined ? 1 : 2);
+        expect(fresh.workspace.turns.last.agentEvents.values.single.result!['reused'], isNull);
+      },
+    );
   }
 
   test('same-owner token rejection retains transcript but cancels active work', () async {
@@ -169,7 +171,7 @@ void main() {
           jsonDecode((messages[messages.length - 2] as Map)['content'] as String) as Map;
       expect(control['current_task'], steps == 0 ? isNull : 'Only read the new semester');
       expect(
-        control['current_step'],
+        decodeGenAiRemoteRecord(body['chatInfo'] as String)!['step_id'],
         genAiAgentNonceFromSystem((messages.last as Map)['content'] as String),
       );
       expect(messages.toString(), contains('techpie_turn_end'));
@@ -193,43 +195,45 @@ void main() {
     expect(fresh.workspace.turns.last.answer, 'New semester 2');
   });
 
-  test('edited agent turns run the full loop and recover on a fresh client in both modes',
-      () async {
-    final server = JournalServer();
-    var executions = 0;
-    final tool = testTool(execute: () async => {'semester': ++executions});
-    final client = await JournalClient.create(server, tools: [tool]);
-    addTearDown(client.dispose);
-    client.workspace.setAgentEnabled(true);
-    server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
-        ? server.call(body)
-        : server.finalAnswer(body, 'Semester $executions.');
-    await client.workspace.send('original question');
-    final group = client.workspace.groupId;
-    final target = client.workspace.turns.single.id;
-    await client.workspace.send('discarded followup');
-    await client.workspace.changeTurn(target, replacement: 'edited question');
-    expect(executions, 3);
-    expect(client.workspace.turns.single.answer, 'Semester 3.');
-    expect(server.rows[group], hasLength(2)); // Proposal plus receipt/final, no bookkeeping POST.
-    for (final agent in [true, false]) {
-      final fresh = await JournalClient.create(server, tools: [tool]);
-      addTearDown(fresh.dispose);
-      await fresh.workspace.openConversation(group, GenAiCancellation());
-      expect(fresh.workspace.turns.first.prompt, 'edited question');
-      expect(fresh.workspace.turns.first.agentEvents.values.single.result!['ok'], true);
-      fresh.workspace.setAgentEnabled(agent);
-      server.onGenerate = (body) {
-        expect(body['messages'].toString(), contains('semester'));
-        expect(body['messages'].toString(), isNot(contains('discarded followup')));
-        expect(body['messages'].toString(), isNot(contains('original question')));
-        return agent ? server.finalAnswer(body, 'Recall 3.') : 'Recall 3.';
-      };
-      await fresh.workspace.send('follow up');
-      expect(fresh.workspace.turns.last.phase, GenAiChatPhase.completed);
-    }
-    expect(executions, 3); // Recovery never replays a tool.
-  });
+  test(
+    'edited agent turns run the full loop and recover on a fresh client in both modes',
+    () async {
+      final server = JournalServer();
+      var executions = 0;
+      final tool = testTool(execute: () async => {'semester': ++executions});
+      final client = await JournalClient.create(server, tools: [tool]);
+      addTearDown(client.dispose);
+      client.workspace.setAgentEnabled(true);
+      server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+          ? server.call(body)
+          : server.finalAnswer(body, 'Semester $executions.');
+      await client.workspace.send('original question');
+      final group = client.workspace.groupId;
+      final target = client.workspace.turns.single.id;
+      await client.workspace.send('discarded followup');
+      await client.workspace.changeTurn(target, replacement: 'edited question');
+      expect(executions, 3);
+      expect(client.workspace.turns.single.answer, 'Semester 3.');
+      expect(server.rows[group], hasLength(2)); // Proposal plus receipt/final, no bookkeeping POST.
+      for (final agent in [true, false]) {
+        final fresh = await JournalClient.create(server, tools: [tool]);
+        addTearDown(fresh.dispose);
+        await fresh.workspace.openConversation(group, GenAiCancellation());
+        expect(fresh.workspace.turns.first.prompt, 'edited question');
+        expect(fresh.workspace.turns.first.agentEvents.values.single.result!['ok'], true);
+        fresh.workspace.setAgentEnabled(agent);
+        server.onGenerate = (body) {
+          expect(body['messages'].toString(), contains('semester'));
+          expect(body['messages'].toString(), isNot(contains('discarded followup')));
+          expect(body['messages'].toString(), isNot(contains('original question')));
+          return agent ? server.finalAnswer(body, 'Recall 3.') : 'Recall 3.';
+        };
+        await fresh.workspace.send('follow up');
+        expect(fresh.workspace.turns.last.phase, GenAiChatPhase.completed);
+      }
+      expect(executions, 3); // Recovery never replays a tool.
+    },
+  );
 
   test('editing a stopped agent preserves a tool receipt not yet saved by the model', () async {
     final server = JournalServer();
@@ -276,55 +280,57 @@ void main() {
   });
 
   for (final name in ['generate_image', 'reserve_court']) {
-    test('explicit $name edit renews approval while keeping external receipts recoverable',
-        () async {
-      final server = JournalServer();
-      var executions = 0;
-      var slot = 'first';
-      final tool = GenAiAgentTool(
-        name: name,
-        description: 'Test mutation',
-        inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
-        maxApprovalsPerRun: name == 'reserve_court' ? 1 : null,
-        prepare: (_, __) async => GenAiAgentPreparedTool(
-          requiresApproval: true,
-          effectKey: slot,
-          execute: () async => {'completed': ++executions},
-        ),
-      );
-      final client = await JournalClient.create(server, tools: [tool]);
-      addTearDown(client.dispose);
-      client.workspace.setAgentEnabled(true);
-      server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
-          ? encodeGenAiCompactCall(name, {}, nonce: server.nonce(body))
-          : server.finalAnswer(body, 'Done.');
-      final sending = client.workspace.send('original');
-      await until(() => client.workspace.pendingAgentApproval != null);
-      client.workspace.resolveAgentApproval(name != 'generate_image');
-      await sending;
-      final group = client.workspace.groupId;
-      final original = client.workspace.turns.single;
-      slot = 'second';
-      final editing = client.workspace.changeTurn(original.id, replacement: 'revised');
-      await until(() => client.workspace.pendingAgentApproval != null);
-      client.workspace.resolveAgentApproval(true);
-      await editing;
-      expect(
-        client.workspace.turns.single.actionScopeId,
-        isNot(original.actionScopeId ?? original.id),
-      );
-      expect(executions, name == 'generate_image' ? 1 : 2);
-      final fresh = await JournalClient.create(server, tools: [tool]);
-      addTearDown(fresh.dispose);
-      await fresh.workspace.openConversation(group, GenAiCancellation());
-      expect(fresh.workspace.turns.single.prompt, 'revised');
-      if (name == 'reserve_court') {
-        slot = 'first';
-        await fresh.workspace.send('same previously booked court');
-        expect(fresh.workspace.pendingAgentApproval, isNull);
-        expect(executions, 2); // Old receipt survives deletion and a fresh client.
-      }
-    });
+    test(
+      'explicit $name edit renews approval while keeping external receipts recoverable',
+      () async {
+        final server = JournalServer();
+        var executions = 0;
+        var slot = 'first';
+        final tool = GenAiAgentTool(
+          name: name,
+          description: 'Test mutation',
+          inputSchema: {'type': 'object', 'properties': <String, Object?>{}},
+          maxApprovalsPerRun: name == 'reserve_court' ? 1 : null,
+          prepare: (_, __) async => GenAiAgentPreparedTool(
+            requiresApproval: true,
+            effectKey: slot,
+            execute: () async => {'completed': ++executions},
+          ),
+        );
+        final client = await JournalClient.create(server, tools: [tool]);
+        addTearDown(client.dispose);
+        client.workspace.setAgentEnabled(true);
+        server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+            ? encodeGenAiCompactCall(name, {}, nonce: server.nonce(body))
+            : server.finalAnswer(body, 'Done.');
+        final sending = client.workspace.send('original');
+        await until(() => client.workspace.pendingAgentApproval != null);
+        client.workspace.resolveAgentApproval(name != 'generate_image');
+        await sending;
+        final group = client.workspace.groupId;
+        final original = client.workspace.turns.single;
+        slot = 'second';
+        final editing = client.workspace.changeTurn(original.id, replacement: 'revised');
+        await until(() => client.workspace.pendingAgentApproval != null);
+        client.workspace.resolveAgentApproval(true);
+        await editing;
+        expect(
+          client.workspace.turns.single.actionScopeId,
+          isNot(original.actionScopeId ?? original.id),
+        );
+        expect(executions, name == 'generate_image' ? 1 : 2);
+        final fresh = await JournalClient.create(server, tools: [tool]);
+        addTearDown(fresh.dispose);
+        await fresh.workspace.openConversation(group, GenAiCancellation());
+        expect(fresh.workspace.turns.single.prompt, 'revised');
+        if (name == 'reserve_court') {
+          slot = 'first';
+          await fresh.workspace.send('same previously booked court');
+          expect(fresh.workspace.pendingAgentApproval, isNull);
+          expect(executions, 2); // Old receipt survives deletion and a fresh client.
+        }
+      },
+    );
   }
 
   for (final cancel in [false, true]) {
@@ -359,141 +365,159 @@ void main() {
       // Read-back confirms the proposal, not a durable unknown-result write.
       // Cancellation captures the runner's dispatched receipt below.
       expect(turn.agentTranscript.last.call?.name, 'reserve_court');
-      if (cancel) client.workspace.stop();
+      Future<void>? followUp;
+      if (cancel) {
+        client.workspace.stop();
+        followUp = client.workspace.send('Record my next question');
+      }
       finish.complete({'status': 'booked'});
       await sending;
+      await followUp;
       final result = turn.agentEvents.values.single.result!;
       expect(turn.agentEvents.values.single.kind, GenAiAgentEventKind.toolFinished);
       if (cancel) {
         expect(result['error'], containsPair('code', 'outcome_unknown'));
+        final fresh = await JournalClient.create(server, tools: [testTool()]);
+        addTearDown(fresh.dispose);
+        await fresh.workspace.openConversation(client.workspace.groupId, GenAiCancellation());
+        final recovered = fresh.workspace.turns;
+        expect(recovered.first.agentEvents.values.single.result, result);
+        expect(recovered.last.prompt, 'Record my next question');
+        expect(recovered.last.agentEvents, isEmpty);
       } else {
         expect(result['ok'], true);
       }
     });
   }
 
-  test('generated-image receipts supply visual context after remote recovery in both modes',
-      () async {
-    final server = JournalServer();
-    const image = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/generated.png';
-    const revision = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/revised.png';
-    var executions = 0;
-    final imageTool = GenAiAgentTool(
-      name: 'generate_image',
-      description: 'Test image',
-      inputSchema: {
-        'type': 'object',
-        'properties': <String, Object?>{},
-        'additionalProperties': false,
-      },
-      prepare: (_, __) async => GenAiAgentPreparedTool(
-        execute: () async => {
-          'status': 'generated',
-          'images': [++executions == 1 ? image : revision],
+  test(
+    'generated-image receipts supply visual context after remote recovery in both modes',
+    () async {
+      final server = JournalServer();
+      const image = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/generated.png';
+      const revision = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/revised.png';
+      var executions = 0;
+      final imageTool = GenAiAgentTool(
+        name: 'generate_image',
+        description: 'Test image',
+        inputSchema: {
+          'type': 'object',
+          'properties': <String, Object?>{},
+          'additionalProperties': false,
         },
-      ),
-    );
-    final a = await JournalClient.create(server, tools: [imageTool]);
-    addTearDown(a.dispose);
-    a.workspace.setAgentEnabled(true);
-    server.onGenerate = (body) {
-      expect(body['netGo'], false);
-      if (decodeGenAiAgentRecord(server.input(body))?.result == null) {
-        return server.call(body, name: 'generate_image');
-      }
-      expect(visionImageLabels(body), [executions == 1 ? image : revision]);
-      expect(body['messages'].toString(), contains('"images":true'));
-      expect(body['imageUrl'], isNull);
-      if (executions == 1) return server.call(body, name: 'generate_image');
-      expect(visionImageLabels(body), [revision]);
-      return server.finalAnswer(body, 'Created.');
-    };
-    await a.workspace.send('Create a campus image');
-    final id = a.workspace.groupId;
-    for (final enabled in [false, true]) {
-      final b = await JournalClient.create(server, tools: [imageTool]);
-      addTearDown(b.dispose);
-      expect(await b.workspace.openConversation(id, GenAiCancellation()), true);
-      b.workspace.setAgentEnabled(enabled);
+        prepare: (_, __) async => GenAiAgentPreparedTool(
+          execute: () async => {
+            'status': 'generated',
+            'images': [++executions == 1 ? image : revision],
+          },
+        ),
+      );
+      final a = await JournalClient.create(server, tools: [imageTool]);
+      addTearDown(a.dispose);
+      a.workspace.setAgentEnabled(true);
       server.onGenerate = (body) {
-        expect(visionImageLabels(body), enabled ? [revision] : [image, revision]);
-        if (enabled) expect(body['messages'].toString(), contains(image));
-        expect(body['imageUrl'], isNull);
         expect(body['netGo'], false);
-        return enabled ? server.finalAnswer(body, 'The saved picture.') : 'The saved picture.';
+        if (decodeGenAiAgentRecord(server.input(body))?.result == null) {
+          return server.call(body, name: 'generate_image');
+        }
+        expect(visionImageLabels(body), [executions == 1 ? image : revision]);
+        expect(body['messages'].toString(), contains('"images":true'));
+        expect(body['imageUrl'], isNull);
+        if (executions == 1) return server.call(body, name: 'generate_image');
+        expect(visionImageLabels(body), [revision]);
+        return server.finalAnswer(body, 'Created.');
       };
-      await b.workspace.send('Describe the image');
-      expect(b.workspace.turns.last.phase, GenAiChatPhase.completed);
-    }
-    expect(server.transport.requests.any((r) => r.uri.path.endsWith('/net/search')), false);
-  });
+      await a.workspace.send('Create a campus image');
+      final id = a.workspace.groupId;
+      for (final enabled in [false, true]) {
+        final b = await JournalClient.create(server, tools: [imageTool]);
+        addTearDown(b.dispose);
+        expect(await b.workspace.openConversation(id, GenAiCancellation()), true);
+        b.workspace.setAgentEnabled(enabled);
+        server.onGenerate = (body) {
+          expect(visionImageLabels(body), enabled ? [revision] : [image, revision]);
+          if (enabled) expect(body['messages'].toString(), contains(image));
+          expect(body['imageUrl'], isNull);
+          expect(body['netGo'], false);
+          return enabled ? server.finalAnswer(body, 'The saved picture.') : 'The saved picture.';
+        };
+        await b.workspace.send('Describe the image');
+        expect(b.workspace.turns.last.phase, GenAiChatPhase.completed);
+      }
+      expect(server.transport.requests.any((r) => r.uri.path.endsWith('/net/search')), false);
+    },
+  );
 
-  test('fresh clients recover tools and documents; mode switches share one canonical context',
-      () async {
-    final server = JournalServer();
-    final a = await JournalClient.create(server, tools: [testTool()]);
-    addTearDown(a.dispose);
-    a.workspace.setAgentEnabled(true);
-    a.workspace.setThinking(true);
-    await a.workspace.addDocumentAttachment('notes.txt', [65, 66]);
-    server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
-        ? server.call(body)
-        : server.finalAnswer(body, 'Semester 3; number 5837.');
-    await a.workspace.send('Read the document and semester');
-    expect(a.workspace.turns.single.phase, GenAiChatPhase.completed);
-    expect(server.generations, hasLength(2)); // No metadata-only generation.
-    final group = a.workspace.groupId;
-    final b = await JournalClient.create(server, tools: [testTool()]);
-    addTearDown(b.dispose);
-    expect(await b.workspace.openConversation(group, GenAiCancellation()), true);
-    final recovered = b.workspace.turns.single;
-    expect(recovered.answer, 'Semester 3; number 5837.');
-    expect(recovered.attachedFileContents['doc-1'], contains('5837'));
-    expect(recovered.agentEvents.values.single.result!['ok'], true);
-    expect(b.workspace.agentEnabled, true);
-    b.workspace.setAgentEnabled(false);
-    server.onGenerate = (_) => 'It is 5837.';
-    await b.workspace.send('What was the number?');
-    expect(b.workspace.turns.last.answer, 'It is 5837.');
-    expect(server.generations.last['fileIds'], ['doc-1']);
-    expect(server.generations.last['messages'].toString(), contains('Semester 3'));
-    a.workspace.setAgentEnabled(false);
-    await a.workspace.send('Another device continued; use that history');
-    expect(a.workspace.turns, hasLength(3));
-    expect(server.generations.last['messages'].toString(), contains('It is 5837.'));
-  });
+  test(
+    'fresh clients recover tools and documents; mode switches share one canonical context',
+    () async {
+      final server = JournalServer();
+      final a = await JournalClient.create(server, tools: [testTool()]);
+      addTearDown(a.dispose);
+      a.workspace.setAgentEnabled(true);
+      a.workspace.setThinking(true);
+      await a.workspace.addDocumentAttachment('notes.txt', [65, 66]);
+      server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+          ? server.call(body)
+          : server.finalAnswer(body, 'Semester 3; number 5837.');
+      await a.workspace.send('Read the document and semester');
+      expect(a.workspace.turns.single.phase, GenAiChatPhase.completed);
+      expect(server.generations, hasLength(2)); // No metadata-only generation.
+      final group = a.workspace.groupId;
+      final b = await JournalClient.create(server, tools: [testTool()]);
+      addTearDown(b.dispose);
+      expect(await b.workspace.openConversation(group, GenAiCancellation()), true);
+      final recovered = b.workspace.turns.single;
+      expect(recovered.answer, 'Semester 3; number 5837.');
+      expect(recovered.attachedFileContents['doc-1'], contains('5837'));
+      expect(recovered.agentEvents.values.single.result!['ok'], true);
+      expect(b.workspace.agentEnabled, true);
+      b.workspace.setAgentEnabled(false);
+      server.onGenerate = (_) => 'It is 5837.';
+      await b.workspace.send('What was the number?');
+      expect(b.workspace.turns.last.answer, 'It is 5837.');
+      expect(server.generations.last['fileIds'], ['doc-1']);
+      expect(server.generations.last['messages'].toString(), contains('Semester 3'));
+      a.workspace.setAgentEnabled(false);
+      await a.workspace.send('Another device continued; use that history');
+      expect(a.workspace.turns, hasLength(3));
+      expect(server.generations.last['messages'].toString(), contains('It is 5837.'));
+    },
+  );
 
-  test('mutation requires persisted proposal and explicit confirmation; retry cannot book twice',
-      () async {
-    final server = JournalServer();
-    var executions = 0;
-    final client = await JournalClient.create(
-      server,
-      tools: [testTool(mutation: true, execute: () async => ++executions)],
-    );
-    addTearDown(client.dispose);
-    client.workspace.setAgentEnabled(true);
-    server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
-        ? server.call(body, name: 'reserve_court', arguments: {'action': 'book'})
-        : server.finalAnswer(body, 'Booked.');
-    final sending = client.workspace.send('Book one court');
-    await until(() => client.workspace.pendingAgentApproval != null);
-    expect(executions, 0);
-    client.workspace.resolveAgentApproval(true);
-    await sending;
-    expect(executions, 1);
-    expect(client.workspace.turns.single.phase, GenAiChatPhase.completed);
-    final fresh = await JournalClient.create(
-      server,
-      tools: [testTool(mutation: true, execute: () async => ++executions)],
-    );
-    addTearDown(fresh.dispose);
-    await fresh.workspace.openConversation(client.workspace.groupId, GenAiCancellation());
-    await fresh.workspace.retryTurn(0);
-    expect(executions, 1);
-    expect(fresh.workspace.pendingAgentApproval, isNull);
-    expect(fresh.workspace.turns, hasLength(1));
-  });
+  test(
+    'mutation requires persisted proposal and explicit confirmation; retry cannot book twice',
+    () async {
+      final server = JournalServer();
+      var executions = 0;
+      final client = await JournalClient.create(
+        server,
+        tools: [testTool(mutation: true, execute: () async => ++executions)],
+      );
+      addTearDown(client.dispose);
+      client.workspace.setAgentEnabled(true);
+      server.onGenerate = (body) => decodeGenAiAgentRecord(server.input(body))?.result == null
+          ? server.call(body, name: 'reserve_court', arguments: {'action': 'book'})
+          : server.finalAnswer(body, 'Booked.');
+      final sending = client.workspace.send('Book one court');
+      await until(() => client.workspace.pendingAgentApproval != null);
+      expect(executions, 0);
+      client.workspace.resolveAgentApproval(true);
+      await sending;
+      expect(executions, 1);
+      expect(client.workspace.turns.single.phase, GenAiChatPhase.completed);
+      final fresh = await JournalClient.create(
+        server,
+        tools: [testTool(mutation: true, execute: () async => ++executions)],
+      );
+      addTearDown(fresh.dispose);
+      await fresh.workspace.openConversation(client.workspace.groupId, GenAiCancellation());
+      await fresh.workspace.retryTurn(0);
+      expect(executions, 1);
+      expect(fresh.workspace.pendingAgentApproval, isNull);
+      expect(fresh.workspace.turns, hasLength(1));
+    },
+  );
 
   test('missing persisted proposal fails closed before approval or mutation', () async {
     final server = JournalServer()..hideHistory = true;
@@ -504,8 +528,8 @@ void main() {
     );
     addTearDown(client.dispose);
     client.workspace.setAgentEnabled(true);
-    server.onGenerate =
-        (body) => server.call(body, name: 'reserve_court', arguments: {'action': 'book'});
+    server.onGenerate = (body) =>
+        server.call(body, name: 'reserve_court', arguments: {'action': 'book'});
     await client.workspace.send('Book one court');
     expect(executions, 0);
     expect(client.workspace.pendingAgentApproval, isNull);
@@ -522,8 +546,8 @@ void main() {
     );
     addTearDown(client.dispose);
     client.workspace.setAgentEnabled(true);
-    server.onGenerate =
-        (body) => server.call(body, name: 'reserve_court', arguments: {'action': 'book'});
+    server.onGenerate = (body) =>
+        server.call(body, name: 'reserve_court', arguments: {'action': 'book'});
     final pending = client.workspace.send('Book');
     await until(() => client.workspace.pendingAgentApproval != null);
     await client.sessions.setOwner(ownerB);
@@ -543,10 +567,13 @@ void main() {
     final opening = client.workspace.openConversation(group, GenAiCancellation());
     await Future<void>.delayed(Duration.zero);
     client.workspace.newConversation();
-    server.readGate!.complete();
+    final gate = server.readGate!;
     server.readGate = null;
+    await client.workspace.send('New work');
+    gate.complete();
     expect(await opening, false);
-    expect(client.workspace.turns, isEmpty);
+    expect(client.workspace.groupId, isNot(group));
+    expect(client.workspace.turns.single.prompt, 'New work');
     server.failDelete = true;
     await expectLater(
       client.workspace.deleteConversation(group, GenAiCancellation()),
@@ -559,36 +586,39 @@ void main() {
     expect(server.rows[group], isNotEmpty);
   });
 
-  test('unsaved exchange blocks automatic continuation and opening does not reorder messages',
-      () async {
-    final server = JournalServer();
-    final client = await JournalClient.create(server);
-    addTearDown(client.dispose);
-    await client.workspace.send('Original');
-    final group = client.workspace.groupId;
-    final time = server.rows[group]!.single['createTime'];
-    await client.workspace.openConversation(group, GenAiCancellation());
-    expect(server.rows[group]!.single['createTime'], time);
-    server.hideHistory = true;
-    await client.workspace.send('Must not silently replace history');
-    expect(server.generations, hasLength(1));
-    expect(client.workspace.archiveFailure, isNotNull);
-  });
+  test(
+    'unsaved exchange blocks automatic continuation and opening does not reorder messages',
+    () async {
+      final server = JournalServer();
+      final client = await JournalClient.create(server);
+      addTearDown(client.dispose);
+      await client.workspace.send('Original');
+      final group = client.workspace.groupId;
+      final time = server.rows[group]!.single['createTime'];
+      await client.workspace.openConversation(group, GenAiCancellation());
+      expect(server.rows[group]!.single['createTime'], time);
+      server.hideHistory = true;
+      await client.workspace.send('Must not silently replace history');
+      expect(server.generations, hasLength(1));
+      expect(client.workspace.archiveFailure, isNotNull);
+    },
+  );
 
-  test('rename is marked in the next real message without a bookkeeping generation', () async {
+  test('rename is server metadata and survives a fresh history read without generation', () async {
     final server = JournalServer();
     final client = await JournalClient.create(server);
     addTearDown(client.dispose);
     await client.workspace.send('Original');
     await client.workspace.renameConversation(client.workspace.groupId, 'Named chat');
     expect(server.generations, hasLength(1));
-    await client.workspace.send('Followup');
-    expect(
-      decodeGenAiRemoteRecord(server.generations.last['chatInfo'] as String)!['title'],
-      'Named chat',
-    );
+    expect(server.titles[client.workspace.groupId], 'Named chat');
+    await client.workspace.pinConversation(client.workspace.groupId, true, GenAiCancellation());
+    expect(server.generations, hasLength(1));
     final fresh = await JournalClient.create(server);
     addTearDown(fresh.dispose);
+    final listed = await fresh.workspace.listConversations(GenAiCancellation());
+    expect(listed.records.single.title, 'Named chat');
+    expect(listed.records.single.pinned, isTrue);
     await fresh.workspace.openConversation(client.workspace.groupId, GenAiCancellation());
     expect(fresh.workspace.title, 'Named chat');
   });

@@ -4,17 +4,14 @@ import 'genai_failure.dart';
 
 /// Per-operation cancellation, including requests still awaiting headers.
 final class GenAiCancellation {
-  final _cancelled = Completer<void>();
   final _listeners = <void Function()>{};
   GenAiFailure? _failure;
 
   bool get isCancelled => _failure != null;
-  Future<void> get whenCancelled => _cancelled.future;
 
   void cancel([GenAiFailureKind kind = GenAiFailureKind.cancelled]) {
     if (isCancelled) return;
     _failure = GenAiFailure(kind);
-    _cancelled.complete();
     final listeners = _listeners.toList();
     _listeners.clear();
     for (final listener in listeners) {
@@ -36,6 +33,10 @@ final class GenAiCancellation {
     }
     return () => _listeners.remove(listener);
   }
+
+  /// Links a child request while preserving timeout and account invalidation.
+  void Function() forwardTo(GenAiCancellation child) =>
+      onCancel(() => child.cancel(_failure!.kind));
 
   Future<T> race<T>(Future<T> operation) {
     final result = Completer<T>();

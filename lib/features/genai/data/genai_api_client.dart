@@ -20,16 +20,15 @@ final class GenAiApiClient {
     Uri? apiBase,
     DateTime Function()? now,
     GenAiRequestSigner? signer,
-    this.maxJsonBytes = 2 * 1024 * 1024,
-  })  : _transport = transport,
-        _base = apiBase ?? Uri.https('genai.shanghaitech.edu.cn', '/htk/'),
-        _now = now ?? DateTime.now,
-        _signer = signer ??
-            (const String.fromEnvironment('TECHPI_GENAI_SIGNING_SALT').isEmpty
-                ? null
-                : const GenAiRequestSigner(
-                    String.fromEnvironment('TECHPI_GENAI_SIGNING_SALT'),
-                  )) {
+    this.maxJsonBytes = 64 * 1024 * 1024,
+  }) : _transport = transport,
+       _base = apiBase ?? Uri.https('genai.shanghaitech.edu.cn', '/htk/'),
+       _now = now ?? DateTime.now,
+       _signer =
+           signer ??
+           (const String.fromEnvironment('TECHPI_GENAI_SIGNING_SALT').isEmpty
+               ? null
+               : const GenAiRequestSigner(String.fromEnvironment('TECHPI_GENAI_SIGNING_SALT'))) {
     final loopback = const ['localhost', '127.0.0.1', '::1'].contains(_base.host);
     if ((_base.scheme != 'https' && !(_base.scheme == 'http' && loopback)) ||
         !_base.path.endsWith('/') ||
@@ -49,18 +48,12 @@ final class GenAiApiClient {
   /// Resolve only for display; chat requests retain canonical university URLs.
   Uri imageDisplayUri(String url) => genAiImageUri(url, baseOrigin: _base.origin);
 
-  Future<GenAiProfile> verifyToken(
-    String token,
-    GenAiCancellation cancellation,
-  ) async {
+  Future<GenAiProfile> verifyToken(String token, GenAiCancellation cancellation) async {
     _validateToken(token);
     final result = genAiObject(
-      await _get(
-        'user/info/${Uri.encodeComponent(token)}',
-        token,
-        {'_t': '${_now().millisecondsSinceEpoch}'},
-        cancellation,
-      ),
+      await _get('user/info/${Uri.encodeComponent(token)}', token, {
+        '_t': '${_now().millisecondsSinceEpoch}',
+      }, cancellation),
     );
     final user = genAiObject(result['userInfo']);
     return GenAiProfile(
@@ -69,39 +62,87 @@ final class GenAiApiClient {
     );
   }
 
-  Future<List<GenAiModel>> listModels(
-    String token,
-    GenAiCancellation cancellation,
-  ) async {
+  Future<List<GenAiModel>> listModels(String token, GenAiCancellation cancellation) async {
     final page = genAiObject(
-      await _get(
-        'ai/aiModel/list',
-        token,
-        {
+      await _get('ai/aiModel/list', token, {
+        'pageNo': '1',
+        'pageSize': '999',
+        'showStatusList': '2,3',
+        '_t': '${_now().millisecondsSinceEpoch}',
+      }, cancellation),
+    );
+    final records = page['records'];
+    if (records is! List) throw const GenAiFailure(GenAiFailureKind.protocol);
+    final byModel = <String, Map<String, dynamic>>{};
+    bool hasText(Object? value) => value is String && value.trim().isNotEmpty;
+    void merge(List<dynamic> records, {bool supplemental = false}) {
+      for (final record in records) {
+        if (record is! Map<String, dynamic>) continue;
+        // Registry V2 includes unassigned rows without a provider. They cannot
+        // be invoked; never guess a provider or discard the valid catalog.
+        if (!hasText(record['rootAiType']) || !hasText(record['aiType'])) continue;
+        final key = '${record['rootAiType']}:${record['aiType']}';
+        final previous = byModel[key];
+        final status = int.tryParse('${record['status']}');
+        // V2 is not reliably curated: it also returns ASR/TTS/search and old
+        // registry entries. Only declared chat/image rows may add new routes.
+        if (supplemental &&
+            ((status != null && status != 2 && status != 3) ||
+                (previous == null && status == null))) {
+          continue;
+        }
+        final name = hasText(record['aiName']) ? record['aiName'] : previous?['aiName'];
+        if (!hasText(name)) continue;
+        byModel[key] = {
+          ...?previous,
+          for (final entry in record.entries)
+            if (entry.value != null) entry.key: entry.value,
+          'aiName': name,
+        };
+      }
+    }
+
+    merge(records);
+    try {
+      final enterprise = genAiObject(
+        await _get('ai/aiModel/list/V2', token, {
           'pageNo': '1',
           'pageSize': '999',
           'showStatusList': '2,3',
-          '_t': '${_now().millisecondsSinceEpoch}',
-        },
-        cancellation,
-      ),
-    );
-    final records = page['records'];
-    if (records is! List) {
+        }, cancellation),
+      );
+      final records = enterprise['records'];
+      if (records is! List) throw const GenAiFailure(GenAiFailureKind.protocol);
+      merge(records, supplemental: true);
+    } on GenAiFailure catch (error) {
+      // Older deployments may expose only the complete registry. Campus denial
+      // is also HTTP 404; it must never be treated as an unavailable V2 route.
+      if (error.statusCode != 404 || error.kind == GenAiFailureKind.campusNetworkRequired) rethrow;
+    }
+    if (records.isNotEmpty && byModel.isEmpty) {
       throw const GenAiFailure(GenAiFailureKind.protocol);
     }
     return List.unmodifiable(
-      records.map((Object? record) {
+      byModel.values.map((record) {
         final model = genAiObject(record);
         return GenAiModel(
           name: genAiRequiredString(model, 'aiName'),
           aiType: genAiRequiredString(model, 'aiType'),
           rootAiType: genAiRequiredString(model, 'rootAiType'),
           status: int.tryParse('${model['status']}'),
-          enableDeepThink: model['enableDeepThink'] == true ||
+          enableDeepThink:
+              model['enableDeepThink'] == true ||
               model['enableDeepThink'] == 1 ||
               model['enableDeepThink'] == '1',
           payType: model['payType'] is String ? model['payType'] as String : null,
+          promptPrice: model['promptPrice']?.toString(),
+          completionPrice: model['completionPrice']?.toString(),
+          cacheTokenPrice: model['cacheTokenPrice']?.toString(),
+          longContextTokenThreshold: int.tryParse('${model['longContextTokenThreshold']}'),
+          thinkingField: model['thinkingField'] is String ? model['thinkingField'] as String : null,
+          thinkingFieldValue: model['thinkingFieldValue'] is String
+              ? model['thinkingFieldValue'] as String
+              : null,
         );
       }),
     );
@@ -113,35 +154,27 @@ final class GenAiApiClient {
     GenAiCancellation cancellation, {
     int page = 1,
     String query = '',
-  }) async =>
-      genAiPage(
-        await _get(
-          'ai/history/listByContentGroup',
-          token,
-          {
-            'userId': userId,
-            'pageNo': '$page',
-            'pageSize': '20',
-            'question': query,
-          },
-          cancellation,
-        ),
-        GenAiConversationSummary.fromJson,
-        page: page,
-        pageSize: 20,
-      );
+  }) async => genAiPage(
+    await _get('ai/history/listByContentGroup', token, {
+      'userId': userId,
+      'pageNo': '$page',
+      'pageSize': '20',
+      'question': query,
+    }, cancellation),
+    GenAiConversationSummary.fromJson,
+    page: page,
+    pageSize: 20,
+  );
 
   Future<List<GenAiSavedTurn>> loadConversation(
     String token,
     String groupId,
     GenAiCancellation cancellation,
   ) async {
-    final result = await _get(
-      'ai/history/getByChatGroupId',
-      token,
-      {'chatGroupId': groupId, '_t': '${_now().millisecondsSinceEpoch}'},
-      cancellation,
-    );
+    final result = await _get('ai/history/getByChatGroupId', token, {
+      'chatGroupId': groupId,
+      '_t': '${_now().millisecondsSinceEpoch}',
+    }, cancellation);
     if (result is! List) throw const GenAiFailure(GenAiFailureKind.protocol);
     final turns = <GenAiSavedTurn>[];
     for (final Object? row in result) {
@@ -175,33 +208,57 @@ final class GenAiApiClient {
     // leaves a prefix rather than dangling continuations where possible.
     for (var end = ids.length; end > 0;) {
       final start = (end - 50).clamp(0, end);
-      await _get(
-        'ai/history/delete/batch',
-        token,
-        {
-          'ids': ids.sublist(start, end).join(','),
-          '_t': '${_now().millisecondsSinceEpoch}',
-        },
-        cancellation,
-      );
+      await _get('ai/history/delete/batch', token, {
+        'ids': ids.sublist(start, end).join(','),
+        '_t': '${_now().millisecondsSinceEpoch}',
+      }, cancellation);
       end = start;
     }
   }
 
-  Future<void> deleteConversation(
+  Future<void> deleteConversation(String token, String id, GenAiCancellation cancellation) async {
+    await _get('ai/history/delete/groupId', token, {
+      'id': id,
+      '_t': '${_now().millisecondsSinceEpoch}',
+    }, cancellation);
+  }
+
+  Future<void> renameConversation(
     String token,
     String id,
+    String title,
     GenAiCancellation cancellation,
   ) async {
-    await _get(
-      'ai/history/delete/groupId',
+    await _jsonRequest(
+      'ai/history/group/rename',
       token,
-      {
-        'id': id,
-        '_t': '${_now().millisecondsSinceEpoch}',
-      },
       cancellation,
+      body: {'chatGroupId': id, 'title': title},
     );
+  }
+
+  Future<void> pinConversations(
+    String token,
+    List<String> ids,
+    bool pinned,
+    GenAiCancellation cancellation,
+  ) async {
+    if (ids.isEmpty) return;
+    await _jsonRequest(
+      'ai/history/group/pin',
+      token,
+      cancellation,
+      body: {'chatGroupIds': ids, 'pinned': pinned},
+    );
+  }
+
+  Future<void> deleteConversations(
+    String token,
+    List<String> ids,
+    GenAiCancellation cancellation,
+  ) async {
+    if (ids.isEmpty) return;
+    await _jsonRequest('ai/history/group/delete', token, cancellation, body: {'chatGroupIds': ids});
   }
 
   Future<List<Uri>> generateImage(
@@ -210,24 +267,14 @@ final class GenAiApiClient {
     GenAiCancellation cancellation,
   ) async {
     final result = genAiObject(
-      await _jsonRequest(
-        'chat/start/chat',
-        token,
-        cancellation,
-        body: request.toJson(),
-        raw: true,
-      ),
+      await _jsonRequest('chat/start/chat', token, cancellation, body: request.toJson(), raw: true),
     );
     final data = result['data'];
     if (data is! List || data.isEmpty) {
       throw const GenAiFailure(GenAiFailureKind.protocol);
     }
     return List.unmodifiable(
-      data.map(
-        (Object? row) => genAiImageUri(
-          genAiRequiredString(genAiObject(row), 'url'),
-        ),
-      ),
+      data.map((Object? row) => genAiImageUri(genAiRequiredString(genAiObject(row), 'url'))),
     );
   }
 
@@ -235,48 +282,21 @@ final class GenAiApiClient {
     String token,
     GenAiCancellation cancellation, {
     int page = 1,
-  }) async =>
-      genAiPage(
-        await _get(
-          'ai-image-history/list',
-          token,
-          {'pageNo': '$page', 'pageSize': '10'},
-          cancellation,
-        ),
-        GenAiImageRecord.fromJson,
-        page: page,
-        pageSize: 10,
-      );
+  }) async => genAiPage(
+    await _get('ai-image-history/list', token, {'pageNo': '$page', 'pageSize': '10'}, cancellation),
+    GenAiImageRecord.fromJson,
+    page: page,
+    pageSize: 10,
+  );
 
-  Future<void> deleteImage(
-    String token,
-    String id,
-    GenAiCancellation cancellation,
-  ) async {
-    _validateToken(token);
-    final response = await _transport.send(
+  Future<void> deleteImage(String token, String id, GenAiCancellation cancellation) async {
+    await _jsonRequest(
+      'ai-image-history/delete',
+      token,
+      cancellation,
       method: 'DELETE',
-      uri: _base.resolve('ai-image-history/delete').replace(
-        queryParameters: {
-          'id': id,
-          '_t': '${_now().millisecondsSinceEpoch}',
-        },
-      ),
-      cancellation: cancellation,
-      headers: {
-        'X-Access-Token': token,
-        'tenant-id': '0',
-        'Accept': 'application/json, text/plain, */*',
-      },
+      query: {'id': id, '_t': '${_now().millisecondsSinceEpoch}'},
     );
-    try {
-      await _checkStatus(response, cancellation);
-      final value = await _readJson(response);
-      cancellation.throwIfCancelled();
-      genAiEnvelope(value);
-    } finally {
-      response.close();
-    }
   }
 
   Future<GenAiUploadedFile> uploadDocument(
@@ -295,18 +315,10 @@ final class GenAiApiClient {
       fileName: uploadName,
       fileBytes: bytes,
     );
-    final uri = _base.resolve('chat/upload/chat/file').replace(
-      queryParameters: {
-        'chatGroupId': groupId,
-        'aiType': aiType,
-      },
-    );
-    final value = await _postMultipart(
-      uri,
-      token,
-      multipart,
-      cancellation,
-    );
+    final uri = _base
+        .resolve('chat/upload/chat/file')
+        .replace(queryParameters: {'chatGroupId': groupId, 'aiType': aiType});
+    final value = await _postMultipart(uri, token, multipart, cancellation);
     return GenAiUploadedFile.fromJson(genAiObject(value));
   }
 
@@ -321,25 +333,19 @@ final class GenAiApiClient {
     final contentType = lower.endsWith('.png')
         ? 'image/png'
         : (lower.endsWith('.gif')
-            ? 'image/gif'
-            : (lower.endsWith('.webp') ? 'image/webp' : 'image/jpeg'));
+              ? 'image/gif'
+              : (lower.endsWith('.webp') ? 'image/webp' : 'image/jpeg'));
     final multipart = GenAiMultipartData.create(
-      fields: const {
-        'biz': 'temp',
-        'uploadType': 'local',
-      },
+      fields: const {'biz': 'temp', 'uploadType': 'local'},
       fileFieldName: 'file',
       fileName: fileName,
       fileBytes: bytes,
       fileContentType: contentType,
     );
-    final host =
-        _base.host == 'genai.shanghaitech.edu.cn' ? 'genaipic.shanghaitech.edu.cn' : _base.host;
-    final uri = _base.replace(
-      host: host,
-      path: '/sys/common/upload',
-      queryParameters: null,
-    );
+    final host = _base.host == 'genai.shanghaitech.edu.cn'
+        ? 'genaipic.shanghaitech.edu.cn'
+        : _base.host;
+    final uri = _base.replace(host: host, path: '/sys/common/upload', queryParameters: null);
     final value = await _postMultipart(
       uri,
       token,
@@ -446,43 +452,20 @@ final class GenAiApiClient {
       fileBytes: bytes,
       fileContentType: 'audio/wav',
     );
-    final uri = _base.resolve('chat/recognize');
-    final response = await _transport.send(
-      method: 'POST',
-      uri: uri,
-      cancellation: cancellation,
-      headers: {
-        'x-access-token': token,
-        'X-Access-Token': token,
-        'tenant-id': '0',
-        'Accept': 'application/json, text/plain, */*',
-        'Content-Type': multipart.contentType,
-      },
-      bodyBytes: multipart.bytes,
+    final value = await _postMultipart(
+      _base.resolve('chat/recognize'),
+      token,
+      multipart,
+      cancellation,
+      headers: {'x-access-token': token},
     );
-    try {
-      await _checkStatus(response, cancellation);
-      final value = await _readJson(response);
-      cancellation.throwIfCancelled();
-      final envelope = genAiObject(genAiEnvelope(value));
-      return GenAiAudioTranscription.fromJson(envelope).text;
-    } finally {
-      response.close();
-    }
+    return genAiTranscriptionText(genAiObject(value));
   }
 
-  Future<GenAiUsageSummary> usageSummary(
-    String token,
-    GenAiCancellation cancellation,
-  ) async =>
+  Future<GenAiUsageSummary> usageSummary(String token, GenAiCancellation cancellation) async =>
       GenAiUsageSummary.fromJson(
         genAiObject(
-          await _jsonRequest(
-            'ai-api-gateway/my/summary',
-            token,
-            cancellation,
-            signed: true,
-          ),
+          await _jsonRequest('ai-api-gateway/my/summary', token, cancellation, signed: true),
         ),
       );
 
@@ -490,24 +473,24 @@ final class GenAiApiClient {
     String token,
     GenAiCancellation cancellation, {
     int page = 1,
-  }) async =>
-      genAiPage(
-        await _jsonRequest(
-          'ai-trade-order/my/list',
-          token,
-          cancellation,
-          signed: true,
-          query: {'pageNo': '$page', 'pageSize': '10'},
-        ),
-        GenAiUsageOrder.fromJson,
-        page: page,
-        pageSize: 10,
-      );
+  }) async => genAiPage(
+    await _jsonRequest(
+      'ai-trade-order/my/list',
+      token,
+      cancellation,
+      signed: true,
+      query: {'pageNo': '$page', 'pageSize': '10'},
+    ),
+    GenAiUsageOrder.fromJson,
+    page: page,
+    pageSize: 10,
+  );
 
   Future<Object?> _jsonRequest(
     String path,
     String token,
     GenAiCancellation cancellation, {
+    String? method,
     Map<String, String> query = const {},
     Map<String, Object?>? body,
     bool signed = false,
@@ -521,7 +504,7 @@ final class GenAiApiClient {
     }
     final wireBody = body == null ? null : signer?.prepareBody(body) ?? body;
     final response = await _transport.send(
-      method: wireBody == null ? 'GET' : 'POST',
+      method: method ?? (wireBody == null ? 'GET' : 'POST'),
       uri: uri,
       cancellation: cancellation,
       headers: {
@@ -572,8 +555,7 @@ final class GenAiApiClient {
     String token,
     Map<String, String> query,
     GenAiCancellation cancellation,
-  ) =>
-      _jsonRequest(path, token, cancellation, query: query);
+  ) => _jsonRequest(path, token, cancellation, query: query);
 
   Stream<GenAiChatEvent> streamChat(
     GenAiChatRequest request,
@@ -634,7 +616,7 @@ final class GenAiApiClient {
         if (chunk.containsKey('error')) {
           throw const GenAiFailure(GenAiFailureKind.rejected);
         }
-        if (azure && chunk.containsKey('other')) {
+        if (chunk.containsKey('other')) {
           final Object? receipt;
           try {
             final other = chunk['other'];
@@ -644,13 +626,18 @@ final class GenAiApiClient {
           }
           final metadata = genAiObject(receipt);
           final answerId = metadata['answerGroupId'];
-          if (!((answerId is String && answerId.trim().isNotEmpty) || answerId is int)) {
+          if (azure && !((answerId is String && answerId.trim().isNotEmpty) || answerId is int)) {
             throw const GenAiFailure(GenAiFailureKind.protocol);
           }
           yield GenAiChatFinished(finishReason ?? GenAiFinishReason.done);
           return;
         }
+        final ended = chunk['isEnd'] == 1 || chunk['is_end'] == 1;
         final choices = chunk['choices'];
+        if (choices == null && ended && !azure) {
+          yield GenAiChatFinished(finishReason ?? GenAiFinishReason.stop);
+          return;
+        }
         if (choices is! List) {
           throw const GenAiFailure(GenAiFailureKind.protocol);
         }
@@ -678,6 +665,7 @@ final class GenAiApiClient {
             yield field == 'content' ? GenAiTextDelta(value) : GenAiReasoningDelta(value);
           }
         }
+        if (ended && finishReason == null) finishReason = GenAiFinishReason.stop;
         final finish = choice['finish_reason'];
         if (finish != null) {
           if (finish is! String || finish.isEmpty) {

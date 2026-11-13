@@ -2,25 +2,15 @@ import 'dart:convert';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
-import '../../../../widgets/adaptive_feedback.dart';
 import '../genai_icons.dart';
 import '../genai_theme.dart';
-import 'genai_code_font.dart';
+import 'genai_rich_answer_frame.dart';
 
-enum GenAiChartType {
-  bar,
-  line,
-  pie,
-}
+enum GenAiChartType { bar, line, pie }
 
 class GenAiChartSeries {
-  const GenAiChartSeries({
-    required this.name,
-    required this.values,
-    this.color,
-  });
+  const GenAiChartSeries({required this.name, required this.values, this.color});
 
   final String name;
   final List<double> values;
@@ -63,10 +53,7 @@ class GenAiChartSpec {
     }
   }
 
-  static GenAiChartSpec? _fromMap(
-    Map<String, dynamic> map, {
-    String? defaultTypeHint,
-  }) {
+  static GenAiChartSpec? _fromMap(Map<String, dynamic> map, {String? defaultTypeHint}) {
     // 1. Detect type
     var typeStr = (map['type'] ?? defaultTypeHint ?? 'bar').toString().toLowerCase();
     if (typeStr.contains('line')) {
@@ -134,9 +121,7 @@ class GenAiChartSpec {
         final parsedValues = <double>[];
         for (final item in list) {
           if (item is Map) {
-            parsedLabels.add(
-              item['name']?.toString() ?? item['label']?.toString() ?? '',
-            );
+            parsedLabels.add(item['name']?.toString() ?? item['label']?.toString() ?? '');
             final val = item['value'] ?? item['y'] ?? item['data'];
             parsedValues.add(_toDouble(val));
           }
@@ -156,15 +141,8 @@ class GenAiChartSpec {
     }
     // fl_chart computes padded bounds, ranges and pie totals during paint.
     // Finite inputs can still overflow these operations; show the source instead.
-    final values = series.expand((s) => s.values);
-    var min = 0.0;
-    var max = 0.0;
-    for (final value in values) {
-      if (value < min) min = value;
-      if (value > max) max = value;
-    }
-    final paddedMax = max == 0 ? 10.0 : max * 1.15;
-    final span = paddedMax - min;
+    final bounds = _bounds(series);
+    final span = bounds.$2 - bounds.$1;
     if (!span.isFinite || span / 100 == 0) return null;
     if (type == GenAiChartType.pie) {
       final slices = series.first.values;
@@ -187,12 +165,17 @@ class GenAiChartSpec {
       labels = padded;
     }
 
-    return GenAiChartSpec(
-      type: type,
-      title: title,
-      labels: labels,
-      series: series,
-    );
+    return GenAiChartSpec(type: type, title: title, labels: labels, series: series);
+  }
+
+  static (double, double) _bounds(List<GenAiChartSeries> series) {
+    var min = 0.0;
+    var max = 0.0;
+    for (final value in series.expand((s) => s.values)) {
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+    return (min, max == 0 ? 10.0 : max * 1.15);
   }
 
   static List<double> _toDoubleList(dynamic data) {
@@ -206,8 +189,8 @@ class GenAiChartSpec {
     final value = val is num
         ? val.toDouble()
         : val is String
-            ? double.tryParse(val)
-            : null;
+        ? double.tryParse(val)
+        : null;
     // fl_chart's automatic interval rounding converts values to integers.
     // Keep padding/ranges within the exact-integer range on native and web;
     // enormous scientific values remain available in the source fallback.
@@ -219,11 +202,7 @@ class GenAiChartSpec {
 }
 
 class GenAiChartView extends StatefulWidget {
-  const GenAiChartView({
-    super.key,
-    required this.code,
-    this.typeHint,
-  });
+  const GenAiChartView({super.key, required this.code, this.typeHint});
 
   final String code;
   final String? typeHint;
@@ -233,7 +212,6 @@ class GenAiChartView extends StatefulWidget {
 }
 
 class _GenAiChartViewState extends State<GenAiChartView> {
-  bool _showCode = false;
   GenAiChartSpec? _spec;
 
   @override
@@ -256,194 +234,63 @@ class _GenAiChartViewState extends State<GenAiChartView> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final palette = GenAiPalette.of(context);
-
     final spec = _spec;
-
-    if (spec == null) {
-      // Invalid JSON: fallback to code card with error header
-      return Container(
-        width: double.infinity,
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: palette.raised,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: palette.line),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(
-              context,
-              title: '图表数据格式无法识别',
-              badgeColor: theme.colorScheme.error,
-              showToggle: false,
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: SelectableText(
-                widget.code,
-                style: const TextStyle(
-                  fontFamily: kGenAiMonospaceFamily,
-                  fontFamilyFallback: kGenAiMonospaceFallback,
-                  fontSize: 12,
+    return GenAiRichAnswerFrame(
+      title: spec == null ? '图表数据格式无法识别' : spec.title ?? '数据图表',
+      icon: GenAiGlyph.chart,
+      source: widget.code,
+      sourceLabel: '数据',
+      fullscreenFromSource: true,
+      onFullscreen: spec == null ? null : () => _openFullscreen(spec),
+      preview: spec == null
+          ? null
+          : (context) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                  child: SizedBox(height: 240, child: _chart(context, spec)),
                 ),
-              ),
+                _buildLegend(context, spec),
+              ],
             ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: palette.raised,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: palette.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildHeader(
-            context,
-            title: spec.title ?? '数据图表',
-            badgeColor: theme.colorScheme.primary,
-            showToggle: true,
-          ),
-          if (_showCode)
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: SelectableText(
-                widget.code,
-                style: const TextStyle(
-                  fontFamily: kGenAiMonospaceFamily,
-                  fontFamilyFallback: kGenAiMonospaceFallback,
-                  fontSize: 12,
-                ),
-              ),
-            )
-          else ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-              child: SizedBox(
-                height: 240,
-                child: _chart(context, spec),
-              ),
-            ),
-            _buildLegend(context, spec),
-          ],
-        ],
-      ),
     );
   }
 
-  Widget _buildHeader(
-    BuildContext context, {
-    required String title,
-    required Color badgeColor,
-    required bool showToggle,
-  }) =>
-      GenAiContentHeader(
-        title: title,
-        leading: GenAiIcon(GenAiGlyph.chart, size: 16, color: badgeColor),
-        actions: [
-          if (showToggle)
-            IconButton(
-              tooltip: '全屏查看',
-              icon: const GenAiIcon(GenAiGlyph.full, size: 20),
-              onPressed: () async {
-                final spec = _spec;
-                if (spec == null) return;
-                await Navigator.of(context, rootNavigator: true).push<void>(
-                  MaterialPageRoute<void>(
-                    fullscreenDialog: true,
-                    builder: (context) => genAiThemeScope(
-                      context,
-                      Scaffold(
-                        appBar: AppBar(title: Text(title)),
-                        body: SafeArea(
-                          child: Padding(
-                            padding: const EdgeInsets.all(20),
-                            child: Column(
-                              children: [
-                                Expanded(child: _chart(context, spec)),
-                                _buildLegend(context, spec),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+  Future<void> _openFullscreen(GenAiChartSpec spec) =>
+      Navigator.of(context, rootNavigator: true).push<void>(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (context) => genAiThemeScope(
+            context,
+            Scaffold(
+              appBar: AppBar(title: Text(spec.title ?? '数据图表')),
+              body: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      Expanded(child: _chart(context, spec)),
+                      _buildLegend(context, spec),
+                    ],
                   ),
-                );
-              },
-            ),
-          Builder(
-            builder: (anchor) => IconButton(
-              tooltip: '更多操作',
-              icon: const GenAiIcon(GenAiGlyph.more, size: 20),
-              onPressed: () async {
-                final action = await genAiShowMenu<String>(
-                  context: context,
-                  anchorContext: anchor,
-                  items: [
-                    if (showToggle)
-                      PopupMenuItem(
-                        value: 'source',
-                        child: Text(_showCode ? '切换到图表' : '查看数据'),
-                      ),
-                    const PopupMenuItem(value: 'copy', child: Text('复制数据')),
-                  ],
-                );
-                if (!mounted) return;
-                if (action == 'source') setState(() => _showCode = !_showCode);
-                if (action == 'copy') {
-                  try {
-                    await Clipboard.setData(ClipboardData(text: widget.code));
-                    if (context.mounted) showAdaptiveFeedback(context: context, message: '已复制数据');
-                  } catch (_) {
-                    if (context.mounted) {
-                      showAdaptiveFeedback(context: context, message: '无法复制，请手动选择文字');
-                    }
-                  }
-                }
-              },
+                ),
+              ),
             ),
           ),
-        ],
+        ),
       );
 
   static Widget _chart(BuildContext context, GenAiChartSpec spec) => switch (spec.type) {
-        GenAiChartType.bar => _buildBarChart(context, spec),
-        GenAiChartType.line => _buildLineChart(context, spec),
-        GenAiChartType.pie => _buildPieChart(context, spec),
-      };
+    GenAiChartType.bar => _buildBarChart(context, spec),
+    GenAiChartType.line => _buildLineChart(context, spec),
+    GenAiChartType.pie => _buildPieChart(context, spec),
+  };
 
   static Widget _buildBarChart(BuildContext context, GenAiChartSpec spec) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final gridColor =
-        isDark ? Colors.white.withValues(alpha: .06) : Colors.black.withValues(alpha: .05);
-
     final numGroups = spec.labels.length;
     final numSeries = spec.series.length;
-
-    var maxY = 0.0;
-    for (final s in spec.series) {
-      for (final v in s.values) {
-        if (v > maxY) {
-          maxY = v;
-        }
-      }
-    }
-    if (maxY == 0) {
-      maxY = 10;
-    } else {
-      maxY = maxY * 1.15;
-    }
 
     final barGroups = <BarChartGroupData>[];
     for (var i = 0; i < numGroups; i++) {
@@ -467,92 +314,18 @@ class _GenAiChartViewState extends State<GenAiChartView> {
 
     return BarChart(
       BarChartData(
-        maxY: maxY,
+        maxY: GenAiChartSpec._bounds(spec.series).$2,
         barGroups: barGroups,
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          getDrawingHorizontalLine: (val) => FlLine(
-            color: gridColor,
-            strokeWidth: 1,
-          ),
-        ),
+        gridData: _grid(theme),
         borderData: FlBorderData(show: false),
-        titlesData: FlTitlesData(
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 36,
-              getTitlesWidget: (value, meta) => Text(
-                _formatNumber(value),
-                style: TextStyle(
-                  fontSize: 10,
-                  color: theme.hintColor,
-                ),
-              ),
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 26,
-              getTitlesWidget: (value, meta) {
-                final idx = value.toInt();
-                if (idx >= 0 && idx < spec.labels.length) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      spec.labels[idx],
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: theme.hintColor,
-                      ),
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-          ),
-        ),
+        titlesData: _titles(theme, spec.labels),
       ),
     );
   }
 
   static Widget _buildLineChart(BuildContext context, GenAiChartSpec spec) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final gridColor =
-        isDark ? Colors.white.withValues(alpha: .06) : Colors.black.withValues(alpha: .05);
-
-    var maxY = 0.0;
-    var minY = double.infinity;
-    for (final s in spec.series) {
-      for (final v in s.values) {
-        if (v > maxY) {
-          maxY = v;
-        }
-        if (v < minY) {
-          minY = v;
-        }
-      }
-    }
-    if (minY == double.infinity) {
-      minY = 0;
-    }
-    if (minY > 0) {
-      minY = 0;
-    }
-    if (maxY == 0) {
-      maxY = 10;
-    } else {
-      maxY = maxY * 1.15;
-    }
-
+    final (minY, maxY) = GenAiChartSpec._bounds(spec.series);
     final lineBars = <LineChartBarData>[];
     for (var sIdx = 0; sIdx < spec.series.length; sIdx++) {
       final s = spec.series[sIdx];
@@ -570,10 +343,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
           barWidth: 2.5,
           color: color,
           dotData: const FlDotData(show: true),
-          belowBarData: BarAreaData(
-            show: true,
-            color: color.withValues(alpha: .12),
-          ),
+          belowBarData: BarAreaData(show: true, color: color.withValues(alpha: .12)),
         ),
       );
     }
@@ -583,59 +353,56 @@ class _GenAiChartViewState extends State<GenAiChartView> {
         minY: minY,
         maxY: maxY,
         lineBarsData: lineBars,
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          getDrawingHorizontalLine: (val) => FlLine(
-            color: gridColor,
-            strokeWidth: 1,
-          ),
-        ),
+        gridData: _grid(theme),
         borderData: FlBorderData(show: false),
-        titlesData: FlTitlesData(
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 36,
-              getTitlesWidget: (value, meta) => Text(
-                _formatNumber(value),
-                style: TextStyle(
-                  fontSize: 10,
-                  color: theme.hintColor,
-                ),
-              ),
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 26,
-              getTitlesWidget: (value, meta) {
-                final idx = value.toInt();
-                if (idx >= 0 && idx < spec.labels.length) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      spec.labels[idx],
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: theme.hintColor,
-                      ),
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-          ),
-        ),
+        titlesData: _titles(theme, spec.labels),
       ),
     );
   }
+
+  static FlGridData _grid(ThemeData theme) {
+    final color = theme.brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: .06)
+        : Colors.black.withValues(alpha: .05);
+    return FlGridData(
+      drawVerticalLine: false,
+      getDrawingHorizontalLine: (_) => FlLine(color: color, strokeWidth: 1),
+    );
+  }
+
+  static FlTitlesData _titles(ThemeData theme, List<String> labels) => FlTitlesData(
+    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+    leftTitles: AxisTitles(
+      sideTitles: SideTitles(
+        showTitles: true,
+        reservedSize: 36,
+        getTitlesWidget: (value, meta) =>
+            Text(_formatNumber(value), style: TextStyle(fontSize: 10, color: theme.hintColor)),
+      ),
+    ),
+    bottomTitles: AxisTitles(
+      sideTitles: SideTitles(
+        showTitles: true,
+        reservedSize: 26,
+        getTitlesWidget: (value, meta) {
+          final idx = value.toInt();
+          if (idx >= 0 && idx < labels.length) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                labels[idx],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10, color: theme.hintColor),
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        },
+      ),
+    ),
+  );
 
   static Widget _buildPieChart(BuildContext context, GenAiChartSpec spec) {
     final sections = <PieChartSectionData>[];
@@ -662,13 +429,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
       }
     }
 
-    return PieChart(
-      PieChartData(
-        sections: sections,
-        centerSpaceRadius: 36,
-        sectionsSpace: 2,
-      ),
-    );
+    return PieChart(PieChartData(sections: sections, centerSpaceRadius: 36, sectionsSpace: 2));
   }
 
   static Widget _buildLegend(BuildContext context, GenAiChartSpec spec) {
@@ -699,12 +460,7 @@ class _GenAiChartViewState extends State<GenAiChartView> {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 6,
-        alignment: WrapAlignment.center,
-        children: items,
-      ),
+      child: Wrap(spacing: 12, runSpacing: 6, alignment: WrapAlignment.center, children: items),
     );
   }
 
@@ -715,19 +471,13 @@ class _GenAiChartViewState extends State<GenAiChartView> {
         Container(
           width: 8,
           height: 8,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 5),
         Flexible(
           child: Text(
             label,
-            style: TextStyle(
-              fontSize: 11,
-              color: theme.textTheme.bodySmall?.color,
-            ),
+            style: TextStyle(fontSize: 11, color: theme.textTheme.bodySmall?.color),
           ),
         ),
       ],

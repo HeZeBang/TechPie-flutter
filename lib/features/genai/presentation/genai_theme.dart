@@ -25,12 +25,8 @@ ThemeData genAiTheme(ThemeData base) {
   final palette = GenAiPalette._(base);
   final textTheme = base.textTheme;
 
-  const menuShape = RoundedRectangleBorder(
-    borderRadius: BorderRadius.all(Radius.circular(12)),
-  );
-  const controlShape = RoundedRectangleBorder(
-    borderRadius: BorderRadius.all(Radius.circular(10)),
-  );
+  const menuShape = RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12)));
+  const controlShape = RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10)));
   const fieldRadius = BorderRadius.all(Radius.circular(9));
   const controlPadding = EdgeInsets.symmetric(horizontal: 14, vertical: 10);
 
@@ -38,9 +34,9 @@ ThemeData genAiTheme(ThemeData base) {
   final disabledForeground = scheme.onSurface.withValues(alpha: .38);
 
   OutlineInputBorder fieldBorder(Color color, [double width = 1]) => OutlineInputBorder(
-        borderRadius: fieldRadius,
-        borderSide: BorderSide(color: color, width: width),
-      );
+    borderRadius: fieldRadius,
+    borderSide: BorderSide(color: color, width: width),
+  );
 
   WidgetStateProperty<Color?> buttonBackground(Color normal) =>
       WidgetStateProperty.resolveWith<Color?>(
@@ -76,9 +72,7 @@ ThemeData genAiTheme(ThemeData base) {
     overlayColor: WidgetStatePropertyAll(palette.hover),
     padding: const WidgetStatePropertyAll(controlPadding),
     shape: const WidgetStatePropertyAll(controlShape),
-    textStyle: WidgetStatePropertyAll(
-      textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
-    ),
+    textStyle: WidgetStatePropertyAll(textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600)),
   );
   final filledButtonStyle = textButtonStyle.copyWith(
     backgroundColor: buttonBackground(palette.accent),
@@ -108,17 +102,13 @@ ThemeData genAiTheme(ThemeData base) {
     elevation: const WidgetStatePropertyAll(3),
     shape: const WidgetStatePropertyAll(menuShape),
     side: WidgetStatePropertyAll(BorderSide(color: palette.line)),
-    padding: const WidgetStatePropertyAll(
-      EdgeInsets.symmetric(vertical: 6),
-    ),
+    padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 6)),
   );
 
   final menuButtonStyle = ButtonStyle(
     foregroundColor: WidgetStatePropertyAll(palette.text),
     overlayColor: WidgetStatePropertyAll(palette.hover),
-    padding: const WidgetStatePropertyAll(
-      EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-    ),
+    padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
     shape: const WidgetStatePropertyAll(menuShape),
     textStyle: WidgetStatePropertyAll(textTheme.bodyMedium),
   );
@@ -155,9 +145,7 @@ ThemeData genAiTheme(ThemeData base) {
       surfaceTintColor: palette.raised,
       shadowColor: scheme.shadow,
       elevation: 6,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(18)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(18))),
       iconColor: palette.muted,
       titleTextStyle: textTheme.titleMedium?.copyWith(
         color: palette.text,
@@ -203,9 +191,7 @@ ThemeData genAiTheme(ThemeData base) {
     ),
     listTileTheme: ListTileThemeData(
       dense: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(10)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
       selectedColor: palette.accent,
       selectedTileColor: palette.accentSoft,
       iconColor: palette.muted,
@@ -218,11 +204,7 @@ ThemeData genAiTheme(ThemeData base) {
       minTileHeight: 44,
       enableFeedback: true,
     ),
-    dividerTheme: DividerThemeData(
-      color: palette.line,
-      space: 1,
-      thickness: 1,
-    ),
+    dividerTheme: DividerThemeData(color: palette.line, space: 1, thickness: 1),
   );
 }
 
@@ -232,10 +214,8 @@ ThemeData genAiTheme(ThemeData base) {
 /// be above a widget's local workspace theme. Reapplying the same derived theme
 /// in the route builder keeps those overlays consistent without changing the
 /// host app's theme.
-Widget genAiThemeScope(BuildContext context, Widget child) => Theme(
-      data: genAiTheme(Theme.of(context)),
-      child: child,
-    );
+Widget genAiThemeScope(BuildContext context, Widget child) =>
+    Theme(data: genAiTheme(Theme.of(context)), child: child);
 
 /// Shared draft scrim: drawers are lighter than dialogs and modal sheets.
 Color genAiOverlayScrim({bool drawer = false}) =>
@@ -246,17 +226,8 @@ Future<T?> genAiShowDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool barrierDismissible = true,
-  String? barrierLabel,
-  bool useSafeArea = true,
-  bool useRootNavigator = true,
-  RouteSettings? routeSettings,
-  Offset? anchorPoint,
-  TraversalEdgeBehavior? traversalEdgeBehavior,
-  bool fullscreenDialog = false,
-  bool? requestFocus,
-  AnimationStyle? animationStyle,
 }) {
-  final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
+  final navigator = Navigator.of(context, rootNavigator: true);
   return navigator.push<T>(
     DialogRoute<T>(
       context: context,
@@ -264,14 +235,7 @@ Future<T?> genAiShowDialog<T>({
       themes: InheritedTheme.capture(from: context, to: navigator.context),
       barrierColor: genAiOverlayScrim(),
       barrierDismissible: barrierDismissible,
-      barrierLabel: barrierLabel,
-      useSafeArea: useSafeArea,
-      settings: routeSettings,
-      anchorPoint: anchorPoint,
-      traversalEdgeBehavior: traversalEdgeBehavior ?? TraversalEdgeBehavior.closedLoop,
-      fullscreenDialog: fullscreenDialog,
-      requestFocus: requestFocus,
-      animationStyle: animationStyle,
+      traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
     ),
   );
 }
@@ -340,8 +304,11 @@ class GenAiDialogFrame extends StatelessWidget {
                 children: [
                   Expanded(
                     child: DefaultTextStyle.merge(
-                      style:
-                          TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: palette.text),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: palette.text,
+                      ),
                       child: title,
                     ),
                   ),
@@ -362,7 +329,8 @@ class GenAiDialogFrame extends StatelessWidget {
               Flexible(child: scrollable ? SingleChildScrollView(child: body) : body),
             if (actions?.isNotEmpty ?? false)
               Padding(
-                padding: actionsPadding ??
+                padding:
+                    actionsPadding ??
                     (compact
                         ? const EdgeInsets.fromLTRB(18, 0, 18, 18)
                         : const EdgeInsets.fromLTRB(24, 0, 24, 22)),
@@ -400,6 +368,50 @@ class GenAiLayout {
   bool get short => size.height < 560;
   bool get compactControls => narrow || short;
 }
+
+/// A compact command row shared by anchored menus and phone sheets.
+PopupMenuItem<T> genAiActionItem<T>(
+  GenAiPalette palette,
+  T? value,
+  Widget icon,
+  String label, {
+  Key? key,
+  bool enabled = true,
+  bool danger = false,
+  Widget? trailing,
+}) => PopupMenuItem<T>(
+  key: key,
+  value: value,
+  enabled: enabled,
+  height: 42,
+  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+  child: Row(
+    children: [
+      IconTheme.merge(
+        data: IconThemeData(
+          size: 17,
+          color: enabled ? palette.muted : palette.muted.withValues(alpha: .4),
+        ),
+        child: icon,
+      ),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: !enabled
+                ? palette.muted.withValues(alpha: .5)
+                : danger
+                ? palette.accent
+                : palette.text,
+          ),
+        ),
+      ),
+      if (trailing != null) trailing,
+    ],
+  ),
+);
 
 /// Short menus stay by their trigger. Longer lists use a sheet on phones.
 /// Both return the same value and support dismissal without changing selection.
@@ -449,8 +461,11 @@ Future<T?> genAiShowMenu<T>({
           top: false,
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: (media.size.height - media.padding.vertical - media.viewInsets.vertical)
-                      .clamp(0.0, double.infinity) *
+              maxHeight:
+                  (media.size.height - media.padding.vertical - media.viewInsets.vertical).clamp(
+                    0.0,
+                    double.infinity,
+                  ) *
                   .8,
             ),
             child: Semantics(
@@ -519,8 +534,11 @@ class GenAiContentHeader extends StatelessWidget {
     return Container(
       constraints: const BoxConstraints(minHeight: 48),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration:
-          divider ? BoxDecoration(border: Border(bottom: BorderSide(color: palette.line))) : null,
+      decoration: divider
+          ? BoxDecoration(
+              border: Border(bottom: BorderSide(color: palette.line)),
+            )
+          : null,
       child: Row(
         children: [
           Expanded(
@@ -549,49 +567,22 @@ class GenAiContentHeader extends StatelessWidget {
 Future<T?> genAiShowModalBottomSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
-  Color? backgroundColor,
-  String? barrierLabel,
-  double? elevation,
-  ShapeBorder? shape,
-  Clip? clipBehavior,
-  BoxConstraints? constraints,
   bool isScrollControlled = false,
-  double scrollControlDisabledMaxHeightRatio = 9 / 16,
   bool useRootNavigator = false,
-  bool isDismissible = true,
-  bool enableDrag = true,
   bool? showDragHandle,
   bool useSafeArea = false,
-  RouteSettings? routeSettings,
-  AnimationController? transitionAnimationController,
-  Offset? anchorPoint,
-  AnimationStyle? sheetAnimationStyle,
-  bool? requestFocus,
 }) async {
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
   final localizations = MaterialLocalizations.of(context);
   final route = ModalBottomSheetRoute<T>(
     builder: (context) => genAiThemeScope(context, builder(context)),
     capturedThemes: InheritedTheme.capture(from: context, to: navigator.context),
-    barrierLabel: barrierLabel ?? localizations.scrimLabel,
+    barrierLabel: localizations.scrimLabel,
     barrierOnTapHint: localizations.scrimOnTapHint(localizations.bottomSheetLabel),
     modalBarrierColor: genAiOverlayScrim(),
-    backgroundColor: backgroundColor,
-    elevation: elevation,
-    shape: shape,
-    clipBehavior: clipBehavior,
-    constraints: constraints,
     isScrollControlled: isScrollControlled,
-    scrollControlDisabledMaxHeightRatio: scrollControlDisabledMaxHeightRatio,
-    isDismissible: isDismissible,
-    enableDrag: enableDrag,
     showDragHandle: showDragHandle,
     useSafeArea: useSafeArea,
-    settings: routeSettings,
-    transitionAnimationController: transitionAnimationController,
-    anchorPoint: anchorPoint,
-    sheetAnimationStyle: sheetAnimationStyle,
-    requestFocus: requestFocus,
   );
   final result = await navigator.push(route);
   // A selection can open another modal. Finish removing this sheet first.
@@ -625,8 +616,9 @@ Future<T?> genAiShowAnchoredMenu<T>({
   final stage = scaffold is RenderBox ? scaffold : overlay;
   Rect bounds(RenderBox box) => box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
   final media = MediaQuery.of(navigator.context);
-  final available =
-      media.padding.deflateRect(media.viewInsets.deflateRect(Offset.zero & overlay.size));
+  final available = media.padding.deflateRect(
+    media.viewInsets.deflateRect(Offset.zero & overlay.size),
+  );
   final visibleStage = bounds(stage).intersect(available);
   var target = bounds(anchor);
   if (pressPosition != null && target.height > 96) {
@@ -763,8 +755,7 @@ class _GenAiAnchoredMenuRoute<T> extends PopupRoute<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) =>
-      FadeTransition(opacity: animation, child: child);
+  ) => FadeTransition(opacity: animation, child: child);
 }
 
 /// A menu is one keyboard group, independent of whether it is a sheet or
@@ -826,24 +817,23 @@ class _GenAiMenuInteractionState extends State<_GenAiMenuInteraction> with Widge
 
   @override
   Widget build(BuildContext context) => FocusTraversalGroup(
-        policy: WidgetOrderTraversalPolicy(),
-        child: FocusScope(
-          node: _focus,
-          child: CallbackShortcuts(
-            bindings: {
-              const SingleActivator(LogicalKeyboardKey.arrowDown): _focus.nextFocus,
-              const SingleActivator(LogicalKeyboardKey.arrowUp): _focus.previousFocus,
-              const SingleActivator(LogicalKeyboardKey.home): () => _edge(false),
-              const SingleActivator(LogicalKeyboardKey.end): () => _edge(true),
-              const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.pop(context),
-              const SingleActivator(LogicalKeyboardKey.tab): () => Navigator.pop(context),
-              const SingleActivator(LogicalKeyboardKey.tab, shift: true): () =>
-                  Navigator.pop(context),
-            },
-            child: widget.child,
-          ),
-        ),
-      );
+    policy: WidgetOrderTraversalPolicy(),
+    child: FocusScope(
+      node: _focus,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.arrowDown): _focus.nextFocus,
+          const SingleActivator(LogicalKeyboardKey.arrowUp): _focus.previousFocus,
+          const SingleActivator(LogicalKeyboardKey.home): () => _edge(false),
+          const SingleActivator(LogicalKeyboardKey.end): () => _edge(true),
+          const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.pop(context),
+          const SingleActivator(LogicalKeyboardKey.tab): () => Navigator.pop(context),
+          const SingleActivator(LogicalKeyboardKey.tab, shift: true): () => Navigator.pop(context),
+        },
+        child: widget.child,
+      ),
+    ),
+  );
 }
 
 class _GenAiAnchoredMenuLayout extends SingleChildLayoutDelegate {
@@ -878,10 +868,7 @@ class _GenAiAnchoredMenuLayout extends SingleChildLayoutDelegate {
   Offset getPositionForChild(Size size, Size childSize) {
     final minLeft = stage.left + 10;
     final maxLeft = stage.right - childSize.width - 10;
-    final left = (alignEnd ? anchor.right - childSize.width : anchor.left).clamp(
-      minLeft,
-      maxLeft,
-    );
+    final left = (alignEnd ? anchor.right - childSize.width : anchor.left).clamp(minLeft, maxLeft);
     final below = anchor.bottom + gap;
     final above = anchor.top - gap - childSize.height;
     final fitsBelow = below + childSize.height <= stage.bottom;
@@ -904,20 +891,20 @@ class _GenAiAnchoredMenuLayout extends SingleChildLayoutDelegate {
 /// dark, AMOLED, dynamic color and iOS accents all follow TechPie settings.
 final class GenAiPalette {
   GenAiPalette._(ThemeData theme)
-      : canvas = theme.scaffoldBackgroundColor,
-        sidebar = theme.colorScheme.surfaceContainerLow,
-        raised = theme.brightness == Brightness.light
-            ? theme.colorScheme.surfaceContainerLowest
-            : theme.colorScheme.surfaceContainerHigh,
-        soft = theme.colorScheme.surfaceContainerHigh,
-        hover = theme.colorScheme.onSurface.withValues(alpha: .06),
-        line = theme.colorScheme.outlineVariant,
-        text = theme.colorScheme.onSurface,
-        muted = theme.colorScheme.onSurfaceVariant,
-        accent = theme.colorScheme.primary,
-        accentSoft = theme.colorScheme.primary.withValues(alpha: .1),
-        onAccent = theme.colorScheme.onPrimary,
-        success = theme.colorScheme.tertiary;
+    : canvas = theme.scaffoldBackgroundColor,
+      sidebar = theme.colorScheme.surfaceContainerLow,
+      raised = theme.brightness == Brightness.light
+          ? theme.colorScheme.surfaceContainerLowest
+          : theme.colorScheme.surfaceContainerHigh,
+      soft = theme.colorScheme.surfaceContainerHigh,
+      hover = theme.colorScheme.onSurface.withValues(alpha: .06),
+      line = theme.colorScheme.outlineVariant,
+      text = theme.colorScheme.onSurface,
+      muted = theme.colorScheme.onSurfaceVariant,
+      accent = theme.colorScheme.primary,
+      accentSoft = theme.colorScheme.primary.withValues(alpha: .1),
+      onAccent = theme.colorScheme.onPrimary,
+      success = theme.colorScheme.tertiary;
 
   factory GenAiPalette.of(BuildContext context) => GenAiPalette._(Theme.of(context));
 

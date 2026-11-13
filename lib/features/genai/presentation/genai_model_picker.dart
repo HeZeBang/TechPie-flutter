@@ -6,7 +6,7 @@ import 'genai_theme.dart';
 
 /// Quiet text button in the composer; the menu explains cost and thinking
 /// support per model instead of decorating the button itself.
-class GenAiModelPicker extends StatelessWidget {
+class GenAiModelPicker extends StatefulWidget {
   const GenAiModelPicker({
     super.key,
     required this.models,
@@ -36,11 +36,7 @@ class GenAiModelPicker extends StatelessWidget {
   /// draft's row: 6 px padding each side, a 7 px gap and a 13 px chevron. The
   /// toolbar, not this measurement, is responsible for constraining the width
   /// to the row it actually has.
-  static double widthFor(
-    BuildContext context,
-    String label, {
-    double max = double.infinity,
-  }) {
+  static double widthFor(BuildContext context, String label, {double max = double.infinity}) {
     final painter = TextPainter(
       text: TextSpan(text: label, style: _labelStyle),
       textDirection: Directionality.of(context),
@@ -53,18 +49,25 @@ class GenAiModelPicker extends StatelessWidget {
   }
 
   static String cost(GenAiModel model) => switch (model.payType) {
-        'FREE' => '免费',
-        'PAID' => '付费',
-        _ => '费用未知',
-      };
+    'FREE' => '免费',
+    'PAID' => '付费',
+    _ => '费用未知',
+  };
 
+  @override
+  State<GenAiModelPicker> createState() => _GenAiModelPickerState();
+}
+
+class _GenAiModelPickerState extends State<GenAiModelPicker> {
   Future<void> _openMenu(BuildContext context, BuildContext anchorContext) async {
     final palette = GenAiPalette.of(context);
     final compact = GenAiLayout.of(context).compactControls;
     // Draft popover width: 220 px minimum, never wider than the workspace
     // minus the 12 px side insets.
-    final menuWidth =
-        ((workspaceWidth ?? MediaQuery.sizeOf(context).width) - 24).clamp(220.0, 300.0);
+    final menuWidth = ((widget.workspaceWidth ?? MediaQuery.sizeOf(context).width) - 24).clamp(
+      220.0,
+      300.0,
+    );
     final picked = await genAiShowMenu<GenAiModel>(
       context: context,
       anchorContext: anchorContext,
@@ -78,11 +81,11 @@ class GenAiModelPicker extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Text('选择模型', style: TextStyle(fontSize: 11, color: palette.muted)),
           ),
-        for (final model in models)
+        for (final model in widget.models)
           PopupMenuItem<GenAiModel>(
             key: ValueKey('genai-model-${model.aiType}'),
             value: model,
-            enabled: enabled,
+            enabled: widget.enabled,
             height: 48,
             padding: EdgeInsets.symmetric(horizontal: 10, vertical: compact ? 4 : 8),
             child: compact
@@ -103,7 +106,7 @@ class GenAiModelPicker extends StatelessWidget {
                               const SizedBox(height: 3),
                               Text(
                                 [
-                                  cost(model),
+                                  GenAiModelPicker.cost(model),
                                   if (model.supportsThinking) '支持深度思考',
                                 ].join(' · '),
                                 maxLines: 1,
@@ -114,7 +117,7 @@ class GenAiModelPicker extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (model == selected)
+                      if (model == widget.selected)
                         GenAiIcon(GenAiGlyph.check, size: 17, color: palette.accent)
                       else
                         const SizedBox(width: 17),
@@ -125,42 +128,39 @@ class GenAiModelPicker extends StatelessWidget {
     );
     // The menu is a route: the picker may have been rebuilt, disabled or moved
     // to another account while it was open, so only deliver a still-valid pick.
-    if (picked == null || !context.mounted || !enabled || !models.contains(picked)) return;
-    onSelected(picked);
+    if (picked == null || !mounted || !widget.enabled || !widget.models.contains(picked)) return;
+    widget.onSelected(picked);
   }
 
   Widget _compactRow(GenAiModel model, GenAiPalette palette) => Row(
-        children: [
-          Expanded(
-            child: Text(
-              model.name,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(cost(model), style: TextStyle(fontSize: 11, color: palette.muted)),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 15,
-            child: model.supportsThinking
-                ? Semantics(
-                    label: '支持深度思考',
-                    child: GenAiIcon(GenAiGlyph.brain, size: 15, color: palette.muted),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 8),
-          if (model == selected)
-            GenAiIcon(GenAiGlyph.check, size: 17, color: palette.accent)
-          else
-            const SizedBox(width: 17),
-        ],
-      );
+    children: [
+      Expanded(
+        child: Text(model.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      ),
+      const SizedBox(width: 8),
+      Text(GenAiModelPicker.cost(model), style: TextStyle(fontSize: 11, color: palette.muted)),
+      const SizedBox(width: 8),
+      SizedBox(
+        width: 15,
+        child: model.supportsThinking
+            ? Semantics(
+                label: '支持深度思考',
+                child: GenAiIcon(GenAiGlyph.brain, size: 15, color: palette.muted),
+              )
+            : null,
+      ),
+      const SizedBox(width: 8),
+      if (model == widget.selected)
+        GenAiIcon(GenAiGlyph.check, size: 17, color: palette.accent)
+      else
+        const SizedBox(width: 17),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
     final palette = GenAiPalette.of(context);
-    final label = selected?.name ?? (loading ? '正在加载模型…' : '选择模型');
+    final label = widget.selected?.name ?? (widget.loading ? '正在加载模型…' : '选择模型');
     // The TextButton supplies the button role and tap action; this only
     // prefixes its visible model name with what the control does.
     return Semantics(
@@ -168,14 +168,15 @@ class GenAiModelPicker extends StatelessWidget {
       label: '选择模型',
       child: Builder(
         builder: (anchorContext) => ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth, minHeight: 44),
+          constraints: BoxConstraints(maxWidth: widget.maxWidth, minHeight: 44),
           child: TextButton(
             key: const ValueKey('genai-model'),
-            onPressed:
-                enabled && models.isNotEmpty ? () => _openMenu(context, anchorContext) : null,
+            onPressed: widget.enabled && widget.models.isNotEmpty
+                ? () => _openMenu(context, anchorContext)
+                : null,
             style: TextButton.styleFrom(
               foregroundColor: palette.text,
-              textStyle: _labelStyle,
+              textStyle: GenAiModelPicker._labelStyle,
               padding: const EdgeInsets.symmetric(horizontal: 6),
               minimumSize: const Size(44, 44),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -188,7 +189,7 @@ class GenAiModelPicker extends StatelessWidget {
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: _labelStyle,
+                    style: GenAiModelPicker._labelStyle,
                   ),
                 ),
                 const SizedBox(width: 7),

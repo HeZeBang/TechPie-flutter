@@ -7,11 +7,7 @@ import 'genai_image_size.dart';
 import 'genai_reference_image.dart';
 
 final class GenAiPageResult<T> {
-  const GenAiPageResult(
-    this.records, {
-    required this.page,
-    required this.hasMore,
-  });
+  const GenAiPageResult(this.records, {required this.page, required this.hasMore});
   final List<T> records;
   final int page;
   final bool hasMore;
@@ -56,6 +52,8 @@ final class GenAiConversationSummary {
     required this.id,
     required this.title,
     this.time = '',
+    this.pinned = false,
+    this.hasCustomTitle = false,
   });
   factory GenAiConversationSummary.fromJson(Map<String, dynamic> json) {
     final id = genAiOptionalText(json, 'chatGroupId').trim();
@@ -64,7 +62,13 @@ final class GenAiConversationSummary {
     }
     return GenAiConversationSummary(
       id: id,
-      title: _displayTitle(genAiOptionalText(json, 'question')),
+      title: _displayTitle(
+        genAiOptionalText(json, 'title').trim().isNotEmpty
+            ? genAiOptionalText(json, 'title')
+            : genAiOptionalText(json, 'question'),
+      ),
+      hasCustomTitle: genAiOptionalText(json, 'title').trim().isNotEmpty,
+      pinned: json['pinned'] == true || json['pinned'] == 1 || json['pinned'] == '1',
       time: genAiOptionalText(json, 'createTime'),
     );
   }
@@ -73,14 +77,17 @@ final class GenAiConversationSummary {
   static String _displayTitle(String title) => isGenAiContextExtraction(title)
       ? '对话（已整理上下文）'
       : RegExp(r'^<techpie-agent-(?:call|result|history)(?:\s|>)').hasMatch(title.trimLeft())
-          ? '校园工具对话'
-          : title;
+      ? '校园工具对话'
+      : title;
 
   final String id;
   final String title;
   final String time;
+  final bool pinned;
+  final bool hasCustomTitle;
 
   static int newestFirst(GenAiConversationSummary a, GenAiConversationSummary b) {
+    if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
     final epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
     final order = (DateTime.tryParse(b.time) ?? epoch).compareTo(
       DateTime.tryParse(a.time) ?? epoch,
@@ -229,9 +236,7 @@ final class GenAiImageRecord {
       quality: _optionalImageText(json, 'quality'),
       images: List.unmodifiable(
         images.map(
-          (Object? row) => genAiImageUri(
-            genAiRequiredString(genAiObject(row), 'imageUrl'),
-          ),
+          (Object? row) => genAiImageUri(genAiRequiredString(genAiObject(row), 'imageUrl')),
         ),
       ),
     );
@@ -252,14 +257,14 @@ final class GenAiImageRecord {
   /// records keep optional metadata. Null values are omitted, which keeps old
   /// stored rows backward compatible.
   Map<String, Object?> toJson() => {
-        'id': id,
-        'question': prompt,
-        if (title != null) 'title': title,
-        if (quality != null) 'quality': quality,
-        'images': [
-          for (final image in images) {'imageUrl': image.toString()},
-        ],
-      };
+    'id': id,
+    'question': prompt,
+    if (title != null) 'title': title,
+    if (quality != null) 'quality': quality,
+    'images': [
+      for (final image in images) {'imageUrl': image.toString()},
+    ],
+  };
 }
 
 /// Trims an optional caption, treating a null or blank value as absent.
@@ -285,10 +290,9 @@ final class GenAiImageRequest {
     int? outputCompression,
     String? title,
     List<GenAiReferenceImage> referenceImages = const [],
-  })  : outputCompression = outputFormat == 'jpeg' ? (outputCompression ?? 80) : outputCompression,
-        title = _blankImageText(title),
-        referenceImages = List.unmodifiable(referenceImages) {
-    GenAiReferenceImage.validate(this.referenceImages);
+  }) : outputCompression = outputFormat == 'jpeg' ? (outputCompression ?? 80) : outputCompression,
+       title = _blankImageText(title),
+       referenceImages = List.unmodifiable(referenceImages) {
     if (prompt.trim().isEmpty ||
         groupId.isEmpty ||
         !model.isImage ||
@@ -301,12 +305,6 @@ final class GenAiImageRequest {
       throw ArgumentError('Invalid image request');
     }
   }
-
-  static final supportedSizes = Set<String>.unmodifiable({
-    for (final sizes in GenAiImageSize.presets.values) ...sizes.values,
-    '1536x1024',
-    '1024x1536',
-  });
 
   final String prompt;
   final GenAiModel model;
@@ -321,24 +319,24 @@ final class GenAiImageRequest {
   final String? title;
   final List<GenAiReferenceImage> referenceImages;
   Map<String, Object?> toJson() => {
-        'chatInfo': prompt,
-        'type': '3',
-        'aiSecType': '1',
-        'aiType': model.aiType,
-        'rootAiType': model.rootAiType,
-        'chatGroupId': groupId,
-        if (title != null) 'title': title,
-        'size': size,
-        'quality': quality,
-        'count': '1',
-        'style': 'vivid',
-        'outputFormat': outputFormat,
-        'imageBase64': referenceImages.length == 1 ? referenceImages.single.dataUrl : null,
-        'imageBase64List': referenceImages.length > 1
-            ? [for (final image in referenceImages) image.dataUrl]
-            : null,
-        'outputCompression': outputCompression,
-      };
+    'chatInfo': prompt,
+    'type': '3',
+    'aiSecType': '1',
+    'aiType': model.aiType,
+    'rootAiType': model.rootAiType,
+    'chatGroupId': groupId,
+    if (title != null) 'title': title,
+    'size': size,
+    'quality': quality,
+    'count': '1',
+    'style': 'vivid',
+    'outputFormat': outputFormat,
+    'imageBase64': referenceImages.length == 1 ? referenceImages.single.dataUrl : null,
+    'imageBase64List': referenceImages.length > 1
+        ? [for (final image in referenceImages) image.dataUrl]
+        : null,
+    'outputCompression': outputCompression,
+  };
 }
 
 num _number(Map<String, dynamic> json, String key) {
@@ -359,11 +357,11 @@ final class GenAiQuota {
     required this.remaining,
   });
   factory GenAiQuota.fromJson(String name, Map<String, dynamic> json) => GenAiQuota(
-        name: name,
-        total: _number(json, 'total'),
-        used: _number(json, 'used'),
-        remaining: _number(json, 'remain'),
-      );
+    name: name,
+    total: _number(json, 'total'),
+    used: _number(json, 'used'),
+    remaining: _number(json, 'remain'),
+  );
   final String name;
   final num total;
   final num used;
@@ -412,15 +410,15 @@ final class GenAiUsageOrder {
     required this.imageTokens,
   });
   factory GenAiUsageOrder.fromJson(Map<String, dynamic> json) => GenAiUsageOrder(
-        model: genAiOptionalText(json, 'modelName').isEmpty
-            ? genAiOptionalText(json, 'modelCode')
-            : genAiOptionalText(json, 'modelName'),
-        time: genAiOptionalText(json, 'orderTime'),
-        used: _number(json, 'totalUsed'),
-        inputTokens: json['inputTokens'] == null ? 0 : _number(json, 'inputTokens'),
-        outputTokens: json['outputTokens'] == null ? 0 : _number(json, 'outputTokens'),
-        imageTokens: json['imageTokens'] == null ? 0 : _number(json, 'imageTokens'),
-      );
+    model: genAiOptionalText(json, 'modelName').isEmpty
+        ? genAiOptionalText(json, 'modelCode')
+        : genAiOptionalText(json, 'modelName'),
+    time: genAiOptionalText(json, 'orderTime'),
+    used: _number(json, 'totalUsed'),
+    inputTokens: json['inputTokens'] == null ? 0 : _number(json, 'inputTokens'),
+    outputTokens: json['outputTokens'] == null ? 0 : _number(json, 'outputTokens'),
+    imageTokens: json['imageTokens'] == null ? 0 : _number(json, 'imageTokens'),
+  );
   final String model;
   final String time;
   final num used;
@@ -438,11 +436,11 @@ final class GenAiWebSearchCitation {
   });
 
   factory GenAiWebSearchCitation.fromJson(Map<String, dynamic> json) => GenAiWebSearchCitation(
-        num: json['num'] is int ? json['num'] as int : int.tryParse('${json['num']}') ?? 0,
-        title: genAiOptionalText(json, 'title'),
-        link: genAiOptionalText(json, 'link'),
-        snippet: genAiOptionalText(json, 'snippet'),
-      );
+    num: json['num'] is int ? json['num'] as int : int.tryParse('${json['num']}') ?? 0,
+    title: genAiOptionalText(json, 'title'),
+    link: genAiOptionalText(json, 'link'),
+    snippet: genAiOptionalText(json, 'snippet'),
+  );
 
   final int num;
   final String title;
@@ -480,39 +478,29 @@ final class GenAiUploadedFile {
 }
 
 final class GenAiUploadedImage {
-  const GenAiUploadedImage({
-    required this.url,
-    this.width,
-    this.height,
-  });
+  const GenAiUploadedImage({required this.url, this.width, this.height});
 
   factory GenAiUploadedImage.fromJson(Map<String, dynamic> json) => GenAiUploadedImage(
-        url: genAiRequiredString(json, 'url'),
-        width: (json['width'] as num?)?.toInt(),
-        height: (json['height'] as num?)?.toInt(),
-      );
+    url: genAiRequiredString(json, 'url'),
+    width: (json['width'] as num?)?.toInt(),
+    height: (json['height'] as num?)?.toInt(),
+  );
 
   final String url;
   final int? width;
   final int? height;
 }
 
-final class GenAiAudioTranscription {
-  const GenAiAudioTranscription(this.text);
-
-  factory GenAiAudioTranscription.fromJson(Map<String, dynamic> json) {
-    final raw = genAiOptionalText(json, 'transcription');
-    if (raw.isEmpty) return const GenAiAudioTranscription('');
-    try {
-      final inner = jsonDecode(raw) as Map<String, dynamic>;
-      final list = inner['transcription'] as List<dynamic>?;
-      if (list != null && list.isNotEmpty) {
-        final item = list.first as Map<String, dynamic>;
-        return GenAiAudioTranscription(item['text'] as String? ?? '');
-      }
-    } catch (_) {}
-    return GenAiAudioTranscription(raw);
-  }
-
-  final String text;
+String genAiTranscriptionText(Map<String, dynamic> json) {
+  final raw = genAiOptionalText(json, 'transcription');
+  if (raw.isEmpty) return '';
+  try {
+    final inner = jsonDecode(raw) as Map<String, dynamic>;
+    final list = inner['transcription'] as List<dynamic>?;
+    if (list != null && list.isNotEmpty) {
+      final item = list.first as Map<String, dynamic>;
+      return item['text'] as String? ?? '';
+    }
+  } catch (_) {}
+  return raw;
 }

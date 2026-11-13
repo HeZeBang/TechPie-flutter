@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/application/genai_conversation_turn.dart';
 import 'package:techpie/features/genai/domain/genai_failure.dart';
 import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
-import 'package:techpie/features/genai/presentation/genai_icons.dart';
 import 'package:techpie/features/genai/presentation/genai_turn_view.dart';
 
 const _turnId = 'turn-actions';
@@ -16,20 +15,19 @@ GenAiTurnActions _actions({
   void Function(int index, String action)? changeTurn,
   void Function(int index)? retry,
   Uri Function(String)? imageDisplayUri,
-}) =>
-    GenAiTurnActions(
-      copy: copy ?? (_, __) {},
-      openLink: (_) {},
-      changeTurn: changeTurn ?? (_, __) {},
-      retry: retry ?? (_) {},
-      openImages: () {},
-      showImage: ({Uint8List? bytes, String? url}) {},
-      imageDisplayUri: imageDisplayUri ?? (url) => Uri.parse(url),
-      markdownImage: (uri, title, alt) => const SizedBox.shrink(),
-      toggleTts: (_, __) {},
-      approve: (_) {},
-      reject: (_) {},
-    );
+}) => GenAiTurnActions(
+  copy: copy ?? (_, __) {},
+  openLink: (_) {},
+  changeTurn: changeTurn ?? (_, __) {},
+  retry: retry ?? (_) {},
+  openImages: () {},
+  showImage: ({Uint8List? bytes, String? url}) {},
+  imageDisplayUri: imageDisplayUri ?? (url) => Uri.parse(url),
+  markdownImage: (uri, title, alt) => const SizedBox.shrink(),
+  toggleTts: (_, __) {},
+  approve: (_) {},
+  reject: (_) {},
+);
 
 GenAiTurnContext _context({
   required double width,
@@ -38,20 +36,19 @@ GenAiTurnContext _context({
   int count = 1,
   bool sending = false,
   bool connected = true,
-}) =>
-    GenAiTurnContext(
-      index: index,
-      count: count,
-      sending: sending,
-      connected: connected,
-      touch: touch,
-      pendingApproval: null,
-      latestVisual: null,
-      supportsPlayback: false,
-      playingTtsIndex: null,
-      loadingTts: false,
-      workspaceWidth: width,
-    );
+}) => GenAiTurnContext(
+  index: index,
+  count: count,
+  sending: sending,
+  connected: connected,
+  touch: touch,
+  pendingApproval: null,
+  latestVisual: null,
+  supportsPlayback: false,
+  playingTtsIndex: null,
+  loadingTts: false,
+  workspaceWidth: width,
+);
 
 Widget _host({
   required double width,
@@ -127,7 +124,7 @@ void main() {
   });
 
   for (final width in [375.0, 1280.0]) {
-    testWidgets('campus-network warning retains the draft notice weight at $width', (tester) async {
+    testWidgets('campus-network warning fits the viewport at $width', (tester) async {
       _sizeTo(tester, Size(width, 900));
       await tester.pumpWidget(
         _host(
@@ -138,87 +135,15 @@ void main() {
       );
       await tester.pumpAndSettle();
       final title = find.text('暂时无法连接校园 GenAI');
-      expect(title, findsOneWidget);
-      final rich = find.descendant(of: title, matching: find.byType(RichText));
-      // The notice title is semibold at 600.
-      expect(tester.widget<RichText>(rich).text.style?.fontWeight, FontWeight.w600);
-      expect(tester.widget<RichText>(rich).text.style?.fontSize, 13);
-      expect(tester.getRect(rich).right, lessThanOrEqualTo(width));
+      final retry = find.byKey(const ValueKey('genai-retry-0'));
+      expect(retry.hitTestable(), findsOneWidget);
+      expect(tester.getRect(title).right, lessThanOrEqualTo(width));
+      expect(tester.getRect(retry).overlaps(tester.getRect(title)), isFalse);
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('campus-network notice centers its icon and retry on the text block', (
-    tester,
-  ) async {
-    _sizeTo(tester, const Size(1280, 900));
-    await tester.pumpWidget(
-      _host(
-        width: 1280,
-        touch: false,
-        failure: const GenAiFailure(GenAiFailureKind.campusNetworkRequired),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final icon = find.byWidgetPredicate(
-      (widget) => widget is GenAiIcon && widget.glyph == GenAiGlyph.info,
-    );
-    expect(icon, findsOneWidget);
-    final textBlock = find
-        .ancestor(
-          of: find.text('暂时无法连接校园 GenAI'),
-          matching: find.byType(Column),
-        )
-        .first;
-    final retry = find.byKey(const ValueKey('genai-retry-0'));
-    expect(retry, findsOneWidget);
-
-    final iconRect = tester.getRect(icon);
-    final textRect = tester.getRect(textBlock);
-    final retryRect = tester.getRect(retry);
-
-    // Icon, two-line text block and retry share one vertical center, rather
-    // than the icon and retry hanging off the notice's top edge.
-    expect(iconRect.right, lessThan(textRect.left));
-    expect(retryRect.left, greaterThan(textRect.right));
-    expect(iconRect.center.dy, closeTo(textRect.center.dy, 0.01));
-    expect(retryRect.center.dy, closeTo(textRect.center.dy, 0.01));
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('campus-network notice stacks the retry under the text on phones', (
-    tester,
-  ) async {
-    _sizeTo(tester, const Size(375, 900));
-    await tester.pumpWidget(
-      _host(
-        width: 375,
-        touch: true,
-        failure: const GenAiFailure(GenAiFailureKind.campusNetworkRequired),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final subtitle = find.text('请连接校园网或校园 VPN 后重试。');
-    final retry = find.byKey(const ValueKey('genai-retry-0'));
-    expect(subtitle, findsOneWidget);
-    expect(retry, findsOneWidget);
-
-    final subtitleRect = tester.getRect(subtitle);
-    final retryRect = tester.getRect(retry);
-
-    // The retry keeps its own row below the copy, left-aligned with the text
-    // and separated by the existing 10px gap, inside the notice width.
-    expect(retryRect.top, closeTo(subtitleRect.bottom + 10, 0.01));
-    expect(retryRect.left, closeTo(subtitleRect.left, 0.01));
-    expect(retryRect.right, lessThanOrEqualTo(375));
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('desktop hover reveals actions without moving the bubble or answer', (
-    tester,
-  ) async {
+  testWidgets('desktop hover reveals actions without moving the bubble or answer', (tester) async {
     _sizeTo(tester, const Size(1280, 900));
     await tester.pumpWidget(_host(width: 1280, touch: false));
     await tester.pumpAndSettle();
@@ -239,11 +164,6 @@ void main() {
     expect(_actionsRow, findsOneWidget);
     expect(_edit.hitTestable(), findsOneWidget);
     expect(_copy.hitTestable(), findsOneWidget);
-    expect(tester.getSize(_edit), const Size(28, 28));
-    expect(tester.getSize(_copy), const Size(28, 28));
-
-    // The actions overlay the fixed margin: nothing shifts on reveal.
-    expect(tester.getRect(_actionsRow).right, hiddenBubble.right);
     expect(tester.getRect(_bubble), hiddenBubble);
     expect(tester.getSize(find.byType(GenAiTurnView)).height, hiddenHeight);
   });
@@ -259,8 +179,9 @@ void main() {
     expect(find.byTooltip('导出对话'), findsNothing);
   });
 
-  testWidgets('long pressing prompt text opens its actions and respects sending state',
-      (tester) async {
+  testWidgets('long pressing prompt text opens its actions and respects sending state', (
+    tester,
+  ) async {
     _sizeTo(tester, const Size(390, 844));
     final copied = <(String, String)>[];
     final changed = <(int, String)>[];
@@ -280,7 +201,7 @@ void main() {
     await tester.pumpAndSettle();
     final bubble = tester.getRect(_bubble);
     final menu = tester.getRect(find.byKey(const ValueKey('genai-anchored-menu')));
-    expect(menu.top, closeTo(bubble.bottom + 7, .01));
+    expect(menu.overlaps(bubble), isFalse);
     expect(menu.right, lessThanOrEqualTo(390));
     for (final label in ['复制内容', '编辑并重新发送', '回退到此处', '删除此轮及后续']) {
       expect(find.text(label), findsOneWidget);

@@ -23,29 +23,29 @@ const policy = GenAiContextPolicy(
 );
 
 List<GenAiMessage> sourceHistory() => [
-      const GenAiMessage(
-        role: GenAiRole.system,
-        content: 'Use only enabled tools. Never repeat an unknown action.',
-      ),
-      const GenAiMessage(
-        role: GenAiRole.user,
-        content: 'Plan my campus week. Never book a court without confirmation.',
-      ),
-      for (var i = 0; i < 12; i++) ...[
-        GenAiMessage(
-          role: GenAiRole.assistant,
-          content: 'Observation $i. ${'irrelevant telemetry ' * 70}',
-        ),
-        GenAiMessage(
-          role: GenAiRole.user,
-          content: i == 2
-              ? 'Budget: 49 CNY. Deadline: 2031-11-12 14:35 Asia/Shanghai. ${'detail ' * 100}'
-              : i == 4
-                  ? 'Correction: Budget is 73 CNY, not 49. Keep booking B-37 outcome UNKNOWN; do not retry. ${'detail ' * 100}'
-                  : 'Question $i: ${'detail ' * 100}',
-        ),
-      ],
-    ];
+  const GenAiMessage(
+    role: GenAiRole.system,
+    content: 'Use only enabled tools. Never repeat an unknown action.',
+  ),
+  const GenAiMessage(
+    role: GenAiRole.user,
+    content: 'Plan my campus week. Never book a court without confirmation.',
+  ),
+  for (var i = 0; i < 12; i++) ...[
+    GenAiMessage(
+      role: GenAiRole.assistant,
+      content: 'Observation $i. ${'irrelevant telemetry ' * 70}',
+    ),
+    GenAiMessage(
+      role: GenAiRole.user,
+      content: i == 2
+          ? 'Budget: 49 CNY. Deadline: 2031-11-12 14:35 Asia/Shanghai. ${'detail ' * 100}'
+          : i == 4
+          ? 'Correction: Budget is 73 CNY, not 49. Keep booking B-37 outcome UNKNOWN; do not retry. ${'detail ' * 100}'
+          : 'Question $i: ${'detail ' * 100}',
+    ),
+  ],
+];
 
 GenAiChatRequest request(
   List<GenAiMessage> history, {
@@ -53,28 +53,26 @@ GenAiChatRequest request(
   String? goal,
   List<String> files = const [],
   Map<String, String> documents = const {},
-}) =>
-    GenAiChatRequest(
-      chatGroupId: 'test-conversation',
-      aiType: 'Kimi-k3',
-      rootAiType: 'xinference',
-      prompt: prompt,
-      history: history,
-      contextGoal: goal,
-      fileIds: files,
-      documentContents: documents,
-    );
+}) => GenAiChatRequest(
+  chatGroupId: 'test-conversation',
+  aiType: 'Kimi-k3',
+  rootAiType: 'xinference',
+  prompt: prompt,
+  history: history,
+  contextGoal: goal,
+  fileIds: files,
+  documentContents: documents,
+);
 
-Map<String, dynamic> memoryOf(GenAiChatRequest request) => jsonDecode(
-      request.history
-          .singleWhere((m) => m.content.contains('"kind":"techpie_context_memory_v1"'))
-          .content,
-    ) as Map<String, dynamic>;
+Map<String, dynamic> memoryOf(GenAiChatRequest request) =>
+    jsonDecode(
+          request.history
+              .singleWhere((m) => m.content.contains('"kind":"techpie_context_memory_v1"'))
+              .content,
+        )
+        as Map<String, dynamic>;
 
-Stream<GenAiChatEvent> summary(
-  GenAiChatRequest request,
-  GenAiCancellation c,
-) async* {
+Stream<GenAiChatEvent> summary(GenAiChatRequest request, GenAiCancellation c) async* {
   expect(request.thinking, isFalse);
   expect(request.toJson()['netGo'], isFalse);
   expect(request.fileIds, isEmpty);
@@ -86,8 +84,12 @@ Stream<GenAiChatEvent> summary(
           {
             'source': record['source'],
             'kind': record['role'] == 'user' ? 'constraint' : 'fact',
-            'quote':
-                (record['text'] as String).split('detail').first.split('irrelevant').first.trim(),
+            'quote': (record['text'] as String)
+                .split('detail')
+                .first
+                .split('irrelevant')
+                .first
+                .trim(),
           },
       ],
     }),
@@ -96,6 +98,16 @@ Stream<GenAiChatEvent> summary(
 }
 
 void main() {
+  test('compaction does not pin a current goal absent from history', () async {
+    const goal = 'Unique current user request';
+    final prepared = await GenAiContextCompactor(
+      policy: policy,
+    ).prepare(request(sourceHistory(), prompt: goal, goal: goal), GenAiCancellation(), summary);
+    expect(prepared.contextCompacted, isTrue);
+    expect(prepared.history.where((m) => m.content == goal), isEmpty);
+    expect(prepared.prompt, goal);
+  });
+
   test('compacted evidence precedes a retained user correction on every continuation', () async {
     final history = sourceHistory();
     history[history.length - 1] = const GenAiMessage(
@@ -110,8 +122,9 @@ void main() {
     expect(first.contextCompacted, isTrue);
     expect(reopened.contextCompacted, isFalse);
     for (final result in [first, reopened]) {
-      final index = result.history
-          .indexWhere((m) => m.content.contains('"kind":"techpie_context_memory_v1"'));
+      final index = result.history.indexWhere(
+        (m) => m.content.contains('"kind":"techpie_context_memory_v1"'),
+      );
       final correction = result.history.indexWhere((m) => m.content == history.last.content);
       expect(index, greaterThanOrEqualTo(0));
       expect(correction, greaterThan(index));
@@ -197,11 +210,7 @@ void main() {
           const GenAiMessage(role: GenAiRole.assistant, content: 'Short answer'),
           if (tools) ...[
             GenAiAgentHistoryEntry.call(
-              GenAiAgentToolCall(
-                id: 'time-$i',
-                name: 'get_current_time',
-                arguments: const {},
-              ),
+              GenAiAgentToolCall(id: 'time-$i', name: 'get_current_time', arguments: const {}),
             ).message,
             GenAiAgentHistoryEntry.result({
               'call_id': 'time-$i',
@@ -302,10 +311,7 @@ void main() {
       ready.allowedInputUnits,
       policy.contextTokens - policy.safetyTokens - policy.outputTokens,
     );
-    expect(
-      ready.estimatedInputUnits,
-      lessThanOrEqualTo(ready.allowedInputUnits),
-    );
+    expect(ready.estimatedInputUnits, lessThanOrEqualTo(ready.allowedInputUnits));
   });
 
   test('ready estimates include CJK, deduplicated attachments and reserved output', () async {
@@ -327,41 +333,40 @@ void main() {
       summary,
       onUsage: updates.add,
     );
-    expect(
-      updates.map((value) => value.stage),
-      [GenAiContextStage.preparing, GenAiContextStage.ready],
-    );
+    expect(updates.map((value) => value.stage), [
+      GenAiContextStage.preparing,
+      GenAiContextStage.ready,
+    ]);
     expect(updates.last.estimatedInputUnits, 2 + 32 + 1 + 12 + 2 + 64 + 4096);
     expect(updates.last.allowedInputUnits, 20000 - 1000 - 1234);
     expect(updates.last.compacted, isFalse);
     expect(updates.last.totalChunks, 0);
   });
 
-  test('compacts wire context, preserves exact corrections and leaves source history intact',
-      () async {
-    final history = sourceHistory();
-    final before = jsonEncode(history.map((m) => m.toJson()).toList());
-    final compactor = GenAiContextCompactor(policy: policy);
-    final result = await compactor.prepare(request(history), GenAiCancellation(), summary);
-    final text = result.history.map((m) => m.content).join('\n');
-    expect(text, contains('73 CNY, not 49'));
-    expect(text, contains('2031-11-12 14:35 Asia/Shanghai'));
-    expect(text, contains('outcome UNKNOWN; do not retry'));
-    expect(result.history.first.role, GenAiRole.system);
-    expect(text, contains('Never book a court without confirmation'));
-    expect(text, contains('techpie_context_memory_v1'));
-    expect(
-      result.history.last.content,
-      history.last.content,
-    );
-    expect(result.prompt, request(history).prompt);
-    expect(
-      GenAiContextCompactor.tokens(text) + GenAiContextCompactor.tokens(result.prompt),
-      lessThan(19000),
-    );
-    expect(jsonEncode(history.map((m) => m.toJson()).toList()), before);
-    expect(compactor.snapshot('test-conversation'), isNotEmpty);
-  });
+  test(
+    'compacts wire context, preserves exact corrections and leaves source history intact',
+    () async {
+      final history = sourceHistory();
+      final before = jsonEncode(history.map((m) => m.toJson()).toList());
+      final compactor = GenAiContextCompactor(policy: policy);
+      final result = await compactor.prepare(request(history), GenAiCancellation(), summary);
+      final text = result.history.map((m) => m.content).join('\n');
+      expect(text, contains('73 CNY, not 49'));
+      expect(text, contains('2031-11-12 14:35 Asia/Shanghai'));
+      expect(text, contains('outcome UNKNOWN; do not retry'));
+      expect(result.history.first.role, GenAiRole.system);
+      expect(text, contains('Never book a court without confirmation'));
+      expect(text, contains('techpie_context_memory_v1'));
+      expect(result.history.last.content, history.last.content);
+      expect(result.prompt, request(history).prompt);
+      expect(
+        GenAiContextCompactor.tokens(text) + GenAiContextCompactor.tokens(result.prompt),
+        lessThan(19000),
+      );
+      expect(jsonEncode(history.map((m) => m.toJson()).toList()), before);
+      expect(compactor.snapshot('test-conversation'), isNotEmpty);
+    },
+  );
 
   test('source evidence outranks repeated wrong assistant answers after compaction', () async {
     final history = sourceHistory();
@@ -396,10 +401,7 @@ void main() {
     );
     final memory = memoryOf(result);
     final items = memory['items'] as List;
-    expect(
-      items.every((dynamic item) => (item as Map)['role'] == 'user'),
-      isTrue,
-    );
+    expect(items.every((dynamic item) => (item as Map)['role'] == 'user'), isTrue);
     expect(jsonEncode(items), contains('sample 688'));
     expect(jsonEncode(items), contains('tool_result'));
     expect(jsonEncode(items), isNot(contains('696')));
@@ -412,10 +414,7 @@ void main() {
       GenAiContextCompactor.tokens(jsonEncode([...items, ...artifacts])),
       lessThanOrEqualTo(policy.memoryTokens),
     );
-    expect(
-      result.history.last.content,
-      contains('techpie_previous_answer_v1'),
-    );
+    expect(result.history.last.content, contains('techpie_previous_answer_v1'));
     expect(
       result.history.last.role,
       GenAiRole.user,
@@ -429,7 +428,8 @@ void main() {
   });
 
   test('retrieves a coherent old draft by its user request as an unverified artifact', () async {
-    const draft = '```dart\n'
+    const draft =
+        '```dart\n'
         'String greeting(String name) {\n'
         r"  return 'Hello, $name!';"
         '\n}\n```';
@@ -439,20 +439,14 @@ void main() {
         role: GenAiRole.user,
         content: 'Please write an earlier draft of a greeting function.',
       );
-      history[5] = const GenAiMessage(
-        role: GenAiRole.assistant,
-        content: draft,
-      );
+      history[5] = const GenAiMessage(role: GenAiRole.assistant, content: draft);
       history[6] = const GenAiMessage(
         role: GenAiRole.user,
         content: 'Thanks. Let us review the upcoming week.',
       );
       final before = jsonEncode(history.map((m) => m.toJson()).toList());
       final result = await GenAiContextCompactor(policy: policy).prepare(
-        request(
-          history,
-          prompt: 'Revise the earlier draft to sound more formal.',
-        ),
+        request(history, prompt: 'Revise the earlier draft to sound more formal.'),
         GenAiCancellation(),
         (r, c) async* {
           if (extractionAvailable) {
@@ -495,26 +489,16 @@ void main() {
         'result': {'utc': '2031-11-12T05:17:00Z'},
       }).message;
       final call = GenAiAgentHistoryEntry.call(
-        GenAiAgentToolCall(
-          id: 'latest',
-          name: 'get_current_time',
-          arguments: const {},
-        ),
+        GenAiAgentToolCall(id: 'latest', name: 'get_current_time', arguments: const {}),
       ).message;
       final receipt = GenAiAgentHistoryEntry.result({
         'call_id': 'latest',
         'name': 'get_current_time',
         'ok': succeeded,
         if (succeeded) 'result': {'utc': '2031-11-12T05:18:00Z'},
-        if (!succeeded)
-          'error': {
-            'code': 'outcome_unknown',
-            'message': 'Receipt unavailable',
-          },
+        if (!succeeded) 'error': {'code': 'outcome_unknown', 'message': 'Receipt unavailable'},
       }).message;
-      history.addAll(
-        [call, receipt],
-      );
+      history.addAll([call, receipt]);
       final prepared = await GenAiContextCompactor(policy: policy).prepare(
         request(history, prompt: 'What is the latest get_current_time result?'),
         GenAiCancellation(),
@@ -523,18 +507,13 @@ void main() {
       final memory = memoryOf(prepared);
       final latest = (memory['items'] as List)
           .cast<Map<String, dynamic>>()
-          .where(
-            (item) => item['latestRecordedResultForTool'] == 'get_current_time',
-          )
+          .where((item) => item['latestRecordedResultForTool'] == 'get_current_time')
           .single;
       expect(latest['quote'], receipt.content);
       expect(latest['source'], history.length - 2); // Excludes the system row.
       expect(latest['partial'], isFalse);
       expect(memory['retainedSourceRange']['endExclusive'], history.length - 1);
-      expect(
-        prepared.history.sublist(prepared.history.length - 2),
-        [call, receipt],
-      );
+      expect(prepared.history.sublist(prepared.history.length - 2), [call, receipt]);
       expect(
         GenAiContextCompactor.tokens(jsonEncode(memory['items'])),
         lessThanOrEqualTo(policy.memoryTokens),
@@ -543,51 +522,54 @@ void main() {
   });
 
   test(
-      'reopen reuses source-checked checkpoints; edits and model changes cannot reuse stale memory',
-      () async {
-    final history = sourceHistory();
-    final first = GenAiContextCompactor(policy: policy);
-    await first.prepare(request(history), GenAiCancellation(), summary);
-    final checkpoint =
-        jsonDecode(jsonEncode(first.snapshot('test-conversation'))) as Map<String, dynamic>;
-    final restored = GenAiContextCompactor(policy: policy)
-      ..restore('test-conversation', checkpoint);
-    var calls = 0;
-    Stream<GenAiChatEvent> tracked(GenAiChatRequest r, GenAiCancellation c) {
-      calls++;
-      return summary(r, c);
-    }
+    'reopen reuses source-checked checkpoints; edits and model changes cannot reuse stale memory',
+    () async {
+      final history = sourceHistory();
+      final first = GenAiContextCompactor(policy: policy);
+      await first.prepare(request(history), GenAiCancellation(), summary);
+      final checkpoint =
+          jsonDecode(jsonEncode(first.snapshot('test-conversation'))) as Map<String, dynamic>;
+      final restored = GenAiContextCompactor(policy: policy)
+        ..restore('test-conversation', checkpoint);
+      var calls = 0;
+      Stream<GenAiChatEvent> tracked(GenAiChatRequest r, GenAiCancellation c) {
+        calls++;
+        return summary(r, c);
+      }
 
-    await restored.prepare(request(history), GenAiCancellation(), tracked);
-    expect(calls, 0);
-    final changed = [...history];
-    changed[10] = const GenAiMessage(
-      role: GenAiRole.user,
-      content: 'Correction: Budget is 81 CNY.',
-    );
-    final result = await restored.prepare(request(changed), GenAiCancellation(), tracked);
-    expect(calls, greaterThan(0));
-    expect(result.history.map((m) => m.content).join(), contains('81 CNY'));
-    calls = 0;
-    await restored.prepare(
-      GenAiChatRequest(
-        chatGroupId: 'test-conversation',
-        prompt: 'Budget?',
-        aiType: 'different',
-        rootAiType: 'xinference',
-        history: history,
-      ),
-      GenAiCancellation(),
-      tracked,
-    );
-    expect(calls, greaterThan(0));
-  });
+      await restored.prepare(request(history), GenAiCancellation(), tracked);
+      expect(calls, 0);
+      final changed = [...history];
+      changed[10] = const GenAiMessage(
+        role: GenAiRole.user,
+        content: 'Correction: Budget is 81 CNY.',
+      );
+      final result = await restored.prepare(request(changed), GenAiCancellation(), tracked);
+      expect(calls, greaterThan(0));
+      expect(result.history.map((m) => m.content).join(), contains('81 CNY'));
+      calls = 0;
+      await restored.prepare(
+        GenAiChatRequest(
+          chatGroupId: 'test-conversation',
+          prompt: 'Budget?',
+          aiType: 'different',
+          rootAiType: 'xinference',
+          history: history,
+        ),
+        GenAiCancellation(),
+        tracked,
+      );
+      expect(calls, greaterThan(0));
+    },
+  );
 
   test('invalid summaries fall back to verbatim retrieval without inventing facts', () async {
     final compactor = GenAiContextCompactor(policy: policy);
     var extractionCalls = 0;
-    final result =
-        await compactor.prepare(request(sourceHistory()), GenAiCancellation(), (r, c) async* {
+    final result = await compactor.prepare(request(sourceHistory()), GenAiCancellation(), (
+      r,
+      c,
+    ) async* {
       extractionCalls++;
       yield const GenAiTextDelta(
         '{"items":[{"source":1,"kind":"action","quote":"Booking succeeded; charge 999 CNY"}]}',
@@ -604,21 +586,12 @@ void main() {
   test('configured latest-input budget accounts for CJK without byte-token confusion', () async {
     final compactor = GenAiContextCompactor(policy: policy);
     await expectLater(
-      compactor.prepare(
-        request(const [], prompt: '中' * 3000),
-        GenAiCancellation(),
-        summary,
-      ),
-      throwsA(
-        isA<GenAiFailure>().having((e) => e.kind, 'kind', GenAiFailureKind.messageTooLarge),
-      ),
+      compactor.prepare(request(const [], prompt: '中' * 3000), GenAiCancellation(), summary),
+      throwsA(isA<GenAiFailure>().having((e) => e.kind, 'kind', GenAiFailureKind.messageTooLarge)),
     );
     final history = [
       for (var i = 0; i < 4; i++)
-        GenAiMessage(
-          role: i.isEven ? GenAiRole.user : GenAiRole.assistant,
-          content: 'a' * 1200,
-        ),
+        GenAiMessage(role: i.isEven ? GenAiRole.user : GenAiRole.assistant, content: 'a' * 1200),
     ];
     final result = await compactor.prepare(
       request(history, prompt: 'continue'),
@@ -632,11 +605,7 @@ void main() {
   test('injected documents consume context; unknown archived content fails explicitly', () async {
     final compactor = GenAiContextCompactor(policy: policy);
     await expectLater(
-      compactor.prepare(
-        request(const [], files: ['old']),
-        GenAiCancellation(),
-        summary,
-      ),
+      compactor.prepare(request(const [], files: ['old']), GenAiCancellation(), summary),
       throwsA(
         isA<GenAiFailure>().having(
           (e) => e.kind,
@@ -651,9 +620,7 @@ void main() {
         GenAiCancellation(),
         summary,
       ),
-      throwsA(
-        isA<GenAiFailure>().having((e) => e.kind, 'kind', GenAiFailureKind.contextTooLarge),
-      ),
+      throwsA(isA<GenAiFailure>().having((e) => e.kind, 'kind', GenAiFailureKind.contextTooLarge)),
     );
     final result = await compactor.prepare(
       request(const [], files: ['small'], documents: {'small': 'hello'}),
@@ -695,8 +662,7 @@ void main() {
     }
   });
 
-  test('active goal and last tool exchange survive even when goal is older than the tail',
-      () async {
+  test('active goal and last tool exchange survive even when goal is older than the tail', () async {
     const goal = 'ACTIVE GOAL: locate my schedule; never make a booking';
     final history = sourceHistory();
     history[4] = const GenAiMessage(role: GenAiRole.user, content: goal);
@@ -712,64 +678,48 @@ void main() {
             '<techpie-agent-history version="2">{"kind":"result","value":{"call_id":"s-1","name":"get_semesters","ok":true,"result":{}}}</techpie-agent-history>',
       ),
     ]);
-    final result = await GenAiContextCompactor(policy: policy).prepare(
-      request(history, goal: goal, prompt: 'current result'),
-      GenAiCancellation(),
-      summary,
-    );
+    final result = await GenAiContextCompactor(
+      policy: policy,
+    ).prepare(request(history, goal: goal, prompt: 'current result'), GenAiCancellation(), summary);
     expect(result.history.any((m) => m.content == goal), isTrue);
     expect(
       result.history.sublist(result.history.length - 2).map((m) => m.content),
       history.sublist(history.length - 2).map((m) => m.content),
     );
   });
-  test('oversized recent exchanges compact further without splitting the newest tool pair',
-      () async {
-    final call = GenAiAgentHistoryEntry.call(
-      GenAiAgentToolCall(
-        id: 'latest',
-        name: 'get_semesters',
-        arguments: const {},
-      ),
-    ).message;
-    final result = GenAiAgentHistoryEntry.result({
-      'call_id': 'latest',
-      'name': 'get_semesters',
-      'ok': true,
-      'result': {'semester': '2026-fall'},
-    }).message;
-    final history = [
-      ...sourceHistory(),
-      GenAiMessage(
-        role: GenAiRole.user,
-        content: 'Large old exchange ${'x' * 15000}',
-      ),
-      GenAiMessage(
-        role: GenAiRole.assistant,
-        content: 'Large old answer ${'y' * 15000}',
-      ),
-      call,
-      result,
-    ];
-    final prepared = await GenAiContextCompactor(policy: policy).prepare(
-      request(history),
-      GenAiCancellation(),
-      summary,
-    );
-    expect(prepared.contextCompacted, isTrue);
-    expect(
-      prepared.history.sublist(prepared.history.length - 2),
-      [call, result],
-    );
-    expect(
-      prepared.history.fold<int>(0, (n, m) => n + GenAiContextCompactor.messageTokens(m)),
-      lessThan(18000),
-    );
-    expect(history.any((m) => m.content.length > 15000), isTrue);
-  });
+  test(
+    'oversized recent exchanges compact further without splitting the newest tool pair',
+    () async {
+      final call = GenAiAgentHistoryEntry.call(
+        GenAiAgentToolCall(id: 'latest', name: 'get_semesters', arguments: const {}),
+      ).message;
+      final result = GenAiAgentHistoryEntry.result({
+        'call_id': 'latest',
+        'name': 'get_semesters',
+        'ok': true,
+        'result': {'semester': '2026-fall'},
+      }).message;
+      final history = [
+        ...sourceHistory(),
+        GenAiMessage(role: GenAiRole.user, content: 'Large old exchange ${'x' * 15000}'),
+        GenAiMessage(role: GenAiRole.assistant, content: 'Large old answer ${'y' * 15000}'),
+        call,
+        result,
+      ];
+      final prepared = await GenAiContextCompactor(
+        policy: policy,
+      ).prepare(request(history), GenAiCancellation(), summary);
+      expect(prepared.contextCompacted, isTrue);
+      expect(prepared.history.sublist(prepared.history.length - 2), [call, result]);
+      expect(
+        prepared.history.fold<int>(0, (n, m) => n + GenAiContextCompactor.messageTokens(m)),
+        lessThan(18000),
+      );
+      expect(history.any((m) => m.content.length > 15000), isTrue);
+    },
+  );
 
-  test('exact record identifiers outrank generic words when retrieving omitted source details',
-      () async {
+  test('exact record identifiers outrank generic words when retrieving omitted source details', () async {
     const query =
         'From the earlier Calibration off-2-077 record, what are the sample number and temperature? '
         'Also explain whether booking B-37 may be retried. Use the original records; '
@@ -777,7 +727,8 @@ void main() {
     final history = sourceHistory();
     final records = List.generate(
       120,
-      (i) => 'Calibration off-2-${i.toString().padLeft(3, '0')}: '
+      (i) =>
+          'Calibration off-2-${i.toString().padLeft(3, '0')}: '
           'sample ${((i * 17 + 2) % 997).toString().padLeft(3, '0')}; '
           'temperature ${18 + i % 9}. Sensor observation archived for comparison, no action needed.',
     ).join('\n');
@@ -816,10 +767,7 @@ void main() {
       );
     }
     final result = await GenAiContextCompactor(policy: policy).prepare(
-      request(
-        history,
-        prompt: '$noise What are the courier code and archive room?',
-      ),
+      request(history, prompt: '$noise What are the courier code and archive room?'),
       GenAiCancellation(),
       summary,
     );

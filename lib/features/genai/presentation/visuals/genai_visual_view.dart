@@ -13,7 +13,8 @@ import '../markdown/genai_code_font.dart';
 import '../markdown/genai_syntax_highlighter.dart';
 import 'genai_visual_document.dart';
 import 'genai_visual_external_native.dart'
-    if (dart.library.js_interop) 'genai_visual_external_web.dart' as visual_platform;
+    if (dart.library.js_interop) 'genai_visual_external_web.dart'
+    as visual_platform;
 import 'genai_visual_surface.dart';
 
 /// The latest complete visual is expanded on reopen. User overrides last until
@@ -329,12 +330,7 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
     setState(() => _openingExternal = true);
     try {
       await visual_platform.openGenAiVisual(
-        GenAiVisualDocument.shell(
-          document,
-          native: false,
-          fullscreen: true,
-          theme: _visualTheme(),
-        ),
+        GenAiVisualDocument.shell(document, native: false, fullscreen: true, theme: _visualTheme()),
       );
     } catch (_) {
       if (mounted) showAdaptiveFeedback(context: context, message: '无法打开浏览器，请稍后重试');
@@ -352,39 +348,19 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
     showAdaptiveFeedback(context: context, message: '已复制源码');
   }
 
-  /// Draft popover rows: 42 px minimum, 10/8 px padding, 13 px labels,
-  /// 17 px muted icons and a 10 px gap. The shared route clips each row's
-  /// 7 px hover plate through `genAiMenuEntry`.
-  PopupMenuItem<String> _menuItem(
-    GenAiPalette palette,
-    String value,
-    String label,
-    GenAiGlyph glyph, {
-    bool enabled = true,
-  }) =>
-      PopupMenuItem<String>(
-        value: value,
-        enabled: enabled,
-        height: 42,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: Row(
-          children: [
-            IconTheme.merge(
-              data: IconThemeData(size: 17, color: palette.muted),
-              child: GenAiIcon(glyph),
-            ),
-            const SizedBox(width: 10),
-            Text(label, style: const TextStyle(fontSize: 13)),
-          ],
-        ),
-      );
-
   Widget _moreMenu({required bool enabled}) {
     final palette = GenAiPalette.of(context);
     final items = <PopupMenuEntry<String>>[
-      if (!_externalOnly) _menuItem(palette, 'rerun', '重新运行', GenAiGlyph.retry, enabled: enabled),
-      _menuItem(palette, 'source', '查看源代码', GenAiGlyph.code),
-      _menuItem(palette, 'copy', '复制内容', GenAiGlyph.copy),
+      if (!_externalOnly)
+        genAiActionItem(
+          palette,
+          'rerun',
+          const GenAiIcon(GenAiGlyph.retry),
+          '重新运行',
+          enabled: enabled,
+        ),
+      genAiActionItem(palette, 'source', const GenAiIcon(GenAiGlyph.code), '查看源代码'),
+      genAiActionItem(palette, 'copy', const GenAiIcon(GenAiGlyph.copy), '复制内容'),
     ];
     return Builder(
       builder: (anchorContext) => IconButton(
@@ -398,10 +374,7 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
   /// The popover can outlive a rebuild of this visual, so a late choice is
   /// applied only while this state element and its opening anchor are mounted
   /// and the code it acted on is still the current revision.
-  Future<void> _openMoreMenu(
-    BuildContext anchorContext,
-    List<PopupMenuEntry<String>> items,
-  ) async {
+  Future<void> _openMoreMenu(BuildContext anchorContext, List<PopupMenuEntry<String>> items) async {
     final revision = _revision;
     final action = await genAiShowMenu<String>(
       context: context,
@@ -432,127 +405,83 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
   }
 
   Widget _cardHeader() => GenAiContentHeader(
-        title: _explicitTitle ?? GenAiVisualDocument.defaultTitle,
-        expanded: !_collapsed,
-        onToggle: _toggleCollapsed,
-        divider: false,
-        actions: [
-          if (!_externalOnly)
-            IconButton(
-              tooltip: '全屏',
-              onPressed: () => _fullscreen(true),
-              icon: const GenAiIcon(GenAiGlyph.full, size: 20),
-            ),
-          _moreMenu(enabled: widget.complete),
-        ],
-      );
+    title: _explicitTitle ?? GenAiVisualDocument.defaultTitle,
+    expanded: !_collapsed,
+    onToggle: _toggleCollapsed,
+    divider: false,
+    actions: [
+      if (!_externalOnly)
+        IconButton(
+          tooltip: '全屏',
+          onPressed: () => _fullscreen(true),
+          icon: const GenAiIcon(GenAiGlyph.full, size: 20),
+        ),
+      _moreMenu(enabled: widget.complete),
+    ],
+  );
 
   Widget _fullscreenHeader() => ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 48),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _explicitTitle ?? GenAiVisualDocument.defaultTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                ),
-              ),
-              IconButton(
-                tooltip: '退出全屏',
-                onPressed: () => _fullscreen(false),
-                icon: const GenAiIcon(GenAiGlyph.close, size: 20),
-              ),
-            ],
+    constraints: const BoxConstraints(minHeight: 48),
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _explicitTitle ?? GenAiVisualDocument.defaultTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
           ),
-        ),
-      );
+          IconButton(
+            tooltip: '退出全屏',
+            onPressed: () => _fullscreen(false),
+            icon: const GenAiIcon(GenAiGlyph.close, size: 20),
+          ),
+        ],
+      ),
+    ),
+  );
 
-  /// Source opens in its own dialog; the inline canvas keeps running behind it.
-  /// The view is 18px rounded, `min(500, screen - 32)` wide, with a titled
-  /// header, a scrolling monospace body and a copy footer.
+  /// Keep the inline canvas alive and remove only its source route on disposal.
   Future<void> _showSource() async {
-    final colors = Theme.of(context).colorScheme;
     try {
       await genAiShowDialog<void>(
         context: context,
         builder: (dialogContext) {
-          // Track the exact route this visual owns; disposal removes this
-          // route only, never whatever happens to be on top of the navigator.
           _sourceRoute = ModalRoute.of(dialogContext);
-          return Dialog(
+          final theme = Theme.of(dialogContext);
+          return GenAiDialogFrame(
+            surfaceKey: const ValueKey('genai-visual-source'),
             insetPadding: const EdgeInsets.all(16),
-            clipBehavior: Clip.antiAlias,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-            child: ConstrainedBox(
-              key: const ValueKey('genai-visual-source'),
-              constraints: BoxConstraints(
-                maxWidth: 500,
-                maxHeight: MediaQuery.sizeOf(dialogContext).height * .9,
+            constraints: BoxConstraints(
+              maxWidth: 500,
+              maxHeight: MediaQuery.sizeOf(dialogContext).height * .9,
+            ),
+            title: const Text('示例源代码', maxLines: 1, overflow: TextOverflow.ellipsis),
+            scrollable: true,
+            content: SelectableText.rich(
+              TextSpan(
+                children: GenAiSyntaxHighlighter(
+                  brightness: theme.brightness,
+                ).highlight(code: widget.code, language: 'html'),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            '示例源代码',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-                          tooltip: '关闭',
-                          onPressed: () => Navigator.pop(dialogContext),
-                          icon: const GenAiIcon(GenAiGlyph.close, size: 20),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(24),
-                      child: SelectableText.rich(
-                        TextSpan(
-                          children: GenAiSyntaxHighlighter(
-                            brightness: Theme.of(dialogContext).brightness,
-                          ).highlight(code: widget.code, language: 'html'),
-                        ),
-                        style: TextStyle(
-                          fontFamily: kGenAiMonospaceFamily,
-                          fontFamilyFallback: kGenAiMonospaceFallback,
-                          fontSize: 12,
-                          height: 1.7,
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 22),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: _copySource,
-                        icon: const GenAiIcon(GenAiGlyph.copy, size: 17),
-                        label: const Text('复制'),
-                      ),
-                    ),
-                  ),
-                ],
+              style: TextStyle(
+                fontFamily: kGenAiMonospaceFamily,
+                fontFamilyFallback: kGenAiMonospaceFallback,
+                fontSize: 12,
+                height: 1.7,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            actions: [
+              TextButton.icon(
+                onPressed: _copySource,
+                icon: const GenAiIcon(GenAiGlyph.copy, size: 17),
+                label: const Text('复制'),
+              ),
+            ],
           );
         },
       );
@@ -566,34 +495,34 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
   Widget _inlineBody() => SizedBox(height: _height, child: _canvas());
 
   Widget _fullscreenBody() => LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = MediaQuery.sizeOf(context).width <= _mobileBreakpoint;
-          // The frame owns vertical centring and scrolling. Never size it from
-          // the inline measurement: its new width changes the content height.
-          return Padding(
-            key: const ValueKey('genai-visual-fullscreen-body'),
-            padding: EdgeInsets.all(compact ? 12 : 24),
-            child: SizedBox.expand(child: _canvas()),
-          );
-        },
+    builder: (context, constraints) {
+      final compact = MediaQuery.sizeOf(context).width <= _mobileBreakpoint;
+      // The frame owns vertical centring and scrolling. Never size it from
+      // the inline measurement: its new width changes the content height.
+      return Padding(
+        key: const ValueKey('genai-visual-fullscreen-body'),
+        padding: EdgeInsets.all(compact ? 12 : 24),
+        child: SizedBox.expand(child: _canvas()),
       );
+    },
+  );
 
   Widget _content({required bool full}) => Column(
-        key: full ? null : _inlineContentKey,
-        mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          full ? _fullscreenHeader() : _cardHeader(),
-          if (!_collapsed || full) const Divider(height: 1),
-          if (full)
-            Expanded(child: _fullscreenBody())
-          else
-            Offstage(
-              offstage: _collapsed,
-              child: _full || !_activated ? const SizedBox.shrink() : _inlineBody(),
-            ),
-        ],
-      );
+    key: full ? null : _inlineContentKey,
+    mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      full ? _fullscreenHeader() : _cardHeader(),
+      if (!_collapsed || full) const Divider(height: 1),
+      if (full)
+        Expanded(child: _fullscreenBody())
+      else
+        Offstage(
+          offstage: _collapsed,
+          child: _full || !_activated ? const SizedBox.shrink() : _inlineBody(),
+        ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -637,7 +566,15 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(compact ? 0 : 18),
                             ),
-                            child: SafeArea(child: _content(full: true)),
+                            // The portal inherits the chat's consumed safe-area
+                            // padding, but its overlay covers the whole window.
+                            child: MediaQuery(
+                              data: MediaQueryData.fromView(
+                                View.of(context),
+                                platformData: MediaQuery.of(context),
+                              ),
+                              child: SafeArea(child: _content(full: true)),
+                            ),
                           ),
                         ),
                       ),
@@ -659,8 +596,9 @@ class _GenAiVisualViewState extends State<GenAiVisualView> {
                 border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                 borderRadius: BorderRadius.circular(compact ? _cardRadiusCompact : _cardRadius),
               ),
-              child:
-                  _full ? SizedBox(height: _inlineHeight ?? _height + 49) : _content(full: false),
+              child: _full
+                  ? SizedBox(height: _inlineHeight ?? _height + 49)
+                  : _content(full: false),
             );
           },
         ),

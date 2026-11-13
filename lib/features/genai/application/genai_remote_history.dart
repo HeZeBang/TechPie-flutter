@@ -26,7 +26,11 @@ final class GenAiRemoteHistory {
   late final GenAiConversationSnapshot archive = _createArchive();
 }
 
-GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows) {
+GenAiRemoteHistory decodeGenAiConversation(
+  String id,
+  List<GenAiSavedTurn> rows, {
+  String? serverTitle,
+}) {
   final aliases = _uploadFallbackAliases(rows);
   final turns = <String, GenAiConversationTurn>{};
   final legacy = <GenAiSavedTurn>[];
@@ -75,7 +79,9 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
       try {
         final notes = jsonDecode(row.answer);
         if (notes is Map<String, Object?> && notes['items'] is List) memory[extraction] = notes;
-      } on FormatException {/* Invalid extraction is re-derived from source. */}
+      } on FormatException {
+        /* Invalid extraction is re-derived from source. */
+      }
       continue;
     }
     final record = decodeGenAiRemoteRecord(row.prompt);
@@ -116,8 +122,9 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
         explicitlyStopped.add(stopped.id);
       }
       final input = record['input']! as String;
-      final source =
-          record['turn'] is Map ? Map<String, Object?>.from(record['turn']! as Map) : null;
+      final source = record['turn'] is Map
+          ? Map<String, Object?>.from(record['turn']! as Map)
+          : null;
       final turnId = (source?['id'] ?? record['turn_id'])! as String;
       if (turnId.isEmpty) throw const FormatException('Missing turn ID');
       final turn = turns.putIfAbsent(turnId, () {
@@ -222,8 +229,8 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
         final answer = currentFormat
             ? decision?.text
             : turn.isAgent
-                ? decodeGenAiAgentFinal(row.answer)
-                : row.answer;
+            ? decodeGenAiAgentFinal(row.answer)
+            : row.answer;
         if (answer == null || answer.isEmpty) {
           turn.phase = GenAiChatPhase.interrupted;
           if (turn.isAgent && row.answer.trim().isNotEmpty) {
@@ -255,9 +262,12 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
     } catch (_) {
       // A damaged record is visible and breaks context continuity; do not
       // silently supply a seemingly complete history to the model.
-      final gap =
-          GenAiConversationTurn('', id: 'gap-${turns.length}', parentId: leaf, isHistoryGap: true)
-            ..phase = GenAiChatPhase.interrupted;
+      final gap = GenAiConversationTurn(
+        '',
+        id: 'gap-${turns.length}',
+        parentId: leaf,
+        isHistoryGap: true,
+      )..phase = GenAiChatPhase.interrupted;
       turns[gap.id] = gap;
       leaf = gap.id;
     }
@@ -288,7 +298,7 @@ GenAiRemoteHistory decodeGenAiConversation(String id, List<GenAiSavedTurn> rows)
     leaf = turn.parentId;
   }
   final ordered = path.reversed.toList();
-  final resolvedTitle = title ?? ordered.firstOrNull?.prompt ?? '新的对话';
+  final resolvedTitle = serverTitle ?? title ?? ordered.firstOrNull?.prompt ?? '新的对话';
   return GenAiRemoteHistory._(
     GenAiConversationSummary(
       id: id,

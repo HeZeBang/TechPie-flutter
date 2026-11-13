@@ -12,7 +12,7 @@ final class _StubAudioPlayer implements GenAiAudioPlayer {
   bool get isPlaying => false;
 
   @override
-  set onFinished(void Function()? callback) {}
+  set onFinished(void Function(bool completed)? callback) {}
 
   @override
   Future<void> playWav(List<int> bytes) async =>

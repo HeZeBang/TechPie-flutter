@@ -4,6 +4,8 @@
 <dict>
   <key>TechPieDeadlineAppGroup</key><string>$(TECHPIE_DEADLINE_APP_GROUP)</string>
   <key>TechPieWidgetURLScheme</key><string>$(TECHPIE_WIDGET_URL_SCHEME)</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>使用麦克风将语音转为聊天草稿。</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

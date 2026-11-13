@@ -1,11 +1,44 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/domain/genai_agent_protocol.dart';
+import 'package:techpie/features/genai/domain/genai_cancellation.dart';
+import 'package:techpie/features/genai/domain/genai_failure.dart';
 
 void main() {
+  test('linked requests preserve failure reasons and can detach', () async {
+    for (final kind in [GenAiFailureKind.timeout, GenAiFailureKind.accountChanged]) {
+      final parent = GenAiCancellation();
+      final child = GenAiCancellation();
+      final detached = GenAiCancellation();
+      parent.forwardTo(child);
+      parent.forwardTo(detached)();
+      parent.cancel(kind);
+      expect(
+        child.throwIfCancelled,
+        throwsA(isA<GenAiFailure>().having((e) => e.kind, 'kind', kind)),
+      );
+      expect(detached.isCancelled, isFalse);
+      final lateChild = GenAiCancellation();
+      parent.forwardTo(lateChild);
+      expect(
+        lateChild.throwIfCancelled,
+        throwsA(isA<GenAiFailure>().having((e) => e.kind, 'kind', kind)),
+      );
+    }
+  });
+
+  test('ordinary code fences stream before completion without accepting tool frames', () {
+    final stream = GenAiAgentFinalStream('synthetic_nonce_0123456789', allowPlain: true);
+    expect(stream.add('```py'), isEmpty);
+    expect(stream.add('thon\nprint(1)'), '```python\nprint(1)');
+    expect(stream.add('\n```'), '\n```');
+    expect(stream.finish().text, contains('print(1)'));
+  });
+
   test('plain finals stream unchanged while control-like output cannot execute', () {
     const nonce = 'plain_final_nonce_012345';
-    const body = '谱定理：\\(A=Q\\Lambda Q^{T}\\)。\n'
+    const body =
+        '谱定理：\\(A=Q\\Lambda Q^{T}\\)。\n'
         '```techpie-visual {"title":"谱定理"}\n<p data-latex="A=Q"></p>\n```';
     final decoder = GenAiAgentFinalStream(nonce);
     expect(body.split('').map(decoder.add).join(), body);
@@ -32,168 +65,60 @@ void main() {
     }
   });
 
-  GenAiAgentToolCall call(String name) =>
-      GenAiAgentToolCall(id: 'call-1', name: name, arguments: const {});
-
-  GenAiAgentEvent event(
-    GenAiAgentEventKind kind, {
-    String? name,
-    Map<String, Object?>? result,
-  }) =>
+  test('only finished mutations with a successful or uncertain receipt warn of an effect', () {
+    const booked = {
+      'ok': true,
+      'result': {'status': 'booked'},
+    };
+    bool hasEffect(
+      String? name,
+      Map<String, Object?>? result, {
+      GenAiAgentEventKind kind = GenAiAgentEventKind.toolFinished,
+      Map<String, Object?> arguments = const {},
+    }) => genAiHasExternalEffect(
       GenAiAgentEvent(
         kind: kind,
         turn: 1,
-        call: name == null ? null : call(name),
+        call: name == null
+            ? null
+            : GenAiAgentToolCall(id: 'call', name: name, arguments: arguments),
         result: result,
+      ),
+    );
+
+    for (final kind in [
+      GenAiAgentEventKind.toolProposed,
+      GenAiAgentEventKind.approvalRequired,
+      GenAiAgentEventKind.toolStarted,
+      GenAiAgentEventKind.cancelled,
+      GenAiAgentEventKind.failed,
+    ]) {
+      expect(hasEffect('reserve_court', booked, kind: kind), isFalse, reason: kind.name);
+    }
+    for (final name in ['generate_image', 'reserve_court']) {
+      expect(hasEffect(name, booked), isTrue, reason: name);
+    }
+    for (final name in ['read_data', null]) {
+      expect(hasEffect(name, booked), isFalse, reason: name);
+    }
+    for (final code in ['approval_denied', 'tool_failed', 'outcome_unknown']) {
+      expect(
+        hasEffect('reserve_court', {
+          'ok': false,
+          'error': {'code': code},
+        }),
+        code == 'outcome_unknown',
+        reason: code,
       );
-
-  const success = {
-    'ok': true,
-    'result': {'status': 'booked'},
-  };
-  const rejection = {
-    'ok': false,
-    'error': {'code': 'approval_denied', 'message': 'The user declined this action.'},
-  };
-  const failure = {
-    'ok': false,
-    'error': {'code': 'tool_failed', 'message': 'The tool could not complete this request.'},
-  };
-  const unknown = {
-    'ok': false,
-    'error': {'code': 'outcome_unknown', 'message': 'This action may have been dispatched.'},
-  };
-
-  test('a proposed call is not an external action', () {
+    }
+    expect(hasEffect('generate_image', null), isFalse);
     expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.toolProposed, name: 'reserve_court'),
-      ),
+      hasEffect('generate_image', {
+        'result': {'status': 'generated'},
+      }),
       isFalse,
     );
-  });
-
-  test('a pending approval is not an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.approvalRequired, name: 'generate_image'),
-      ),
-      isFalse,
-    );
-  });
-
-  test('a started call is not a completed external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.toolStarted, name: 'reserve_court', result: success),
-      ),
-      isFalse,
-    );
-  });
-
-  test('a rejected approval is not an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.toolFinished, name: 'reserve_court', result: rejection),
-      ),
-      isFalse,
-    );
-  });
-
-  test('a cancelled event is not an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.cancelled, name: 'generate_image', result: success),
-      ),
-      isFalse,
-    );
-  });
-
-  test('a failed event is not an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.failed, name: 'generate_image', result: success),
-      ),
-      isFalse,
-    );
-  });
-
-  test('a failed tool result is not an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.toolFinished, name: 'reserve_court', result: failure),
-      ),
-      isFalse,
-    );
-  });
-
-  test('an unknown-outcome receipt may still be an external effect', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.toolFinished, name: 'reserve_court', result: unknown),
-      ),
-      isTrue,
-    );
-  });
-
-  test('a missing result is not an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.toolFinished, name: 'reserve_court'),
-      ),
-      isFalse,
-    );
-  });
-
-  test('a result without ok is not an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(
-          GenAiAgentEventKind.toolFinished,
-          name: 'generate_image',
-          result: const {
-            'result': {'status': 'generated'},
-          },
-        ),
-      ),
-      isFalse,
-    );
-  });
-
-  test('a call-less event is not an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.toolFinished, result: success),
-      ),
-      isFalse,
-    );
-  });
-
-  test('a successful booking is an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.toolFinished, name: 'reserve_court', result: success),
-      ),
-      isTrue,
-    );
-  });
-
-  test('a successful image is an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.toolFinished, name: 'generate_image', result: success),
-      ),
-      isTrue,
-    );
-  });
-
-  test('an unrelated successful read tool is not an external action', () {
-    expect(
-      genAiHasExternalEffect(
-        event(GenAiAgentEventKind.toolFinished, name: 'read_data', result: success),
-      ),
-      isFalse,
-    );
+    expect(hasEffect('reserve_court', booked, arguments: {'action': 'search'}), isTrue);
   });
 
   test('ledger receipts require an actual booking for reserve_court', () {
@@ -202,25 +127,5 @@ void main() {
     expect(genAiRecordsMutationReceipt('reserve_court', const {'action': 'search'}), isFalse);
     expect(genAiRecordsMutationReceipt('reserve_court', const {}), isFalse);
     expect(genAiRecordsMutationReceipt('get_court_slots', const {'action': 'book'}), isFalse);
-  });
-
-  test('the effect warning stays name-only for non-booking court actions', () {
-    // The warning intentionally ignores arguments: a finished reserve_court
-    // receipt may describe an uncertain external effect whatever its action.
-    expect(
-      genAiHasExternalEffect(
-        GenAiAgentEvent(
-          kind: GenAiAgentEventKind.toolFinished,
-          turn: 1,
-          call: GenAiAgentToolCall(
-            id: 'call-1',
-            name: 'reserve_court',
-            arguments: const {'action': 'search'},
-          ),
-          result: success,
-        ),
-      ),
-      isTrue,
-    );
   });
 }

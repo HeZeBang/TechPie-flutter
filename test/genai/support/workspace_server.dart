@@ -31,6 +31,8 @@ final class FakeGenAiServer implements GenAiTransport {
   final _operations = <GenAiCancellation>{};
   int _uploadSequence = 0;
   int _recordSequence = 0;
+  final _titles = <String, String>{};
+  final _pins = <String, bool>{};
   final _history = <String, List<Map<String, Object?>>>{};
   final _images = <Map<String, Object?>>[];
 
@@ -39,10 +41,7 @@ final class FakeGenAiServer implements GenAiTransport {
   Map<String, Object?> _page(List<Object?> rows, Uri uri) {
     final page = int.tryParse(uri.queryParameters['pageNo'] ?? '') ?? 1;
     final size = int.tryParse(uri.queryParameters['pageSize'] ?? '') ?? 20;
-    return {
-      'records': rows.skip((page - 1) * size).take(size).toList(),
-      'total': rows.length,
-    };
+    return {'records': rows.skip((page - 1) * size).take(size).toList(), 'total': rows.length};
   }
 
   @override
@@ -76,7 +75,7 @@ final class FakeGenAiServer implements GenAiTransport {
         },
       });
     }
-    if (uri.path == '/htk/ai/aiModel/list') {
+    if (uri.path == '/htk/ai/aiModel/list' || uri.path == '/htk/ai/aiModel/list/V2') {
       return _json({
         'success': true,
         'code': 200,
@@ -119,11 +118,7 @@ final class FakeGenAiServer implements GenAiTransport {
     }
     if (uri.path == '/sys/common/upload') {
       if (failUpload) {
-        return _json({
-          'success': false,
-          'code': 500,
-          'message': 'Upload failed',
-        });
+        return _json({'success': false, 'code': 500, 'message': 'Upload failed'});
       }
       return _ok({
         'url': 'temp/test-upload-${++_uploadSequence}.png',
@@ -152,26 +147,34 @@ final class FakeGenAiServer implements GenAiTransport {
         ? <String, dynamic>{}
         : (body.startsWith('{') ? jsonDecode(body) as Map<String, dynamic> : <String, dynamic>{});
     switch (uri.path) {
+      case '/htk/ai/history/group/rename':
+        _titles[data['chatGroupId'] as String] = data['title'] as String;
+        return _ok(null);
+      case '/htk/ai/history/group/pin':
+        for (final id in data['chatGroupIds'] as List) {
+          _pins[id as String] = data['pinned'] as bool;
+        }
+        return _ok(null);
       case '/htk/ai/history/listByContentGroup':
         final rawQuery = uri.queryParameters['question'] ?? '';
         final query = rawQuery.trim().toLowerCase();
         return _ok(
-          _page(
-            [
-              for (final entry in _history.entries.toList().reversed)
-                if (entry.value.isNotEmpty)
-                  if (query.isEmpty ||
-                      entry.value.any(
-                        (turn) => (turn['question'] as String? ?? '').toLowerCase().contains(query),
-                      ))
-                    {
-                      'chatGroupId': entry.key,
-                      'question': entry.value.first['question'],
-                      'createTime': '2026-10-19 12:00:00',
-                    },
-            ],
-            uri,
-          ),
+          _page([
+            for (final entry in _history.entries.toList().reversed)
+              if (entry.value.isNotEmpty)
+                if (query.isEmpty ||
+                    (_titles[entry.key]?.toLowerCase().contains(query) ?? false) ||
+                    entry.value.any(
+                      (turn) => (turn['question'] as String? ?? '').toLowerCase().contains(query),
+                    ))
+                  {
+                    'chatGroupId': entry.key,
+                    if (_titles[entry.key] != null) 'title': _titles[entry.key],
+                    'pinned': _pins[entry.key] ?? false,
+                    'question': entry.value.first['question'],
+                    'createTime': '2026-10-19 12:00:00',
+                  },
+          ], uri),
         );
       case '/htk/ai/history/getByChatGroupId':
         return _ok(_history[uri.queryParameters['chatGroupId']] ?? <Object>[]);
@@ -189,9 +192,7 @@ final class FakeGenAiServer implements GenAiTransport {
       case '/htk/ai-image-history/list':
         return _ok(_page(_images.reversed.toList(), uri));
       case '/htk/ai-image-history/delete':
-        _images.removeWhere(
-          (row) => row['id'] == (uri.queryParameters['id'] ?? data['id']),
-        );
+        _images.removeWhere((row) => row['id'] == (uri.queryParameters['id'] ?? data['id']));
         return _ok(null);
       case '/htk/ai-api-gateway/my/summary':
         return _ok({
@@ -253,11 +254,11 @@ final class FakeGenAiServer implements GenAiTransport {
   }
 
   GenAiResponse _json(Map<String, Object?> data) => GenAiResponse(
-        statusCode: 200,
-        headers: const {'Content-Type': 'application/json'},
-        bytes: Stream.value(utf8.encode(jsonEncode(data))),
-        close: () {},
-      );
+    statusCode: 200,
+    headers: const {'Content-Type': 'application/json'},
+    bytes: Stream.value(utf8.encode(jsonEncode(data))),
+    close: () {},
+  );
 
   static List<int> _createSilentWav() {
     final header = Uint8List(44);
@@ -278,10 +279,7 @@ final class FakeGenAiServer implements GenAiTransport {
     return header;
   }
 
-  Stream<List<int>> _stream(
-    Map<String, dynamic> request,
-    GenAiCancellation cancellation,
-  ) async* {
+  Stream<List<int>> _stream(Map<String, dynamic> request, GenAiCancellation cancellation) async* {
     final storedPrompt = request['chatInfo'] as String;
     final prompt = decodeGenAiRemoteRecord(storedPrompt)?['input'] as String? ?? storedPrompt;
     final history = request['messages'] as List<dynamic>;
@@ -292,10 +290,7 @@ final class FakeGenAiServer implements GenAiTransport {
         await cancellation.race(Future<void>.delayed(chunkDelay));
         cancellation.throwIfCancelled();
         yield _event({
-          'reasoning_content': thoughts.substring(
-            index,
-            (index + 5).clamp(0, thoughts.length),
-          ),
+          'reasoning_content': thoughts.substring(index, (index + 5).clamp(0, thoughts.length)),
         });
       }
     }
@@ -303,9 +298,7 @@ final class FakeGenAiServer implements GenAiTransport {
     for (var index = 0; index < answer.length; index += 5) {
       await cancellation.race(Future<void>.delayed(chunkDelay));
       cancellation.throwIfCancelled();
-      yield _event({
-        'content': answer.substring(index, (index + 5).clamp(0, answer.length)),
-      });
+      yield _event({'content': answer.substring(index, (index + 5).clamp(0, answer.length))});
     }
     final groupId = request['chatGroupId'] as String;
     _history.putIfAbsent(groupId, () => []).add({
@@ -320,15 +313,13 @@ final class FakeGenAiServer implements GenAiTransport {
     yield _event({}, finish: 'stop');
   }
 
-  List<int> _event(Map<String, String> delta, {String? finish}) => utf8.encode('data: ${jsonEncode({
-            'choices': [
-              {
-                'index': 0,
-                'delta': delta,
-                if (finish != null) 'finish_reason': finish,
-              }
-            ],
-          })}\n\n');
+  List<int> _event(Map<String, String> delta, {String? finish}) => utf8.encode(
+    'data: ${jsonEncode({
+      'choices': [
+        {'index': 0, 'delta': delta, if (finish != null) 'finish_reason': finish},
+      ],
+    })}\n\n',
+  );
 
   @override
   void dispose() {

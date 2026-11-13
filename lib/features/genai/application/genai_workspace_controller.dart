@@ -58,25 +58,23 @@ final class GenAiAttachment {
   final bool uploading;
   final String? error;
 
-  GenAiAttachment copyWith({
+  GenAiAttachment _withUpload({
     String? fileId,
     String? documentContent,
     String? imageUrl,
-    bool? uploading,
+    bool uploading = false,
     String? error,
-    bool clearError = false,
-  }) =>
-      GenAiAttachment(
-        id: id,
-        name: name,
-        bytes: bytes,
-        fileId: fileId ?? this.fileId,
-        documentContent: documentContent ?? this.documentContent,
-        isImage: isImage,
-        imageUrl: imageUrl ?? this.imageUrl,
-        uploading: uploading ?? this.uploading,
-        error: clearError ? null : (error ?? this.error),
-      );
+  }) => GenAiAttachment(
+    id: id,
+    name: name,
+    bytes: bytes,
+    fileId: fileId,
+    documentContent: documentContent,
+    isImage: isImage,
+    imageUrl: imageUrl,
+    uploading: uploading,
+    error: error,
+  );
 }
 
 /// Transient UI and execution state reconstructed from GenAI server records.
@@ -85,8 +83,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     required this.sessions,
     required GenAiRepository repository,
     required GenAiChatService chat,
-  })  : _repository = repository,
-        _chat = chat {
+  }) : _repository = repository,
+       _chat = chat {
     _owner = sessions.owner;
     _agentSessionRevision = sessions.revision;
     _archiveScope = _currentArchiveScope();
@@ -115,8 +113,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   bool _thinkingEnabled = false;
   bool _recognizingAudio = false;
   final _attachments = <GenAiAttachment>[];
-  final _pendingUploads = <Future<void>>{};
-  final _attachmentOperations = <String, GenAiCancellation>{};
+  final _uploads = <String, ({GenAiCancellation cancellation, Future<void> done})>{};
   int _generation = 0;
   int _conversationLoad = 0;
   int _conversationRevision = 0;
@@ -141,10 +138,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   GenAiCancellation? _historyEditOperation;
   final _unverifiedHistoryEdits = <String>{};
   GenAiFailure? _recoveryFailure;
-  Map<String, Object?> _restoredMutations = const {
-    'version': 1,
-    'effects': <String, Object?>{},
-  };
+  Map<String, Object?> _restoredMutations = const {'version': 1, 'effects': <String, Object?>{}};
   bool _ledgerNeedsRestore = false;
 
   List<GenAiConversationTurn> get turns => List.unmodifiable(_turns);
@@ -171,7 +165,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   GenAiPendingAgentApproval? get pendingAgentApproval => _pendingAgentApproval;
   bool get recognizingAudio => _recognizingAudio;
   List<GenAiAttachment> get attachments => List.unmodifiable(_attachments);
-  bool get hasPendingUploads => _attachments.any((a) => a.uploading) || _pendingUploads.isNotEmpty;
+  bool get hasPendingUploads => _uploads.isNotEmpty;
   bool get hasFailedUploads => _attachments.any((a) => a.error != null);
   String get groupId => _groupId;
   GenAiContextUsage? get contextUsage => _turns.lastOrNull?.contextUsage;
@@ -245,7 +239,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     final pending = _pendingAgentApproval;
     if (pending == null || (expected != null && !identical(expected, pending))) return;
     _pendingAgentApproval = null;
-    final current = !_disposed &&
+    final current =
+        !_disposed &&
         _agentOperation != null &&
         !_agentOperation!.isCancelled &&
         sessions.revision == _agentSessionRevision &&
@@ -262,210 +257,129 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     if (_active?.isAgent ?? false) stop();
   }
 
-  Future<void> waitForPendingUploads() async {
-    while (_pendingUploads.isNotEmpty) {
-      await Future.wait(List.of(_pendingUploads));
-    }
+  Future<void> addDocumentAttachment(String fileName, List<int> bytes) =>
+      _addAttachment(fileName, bytes, isImage: false);
+
+  Future<void> addImageAttachment(String fileName, List<int> bytes) =>
+      _addAttachment(fileName, bytes, isImage: true);
+
+  Future<void> _addAttachment(String name, List<int> bytes, {required bool isImage}) async {
+    if (_disposed || !connected || (!isImage && _selectedModel == null)) return;
+    final attachment = GenAiAttachment(
+      id: '${isImage ? 'img' : 'doc'}-${createGroupId()}',
+      name: name,
+      bytes: bytes,
+      isImage: isImage,
+      uploading: true,
+    );
+    _attachments.add(attachment);
+    await _startUpload(attachment);
   }
 
   Future<void> retryAttachment(String id) async {
-    final model = _selectedModel;
-    if (_disposed || !connected || model == null) return;
-    final index = _attachments.indexWhere((a) => a.id == id);
-    if (index == -1) return;
-    final attachment = _attachments[index];
-    if (attachment.uploading) return;
-
-    _attachments[index] = attachment.copyWith(
-      uploading: true,
-      clearError: true,
-    );
-    _notify();
-
-    final uploadFuture = attachment.isImage
-        ? _uploadImage(
-            id,
-            _attachments[index],
-            attachment.name,
-            attachment.bytes,
-          )
-        : _uploadDocument(
-            id,
-            _attachments[index],
-            model.aiType,
-            attachment.name,
-            attachment.bytes,
-          );
-    _pendingUploads.add(uploadFuture);
-    try {
-      await uploadFuture;
-    } finally {
-      _pendingUploads.remove(uploadFuture);
-    }
-  }
-
-  Future<void> addDocumentAttachment(String fileName, List<int> bytes) async {
-    final model = _selectedModel;
-    if (_disposed || !connected || model == null) return;
-    final id = 'doc-${DateTime.now().microsecondsSinceEpoch}';
-    final attachment = GenAiAttachment(
-      id: id,
-      name: fileName,
-      bytes: bytes,
-      uploading: true,
-    );
-    _attachments.add(attachment);
-    _notify();
-    final uploadFuture = _uploadDocument(id, attachment, model.aiType, fileName, bytes);
-    _pendingUploads.add(uploadFuture);
-    try {
-      await uploadFuture;
-    } finally {
-      _pendingUploads.remove(uploadFuture);
-    }
-  }
-
-  Future<void> _uploadDocument(
-    String id,
-    GenAiAttachment attachment,
-    String aiType,
-    String fileName,
-    List<int> bytes,
-  ) async {
-    final operation = GenAiCancellation();
-    _attachmentOperations[id] = operation;
-    try {
-      final uploaded = await _repository.uploadDocument(
-        groupId: _groupId,
-        aiType: aiType,
-        fileName: fileName,
-        bytes: bytes,
-        c: operation,
-      );
-      final index = _attachments.indexWhere((a) => a.id == id);
-      if (index != -1) {
-        _attachments[index] = _attachments[index].copyWith(
-          fileId: uploaded.fileId,
-          documentContent: uploaded.content,
-          uploading: false,
-          clearError: true,
-        );
-      }
-    } catch (e) {
-      final index = _attachments.indexWhere((a) => a.id == id);
-      if (index != -1) {
-        _attachments[index] = _attachments[index].copyWith(
-          uploading: false,
-          error: switch (e) {
-            GenAiDocumentUploadException() => e.message,
-            GenAiFailure(kind: GenAiFailureKind.protocol) => '无法读取文档解析结果，请重新上传',
-            _ => '上传失败，请重试；文档解析后不能超过 500,000 字符',
-          },
-        );
-      }
-    } finally {
-      if (identical(_attachmentOperations[id], operation)) {
-        _attachmentOperations.remove(id);
-      }
-      operation.cancel();
-      _notify();
-    }
-  }
-
-  Future<void> addImageAttachment(String fileName, List<int> bytes) async {
     if (_disposed || !connected) return;
-    final id = 'img-${DateTime.now().microsecondsSinceEpoch}';
-    final attachment = GenAiAttachment(
-      id: id,
-      name: fileName,
-      bytes: bytes,
-      isImage: true,
-      uploading: true,
-    );
-    _attachments.add(attachment);
-    _notify();
-    final uploadFuture = _uploadImage(id, attachment, fileName, bytes);
-    _pendingUploads.add(uploadFuture);
-    try {
-      await uploadFuture;
-    } finally {
-      _pendingUploads.remove(uploadFuture);
-    }
+    final index = _attachments.indexWhere((a) => a.id == id);
+    if (index < 0) return;
+    final original = _attachments[index];
+    if (original.uploading || (!original.isImage && _selectedModel == null)) return;
+    final attachment = _attachments[index] = original._withUpload(uploading: true);
+    await _startUpload(attachment);
   }
 
-  Future<void> _uploadImage(
-    String id,
-    GenAiAttachment attachment,
-    String fileName,
-    List<int> bytes,
-  ) async {
-    final operation = GenAiCancellation();
-    _attachmentOperations[id] = operation;
+  Future<void> _startUpload(GenAiAttachment attachment) {
+    final cancellation = GenAiCancellation();
+    final done = _uploadAttachment(attachment, cancellation);
+    _uploads[attachment.id] = (cancellation: cancellation, done: done);
+    _notify();
+    return done;
+  }
+
+  Future<void> _uploadAttachment(GenAiAttachment attachment, GenAiCancellation cancellation) async {
+    late GenAiAttachment result;
     try {
-      final uploaded = await _repository.uploadVisionImage(
-        fileName: fileName,
-        bytes: bytes,
-        c: operation,
+      if (attachment.isImage) {
+        final uploaded = await _repository.uploadVisionImage(
+          fileName: attachment.name,
+          bytes: attachment.bytes,
+          c: cancellation,
+        );
+        result = attachment._withUpload(imageUrl: genAiImageUri(uploaded.url).toString());
+      } else {
+        final uploaded = await _repository.uploadDocument(
+          groupId: _groupId,
+          aiType: _selectedModel!.aiType,
+          fileName: attachment.name,
+          bytes: attachment.bytes,
+          c: cancellation,
+        );
+        result = attachment._withUpload(fileId: uploaded.fileId, documentContent: uploaded.content);
+      }
+    } catch (error) {
+      result = attachment._withUpload(
+        error: attachment.isImage
+            ? '上传失败'
+            : switch (error) {
+                GenAiDocumentUploadException() => error.message,
+                GenAiFailure(kind: GenAiFailureKind.protocol) => '无法读取文档解析结果，请重新上传',
+                _ => '上传失败，请重试；文档解析后不能超过 500,000 字符',
+              },
       );
-      final fullUrl = genAiImageUri(uploaded.url).toString();
-      final index = _attachments.indexWhere((a) => a.id == id);
-      if (index != -1) {
-        _attachments[index] = _attachments[index].copyWith(
-          imageUrl: fullUrl,
-          uploading: false,
-          clearError: true,
-        );
-      }
-    } catch (e) {
-      final index = _attachments.indexWhere((a) => a.id == id);
-      if (index != -1) {
-        _attachments[index] = _attachments[index].copyWith(
-          uploading: false,
-          error: '上传失败',
-        );
-      }
-    } finally {
-      if (identical(_attachmentOperations[id], operation)) {
-        _attachmentOperations.remove(id);
-      }
-      operation.cancel();
-      _notify();
     }
+    cancellation.cancel();
+    if (!identical(_uploads[attachment.id]?.cancellation, cancellation)) return;
+    _uploads.remove(attachment.id);
+    final index = _attachments.indexOf(attachment);
+    if (index >= 0) _attachments[index] = result;
+    _notify();
   }
 
   void removeAttachment(String id) {
-    _attachmentOperations.remove(id)?.cancel();
+    _uploads.remove(id)?.cancellation.cancel();
     _attachments.removeWhere((a) => a.id == id);
     _notify();
   }
 
-  void clearAttachments() {
-    _cancelAttachments();
-    _notify();
+  void _cancelAttachments() {
+    for (final upload in _uploads.values) {
+      upload.cancellation.cancel();
+    }
+    _uploads.clear();
+    _attachments.clear();
   }
 
-  void _cancelAttachments() {
-    for (final operation in _attachmentOperations.values) {
+  final _audioOperations = <GenAiCancellation>{};
+  GenAiCancellation? _transcription;
+
+  Future<T> _audioRequest<T>(Future<T> Function(GenAiCancellation) request) async {
+    final operation = GenAiCancellation();
+    _audioOperations.add(operation);
+    try {
+      return await operation.race(request(operation));
+    } finally {
+      _audioOperations.remove(operation);
       operation.cancel();
     }
-    _attachmentOperations.clear();
-    _pendingUploads.clear();
-    _attachments.clear();
   }
 
   Future<String?> transcribeAudio(String fileName, List<int> bytes) async {
     if (_disposed || !connected || _recognizingAudio) return null;
+    final operation = GenAiCancellation();
+    _transcription = operation;
+    _audioOperations.add(operation);
     _recognizingAudio = true;
     _notify();
     try {
-      return await _repository.recognizeAudio(
-        fileName: fileName,
-        bytes: bytes,
-        c: GenAiCancellation(),
+      return await operation.race(
+        _repository.recognizeAudio(fileName: fileName, bytes: bytes, c: operation),
       );
     } finally {
-      _recognizingAudio = false;
-      _notify();
+      _audioOperations.remove(operation);
+      operation.cancel();
+      if (identical(_transcription, operation)) {
+        _transcription = null;
+        _recognizingAudio = false;
+        _notify();
+      }
     }
   }
 
@@ -473,10 +387,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     if (_disposed || !connected) {
       throw const GenAiFailure(GenAiFailureKind.cancelled);
     }
-    return _repository.convertTextToSpeech(
-      text,
-      GenAiCancellation(),
-    );
+    return _audioRequest((operation) => _repository.convertTextToSpeech(text, operation));
   }
 
   static String createGroupId() {
@@ -486,10 +397,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     const alphabet = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict';
     final random = Random.secure();
     return String.fromCharCodes(
-      List<int>.generate(
-        21,
-        (_) => alphabet.codeUnitAt(random.nextInt(64)),
-      ),
+      List<int>.generate(21, (_) => alphabet.codeUnitAt(random.nextInt(64))),
     );
   }
 
@@ -511,8 +419,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   }
 
   Future<void> connect(GenAiCredential credential) => connectUsing(() async {
-        await sessions.connect(credential);
-      });
+    await sessions.connect(credential);
+  });
 
   Future<void> connectUsing(Future<void> Function() operation) async {
     if (_connecting || _disposed) return;
@@ -573,7 +481,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       final previous = _selectedModel;
       _models = models;
       // Paid-only catalogs require an explicit choice; no silent paid fallback.
-      _selectedModel = models
+      _selectedModel =
+          models
               .where(
                 (m) =>
                     !m.isImage &&
@@ -613,7 +522,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
     final rows = await _repository.loadConversation(id, cancellation);
     _checkArchiveScope(scope, revision, cancellation);
-    return decodeGenAiConversation(id, rows);
+    return decodeGenAiConversation(id, rows, serverTitle: _draftTitles[id]);
   }
 
   Future<GenAiPageResult<GenAiConversationSummary>> listConversations(
@@ -637,11 +546,14 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           _checkArchiveScope(scope, revision, cancellation);
           final index = next++;
           final item = remote.records[index];
+          if (item.hasCustomTitle) _draftTitles[item.id] = item.title;
           final history = await _readConversation(item.id, cancellation);
           summaries[index] = GenAiConversationSummary(
             id: item.id,
             title: _draftTitles[item.id] ?? (history.isEmpty ? item.title : history.summary.title),
             time: history.isEmpty ? item.time : history.summary.time,
+            pinned: item.pinned,
+            hasCustomTitle: item.hasCustomTitle,
           );
         }
       } catch (_) {
@@ -695,16 +607,35 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   Future<GenAiConversationSnapshot> conversationForExport(
     String id,
     GenAiCancellation cancellation,
-  ) async =>
-      (await _readConversation(id, cancellation)).archive;
+  ) async => (await _readConversation(id, cancellation)).archive;
 
-  /// Rename is draft metadata until the next normal exchange. No hidden model
-  /// generation is made merely to persist a label.
-  Future<void> renameConversation(String id, String name) async {
+  /// Server metadata is updated without generating a model response.
+  Future<void> renameConversation(String id, String name, {GenAiCancellation? cancellation}) async {
     final value = name.trim();
-    if (value.isEmpty || value.length > 120) throw ArgumentError.value(name, 'name');
-    _draftTitles[id] = value;
-    if (_groupId == id) _titleOverride = value;
+    if (value.isEmpty) throw ArgumentError.value(name, 'name');
+    final scope = _archiveScope;
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    final operation = cancellation ?? GenAiCancellation();
+    try {
+      await _repository.renameConversation(id, value, operation);
+      _checkArchiveScope(scope, revision, operation);
+      _draftTitles[id] = value;
+      if (_groupId == id) _titleOverride = value;
+      _finishedTurnRevision++;
+      _notify();
+    } finally {
+      if (cancellation == null) operation.cancel();
+    }
+  }
+
+  Future<void> pinConversation(String id, bool pinned, GenAiCancellation cancellation) async {
+    final scope = _archiveScope;
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    await _repository.pinConversations([id], pinned, cancellation);
+    _checkArchiveScope(scope, revision, cancellation);
+    _finishedTurnRevision++;
     _notify();
   }
 
@@ -840,13 +771,13 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   }
 
   Map<String, Object?> _recordFor(GenAiConversationTurn turn) => {
-        'step_id': createGroupId(),
-        'turn': turn.toRemoteInput(),
-        if (_interruptedTurns.isNotEmpty) 'interrupted': _interruptedTurns.values.toList(),
-        'agent': turn.isAgent,
-        'search': false,
-        if (_titleOverride != null) 'title': _titleOverride,
-      };
+    'step_id': createGroupId(),
+    'turn': turn.toRemoteInput(),
+    if (_interruptedTurns.isNotEmpty) 'interrupted': _interruptedTurns.values.toList(),
+    'agent': turn.isAgent,
+    'search': false,
+    if (_titleOverride != null) 'title': _titleOverride,
+  };
 
   void selectModel(GenAiModel model) {
     if (sending || !models.contains(model)) return;
@@ -862,18 +793,18 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     if (_disposed || sending || !connected || model == null) {
       return;
     }
-    if (_attachments.any((a) => a.uploading) || _pendingUploads.isNotEmpty) {
-      await waitForPendingUploads();
+    if ((_turns.isNotEmpty || _unverifiedHistoryEdits.contains(_groupId)) &&
+        !await _refreshBeforeSend()) {
+      return;
+    }
+    while (hasPendingUploads && generation == _generation) {
+      await Future.wait([for (final upload in _uploads.values) upload.done]);
     }
     if (_disposed ||
         sending ||
         !connected ||
         generation != _generation ||
         revision != _archiveRevision) {
-      return;
-    }
-    if ((_turns.isNotEmpty || _unverifiedHistoryEdits.contains(_groupId)) &&
-        !await _refreshBeforeSend()) {
       return;
     }
     if (hasFailedUploads) {
@@ -888,20 +819,21 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       for (final a in imageAttachments)
         if (a.bytes.isNotEmpty) Uint8List.fromList(a.bytes),
     ];
-    final turn = GenAiConversationTurn(
-      prompt.trim(),
-      id: createGroupId(),
-      parentId: _turns.lastOrNull?.id,
-      isAgent: _agentEnabled,
-    )
-      ..thinkingStartTime = DateTime.now()
-      ..files = [
-        for (final a in _attachments)
-          if (a.fileId != null)
-            GenAiTurnFile(id: a.fileId!, name: a.name, content: a.documentContent),
-      ]
-      ..attachedImageUrls = imageUrls
-      ..attachedImageBytesList = attachedImageBytesList;
+    final turn =
+        GenAiConversationTurn(
+            prompt.trim(),
+            id: createGroupId(),
+            parentId: _turns.lastOrNull?.id,
+            isAgent: _agentEnabled,
+          )
+          ..thinkingStartTime = DateTime.now()
+          ..files = [
+            for (final a in _attachments)
+              if (a.fileId != null)
+                GenAiTurnFile(id: a.fileId!, name: a.name, content: a.documentContent),
+          ]
+          ..attachedImageUrls = imageUrls
+          ..attachedImageBytesList = attachedImageBytesList;
     _attachments.clear();
     if (turn.isAgent) {
       await _executeAgentTurn(turn, model, onAccepted: onAccepted);
@@ -913,18 +845,18 @@ final class GenAiWorkspaceController extends ChangeNotifier {
   bool _matchesHistoryForEdit(List<GenAiConversationTurn> remote) {
     if (remote.length != _turns.length) return false;
     Map<String, Object?> request(GenAiConversationTurn turn) => {
-          'id': turn.id,
-          'parentId': turn.parentId,
-          'actionScopeId': turn.actionScopeId ?? turn.id,
-          'prompt': turn.prompt,
-          'isAgent': turn.isAgent,
-          'files': [for (final file in turn.files) file.toJson()],
-          'images': turn.attachedImageUrls,
-        };
+      'id': turn.id,
+      'parentId': turn.parentId,
+      'actionScopeId': turn.actionScopeId ?? turn.id,
+      'prompt': turn.prompt,
+      'isAgent': turn.isAgent,
+      'files': [for (final file in turn.files) file.toJson()],
+      'images': turn.attachedImageUrls,
+    };
     String output(GenAiConversationTurn turn) => jsonEncode({
-          'answer': turn.answer,
-          'evidence': [for (final entry in turn.evidenceEntries) entry.message.content],
-        });
+      'answer': turn.answer,
+      'evidence': [for (final entry in turn.evidenceEntries) entry.message.content],
+    });
     for (var i = 0; i < remote.length; i++) {
       final local = _turns[i];
       final saved = remote[i];
@@ -935,7 +867,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       // Later output from this exact request is expected, even after check-sync.
       // All user input and the conversation path must still match; completed
       // turns retain the normal output conflict check.
-      final stopped = _stoppedRequests.contains(local.id) ||
+      final stopped =
+          _stoppedRequests.contains(local.id) ||
           local.phase == GenAiChatPhase.cancelled ||
           local.phase == GenAiChatPhase.interrupted ||
           local.phase == GenAiChatPhase.failed;
@@ -1014,8 +947,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       // The endpoint has no transaction/revision token. Verify the actual
       // server prefix, including content, before allowing edit-and-resend.
       String signature(List<GenAiSavedTurn> values) => jsonEncode([
-            for (final row in values) [row.recordId, row.prompt, row.answer, row.reasoning],
-          ]);
+        for (final row in values) [row.recordId, row.prompt, row.answer, row.reasoning],
+      ]);
       if (signature(remaining) != signature(plan.retained)) {
         throw const GenAiFailure(GenAiFailureKind.historyChanged);
       }
@@ -1040,16 +973,17 @@ final class GenAiWorkspaceController extends ChangeNotifier {
                 entry.key: entry.value,
           },
         };
-        final edited = GenAiConversationTurn(
-          replacement.trim(),
-          id: createGroupId(),
-          parentId: _turns.lastOrNull?.id,
-          isAgent: target.isAgent,
-        )
-          ..files = List.of(target.files)
-          ..attachedImageUrls = List.of(target.attachedImageUrls)
-          ..attachedImageBytesList = List.of(target.attachedImageBytesList)
-          ..thinkingStartTime = DateTime.now();
+        final edited =
+            GenAiConversationTurn(
+                replacement.trim(),
+                id: createGroupId(),
+                parentId: _turns.lastOrNull?.id,
+                isAgent: target.isAgent,
+              )
+              ..files = List.of(target.files)
+              ..attachedImageUrls = List.of(target.attachedImageUrls)
+              ..attachedImageBytesList = List.of(target.attachedImageBytesList)
+              ..thinkingStartTime = DateTime.now();
         if (edited.isAgent) {
           await _executeAgentTurn(edited, model!, priorMutations: _restoredMutations);
         } else {
@@ -1059,7 +993,10 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     } on GenAiFailure catch (error) {
       // Ambiguous/partial deletion is reconciled by explicitly reopening the
       // server history. Never send the stale local transcript or replay DELETE.
-      if (!_disposed && _groupId == group && _archiveRevision == revision) {
+      if (!_disposed &&
+          _groupId == group &&
+          _archiveRevision == revision &&
+          generation == _generation) {
         _recoveryFailure = error;
       }
       rethrow;
@@ -1095,18 +1032,19 @@ final class GenAiWorkspaceController extends ChangeNotifier {
 
     _turns.removeLast();
 
-    final turn = GenAiConversationTurn(
-      prompt,
-      id: createGroupId(),
-      parentId: target.parentId,
-      actionScopeId: target.actionScopeId ?? target.id,
-      isAgent: target.isAgent,
-    )
-      ..approvalBudget.addAll(target.approvalBudget)
-      ..thinkingStartTime = DateTime.now()
-      ..files = List.of(files)
-      ..attachedImageUrls = imageUrls
-      ..attachedImageBytesList = imageBytesList;
+    final turn =
+        GenAiConversationTurn(
+            prompt,
+            id: createGroupId(),
+            parentId: target.parentId,
+            actionScopeId: target.actionScopeId ?? target.id,
+            isAgent: target.isAgent,
+          )
+          ..approvalBudget.addAll(target.approvalBudget)
+          ..thinkingStartTime = DateTime.now()
+          ..files = List.of(files)
+          ..attachedImageUrls = imageUrls
+          ..attachedImageBytesList = imageBytesList;
 
     if (turn.isAgent) {
       await _executeAgentTurn(turn, model);
@@ -1135,49 +1073,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
       }
     }
     return history;
-  }
-
-  void _captureAgentTranscript(
-    GenAiConversationTurn turn,
-    GenAiAgentRunner runner,
-    String groupId,
-    int transcriptStart, {
-    bool terminal = false,
-  }) {
-    turn.agentTranscript =
-        runner.transcriptForConversation(groupId).skip(transcriptStart).toList(growable: false);
-    // Reconcile execution receipts into the live projection, including terminal
-    // cancellation. This updates memory only; the next normal exchange carries
-    // the receipt to the school server.
-    for (final entry in turn.agentTranscript) {
-      final result = entry.result;
-      if (result == null) continue;
-      final existing = turn.agentEvents.entries
-          .where(
-            (event) =>
-                event.value.call?.id == result['call_id'] &&
-                event.value.call?.name == result['name'],
-          )
-          .lastOrNull;
-      if (existing == null) continue;
-      // A dispatched receipt is uncertain, not a completed outcome while the
-      // live tool is still running. Promote it only when the
-      // run terminates or the runner actually reports a finished tool.
-      if (!terminal &&
-          existing.value.kind != GenAiAgentEventKind.toolFinished &&
-          (result['error'] as Map?)?['code'] == 'outcome_unknown') {
-        continue;
-      }
-      final reconciled = GenAiAgentEvent(
-        kind: GenAiAgentEventKind.toolFinished,
-        turn: existing.value.turn,
-        call: existing.value.call,
-        prepared: existing.value.prepared,
-        result: result,
-      );
-      turn.agentEvents[existing.key] = reconciled;
-      if (turn.agentActivity.isNotEmpty) turn.recordAgentActivity(reconciled);
-    }
   }
 
   Future<void> _executeAgentTurn(
@@ -1211,7 +1106,7 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         identical(_active, turn) &&
         identical(_agentOperation, operation);
     bool current() => owned() && !operation.isCancelled;
-    var transcriptStart = 0;
+    turn.agentTranscript = [GenAiAgentHistoryEntry.text(GenAiRole.user, turn.prompt)];
     try {
       // Stop permits another send immediately; wait for the cancelled runner's
       // finally block before using its session-scoped mutation ledger again.
@@ -1229,28 +1124,16 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         _ledgerNeedsRestore = false;
       }
       final transcript = _agentConversationTranscript();
-      transcriptStart = transcript.length;
       final attachments = _conversationAttachments(_turns);
       if (!current()) return;
       await for (final event in runner.run(
         request: GenAiChatRequest(
           chatGroupId: groupId,
           prompt: turn.prompt,
-          record: {
-            ..._recordFor(turn),
-            if (priorMutations != null) 'mutations': priorMutations,
-          },
+          record: {..._recordFor(turn), if (priorMutations != null) 'mutations': priorMutations},
           aiType: model.aiType,
           rootAiType: model.rootAiType,
           history: const [],
-          stepContext: attachments.fileIds.isEmpty && attachments.imageUrls.isEmpty
-              ? null
-              : jsonEncode({
-                  'attached_content': {
-                    'documents': attachments.fileIds.isNotEmpty,
-                    'images': attachments.imageUrls.isNotEmpty,
-                  },
-                }),
           thinking: thinking,
           fileIds: attachments.fileIds,
           documentContents: attachments.documentContents,
@@ -1263,7 +1146,6 @@ final class GenAiWorkspaceController extends ChangeNotifier {
         approvalBudget: turn.approvalBudget,
         confirmProposalSaved: () async {
           if (!current()) throw const GenAiFailure(GenAiFailureKind.cancelled);
-          _captureAgentTranscript(turn, runner, groupId, transcriptStart);
           final step = _repository.lastStepFor(groupId);
           if (step == null) throw const GenAiFailure(GenAiFailureKind.storage);
           await _repository.confirmStep(groupId, step, operation);
@@ -1277,40 +1159,29 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           return pending._result.future;
         },
       )) {
-        if (!owned()) {
-          // A stopped turn can finish unwinding after the next send starts.
-          // Retain its tool outcome for follow-ups, but never revive a removed
-          // conversation or copy data across account/session boundaries.
-          if (!_disposed &&
-              _turns.contains(turn) &&
-              _groupId == groupId &&
-              revision == sessions.revision &&
-              _agentScope?.call() == scope &&
-              (event.kind == GenAiAgentEventKind.cancelled ||
-                  event.kind == GenAiAgentEventKind.failed)) {
-            _captureAgentTranscript(turn, runner, groupId, transcriptStart, terminal: true);
+        final active = owned();
+        if (!active) {
+          // Drain same-owner receipts after Stop, even if a new send has started.
+          if (_disposed ||
+              !_turns.contains(turn) ||
+              _groupId != groupId ||
+              revision != sessions.revision ||
+              _agentScope?.call() != scope) {
+            break;
           }
-          break;
+          if (event.call == null) continue;
         }
-        if (operation.isCancelled &&
-            event.kind != GenAiAgentEventKind.failed &&
-            event.kind != GenAiAgentEventKind.cancelled) {
-          break;
+        final call = event.call;
+        if (call != null) {
+          turn.agentEvents[call.id] = event;
+          if (event.kind == GenAiAgentEventKind.toolProposed) {
+            turn.agentTranscript.add(GenAiAgentHistoryEntry.call(call));
+          } else if (event.result case final result?) {
+            turn.agentTranscript.add(GenAiAgentHistoryEntry.result(result));
+          }
         }
         turn.recordAgentActivity(event);
-        if (event.call != null) turn.agentEvents[event.call!.id] = event;
-        if (event.kind != GenAiAgentEventKind.reasoningDelta &&
-            event.kind != GenAiAgentEventKind.answerDelta &&
-            event.kind != GenAiAgentEventKind.contextUsage) {
-          _captureAgentTranscript(
-            turn,
-            runner,
-            groupId,
-            transcriptStart,
-            terminal: event.kind == GenAiAgentEventKind.cancelled ||
-                event.kind == GenAiAgentEventKind.failed,
-          );
-        }
+        if (!active) continue;
         switch (event.kind) {
           case GenAiAgentEventKind.contextUsage:
             turn.contextUsage = event.contextUsage;
@@ -1346,13 +1217,17 @@ final class GenAiWorkspaceController extends ChangeNotifier {
           case GenAiAgentEventKind.completed:
             turn.isAgentThinking = false;
             turn.answer = event.text ?? '';
+            turn.agentTranscript.add(GenAiAgentHistoryEntry.text(GenAiRole.assistant, turn.answer));
             turn.agentStatus = '';
             turn.phase = GenAiChatPhase.completed;
           case GenAiAgentEventKind.failed:
           case GenAiAgentEventKind.cancelled:
             turn.contextUsage = null;
             turn.failure = event.failure;
-            if (event.partialText != null) turn.answer = event.partialText!;
+            if (event.partialText case final partial?) {
+              turn.answer = partial;
+              turn.agentTranscript.add(GenAiAgentHistoryEntry.text(GenAiRole.assistant, partial));
+            }
             turn.agentStatus = event.text ?? '任务未完成，请检查工具记录后再继续。已提交的操作不要重复执行。';
             turn.phase = event.kind == GenAiAgentEventKind.cancelled
                 ? GenAiChatPhase.cancelled
@@ -1363,8 +1238,9 @@ final class GenAiWorkspaceController extends ChangeNotifier {
     } catch (error) {
       if (current()) {
         turn.contextUsage = null;
-        turn.failure =
-            error is GenAiFailure ? error : const GenAiFailure(GenAiFailureKind.protocol);
+        turn.failure = error is GenAiFailure
+            ? error
+            : const GenAiFailure(GenAiFailureKind.protocol);
         turn.phase = GenAiChatPhase.failed;
         turn.agentStatus = '无法继续任务，请检查工具记录。已提交的操作不要重复执行。';
       }
@@ -1387,11 +1263,8 @@ final class GenAiWorkspaceController extends ChangeNotifier {
 
   /// Both chat modes carry the same attachment context. A missing-history row
   /// breaks that context; we must not associate earlier files with later tasks.
-  ({
-    List<String> fileIds,
-    Map<String, String> documentContents,
-    List<String> imageUrls,
-  }) _conversationAttachments(Iterable<GenAiConversationTurn> turns) {
+  ({List<String> fileIds, Map<String, String> documentContents, List<String> imageUrls})
+  _conversationAttachments(Iterable<GenAiConversationTurn> turns) {
     final fileIds = <String>{};
     final documentContents = <String, String>{};
     final imageUrls = <String>{};
@@ -1535,6 +1408,13 @@ final class GenAiWorkspaceController extends ChangeNotifier {
 
   void stop() {
     _historyEditOperation?.cancel();
+    _historyEditOperation = null;
+    for (final operation in _audioOperations.toList()) {
+      operation.cancel();
+    }
+    _audioOperations.clear();
+    _transcription = null;
+    _recognizingAudio = false;
     _refreshOperation?.cancel();
     _refreshOperation = null;
     _agentOperation?.cancel();

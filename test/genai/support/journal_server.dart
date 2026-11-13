@@ -19,6 +19,8 @@ import 'fakes.dart';
 /// Fake remote server shared by otherwise independent application instances.
 /// Records exactly chatInfo/answer; messages are deliberately not persisted.
 class JournalServer {
+  final titles = <String, String>{};
+  final pins = <String, bool>{};
   final rows = <String, List<Map<String, Object?>>>{};
   final generations = <Map<String, dynamic>>[];
   FutureOr<String> Function(Map<String, dynamic>)? onGenerate;
@@ -42,6 +44,18 @@ class JournalServer {
         json: {'success': true, 'code': 200, 'result': hideHistory ? <Object?>[] : snapshot},
       );
     }
+    if (path.endsWith('/group/rename')) {
+      final body = jsonDecode(request.body!) as Map<String, dynamic>;
+      titles[body['chatGroupId'] as String] = body['title'] as String;
+      return response(json: {'success': true, 'code': 200});
+    }
+    if (path.endsWith('/group/pin')) {
+      final body = jsonDecode(request.body!) as Map<String, dynamic>;
+      for (final id in body['chatGroupIds'] as List) {
+        pins[id as String] = body['pinned'] as bool;
+      }
+      return response(json: {'success': true, 'code': 200});
+    }
     if (path.endsWith('/listByContentGroup')) {
       return response(
         json: {
@@ -49,7 +63,13 @@ class JournalServer {
           'code': 200,
           'result': {
             'records': [
-              for (final id in rows.keys) {'chatGroupId': id, 'question': 'server label'},
+              for (final id in rows.keys)
+                {
+                  'chatGroupId': id,
+                  'question': 'server label',
+                  if (titles[id] != null) 'title': titles[id],
+                  'pinned': pins[id] ?? false,
+                },
             ],
             'total': rows.length,
           },
@@ -71,7 +91,7 @@ class JournalServer {
       rows.remove(request.uri.queryParameters['id']);
       return response(json: {'success': true, 'code': 200});
     }
-    if (path.endsWith('/list')) {
+    if (path.endsWith('/list') || path.endsWith('/list/V2')) {
       return response(
         json: {
           'success': true,
@@ -158,11 +178,10 @@ class JournalServer {
     Map<String, dynamic> body, {
     String name = 'get_semesters',
     Map<String, Object?> arguments = const {},
-  }) =>
-      encodeGenAiAgentCall(
-        GenAiAgentToolCall(id: 'call-${generations.length}', name: name, arguments: arguments),
-        nonce: nonce(body),
-      );
+  }) => encodeGenAiAgentCall(
+    GenAiAgentToolCall(id: 'call-${generations.length}', name: name, arguments: arguments),
+    nonce: nonce(body),
+  );
 }
 
 class JournalClient {
@@ -187,8 +206,11 @@ class JournalClient {
       contextCompactor: policy == null ? null : GenAiContextCompactor(policy: policy),
     );
     final chat = GenAiChatService(repository);
-    final workspace =
-        GenAiWorkspaceController(sessions: sessions, repository: repository, chat: chat);
+    final workspace = GenAiWorkspaceController(
+      sessions: sessions,
+      repository: repository,
+      chat: chat,
+    );
     workspace.configureAgent(
       runner: GenAiAgentRunner(
         streamChat: repository.streamChat,

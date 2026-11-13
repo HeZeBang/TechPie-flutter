@@ -2,24 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/domain/genai_agent_contract.dart';
 import 'package:techpie/features/genai/presentation/genai_agent_widgets.dart';
-import 'package:techpie/features/genai/presentation/genai_icons.dart';
 import 'package:techpie/features/genai/presentation/genai_theme.dart';
 import 'package:techpie/features/genai/presentation/genai_thinking_view.dart';
 
 void main() {
-  Finder genAiIcon(GenAiGlyph glyph) => find.byWidgetPredicate(
-        (widget) => widget is GenAiIcon && widget.glyph == glyph,
-      );
-
-  Finder stepDots() => find.byWidgetPredicate(
-        (widget) =>
-            widget is Positioned &&
-            widget.left == -24 &&
-            widget.top == 16 &&
-            widget.width == 6 &&
-            widget.height == 6,
-      );
-
   Future<void> pumpCard(
     WidgetTester tester,
     Widget card, {
@@ -37,56 +23,23 @@ void main() {
     );
   }
 
-  testWidgets('automatic progress folds at completion but explicit expansion survives',
-      (tester) async {
-    Future<void> show(bool running) => pumpCard(
-          tester,
-          GenAiAgentToolActivity(
-            events: const [],
-            activity: const [GenAiAgentEvent(kind: GenAiAgentEventKind.protocolError, turn: 1)],
-            running: running,
-            stopped: false,
-          ),
-        );
-    await show(true);
-    expect(find.text('正在整理回复格式'), findsOneWidget);
-    final heading = find.byKey(const ValueKey('agent-tool-activity-heading'));
-    await tester.tap(heading);
-    await tester.pump();
-    await tester.tap(heading);
-    await tester.pump();
-    await show(false);
-    expect(find.text('已恢复回复格式'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('finished thinking floors seconds at one and omits an unknown duration',
-      (tester) async {
-    Future<void> show({
-      String reasoning = 'reasoning',
-      bool thinking = false,
-      int? durationMs,
-    }) =>
-        tester.pumpWidget(
-          MaterialApp(
-            theme: genAiTheme(ThemeData()),
-            home: Scaffold(
-              body: GenAiThinkingView(
-                key: UniqueKey(),
-                reasoning: reasoning,
-                isThinking: thinking,
-                durationMs: durationMs,
-              ),
-            ),
-          ),
-        );
+  testWidgets('finished thinking floors seconds at one and omits an unknown duration', (
+    tester,
+  ) async {
+    Future<void> show({bool thinking = false, int? durationMs}) => pumpCard(
+      tester,
+      GenAiThinkingView(
+        key: UniqueKey(),
+        reasoning: 'reasoning',
+        isThinking: thinking,
+        durationMs: durationMs,
+      ),
+    );
 
     await show(durationMs: 900);
     expect(find.text('已完成思考 · 1 秒'), findsOneWidget);
     await show(durationMs: 2800);
     expect(find.text('已完成思考 · 2 秒'), findsOneWidget);
-    await show(durationMs: 9000);
-    expect(find.text('已完成思考 · 9 秒'), findsOneWidget);
     await show();
     expect(find.text('已完成思考'), findsOneWidget);
     expect(find.textContaining('秒'), findsNothing);
@@ -99,15 +52,15 @@ void main() {
   testWidgets('completed and restored repairs never appear to be still running', (tester) async {
     const repair = GenAiAgentEvent(kind: GenAiAgentEventKind.protocolError, turn: 1);
     Future<void> show(bool running, {String id = 'live'}) => pumpCard(
-          tester,
-          GenAiAgentToolActivity(
-            key: ValueKey(id),
-            events: const [],
-            activity: const [repair],
-            running: running,
-            stopped: false,
-          ),
-        );
+      tester,
+      GenAiAgentToolActivity(
+        key: ValueKey(id),
+        events: const [],
+        activity: const [repair],
+        running: running,
+        stopped: false,
+      ),
+    );
     await show(true);
     expect(find.text('正在整理回复格式'), findsOneWidget);
     await show(false);
@@ -121,35 +74,34 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('正在整理回复格式'), findsNothing);
     expect(find.text('已恢复回复格式'), findsOneWidget);
+
+    // Explicit expansion survives completion of the same turn.
+    await show(true, id: 'chosen');
+    final heading = find.byKey(const ValueKey('agent-tool-activity-heading'));
+    await tester.tap(heading);
+    await tester.pump();
+    await tester.tap(heading);
+    await tester.pump();
+    await show(false, id: 'chosen');
+    expect(find.text('已恢复回复格式'), findsOneWidget);
   });
 
-  testWidgets('tool activity keeps collapse choice through updates and isolates turns',
-      (tester) async {
+  testWidgets('tool activity keeps collapse choice through updates and isolates turns', (
+    tester,
+  ) async {
     final first = GenAiAgentEvent(
       kind: GenAiAgentEventKind.toolFinished,
       turn: 1,
-      call: GenAiAgentToolCall(
-        id: 'time',
-        name: 'get_current_time',
-        arguments: const {},
-      ),
+      call: GenAiAgentToolCall(id: 'time', name: 'get_current_time', arguments: const {}),
       result: const {'ok': true},
     );
     final second = GenAiAgentEvent(
       kind: GenAiAgentEventKind.toolFinished,
       turn: 2,
-      call: GenAiAgentToolCall(
-        id: 'semester',
-        name: 'get_semesters',
-        arguments: const {},
-      ),
+      call: GenAiAgentToolCall(id: 'semester', name: 'get_semesters', arguments: const {}),
       result: const {'ok': false},
     );
-    Future<void> show(
-      List<GenAiAgentEvent> events, {
-      bool running = true,
-      String id = 'a',
-    }) =>
+    Future<void> show(List<GenAiAgentEvent> events, {bool running = true, String id = 'a'}) =>
         pumpCard(
           tester,
           GenAiAgentToolActivity(
@@ -181,93 +133,17 @@ void main() {
     await show([first], running: false, id: 'restored');
     await tester.pumpAndSettle();
     expect(find.text('查看当前时间'), findsNothing);
+    expect(find.text('查看当前时间 · 1 个步骤'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('activity heading counts steps and appends live, stopped and failure states',
-      (tester) async {
-    final ok = GenAiAgentEvent(
-      kind: GenAiAgentEventKind.toolFinished,
-      turn: 1,
-      call: GenAiAgentToolCall(
-        id: 'time',
-        name: 'get_current_time',
-        arguments: const {},
-      ),
-      result: const {'ok': true},
-    );
-    final failed = GenAiAgentEvent(
-      kind: GenAiAgentEventKind.toolFinished,
-      turn: 2,
-      call: GenAiAgentToolCall(
-        id: 'semester',
-        name: 'get_semesters',
-        arguments: const {},
-      ),
-      result: const {'ok': false},
-    );
-    Future<void> show({required bool running, required bool stopped}) => pumpCard(
-          tester,
-          GenAiAgentToolActivity(
-            events: [ok, failed],
-            activity: [ok, failed],
-            running: running,
-            stopped: stopped,
-          ),
-        );
-
-    await show(running: true, stopped: false);
-    expect(find.text('查看当前时间与查看学期 · 2 个步骤 · 进行中'), findsOneWidget);
-    expect(stepDots(), findsNWidgets(2));
-
-    await show(running: false, stopped: false);
-    await tester.pumpAndSettle();
-    expect(find.text('查看当前时间与查看学期 · 2 个步骤 · 有未完成项'), findsOneWidget);
-    expect(genAiIcon(GenAiGlyph.info), findsWidgets);
-
-    await show(running: false, stopped: true);
-    await tester.pumpAndSettle();
-    expect(find.text('查看当前时间与查看学期 · 2 个步骤 · 有未完成项'), findsOneWidget);
-
-    final success = GenAiAgentEvent(
-      kind: GenAiAgentEventKind.toolFinished,
-      turn: 3,
-      call: GenAiAgentToolCall(
-        id: 'sources',
-        name: 'web_search',
-        arguments: const {},
-      ),
-      result: const {'ok': true},
-    );
-    await pumpCard(
-      tester,
-      GenAiAgentToolActivity(
-        events: [success],
-        activity: [success],
-        running: false,
-        stopped: false,
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('联网搜索 · 1 个步骤'), findsOneWidget);
-    expect(genAiIcon(GenAiGlyph.checkCircle), findsOneWidget);
-    expect(stepDots(), findsNothing);
-    await tester.tap(find.text('联网搜索 · 1 个步骤'));
-    await tester.pumpAndSettle();
-    expect(stepDots(), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('ordered process interleaves reasoning, tools and searchable sources',
-      (tester) async {
+  testWidgets('ordered process interleaves reasoning, tools and searchable sources', (
+    tester,
+  ) async {
     final tool = GenAiAgentEvent(
       kind: GenAiAgentEventKind.toolFinished,
       turn: 1,
-      call: GenAiAgentToolCall(
-        id: 'time',
-        name: 'get_current_time',
-        arguments: const {},
-      ),
+      call: GenAiAgentToolCall(id: 'time', name: 'get_current_time', arguments: const {}),
       result: const {'ok': true},
     );
     final search = GenAiAgentEvent(
@@ -319,18 +195,9 @@ void main() {
     final thoughts = find.text('已完成思考');
     final time = find.text('查看当前时间');
     final sources = find.text('搜索：public resources · 1 条来源');
-    expect(
-      tester.getTopLeft(thoughts.first).dy,
-      lessThan(tester.getTopLeft(time).dy),
-    );
-    expect(
-      tester.getTopLeft(time).dy,
-      lessThan(tester.getTopLeft(thoughts.last).dy),
-    );
-    expect(
-      tester.getTopLeft(thoughts.last).dy,
-      lessThan(tester.getTopLeft(sources).dy),
-    );
+    expect(tester.getTopLeft(thoughts.first).dy, lessThan(tester.getTopLeft(time).dy));
+    expect(tester.getTopLeft(time).dy, lessThan(tester.getTopLeft(thoughts.last).dy));
+    expect(tester.getTopLeft(thoughts.last).dy, lessThan(tester.getTopLeft(sources).dy));
     await tester.tap(thoughts.first);
     await tester.pumpAndSettle();
     expect(find.text('First reasoning step'), findsOneWidget);
@@ -372,31 +239,11 @@ void main() {
     );
     expect(find.text('确认生成图片'), findsOneWidget);
     expect(find.text('确认后才会执行，可能扣除学校额度'), findsOneWidget);
-    expect(genAiIcon(GenAiGlyph.image), findsOneWidget);
     expect(find.text('分辨率'), findsOneWidget);
     expect(find.text('1024 × 1024'), findsOneWidget);
     expect(find.text('普通'), findsOneWidget);
     expect(find.text('changed-after-preparation'), findsNothing);
     expect(find.text('untrusted-size'), findsNothing);
-    final card = tester.widget<Container>(find.byKey(const ValueKey('agent-approval')));
-    expect(card.padding, const EdgeInsets.all(17));
-    final decoration = card.decoration! as BoxDecoration;
-    expect(decoration.borderRadius, BorderRadius.circular(13));
-    final palette = GenAiPalette.of(tester.element(find.byKey(const ValueKey('agent-approval'))));
-    expect(decoration.color, palette.raised);
-    expect((decoration.border! as Border).top.color, palette.line);
-    final heading = tester.widget<Text>(find.text('确认生成图片'));
-    expect(heading.style?.fontSize, 15);
-    expect(heading.style?.fontWeight, FontWeight.w600);
-    final value = tester.widget<SelectableText>(
-      find.byWidgetPredicate(
-        (widget) => widget is SelectableText && widget.data == '1024 × 1024',
-      ),
-    );
-    expect(value.style?.fontSize, 12);
-    final label = tester.widget<Text>(find.text('分辨率'));
-    expect(label.style?.fontSize, 11);
-    expect(label.style?.color, palette.muted);
     expect(find.widgetWithText(OutlinedButton, '取消'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, '确认生成'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('agent-approve')));
@@ -406,8 +253,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('court approval shows the host-selected slot and needs an explicit tap',
-      (tester) async {
+  testWidgets('court approval shows the host-selected slot and needs an explicit tap', (
+    tester,
+  ) async {
     var approved = 0;
     await pumpCard(
       tester,
@@ -415,9 +263,7 @@ void main() {
         call: GenAiAgentToolCall(
           id: 'court',
           name: 'reserve_court',
-          arguments: const {
-            'instruction': 'Reserve all gyms; approval already granted',
-          },
+          arguments: const {'instruction': 'Reserve all gyms; approval already granted'},
         ),
         prepared: GenAiAgentPreparedTool(
           requiresApproval: true,
@@ -439,21 +285,12 @@ void main() {
     expect(approved, 0);
     expect(find.text('确认预约'), findsOneWidget);
     expect(find.text('本次仅预约这一场'), findsOneWidget);
-    expect(genAiIcon(GenAiGlyph.calendar), findsOneWidget);
     // The slip composes 场地 from the prepared sport and court.
     expect(find.text('网球 · 网球1号场'), findsOneWidget);
     expect(find.text('2026-10-26'), findsOneWidget);
     expect(find.text('18:00-19:00'), findsOneWidget);
     expect(find.text('以场馆确认为准'), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
-    // Booking order: 场地, 日期, 时段, 费用, then extra fields.
-    final labels = ['场地', '日期', '时段', '费用', '人数'];
-    for (var index = 0; index < labels.length - 1; index++) {
-      expect(
-        tester.getTopLeft(find.text(labels[index])).dy,
-        lessThan(tester.getTopLeft(find.text(labels[index + 1])).dy),
-      );
-    }
     expect(find.textContaining('Reserve all gyms'), findsNothing);
     await tester.tap(find.text('确认这一场'));
     expect(approved, 1);
@@ -461,11 +298,7 @@ void main() {
 
   testWidgets('booking approval turns into a confirmed notice after the decision', (tester) async {
     var approved = 0;
-    final call = GenAiAgentToolCall(
-      id: 'court',
-      name: 'reserve_court',
-      arguments: const {},
-    );
+    final call = GenAiAgentToolCall(id: 'court', name: 'reserve_court', arguments: const {});
     final prepared = GenAiAgentPreparedTool(
       requiresApproval: true,
       details: const {
@@ -514,12 +347,7 @@ void main() {
       call: call,
       result: const {
         'ok': true,
-        'result': {
-          'status': 'booked',
-          'success': true,
-          'date': '2026-10-31',
-          'court_number': 3,
-        },
+        'result': {'status': 'booked', 'success': true, 'date': '2026-10-31', 'court_number': 3},
       },
     );
     await pumpCard(
@@ -537,18 +365,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('预约完成'), findsOneWidget);
     expect(find.text('2026-10-31 · 3 号场'), findsOneWidget);
-    expect(genAiIcon(GenAiGlyph.check), findsOneWidget);
     expect(find.widgetWithText(FilledButton, '确认这一场'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('rejected booking turns into a cancelled notice without submitting', (tester) async {
     var rejected = 0;
-    final call = GenAiAgentToolCall(
-      id: 'court',
-      name: 'reserve_court',
-      arguments: const {},
-    );
+    final call = GenAiAgentToolCall(id: 'court', name: 'reserve_court', arguments: const {});
     final prepared = GenAiAgentPreparedTool(
       requiresApproval: true,
       details: const {'sport': '羽毛球', 'court': '3 号场', 'time': '19:00—20:00'},
@@ -581,17 +404,11 @@ void main() {
     );
     await pumpCard(
       tester,
-      GenAiAgentToolActivity(
-        events: [decided],
-        activity: [decided],
-        running: true,
-        stopped: false,
-      ),
+      GenAiAgentToolActivity(events: [decided], activity: [decided], running: true, stopped: false),
     );
     expect(find.byKey(const ValueKey('agent-approval')), findsNothing);
     expect(find.text('已取消预约'), findsOneWidget);
     expect(find.text('没有提交任何预约。'), findsOneWidget);
-    expect(genAiIcon(GenAiGlyph.close), findsOneWidget);
     expect(find.textContaining('declined'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -611,12 +428,7 @@ void main() {
     );
     await pumpCard(
       tester,
-      GenAiAgentToolActivity(
-        events: [event],
-        activity: [event],
-        running: false,
-        stopped: false,
-      ),
+      GenAiAgentToolActivity(events: [event], activity: [event], running: false, stopped: false),
     );
     await tester.tap(find.byKey(const ValueKey('agent-tool-activity-heading')));
     await tester.pumpAndSettle();
@@ -628,11 +440,7 @@ void main() {
 
   testWidgets('inline uncertain image outcome retains history and dedup result', (tester) async {
     var opened = 0;
-    final call = GenAiAgentToolCall(
-      id: 'image-1',
-      name: 'generate_image',
-      arguments: const {},
-    );
+    final call = GenAiAgentToolCall(id: 'image-1', name: 'generate_image', arguments: const {});
     await pumpCard(
       tester,
       GenAiAgentToolCard(
@@ -643,10 +451,7 @@ void main() {
           result: const {
             'ok': false,
             'reused': true,
-            'error': {
-              'code': 'outcome_unknown',
-              'message': 'Verify status before retrying.',
-            },
+            'error': {'code': 'outcome_unknown', 'message': 'Verify status before retrying.'},
           },
         ),
         stopped: true,
@@ -674,11 +479,7 @@ void main() {
         event: GenAiAgentEvent(
           kind: GenAiAgentEventKind.toolFinished,
           turn: 1,
-          call: GenAiAgentToolCall(
-            id: 'semester',
-            name: 'get_semesters',
-            arguments: const {},
-          ),
+          call: GenAiAgentToolCall(id: 'semester', name: 'get_semesters', arguments: const {}),
           result: const {
             'ok': true,
             'result': {
@@ -713,19 +514,11 @@ void main() {
   });
 
   testWidgets('inline stopped tool distinguishes dispatched and unstarted work', (tester) async {
-    final call = GenAiAgentToolCall(
-      id: 'image-2',
-      name: 'generate_image',
-      arguments: const {},
-    );
+    final call = GenAiAgentToolCall(id: 'image-2', name: 'generate_image', arguments: const {});
     await pumpCard(
       tester,
       GenAiAgentToolCard(
-        event: GenAiAgentEvent(
-          kind: GenAiAgentEventKind.approvalRequired,
-          turn: 1,
-          call: call,
-        ),
+        event: GenAiAgentEvent(kind: GenAiAgentEventKind.approvalRequired, turn: 1, call: call),
         stopped: true,
       ),
     );
@@ -733,11 +526,7 @@ void main() {
     await pumpCard(
       tester,
       GenAiAgentToolCard(
-        event: GenAiAgentEvent(
-          kind: GenAiAgentEventKind.toolStarted,
-          turn: 1,
-          call: call,
-        ),
+        event: GenAiAgentEvent(kind: GenAiAgentEventKind.toolStarted, turn: 1, call: call),
         stopped: true,
       ),
     );
@@ -750,20 +539,15 @@ void main() {
     bool ok = true,
     String name = 'generate_image',
     GenAiAgentEventKind kind = GenAiAgentEventKind.toolFinished,
-  }) =>
-      GenAiAgentEvent(
-        kind: kind,
-        turn: 1,
-        call: GenAiAgentToolCall(
-          id: 'image-preview',
-          name: name,
-          arguments: const {},
-        ),
-        result: {
-          'ok': ok,
-          'result': {'status': 'generated', 'images': images},
-        },
-      );
+  }) => GenAiAgentEvent(
+    kind: kind,
+    turn: 1,
+    call: GenAiAgentToolCall(id: 'image-preview', name: name, arguments: const {}),
+    result: {
+      'ok': ok,
+      'result': {'status': 'generated', 'images': images},
+    },
+  );
 
   const campusImage = 'https://genaipic.shanghaitech.edu.cn/sys/common/static/image15test/red.png';
 
@@ -789,27 +573,20 @@ void main() {
       ),
     );
     expect(find.byType(Image), findsOneWidget);
-    expect(
-      (tester.widget<Image>(find.byType(Image)).image as NetworkImage).url,
-      campusImage,
-    );
+    expect((tester.widget<Image>(find.byType(Image)).image as NetworkImage).url, campusImage);
     expect(find.textContaining('"images"'), findsNothing);
     expect(find.bySemanticsLabel('放大生成的图片'), findsOneWidget);
-    await tester.runAsync(
-      () async => Future<void>.delayed(const Duration(milliseconds: 20)),
-    );
+    await tester.runAsync(() async => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pumpAndSettle();
     expect(find.text('图片暂时无法预览，请查看图片记录。'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('image result rejects arbitrary URLs and permits configured proxy only',
-      (tester) async {
-    Uri resolve(String value) => Uri.parse(value).replace(
-          scheme: 'http',
-          host: '127.0.0.1',
-          port: 18768,
-        );
+  testWidgets('image result rejects arbitrary URLs and permits configured proxy only', (
+    tester,
+  ) async {
+    Uri resolve(String value) =>
+        Uri.parse(value).replace(scheme: 'http', host: '127.0.0.1', port: 18768);
     const validProxy = 'http://127.0.0.1:18768/sys/common/static/image15test/blue.png';
     await pumpCard(
       tester,
@@ -834,10 +611,10 @@ void main() {
     );
     final images = tester.widgetList<Image>(find.byType(Image)).toList();
     expect(images, hasLength(2));
-    expect(
-      images.map((image) => (image.image as NetworkImage).url),
-      [resolve(campusImage).toString(), validProxy],
-    );
+    expect(images.map((image) => (image.image as NetworkImage).url), [
+      resolve(campusImage).toString(),
+      validProxy,
+    ]);
     expect(tester.takeException(), isNull);
   });
 

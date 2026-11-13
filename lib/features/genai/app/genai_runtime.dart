@@ -15,7 +15,7 @@ import '../domain/genai_cancellation.dart';
 import '../domain/genai_failure.dart';
 import '../domain/genai_session.dart';
 import '../platform/genai_transport.dart';
-import '../platform/http_genai_transport.dart';
+import '../platform/genai_transport_factory.dart';
 
 /// Construction only installs listeners. Secure storage/network access starts
 /// when a feature explicitly connects or requests authenticated data.
@@ -27,10 +27,10 @@ final class GenAiRuntime {
     GenAiSessionStore? store,
     GenAiSessionIssuer? issuer,
     Uri? apiBase,
-  })  : _auth = auth,
-        _thirdPartyAuth = thirdPartyAuth,
-        _issuer = issuer,
-        _transport = transport ?? HttpGenAiTransport() {
+  }) : _auth = auth,
+       _thirdPartyAuth = thirdPartyAuth,
+       _issuer = issuer,
+       _transport = transport ?? createGenAiTransport() {
     final api = GenAiApiClient(
       transport: _transport,
       apiBase: apiBase,
@@ -49,11 +49,7 @@ final class GenAiRuntime {
     );
     repository = GenAiRepository(api: api, sessions: sessions);
     chat = GenAiChatService(repository);
-    workspace = GenAiWorkspaceController(
-      sessions: sessions,
-      repository: repository,
-      chat: chat,
-    );
+    workspace = GenAiWorkspaceController(sessions: sessions, repository: repository, chat: chat);
     _auth.addListener(_syncOwner);
     _thirdPartyAuth.addListener(_syncOwner);
     _syncOwner();
@@ -89,12 +85,12 @@ final class GenAiRuntime {
     final studentId = boundStudentId.isNotEmpty ? boundStudentId : _resolvedStudentId ?? '';
     final owner =
         primary == null || primary.userId.trim().isEmpty || binding == null || studentId.isEmpty
-            ? null
-            : GenAiOwner(
-                primaryUserId: primary.userId,
-                studentId: studentId,
-                bindingId: binding.boundAt.toUtc().toIso8601String(),
-              );
+        ? null
+        : GenAiOwner(
+            primaryUserId: primary.userId,
+            studentId: studentId,
+            bindingId: binding.boundAt.toUtc().toIso8601String(),
+          );
     if (owner == sessions.owner) return;
     chat.clear();
     // setOwner already exposes storage failures through sessions.lastFailure.
@@ -108,11 +104,7 @@ final class GenAiRuntime {
     if (primary == null || primary.userId.trim().isEmpty || binding == null) {
       return null;
     }
-    return jsonEncode([
-      primary.userId,
-      binding.account,
-      binding.boundAt.toUtc().toIso8601String(),
-    ]);
+    return jsonEncode([primary.userId, binding.account, binding.boundAt.toUtc().toIso8601String()]);
   }
 
   /// SMS/legacy CpDaily bindings can contain only a phone and internal UUID.
@@ -160,9 +152,7 @@ final class GenAiRuntime {
         bindingId: binding.boundAt.toUtc().toIso8601String(),
         cancellation: cancellation,
       );
-      final profile = await cancellation.race(
-        _api.verifyToken(credential.token, cancellation),
-      );
+      final profile = await cancellation.race(_api.verifyToken(credential.token, cancellation));
       guard();
       cancellation.throwIfCancelled();
       final studentId = ThirdPartyAccount.cpdailySchoolId(profile.username);
@@ -179,7 +169,7 @@ final class GenAiRuntime {
       _resolvedStudentId = studentId;
       _syncOwner();
       cancellation.throwIfCancelled();
-      await sessions.connect(credential);
+      await sessions.connect(credential, verifiedProfile: profile);
     } catch (error) {
       guard();
       cancellation.throwIfCancelled();

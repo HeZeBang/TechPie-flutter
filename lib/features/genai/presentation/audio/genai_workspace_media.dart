@@ -9,10 +9,7 @@ import 'genai_audio_player.dart';
 import 'genai_audio_recorder.dart';
 
 typedef _MediaScope = (GenAiWorkspaceController, int, int);
-typedef GenAiTranscriptionCallback = void Function(
-  String text, {
-  required bool requestFocus,
-});
+typedef GenAiTranscriptionCallback = void Function(String text, {required bool requestFocus});
 
 /// Presentation lifetime for pickers, microphone recording, and speech playback.
 /// Late results are ignored after an account, conversation, or screen change.
@@ -24,15 +21,12 @@ class GenAiWorkspaceMedia extends ChangeNotifier {
     GenAiPicker? picker,
     GenAiAudioPlayer? audioPlayer,
     GenAiAudioRecorder? audioRecorder,
-  })  : _workspace = workspace,
-        _picker = picker ?? GenAiPicker(),
-        _audioPlayer = audioPlayer ?? GenAiAudioPlayer(),
-        _audioRecorder = audioRecorder ?? GenAiAudioRecorder() {
+  }) : _workspace = workspace,
+       _picker = picker ?? GenAiPicker(),
+       _audioPlayer = audioPlayer ?? GenAiAudioPlayer(),
+       _audioRecorder = audioRecorder ?? GenAiAudioRecorder() {
     _mediaScope = _scope;
     _workspace.addListener(_workspaceChanged);
-    _audioPlayer.onFinished = () {
-      if (!_disposed) _update(() => _playingTtsTurnIndex = null);
-    };
   }
 
   GenAiWorkspaceController _workspace;
@@ -83,6 +77,7 @@ class GenAiWorkspaceMedia extends ChangeNotifier {
     if (_mediaScope == _scope) return;
     _mediaScope = _scope;
     _ttsOperation++;
+    _audioPlayer.onFinished = null;
     _playingTtsTurnIndex = null;
     _loadingTts = false;
     _recordingAudio = false;
@@ -96,6 +91,7 @@ class GenAiWorkspaceMedia extends ChangeNotifier {
     if (!_audioPlayer.isSupported) return;
     final scope = _scope;
     final operation = ++_ttsOperation;
+    _audioPlayer.onFinished = null;
     bool current() => _isCurrent(scope) && operation == _ttsOperation;
     if (_playingTtsTurnIndex == index) {
       await _audioPlayer.stop();
@@ -112,39 +108,75 @@ class GenAiWorkspaceMedia extends ChangeNotifier {
       _playingTtsTurnIndex = index;
       _loadingTts = true;
     });
-    try {
-      final cleanText = text
-          .replaceAll(RegExp(r'```[\s\S]*?```|~~~[\s\S]*?~~~'), '')
-          .replaceAll(RegExp(r'\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]'), '')
-          .replaceAll(RegExp(r'\$(?!\s)[^\$\n]+\$|\\\([^\n]*?\\\)'), '')
-          .replaceAllMapped(RegExp(r'!?\[([^\]]*)\]\([^\s]*?\)'), (m) => m[1]!)
-          .replaceAll(RegExp(r'https?://\S+'), '')
-          .replaceAll(RegExp(r'^\s*([-*_])(?:\s*\1){2,}\s*$', multiLine: true), '')
-          .replaceAll(RegExp(r'[#*`_~]'), '')
-          .trim();
-      if (cleanText.isEmpty) {
-        _update(() {
-          _playingTtsTurnIndex = null;
-          _loadingTts = false;
-        });
-        onMessage('没有可供语音播报的文本内容');
+    final cleanText = text
+        .replaceAll(RegExp(r'```[\s\S]*?```|~~~[\s\S]*?~~~'), '')
+        .replaceAll(RegExp(r'\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]'), '')
+        .replaceAll(RegExp(r'\$(?!\s)[^\$\n]+\$|\\\([^\n]*?\\\)'), '')
+        .replaceAllMapped(RegExp(r'!?\[([^\]]*)\]\([^\s]*?\)'), (m) => m[1]!)
+        .replaceAll(RegExp(r'https?://\S+'), '')
+        .replaceAll(RegExp(r'^\s*([-*_])(?:\s*\1){2,}\s*$', multiLine: true), '')
+        .replaceAll(RegExp(r'[#*`_~]'), '')
+        .trim();
+    if (cleanText.isEmpty) {
+      _update(() {
+        _playingTtsTurnIndex = null;
+        _loadingTts = false;
+      });
+      onMessage('没有可供语音播报的文本内容');
+      return;
+    }
+    final chunks = _speechChunks(cleanText).iterator;
+    void finish({bool failed = false}) {
+      if (!current()) return;
+      _audioPlayer.onFinished = null;
+      _update(() {
+        _playingTtsTurnIndex = null;
+        _loadingTts = false;
+      });
+      if (failed) onMessage('语音播报失败，请稍后重试');
+    }
+
+    Future<void> playNext() async {
+      if (!current()) return;
+      if (!chunks.moveNext()) {
+        finish();
         return;
       }
-      final wavBytes = await scope.$1.synthesizeSpeech(
-        cleanText.length > 500 ? cleanText.substring(0, 500) : cleanText,
-      );
-      if (!current()) return;
-      _update(() => _loadingTts = false);
-      await _audioPlayer.playWav(wavBytes);
-    } catch (_) {
-      if (!_disposed && current()) {
-        _update(() {
-          _playingTtsTurnIndex = null;
-          _loadingTts = false;
-        });
-        onMessage('语音播报失败，请稍后重试');
+      _update(() => _loadingTts = true);
+      try {
+        final wavBytes = await scope.$1.synthesizeSpeech(chunks.current);
+        if (!current()) return;
+        _update(() => _loadingTts = false);
+        await _audioPlayer.playWav(wavBytes);
+      } catch (_) {
+        finish(failed: true);
       }
     }
+
+    _audioPlayer.onFinished = (completed) {
+      if (completed) {
+        unawaited(playNext());
+      } else {
+        finish(failed: true);
+      }
+    };
+    await playNext();
+  }
+
+  // Keep requests short, preferring a natural pause and never splitting a surrogate pair.
+  static Iterable<String> _speechChunks(String text) sync* {
+    final pause = RegExp(r'[。！？.!?，,、；;\s]');
+    var start = 0;
+    while (text.length - start > 500) {
+      var end = start + 500;
+      if (text.codeUnitAt(end) >= 0xdc00 && text.codeUnitAt(end) <= 0xdfff) end--;
+      final pauseStart = start + 250;
+      final lastPause = text.substring(pauseStart, end).lastIndexOf(pause);
+      if (lastPause >= 0) end = pauseStart + lastPause + 1;
+      yield text.substring(start, end);
+      start = end;
+    }
+    yield text.substring(start);
   }
 
   Future<void> pickDocument() async {

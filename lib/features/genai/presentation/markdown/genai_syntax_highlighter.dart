@@ -2,24 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'genai_code_font.dart';
 
-/// Syntax token classification for code highlighting.
-enum SyntaxTokenType {
-  keyword,
-  type,
-  string,
-  comment,
-  number,
-  functionName,
-  variable,
-  annotation,
-  property,
-  operator,
-  punctuation,
-  tag,
-  attribute,
-  plain,
-}
-
 /// Color theme definition for syntax highlighting.
 class SyntaxTheme {
   const SyntaxTheme({
@@ -80,46 +62,11 @@ class SyntaxTheme {
     operator: Color(0xFF383A42),
     plain: Color(0xFF383A42),
   );
-
-  Color colorFor(SyntaxTokenType type) {
-    switch (type) {
-      case SyntaxTokenType.keyword:
-        return keyword;
-      case SyntaxTokenType.type:
-        return this.type;
-      case SyntaxTokenType.string:
-        return string;
-      case SyntaxTokenType.comment:
-        return comment;
-      case SyntaxTokenType.number:
-        return number;
-      case SyntaxTokenType.functionName:
-        return functionName;
-      case SyntaxTokenType.variable:
-        return variable;
-      case SyntaxTokenType.annotation:
-        return annotation;
-      case SyntaxTokenType.property:
-        return property;
-      case SyntaxTokenType.tag:
-        return keyword;
-      case SyntaxTokenType.attribute:
-        return this.type;
-      case SyntaxTokenType.operator:
-        return operator;
-      case SyntaxTokenType.punctuation:
-      case SyntaxTokenType.plain:
-        return plain;
-    }
-  }
 }
 
 /// A lightweight, robust, streaming-safe syntax highlighter for common programming languages.
 class GenAiSyntaxHighlighter {
-  const GenAiSyntaxHighlighter({
-    required this.brightness,
-    this.customTheme,
-  });
+  const GenAiSyntaxHighlighter({required this.brightness, this.customTheme});
 
   final Brightness brightness;
   final SyntaxTheme? customTheme;
@@ -594,26 +541,50 @@ class GenAiSyntaxHighlighter {
     'final',
   };
 
+  static final _tokenizers = <String, RegExp>{};
+  static final _number = RegExp(r'^(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)$');
+  static final _identifier = RegExp(r'^[a-zA-Z_$][a-zA-Z0-9_$]*$');
+  static final _type = RegExp(r'^[A-Z][a-zA-Z0-9_$]*$');
+  static bool _followedBy(String code, int index, String character) {
+    while (index < code.length && code[index].trim().isEmpty) {
+      index++;
+    }
+    return index < code.length && code[index] == character;
+  }
+
   /// Tokenizes [code] into highlighted [TextSpan]s.
-  List<TextSpan> highlight({
-    required String code,
-    String? language,
-    TextStyle? baseStyle,
-  }) {
+  List<TextSpan> highlight({required String code, String? language, TextStyle? baseStyle}) {
     if (code.isEmpty) return const [];
 
     final lang = language?.toLowerCase().trim() ?? '';
-    final defaultStyle = (baseStyle ??
-            const TextStyle(
-              fontFamily: kGenAiMonospaceFamily,
-              fontFamilyFallback: kGenAiMonospaceFallback,
-            ))
-        .copyWith(color: theme.plain);
+    final defaultStyle =
+        (baseStyle ??
+                const TextStyle(
+                  fontFamily: kGenAiMonospaceFamily,
+                  fontFamilyFallback: kGenAiMonospaceFallback,
+                ))
+            .copyWith(color: theme.plain);
 
+    // Large source views remain fully readable without blocking on tokenization.
+    if (code.length > 64 * 1024) return [TextSpan(text: code, style: defaultStyle)];
     final spans = <TextSpan>[];
+    var plain = StringBuffer();
+    void emit(TextSpan span) {
+      if (span.style == defaultStyle) {
+        plain.write(span.text);
+        return;
+      }
+      if (plain.isNotEmpty) {
+        spans.add(TextSpan(text: plain.toString(), style: defaultStyle));
+        plain = StringBuffer();
+      }
+      spans.add(span);
+    }
+
     final isPython = lang == 'python' || lang == 'py';
     final isDart = lang == 'dart';
-    final isJsOrTs = lang == 'javascript' ||
+    final isJsOrTs =
+        lang == 'javascript' ||
         lang == 'js' ||
         lang == 'typescript' ||
         lang == 'ts' ||
@@ -623,7 +594,8 @@ class GenAiSyntaxHighlighter {
     final isJson = lang == 'json';
     final isSql = lang == 'sql';
     final isBash = lang == 'bash' || lang == 'sh' || lang == 'zsh' || lang == 'shell';
-    final isCpp = lang == 'c' ||
+    final isCpp =
+        lang == 'c' ||
         lang == 'cpp' ||
         lang == 'cxx' ||
         lang == 'cc' ||
@@ -693,7 +665,8 @@ class GenAiSyntaxHighlighter {
     patterns.add(r'\s+');
     patterns.add(r'.');
 
-    final masterRegex = RegExp(patterns.join('|'), multiLine: true);
+    final pattern = patterns.join('|');
+    final masterRegex = _tokenizers.putIfAbsent(pattern, () => RegExp(pattern, multiLine: true));
     final matches = masterRegex.allMatches(code);
 
     for (final match in matches) {
@@ -704,7 +677,7 @@ class GenAiSyntaxHighlighter {
 
       // Whitespace
       if (token.trim().isEmpty) {
-        spans.add(TextSpan(text: token, style: defaultStyle));
+        emit(TextSpan(text: token, style: defaultStyle));
         continue;
       }
 
@@ -714,13 +687,10 @@ class GenAiSyntaxHighlighter {
           token.startsWith('<!--') ||
           ((isPython || isBash) && token.startsWith('#')) ||
           (isSql && token.startsWith('--'))) {
-        spans.add(
+        emit(
           TextSpan(
             text: token,
-            style: defaultStyle.copyWith(
-              color: theme.comment,
-              fontStyle: FontStyle.italic,
-            ),
+            style: defaultStyle.copyWith(color: theme.comment, fontStyle: FontStyle.italic),
           ),
         );
         continue;
@@ -731,9 +701,8 @@ class GenAiSyntaxHighlighter {
         // Special JSON property check: "key":
         if (isJson && token.startsWith('"')) {
           final nextIndex = match.end;
-          final remaining = code.substring(nextIndex);
-          if (remaining.trimLeft().startsWith(':')) {
-            spans.add(
+          if (_followedBy(code, nextIndex, ':')) {
+            emit(
               TextSpan(
                 text: token,
                 style: defaultStyle.copyWith(color: theme.property),
@@ -742,7 +711,7 @@ class GenAiSyntaxHighlighter {
             continue;
           }
         }
-        spans.add(
+        emit(
           TextSpan(
             text: token,
             style: defaultStyle.copyWith(color: theme.string),
@@ -753,13 +722,10 @@ class GenAiSyntaxHighlighter {
 
       // HTML Tag
       if (isHtmlOrXml && token.startsWith('<')) {
-        spans.add(
+        emit(
           TextSpan(
             text: token,
-            style: defaultStyle.copyWith(
-              color: theme.tag,
-              fontWeight: FontWeight.w600,
-            ),
+            style: defaultStyle.copyWith(color: theme.tag, fontWeight: FontWeight.w600),
           ),
         );
         continue;
@@ -767,7 +733,7 @@ class GenAiSyntaxHighlighter {
 
       // Annotations / Preprocessor
       if (token.startsWith('@') || (isCpp && token.startsWith('#'))) {
-        spans.add(
+        emit(
           TextSpan(
             text: token,
             style: defaultStyle.copyWith(color: theme.annotation),
@@ -778,7 +744,7 @@ class GenAiSyntaxHighlighter {
 
       // Shell Variables
       if (isBash && token.startsWith(r'$')) {
-        spans.add(
+        emit(
           TextSpan(
             text: token,
             style: defaultStyle.copyWith(color: theme.variable),
@@ -788,8 +754,8 @@ class GenAiSyntaxHighlighter {
       }
 
       // Numbers
-      if (RegExp(r'^(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)$').hasMatch(token)) {
-        spans.add(
+      if (_number.hasMatch(token)) {
+        emit(
           TextSpan(
             text: token,
             style: defaultStyle.copyWith(color: theme.number),
@@ -799,7 +765,7 @@ class GenAiSyntaxHighlighter {
       }
 
       // Identifiers / Words
-      if (RegExp(r'^[a-zA-Z_$][a-zA-Z0-9_$]*$').hasMatch(token)) {
+      if (_identifier.hasMatch(token)) {
         final lower = token.toLowerCase();
 
         // 1. Keywords
@@ -821,13 +787,10 @@ class GenAiSyntaxHighlighter {
         }
 
         if (isKeyword) {
-          spans.add(
+          emit(
             TextSpan(
               text: token,
-              style: defaultStyle.copyWith(
-                color: theme.keyword,
-                fontWeight: FontWeight.w600,
-              ),
+              style: defaultStyle.copyWith(color: theme.keyword, fontWeight: FontWeight.w600),
             ),
           );
           continue;
@@ -843,19 +806,16 @@ class GenAiSyntaxHighlighter {
           isType = true;
         } else if (isSql && _sqlTypes.contains(lower)) {
           isType = true;
-        } else if (RegExp(r'^[A-Z][a-zA-Z0-9_$]*$').hasMatch(token)) {
+        } else if (_type.hasMatch(token)) {
           // PascalCase convention is universally a Type/Class across languages
           isType = true;
         }
 
         if (isType) {
-          spans.add(
+          emit(
             TextSpan(
               text: token,
-              style: defaultStyle.copyWith(
-                color: theme.type,
-                fontWeight: FontWeight.w500,
-              ),
+              style: defaultStyle.copyWith(color: theme.type, fontWeight: FontWeight.w500),
             ),
           );
           continue;
@@ -864,9 +824,8 @@ class GenAiSyntaxHighlighter {
         // 3. HTML Attribute
         if (isHtmlOrXml) {
           final nextIndex = match.end;
-          final remaining = code.substring(nextIndex);
-          if (remaining.trimLeft().startsWith('=')) {
-            spans.add(
+          if (_followedBy(code, nextIndex, '=')) {
+            emit(
               TextSpan(
                 text: token,
                 style: defaultStyle.copyWith(color: theme.attribute),
@@ -879,9 +838,8 @@ class GenAiSyntaxHighlighter {
         // 4. Function call check: identifier followed by '('
         final nextIndex = match.end;
         if (nextIndex < code.length) {
-          final remaining = code.substring(nextIndex);
-          if (remaining.trimLeft().startsWith('(')) {
-            spans.add(
+          if (_followedBy(code, nextIndex, '(')) {
+            emit(
               TextSpan(
                 text: token,
                 style: defaultStyle.copyWith(color: theme.functionName),
@@ -892,13 +850,13 @@ class GenAiSyntaxHighlighter {
         }
 
         // Default identifier
-        spans.add(TextSpan(text: token, style: defaultStyle));
+        emit(TextSpan(text: token, style: defaultStyle));
         continue;
       }
 
       // Operators and punctuation
       if (r'=+-*/%!<>|&~^?:'.contains(firstChar)) {
-        spans.add(
+        emit(
           TextSpan(
             text: token,
             style: defaultStyle.copyWith(color: theme.operator),
@@ -908,9 +866,10 @@ class GenAiSyntaxHighlighter {
       }
 
       // Default fallback
-      spans.add(TextSpan(text: token, style: defaultStyle));
+      emit(TextSpan(text: token, style: defaultStyle));
     }
 
+    if (plain.isNotEmpty) spans.add(TextSpan(text: plain.toString(), style: defaultStyle));
     return spans;
   }
 }

@@ -4,44 +4,27 @@ import 'package:techpie/features/genai/domain/genai_platform_contract.dart';
 import '../support/workspace_server.dart';
 
 void main() {
-  test('pending image records retain request title and quality', () async {
-    final demo = await TestGenAiWorkspace.create();
-    addTearDown(demo.dispose);
-    await demo.workspace.reloadModels();
-    final studio = demo.workspace.imageStudio;
-    final model = demo.workspace.imageModels.single;
-
-    await studio.generate(
-      GenAiImageRequest(
-        prompt: 'A red square',
-        title: '  Red square  ',
-        model: model,
-        groupId: 'titled-job',
-        quality: 'high',
-      ),
-    );
-
-    expect(studio.pending, hasLength(1));
-    expect(studio.pending.single.title, 'Red square');
-    expect(studio.pending.single.quality, 'high');
-    expect(studio.pending.single.prompt, 'A red square');
-  });
-
-  test('pending image records stay empty-safe when no title is provided', () async {
-    final demo = await TestGenAiWorkspace.create();
-    addTearDown(demo.dispose);
-    await demo.workspace.reloadModels();
-    final studio = demo.workspace.imageStudio;
-
-    await studio.generate(
-      GenAiImageRequest(
-        prompt: 'A blue circle',
-        model: demo.workspace.imageModels.single,
-        groupId: 'untitled-job',
-      ),
-    );
-
-    expect(studio.pending.single.title, isNull);
-    expect(studio.pending.single.quality, 'low');
-  });
+  for (final titled in [true, false]) {
+    test('pending image preserves optional metadata, titled=$titled', () async {
+      final demo = await TestGenAiWorkspace.create();
+      addTearDown(demo.dispose);
+      await demo.workspace.reloadModels();
+      final studio = demo.workspace.imageStudio;
+      final model = demo.workspace.imageModels.single;
+      final request = titled
+          ? GenAiImageRequest(
+              prompt: 'A red square',
+              title: '  Red square  ',
+              model: model,
+              groupId: 'image-job',
+              quality: 'high',
+            )
+          : GenAiImageRequest(prompt: 'A red square', model: model, groupId: 'image-job');
+      await studio.generate(request);
+      final pending = studio.pending.single;
+      expect(pending.prompt, 'A red square');
+      expect(pending.title, titled ? 'Red square' : isNull);
+      expect(pending.quality, titled ? 'high' : 'low');
+    });
+  }
 }

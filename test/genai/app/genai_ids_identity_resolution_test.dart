@@ -26,14 +26,14 @@ const _studentId = '20249999';
 const _phone = '13800138000';
 const _internalId = '00000000-0000-0000-0000-000000000001';
 
-ThirdPartyAccount _binding({DateTime? boundAt}) => ThirdPartyAccount(
-      platform: ThirdPartyPlatform.cpdaily,
-      account: _phone,
-      sid: _internalId,
-      token: 'cpdaily-token-not-genai',
-      boundAt: boundAt ?? DateTime(2026),
-      raw: const {'tgc': 'existing-ids-tgc'},
-    );
+ThirdPartyAccount _binding({DateTime? boundAt, String account = _phone}) => ThirdPartyAccount(
+  platform: ThirdPartyPlatform.cpdaily,
+  account: account,
+  sid: _internalId,
+  token: 'cpdaily-token-not-genai',
+  boundAt: boundAt ?? DateTime(2026),
+  raw: const {'tgc': 'existing-ids-tgc'},
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -43,14 +43,17 @@ void main() {
   });
 
   Future<
-      ({
-        GenAiRuntime runtime,
-        ThirdPartyAuthService bindings,
-        AuthService auth,
-        ScriptedTransport transport,
-        MemorySessionStore store,
-      })> fixture({
+    ({
+      GenAiRuntime runtime,
+      ThirdPartyAuthService bindings,
+      AuthService auth,
+      ScriptedTransport transport,
+      MemorySessionStore store,
+    })
+  >
+  fixture({
     String username = _studentId,
+    String account = _phone,
     GenAiCampusExchange? exchange,
     http.Client? renewalClient,
     bool trustedIssuer = true,
@@ -72,7 +75,7 @@ void main() {
     );
     await auth.loadSession();
     final bindings = ThirdPartyAuthService(storage, logging);
-    await bindings.replaceAll([_binding()]);
+    await bindings.replaceAll([_binding(account: account)]);
     final transport = ScriptedTransport((request) async {
       if (request.uri.path.endsWith('/ai/aiModel/list')) {
         return response(
@@ -95,7 +98,8 @@ void main() {
           ? _CampusIssuerAdapter(
               CampusGenAiSessionIssuer(
                 thirdPartyAuth: bindings,
-                exchange: exchange ??
+                exchange:
+                    exchange ??
                     (provider, _) async {
                       expect(provider.studentId, isEmpty);
                       expect(provider.cookies, contains('CASTGC='));
@@ -103,9 +107,7 @@ void main() {
                     },
               ),
             )
-          : CallbackIssuer(
-              (_, __) async => const GenAiCredential(token: 'untrusted-token'),
-            ),
+          : CallbackIssuer((_, __) async => const GenAiCredential(token: 'untrusted-token')),
     );
     addTearDown(() {
       runtime.dispose();
@@ -113,14 +115,25 @@ void main() {
       auth.dispose();
       logging.close();
     });
-    return (
-      runtime: runtime,
-      bindings: bindings,
-      auth: auth,
-      transport: transport,
-      store: store,
-    );
+    return (runtime: runtime, bindings: bindings, auth: auth, transport: transport, store: store);
   }
+
+  test(
+    'a known campus binding supplies the owner without reading storage or contacting GenAI',
+    () async {
+      final f = await fixture(account: _studentId);
+      expect(f.runtime.sessions.owner?.studentId, _studentId);
+      expect(f.store.reads, 0);
+      expect(f.transport.requests, isEmpty);
+      await f.runtime.sessions.connect(const GenAiCredential(token: 'genai-token'));
+      expect(f.transport.requests.single.headers['X-Access-Token'], 'genai-token');
+      await f.bindings.unbind(ThirdPartyPlatform.cpdaily);
+      expect(f.runtime.sessions.owner, isNull);
+      expect(f.runtime.sessions.session, isNull);
+      await Future<void>.delayed(Duration.zero);
+      expect(f.store.records, isEmpty);
+    },
+  );
 
   test('SMS binding resolves school identity through its IDS session', () async {
     final f = await fixture();
@@ -136,10 +149,7 @@ void main() {
     expect(f.bindings.cpdailyBinding?.sid, _internalId);
     expect(f.bindings.cpdailyBinding?.raw, {'tgc': 'existing-ids-tgc'});
     expect(f.auth.session?.studentId, '20240001');
-    expect(
-      f.transport.requests.every((r) => r.headers['X-Access-Token'] == 'genai-token'),
-      isTrue,
-    );
+    expect(f.transport.requests.every((r) => r.headers['X-Access-Token'] == 'genai-token'), isTrue);
   });
 
   for (final discoveredId in [_studentId, '20241111']) {
@@ -151,11 +161,7 @@ void main() {
           expect(request.url.path, '/api/auth/renew');
           renewals++;
           return http.Response(
-            jsonEncode({
-              'success': true,
-              'tgc': 'renewed-ids-tgc',
-              'sid': discoveredId,
-            }),
+            jsonEncode({'success': true, 'tgc': 'renewed-ids-tgc', 'sid': discoveredId}),
             200,
           );
         }),
@@ -175,10 +181,7 @@ void main() {
         expect(f.runtime.sessions.session?.profile.username, _studentId);
         expect(f.store.writes, 1);
       } else {
-        expect(
-          f.runtime.workspace.loginFailure,
-          failure(GenAiFailureKind.identityMismatch),
-        );
+        expect(f.runtime.workspace.loginFailure, failure(GenAiFailureKind.identityMismatch));
         expect(f.runtime.sessions.session, isNull);
         expect(f.store.writes, 0);
       }
@@ -192,10 +195,7 @@ void main() {
     final f = await fixture();
     await f.runtime.connectUsingCampusSession();
     final owner = f.runtime.sessions.owner;
-    await f.bindings.updateRaw(
-      ThirdPartyPlatform.cpdaily,
-      {'tgc': 'renewed-ids-tgc'},
-    );
+    await f.bindings.updateRaw(ThirdPartyPlatform.cpdaily, {'tgc': 'renewed-ids-tgc'});
     expect(f.runtime.sessions.owner, owner);
     await f.runtime.sessions.disconnect();
     await f.runtime.connectUsingCampusSession();
@@ -229,10 +229,7 @@ void main() {
       },
     );
     final connection = f.runtime.connectUsingCampusSession();
-    final assertion = expectLater(
-      connection,
-      throwsA(failure(GenAiFailureKind.accountChanged)),
-    );
+    final assertion = expectLater(connection, throwsA(failure(GenAiFailureKind.accountChanged)));
     await started.future;
     await f.bindings.unbind(ThirdPartyPlatform.cpdaily);
     await assertion;
@@ -248,10 +245,7 @@ void main() {
     test('profile with non-school identity $username is rejected', () async {
       final f = await fixture(username: username);
       await f.runtime.workspace.connectUsing(f.runtime.connectUsingCampusSession);
-      expect(
-        f.runtime.workspace.loginFailure,
-        failure(GenAiFailureKind.identityMismatch),
-      );
+      expect(f.runtime.workspace.loginFailure, failure(GenAiFailureKind.identityMismatch));
       expect(f.runtime.sessions.owner, isNull);
       expect(f.store.writes, 0);
     });
@@ -268,10 +262,7 @@ void main() {
       },
     );
     await f.runtime.workspace.connectUsing(f.runtime.connectUsingCampusSession);
-    expect(
-      f.runtime.workspace.loginFailure,
-      failure(GenAiFailureKind.transport),
-    );
+    expect(f.runtime.workspace.loginFailure, failure(GenAiFailureKind.transport));
     expect(
       f.runtime.workspace.loginFailure.toString(),
       isNot(contains('private IDS cookie value')),
@@ -312,10 +303,9 @@ class _CampusIssuerAdapter implements GenAiCampusIdentityIssuer {
     required String primaryUserId,
     required String bindingId,
     required GenAiCancellation cancellation,
-  }) =>
-      delegate.issueForCampusBinding(
-        primaryUserId: primaryUserId,
-        bindingId: bindingId,
-        cancellation: cancellation,
-      );
+  }) => delegate.issueForCampusBinding(
+    primaryUserId: primaryUserId,
+    bindingId: bindingId,
+    cancellation: cancellation,
+  );
 }

@@ -13,7 +13,7 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
   String? _objectUrl;
   bool _playing = false;
   int _generation = 0;
-  void Function()? _onFinished;
+  void Function(bool completed)? _onFinished;
 
   @override
   bool get isSupported => true;
@@ -22,7 +22,7 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
   bool get isPlaying => _playing;
 
   @override
-  set onFinished(void Function()? callback) {
+  set onFinished(void Function(bool completed)? callback) {
     _onFinished = callback;
   }
 
@@ -38,10 +38,7 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
     }
     final generation = ++_generation;
     final uint8List = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
-    final blob = web.Blob(
-      [uint8List.toJS].toJS,
-      web.BlobPropertyBag(type: 'audio/wav'),
-    );
+    final blob = web.Blob([uint8List.toJS].toJS, web.BlobPropertyBag(type: 'audio/wav'));
     final url = web.URL.createObjectURL(blob);
     _objectUrl = url;
     final element = web.HTMLAudioElement()..src = url;
@@ -51,13 +48,13 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
     element.onended = ((web.Event _) {
       if (!_isCurrent(generation, element)) return;
       _cleanup();
-      _onFinished?.call();
+      _onFinished?.call(true);
     }).toJS;
 
     element.onerror = ((web.Event _) {
       if (!_isCurrent(generation, element)) return;
       _cleanup();
-      _onFinished?.call();
+      _onFinished?.call(false);
     }).toJS;
 
     try {
@@ -65,7 +62,7 @@ final class GenAiAudioPlayerWeb implements GenAiAudioPlayer {
     } catch (_) {
       if (!_isCurrent(generation, element)) return;
       _cleanup();
-      _onFinished?.call();
+      rethrow;
     }
   }
 

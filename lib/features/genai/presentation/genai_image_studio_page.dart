@@ -49,7 +49,6 @@ class GenAiImageStudioPage extends StatefulWidget {
 
 class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   static const _qualityLabels = {'low': '普通', 'medium': '标准', 'high': '高清'};
-  static const _customResolution = 'custom';
 
   late final GenAiPicker _picker;
   late final GenAiImageDraft _draft;
@@ -61,8 +60,6 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   final _studioScroll = ScrollController();
   final _parameterScroll = ScrollController(keepScrollOffset: false);
   final _images = <GenAiImageRecord>[];
-  GenAiModel? get _imageModel => _draft.model;
-  set _imageModel(GenAiModel? value) => _draft.model = value;
   GenAiCancellation? _operation;
   GenAiFailure? _failure;
   late final int _revision;
@@ -84,28 +81,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   int _page = 1;
   final _customWidth = TextEditingController(text: '1024');
   final _customHeight = TextEditingController(text: '1024');
-  String get _aspectRatio => _draft.aspectRatio;
-  set _aspectRatio(String value) => _draft.aspectRatio = value;
-  String get _resolution => _draft.resolution;
-  set _resolution(String value) => _draft.resolution = value;
-  bool _linked = true;
-  bool get _customSize => _resolution == _customResolution;
-
-  /// A preset request is named by the ratio and resolution alone; free-form
-  /// dimensions only participate while the custom resolution is selected.
-  String get _size {
-    if (!_customSize) {
-      final preset = GenAiImageSize.presets[_aspectRatio]?[_resolution];
-      if (preset != null) return preset;
-    }
-    return '${_customWidth.text}x${_customHeight.text}';
-  }
-
-  String get _resolutionLabel => _customSize ? '自定义' : _resolution;
-  GenAiImageSize? get _parsedSize => GenAiImageSize.tryParse(_size);
-  bool get _validSize => _parsedSize?.isValid ?? false;
-  String get _quality => _draft.quality;
-  set _quality(String value) => _draft.quality = value;
+  bool get _validSize => GenAiImageSize.tryParse(_draft.size) != null;
   GenAiWorkspaceController get _workspace => widget.workspace;
 
   @override
@@ -114,46 +90,10 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
     _picker = widget.picker ?? GenAiPicker();
     _revision = _workspace.sessions.revision;
     _accountScope = _workspace.accountScope;
-    final draft = _draft = _workspace.imageStudio.draft;
-    final restoreRatioFromDimensions = !GenAiImageSize.presets.containsKey(draft.aspectRatio);
-    _prompt.text = draft.prompt;
-    _customWidth.text = draft.width;
-    _customHeight.text = draft.height;
-    _aspectRatio =
-        GenAiImageSize.presets.containsKey(draft.aspectRatio) ? draft.aspectRatio : '1:1';
-    final presets = GenAiImageSize.presets[_aspectRatio]!;
-    _resolution = draft.resolution == _customResolution || presets.containsKey(draft.resolution)
-        ? draft.resolution
-        : '1K';
-    _quality = _qualityLabels.containsKey(draft.quality) ? draft.quality : 'low';
-    // Restore a valid custom draft; preset-to-custom transitions use the
-    // dimensions currently shown by the selected preset.
-    final restoredCustom = GenAiImageSize.tryParse(
-      '${_customWidth.text}x${_customHeight.text}',
-    );
-    if (restoredCustom == null || !restoredCustom.isValid) {
-      final seed = GenAiImageSize.tryParse(presets[_customSize ? '1K' : _resolution]!)!;
-      _setCustomDimensions(seed);
-    }
-    if (restoreRatioFromDimensions) {
-      final width = int.tryParse(_customWidth.text);
-      final height = int.tryParse(_customHeight.text);
-      if (width != null && height != null && width > 0 && height > 0) {
-        _aspectRatio = _ratioFor(width, height);
-        final options = GenAiImageSize.presets[_aspectRatio];
-        if (options == null) {
-          _resolution = _customResolution;
-        } else if (!_customSize && !options.containsKey(_resolution)) {
-          _resolution = '1K';
-        }
-      }
-    }
-    _imageModel = _workspace.imageModels
-            .where(
-              (m) => m.aiType == draft.model?.aiType && m.rootAiType == draft.model?.rootAiType,
-            )
-            .firstOrNull ??
-        _workspace.imageModels.firstOrNull;
+    _draft = _workspace.imageStudio.draft;
+    _prompt.text = _draft.prompt;
+    _syncDimensions();
+    _syncModel();
     _imageCompletion = _workspace.imageStudio.completion;
     _workspace.imageStudio.addListener(_imageChanged);
     _workspace.sessions.addListener(_sessionChanged);
@@ -161,18 +101,6 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_load());
     });
-  }
-
-  void _saveDraft() {
-    if (!_scopeValid ||
-        _accountScope != _workspace.accountScope ||
-        _revision != _workspace.sessions.revision) {
-      return;
-    }
-    final draft = _workspace.imageStudio.draft;
-    draft.prompt = _prompt.text;
-    draft.width = _customWidth.text;
-    draft.height = _customHeight.text;
   }
 
   void _imageChanged() {
@@ -189,16 +117,17 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   void _workspaceChanged() {
     if (!mounted) return;
     _sessionChanged();
-    final previous = _imageModel;
-    _imageModel = (previous != null
-            ? _workspace.imageModels
-                .where(
-                  (m) => m.aiType == previous.aiType && m.rootAiType == previous.rootAiType,
-                )
-                .firstOrNull
-            : null) ??
-        _workspace.imageModels.firstOrNull;
+    _syncModel();
     setState(() {});
+  }
+
+  void _syncModel() {
+    final previous = _draft.model;
+    _draft.model =
+        _workspace.imageModels
+            .where((m) => m.aiType == previous?.aiType && m.rootAiType == previous?.rootAiType)
+            .firstOrNull ??
+        _workspace.imageModels.firstOrNull;
   }
 
   void _sessionChanged() {
@@ -238,9 +167,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
       if (mounted && !operation.isCancelled) setState(() => _failure = error);
     } catch (_) {
       if (mounted && !operation.isCancelled) {
-        setState(
-          () => _failure = const GenAiFailure(GenAiFailureKind.transport),
-        );
+        setState(() => _failure = const GenAiFailure(GenAiFailureKind.transport));
       }
     } finally {
       operation.cancel();
@@ -298,10 +225,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
         title: const Text('删除图片记录？'),
         content: const Text('这将删除学校平台上的图片记录，无法撤销。'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('删除'),
@@ -322,7 +246,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   }
 
   Future<void> _generate() async {
-    final model = _imageModel;
+    final model = _draft.model;
     if (_editingBlocked ||
         _pickingReference ||
         !_scopeValid ||
@@ -335,8 +259,8 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
       prompt: _prompt.text.trim(),
       model: model,
       groupId: GenAiWorkspaceController.createGroupId(),
-      size: _size,
-      quality: _quality,
+      size: _draft.size,
+      quality: _draft.quality,
       referenceImages: _references,
     );
     final confirmed = await genAiShowDialog<bool>(
@@ -349,15 +273,12 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
         shape: _dialogShape(_compactDialog(dialogContext)),
         title: const Text('生成 1 张图片'),
         content: Text(
-          '${model.name} · $_size · ${_qualityLabels[_quality] ?? _quality}'
+          '${model.name} · ${_draft.size} · ${_qualityLabels[_draft.quality] ?? _draft.quality}'
           '${request.referenceImages.isEmpty ? '' : ' · ${request.referenceImages.length} 张参考图片'}\n'
           '可能扣除学校账号额度。生成可能需要几分钟，可离开此页面，稍后回来查看结果。',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('生成'),
@@ -367,13 +288,11 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
     );
     if (confirmed != true || !mounted) return;
     if (!_scopeValid || _editingBlocked) return;
-    _saveDraft();
     await _workspace.imageStudio.generate(request);
   }
 
   @override
   void dispose() {
-    _saveDraft();
     _workspace.imageStudio.removeListener(_imageChanged);
     _loadOperation?.cancel();
     _operation?.cancel();
@@ -389,52 +308,43 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
 
   @override
   Widget build(BuildContext context) => Theme(
-        data: genAiTheme(Theme.of(context)),
-        child: widget.embedded
-            ? _content()
-            : Scaffold(
-                appBar: AppBar(
-                  title: const Text('图片创作'),
-                  actions: [_refreshButton()],
-                ),
-                body: SafeArea(top: false, child: _content()),
-              ),
-      );
+    data: genAiTheme(Theme.of(context)),
+    child: widget.embedded
+        ? _content()
+        : Scaffold(
+            appBar: AppBar(title: const Text('图片创作'), actions: [_refreshButton()]),
+            body: SafeArea(top: false, child: _content()),
+          ),
+  );
 
   Widget _refreshButton() => IconButton(
-        onPressed: _busy || _loading || !_currentScope ? null : () => unawaited(_load()),
-        icon: const GenAiIcon(GenAiGlyph.retry, size: 20),
-        tooltip: '刷新',
-      );
+    onPressed: _busy || _loading || !_currentScope ? null : () => unawaited(_load()),
+    icon: const GenAiIcon(GenAiGlyph.retry, size: 20),
+    tooltip: '刷新',
+  );
 
   Widget _content() => Column(
-        children: [
-          SizedBox(
-            height: 2,
-            child: _busy || _loading ? const LinearProgressIndicator() : null,
-          ),
-          if (_failure != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(genAiFailureText(_failure!)),
-            ),
-          Expanded(child: _imageStudio()),
-        ],
-      );
+    children: [
+      SizedBox(height: 2, child: _busy || _loading ? const LinearProgressIndicator() : null),
+      if (_failure != null)
+        Padding(padding: const EdgeInsets.all(16), child: Text(genAiFailureText(_failure!))),
+      Expanded(child: _imageStudio()),
+    ],
+  );
 
   Widget _loadError() => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Text(genAiFailureText(_loadFailure!)),
-            TextButton.icon(
-              onPressed: _loading || !_scopeValid ? null : () => unawaited(_load()),
-              icon: const GenAiIcon(GenAiGlyph.retry),
-              label: const Text('重试加载'),
-            ),
-          ],
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      children: [
+        Text(genAiFailureText(_loadFailure!)),
+        TextButton.icon(
+          onPressed: _loading || !_scopeValid ? null : () => unawaited(_load()),
+          icon: const GenAiIcon(GenAiGlyph.retry),
+          label: const Text('重试加载'),
         ),
-      );
+      ],
+    ),
+  );
 
   Widget _loadMore() => _more
       ? Padding(
@@ -447,10 +357,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
       : const SizedBox.shrink();
 
   Future<bool> _pickReferenceImage({Uri? uri}) async {
-    if (_pickingReference ||
-        _editingBlocked ||
-        !_scopeValid ||
-        _references.length >= GenAiReferenceImage.maxCount) {
+    if (_pickingReference || _editingBlocked || !_scopeValid) {
       return false;
     }
     setState(() {
@@ -483,7 +390,6 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
       }
       if (!current() || file == null) return false;
       final image = GenAiReferenceImage.fromBytes(file.name, file.bytes);
-      GenAiReferenceImage.validate([..._references, image]);
       // Decode a small frame to reject damaged files before accepting a reference.
       // Flutter web codecs require a native typed array, not an unmodifiable view.
       final codec = await ui.instantiateImageCodec(
@@ -506,12 +412,10 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
         codec.dispose();
       }
       if (!current()) return false;
-      GenAiReferenceImage.validate([..._references, image]);
       setState(() {
         _references.add(image);
         _referencePreviews[image] = thumbnail;
       });
-      _saveDraft();
       return true;
     } on GenAiReferenceImageFailure catch (error) {
       if (!current()) return false;
@@ -519,9 +423,6 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
         () => _referenceError = switch (error) {
           GenAiReferenceImageFailure.unsupportedFormat => '请选择 PNG、JPG 或 WebP 图片。',
           GenAiReferenceImageFailure.empty => '图片为空，请选择其他文件。',
-          GenAiReferenceImageFailure.tooLarge => '单张参考图片不能超过 10 MB。',
-          GenAiReferenceImageFailure.tooMany => '最多添加 4 张参考图片。',
-          GenAiReferenceImageFailure.totalTooLarge => '参考图片总大小不能超过 25 MB。',
         },
       );
     } catch (_) {
@@ -549,9 +450,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
             minimumSize: const Size(0, 32),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-          onPressed: enabled && _references.length < GenAiReferenceImage.maxCount
-              ? () => unawaited(_pickReferenceImage())
-              : null,
+          onPressed: enabled ? () => unawaited(_pickReferenceImage()) : null,
           icon: _pickingReference
               ? const SizedBox.square(
                   dimension: 14,
@@ -605,9 +504,9 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                           ),
                           onPressed: enabled
                               ? () => setState(() {
-                                    _referencePreviews.remove(_references.removeAt(index));
-                                    _referenceError = null;
-                                  })
+                                  _referencePreviews.remove(_references.removeAt(index));
+                                  _referenceError = null;
+                                })
                               : null,
                         ),
                       ),
@@ -629,127 +528,26 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
     );
   }
 
-  String _ratioFor(int width, int height) {
-    for (final entry in GenAiImageSize.presets.entries) {
-      final sample = GenAiImageSize.tryParse(entry.value.values.first)!;
-      if (sample.width * height == sample.height * width) return entry.key;
-    }
-    final divisor = width.gcd(height);
-    return '${width ~/ divisor}:${height ~/ divisor}';
-  }
-
-  /// Parses a `width:height` ratio into its two positive sides. A malformed,
-  /// non-positive or multi-part value is invalid and yields null.
-  (int, int)? _ratioValues(String ratio) {
-    final sides = ratio.split(':').map(int.tryParse).toList();
-    if (sides.length != 2 ||
-        sides[0] == null ||
-        sides[1] == null ||
-        sides[0]! <= 0 ||
-        sides[1]! <= 0) {
-      return null;
-    }
-    return (sides[0]!, sides[1]!);
-  }
-
-  String _orientationOf(String ratio) => GenAiImageDraft.orientationOf(ratio);
-
-  (int, int)? _ratioSides() => _ratioValues(_aspectRatio);
-
   String get _parameterSummary =>
-      '$_aspectRatio · ${_size.replaceAll('x', ' × ')} · ${_qualityLabels[_quality] ?? _quality}';
+      '${_draft.aspectRatio} · ${_draft.size.replaceAll('x', ' × ')} · ${_qualityLabels[_draft.quality] ?? _draft.quality}';
 
-  void _alignCustomSize() {
-    if (!_customSize) return;
-    final ratio = _ratioSides();
-    final width = int.tryParse(_customWidth.text);
-    if (ratio != null && width != null && width > 0) {
-      _customHeight.text = '${(width * ratio.$2 / ratio.$1).round()}';
-    }
+  void _syncDimensions() {
+    if (_customWidth.text != _draft.width) _customWidth.text = _draft.width;
+    if (_customHeight.text != _draft.height) _customHeight.text = _draft.height;
   }
 
-  void _selectOrientation(String orientation, {VoidCallback? notify}) {
+  void _updateParameters(VoidCallback change, VoidCallback? notify) {
     setState(() {
-      _draft.selectOrientation(orientation);
-      _alignCustomSize();
-    });
-    notify?.call();
-  }
-
-  void _selectAspectRatio(String ratio, {VoidCallback? notify}) {
-    setState(() {
-      _draft.selectAspectRatio(ratio);
-      _alignCustomSize();
-    });
-    notify?.call();
-  }
-
-  void _selectResolution(String resolution, {VoidCallback? notify}) {
-    setState(() {
-      final previousSize = GenAiImageSize.tryParse(_size);
-      final wasCustom = _customSize;
-      _resolution = resolution;
-      if (_customSize && !wasCustom && previousSize != null) {
-        _setCustomDimensions(previousSize);
-      }
-    });
-    notify?.call();
-  }
-
-  void _selectQuality(String quality, {VoidCallback? notify}) {
-    setState(() => _quality = quality);
-    notify?.call();
-  }
-
-  void _toggleLinked({VoidCallback? notify}) {
-    setState(() {
-      _linked = !_linked;
-      if (!_linked) return;
-      final ratio = _ratioSides();
-      if (ratio == null) return;
-      final width = int.tryParse(_customWidth.text);
-      final height = int.tryParse(_customHeight.text);
-      if (width != null && width > 0) {
-        _customHeight.text = '${math.max(1, (width * ratio.$2 / ratio.$1).round())}';
-      } else if (height != null && height > 0) {
-        _customWidth.text = '${math.max(1, (height * ratio.$1 / ratio.$2).round())}';
-      }
-    });
-    notify?.call();
-  }
-
-  void _setCustomDimensions(GenAiImageSize size) {
-    _customWidth.text = '${size.width}';
-    _customHeight.text = '${size.height}';
-  }
-
-  void _editDimension(String value, {required bool width, VoidCallback? notify}) {
-    setState(() {
-      if (!_linked) {
-        final w = int.tryParse(_customWidth.text);
-        final h = int.tryParse(_customHeight.text);
-        if (w != null && h != null && w > 0 && h > 0) _aspectRatio = _ratioFor(w, h);
-        return;
-      }
-      final amount = int.tryParse(value);
-      final other = width ? _customHeight : _customWidth;
-      if (amount == null || amount <= 0) {
-        other.clear();
-        return;
-      }
-      final ratio = _ratioSides();
-      if (ratio == null) return;
-      final scaled = width ? amount * ratio.$2 / ratio.$1 : amount * ratio.$1 / ratio.$2;
-      other.text = '${scaled.round()}';
+      change();
+      _syncDimensions();
     });
     notify?.call();
   }
 
   bool _compactDialog(BuildContext context) => MediaQuery.sizeOf(context).width <= 600;
 
-  ShapeBorder _dialogShape(bool compact) => RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(compact ? 14 : 18),
-      );
+  ShapeBorder _dialogShape(bool compact) =>
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(compact ? 14 : 18));
 
   InputDecoration _studioDecoration({String? hint, bool error = false}) {
     final colors = Theme.of(context).colorScheme;
@@ -774,19 +572,16 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   }
 
   Widget _studioField(String label, Widget control) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          control,
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        label,
+        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+      ),
+      const SizedBox(height: 8),
+      control,
+    ],
+  );
 
   Widget _studioSelect<T>({
     required ValueKey<String> key,
@@ -798,10 +593,10 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   }) {
     final palette = GenAiPalette.of(context);
     final textStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
-          fontSize: 14,
-          height: 1.4,
-          color: onChanged == null ? palette.muted : palette.text,
-        );
+      fontSize: 14,
+      height: 1.4,
+      color: onChanged == null ? palette.muted : palette.text,
+    );
     final label = selectedLabel ?? items.where((item) => item.$1 == value).firstOrNull?.$2 ?? '';
     // A real centred box, rather than InputDecorator's baseline metrics, keeps
     // both numeric presets and CJK labels centred at every text scale.
@@ -850,11 +645,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                             child: Row(
                               children: [
                                 Expanded(
-                                  child: Text(
-                                    items[index].$2,
-                                    softWrap: false,
-                                    style: textStyle,
-                                  ),
+                                  child: Text(items[index].$2, softWrap: false, style: textStyle),
                                 ),
                                 const SizedBox(width: 10),
                                 SizedBox(
@@ -873,12 +664,12 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                     onChanged(selected);
                   },
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                minHeight: 48,
-              ),
+              constraints: const BoxConstraints(minHeight: 48),
               child: Padding(
-                padding:
-                    EdgeInsets.symmetric(horizontal: compact ? 0 : 12, vertical: compact ? 0 : 10),
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 0 : 12,
+                  vertical: compact ? 0 : 10,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -891,8 +682,11 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: textStyle,
-                          strutStyle:
-                              const StrutStyle(fontSize: 14, height: 1.4, forceStrutHeight: true),
+                          strutStyle: const StrutStyle(
+                            fontSize: 14,
+                            height: 1.4,
+                            forceStrutHeight: true,
+                          ),
                           textHeightBehavior: const TextHeightBehavior(
                             applyHeightToFirstAscent: false,
                             applyHeightToLastDescent: false,
@@ -917,117 +711,124 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
     bool enabled, {
     VoidCallback? notify,
     bool minTargets = false,
-  }) =>
-      LayoutBuilder(
-        builder: (context, constraints) {
-          final colors = Theme.of(context).colorScheme;
-          final scale = MediaQuery.textScalerOf(context).scale(12) / 12;
-          final columns = constraints.maxWidth >= 210 * scale ? 3 : 1;
-          final width = (constraints.maxWidth - 6 - (columns - 1) * 3) / columns;
-          final optionHeight = minTargets ? 44.0 : null;
-          return Container(
-            key: const ValueKey('genai-image-orientation'),
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Wrap(
-              spacing: 3,
-              runSpacing: 3,
-              children: [
-                for (final option in const [
-                  ('landscape', '横向', 15.0, 10.0),
-                  ('square', '方形', 12.0, 12.0),
-                  ('portrait', '纵向', 10.0, 15.0),
-                ])
-                  SizedBox(
-                    key: ValueKey('genai-orientation-${option.$1}'),
-                    width: width,
-                    height: optionHeight,
-                    child: Semantics(
-                      button: true,
-                      selected: orientation == option.$1,
-                      enabled: enabled,
-                      child: Material(
-                        color: orientation == option.$1 ? colors.surface : Colors.transparent,
-                        elevation: orientation == option.$1 ? 1 : 0,
-                        shadowColor: Colors.black12,
-                        borderRadius: BorderRadius.circular(6),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(6),
-                          onTap:
-                              enabled ? () => _selectOrientation(option.$1, notify: notify) : null,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  width: option.$3,
-                                  height: option.$4,
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: enabled ? colors.onSurfaceVariant : colors.outline,
-                                      width: 1.3,
-                                    ),
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
+  }) => LayoutBuilder(
+    builder: (context, constraints) {
+      final colors = Theme.of(context).colorScheme;
+      final scale = MediaQuery.textScalerOf(context).scale(12) / 12;
+      final columns = constraints.maxWidth >= 210 * scale ? 3 : 1;
+      final width = (constraints.maxWidth - 6 - (columns - 1) * 3) / columns;
+      final optionHeight = minTargets ? 44.0 : null;
+      return Container(
+        key: const ValueKey('genai-image-orientation'),
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Wrap(
+          spacing: 3,
+          runSpacing: 3,
+          children: [
+            for (final option in const [
+              ('landscape', '横向', 15.0, 10.0),
+              ('square', '方形', 12.0, 12.0),
+              ('portrait', '纵向', 10.0, 15.0),
+            ])
+              SizedBox(
+                key: ValueKey('genai-orientation-${option.$1}'),
+                width: width,
+                height: optionHeight,
+                child: Semantics(
+                  button: true,
+                  selected: orientation == option.$1,
+                  enabled: enabled,
+                  child: Material(
+                    color: orientation == option.$1 ? colors.surface : Colors.transparent,
+                    elevation: orientation == option.$1 ? 1 : 0,
+                    shadowColor: Colors.black12,
+                    borderRadius: BorderRadius.circular(6),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: enabled
+                          ? () =>
+                                _updateParameters(() => _draft.selectOrientation(option.$1), notify)
+                          : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: option.$3,
+                              height: option.$4,
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: enabled ? colors.onSurfaceVariant : colors.outline,
+                                  width: 1.3,
                                 ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  option.$2,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: enabled ? colors.onSurface : colors.outline,
-                                  ),
-                                ),
-                              ],
+                                borderRadius: BorderRadius.circular(2),
+                              ),
                             ),
-                          ),
+                            const SizedBox(width: 4),
+                            Text(
+                              option.$2,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: enabled ? colors.onSurface : colors.outline,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
-              ],
-            ),
-          );
-        },
+                ),
+              ),
+          ],
+        ),
       );
+    },
+  );
 
   Widget _imageSizeControls({VoidCallback? onChanged, bool compactDialog = false}) {
     final enabled = !_editingBlocked;
-    final presets = GenAiImageSize.presets[_aspectRatio] ?? const <String, String>{};
-    final orientation = _orientationOf(_aspectRatio);
+    final presets = GenAiImageSize.presets[_draft.aspectRatio] ?? const <String, String>{};
+    final orientation = GenAiImageDraft.orientationOf(_draft.aspectRatio);
     final ratios = [
       for (final ratio in GenAiImageSize.presets.keys)
-        if (_orientationOf(ratio) == orientation) ratio,
+        if (GenAiImageDraft.orientationOf(ratio) == orientation) ratio,
     ];
-    if (!ratios.contains(_aspectRatio)) ratios.insert(0, _aspectRatio);
+    if (!ratios.contains(_draft.aspectRatio)) ratios.insert(0, _draft.aspectRatio);
     final ratio = _studioSelect<String>(
       key: const ValueKey('genai-image-ratio'),
-      value: _aspectRatio,
+      value: _draft.aspectRatio,
       items: [for (final ratio in ratios) (ratio, ratio)],
-      onChanged: enabled ? (value) => _selectAspectRatio(value!, notify: onChanged) : null,
+      onChanged: enabled
+          ? (value) => _updateParameters(() => _draft.selectAspectRatio(value!), onChanged)
+          : null,
     );
     final resolution = _studioSelect<String>(
       key: const ValueKey('genai-image-resolution'),
-      value: _resolution,
+      value: _draft.resolution,
       items: [
         for (final entry in presets.entries)
           (entry.key, '${entry.key} · ${entry.value.replaceAll('x', ' × ')}'),
-        (_customResolution, '自定义'),
+        ('custom', '自定义'),
       ],
-      selectedLabel: _resolutionLabel,
-      onChanged: enabled ? (value) => _selectResolution(value!, notify: onChanged) : null,
+      selectedLabel: _draft.custom ? '自定义' : _draft.resolution,
+      onChanged: enabled
+          ? (value) => _updateParameters(() => _draft.selectResolution(value!), onChanged)
+          : null,
     );
     final quality = _studioField(
       '质量',
       _studioSelect<String>(
         key: const ValueKey('genai-image-quality'),
-        value: _quality,
+        value: _draft.quality,
         items: [for (final entry in _qualityLabels.entries) (entry.key, entry.value)],
-        onChanged: enabled ? (value) => _selectQuality(value!, notify: onChanged) : null,
+        onChanged: enabled
+            ? (value) => _updateParameters(() => _draft.quality = value!, onChanged)
+            : null,
       ),
     );
     return Column(
@@ -1035,12 +836,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
       children: [
         _studioField(
           '方向',
-          _orientationControl(
-            orientation,
-            enabled,
-            notify: onChanged,
-            minTargets: compactDialog,
-          ),
+          _orientationControl(orientation, enabled, notify: onChanged, minTargets: compactDialog),
         ),
         const SizedBox(height: 18),
         Row(
@@ -1053,10 +849,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
             Expanded(child: _studioField('分辨率', resolution)),
           ],
         ),
-        if (_customSize) ...[
-          const SizedBox(height: 12),
-          _dimensionRow(enabled, onChanged),
-        ],
+        if (_draft.custom) ...[const SizedBox(height: 12), _dimensionRow(enabled, onChanged)],
         const SizedBox(height: 18),
         quality,
       ],
@@ -1067,26 +860,24 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
     final palette = GenAiPalette.of(context);
     final error = !_validSize;
     Widget dimension(TextEditingController controller, bool width) => _studioField(
-          width ? '宽度' : '高度',
-          Semantics(
-            label: width ? '宽度' : '高度',
-            child: TextField(
-              key: ValueKey(width ? 'genai-image-width' : 'genai-image-height'),
-              controller: controller,
-              enabled: enabled,
-              textAlignVertical: TextAlignVertical.center,
-              style: const TextStyle(fontSize: 14, height: 1.4),
-              strutStyle: const StrutStyle(fontSize: 14, height: 1.4, forceStrutHeight: true),
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(7),
-              ],
-              decoration: _studioDecoration(error: error),
-              onChanged: (value) => _editDimension(value, width: width, notify: onChanged),
-            ),
-          ),
-        );
+      width ? '宽度' : '高度',
+      Semantics(
+        label: width ? '宽度' : '高度',
+        child: TextField(
+          key: ValueKey(width ? 'genai-image-width' : 'genai-image-height'),
+          controller: controller,
+          enabled: enabled,
+          textAlignVertical: TextAlignVertical.center,
+          style: const TextStyle(fontSize: 14, height: 1.4),
+          strutStyle: const StrutStyle(fontSize: 14, height: 1.4, forceStrutHeight: true),
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: _studioDecoration(error: error),
+          onChanged: (value) =>
+              _updateParameters(() => _draft.editDimension(value, isWidth: width), onChanged),
+        ),
+      ),
+    );
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -1097,11 +888,11 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
           child: Center(
             child: IconButton(
               key: const ValueKey('genai-image-link'),
-              tooltip: _linked ? '宽高联动' : '宽高独立',
+              tooltip: _draft.linked ? '宽高联动' : '宽高独立',
               visualDensity: VisualDensity.compact,
-              color: _linked ? palette.accent : palette.muted,
-              onPressed: enabled ? () => _toggleLinked(notify: onChanged) : null,
-              isSelected: _linked,
+              color: _draft.linked ? palette.accent : palette.muted,
+              onPressed: enabled ? () => _updateParameters(_draft.toggleLinked, onChanged) : null,
+              isSelected: _draft.linked,
               selectedIcon: const GenAiIcon(GenAiGlyph.link, size: 18),
               icon: const GenAiIcon(GenAiGlyph.unlink, size: 18),
             ),
@@ -1113,145 +904,138 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
   }
 
   Widget _imageStudio() => LayoutBuilder(
-        builder: (context, constraints) {
-          final localWidth = constraints.maxWidth;
-          final declaredStage = widget.stageWidth ?? 0;
-          final windowWidth = MediaQuery.sizeOf(context).width;
-          // Breakpoints follow the stage the studio actually occupies. The
-          // local box only constrains what can be painted; a zero/invalid
-          // stage never selects a phone layout.
-          final stage =
-              declaredStage > 0 ? declaredStage : (windowWidth > 0 ? windowWidth : localWidth);
-          // The draft stacks the form above the gallery at 680px and keeps the
-          // form beside its own scrolling gallery above that.
-          if (stage <= 680) {
-            return CustomScrollView(
-              controller: _studioScroll,
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      ..._studioForm(compact: true, short: constraints.maxHeight < 360),
-                      const SizedBox(height: 26),
-                    ]),
-                  ),
-                ),
-                ..._gallerySlivers(
-                  const EdgeInsets.symmetric(horizontal: 18),
-                  bottom: 30,
-                  stageWidth: stage,
-                ),
-              ],
-            );
-          }
-          final short = GenAiLayout(Size(localWidth, constraints.maxHeight)).short;
-          final wide = stage > 1100;
-          final mid = stage > 959;
-          final formWidth = (localWidth * .4).clamp(280.0, 440.0);
-          final gap = wide ? 42.0 : (mid ? 26.0 : 28.0);
-          final padding = short
-              ? const EdgeInsets.symmetric(horizontal: 18, vertical: 8)
-              : wide
-                  ? const EdgeInsets.fromLTRB(32, 24, 32, 40)
-                  : mid
-                      ? const EdgeInsets.all(20)
-                      : const EdgeInsets.symmetric(horizontal: 24, vertical: 20);
-          return Padding(
-            key: const ValueKey('genai-image-padding'),
-            padding: padding,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  key: const ValueKey('genai-image-form'),
-                  width: formWidth,
-                  child: Column(
-                    children: [
-                      Flexible(
-                        child: ListView(
-                          controller: _studioScroll,
-                          shrinkWrap: true,
-                          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                          children: [
-                            if (!short) ...[
-                              Text(
-                                '让想象成像。',
-                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: -.4,
-                                    ),
-                              ),
-                              const SizedBox(height: 24),
-                            ],
-                            ..._studioForm(
-                              compact: short || constraints.maxHeight < 760,
-                              includeGenerate: false,
+    builder: (context, constraints) {
+      final localWidth = constraints.maxWidth;
+      final declaredStage = widget.stageWidth ?? 0;
+      final windowWidth = MediaQuery.sizeOf(context).width;
+      // Breakpoints follow the stage the studio actually occupies. The
+      // local box only constrains what can be painted; a zero/invalid
+      // stage never selects a phone layout.
+      final stage = declaredStage > 0
+          ? declaredStage
+          : (windowWidth > 0 ? windowWidth : localWidth);
+      // The draft stacks the form above the gallery at 680px and keeps the
+      // form beside its own scrolling gallery above that.
+      if (stage <= 680) {
+        return CustomScrollView(
+          controller: _studioScroll,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  ..._studioForm(compact: true, short: constraints.maxHeight < 360),
+                  const SizedBox(height: 26),
+                ]),
+              ),
+            ),
+            ..._gallerySlivers(
+              const EdgeInsets.symmetric(horizontal: 18),
+              bottom: 30,
+              stageWidth: stage,
+            ),
+          ],
+        );
+      }
+      final short = GenAiLayout(Size(localWidth, constraints.maxHeight)).short;
+      final wide = stage > 1100;
+      final mid = stage > 959;
+      final formWidth = (localWidth * .4).clamp(280.0, 440.0);
+      final gap = wide ? 42.0 : (mid ? 26.0 : 28.0);
+      final padding = short
+          ? const EdgeInsets.symmetric(horizontal: 18, vertical: 8)
+          : wide
+          ? const EdgeInsets.fromLTRB(32, 24, 32, 40)
+          : mid
+          ? const EdgeInsets.all(20)
+          : const EdgeInsets.symmetric(horizontal: 24, vertical: 20);
+      return Padding(
+        key: const ValueKey('genai-image-padding'),
+        padding: padding,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              key: const ValueKey('genai-image-form'),
+              width: formWidth,
+              child: Column(
+                children: [
+                  Flexible(
+                    child: ListView(
+                      controller: _studioScroll,
+                      shrinkWrap: true,
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                      children: [
+                        if (!short) ...[
+                          Text(
+                            '让想象成像。',
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -.4,
                             ),
-                          ],
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+                        ..._studioForm(
+                          compact: short || constraints.maxHeight < 760,
+                          includeGenerate: false,
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      _generateButton(),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                SizedBox(key: const ValueKey('genai-image-gap'), width: gap),
-                Expanded(
-                  child: CustomScrollView(
-                    slivers: _gallerySlivers(EdgeInsets.zero, stageWidth: stage),
-                  ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  _generateButton(),
+                ],
+              ),
             ),
-          );
-        },
-      );
-
-  List<Widget> _gallerySlivers(
-    EdgeInsets padding, {
-    double bottom = 24,
-    double? stageWidth,
-  }) =>
-      [
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(padding.left, 0, padding.right, 20),
-          sliver: SliverToBoxAdapter(
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '我的创作',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                  ),
-                ),
-                if (_images.isNotEmpty)
-                  Text(
-                    '${_images.length} 张',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 11,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                _refreshButton(),
-              ],
+            SizedBox(key: const ValueKey('genai-image-gap'), width: gap),
+            Expanded(
+              child: CustomScrollView(slivers: _gallerySlivers(EdgeInsets.zero, stageWidth: stage)),
             ),
-          ),
+          ],
         ),
-        if (_loadFailure != null)
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(padding.left, 0, padding.right, 0),
-            sliver: SliverToBoxAdapter(child: _loadError()),
-          ),
-        SliverPadding(padding: padding, sliver: _imageGallery(stageWidth)),
-        SliverToBoxAdapter(child: _loadMore()),
-        SliverToBoxAdapter(child: SizedBox(height: bottom)),
-      ];
+      );
+    },
+  );
+
+  List<Widget> _gallerySlivers(EdgeInsets padding, {double bottom = 24, double? stageWidth}) => [
+    SliverPadding(
+      padding: EdgeInsets.fromLTRB(padding.left, 0, padding.right, 20),
+      sliver: SliverToBoxAdapter(
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '我的创作',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+            ),
+            if (_images.isNotEmpty)
+              Text(
+                '${_images.length} 张',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            _refreshButton(),
+          ],
+        ),
+      ),
+    ),
+    if (_loadFailure != null)
+      SliverPadding(
+        padding: EdgeInsets.fromLTRB(padding.left, 0, padding.right, 0),
+        sliver: SliverToBoxAdapter(child: _loadError()),
+      ),
+    SliverPadding(padding: padding, sliver: _imageGallery(stageWidth)),
+    SliverToBoxAdapter(child: _loadMore()),
+    SliverToBoxAdapter(child: SizedBox(height: bottom)),
+  ];
 
   List<Widget> _studioForm({
     required bool compact,
@@ -1265,24 +1049,24 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
         height: short
             ? 4
             : compact
-                ? 12
-                : 18,
+            ? 12
+            : 18,
       ),
       Semantics(
         label: '画面描述',
         child: TextField(
           key: const ValueKey('genai-image-prompt'),
           controller: _prompt,
+          onChanged: (value) => _draft.prompt = value,
           enabled: !_editingBlocked,
           minLines: short
               ? 1
               : compact
-                  ? 4
-                  : 6,
+              ? 4
+              : 6,
           maxLines: compact ? 10 : 14,
           textAlignVertical: TextAlignVertical.top,
           style: const TextStyle(fontSize: 14, height: 1.7),
-          onChanged: (_) => setState(() {}),
           decoration: _studioDecoration(hint: '描述你想创作的画面…'),
         ),
       ),
@@ -1298,106 +1082,103 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
       SizedBox(height: short ? 4 : 16),
       if (includeGenerate) _generateButton(),
       if (_workspace.imageStudio.failure case final failure?)
-        Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: Text(genAiFailureText(failure)),
-        ),
+        Padding(padding: const EdgeInsets.only(top: 12), child: Text(genAiFailureText(failure))),
     ];
   }
 
   Widget _modelField(List<GenAiModel> models, {required bool compact}) {
     final select = _studioSelect<GenAiModel>(
       key: const ValueKey('genai-image-model'),
-      value: _imageModel,
+      value: _draft.model,
       items: [for (final model in models) (model, model.name)],
       compact: compact,
-      onChanged: _editingBlocked ? null : (model) => setState(() => _imageModel = model),
+      onChanged: _editingBlocked ? null : (model) => setState(() => _draft.model = model),
     );
     return compact ? Semantics(label: '模型', child: select) : _studioField('模型', select);
   }
 
   Widget _mobileParametersButton() => SizedBox(
-        width: double.infinity,
-        height: 44,
-        child: OutlinedButton(
-          key: const ValueKey('genai-image-parameters'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Theme.of(context).colorScheme.onSurface,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
-          ),
-          onPressed: _editingBlocked ? null : () => unawaited(_showParameters()),
-          child: Row(
-            children: [
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _parameterSummary,
-                    key: const ValueKey('genai-image-parameter-summary'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    strutStyle: const StrutStyle(fontSize: 12, height: 1.4, forceStrutHeight: true),
-                    textHeightBehavior: const TextHeightBehavior(
-                      applyHeightToFirstAscent: false,
-                      applyHeightToLastDescent: false,
-                    ),
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.4,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+    width: double.infinity,
+    height: 44,
+    child: OutlinedButton(
+      key: const ValueKey('genai-image-parameters'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+      ),
+      onPressed: _editingBlocked ? null : () => unawaited(_showParameters()),
+      child: Row(
+        children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _parameterSummary,
+                key: const ValueKey('genai-image-parameter-summary'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                strutStyle: const StrutStyle(fontSize: 12, height: 1.4, forceStrutHeight: true),
+                textHeightBehavior: const TextHeightBehavior(
+                  applyHeightToFirstAscent: false,
+                  applyHeightToLastDescent: false,
+                ),
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
-              const GenAiIcon(GenAiGlyph.down, size: 14),
-            ],
+            ),
           ),
-        ),
-      );
+          const GenAiIcon(GenAiGlyph.down, size: 14),
+        ],
+      ),
+    ),
+  );
 
   Future<void> _showParameters() async {
     if (_editingBlocked || !_currentScope) return;
     Widget content(BuildContext dialogContext) => AnimatedBuilder(
-          animation: Listenable.merge([_workspace, _workspace.sessions, _workspace.imageStudio]),
-          builder: (context, _) => StatefulBuilder(
-            builder: (context, update) => Column(
-              key: const ValueKey('genai-parameters-surface'),
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                GenAiContentHeader(
-                  key: const ValueKey('genai-parameters-header'),
-                  title: _currentScope ? '图片参数' : '账号已切换',
-                ),
-                Flexible(
-                  child: Scrollbar(
-                    controller: _parameterScroll,
-                    child: SingleChildScrollView(
-                      key: const ValueKey('genai-parameters-body'),
-                      controller: _parameterScroll,
-                      padding: const EdgeInsets.all(18),
-                      child: _currentScope
-                          ? _imageSizeControls(onChanged: () => update(() {}), compactDialog: true)
-                          : const Text('请关闭后重新打开。'),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
-                  child: Align(
-                    alignment: AlignmentDirectional.centerEnd,
-                    child: FilledButton(
-                      onPressed: () => Navigator.pop(dialogContext),
-                      child: const Text('完成'),
-                    ),
-                  ),
-                ),
-              ],
+      animation: Listenable.merge([_workspace, _workspace.sessions, _workspace.imageStudio]),
+      builder: (context, _) => StatefulBuilder(
+        builder: (context, update) => Column(
+          key: const ValueKey('genai-parameters-surface'),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            GenAiContentHeader(
+              key: const ValueKey('genai-parameters-header'),
+              title: _currentScope ? '图片参数' : '账号已切换',
             ),
-          ),
-        );
+            Flexible(
+              child: Scrollbar(
+                controller: _parameterScroll,
+                child: SingleChildScrollView(
+                  key: const ValueKey('genai-parameters-body'),
+                  controller: _parameterScroll,
+                  padding: const EdgeInsets.all(18),
+                  child: _currentScope
+                      ? _imageSizeControls(onChanged: () => update(() {}), compactDialog: true)
+                      : const Text('请关闭后重新打开。'),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+              child: Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('完成'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
     if (GenAiLayout.of(context).narrow) {
       await genAiShowModalBottomSheet<void>(
         context: context,
@@ -1424,11 +1205,17 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
     }
   }
 
-  Widget _generateButton() {
-    final canGenerate = !_editingBlocked &&
+  Widget _generateButton() => ValueListenableBuilder<TextEditingValue>(
+    valueListenable: _prompt,
+    builder: (_, __, ___) => _buildGenerateButton(),
+  );
+
+  Widget _buildGenerateButton() {
+    final canGenerate =
+        !_editingBlocked &&
         !_pickingReference &&
         _scopeValid &&
-        _imageModel != null &&
+        _draft.model != null &&
         _prompt.text.trim().isNotEmpty &&
         _validSize;
     Widget button = SizedBox(
@@ -1442,17 +1229,13 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
       ),
     );
     if (!_validSize) {
-      button = Tooltip(
-        message: '像素总数须为 655,360–8,294,400',
-        child: button,
-      );
+      button = Tooltip(message: '请输入有效的图片宽度和高度', child: button);
     }
     return button;
   }
 
-  ImageProvider<Object> _imageProvider(Uri uri) => NetworkImage(
-        _workspace.repository.imageDisplayUri(uri.toString()).toString(),
-      );
+  ImageProvider<Object> _imageProvider(Uri uri) =>
+      NetworkImage(_workspace.repository.imageDisplayUri(uri.toString()).toString());
 
   Widget _imageGallery(double? stageWidth) {
     if (!_currentScope) return const SliverToBoxAdapter();
@@ -1575,10 +1358,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                 style: OutlinedButton.styleFrom(
                   minimumSize: Size(0, GenAiLayout.touchPlatform ? 48 : 32),
                 ),
-                onPressed: uri == null ||
-                        _editingBlocked ||
-                        _pickingReference ||
-                        _references.length >= GenAiReferenceImage.maxCount
+                onPressed: uri == null || _editingBlocked || _pickingReference
                     ? null
                     : () async {
                         if (_editingBlocked) return;
@@ -1602,7 +1382,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                     if (!_currentScope || !dialogContext.mounted) return;
                     Navigator.pop(dialogContext);
                     unawaited(_showImageDescription(record, index: current));
-                  }
+                  },
                 ),
                 (
                   label: '复用描述',
@@ -1613,7 +1393,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                           if (_editingBlocked || !dialogContext.mounted) return;
                           Navigator.pop(dialogContext);
                           _reuseImagePrompt(record.prompt);
-                        }
+                        },
                 ),
                 if (canDelete)
                   (
@@ -1625,7 +1405,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
                             if (!_currentScope || _busy || !dialogContext.mounted) return;
                             Navigator.pop(dialogContext);
                             unawaited(_deleteImage(record.id));
-                          }
+                          },
                   ),
               ],
             );
@@ -1657,10 +1437,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
               title: const Text('账号已切换'),
               content: const Text('此图片属于之前的账号，请关闭后重新打开。'),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('关闭'),
-                ),
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('关闭')),
               ],
             );
           }
@@ -1755,8 +1532,7 @@ class _GenAiImageStudioPageState extends State<GenAiImageStudioPage> {
 
   void _reuseImagePrompt(String prompt) {
     if (_editingBlocked) return;
-    setState(() => _prompt.text = prompt);
-    _saveDraft();
+    setState(() => _prompt.text = _draft.prompt = prompt);
     if (_studioScroll.hasClients) {
       unawaited(
         _studioScroll.animateTo(
@@ -1777,21 +1553,20 @@ class _ImageSizeLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => GenAiImageDimensions(
-        image: image,
-        builder: (context, size) {
-          if (size == null) return const SizedBox.shrink();
-          final theme = Theme.of(context);
-          return Row(
-            children: [
-              Text(
-                '尺寸',
-                style:
-                    theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-              const Spacer(),
-              Text('${size.width.round()} × ${size.height.round()}'),
-            ],
-          );
-        },
+    image: image,
+    builder: (context, size) {
+      if (size == null) return const SizedBox.shrink();
+      final theme = Theme.of(context);
+      return Row(
+        children: [
+          Text(
+            '尺寸',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const Spacer(),
+          Text('${size.width.round()} × ${size.height.round()}'),
+        ],
       );
+    },
+  );
 }

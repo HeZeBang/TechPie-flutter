@@ -6,21 +6,43 @@ final class WavEncoder {
 
   /// Encodes multi-channel Float32 normalized audio samples ([-1.0, 1.0])
   /// into a standard 16-bit PCM RIFF/WAVE byte buffer.
-  static Uint8List encodeFloat32({
-    required List<Float32List> channels,
-    required int sampleRate,
-  }) {
+  static Uint8List encodeFloat32({required List<Float32List> channels, required int sampleRate}) {
     if (channels.isEmpty || channels.first.isEmpty || sampleRate <= 0) {
       return Uint8List(0);
     }
 
     final numChannels = channels.length;
     final numSamples = channels.first.length;
+    final buffer = _pcmBuffer(numSamples * numChannels * 2, numChannels, sampleRate);
+    final data = ByteData.sublistView(buffer);
+    // 4. Interleaved 16-bit signed PCM samples
+    var offset = 44;
+    for (var i = 0; i < numSamples; i++) {
+      for (var ch = 0; ch < numChannels; ch++) {
+        final floatSample = channels[ch][i].clamp(-1.0, 1.0);
+        final int16 = (floatSample < 0 ? floatSample * 32768 : floatSample * 32767).round().clamp(
+          -32768,
+          32767,
+        );
+        data.setInt16(offset, int16, Endian.little);
+        offset += 2;
+      }
+    }
+
+    return buffer;
+  }
+
+  static Uint8List encodeMonoPcm16(Uint8List pcm, {required int sampleRate}) {
+    final buffer = _pcmBuffer(pcm.length, 1, sampleRate);
+    buffer.setRange(44, buffer.length, pcm);
+    return buffer;
+  }
+
+  static Uint8List _pcmBuffer(int subchunk2Size, int numChannels, int sampleRate) {
     const bitsPerSample = 16;
     const bytesPerSample = bitsPerSample ~/ 8;
     final blockAlign = numChannels * bytesPerSample;
     final byteRate = sampleRate * blockAlign;
-    final subchunk2Size = numSamples * blockAlign;
     final totalSize = 44 + subchunk2Size;
 
     final buffer = Uint8List(totalSize);
@@ -44,19 +66,6 @@ final class WavEncoder {
     // 3. "data" sub-chunk
     buffer.setRange(36, 40, 'data'.codeUnits);
     data.setUint32(40, subchunk2Size, Endian.little);
-
-    // 4. Interleaved 16-bit signed PCM samples
-    var offset = 44;
-    for (var i = 0; i < numSamples; i++) {
-      for (var ch = 0; ch < numChannels; ch++) {
-        final floatSample = channels[ch][i].clamp(-1.0, 1.0);
-        final int16 = (floatSample < 0 ? floatSample * 32768 : floatSample * 32767)
-            .round()
-            .clamp(-32768, 32767);
-        data.setInt16(offset, int16, Endian.little);
-        offset += 2;
-      }
-    }
 
     return buffer;
   }

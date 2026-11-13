@@ -17,9 +17,9 @@ final class GenAiRepository {
     required GenAiApiClient api,
     required GenAiSessionService sessions,
     GenAiContextCompactor? contextCompactor,
-  })  : _api = api,
-        _sessions = sessions,
-        _context = contextCompactor ?? GenAiContextCompactor();
+  }) : _api = api,
+       _sessions = sessions,
+       _context = contextCompactor ?? GenAiContextCompactor();
 
   final GenAiApiClient _api;
   final GenAiSessionService _sessions;
@@ -107,38 +107,27 @@ final class GenAiRepository {
     GenAiCancellation c, {
     int page = 1,
     String query = '',
-  }) =>
-      _authorized(
-        c,
-        (s) async {
-          final result = await _api.listConversations(
-            s.credential.token,
-            s.profile.id,
-            c,
-            page: page,
-            query: query,
-          );
-          return GenAiPageResult(
-            result.records
-                .map(
-                  (r) => GenAiContextCompactor.isSummaryGroup(r.id)
-                      ? GenAiConversationSummary(
-                          id: r.id,
-                          title: '上下文整理（旧版辅助会话）',
-                          time: r.time,
-                        )
-                      : r,
-                )
-                .toList(),
-            page: result.page,
-            hasMore: result.hasMore,
-          );
-        },
-      );
-  Future<List<GenAiSavedTurn>> loadConversation(
-    String id,
-    GenAiCancellation c,
-  ) =>
+  }) => _authorized(c, (s) async {
+    final result = await _api.listConversations(
+      s.credential.token,
+      s.profile.id,
+      c,
+      page: page,
+      query: query,
+    );
+    return GenAiPageResult(
+      result.records
+          .map(
+            (r) => GenAiContextCompactor.isSummaryGroup(r.id)
+                ? GenAiConversationSummary(id: r.id, title: '上下文整理（旧版辅助会话）', time: r.time)
+                : r,
+          )
+          .toList(),
+      page: result.page,
+      hasMore: result.hasMore,
+    );
+  });
+  Future<List<GenAiSavedTurn>> loadConversation(String id, GenAiCancellation c) =>
       _authorized(c, (s) => _api.loadConversation(s.credential.token, id, c));
   Future<void> deleteMessages(List<String> ids, GenAiCancellation c) =>
       _authorized(c, (s) => _api.deleteMessages(s.credential.token, ids, c));
@@ -152,28 +141,22 @@ final class GenAiRepository {
 
   Future<void> deleteConversation(String id, GenAiCancellation c) =>
       _authorized(c, (s) => _api.deleteConversation(s.credential.token, id, c));
-  Future<List<Uri>> generateImage(
-    GenAiImageRequest request,
-    GenAiCancellation c,
-  ) =>
+  Future<void> renameConversation(String id, String title, GenAiCancellation c) =>
+      _authorized(c, (s) => _api.renameConversation(s.credential.token, id, title, c));
+  Future<void> pinConversations(List<String> ids, bool pinned, GenAiCancellation c) =>
+      _authorized(c, (s) => _api.pinConversations(s.credential.token, ids, pinned, c));
+  Future<void> deleteConversations(List<String> ids, GenAiCancellation c) =>
+      _authorized(c, (s) => _api.deleteConversations(s.credential.token, ids, c));
+  Future<List<Uri>> generateImage(GenAiImageRequest request, GenAiCancellation c) =>
       _authorized(c, (s) => _api.generateImage(s.credential.token, request, c));
-  Future<GenAiPageResult<GenAiImageRecord>> listImages(
-    GenAiCancellation c, {
-    int page = 1,
-  }) =>
+  Future<GenAiPageResult<GenAiImageRecord>> listImages(GenAiCancellation c, {int page = 1}) =>
       _authorized(c, (s) => _api.listImages(s.credential.token, c, page: page));
   Future<void> deleteImage(String id, GenAiCancellation c) =>
       _authorized(c, (s) => _api.deleteImage(s.credential.token, id, c));
   Future<GenAiUsageSummary> usageSummary(GenAiCancellation c) =>
       _authorized(c, (s) => _api.usageSummary(s.credential.token, c));
-  Future<GenAiPageResult<GenAiUsageOrder>> usageOrders(
-    GenAiCancellation c, {
-    int page = 1,
-  }) =>
-      _authorized(
-        c,
-        (s) => _api.usageOrders(s.credential.token, c, page: page),
-      );
+  Future<GenAiPageResult<GenAiUsageOrder>> usageOrders(GenAiCancellation c, {int page = 1}) =>
+      _authorized(c, (s) => _api.usageOrders(s.credential.token, c, page: page));
 
   Future<GenAiUploadedFile> uploadDocument({
     required String groupId,
@@ -181,33 +164,31 @@ final class GenAiRepository {
     required String fileName,
     required List<int> bytes,
     required GenAiCancellation c,
-  }) =>
-      _authorized(
-        c,
-        (s) => _api.uploadDocument(
-          s.credential.token,
-          groupId: groupId,
-          aiType: aiType,
-          fileName: fileName,
-          bytes: bytes,
-          cancellation: c,
-        ),
-      );
+  }) => _authorized(
+    c,
+    (s) => _api.uploadDocument(
+      s.credential.token,
+      groupId: groupId,
+      aiType: aiType,
+      fileName: fileName,
+      bytes: bytes,
+      cancellation: c,
+    ),
+  );
 
   Future<GenAiUploadedImage> uploadVisionImage({
     required String fileName,
     required List<int> bytes,
     required GenAiCancellation c,
-  }) =>
-      _authorized(
-        c,
-        (s) => _api.uploadVisionImage(
-          s.credential.token,
-          fileName: fileName,
-          bytes: bytes,
-          cancellation: c,
-        ),
-      );
+  }) => _authorized(
+    c,
+    (s) => _api.uploadVisionImage(
+      s.credential.token,
+      fileName: fileName,
+      bytes: bytes,
+      cancellation: c,
+    ),
+  );
 
   Future<List<int>> convertTextToSpeech(
     String text,
@@ -215,33 +196,27 @@ final class GenAiRepository {
     int speed = 1,
     String language = 'ZH',
     String speakerId = 'ZH',
-  }) =>
-      _authorized(
-        c,
-        (s) => _api.convertTextToSpeech(
-          s.credential.token,
-          text: text,
-          speed: speed,
-          language: language,
-          speakerId: speakerId,
-          cancellation: c,
-        ),
-      );
+  }) => _authorized(
+    c,
+    (s) => _api.convertTextToSpeech(
+      s.credential.token,
+      text: text,
+      speed: speed,
+      language: language,
+      speakerId: speakerId,
+      cancellation: c,
+    ),
+  );
 
   Future<String> recognizeAudio({
     required String fileName,
     required List<int> bytes,
     required GenAiCancellation c,
-  }) =>
-      _authorized(
-        c,
-        (s) => _api.recognizeAudio(
-          s.credential.token,
-          fileName: fileName,
-          bytes: bytes,
-          cancellation: c,
-        ),
-      );
+  }) => _authorized(
+    c,
+    (s) =>
+        _api.recognizeAudio(s.credential.token, fileName: fileName, bytes: bytes, cancellation: c),
+  );
 
   Stream<GenAiChatEvent> streamChat(
     GenAiChatRequest request,
@@ -249,7 +224,7 @@ final class GenAiRepository {
   ) async* {
     final revision = _sessions.revision;
     final operation = GenAiCancellation();
-    final removeCaller = cancellation.onCancel(operation.cancel);
+    final removeCaller = cancellation.forwardTo(operation);
     void checkOwner() {
       if (_sessions.revision != revision) {
         operation.cancel(GenAiFailureKind.accountChanged);
@@ -273,11 +248,8 @@ final class GenAiRepository {
             prepared = await _context.prepare(
               request,
               operation,
-              (summary, cancellation) => _api.streamChat(
-                summary,
-                session.credential.token,
-                cancellation,
-              ),
+              (summary, cancellation) =>
+                  _api.streamChat(summary, session.credential.token, cancellation),
               onUsage: (usage) {
                 if (usage.stage == GenAiContextStage.ready) readyUsage = usage;
                 if (!operation.isCancelled) {
@@ -321,11 +293,7 @@ final class GenAiRepository {
         if (prepared!.record['step_id'] case final String step) {
           _lastSteps[request.chatGroupId] = step;
         }
-        await for (final event in _api.streamChat(
-          prepared!,
-          session.credential.token,
-          operation,
-        )) {
+        await for (final event in _api.streamChat(prepared!, session.credential.token, operation)) {
           if (event is GenAiChatFinished && prepared!.record.containsKey('context')) {
             _recordedMemory[request.chatGroupId] = jsonEncode(boundary);
           }
@@ -346,7 +314,7 @@ final class GenAiRepository {
   }
 
   Future<List<GenAiModel>> listModels(GenAiCancellation cancellation) => _authorized(
-        cancellation,
-        (session) => _api.listModels(session.credential.token, cancellation),
-      );
+    cancellation,
+    (session) => _api.listModels(session.credential.token, cancellation),
+  );
 }

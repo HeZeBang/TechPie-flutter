@@ -24,13 +24,17 @@ Paths are relative to `lib/features/genai/`.
 ## Agent protocol
 
 The school endpoint has no native tool calling. The leading system message is stable
-across agent steps. Live tool schemas, optional visual guidance and the current nonce
-are in the final system guide, immediately before the gateway appends `chatInfo`.
-Attachment flags, the active task (on continuation), image references and rejected
-candidate are transient step data. This preserves the reusable history prefix when
-capabilities change; cache hits still depend on the upstream deployment. Both guide and data count toward the budget but are never archived or
-summarized. Repair prose is transient; its durable feedback retains the error code.
-A brief `reply_format` reminder follows the current input in the stored envelope; recovery reads only `input`. Long tasks retain exact beginning/end excerpts plus a reference to the complete original; omitted requirements must be retrieved before acting. The current-input reminder and request guide share one response contract, including final envelopes for quoted protocol examples.
+across agent steps. Live tool schemas and the current step’s response contract are sent once
+in the last system message before the gateway appends `chatInfo`. The stored
+exchange contains the input, step ID and recovery metadata. Older exchanges may
+also carry a `reply_format` field, which recovery ignores.
+Attachment flags, active task, image references and repair instructions are
+transient. Long tasks retain beginning/end excerpts and a reference to the
+complete original. The model can retrieve omitted requirements before acting.
+A successful visual-guide receipt anchors the host guide at the same history
+position for later authoring steps in the run. These system instructions count
+toward the input budget but are excluded from the conversation archive and
+summary sources. Prefix reuse depends on the upstream deployment.
 
 Version 5 requires a current-nonce frame only for executable tool requests. Final
 answers are ordinary Markdown, streamed without JSON escaping or a mandatory wrapper:
@@ -160,7 +164,8 @@ writes from another device cannot be locked. Deleting chat records does not canc
 external reservations or image jobs.
 
 History sorts by logical last message, excluding compaction housekeeping, not by
-last open. Renames persist with the next real message. Account/chat changes
+last open, with server-pinned groups first. Rename and pin update server metadata
+without a model request; history-list titles override old embedded titles. Account/chat changes
 invalidate late reads and execution callbacks.
 
 ## Tools and side effects
@@ -170,7 +175,7 @@ reservation and image generation. `inspect_image` is runner-owned and read-only.
 The catalog is rebuilt each step: image generation requires an available model,
 and inspection requires an image in the conversation. Thinking is a provider setting,
 not a separate behavioral prompt. Both chat and agent use the context policy's
-output reserve (4096 tokens by default), unless the request explicitly overrides it.
+output reserve (16384 tokens by default), unless the request explicitly overrides it.
 Timetable tools reuse `ScheduleService` data verified for the current campus
 account and selected semester. Unverified caches or explicit refresh requests use
 the normal service first. Late responses from another account/selection cannot
@@ -218,9 +223,11 @@ remain assistant observations, never tool facts. Inspection uses ordinary steps
 in the same conversation, without auxiliary chats. See the [API contract](genai-api-contract.md)
 for upload validation and trusted image URLs.
 
-The default context profile is 256k with output/safety reserves; there is no assumed
-16k latest-input ceiling. Estimates include attachments and wire metadata, and are
-not billing counts. Compaction uses a trigger/target gap (200k/136k), whole exchanges
+Known models use the updated documented context windows with output/safety
+reserves (1,050,000 GPT-6.x; 1,024,000 Kimi; 524,288 DeepSeek/GLM/Qwen). Unknown
+models retain a configurable 256k fallback. The separate server `chatInfo` ceiling
+is 900,000 characters; there is no 16k latest-input ceiling. Estimates include attachments and wire metadata, and are
+not billing counts. Compaction uses a trigger/target gap (80%/55% for automatic model policies), whole exchanges
 and source-validated prefix boundaries. Boundaries are reused until effective
 context grows again. Recall of user records and action outcomes uses original user
 messages and tool results rather than assistant recollections; user assertions do
@@ -247,7 +254,7 @@ and past approvals remain inert history, never permission to execute an action.
 
 The normal agent core advertises visual/LaTeX capabilities briefly.
 `get_visual_guide` lets the model elect to load the full authoring instructions for
-the current run. Its receipt stores only the capability identifier; the guide is
+the next authoring step. Its receipt stores only the capability identifier; the guide is
 host-injected context, not repeated archival text. Plain chat receives only the minimal
 visual format/runtime contract; detailed design instructions and the working example
 are loaded through the guide tool in agent mode. General LaTeX guidance applies in both modes. This keeps routine campus steps

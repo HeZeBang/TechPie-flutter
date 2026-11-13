@@ -79,38 +79,6 @@ final class GenAiTurnContext {
   bool get isLast => index == count - 1;
 }
 
-/// Draft popover rows: 42 px minimum, 10/8 px padding, 13 px labels,
-/// 17 px muted icons and a 10 px gap. The shared route paints each native
-/// row's 7 px hover plate through `genAiMenuEntry`; a danger label keeps the
-/// accent while its icon stays muted, as the draft specifies.
-PopupMenuItem<String> _turnMenuItem(
-  GenAiPalette palette,
-  String value,
-  Widget icon,
-  String label, {
-  bool enabled = true,
-  bool danger = false,
-}) =>
-    PopupMenuItem<String>(
-      value: value,
-      enabled: enabled,
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      child: Row(
-        children: [
-          IconTheme.merge(
-            data: IconThemeData(size: 17, color: palette.muted),
-            child: icon,
-          ),
-          const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(fontSize: 13, color: danger ? palette.accent : null),
-          ),
-        ],
-      ),
-    );
-
 /// One exchange: a quiet user bubble with hover actions, then the answer with
 /// its activity line, content, status notes and a compact action row.
 class GenAiTurnView extends StatelessWidget {
@@ -128,11 +96,11 @@ class GenAiTurnView extends StatelessWidget {
   final GenAiTurnActions actions;
 
   bool get _incomplete => const [
-        GenAiChatPhase.cancelled,
-        GenAiChatPhase.interrupted,
-        GenAiChatPhase.failed,
-        GenAiChatPhase.needsLogin,
-      ].contains(turn.phase);
+    GenAiChatPhase.cancelled,
+    GenAiChatPhase.interrupted,
+    GenAiChatPhase.failed,
+    GenAiChatPhase.needsLogin,
+  ].contains(turn.phase);
 
   @override
   Widget build(BuildContext buildContext) {
@@ -169,7 +137,8 @@ class GenAiTurnView extends StatelessWidget {
     final index = context.index;
     final pending = context.isLast && turn.isAgent ? context.pendingApproval : null;
     final note = TextStyle(color: palette.muted, fontSize: 12.5, height: 1.7);
-    final hasActivity = turn.agentEvents.isNotEmpty ||
+    final hasActivity =
+        turn.agentEvents.isNotEmpty ||
         turn.agentActivity.isNotEmpty ||
         turn.reasoning.isNotEmpty ||
         turn.citations.isNotEmpty;
@@ -248,10 +217,7 @@ class GenAiTurnView extends StatelessWidget {
             imageDisplayUri: actions.imageDisplayUri,
           ),
         if (_incomplete)
-          Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: _failureNotice(palette),
-          ),
+          Padding(padding: const EdgeInsets.only(top: 10), child: _failureNotice(palette)),
         if (turn.finishReason == GenAiFinishReason.length)
           Padding(
             padding: const EdgeInsets.only(top: 10),
@@ -277,12 +243,12 @@ class GenAiTurnView extends StatelessWidget {
     final title = _campusFailure
         ? '暂时无法连接校园 GenAI'
         : turn.isAgent && turn.failure?.kind == GenAiFailureKind.protocol && turn.answer.isNotEmpty
-            ? '回复未验证，可以继续整理。'
-            : turn.failure != null
-                ? genAiFailureText(turn.failure!)
-                : turn.isAgent && turn.agentStatus.isNotEmpty
-                    ? turn.agentStatus
-                    : '已停止';
+        ? '回复未验证，可以继续整理。'
+        : turn.failure != null
+        ? genAiFailureText(turn.failure!)
+        : turn.isAgent && turn.agentStatus.isNotEmpty
+        ? turn.agentStatus
+        : '已停止';
     final text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -307,8 +273,9 @@ class GenAiTurnView extends StatelessWidget {
     final retry = _campusFailure && context.connected
         ? OutlinedButton(
             key: ValueKey('genai-retry-${context.index}'),
-            onPressed:
-                context.sending || context.editing ? null : () => actions.retry(context.index),
+            onPressed: context.sending || context.editing
+                ? null
+                : () => actions.retry(context.index),
             child: const Text('重试', style: TextStyle(fontSize: 12)),
           )
         : null;
@@ -342,7 +309,8 @@ class GenAiTurnView extends StatelessWidget {
     final playing = context.playingTtsIndex == index;
     final retry = _incomplete && !_campusFailure && context.isLast && context.connected;
     final actionSize = context.touch ? 48.0 : 32.0;
-    final canRegenerate = context.isLast &&
+    final canRegenerate =
+        context.isLast &&
         context.connected &&
         !context.sending &&
         !context.editing &&
@@ -355,18 +323,17 @@ class GenAiTurnView extends StatelessWidget {
       required String tooltip,
       required Widget icon,
       required VoidCallback? onPressed,
-    }) =>
-        IconButton(
-          key: key,
-          tooltip: tooltip,
-          icon: icon,
-          color: palette.muted,
-          iconSize: 16,
-          padding: EdgeInsets.zero,
-          style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-          constraints: BoxConstraints.tightFor(width: actionSize, height: actionSize),
-          onPressed: onPressed,
-        );
+    }) => IconButton(
+      key: key,
+      tooltip: tooltip,
+      icon: icon,
+      color: palette.muted,
+      iconSize: 16,
+      padding: EdgeInsets.zero,
+      style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      constraints: BoxConstraints.tightFor(width: actionSize, height: actionSize),
+      onPressed: onPressed,
+    );
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
@@ -440,8 +407,11 @@ class _UserMessage extends StatelessWidget {
       if (!turnContext.isLast) ('revert', GenAiGlyph.undo, '回退到此处'),
       ('delete', GenAiGlyph.delete, '删除此轮及后续'),
     ];
-    final style =
-        TextStyle(fontSize: turnContext.phone ? 13 : 14, height: 1.7, color: palette.text);
+    final style = TextStyle(
+      fontSize: turnContext.phone ? 13 : 14,
+      height: 1.7,
+      color: palette.text,
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final bubble = Builder(
@@ -451,17 +421,17 @@ class _UserMessage extends StatelessWidget {
               onLongPressStart: !enabled
                   ? null
                   : (details) => _openMenu(anchorContext, hostContext, details.globalPosition, [
-                        if (turnContext.touch && turn.prompt.isNotEmpty)
-                          _turnMenuItem(palette, 'select', const Icon(Icons.select_all), '选择文本'),
-                        for (final (value, glyph, label) in options)
-                          _turnMenuItem(
-                            palette,
-                            value,
-                            GenAiIcon(glyph),
-                            label,
-                            danger: value == 'delete',
-                          ),
-                      ]),
+                      if (turnContext.touch && turn.prompt.isNotEmpty)
+                        genAiActionItem(palette, 'select', const Icon(Icons.select_all), '选择文本'),
+                      for (final (value, glyph, label) in options)
+                        genAiActionItem(
+                          palette,
+                          value,
+                          GenAiIcon(glyph),
+                          label,
+                          danger: value == 'delete',
+                        ),
+                    ]),
               child: Container(
                 key: ValueKey('genai-user-bubble-${turn.id}'),
                 constraints: BoxConstraints(
@@ -502,8 +472,9 @@ class _UserMessage extends StatelessWidget {
                 Padding(
                   padding: EdgeInsets.only(bottom: turnContext.touch ? 24 : 32),
                   child: ConstrainedBox(
-                    constraints:
-                        BoxConstraints(minWidth: !turnContext.touch ? options.length * 28.0 : 0),
+                    constraints: BoxConstraints(
+                      minWidth: !turnContext.touch ? options.length * 28.0 : 0,
+                    ),
                     child: Align(
                       alignment: AlignmentDirectional.topEnd,
                       widthFactor: 1,
@@ -600,9 +571,9 @@ class _UserMessage extends StatelessWidget {
 
   List<Widget> _attachments(BuildContext context, GenAiPalette palette) {
     Widget framed(Widget image, VoidCallback onTap) => ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: GestureDetector(onTap: onTap, child: image),
-        );
+      borderRadius: BorderRadius.circular(10),
+      child: GestureDetector(onTap: onTap, child: image),
+    );
     final images = <Widget>[
       if (turn.attachedImageBytesList.isNotEmpty)
         for (final bytes in turn.attachedImageBytesList)
@@ -617,12 +588,7 @@ class _UserMessage extends StatelessWidget {
       if (images.isNotEmpty)
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.end,
-            children: images,
-          ),
+          child: Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.end, children: images),
         ),
       if (turn.attachedFileNames.isNotEmpty)
         Padding(
@@ -673,15 +639,15 @@ class _UserMessage extends StatelessWidget {
   }
 
   static Widget _broken(BuildContext context, Object _, StackTrace? __) => Container(
-        padding: const EdgeInsets.all(8),
-        color: GenAiPalette.of(context).hover,
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            GenAiIcon(GenAiGlyph.brokenImage, size: 16),
-            SizedBox(width: 4),
-            Text('图片无法加载', style: TextStyle(fontSize: 11)),
-          ],
-        ),
-      );
+    padding: const EdgeInsets.all(8),
+    color: GenAiPalette.of(context).hover,
+    child: const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GenAiIcon(GenAiGlyph.brokenImage, size: 16),
+        SizedBox(width: 4),
+        Text('图片无法加载', style: TextStyle(fontSize: 11)),
+      ],
+    ),
+  );
 }

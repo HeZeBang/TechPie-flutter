@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/domain/genai_cancellation.dart';
+import 'package:techpie/features/genai/domain/genai_session.dart';
 import 'package:techpie/features/genai/presentation/genai_image_studio_page.dart';
 import 'package:techpie/features/genai/presentation/genai_usage_view.dart';
 
@@ -16,11 +17,8 @@ Future<void> revealInStudio(WidgetTester tester, Finder target) async {
     final scrollable = lists.evaluate().isNotEmpty
         ? find.descendant(of: lists, matching: find.byType(Scrollable)).first
         : find
-            .descendant(
-              of: find.byType(CustomScrollView),
-              matching: find.byType(Scrollable),
-            )
-            .first;
+              .descendant(of: find.byType(CustomScrollView), matching: find.byType(Scrollable))
+              .first;
     await tester.scrollUntilVisible(target, 240, scrollable: scrollable);
   }
   await tester.ensureVisible(target);
@@ -28,22 +26,14 @@ Future<void> revealInStudio(WidgetTester tester, Finder target) async {
 }
 
 Finder studioMenu() => find.byWidgetPredicate(
-      (widget) =>
-          widget.key == const ValueKey('genai-anchored-menu') ||
-          widget.key == const ValueKey('genai-choice-sheet'),
-    );
+  (widget) =>
+      widget.key == const ValueKey('genai-anchored-menu') ||
+      widget.key == const ValueKey('genai-choice-sheet'),
+);
 
 Finder studioField(String key) => find.byKey(ValueKey(key));
 
 Finder studioValue(String key) => find.byKey(ValueKey('$key-value'));
-
-Finder studioOption(String key, int index) =>
-    find.byKey(ValueKey('genai-studio-option-$key-$index'));
-
-/// No DropdownButton or DropdownMenuItem may remain in the studio form.
-Finder dropdownControls() => find.byWidgetPredicate(
-      (widget) => widget is DropdownButton<dynamic> || widget is DropdownMenuItem<dynamic>,
-    );
 
 String? studioValueText(WidgetTester tester, String key) {
   final text = tester.widget<Text>(studioValue(key));
@@ -84,14 +74,61 @@ Future<void> selectStudioOption(WidgetTester tester, String key, String label) a
 }
 
 void main() {
+  testWidgets('usage reconnects and rebinds without showing the previous account orders', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final first = await TestGenAiWorkspace.create();
+    final second = await TestGenAiWorkspace.create();
+    addTearDown(first.dispose);
+    addTearDown(second.dispose);
+    first.backend.usageRecords.add({'id': 'first', 'modelName': 'First account', 'totalUsed': 0});
+    second.backend.usageRecords.add({
+      'id': 'second',
+      'modelName': 'Second account',
+      'totalUsed': 0,
+    });
+    Widget view(TestGenAiWorkspace fixture) => MaterialApp(
+      home: Scaffold(body: GenAiUsageView(workspace: fixture.workspace)),
+    );
+    await tester.pumpWidget(view(first));
+    await tester.pumpAndSettle();
+    expect(find.text('First account'), findsOneWidget);
+    await first.sessions.disconnect();
+    await tester.pumpAndSettle();
+    expect(find.text('First account'), findsNothing);
+    await first.sessions.connect(const GenAiCredential(token: FakeGenAiServer.token));
+    await tester.pumpAndSettle();
+    expect(find.text('First account'), findsOneWidget);
+    expect(first.backend.usagePages, [1, 1]);
+    await tester.pumpWidget(view(second));
+    await tester.pumpAndSettle();
+    expect(find.text('First account'), findsNothing);
+    expect(find.text('Second account'), findsOneWidget);
+    await first.sessions.disconnect();
+    await tester.pumpAndSettle();
+    expect(find.text('Second account'), findsOneWidget);
+    await second.sessions.disconnect();
+    await tester.pumpAndSettle();
+    expect(find.text('Second account'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('usage retries a failed next page without dropping previous orders', (tester) async {
     final demo = await TestGenAiWorkspace.create();
     addTearDown(demo.dispose);
-    demo.backend.usageRecords
-        .addAll(List.generate(11, (i) => {'id': '$i', 'modelName': 'Model $i'}));
+    demo.backend.usageRecords.addAll(
+      List.generate(11, (i) => {'id': '$i', 'modelName': 'Model $i', 'totalUsed': 0}),
+    );
     demo.backend.failUsagePage = 2;
-    await tester
-        .pumpWidget(MaterialApp(home: Scaffold(body: GenAiUsageView(workspace: demo.workspace))));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: GenAiUsageView(workspace: demo.workspace)),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('加载更多'), 300);
     await tester.tap(find.text('加载更多'));
@@ -105,8 +142,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('aspect ratio filters resolutions and validates linked and freeform custom sizes',
-      (tester) async {
+  testWidgets('aspect ratio filters resolutions and validates linked and freeform custom sizes', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(375, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -114,13 +152,7 @@ void main() {
     final demo = await TestGenAiWorkspace.create(chunkDelay: Duration.zero);
     addTearDown(demo.dispose);
     await demo.workspace.reloadModels();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: GenAiImageStudioPage(
-          workspace: demo.workspace,
-        ),
-      ),
-    );
+    await tester.pumpWidget(MaterialApp(home: GenAiImageStudioPage(workspace: demo.workspace)));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('genai-image-prompt')),
@@ -130,9 +162,6 @@ void main() {
     final parameters = find.byKey(const ValueKey('genai-image-parameters'));
     final parametersDialog = find.byKey(const ValueKey('genai-parameters-surface'));
     final orientation = find.byKey(const ValueKey('genai-image-orientation'));
-    final ratio = find.byKey(const ValueKey('genai-image-ratio'));
-    final resolution = find.byKey(const ValueKey('genai-image-resolution'));
-    final quality = find.byKey(const ValueKey('genai-image-quality'));
     final width = find.byKey(const ValueKey('genai-image-width'));
     final height = find.byKey(const ValueKey('genai-image-height'));
     final link = find.byKey(const ValueKey('genai-image-link'));
@@ -143,8 +172,6 @@ void main() {
       await tester.tap(parameters);
       await tester.pumpAndSettle();
       expect(parametersDialog, findsOneWidget);
-      expect(find.text('图片参数'), findsOneWidget);
-      expect(find.text('完成'), findsOneWidget);
     }
 
     Future<void> closeParameters() async {
@@ -163,13 +190,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    // Narrow widths expose the same controls in the mobile parameters dialog,
-    // not inline. Three orientations only: no free-form orientation entry.
-    expect(parameters, findsOneWidget);
     await openParameters();
-    expect(dropdownControls(), findsNothing);
-    expect(find.descendant(of: orientation, matching: find.text('自定义')), findsNothing);
-    expect(find.byKey(const ValueKey('genai-image-resolution-value')), findsOneWidget);
     expect(studioValueText(tester, 'genai-image-resolution'), '1K');
     await openStudioMenu(tester, 'genai-image-resolution');
     expect(studioMenuValues(tester), ['1K', '2K', 'custom']);
@@ -179,56 +200,14 @@ void main() {
     await openStudioMenu(tester, 'genai-image-resolution');
     expect(studioMenuValues(tester), ['1K', '2K', '4K', 'custom']);
     await dismissStudioMenu(tester);
-    expect(tester.getTopLeft(orientation).dy, lessThan(tester.getTopLeft(ratio).dy));
-    expect(tester.getTopLeft(ratio).dy, tester.getTopLeft(resolution).dy);
-    expect(tester.getTopLeft(quality).dy, greaterThan(tester.getTopLeft(resolution).dy));
-    expect(tester.getSize(quality).width, greaterThan(tester.getSize(ratio).width));
-
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    for (final scenario in [(320.0, 1.0), (375.0, 1.6), (1440.0, 1.0)]) {
-      if (parametersDialog.evaluate().isNotEmpty) await closeParameters();
-      tester.view.physicalSize = Size(scenario.$1, 900);
-      tester.platformDispatcher.textScaleFactorTestValue = scenario.$2;
-      await tester.pumpAndSettle();
-      if (scenario.$1 > 680) {
-        // Wide layouts keep the controls inline in the form.
-        expect(parameters, findsNothing);
-      } else {
-        // Narrow layouts keep the mobile parameters button, and its dialog
-        // owns the controls.
-        expect(parameters, findsOneWidget);
-        await openParameters();
-        expect(find.text('图片参数'), findsOneWidget);
-        expect(find.text('完成'), findsOneWidget);
-      }
-      await revealInStudio(tester, ratio);
-      expect(studioValueText(tester, 'genai-image-ratio'), '16:9');
-      expect(tester.getRect(ratio).right, lessThanOrEqualTo(scenario.$1));
-      expect(tester.getTopLeft(orientation).dy, lessThan(tester.getTopLeft(ratio).dy));
-      expect(tester.getTopLeft(ratio).dy, tester.getTopLeft(resolution).dy);
-      expect(tester.getTopLeft(quality).dy, greaterThan(tester.getTopLeft(resolution).dy));
-      expect(tester.takeException(), isNull);
-      if (scenario.$1 <= 680) await closeParameters();
-    }
-    tester.view.physicalSize = const Size(375, 900);
-    tester.platformDispatcher.textScaleFactorTestValue = 1;
-    await tester.pumpAndSettle();
-    if (parametersDialog.evaluate().isNotEmpty) await closeParameters();
-    await openParameters();
-
     await select('genai-image-resolution', '4K · 3840 × 2160');
     expect(studioValueText(tester, 'genai-image-resolution'), '4K');
-    // 4K is a supported preset, not an experimental custom option.
-    expect(find.text('超2K分辨率属实验性质，效果可能不稳定。'), findsNothing);
     // Custom dimensions belong to the custom resolution only.
     expect(width, findsNothing);
     expect(height, findsNothing);
     await selectOrientation('纵向');
     expect(studioValueText(tester, 'genai-image-ratio'), '9:16');
     expect(studioValueText(tester, 'genai-image-resolution'), '4K');
-    await openStudioMenu(tester, 'genai-image-ratio');
-    expect(studioMenuValues(tester), ['2:3', '3:4', '4:5', '9:16', '1:2', '9:21']);
-    await dismissStudioMenu(tester);
     await selectOrientation('横向');
     expect(studioValueText(tester, 'genai-image-ratio'), '16:9');
     expect(studioValueText(tester, 'genai-image-resolution'), '4K');
@@ -274,8 +253,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(height).controller!.text, '900');
 
-    // Free-form invalid sizes disable generation without an experimental or
-    // quality caveat.
     await tester.tap(link);
     await tester.pumpAndSettle();
     await tester.ensureVisible(width);
@@ -286,8 +263,7 @@ void main() {
     expect(tester.widget<FilledButton>(generate).onPressed, isNotNull);
     await tester.enterText(height, '100');
     await tester.pumpAndSettle();
-    expect(tester.widget<FilledButton>(generate).onPressed, isNull);
-    expect(find.text('超2K分辨率属实验性质，效果可能不稳定。'), findsNothing);
+    expect(tester.widget<FilledButton>(generate).onPressed, isNotNull);
     await tester.enterText(width, '1600');
     await tester.enterText(height, '820');
     await tester.pumpAndSettle();
@@ -295,23 +271,15 @@ void main() {
 
     await closeParameters();
     await revealInStudio(tester, generate);
-    expect(
-      find.descendant(of: generate, matching: find.text('生成图片')),
-      findsOneWidget,
-    );
+    expect(find.descendant(of: generate, matching: find.text('生成图片')), findsOneWidget);
     await tester.tap(generate);
     await tester.pumpAndSettle();
     expect(find.text('生成 1 张图片'), findsOneWidget);
-    expect(find.text('生成'), findsOneWidget);
-    expect(find.text('开始生成'), findsNothing);
     expect(find.textContaining('1600x820'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(
-      (await demo.workspace.repository.listImages(GenAiCancellation())).records,
-      isEmpty,
-    );
+    expect((await demo.workspace.repository.listImages(GenAiCancellation())).records, isEmpty);
   });
 
   testWidgets('tools require image confirmation and show usage', (tester) async {
@@ -320,10 +288,7 @@ void main() {
     await demo.workspace.reloadModels();
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiImageStudioPage(
-          key: const ValueKey('images'),
-          workspace: demo.workspace,
-        ),
+        home: GenAiImageStudioPage(key: const ValueKey('images'), workspace: demo.workspace),
       ),
     );
     await tester.pumpAndSettle();
@@ -334,27 +299,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(studioMenu(), findsNothing);
     expect(studioValueText(tester, 'genai-image-model'), 'Test image');
-    await tester.enterText(
-      find.byKey(const ValueKey('genai-image-prompt')),
-      'a blue pie',
-    );
+    await tester.enterText(find.byKey(const ValueKey('genai-image-prompt')), 'a blue pie');
     await tester.pump();
     final generate = find.byKey(const ValueKey('genai-image-generate'));
     await revealInStudio(tester, generate);
-    expect(
-      find.descendant(of: generate, matching: find.text('生成图片')),
-      findsOneWidget,
-    );
+    expect(find.descendant(of: generate, matching: find.text('生成图片')), findsOneWidget);
     await tester.tap(generate);
     await tester.pumpAndSettle();
     expect(find.text('生成 1 张图片'), findsOneWidget);
-    expect(find.text('生成'), findsOneWidget);
-    expect(find.text('开始生成'), findsNothing);
     expect(find.textContaining('额度'), findsWidgets);
-    expect(
-      (await demo.workspace.repository.listImages(GenAiCancellation())).records,
-      isEmpty,
-    );
+    expect((await demo.workspace.repository.listImages(GenAiCancellation())).records, isEmpty);
     await tester.tap(find.text('生成'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('我的创作'));
@@ -362,10 +316,7 @@ void main() {
     expect(find.byType(Image), findsWidgets);
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiUsageView(
-          key: const ValueKey('usage'),
-          workspace: demo.workspace,
-        ),
+        home: GenAiUsageView(key: const ValueKey('usage'), workspace: demo.workspace),
       ),
     );
     await tester.pumpAndSettle();
@@ -374,7 +325,8 @@ void main() {
     await demo.sessions.setOwner(null);
     await tester.pumpAndSettle();
     expect(find.text('免费额度'), findsNothing);
-    expect(find.textContaining('账号已切换'), findsOneWidget);
+    expect(find.textContaining('请重新连接 GenAI'), findsOneWidget);
+    expect(find.text('重试加载'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

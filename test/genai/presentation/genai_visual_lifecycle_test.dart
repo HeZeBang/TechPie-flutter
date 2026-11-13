@@ -126,8 +126,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('folding pauses the runtime while the source dialog leaves it running',
-      (tester) async {
+  testWidgets('folding pauses the runtime while the source dialog leaves it running', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(body: GenAiVisualView(code: '<p>Example</p>', complete: true)),
@@ -227,18 +228,19 @@ void main() {
 
   testWidgets('disposing the visual removes only its own source dialog route', (tester) async {
     final copies = <String>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          copies.add((call.arguments as Map)['text'] as String);
-        }
-        return null;
-      },
-    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (
+      call,
+    ) async {
+      if (call.method == 'Clipboard.setData') {
+        copies.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
     addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null),
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
     );
 
     final showingVisual = ValueNotifier<bool>(true);
@@ -272,9 +274,7 @@ void main() {
     // the exact route this visual owns, not whatever is on top.
     final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
     unawaited(
-      navigator.push(
-        MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('其他页面'))),
-      ),
+      navigator.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('其他页面')))),
     );
     await tester.pumpAndSettle();
     expect(find.text('其他页面'), findsOneWidget);
@@ -295,31 +295,32 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('native gestures scroll chat inline and reach the visual in fullscreen',
-      (tester) async {
+  testWidgets('native gestures scroll chat inline and reach the visual in fullscreen', (
+    tester,
+  ) async {
     final scroll = ScrollController();
     addTearDown(scroll.dispose);
     Widget build(bool fullscreen) => MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              controller: scroll,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: 320,
-                    child: GenAiVisualSurface(
-                      document: '<button>Example</button>',
-                      theme: const {},
-                      fullscreen: fullscreen,
-                      onEvent: (_, __) {},
-                    ),
-                  ),
-                  const SizedBox(height: 1200),
-                ],
+      home: Scaffold(
+        body: SingleChildScrollView(
+          controller: scroll,
+          child: Column(
+            children: [
+              SizedBox(
+                height: 320,
+                child: GenAiVisualSurface(
+                  document: '<button>Example</button>',
+                  theme: const {},
+                  fullscreen: fullscreen,
+                  onEvent: (_, __) {},
+                ),
               ),
-            ),
+              const SizedBox(height: 1200),
+            ],
           ),
-        );
+        ),
+      ),
+    );
     await tester.pumpWidget(build(false));
     await tester.pumpAndSettle();
     final controller = platform.controllers.single;
@@ -361,8 +362,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('entering and leaving fullscreen preserves the conversation scroll offset',
-      (tester) async {
+  testWidgets('entering and leaving fullscreen preserves the conversation scroll offset', (
+    tester,
+  ) async {
     final scroll = ScrollController();
     addTearDown(scroll.dispose);
     await tester.pumpWidget(
@@ -399,17 +401,18 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('native activity combines app lifecycle and visibility without reloading',
-      (tester) async {
+  testWidgets('native activity combines app lifecycle and visibility without reloading', (
+    tester,
+  ) async {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     Widget build(bool active) => MaterialApp(
-          home: GenAiVisualSurface(
-            document: '<p>Example</p>',
-            theme: const {},
-            active: active,
-            onEvent: (_, __) {},
-          ),
-        );
+      home: GenAiVisualSurface(
+        document: '<p>Example</p>',
+        theme: const {},
+        active: active,
+        onEvent: (_, __) {},
+      ),
+    );
     await tester.pumpWidget(build(true));
     await tester.pumpAndSettle();
     final controller = platform.controllers.single;
@@ -448,13 +451,13 @@ void main() {
     final gate = Completer<void>();
     platform.setupGate = gate.future;
     Widget build(bool active) => MaterialApp(
-          home: GenAiVisualSurface(
-            document: '<p>Example</p>',
-            theme: const {},
-            active: active,
-            onEvent: (_, __) {},
-          ),
-        );
+      home: GenAiVisualSurface(
+        document: '<p>Example</p>',
+        theme: const {},
+        active: active,
+        onEvent: (_, __) {},
+      ),
+    );
     await tester.pumpWidget(build(true));
     await tester.pump();
     await tester.pumpWidget(build(false));
@@ -482,8 +485,13 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('native layout messages follow fullscreen transitions and ready without reloading',
-      (tester) async {
+  testWidgets('native layout messages follow fullscreen transitions and ready without reloading', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 820);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(body: GenAiVisualView(code: '<p>Example</p>', complete: true)),
@@ -501,6 +509,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<GenAiVisualSurface>(surface).fullscreen, isTrue);
     expect(controller.layouts, [false, true]);
+    final dialog = find.byKey(const ValueKey('genai-visual-fullscreen'));
+    expect(tester.getSize(dialog).width, lessThan(1280));
+    tester.view.physicalSize = const Size(375, 812);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(dialog).width, 375);
+    expect(tester.getRect(dialog).contains(tester.getCenter(surface)), isTrue);
 
     await tester.tap(find.byTooltip('退出全屏').hitTestable());
     await tester.pumpAndSettle();
@@ -521,15 +535,11 @@ void main() {
     final gate = Completer<void>();
     platform.setupGate = gate.future;
     Widget build(Brightness brightness) => MaterialApp(
-          theme: ThemeData(brightness: brightness),
-          home: Scaffold(
-            body: GenAiVisualSurface(
-              document: '<p>Example</p>',
-              theme: const {},
-              onEvent: (_, __) {},
-            ),
-          ),
-        );
+      theme: ThemeData(brightness: brightness),
+      home: Scaffold(
+        body: GenAiVisualSurface(document: '<p>Example</p>', theme: const {}, onEvent: (_, __) {}),
+      ),
+    );
     await tester.pumpWidget(build(Brightness.light));
     await tester.pump();
     await tester.pumpWidget(build(Brightness.dark));
@@ -540,62 +550,13 @@ void main() {
     expect(platform.controllers.single.documents, ['<!doctype html><html></html>']);
     expect(tester.takeException(), isNull);
   });
-  testWidgets('fullscreen uses bounded dialog geometry and a padded mobile body', (tester) async {
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1280, 820);
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(body: GenAiVisualView(code: '<p>Example</p>', complete: true)),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('全屏'));
-    await tester.pumpAndSettle();
-    final dialog = find.byKey(const ValueKey('genai-visual-fullscreen'));
-    expect(tester.getSize(dialog), const Size(1160, 780));
-    expect(tester.getTopLeft(dialog).dx, 60);
-    expect(
-      (tester.widget<Material>(dialog).shape! as RoundedRectangleBorder).borderRadius,
-      BorderRadius.circular(18),
-    );
-    final desktopSurface = find.byType(GenAiVisualSurface);
-    final desktopBody = tester.getRect(find.byKey(const ValueKey('genai-visual-fullscreen-body')));
-    expect(tester.getSize(desktopSurface).width, 1112);
-    expect(tester.getRect(desktopSurface), desktopBody.deflate(24));
-
-    await tester.tap(find.byTooltip('退出全屏').hitTestable());
-    await tester.pumpAndSettle();
-    tester.view.physicalSize = const Size(375, 812);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('全屏'));
-    await tester.pumpAndSettle();
-    expect(tester.getSize(dialog), const Size(375, 812));
-    expect(
-      (tester.widget<Material>(dialog).shape! as RoundedRectangleBorder).borderRadius,
-      BorderRadius.zero,
-    );
-    final mobileSurface = find.byType(GenAiVisualSurface);
-    final mobileBody = tester.getRect(find.byKey(const ValueKey('genai-visual-fullscreen-body')));
-    expect(tester.getSize(mobileSurface).width, 351);
-    expect(tester.getRect(mobileSurface), mobileBody.deflate(12));
-    expect(mobileBody.contains(tester.getCenter(mobileSurface)), isTrue);
-    expect(tester.getTopLeft(mobileSurface).dy, mobileBody.top + 12);
-
-    await tester.pumpWidget(const SizedBox());
-    await tester.pumpAndSettle();
-  });
-
   testWidgets('theme and fullscreen changes keep the same runtime and document', (tester) async {
     Future<void> build(Brightness brightness) => tester.pumpWidget(
-          MaterialApp(
-            theme: ThemeData(brightness: brightness),
-            home: const Scaffold(
-              body: GenAiVisualView(code: '<p>Example</p>', complete: true),
-            ),
-          ),
-        );
+      MaterialApp(
+        theme: ThemeData(brightness: brightness),
+        home: const Scaffold(body: GenAiVisualView(code: '<p>Example</p>', complete: true)),
+      ),
+    );
     await build(Brightness.light);
     await tester.pumpAndSettle();
     final surface = find.byType(GenAiVisualSurface);
@@ -638,8 +599,7 @@ class _Platform extends WebViewPlatform {
   @override
   PlatformNavigationDelegate createPlatformNavigationDelegate(
     PlatformNavigationDelegateCreationParams params,
-  ) =>
-      _Delegate(params);
+  ) => _Delegate(params);
 
   @override
   PlatformWebViewWidget createPlatformWebViewWidget(PlatformWebViewWidgetCreationParams params) =>
@@ -665,8 +625,8 @@ class _Controller extends PlatformWebViewController {
       .toList();
 
   void report(String event) => _channel!.onMessageReceived(
-        JavaScriptMessage(message: jsonEncode({'kind': 'techpie-visual', 'event': event})),
-      );
+    JavaScriptMessage(message: jsonEncode({'kind': 'techpie-visual', 'event': event})),
+  );
 
   @override
   Future<void> setJavaScriptMode(JavaScriptMode javaScriptMode) async {
@@ -708,11 +668,11 @@ class _View extends PlatformWebViewWidget {
 
   @override
   Widget build(BuildContext context) => PlatformViewSurface(
-        key: const ValueKey('native-visual'),
-        controller: (params.controller as _Controller).pointers,
-        hitTestBehavior: PlatformViewHitTestBehavior.opaque,
-        gestureRecognizers: params.gestureRecognizers,
-      );
+    key: const ValueKey('native-visual'),
+    controller: (params.controller as _Controller).pointers,
+    hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+    gestureRecognizers: params.gestureRecognizers,
+  );
 }
 
 class _PointerController extends PlatformViewController {

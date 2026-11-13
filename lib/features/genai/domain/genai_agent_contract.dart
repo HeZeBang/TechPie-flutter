@@ -2,19 +2,20 @@ import 'dart:convert';
 
 import 'genai_cancellation.dart';
 import 'genai_context_usage.dart';
-import 'genai_contract.dart';
 import 'genai_failure.dart';
 
-typedef GenAiAgentPrepare = Future<GenAiAgentPreparedTool> Function(
-  Map<String, Object?> arguments,
-  GenAiAgentToolContext context,
-);
+typedef GenAiAgentPrepare =
+    Future<GenAiAgentPreparedTool> Function(
+      Map<String, Object?> arguments,
+      GenAiAgentToolContext context,
+    );
 
-typedef GenAiAgentApproval = Future<bool> Function(
-  GenAiAgentTool tool,
-  GenAiAgentToolCall call,
-  GenAiAgentPreparedTool prepared,
-);
+typedef GenAiAgentApproval =
+    Future<bool> Function(
+      GenAiAgentTool tool,
+      GenAiAgentToolCall call,
+      GenAiAgentPreparedTool prepared,
+    );
 
 /// A closed, application-owned capability. Preparation may read data but must
 /// never book, charge, or otherwise mutate state before approval.
@@ -27,9 +28,9 @@ final class GenAiAgentTool {
     Map<String, Object?> annotations = const {},
     required this.prepare,
     this.maxApprovalsPerRun,
-  })  : inputSchema = genAiAgentJsonMap(inputSchema),
-        outputSchema = outputSchema == null ? null : genAiAgentJsonMap(outputSchema),
-        annotations = genAiAgentJsonMap(annotations) {
+  }) : inputSchema = genAiAgentJsonMap(inputSchema),
+       outputSchema = outputSchema == null ? null : genAiAgentJsonMap(outputSchema),
+       annotations = genAiAgentJsonMap(annotations) {
     if (!RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(name) ||
         description.trim().isEmpty ||
         inputSchema['type'] != 'object' ||
@@ -53,12 +54,12 @@ final class GenAiAgentTool {
   final int? maxApprovalsPerRun;
 
   Map<String, Object?> toJson() => {
-        'name': name,
-        'description': description,
-        'inputSchema': inputSchema,
-        if (outputSchema != null) 'outputSchema': outputSchema,
-        if (annotations.isNotEmpty) 'annotations': annotations,
-      };
+    'name': name,
+    'description': description,
+    'inputSchema': inputSchema,
+    if (outputSchema != null) 'outputSchema': outputSchema,
+    if (annotations.isNotEmpty) 'annotations': annotations,
+  };
 }
 
 /// MCP-style result envelope, independent of TechPie's durable turn protocol.
@@ -68,8 +69,8 @@ final class GenAiToolResult {
     List<Map<String, Object?>> content = const [],
     Map<String, Object?>? structuredContent,
     this.isError = false,
-  })  : content = List.unmodifiable(content.map(genAiAgentJsonMap)),
-        structuredContent = structuredContent == null ? null : genAiAgentJsonMap(structuredContent);
+  }) : content = List.unmodifiable(content.map(genAiAgentJsonMap)),
+       structuredContent = structuredContent == null ? null : genAiAgentJsonMap(structuredContent);
 
   factory GenAiToolResult.fromValue(Object? value) {
     final data = value is Map<String, Object?> ? value : <String, Object?>{'value': value};
@@ -86,23 +87,21 @@ final class GenAiToolResult {
   final bool isError;
 
   Map<String, Object?> toJson() => {
-        'content': content,
-        if (structuredContent != null) 'structuredContent': structuredContent,
-        'isError': isError,
-      };
+    'content': content,
+    if (structuredContent != null) 'structuredContent': structuredContent,
+    'isError': isError,
+  };
 
   /// Keep existing campus receipts compact and readable by older clients.
   Map<String, Object?> get recordValue {
     final data = structuredContent;
-    final onlyFallback = content.isEmpty ||
+    final onlyFallback =
+        content.isEmpty ||
         (content.length == 1 &&
             content.single['type'] == 'text' &&
             content.single['text'] == jsonEncode(data));
     if (data != null && onlyFallback) return data;
-    return {
-      if (data != null) 'structuredContent': data,
-      'content': content,
-    };
+    return {if (data != null) 'structuredContent': data, 'content': content};
   }
 }
 
@@ -115,8 +114,8 @@ final class GenAiAgentPreparedTool {
     this.executionTimeout,
     this.effectKey,
     Map<String, Object?> details = const {},
-  })  : _execute = execute,
-        details = genAiAgentJsonMap(details);
+  }) : _execute = execute,
+       details = genAiAgentJsonMap(details);
 
   final Future<Object?> Function() _execute;
 
@@ -140,10 +139,8 @@ final class GenAiAgentPreparedTool {
 }
 
 final class GenAiAgentToolContext {
-  const GenAiAgentToolContext({
-    required this.cancellation,
-    required bool Function() isCurrent,
-  }) : _isCurrent = isCurrent;
+  const GenAiAgentToolContext({required this.cancellation, required bool Function() isCurrent})
+    : _isCurrent = isCurrent;
 
   final GenAiCancellation cancellation;
   final bool Function() _isCurrent;
@@ -169,11 +166,7 @@ final class GenAiAgentToolCall {
   final String name;
   final Map<String, Object?> arguments;
 
-  Map<String, Object?> toJson() => {
-        'call_id': id,
-        'name': name,
-        'arguments': arguments,
-      };
+  Map<String, Object?> toJson() => {'call_id': id, 'name': name, 'arguments': arguments};
 }
 
 /// Messages are deliberately authored by the adapter, never raw exceptions,
@@ -206,10 +199,7 @@ final class GenAiAgentToolRegistry {
   void validate(GenAiAgentToolCall call) {
     final tool = _tools[call.name];
     if (tool == null) {
-      throw const GenAiAgentToolException(
-        'unknown_tool',
-        'Choose a listed tool.',
-      );
+      throw const GenAiAgentToolException('unknown_tool', 'Choose a listed tool.');
     }
     _validate(call.arguments, tool.inputSchema, 'arguments', 0);
   }
@@ -230,12 +220,7 @@ final class GenAiAgentToolRegistry {
   static Never _invalid(String path, String reason) =>
       throw GenAiAgentToolException('invalid_arguments', '$path $reason');
 
-  static void _validate(
-    Object? value,
-    Map<String, Object?> schema,
-    String path,
-    int depth,
-  ) {
+  static void _validate(Object? value, Map<String, Object?> schema, String path, int depth) {
     if (depth > 12) _invalid(path, 'is too deeply nested.');
     final enumeration = schema['enum'];
     if (enumeration is List && !enumeration.contains(value)) {
@@ -331,7 +316,6 @@ final class GenAiAgentEvent {
     this.failure,
     this.partialText,
     this.contextUsage,
-    this.history = const [],
   });
 
   final GenAiAgentEventKind kind;
@@ -345,7 +329,6 @@ final class GenAiAgentEvent {
   /// Inert, explicitly unverified output retained after format recovery fails.
   final String? partialText;
   final GenAiContextUsage? contextUsage;
-  final List<GenAiMessage> history;
 }
 
 /// Tool names that can change state outside the app. Kept in one place so the
@@ -395,9 +378,7 @@ Map<String, Object?> genAiAgentJsonMap(Map<String, Object?> value) =>
 Object? _freeze(Object? value) {
   if (value is Map<String, dynamic>) {
     return Map<String, Object?>.unmodifiable(
-      value.map(
-        (key, child) => MapEntry(key, _freeze(child)),
-      ),
+      value.map((key, child) => MapEntry(key, _freeze(child))),
     );
   }
   if (value is List) return List<Object?>.unmodifiable(value.map(_freeze));

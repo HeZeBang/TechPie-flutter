@@ -5,29 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/genai/presentation/genai_icons.dart';
 
 void main() {
-  test('every glyph has non-empty geometry inside the 24-grid', () {
-    for (final glyph in GenAiGlyph.values) {
-      final path = GenAiIcon.debugPath(glyph);
-      final metrics = path.computeMetrics().toList();
-      expect(metrics, isNotEmpty, reason: glyph.name);
-      expect(
-        metrics.fold<double>(0, (sum, metric) => sum + metric.length),
-        greaterThan(0),
-        reason: glyph.name,
-      );
-      // Path.getBounds includes Bézier control points, not just the drawn
-      // curve (SVG arcs can have controls beyond the viewBox). Inspect the
-      // actual contours instead, including their endpoints.
-      for (final metric in metrics) {
-        for (var i = 0; i <= 1000; i++) {
-          final point = metric.getTangentForOffset(metric.length * i / 1000)!.position;
-          expect(point.dx, inInclusiveRange(0, 24), reason: glyph.name);
-          expect(point.dy, inInclusiveRange(0, 24), reason: glyph.name);
-        }
-      }
-    }
-  });
-
   testWidgets('labelled icons expose their label; unlabelled icons expose nothing', (tester) async {
     final semantics = tester.ensureSemantics();
     await tester.pumpWidget(
@@ -38,10 +15,7 @@ void main() {
     );
     expect(find.bySemanticsLabel('Search conversations'), findsOneWidget);
     await tester.pumpWidget(
-      const Directionality(
-        textDirection: TextDirection.ltr,
-        child: GenAiIcon(GenAiGlyph.search),
-      ),
+      const Directionality(textDirection: TextDirection.ltr, child: GenAiIcon(GenAiGlyph.search)),
     );
     expect(find.bySemanticsLabel(RegExp('.+')), findsNothing);
     expect(

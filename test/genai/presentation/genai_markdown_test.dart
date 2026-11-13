@@ -12,64 +12,96 @@ import 'package:techpie/features/genai/presentation/markdown/genai_markdown.dart
 import 'package:techpie/widgets/adaptive_feedback.dart';
 
 void main() {
-  Finder genAiIcon(GenAiGlyph glyph) => find.byWidgetPredicate(
-        (widget) => widget is GenAiIcon && widget.glyph == glyph,
-      );
+  test('large source remains complete without tokenizing an unbounded document', () {
+    const highlighter = GenAiSyntaxHighlighter(brightness: Brightness.dark);
+    final source = '<div data-value="x">&amp; 中文</div>\n' * 10000;
+    final spans = highlighter.highlight(code: source, language: 'html');
+    expect(spans.map((span) => span.text).join(), source);
+    expect(spans.length, lessThan(100));
+    const json = '{"key"   : "value"}';
+    final highlighted = highlighter.highlight(code: json, language: 'json');
+    expect(highlighted.map((span) => span.text).join(), json);
+    expect(
+      highlighted.any((s) => s.text == '"key"' && s.style?.color == SyntaxTheme.dark.property),
+      isTrue,
+    );
+  });
+
+  Finder genAiIcon(GenAiGlyph glyph) =>
+      find.byWidgetPredicate((widget) => widget is GenAiIcon && widget.glyph == glyph);
 
   Widget buildApp(Widget child, {ThemeData? theme}) {
     return MaterialApp(
       theme: theme,
-      builder: (_, child) => AdaptiveFeedbackHost(
-        key: adaptiveFeedbackHostKey,
-        child: child!,
-      ),
-      home: Scaffold(
-        body: SingleChildScrollView(
-          child: child,
-        ),
-      ),
+      builder: (_, child) => AdaptiveFeedbackHost(key: adaptiveFeedbackHostKey, child: child!),
+      home: Scaffold(body: SingleChildScrollView(child: child)),
     );
   }
 
-  testWidgets('fullscreen chart retains its snapshot after inline source changes and disposal',
-      (tester) async {
-    var code = '{"type":"bar","labels":["A"],"series":[{"name":"Saved","values":[2]}]}';
-    var visible = true;
-    late StateSetter update;
-    await tester.pumpWidget(
-      buildApp(
-        StatefulBuilder(
-          builder: (context, setState) {
-            update = setState;
-            return visible ? GenAiChartView(code: code) : const SizedBox();
-          },
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('全屏查看'));
-    await tester.pumpAndSettle();
-    update(() => code = 'invalid');
-    await tester.pumpAndSettle();
-    update(() => visible = false);
-    await tester.pumpAndSettle();
-    tester.view.physicalSize = const Size(1000, 700);
+  testWidgets('fullscreen diagrams keep their snapshot after the inline answer is replaced', (
+    tester,
+  ) async {
+    const chart = '{"type":"bar","labels":["A"],"series":[{"name":"Saved","values":[2]}]}';
+    const flow = 'graph LR; A[First] --> B[Second]';
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
-    await tester.pumpAndSettle();
-    expect(find.byType(BarChart), findsOneWidget);
-    expect(find.text('Saved'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    for (final mermaid in [false, true]) {
+      var source = mermaid ? flow : chart;
+      var visible = true;
+      late StateSetter update;
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpWidget(
+        buildApp(
+          StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              if (!visible) return const SizedBox.shrink();
+              return mermaid ? GenAiMermaidView(code: source) : GenAiChartView(code: source);
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('全屏查看'));
+      await tester.pumpAndSettle();
+      update(() => source = 'invalid');
+      await tester.pumpAndSettle();
+      update(() => visible = false);
+      await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(1000, 700);
+      await tester.pumpAndSettle();
+      if (mermaid) {
+        expect(
+          find.byWidgetPredicate((w) => w is CustomPaint && w.painter is FlowchartPainter),
+          findsOneWidget,
+        );
+      } else {
+        expect(find.byType(BarChart), findsOneWidget);
+        expect(find.text('Saved'), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
+      if (mermaid) {
+        await tester.tap(find.byTooltip('关闭'));
+      } else {
+        await tester.tap(find.byType(CloseButton));
+      }
+      await tester.pumpAndSettle();
+    }
   });
 
   testWidgets('chart reports clipboard failures instead of throwing', (tester) async {
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform,
-        (call) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (
+      call,
+    ) async {
       if (call.method == 'Clipboard.setData') throw PlatformException(code: 'denied');
       return null;
     });
     addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null),
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
     );
     await tester.pumpWidget(buildApp(const GenAiChartView(code: 'invalid')));
     await tester.tap(find.byTooltip('更多操作'));
@@ -83,37 +115,34 @@ void main() {
   testWidgets('streaming a new reply reuses the rendered widgets of older replies', (tester) async {
     final history = List.generate(
       12,
-      (index) => 'Reply $index with **formatted text** and inline \$x^2\$.\n\n'
+      (index) =>
+          'Reply $index with **formatted text** and inline \$x^2\$.\n\n'
           '```dart\nfinal answer = $index;\n```\n\n'
           '- First item\n- Second item',
     );
     Widget conversation(String stream, {int latestVisual = 1}) => buildApp(
-          Column(
-            children: [
-              for (var index = 0; index < history.length; index++)
-                GenAiMarkdown(
-                  key: ValueKey(index),
-                  data: history[index],
-                  latestVisual: ('streaming', latestVisual),
-                ),
-              GenAiMarkdown(data: stream),
-            ],
-          ),
-        );
+      Column(
+        children: [
+          for (var index = 0; index < history.length; index++)
+            GenAiMarkdown(
+              key: ValueKey(index),
+              data: history[index],
+              latestVisual: ('streaming', latestVisual),
+            ),
+          GenAiMarkdown(data: stream),
+        ],
+      ),
+    );
     await tester.pumpWidget(conversation('Starting'));
     final originalBlocks = tester
-        .widgetList<GenAiStandardCodeBlock>(
-          find.byType(GenAiStandardCodeBlock),
-        )
+        .widgetList<GenAiStandardCodeBlock>(find.byType(GenAiStandardCodeBlock))
         .toList();
     expect(originalBlocks, hasLength(history.length));
 
     for (var chunk = 1; chunk <= 6; chunk++) {
       await tester.pumpWidget(conversation('Streaming chunk $chunk', latestVisual: chunk));
       final currentBlocks = tester
-          .widgetList<GenAiStandardCodeBlock>(
-            find.byType(GenAiStandardCodeBlock),
-          )
+          .widgetList<GenAiStandardCodeBlock>(find.byType(GenAiStandardCodeBlock))
           .toList();
       for (var index = 0; index < originalBlocks.length; index++) {
         expect(
@@ -127,16 +156,17 @@ void main() {
     }
   });
 
-  testWidgets('cached Markdown uses the latest link callback without rebuilding content',
-      (tester) async {
+  testWidgets('cached Markdown uses the latest link callback without rebuilding content', (
+    tester,
+  ) async {
     final tapped = <String>[];
     Widget content(String callback) => buildApp(
-          GenAiMarkdown(
-            data: '[Open docs](https://example.com)\n\n```dart\nfinal value = 1;\n```',
-            selectable: false,
-            onTapLink: (_, href, __) => tapped.add('$callback:$href'),
-          ),
-        );
+      GenAiMarkdown(
+        data: '[Open docs](https://example.com)\n\n```dart\nfinal value = 1;\n```',
+        selectable: false,
+        onTapLink: (_, href, __) => tapped.add('$callback:$href'),
+      ),
+    );
     await tester.pumpWidget(content('first'));
     final original = tester.widget<GenAiStandardCodeBlock>(find.byType(GenAiStandardCodeBlock));
     await tester.tap(find.text('Open docs', findRichText: true));
@@ -152,21 +182,22 @@ void main() {
     );
   });
 
-  testWidgets('cached document refreshes typography and streamed reference definitions',
-      (tester) async {
+  testWidgets('cached document refreshes typography and streamed reference definitions', (
+    tester,
+  ) async {
     final tapped = <String?>[];
     Widget content(String data, Color color) => buildApp(
-          Builder(
-            builder: (context) => GenAiMarkdown(
-              data: data,
-              selectable: false,
-              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                p: TextStyle(color: color),
-              ),
-              onTapLink: (_, href, __) => tapped.add(href),
-            ),
-          ),
-        );
+      Builder(
+        builder: (context) => GenAiMarkdown(
+          data: data,
+          selectable: false,
+          styleSheet: MarkdownStyleSheet.fromTheme(
+            Theme.of(context),
+          ).copyWith(p: TextStyle(color: color)),
+          onTapLink: (_, href, __) => tapped.add(href),
+        ),
+      ),
+    );
     const data = 'Paragraph\n\n[Open docs][guide]';
     Color? paragraphColor() => tester
         .widget<RichText>(find.text('Paragraph', findRichText: true))
@@ -185,15 +216,16 @@ void main() {
   });
 
   testWidgets('unchanged Markdown refreshes visual mode and attachment rendering', (tester) async {
-    const data = '![attachment](https://example.com/image.png)\n\n'
+    const data =
+        '![attachment](https://example.com/image.png)\n\n'
         '```techpie-visual\n<p>Still streaming';
     Widget content(bool visual, String label) => buildApp(
-          GenAiMarkdown(
-            data: data,
-            interactiveVisuals: visual,
-            imageBuilder: (_, __, ___) => Text(label),
-          ),
-        );
+      GenAiMarkdown(
+        data: data,
+        interactiveVisuals: visual,
+        imageBuilder: (_, __, ___) => Text(label),
+      ),
+    );
     await tester.pumpWidget(content(false, 'first renderer'));
     expect(find.text('first renderer'), findsOneWidget);
     expect(find.text('正在生成交互示例…'), findsNothing);
@@ -208,14 +240,9 @@ void main() {
   testWidgets('empty streamed task items render and tear down safely', (tester) async {
     for (final input in ['- [x] ', '- [ ] ', '> - [x] ', '1. [x] ']) {
       for (var length = 1; length <= input.length; length++) {
-        await tester.pumpWidget(
-          buildApp(GenAiMarkdown(data: input.substring(0, length))),
-        );
+        await tester.pumpWidget(buildApp(GenAiMarkdown(data: input.substring(0, length))));
         expect(tester.takeException(), isNull);
-        expect(
-          find.byKey(const ValueKey('genai-markdown-fallback')),
-          findsNothing,
-        );
+        expect(find.byKey(const ValueKey('genai-markdown-fallback')), findsNothing);
       }
       await tester.pumpWidget(buildApp(GenAiMarkdown(data: '${input}finished')));
       await tester.pumpWidget(const SizedBox());
@@ -228,22 +255,10 @@ void main() {
     final normalized = normalizeMermaid('graph LR; A[Start] --> B[Done]; B --> C[End]');
     expect(parser.parse(normalized), isNotNull);
     expect(normalized, contains('graph LR\n'));
-    expect(
-      normalizeMermaid('graph LR; A[First; second] --> B[Done]'),
-      contains('First; second'),
-    );
-    expect(
-      normalizeMermaid('graph LR; A["Quoted; label"] --> B[Done]'),
-      contains('Quoted; label'),
-    );
-    expect(
-      normalizeMermaid('graph LR\n%% ignored; Z --> Y\nA --> B'),
-      isNot(contains('Z')),
-    );
-    expect(
-      normalizeMermaid('graph LR; A -->|Yes; proceed| B'),
-      contains('Yes; proceed'),
-    );
+    expect(normalizeMermaid('graph LR; A[First; second] --> B[Done]'), contains('First; second'));
+    expect(normalizeMermaid('graph LR; A["Quoted; label"] --> B[Done]'), contains('Quoted; label'));
+    expect(normalizeMermaid('graph LR\n%% ignored; Z --> Y\nA --> B'), isNot(contains('Z')));
+    expect(normalizeMermaid('graph LR; A -->|Yes; proceed| B'), contains('Yes; proceed'));
   });
 
   test('generated Mermaid IDs never collide with IDs already in the source', () {
@@ -260,10 +275,12 @@ void main() {
     final shifted = normalizeMermaid('n0[开始] --> 中文[结束]\nn1[中间] --> 英文[完成]');
     expect(shifted, contains('n2[结束]'));
     expect(shifted, contains('n3[完成]'));
-    expect(
-      const MermaidParser().parse(shifted)!.nodes.map((node) => node.id).toSet(),
-      {'n0', 'n1', 'n2', 'n3'},
-    );
+    expect(const MermaidParser().parse(shifted)!.nodes.map((node) => node.id).toSet(), {
+      'n0',
+      'n1',
+      'n2',
+      'n3',
+    });
   });
 
   testWidgets('renders inline and block LaTeX equations in KaTeX-HTML style', (tester) async {
@@ -278,11 +295,7 @@ f(x) = \\sum_{i=1}^n x_i
 ```
 ''';
 
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: markdown),
-      ),
-    );
+    await tester.pumpWidget(buildApp(const GenAiMarkdown(data: markdown)));
     await tester.pumpAndSettle();
 
     // Verify Math widgets are rendered (2 inline + 2 display math)
@@ -292,100 +305,34 @@ f(x) = \\sum_{i=1}^n x_i
     expect(genAiIcon(GenAiGlyph.copy), findsNothing);
   });
 
-  testWidgets('renders interactive BarChart, LineChart, and PieChart from code blocks',
-      (tester) async {
-    const barChartMarkdown = '''
-```chart
-{
-  "type": "bar",
-  "title": "月度销售",
-  "labels": ["一月", "二月", "三月"],
-  "datasets": [
-    {
-      "label": "2024",
-      "data": [100, 200, 150]
+  testWidgets('chart fences dispatch by type and can switch to their original data', (
+    tester,
+  ) async {
+    const samples = [
+      ('chart', '{"type":"bar","labels":["Jan"],"datasets":[{"data":[100]}]}', BarChart),
+      ('chart', '{"type":"line","labels":["08:00"],"datasets":[{"data":[18.5]}]}', LineChart),
+      ('chart:pie', '{"data":[{"name":"Dart","value":50},{"name":"Go","value":20}]}', PieChart),
+    ];
+    for (final (fence, data, renderer) in samples) {
+      await tester.pumpWidget(buildApp(GenAiMarkdown(data: '```$fence\n$data\n```')));
+      await tester.pumpAndSettle();
+      expect(find.byType(renderer), findsOneWidget);
     }
-  ]
-}
-```
-''';
-
-    const lineChartMarkdown = '''
-```chart
-{
-  "type": "line",
-  "title": "温度趋势",
-  "labels": ["08:00", "12:00", "16:00"],
-  "datasets": [
-    {
-      "label": "气温",
-      "data": [18.5, 26.0, 22.3]
-    }
-  ]
-}
-```
-''';
-
-    const pieChartMarkdown = '''
-```chart:pie
-{
-  "title": "语言占比",
-  "data": [
-    {"name": "Dart", "value": 50},
-    {"name": "Python", "value": 30},
-    {"name": "Go", "value": 20}
-  ]
-}
-```
-''';
-
-    // 1. BarChart
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: barChartMarkdown),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byType(BarChart), findsOneWidget);
-    expect(find.text('月度销售'), findsOneWidget);
-
-    // Toggle to code
     await tester.tap(find.byTooltip('更多操作'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('查看数据'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('"type": "bar"'), findsOneWidget);
-
-    // Toggle back to chart
+    expect(find.text(samples.last.$2), findsOneWidget);
     await tester.tap(find.byTooltip('更多操作'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('切换到图表'));
     await tester.pumpAndSettle();
-    expect(find.byType(BarChart), findsOneWidget);
-
-    // 2. LineChart
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: lineChartMarkdown),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byType(LineChart), findsOneWidget);
-    expect(find.text('温度趋势'), findsOneWidget);
-
-    // 3. PieChart
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: pieChartMarkdown),
-      ),
-    );
-    await tester.pumpAndSettle();
     expect(find.byType(PieChart), findsOneWidget);
-    expect(find.text('语言占比'), findsOneWidget);
   });
 
-  testWidgets('invalid chart data shows source without crashing or inventing zeros',
-      (tester) async {
+  testWidgets('invalid chart data shows source without crashing or inventing zeros', (
+    tester,
+  ) async {
     for (final code in [
       '{ invalid json syntax',
       '{"type":"line","values":["Infinity"]}',
@@ -409,8 +356,9 @@ f(x) = \\sum_{i=1}^n x_i
     }
   });
 
-  testWidgets('renders AI-generated Mermaid with Chinese IDs, hyphens, and arrow labels',
-      (tester) async {
+  testWidgets('renders AI-generated Mermaid with Chinese IDs, hyphens, and arrow labels', (
+    tester,
+  ) async {
     const aiMermaid = '''
 ```mermaid
 graph TD
@@ -420,11 +368,7 @@ graph TD
 ```
 ''';
 
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: aiMermaid),
-      ),
-    );
+    await tester.pumpWidget(buildApp(const GenAiMarkdown(data: aiMermaid)));
     await tester.pumpAndSettle();
 
     expect(find.byType(GenAiMermaidView), findsOneWidget);
@@ -447,11 +391,7 @@ stateDiagram-v2
 ```
 ''';
 
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: stateMermaid),
-      ),
-    );
+    await tester.pumpWidget(buildApp(const GenAiMarkdown(data: stateMermaid)));
     await tester.pumpAndSettle();
 
     expect(find.byType(GenAiMermaidView), findsOneWidget);
@@ -467,7 +407,8 @@ stateDiagram-v2
     await tester.pumpWidget(
       buildApp(
         const GenAiMarkdown(
-          data: '```mermaid\nsequenceDiagram\n'
+          data:
+              '```mermaid\nsequenceDiagram\n'
               'participant S as 源点 S\nparticipant A as 节点 A\n'
               'S->>A: 松弛距离\n```',
         ),
@@ -493,8 +434,9 @@ stateDiagram-v2
     expect(find.text(source), findsOneWidget);
   });
 
-  testWidgets('clipboard confirms success only after completion and reports denial',
-      (tester) async {
+  testWidgets('clipboard confirms success only after completion and reports denial', (
+    tester,
+  ) async {
     const dartMarkdown = '''
 ```dart
 void main() {
@@ -503,11 +445,7 @@ void main() {
 ```
 ''';
 
-    await tester.pumpWidget(
-      buildApp(
-        const GenAiMarkdown(data: dartMarkdown),
-      ),
-    );
+    await tester.pumpWidget(buildApp(const GenAiMarkdown(data: dartMarkdown)));
     await tester.pumpAndSettle();
 
     expect(find.byType(GenAiStandardCodeBlock), findsOneWidget);
@@ -517,16 +455,17 @@ void main() {
     expect(find.textContaining('print("Hello, TechPie!");'), findsOneWidget);
 
     var write = Completer<void>();
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') await write.future;
-        return null;
-      },
-    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (
+      call,
+    ) async {
+      if (call.method == 'Clipboard.setData') await write.future;
+      return null;
+    });
     addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null),
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
     );
     await tester.tap(find.byTooltip('复制代码'));
     await tester.pump();
@@ -555,30 +494,20 @@ void main() {
     const python = 'def add(x):\n    # return is a comment\n    return "def" + str(x)';
     final spans = highlighter.highlight(code: python, language: 'python');
     expect(spans.map((span) => span.text).join(), python);
-    expect(
-      spans.any(
-        (span) => span.text == 'def' && span.style?.color == theme.keyword,
-      ),
-      isTrue,
-    );
+    expect(spans.any((span) => span.text == 'def' && span.style?.color == theme.keyword), isTrue);
     expect(
       spans.any(
         (span) => span.text == '# return is a comment' && span.style?.color == theme.comment,
       ),
       isTrue,
     );
-    expect(
-      spans.any(
-        (span) => span.text == '"def"' && span.style?.color == theme.string,
-      ),
-      isTrue,
-    );
+    expect(spans.any((span) => span.text == '"def"' && span.style?.color == theme.string), isTrue);
     const json = '{"name": "name", "count": 100}';
     final jsonSpans = highlighter.highlight(code: json, language: 'json');
     expect(jsonSpans.map((span) => span.text).join(), json);
-    expect(
-      jsonSpans.where((span) => span.text == '"name"').map((span) => span.style?.color),
-      [theme.property, theme.string],
-    );
+    expect(jsonSpans.where((span) => span.text == '"name"').map((span) => span.style?.color), [
+      theme.property,
+      theme.string,
+    ]);
   });
 }

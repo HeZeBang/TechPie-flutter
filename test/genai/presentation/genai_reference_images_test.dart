@@ -37,10 +37,7 @@ void main() {
     await demo.workspace.reloadModels();
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiImageStudioPage(
-          workspace: demo.workspace,
-          picker: picker,
-        ),
+        home: GenAiImageStudioPage(workspace: demo.workspace, picker: picker),
       ),
     );
     await tester.pumpAndSettle();
@@ -53,9 +50,7 @@ void main() {
     await tester.tap(add);
     await tester.pump();
     for (var i = 0; i < 100 && find.text('正在读取…').evaluate().isNotEmpty; i++) {
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 10)),
-      );
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
       await tester.pump();
     }
     await tester.pumpAndSettle();
@@ -63,40 +58,25 @@ void main() {
     expect(find.text('参考图片'), findsOneWidget);
   }
 
-  testWidgets('local reference previews support four images, removal and confirmation count',
-      (tester) async {
+  testWidgets('reference previews allow additional images, removal and confirmation count', (
+    tester,
+  ) async {
     final picker = FakeGenAiPicker(
       nextImage: GenAiPickedFile(name: 'red.png', bytes: png),
     );
     final demo = await show(tester, picker);
     for (var i = 0; i < 4; i++) {
       await pick(tester);
-      expect(
-        find.byKey(ValueKey('genai-reference-preview-$i')),
-        findsOneWidget,
-      );
+      expect(find.byKey(ValueKey('genai-reference-preview-$i')), findsOneWidget);
     }
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('genai-reference-preview-0')),
-    );
+    await tester.ensureVisible(find.byKey(const ValueKey('genai-reference-preview-0')));
     await tester.pumpAndSettle();
     expect(
-      tester.getSize(find.byKey(const ValueKey('genai-reference-preview-0'))),
-      const Size(50, 50),
-    );
-    expect(
-      tester
-          .widget<TextButton>(
-            find.byKey(const ValueKey('genai-add-reference')),
-          )
-          .onPressed,
-      isNull,
+      tester.widget<TextButton>(find.byKey(const ValueKey('genai-add-reference'))).onPressed,
+      isNotNull,
     );
     await tester.tap(find.byKey(const ValueKey('genai-remove-reference-0')));
     await tester.pumpAndSettle();
-    // The add control keeps a plain label; the count never enters the label.
-    expect(find.text('参考图片'), findsOneWidget);
-    expect(find.textContaining('参考图片 ·'), findsNothing);
     await tester.enterText(
       find.byKey(const ValueKey('genai-image-prompt')),
       'Use these reference colors',
@@ -113,33 +93,19 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(
       MaterialApp(
-        home: GenAiImageStudioPage(
-          workspace: demo.workspace,
-          picker: picker,
-        ),
+        home: GenAiImageStudioPage(workspace: demo.workspace, picker: picker),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.text('Use these reference colors'), findsOneWidget);
-    expect(find.text('参考图片'), findsOneWidget);
-    expect(find.textContaining('参考图片 ·'), findsNothing);
     for (var index = 0; index < 3; index++) {
-      expect(
-        find.byKey(ValueKey('genai-reference-preview-$index')),
-        findsOneWidget,
-      );
+      expect(find.byKey(ValueKey('genai-reference-preview-$index')), findsOneWidget);
     }
-    expect(
-      find.byKey(const ValueKey('genai-reference-preview-3')),
-      findsNothing,
-    );
+    expect(find.byKey(const ValueKey('genai-reference-preview-3')), findsNothing);
     await demo.sessions.setOwner(null);
     await tester.pumpAndSettle();
     expect(find.text('参考图片'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('genai-reference-preview-0')),
-      findsNothing,
-    );
+    expect(find.byKey(const ValueKey('genai-reference-preview-0')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -155,37 +121,32 @@ void main() {
     expect(find.text('无法读取图片，请选择有效的 PNG、JPG 或 WebP 图片。'), findsOneWidget);
     picker.nextImage = GenAiPickedFile(name: 'valid.png', bytes: png);
     await pick(tester);
-    expect(
-      find.byKey(const ValueKey('genai-reference-preview-0')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('genai-reference-preview-0')), findsOneWidget);
     expect(find.text('请选择 PNG、JPG 或 WebP 图片。'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
   for (final leavePage in [false, true]) {
     testWidgets(
-        'late reference picker result is discarded after ${leavePage ? 'leaving page' : 'account switch'}',
-        (tester) async {
-      final picker = DeferredReferencePicker();
-      final demo = await show(tester, picker);
-      await tester.tap(find.byKey(const ValueKey('genai-add-reference')));
-      await tester.pump();
-      // While the picker is pending the label reads 正在读取…, never a count.
-      expect(find.text('正在读取…'), findsOneWidget);
-      expect(find.text('参考图片'), findsNothing);
-      if (leavePage) {
-        await tester.pumpWidget(const SizedBox.shrink());
-      } else {
-        await demo.sessions.setOwner(null);
-      }
-      picker.selected.complete(GenAiPickedFile(name: 'late.png', bytes: png));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('genai-reference-preview-0')),
-        findsNothing,
-      );
-      expect(tester.takeException(), isNull);
-    });
+      'late reference picker result is discarded after ${leavePage ? 'leaving page' : 'account switch'}',
+      (tester) async {
+        final picker = DeferredReferencePicker();
+        final demo = await show(tester, picker);
+        await tester.tap(find.byKey(const ValueKey('genai-add-reference')));
+        await tester.pump();
+        // While the picker is pending the label reads 正在读取…, never a count.
+        expect(find.text('正在读取…'), findsOneWidget);
+        expect(find.text('参考图片'), findsNothing);
+        if (leavePage) {
+          await tester.pumpWidget(const SizedBox.shrink());
+        } else {
+          await demo.sessions.setOwner(null);
+        }
+        picker.selected.complete(GenAiPickedFile(name: 'late.png', bytes: png));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('genai-reference-preview-0')), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
 }

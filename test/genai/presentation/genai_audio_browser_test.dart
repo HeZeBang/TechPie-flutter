@@ -34,7 +34,7 @@ void main() {
 
     test('a replaced element cannot finish or stop the current playback', () async {
       var finished = 0;
-      player.onFinished = () => finished++;
+      player.onFinished = (_) => finished++;
 
       await player.playWav(_wav());
       expect(harness.elements, hasLength(1));
@@ -57,7 +57,7 @@ void main() {
     test('a late play rejection from the replaced element is ignored', () async {
       harness.pendingPlays = 1;
       var finished = 0;
-      player.onFinished = () => finished++;
+      player.onFinished = (_) => finished++;
 
       final replaced = player.playWav(_wav());
       await harness.waitForElements(1);
@@ -117,10 +117,7 @@ void main() {
   });
 }
 
-Uint8List _wav() => WavEncoder.encodeFloat32(
-      channels: [Float32List(80)],
-      sampleRate: 8000,
-    );
+Uint8List _wav() => WavEncoder.encodeFloat32(channels: [Float32List(80)], sampleRate: 8000);
 
 void _expectTracksEnded(web.MediaStream stream) {
   final tracks = stream.getTracks().toDart;
@@ -240,8 +237,9 @@ final class _RecorderHarness {
     prototype.setProperty(
       'start'.toJS,
       ((JSAny? _) {
-        throw StateError('synthetic start failure');
-      } as void Function(JSAny?))
+                throw StateError('synthetic start failure');
+              }
+              as void Function(JSAny?))
           .toJS,
     );
   }

@@ -65,8 +65,8 @@ enum GenAiGlyph {
   checkCircle('m7 12 3 3 7-7', circles: [_Circle(12, 12, 9)]);
 
   const GenAiGlyph(this._data, {List<_Circle> circles = const [], List<_Rect> rects = const []})
-      : _circles = circles,
-        _rects = rects;
+    : _circles = circles,
+      _rects = rects;
 
   final String _data;
   final List<_Circle> _circles;
@@ -121,12 +121,11 @@ class GenAiIcon extends StatelessWidget {
     );
     return semanticLabel == null
         ? ExcludeSemantics(child: child)
-        : Semantics(label: semanticLabel, child: ExcludeSemantics(child: child));
+        : Semantics(
+            label: semanticLabel,
+            child: ExcludeSemantics(child: child),
+          );
   }
-
-  /// A defensive copy of the cached 24-grid geometry, for bounds/paint tests.
-  @visibleForTesting
-  static Path debugPath(GenAiGlyph glyph) => Path.from(_GenAiIconPainter.pathFor(glyph));
 
   @visibleForTesting
   static Path debugParsePath(String data) => _parsePath(data);
@@ -139,20 +138,20 @@ class _GenAiIconPainter extends CustomPainter {
   static final Map<GenAiGlyph, Path> _paths = {};
 
   static Path pathFor(GenAiGlyph glyph) => _paths.putIfAbsent(glyph, () {
-        final path = _parsePath(glyph._data);
-        for (final circle in glyph._circles) {
-          path.addOval(Rect.fromCircle(center: Offset(circle.x, circle.y), radius: circle.radius));
-        }
-        for (final rect in glyph._rects) {
-          path.addRRect(
-            RRect.fromRectAndRadius(
-              Rect.fromLTWH(rect.x, rect.y, rect.width, rect.height),
-              Radius.circular(rect.radius),
-            ),
-          );
-        }
-        return path;
-      });
+    final path = _parsePath(glyph._data);
+    for (final circle in glyph._circles) {
+      path.addOval(Rect.fromCircle(center: Offset(circle.x, circle.y), radius: circle.radius));
+    }
+    for (final rect in glyph._rects) {
+      path.addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(rect.x, rect.y, rect.width, rect.height),
+          Radius.circular(rect.radius),
+        ),
+      );
+    }
+    return path;
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -178,10 +177,9 @@ class _GenAiIconPainter extends CustomPainter {
 /// SVG path reader. Repeated coordinates implicitly repeat the last command;
 /// subsequent moveto pairs are lineto pairs, including relative moveto.
 Path _parsePath(String data) {
-  final tokens = RegExp(r'[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?')
-      .allMatches(data)
-      .map((match) => match.group(0)!)
-      .toList();
+  final tokens = RegExp(
+    r'[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?',
+  ).allMatches(data).map((match) => match.group(0)!).toList();
   final path = Path();
   var index = 0;
   var command = '';
@@ -245,8 +243,9 @@ Path _parsePath(String data) {
         quadraticControl = control;
         current = end;
       case 'T':
-        final control =
-            previous == 'Q' || previous == 'T' ? current * 2 - quadraticControl : current;
+        final control = previous == 'Q' || previous == 'T'
+            ? current * 2 - quadraticControl
+            : current;
         final end = point(relative);
         path.quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
         quadraticControl = control;

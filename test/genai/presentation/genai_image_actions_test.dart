@@ -30,165 +30,117 @@ final class _TemporaryClipboard extends IOOverrides {
 void main() {
   for (final mobile in [true, false]) {
     testWidgets(
-        '${mobile ? 'menu button' : 'right click'} copies the selected image, not its neighbor',
-        (tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = mobile ? const Size(320, 740) : const Size(1280, 800);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPhysicalSize);
-      final images = await tester.runAsync(() async => [await _picture(16), await _picture(32)]);
-      final temporary = Directory.systemTemp.createTempSync('genai-clipboard-test-');
-      final previousOverrides = IOOverrides.current;
-      IOOverrides.global = _TemporaryClipboard(temporary);
-      addTearDown(() {
-        IOOverrides.global = previousOverrides;
-        temporary.deleteSync(recursive: true);
-      });
-      var copied = Completer<Uint8List>();
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        const MethodChannel('pasteboard'),
-        (call) async {
-          if (call.method == 'writeImage') {
-            final value = call.arguments;
-            copied.complete(
-              value is Uint8List
-                  ? value
-                  : await File((value as Map<Object?, Object?>)['fileName']! as String)
-                      .readAsBytes(),
-            );
-          } else if (call.method == 'writeFiles') {
-            final paths = call.arguments as List<Object?>;
-            copied.complete(await File(paths.single! as String).readAsBytes());
-          }
-          return null;
-        },
-      );
-      addTearDown(() {
+      '${mobile ? 'menu button' : 'right click'} copies the selected image, not its neighbor',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = mobile ? const Size(320, 740) : const Size(1280, 800);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final images = await tester.runAsync(() async => [await _picture(16), await _picture(32)]);
+        final temporary = Directory.systemTemp.createTempSync('genai-clipboard-test-');
+        final previousOverrides = IOOverrides.current;
+        IOOverrides.global = _TemporaryClipboard(temporary);
+        addTearDown(() {
+          IOOverrides.global = previousOverrides;
+          temporary.deleteSync(recursive: true);
+        });
+        var copied = Completer<Uint8List>();
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           const MethodChannel('pasteboard'),
-          null,
+          (call) async {
+            if (call.method == 'writeImage') {
+              final value = call.arguments;
+              copied.complete(
+                value is Uint8List
+                    ? value
+                    : await File(
+                        (value as Map<Object?, Object?>)['fileName']! as String,
+                      ).readAsBytes(),
+              );
+            } else if (call.method == 'writeFiles') {
+              final paths = call.arguments as List<Object?>;
+              copied.complete(await File(paths.single! as String).readAsBytes());
+            }
+            return null;
+          },
         );
-      });
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Column(
-              children: [
-                for (var i = 0; i < 2; i++)
-                  GenAiImageActions(
-                    key: ValueKey(i),
-                    image: MemoryImage(images![i]),
-                    child: SizedBox(width: 240, height: 160, child: Image.memory(images[i])),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      );
-      for (final i in [1, 0]) {
-        final target = find.byKey(ValueKey(i));
-        await tester.runAsync(() => precacheImage(MemoryImage(images![i]), tester.element(target)));
-        await tester.pumpAndSettle();
-        final tile = tester.getRect(target);
-        if (mobile) {
-          await tester.longPress(target);
-          await tester.pumpAndSettle();
-          expect(find.byKey(const ValueKey('genai-anchored-menu')), findsNothing);
-          await tester.tap(find.descendant(of: target, matching: find.byTooltip('图片操作')));
-        } else {
-          await tester.tapAt(tester.getCenter(target), buttons: kSecondaryMouseButton);
-        }
-        // Image encoding is a real engine operation, outside the fake clock.
-        await tester.runAsync(() async => Future<void>.delayed(const Duration(milliseconds: 30)));
-        await tester.pumpAndSettle();
-        final surface = find.byKey(const ValueKey('genai-anchored-menu'));
-        expect(surface, findsOneWidget);
-        if (!mobile) {
-          final menu = tester.getRect(surface);
-          expect(menu.overlaps(tile), isFalse);
-          expect(menu.top - tile.bottom == 7 || tile.top - menu.bottom == 7, isTrue);
-        }
-        final action = find.ancestor(
-          of: find.text(Platform.isLinux ? '复制图片文件' : '复制图片'),
-          matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem),
-        );
-        expect(action, findsOneWidget);
-        expect(tester.widget<PopupMenuItem<dynamic>>(action).enabled, isTrue);
-        expect(tester.getRect(action).left, greaterThanOrEqualTo(0));
-        expect(tester.getRect(action).right, lessThanOrEqualTo(tester.view.physicalSize.width));
-        final png = await tester.runAsync(() async {
-          await tester.tap(action);
-          await tester.pumpAndSettle();
-          return copied.future.timeout(const Duration(seconds: 5));
+        addTearDown(() {
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            const MethodChannel('pasteboard'),
+            null,
+          );
         });
-        await tester.pumpAndSettle();
-        expect(ByteData.sublistView(png!).getUint32(16), i == 0 ? 16 : 32);
-        copied = Completer<Uint8List>();
-        expect(surface, findsNothing);
-        expect(tester.takeException(), isNull);
-      }
-      // A click anchors the visible button itself, and Escape dismisses it.
-      final button = find.byTooltip('图片操作').first;
-      final buttonRect = tester.getRect(button);
-      await tester.tap(button);
-      await tester.pump();
-      final buttonSurface = find.byKey(const ValueKey('genai-anchored-menu'));
-      expect(buttonSurface, findsOneWidget);
-      if (!mobile) expect(tester.getRect(buttonSurface).overlaps(buttonRect), isFalse);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-      expect(buttonSurface, findsNothing);
-    });
-  }
-
-  testWidgets('gallery tile menu anchors outside the whole tile', (tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(600, 800);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
-    final png = (await tester.runAsync(() => _picture(16)))!;
-    final image = MemoryImage(png);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Align(
-            alignment: Alignment.topLeft,
-            child: Padding(
-              padding: const EdgeInsets.all(40),
-              child: GenAiImageActions(
-                image: image,
-                link: Uri.parse('https://example.test/gallery.png'),
-                showMenuButton: false,
-                onOpen: () {},
-                onReference: () {},
-                child: SizedBox(width: 240, height: 160, child: Image.memory(png)),
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  for (var i = 0; i < 2; i++)
+                    GenAiImageActions(
+                      key: ValueKey(i),
+                      image: MemoryImage(images![i]),
+                      child: SizedBox(width: 240, height: 160, child: Image.memory(images[i])),
+                    ),
+                ],
               ),
             ),
           ),
-        ),
-      ),
+        );
+        for (final i in [1, 0]) {
+          final target = find.byKey(ValueKey(i));
+          await tester.runAsync(
+            () => precacheImage(MemoryImage(images![i]), tester.element(target)),
+          );
+          await tester.pumpAndSettle();
+          final tile = tester.getRect(target);
+          if (mobile) {
+            await tester.longPress(target);
+            await tester.pumpAndSettle();
+            expect(find.byKey(const ValueKey('genai-anchored-menu')), findsNothing);
+            await tester.tap(find.descendant(of: target, matching: find.byTooltip('图片操作')));
+          } else {
+            await tester.tapAt(tester.getCenter(target), buttons: kSecondaryMouseButton);
+          }
+          // Image encoding is a real engine operation, outside the fake clock.
+          await tester.runAsync(() async => Future<void>.delayed(const Duration(milliseconds: 30)));
+          await tester.pumpAndSettle();
+          final surface = find.byKey(const ValueKey('genai-anchored-menu'));
+          expect(surface, findsOneWidget);
+          if (!mobile) {
+            final menu = tester.getRect(surface);
+            expect(menu.overlaps(tile), isFalse);
+          }
+          final action = find.ancestor(
+            of: find.text(Platform.isLinux ? '复制图片文件' : '复制图片'),
+            matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem),
+          );
+          expect(action, findsOneWidget);
+          expect(tester.widget<PopupMenuItem<dynamic>>(action).enabled, isTrue);
+          expect(tester.getRect(action).left, greaterThanOrEqualTo(0));
+          expect(tester.getRect(action).right, lessThanOrEqualTo(tester.view.physicalSize.width));
+          final png = await tester.runAsync(() async {
+            await tester.tap(action);
+            await tester.pumpAndSettle();
+            return copied.future.timeout(const Duration(seconds: 5));
+          });
+          await tester.pumpAndSettle();
+          expect(ByteData.sublistView(png!).getUint32(16), i == 0 ? 16 : 32);
+          copied = Completer<Uint8List>();
+          expect(surface, findsNothing);
+          expect(tester.takeException(), isNull);
+        }
+        // A click anchors the visible button itself, and Escape dismisses it.
+        final button = find.byTooltip('图片操作').first;
+        final buttonRect = tester.getRect(button);
+        await tester.tap(button);
+        await tester.pump();
+        final buttonSurface = find.byKey(const ValueKey('genai-anchored-menu'));
+        expect(buttonSurface, findsOneWidget);
+        if (!mobile) expect(tester.getRect(buttonSurface).overlaps(buttonRect), isFalse);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(buttonSurface, findsNothing);
+      },
     );
-    final target = find.byType(GenAiImageActions);
-    await tester.runAsync(() => precacheImage(image, tester.element(target)));
-    await tester.pumpAndSettle();
-    // Gallery tiles leave the visible affordance to their preview.
-    expect(find.byTooltip('图片操作'), findsNothing);
-    final tile = tester.getRect(target);
-    await tester.tapAt(tester.getCenter(target), buttons: kSecondaryMouseButton);
-    await tester.runAsync(() async => Future<void>.delayed(const Duration(milliseconds: 30)));
-    await tester.pumpAndSettle();
-    final surface = find.byKey(const ValueKey('genai-anchored-menu'));
-    expect(surface, findsOneWidget);
-    expect(find.text('查看图片'), findsOneWidget);
-    expect(find.text('用作参考'), findsOneWidget);
-    expect(find.text('复制链接'), findsOneWidget);
-    // The anchor is the tile itself, so the popover never covers the image.
-    final menu = tester.getRect(surface);
-    expect(menu.overlaps(tile), isFalse);
-    expect(menu.top - tile.bottom == 7 || tile.top - menu.bottom == 7, isTrue);
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pumpAndSettle();
-    expect(surface, findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+  }
 }

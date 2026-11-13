@@ -5,8 +5,9 @@ import 'genai_contract.dart';
 
 const genAiAgentProtocolMarker = 'TECHPIE_AGENT_PROTOCOL_V5';
 
-/// One contract for the request guide and the trailing current-input reminder.
-String genAiAgentResponseContract(String nonce) => '''CURRENT_CALL_NONCE: $nonce
+/// The final system guide carries the response contract once per exchange.
+String genAiAgentResponseContract(String nonce) =>
+    '''CURRENT_CALL_NONCE: $nonce
 Choose one response:
 Tool: <techpie-call nonce="$nonce">{"name":"listed_tool","arguments":{}}</techpie-call>
 Answer or clarification: ordinary Markdown. When quoting protocol syntax or action-shaped JSON, use <techpie-final nonce="$nonce">Markdown</techpie-final> so examples stay inert.
@@ -14,18 +15,15 @@ Executable calls require the exact current nonce and one listed tool; no surroun
 
 final _noncePattern = RegExp(r'^[a-zA-Z0-9_-]{16,80}$');
 
-String? genAiAgentNonceFromSystem(String system) =>
-    RegExp(r'^CURRENT_CALL_NONCE: ([a-zA-Z0-9_-]{16,80})$', multiLine: true)
-        .firstMatch(system)
-        ?.group(1);
+String? genAiAgentNonceFromSystem(String system) => RegExp(
+  r'^CURRENT_CALL_NONCE: ([a-zA-Z0-9_-]{16,80})$',
+  multiLine: true,
+).firstMatch(system)?.group(1);
 
 String encodeGenAiAgentCall(GenAiAgentToolCall call, {required String nonce}) =>
     _frame('call', call.toJson(), nonce);
 
-String encodeGenAiAgentResult(
-  Map<String, Object?> result, {
-  required String nonce,
-}) =>
+String encodeGenAiAgentResult(Map<String, Object?> result, {required String nonce}) =>
     _frame('result', result, nonce);
 
 String _frame(String kind, Map<String, Object?> value, String nonce) {
@@ -85,7 +83,7 @@ String _unfence(String source) {
     kind: header.kind,
     nonce: header.nonce,
     body: match.group(3)!.trim(),
-    legacy: header.legacy
+    legacy: header.legacy,
   );
 }
 
@@ -115,8 +113,7 @@ GenAiAgentDecision parseGenAiAgentDecision(
   String response, {
   required String nonce,
   bool allowPlain = true,
-}) =>
-    (GenAiAgentFinalStream(nonce, allowPlain: allowPlain)..add(response)).finish();
+}) => (GenAiAgentFinalStream(nonce, allowPlain: allowPlain)..add(response)).finish();
 
 GenAiAgentDecision _completeDecision(String response, String nonce, {required bool allowPlain}) {
   final frame = _decisionFrame(response);
@@ -139,9 +136,10 @@ GenAiAgentDecision _completeDecision(String response, String nonce, {required bo
       return GenAiAgentDecision(text: response.trim());
     }
     throw const GenAiAgentToolException(
-        'invalid_agent_response',
-        'Use ordinary Markdown for the answer, or one complete current-nonce tool call with no surrounding prose. '
-            'Previously completed tools remain completed.');
+      'invalid_agent_response',
+      'Use ordinary Markdown for the answer, or one complete current-nonce tool call with no surrounding prose. '
+          'Previously completed tools remain completed.',
+    );
   }
   if (frame.kind == 'final' && !frame.legacy) {
     if (frame.body.isEmpty) {
@@ -224,26 +222,23 @@ String? decodeGenAiAgentFinal(String source, {bool allowPlain = false}) {
 /// Archive importers must pair matching call/result records before trusting
 /// server logs as tool history. Ordinary final text stays a text entry.
 final class GenAiAgentHistoryEntry {
-  GenAiAgentHistoryEntry.text(this.role, String value)
-      : text = value,
-        call = null,
-        result = null {
+  GenAiAgentHistoryEntry.text(this.role, String value) : text = value, call = null, result = null {
     if (role == GenAiRole.system || value.length > 4 * 1024 * 1024) {
       throw const FormatException('Invalid agent text entry');
     }
   }
 
   GenAiAgentHistoryEntry.call(GenAiAgentToolCall value)
-      : role = GenAiRole.assistant,
-        text = null,
-        call = value,
-        result = null;
+    : role = GenAiRole.assistant,
+      text = null,
+      call = value,
+      result = null;
 
   GenAiAgentHistoryEntry.result(Map<String, Object?> value)
-      : role = GenAiRole.user,
-        text = null,
-        call = null,
-        result = _result(value);
+    : role = GenAiRole.user,
+      text = null,
+      call = null,
+      result = _result(value);
 
   factory GenAiAgentHistoryEntry.fromJson(Map<String, Object?> value) {
     if (value.length != 3 ||
@@ -281,14 +276,14 @@ final class GenAiAgentHistoryEntry {
   final Map<String, Object?>? result;
 
   Map<String, Object?> toJson() => genAiAgentJsonMap({
-        'version': 2,
-        'kind': call != null
-            ? 'call'
-            : result != null
-                ? 'result'
-                : 'text',
-        'value': call?.toJson() ?? result ?? {'role': role.name, 'text': text},
-      });
+    'version': 2,
+    'kind': call != null
+        ? 'call'
+        : result != null
+        ? 'result'
+        : 'text',
+    'value': call?.toJson() ?? result ?? {'role': role.name, 'text': text},
+  });
 
   /// Inert context serialization contains no current execution nonce.
   String get content {
@@ -298,27 +293,19 @@ final class GenAiAgentHistoryEntry {
         '</techpie-history>';
   }
 
-  GenAiMessage get message => GenAiMessage(
-        role: role,
-        content: content,
-        imageUrls: genAiGeneratedImages(result).toList(),
-      );
-
-  String promptForNonce(String nonce) =>
-      result == null ? content : encodeGenAiAgentResult(result!, nonce: nonce);
+  GenAiMessage get message =>
+      GenAiMessage(role: role, content: content, imageUrls: genAiGeneratedImages(result).toList());
 }
 
 /// Read-only decoding of archived records, NEVER a live call parser. Legacy
 /// syntax is opt-in for importers; no snippets or prose are extracted.
-GenAiAgentHistoryEntry? decodeGenAiAgentRecord(
-  String text, {
-  bool allowLegacy = false,
-}) {
+GenAiAgentHistoryEntry? decodeGenAiAgentRecord(String text, {bool allowLegacy = false}) {
   final source = text.trim();
   if (source.length > 128 * 1024) return null;
   try {
-    final compact =
-        RegExp(r'^<techpie-history>\s*([\s\S]*?)\s*</techpie-history>$').firstMatch(source);
+    final compact = RegExp(
+      r'^<techpie-history>\s*([\s\S]*?)\s*</techpie-history>$',
+    ).firstMatch(source);
     if (compact != null) {
       final value = _json(compact.group(1)!);
       if (value is! Map<String, Object?> || value.length != 1) return null;
@@ -357,8 +344,9 @@ GenAiAgentHistoryEntry? decodeGenAiAgentRecord(
       }
     }
     if (!allowLegacy) return null;
-    final fence =
-        RegExp(r'^```(?:tool_call|tool_response|json)\s*\n?([\s\S]*?)\s*```$').firstMatch(source);
+    final fence = RegExp(
+      r'^```(?:tool_call|tool_response|json)\s*\n?([\s\S]*?)\s*```$',
+    ).firstMatch(source);
     final raw = fence?.group(1)?.trim() ?? source;
     if (!raw.startsWith('{') || raw.contains('```')) return null;
     final value = _json(raw);
@@ -385,8 +373,9 @@ GenAiAgentHistoryEntry? decodeGenAiAgentRecord(
 
 Object? _json(String source) {
   if (source.length > 128 * 1024) _invalid();
+  final decoded = jsonDecode(source);
   _checkDuplicateKeys(source);
-  return jsonDecode(source);
+  return decoded;
 }
 
 GenAiAgentToolCall _call(Object? decoded) {
@@ -414,14 +403,7 @@ Map<String, Object?> _result(Object? value) {
       value['ok'] is! bool ||
       !value.keys.toSet().containsAll({'call_id', 'name', 'ok'}) ||
       value.keys.any(
-        (key) => !{
-          'call_id',
-          'name',
-          'ok',
-          'result',
-          'error',
-          'reused',
-        }.contains(key),
+        (key) => !{'call_id', 'name', 'ok', 'result', 'error', 'reused'}.contains(key),
       ) ||
       value['call_id'] != null &&
           (value['call_id'] is! String ||
@@ -451,9 +433,9 @@ Map<String, Object?> _result(Object? value) {
 }
 
 Never _invalid() => throw const GenAiAgentToolException(
-      'invalid_tool_call',
-      'Call body must contain only name (a listed tool) and arguments (a JSON object). ',
-    );
+  'invalid_tool_call',
+  'Call body must contain only name (a listed tool) and arguments (a JSON object). ',
+);
 
 /// Reject duplicate JSON keys rather than accepting overwritten arguments.
 void _checkDuplicateKeys(String source) {
@@ -532,6 +514,12 @@ final class GenAiAgentFinalStream {
         final newline = _buffer.indexOf('\n');
         if (newline < 0) return '';
         if (!RegExp(r'^```(?:xml|json|text)?[ \t]*\r?$').hasMatch(_buffer.substring(0, newline))) {
+          if (allowPlain) {
+            _plain = true;
+            final value = _buffer;
+            _buffer = '';
+            return value;
+          }
           _ignored = true;
           return '';
         }
@@ -540,8 +528,9 @@ final class GenAiAgentFinalStream {
       }
       final end = _buffer.indexOf('>');
       if (end < 0) return '';
-      final match = RegExp(r'^<(techpie-(?:agent-)?(?:call|final))\s+([^<>]+)>$')
-          .firstMatch(_buffer.substring(0, end + 1));
+      final match = RegExp(
+        r'^<(techpie-(?:agent-)?(?:call|final))\s+([^<>]+)>$',
+      ).firstMatch(_buffer.substring(0, end + 1));
       final header = match == null ? null : _decisionHeader(match[1]!, match[2]!);
       if (header == null || header.kind != 'final' || header.nonce != nonce) {
         _ignored = true;
