@@ -326,6 +326,12 @@ class StorageService {
 
   bool get hasCachedAssignments => _prefs.containsKey(_assignmentsKey);
 
+  bool get deadlineWidgetsEnabled => _prefs.getBool('deadline_widgets_enabled') ?? false;
+
+  Future<void> setDeadlineWidgetsEnabled(bool enabled) async {
+    await _prefs.setBool('deadline_widgets_enabled', enabled);
+  }
+
   Future<void> saveCachedAssignments(List<Map<String, dynamic>> items) =>
       _prefs.setString(_assignmentsKey, jsonEncode(items));
 

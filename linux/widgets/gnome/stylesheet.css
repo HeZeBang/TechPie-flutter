@@ -1,0 +1,7 @@
+.techpie-deadline-row { spacing: 4px; max-width: 420px; }
+.techpie-deadline-detail { font-size: 0.85em; }
+.techpie-desktop-card { padding: 18px; spacing: 14px; border-radius: 16px; }
+.techpie-desktop-header { font-weight: bold; padding: 8px 0; }
+.techpie-desktop-rows { spacing: 12px; }
+.techpie-desktop-item { text-align: left; border-radius: 8px; padding: 8px; }
+.techpie-desktop-item:hover { background-color: rgba(128, 128, 128, 0.2); }

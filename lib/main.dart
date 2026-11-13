@@ -101,7 +101,11 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService,
     scheduleService,
   );
-  final deadlineWidgetService = DeadlineWidgetService(assignmentService);
+  final deadlineWidgetService = DeadlineWidgetService(
+    assignmentService,
+    enabled: kIsWeb || defaultTargetPlatform != TargetPlatform.linux ||
+        storageService.deadlineWidgetsEnabled,
+  );
   final syncService = SyncService(
     authService,
     thirdPartyAuthService,
@@ -194,7 +198,8 @@ Future<void> _realMain(SharedPreferences prefs) async {
   bootMark('cached data ready');
   if (!kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS)) {
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.linux)) {
     deadlineWidgetService.initialize();
   }
 
@@ -481,6 +486,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        deadlineWidgetService: widget.deadlineWidgetService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,

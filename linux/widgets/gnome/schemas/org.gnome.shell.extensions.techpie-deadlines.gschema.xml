@@ -1,0 +1,18 @@
+<schemalist>
+  <schema id="org.gnome.shell.extensions.techpie-deadlines" path="/org/gnome/shell/extensions/techpie-deadlines/">
+    <key name="desktop-visible" type="b">
+      <default>true</default>
+      <summary>Show the desktop deadline card</summary>
+    </key>
+    <key name="position-x" type="d">
+      <range min="0.0" max="1.0"/>
+      <default>1.0</default>
+      <summary>Horizontal position within the primary work area</summary>
+    </key>
+    <key name="position-y" type="d">
+      <range min="0.0" max="1.0"/>
+      <default>0.0</default>
+      <summary>Vertical position within the primary work area</summary>
+    </key>
+  </schema>
+</schemalist>
