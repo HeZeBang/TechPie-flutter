@@ -102,7 +102,7 @@ export HOS_SDK_HOME="$HOME/dev/command-line-tools/sdk"
 
 | 渠道 | 什么触发 | 产物 |
 | --- | --- | --- |
-| **候选版** `X.Y.Z-rc.N` | 在 `master` 上手动运行 `release.yml` | GitHub 预发布 + Android 三个 APK（arm64/arm32 split + universal）、Linux `tar.gz`、Windows `zip`、OHOS 未签名 hap；iOS 进 TestFlight |
+| **候选版** `X.Y.Z-rc.N` | 在 `master` 上手动运行 `release.yml` | GitHub 预发布 + Android 三个 APK（arm64/arm32 split + universal）、Linux `tar.gz` / AppImage / Flatpak、Windows `zip`、OHOS 未签名 hap；iOS 进 TestFlight |
 | **正式版** `X.Y.Z` | 合并 `prepare-release.yml` 开出的 release PR | GitHub 正式发布（Latest）+ 同上全部产物；iOS 进 TestFlight |
 
 ```bash
@@ -116,6 +116,8 @@ gh workflow run prepare-release.yml --ref master -f version=1.0.0
 ```
 
 发布说明写在 `CHANGELOG.md`，按**产品版本**分节（`## [1.0.0]`，同一条线的候选版和正式版共用一节）。没有说明的版本会被拒绝发布。
+
+Linux 同时提供 `tar.gz`、AppImage 和 Flatpak。正式版发布后生成 `techpie-bin` 的 AUR 文件与 Arch 软件包；AUR 自动推送需配置独立账号密钥。运行依赖和启用方法见 [Linux 打包说明](docs/linux-packaging.md)。
 
 上传 Google Play / AppGallery / App Store Connect 仍是人工步骤，产物在 GitHub Release。完整的强制规则、发布编号规则与故障处理见 [`CLAUDE.md`](CLAUDE.md#releasing)。
 

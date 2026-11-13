@@ -311,6 +311,18 @@ jobs:
       submit: true
     secrets: inherit
 
+  aur:
+    name: AUR package
+    needs: [plan, linux, publish]
+    if: >-
+      needs.publish.result == 'success'
+      && needs.plan.outputs.prerelease == 'false'
+    uses: ./.github/workflows/aur-release.yml
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+      publish: true
+    secrets: inherit
+
   publish:
     name: Publish the release
     # Nothing is visible until every asset is in: the Android job opens the
