@@ -8,6 +8,8 @@
     <key>CFBundleURLName</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleURLSchemes</key><array><string>$(TECHPIE_WIDGET_URL_SCHEME)</string></array>
   </dict></array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>使用麦克风将语音转为聊天草稿。</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleExecutable</key>

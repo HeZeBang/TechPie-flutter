@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../features/genai/app/genai_runtime.dart';
 import 'assignment_service.dart';
 import 'auth_service.dart';
 import 'campus_card_service.dart';
@@ -32,6 +33,7 @@ class ServiceProvider extends InheritedWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final GenAiRuntime? genAiRuntime;
 
   const ServiceProvider({
     super.key,
@@ -50,6 +52,7 @@ class ServiceProvider extends InheritedWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.genAiRuntime,
     required super.child,
   });
 
@@ -76,5 +79,6 @@ class ServiceProvider extends InheritedWidget {
       updateService != oldWidget.updateService ||
       campusCardService != oldWidget.campusCardService ||
       ecardBindService != oldWidget.ecardBindService ||
-      ecardWidgetService != oldWidget.ecardWidgetService;
+      ecardWidgetService != oldWidget.ecardWidgetService ||
+      genAiRuntime != oldWidget.genAiRuntime;
 }

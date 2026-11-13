@@ -1,0 +1,1492 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
+
+import '../domain/genai_agent_contract.dart';
+import '../domain/genai_agent_protocol.dart';
+import '../domain/genai_cancellation.dart';
+import '../domain/genai_context_usage.dart';
+import '../domain/genai_contract.dart';
+import '../domain/genai_document_upload.dart';
+import '../domain/genai_failure.dart';
+import '../domain/genai_platform_contract.dart';
+import '../domain/genai_session.dart';
+import 'genai_agent_runner.dart';
+import 'genai_chat_service.dart';
+import 'genai_conversation_snapshot.dart';
+import 'genai_conversation_turn.dart';
+import 'genai_history_edit.dart';
+import 'genai_image_studio_controller.dart';
+import 'genai_remote_history.dart';
+import 'genai_repository.dart';
+import 'genai_session_service.dart';
+import 'genai_system_prompt.dart';
+
+export 'genai_conversation_turn.dart';
+
+/// A host-prepared action awaiting an explicit decision in the chat UI.
+final class GenAiPendingAgentApproval {
+  GenAiPendingAgentApproval(this.call, this.prepared);
+
+  final GenAiAgentToolCall call;
+  final GenAiAgentPreparedTool prepared;
+  final _result = Completer<bool>();
+}
+
+final class GenAiAttachment {
+  const GenAiAttachment({
+    required this.id,
+    required this.name,
+    required this.bytes,
+    this.fileId,
+    this.documentContent,
+    this.isImage = false,
+    this.imageUrl,
+    this.uploading = false,
+    this.error,
+  });
+
+  final String id;
+  final String name;
+  final List<int> bytes;
+  final String? fileId;
+  final String? documentContent;
+  final bool isImage;
+  final String? imageUrl;
+  final bool uploading;
+  final String? error;
+
+  GenAiAttachment _withUpload({
+    String? fileId,
+    String? documentContent,
+    String? imageUrl,
+    bool uploading = false,
+    String? error,
+  }) => GenAiAttachment(
+    id: id,
+    name: name,
+    bytes: bytes,
+    fileId: fileId,
+    documentContent: documentContent,
+    isImage: isImage,
+    imageUrl: imageUrl,
+    uploading: uploading,
+    error: error,
+  );
+}
+
+/// Transient UI and execution state reconstructed from GenAI server records.
+final class GenAiWorkspaceController extends ChangeNotifier {
+  GenAiWorkspaceController({
+    required this.sessions,
+    required GenAiRepository repository,
+    required GenAiChatService chat,
+  }) : _repository = repository,
+       _chat = chat {
+    _owner = sessions.owner;
+    _agentSessionRevision = sessions.revision;
+    _archiveScope = _currentArchiveScope();
+    sessions.addListener(_sessionChanged);
+    _chat.addListener(_chatChanged);
+    _sessionChanged();
+  }
+
+  final GenAiSessionService sessions;
+  final GenAiRepository _repository;
+  late final imageStudio = GenAiImageStudioController(_repository);
+  final GenAiChatService _chat;
+  final _turns = <GenAiConversationTurn>[];
+  final _stoppedRequests = <String>{};
+  GenAiOwner? _owner;
+  GenAiSession? _catalogSession;
+  GenAiCancellation? _catalogOperation;
+  List<GenAiModel> _models = const [];
+  GenAiModel? _selectedModel;
+  GenAiConversationTurn? _active;
+  GenAiFailure? _loginFailure;
+  GenAiFailure? _catalogFailure;
+  bool _connecting = false;
+  bool _loadingModels = false;
+  bool _disposed = false;
+  bool _thinkingEnabled = false;
+  bool _recognizingAudio = false;
+  final _attachments = <GenAiAttachment>[];
+  final _uploads = <String, ({GenAiCancellation cancellation, Future<void> done})>{};
+  int _generation = 0;
+  int _conversationLoad = 0;
+  int _conversationRevision = 0;
+  int _finishedTurnRevision = 0;
+  GenAiCancellation? _sendOperation;
+  GenAiAgentRunner? _agentRunner;
+  Object? Function()? _agentScope;
+  Object? _agentScopeValue;
+  Listenable? _agentScopeChanges;
+  late int _agentSessionRevision;
+  bool _agentEnabled = false;
+  GenAiCancellation? _agentOperation;
+  Future<void>? _agentDrain;
+  GenAiPendingAgentApproval? _pendingAgentApproval;
+  String _groupId = createGroupId();
+  String? _archiveScope;
+  String? _titleOverride;
+  final _draftTitles = <String, String>{};
+  final _interruptedTurns = <String, Map<String, Object?>>{};
+  final _uncertainDeletions = <String, String>{};
+  GenAiCancellation? _refreshOperation;
+  GenAiCancellation? _historyEditOperation;
+  final _unverifiedHistoryEdits = <String>{};
+  GenAiFailure? _recoveryFailure;
+  Map<String, Object?> _restoredMutations = const {'version': 1, 'effects': <String, Object?>{}};
+  bool _ledgerNeedsRestore = false;
+
+  List<GenAiConversationTurn> get turns => List.unmodifiable(_turns);
+  List<GenAiModel> get models => List.unmodifiable(_models.where((m) => !m.isImage));
+  List<GenAiModel> get imageModels => List.unmodifiable(_models.where((m) => m.isImage));
+  GenAiRepository get repository => _repository;
+
+  /// Opaque identity for views containing account- or binding-scoped data.
+  Object? get accountScope => (_archiveScope, _agentScopeValue);
+  Object get _archiveRevision => (sessions.revision, _agentScopeValue);
+  GenAiModel? get selectedModel => _selectedModel;
+  GenAiFailure? get loginFailure => _loginFailure;
+  GenAiFailure? get catalogFailure => _catalogFailure;
+  GenAiFailure? get archiveFailure => _recoveryFailure;
+  int get uncertainDeletionCount =>
+      _uncertainDeletions.values.where((scope) => scope == _archiveScope).length;
+  bool get connecting => _connecting;
+  bool get loadingModels => _loadingModels;
+  bool get sending => _active != null || _refreshOperation != null || _historyEditOperation != null;
+  bool get connected => sessions.session != null;
+  bool get thinkingEnabled => _thinkingEnabled && (_selectedModel?.supportsThinking ?? false);
+  bool get agentAvailable => _agentRunner != null;
+  bool get agentEnabled => _agentEnabled;
+  GenAiPendingAgentApproval? get pendingAgentApproval => _pendingAgentApproval;
+  bool get recognizingAudio => _recognizingAudio;
+  List<GenAiAttachment> get attachments => List.unmodifiable(_attachments);
+  bool get hasPendingUploads => _uploads.isNotEmpty;
+  bool get hasFailedUploads => _attachments.any((a) => a.error != null);
+  String get groupId => _groupId;
+  GenAiContextUsage? get contextUsage => _turns.lastOrNull?.contextUsage;
+
+  /// Changes even when reopening the same saved conversation.
+  int get conversationRevision => _conversationRevision;
+
+  /// A generated turn settled (including retry, failure or stop). Navigation
+  /// and the read before sending do not change the server's conversation list.
+  int get finishedTurnRevision => _finishedTurnRevision;
+  String get title => _titleOverride ?? (_turns.isEmpty ? '新的对话' : _turns.first.prompt);
+
+  void toggleThinking() {
+    _thinkingEnabled = !_thinkingEnabled;
+    _notify();
+  }
+
+  void setThinking(bool value) {
+    if (_thinkingEnabled == value) return;
+    _thinkingEnabled = value;
+    _notify();
+  }
+
+  /// Installs the app-owned tools once and watches every account binding used
+  /// by them. The scope value must have stable equality (for example a record).
+  void configureAgent({
+    required GenAiAgentRunner runner,
+    Object? Function()? scope,
+    Listenable? scopeChanges,
+  }) {
+    if (_disposed) return;
+    final nextScope = scope?.call();
+    final replaced =
+        _agentRunner != null && (!identical(_agentRunner, runner) || nextScope != _agentScopeValue);
+    if (replaced) {
+      newConversation();
+      _agentRunner?.clear();
+    }
+    _agentScopeChanges?.removeListener(_agentScopeChanged);
+    _agentRunner = runner;
+    _agentScope = scope;
+    _agentScopeValue = nextScope;
+    _archiveScope = _currentArchiveScope();
+    _agentScopeChanges = scopeChanges;
+    _agentSessionRevision = sessions.revision;
+    scopeChanges?.addListener(_agentScopeChanged);
+  }
+
+  void _agentScopeChanged() {
+    if (_disposed || _agentRunner == null) return;
+    final scope = _agentScope?.call();
+    if (scope == _agentScopeValue) return;
+    _agentScopeValue = scope;
+    newConversation();
+    _agentRunner?.clear();
+  }
+
+  void setAgentEnabled(bool value) {
+    if (_disposed || sending || value == _agentEnabled) return;
+    if (value && !agentAvailable) {
+      return;
+    }
+    _agentScopeChanged();
+    _agentEnabled = value;
+    // A picker opened in the previous mode must not attach a late file.
+    _conversationRevision++;
+    _notify();
+  }
+
+  void resolveAgentApproval(bool accepted, {GenAiPendingAgentApproval? expected}) {
+    final pending = _pendingAgentApproval;
+    if (pending == null || (expected != null && !identical(expected, pending))) return;
+    _pendingAgentApproval = null;
+    final current =
+        !_disposed &&
+        _agentOperation != null &&
+        !_agentOperation!.isCancelled &&
+        sessions.revision == _agentSessionRevision &&
+        _agentScope?.call() == _agentScopeValue;
+    if (!pending._result.isCompleted) {
+      pending._result.complete(accepted && current);
+    }
+    _notify();
+  }
+
+  /// Leaving the main chat must not leave a hidden approval or agent running.
+  /// Ordinary navigation preserves the visible transcript and mutation ledger.
+  void cancelAgentForPageExit() {
+    if (_active?.isAgent ?? false) stop();
+  }
+
+  Future<void> addDocumentAttachment(String fileName, List<int> bytes) =>
+      _addAttachment(fileName, bytes, isImage: false);
+
+  Future<void> addImageAttachment(String fileName, List<int> bytes) =>
+      _addAttachment(fileName, bytes, isImage: true);
+
+  Future<void> _addAttachment(String name, List<int> bytes, {required bool isImage}) async {
+    if (_disposed || !connected || (!isImage && _selectedModel == null)) return;
+    final attachment = GenAiAttachment(
+      id: '${isImage ? 'img' : 'doc'}-${createGroupId()}',
+      name: name,
+      bytes: bytes,
+      isImage: isImage,
+      uploading: true,
+    );
+    _attachments.add(attachment);
+    await _startUpload(attachment);
+  }
+
+  Future<void> retryAttachment(String id) async {
+    if (_disposed || !connected) return;
+    final index = _attachments.indexWhere((a) => a.id == id);
+    if (index < 0) return;
+    final original = _attachments[index];
+    if (original.uploading || (!original.isImage && _selectedModel == null)) return;
+    final attachment = _attachments[index] = original._withUpload(uploading: true);
+    await _startUpload(attachment);
+  }
+
+  Future<void> _startUpload(GenAiAttachment attachment) {
+    final cancellation = GenAiCancellation();
+    final done = _uploadAttachment(attachment, cancellation);
+    _uploads[attachment.id] = (cancellation: cancellation, done: done);
+    _notify();
+    return done;
+  }
+
+  Future<void> _uploadAttachment(GenAiAttachment attachment, GenAiCancellation cancellation) async {
+    late GenAiAttachment result;
+    try {
+      if (attachment.isImage) {
+        final uploaded = await _repository.uploadVisionImage(
+          fileName: attachment.name,
+          bytes: attachment.bytes,
+          c: cancellation,
+        );
+        result = attachment._withUpload(imageUrl: genAiImageUri(uploaded.url).toString());
+      } else {
+        final uploaded = await _repository.uploadDocument(
+          groupId: _groupId,
+          aiType: _selectedModel!.aiType,
+          fileName: attachment.name,
+          bytes: attachment.bytes,
+          c: cancellation,
+        );
+        result = attachment._withUpload(fileId: uploaded.fileId, documentContent: uploaded.content);
+      }
+    } catch (error) {
+      result = attachment._withUpload(
+        error: attachment.isImage
+            ? '上传失败'
+            : switch (error) {
+                GenAiDocumentUploadException() => error.message,
+                GenAiFailure(kind: GenAiFailureKind.protocol) => '无法读取文档解析结果，请重新上传',
+                _ => '上传失败，请重试；文档解析后不能超过 500,000 字符',
+              },
+      );
+    }
+    cancellation.cancel();
+    if (!identical(_uploads[attachment.id]?.cancellation, cancellation)) return;
+    _uploads.remove(attachment.id);
+    final index = _attachments.indexOf(attachment);
+    if (index >= 0) _attachments[index] = result;
+    _notify();
+  }
+
+  void removeAttachment(String id) {
+    _uploads.remove(id)?.cancellation.cancel();
+    _attachments.removeWhere((a) => a.id == id);
+    _notify();
+  }
+
+  void _cancelAttachments() {
+    for (final upload in _uploads.values) {
+      upload.cancellation.cancel();
+    }
+    _uploads.clear();
+    _attachments.clear();
+  }
+
+  final _audioOperations = <GenAiCancellation>{};
+  GenAiCancellation? _transcription;
+
+  Future<T> _audioRequest<T>(Future<T> Function(GenAiCancellation) request) async {
+    final operation = GenAiCancellation();
+    _audioOperations.add(operation);
+    try {
+      return await operation.race(request(operation));
+    } finally {
+      _audioOperations.remove(operation);
+      operation.cancel();
+    }
+  }
+
+  Future<String?> transcribeAudio(String fileName, List<int> bytes) async {
+    if (_disposed || !connected || _recognizingAudio) return null;
+    final operation = GenAiCancellation();
+    _transcription = operation;
+    _audioOperations.add(operation);
+    _recognizingAudio = true;
+    _notify();
+    try {
+      return await operation.race(
+        _repository.recognizeAudio(fileName: fileName, bytes: bytes, c: operation),
+      );
+    } finally {
+      _audioOperations.remove(operation);
+      operation.cancel();
+      if (identical(_transcription, operation)) {
+        _transcription = null;
+        _recognizingAudio = false;
+        _notify();
+      }
+    }
+  }
+
+  Future<List<int>> synthesizeSpeech(String text) async {
+    if (_disposed || !connected) {
+      throw const GenAiFailure(GenAiFailureKind.cancelled);
+    }
+    return _audioRequest((operation) => _repository.convertTextToSpeech(text, operation));
+  }
+
+  static String createGroupId() {
+    // The official client uses NanoID's 64-character alphabet and 21-byte
+    // identifiers. The image endpoint rejects UUID-shaped group IDs with a
+    // generic HTTP 500 even though chat requests may accept them.
+    const alphabet = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict';
+    final random = Random.secure();
+    return String.fromCharCodes(
+      List<int>.generate(21, (_) => alphabet.codeUnitAt(random.nextInt(64))),
+    );
+  }
+
+  Future<void> restore({bool reportAuthenticationRequired = false}) async {
+    if (sessions.owner == null || _connecting || _disposed) return;
+    _connecting = true;
+    _notify();
+    try {
+      await sessions.requireSession();
+    } on GenAiFailure catch (error) {
+      if ((reportAuthenticationRequired || error.kind != GenAiFailureKind.authenticationRequired) &&
+          error.kind != GenAiFailureKind.accountChanged) {
+        _loginFailure = error;
+      }
+    } finally {
+      _connecting = false;
+      _notify();
+    }
+  }
+
+  Future<void> connect(GenAiCredential credential) => connectUsing(() async {
+    await sessions.connect(credential);
+  });
+
+  Future<void> connectUsing(Future<void> Function() operation) async {
+    if (_connecting || _disposed) return;
+    _connecting = true;
+    _loginFailure = null;
+    _notify();
+    try {
+      await operation();
+    } on GenAiFailure catch (error) {
+      if (error.kind != GenAiFailureKind.accountChanged) _loginFailure = error;
+    } finally {
+      _connecting = false;
+      _notify();
+    }
+  }
+
+  void _sessionChanged() {
+    if (_disposed) return;
+    final revisionChanged = _agentSessionRevision != sessions.revision;
+    _agentSessionRevision = sessions.revision;
+    if (_owner != sessions.owner) {
+      _owner = sessions.owner;
+      _draftTitles.clear();
+      _uncertainDeletions.clear();
+      _unverifiedHistoryEdits.clear();
+      newConversation();
+      _loginFailure = null;
+      _agentRunner?.clear();
+    } else if (revisionChanged) {
+      // Credential renewal/rejection is not an account change. Cancel work
+      // under the old credential, retaining drafts, receipts and visible turns.
+      stop();
+    }
+    final session = sessions.session;
+    if (!identical(session, _catalogSession)) {
+      _catalogSession = session;
+      _catalogOperation?.cancel();
+      _models = const [];
+      _selectedModel = null;
+      _loadingModels = false;
+      _catalogFailure = null;
+      if (session != null) unawaited(reloadModels());
+    }
+    _notify();
+  }
+
+  Future<void> reloadModels() async {
+    if (!connected || _disposed) return;
+    _catalogOperation?.cancel();
+    final operation = GenAiCancellation();
+    _catalogOperation = operation;
+    _loadingModels = true;
+    _catalogFailure = null;
+    _notify();
+    try {
+      final models = await _repository.listModels(operation);
+      if (_disposed || operation.isCancelled) return;
+      final previous = _selectedModel;
+      _models = models;
+      // Paid-only catalogs require an explicit choice; no silent paid fallback.
+      _selectedModel =
+          models
+              .where(
+                (m) =>
+                    !m.isImage &&
+                    m.aiType == previous?.aiType &&
+                    m.rootAiType == previous?.rootAiType,
+              )
+              .firstOrNull ??
+          models.where((m) => !m.isImage && m.payType == 'FREE').firstOrNull;
+    } on GenAiFailure catch (error) {
+      if (!_disposed && !operation.isCancelled) _catalogFailure = error;
+    } finally {
+      if (identical(_catalogOperation, operation)) {
+        _loadingModels = false;
+        _catalogOperation = null;
+      }
+      operation.cancel();
+      _notify();
+    }
+  }
+
+  String? _currentArchiveScope() =>
+      sessions.owner == null ? null : jsonEncode([sessions.owner!.storageId, null]);
+
+  void _checkArchiveScope(String scope, Object revision, [GenAiCancellation? cancellation]) {
+    cancellation?.throwIfCancelled();
+    if (_disposed ||
+        _archiveScope != scope ||
+        _archiveRevision != revision ||
+        _agentScope?.call() != _agentScopeValue) {
+      throw const GenAiFailure(GenAiFailureKind.accountChanged);
+    }
+  }
+
+  Future<GenAiRemoteHistory> _readConversation(String id, GenAiCancellation cancellation) async {
+    final scope = _archiveScope;
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    final rows = await _repository.loadConversation(id, cancellation);
+    _checkArchiveScope(scope, revision, cancellation);
+    return decodeGenAiConversation(id, rows, serverTitle: _draftTitles[id]);
+  }
+
+  Future<GenAiPageResult<GenAiConversationSummary>> listConversations(
+    GenAiCancellation cancellation, {
+    int page = 1,
+    String query = '',
+  }) async {
+    final scope = _archiveScope;
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    final remote = await _repository.listConversations(cancellation, page: page, query: query);
+    _checkArchiveScope(scope, revision, cancellation);
+    // The server title/time may describe a tool continuation or housekeeping
+    // exchange. Derive both from logical user turns, not last-open timestamps.
+    final summaries = List<GenAiConversationSummary?>.filled(remote.records.length, null);
+    var next = 0;
+    var failed = false;
+    Future<void> readSummaries() async {
+      try {
+        while (!failed && next < remote.records.length) {
+          _checkArchiveScope(scope, revision, cancellation);
+          final index = next++;
+          final item = remote.records[index];
+          if (item.hasCustomTitle) _draftTitles[item.id] = item.title;
+          final history = await _readConversation(item.id, cancellation);
+          summaries[index] = GenAiConversationSummary(
+            id: item.id,
+            title: _draftTitles[item.id] ?? (history.isEmpty ? item.title : history.summary.title),
+            time: history.isEmpty ? item.time : history.summary.time,
+            pinned: item.pinned,
+            hasCustomTitle: item.hasCustomTitle,
+          );
+        }
+      } catch (_) {
+        failed = true;
+        rethrow;
+      }
+    }
+
+    // Keep a page from waiting on twenty serial round trips without flooding
+    // the campus service. Every worker retains the same cancellation/owner guard.
+    await Future.wait(List.generate(min(4, remote.records.length), (_) => readSummaries()));
+    _checkArchiveScope(scope, revision, cancellation);
+    return GenAiPageResult(
+      summaries.cast<GenAiConversationSummary>()..sort(GenAiConversationSummary.newestFirst),
+      page: page,
+      hasMore: remote.hasMore,
+    );
+  }
+
+  Future<void> deleteConversation(String id, GenAiCancellation cancellation) async {
+    final scope = _archiveScope;
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    if (_uncertainDeletions.containsKey(id)) {
+      throw const GenAiFailure(GenAiFailureKind.interrupted);
+    }
+    if (_groupId == id) stop();
+    _uncertainDeletions[id] = scope;
+    try {
+      await _repository.deleteConversation(id, cancellation);
+      _checkArchiveScope(scope, revision, cancellation);
+      _uncertainDeletions.remove(id);
+      _draftTitles.remove(id);
+      if (_groupId == id) newConversation();
+    } finally {
+      _notify();
+    }
+  }
+
+  /// Reconciliation reads only. An ambiguous DELETE is never repeated.
+  Future<void> reconcilePendingDeletions(GenAiCancellation cancellation) async {
+    for (final entry in _uncertainDeletions.entries.toList()) {
+      if (entry.value != _archiveScope) continue;
+      final remote = await _readConversation(entry.key, cancellation);
+      if (remote.archive.isEmpty && _groupId == entry.key) newConversation();
+      _uncertainDeletions.remove(entry.key);
+    }
+    _notify();
+  }
+
+  Future<GenAiConversationSnapshot> conversationForExport(
+    String id,
+    GenAiCancellation cancellation,
+  ) async => (await _readConversation(id, cancellation)).archive;
+
+  /// Server metadata is updated without generating a model response.
+  Future<void> renameConversation(String id, String name, {GenAiCancellation? cancellation}) async {
+    final value = name.trim();
+    if (value.isEmpty) throw ArgumentError.value(name, 'name');
+    final scope = _archiveScope;
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    final operation = cancellation ?? GenAiCancellation();
+    try {
+      await _repository.renameConversation(id, value, operation);
+      _checkArchiveScope(scope, revision, operation);
+      _draftTitles[id] = value;
+      if (_groupId == id) _titleOverride = value;
+      _finishedTurnRevision++;
+      _notify();
+    } finally {
+      if (cancellation == null) operation.cancel();
+    }
+  }
+
+  Future<void> pinConversation(String id, bool pinned, GenAiCancellation cancellation) async {
+    final scope = _archiveScope;
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    await _repository.pinConversations([id], pinned, cancellation);
+    _checkArchiveScope(scope, revision, cancellation);
+    _finishedTurnRevision++;
+    _notify();
+  }
+
+  void _applyRemote(GenAiConversationSnapshot archive, {bool restoreModes = true}) {
+    _turns
+      ..clear()
+      ..addAll(archive.turns);
+    _titleOverride = _draftTitles[archive.id] ?? archive.title;
+    _repository.restoreContext(archive.id, archive.contextMemory);
+    _restoredMutations = archive.mutations;
+    _ledgerNeedsRestore = true;
+    if (restoreModes) {
+      _agentEnabled = archive.agentEnabled;
+      final candidates = models
+          .where(
+            (m) =>
+                m.aiType == archive.modelAiType &&
+                (archive.modelRootAiType == null || m.rootAiType == archive.modelRootAiType),
+          )
+          .toList();
+      _selectedModel = candidates.length == 1 ? candidates.single : null;
+    }
+  }
+
+  Future<bool> openConversation(String id, GenAiCancellation cancellation) async {
+    if (_disposed || sending) return false;
+    final load = ++_conversationLoad;
+    final generation = _generation;
+    final remote = await _readConversation(id, cancellation);
+    if (_disposed || load != _conversationLoad || generation != _generation || sending) {
+      return false;
+    }
+    newConversation();
+    _groupId = id;
+    _applyRemote(remote.archive);
+    _unverifiedHistoryEdits.remove(id);
+    _notify();
+    return true;
+  }
+
+  /// Refresh the authoritative path before continuing, without discarding an
+  /// unsaved exchange after a dropped connection. The user can explicitly open
+  /// server history or start a new chat in that case.
+  Future<bool> _refreshBeforeSend({bool reconcileHistoryEdit = false}) async {
+    final historyEdited = _unverifiedHistoryEdits.contains(_groupId);
+    if (historyEdited && !reconcileHistoryEdit) {
+      _recoveryFailure = const GenAiFailure(GenAiFailureKind.historyChanged);
+      _notify();
+      return false;
+    }
+    if (_turns.isEmpty && !historyEdited) return true;
+    final operation = GenAiCancellation();
+    final generation = _generation;
+    _refreshOperation = operation;
+    _notify();
+    try {
+      if (_agentDrain != null) await operation.race(_agentDrain!);
+      if (generation != _generation || operation.isCancelled) return false;
+      final remote = await _readConversation(_groupId, operation);
+      if (generation != _generation || operation.isCancelled) return false;
+      if (historyEdited) {
+        // An explicit recovery accepts the current server path, including a
+        // partially applied deletion. Never merge stale turns or replay DELETE.
+        _interruptedTurns.clear();
+        _agentRunner?.clearConversation(_groupId);
+        _repository.forgetConversationContext(_groupId);
+        _chat.clear();
+        _applyRemote(remote.archive, restoreModes: false);
+        _unverifiedHistoryEdits.remove(_groupId);
+        _recoveryFailure = null;
+        _conversationRevision++;
+        return true;
+      }
+      final recovered = remote.archive.turns;
+      final missing = _turns.where((t) => !recovered.any((r) => r.id == t.id)).toList();
+      if (missing.any((t) => t.phase == GenAiChatPhase.completed)) {
+        _recoveryFailure = const GenAiFailure(GenAiFailureKind.interrupted);
+        return false;
+      }
+      // Explicitly stopped/failed exchanges are inert records, carried once by
+      // the next real request. No metadata-only model call is needed.
+      final interrupted = _turns
+          .where(
+            (t) =>
+                (t.phase == GenAiChatPhase.cancelled ||
+                    t.phase == GenAiChatPhase.interrupted ||
+                    t.phase == GenAiChatPhase.failed) &&
+                !recovered.any((r) => r.id == t.id && r.phase == GenAiChatPhase.completed),
+          )
+          .toList();
+      for (final turn in interrupted) {
+        _interruptedTurns[turn.id] = turn.toInterruptedRecord();
+      }
+      _interruptedTurns.removeWhere(
+        (id, _) => recovered.any(
+          (r) =>
+              r.id == id &&
+              (r.phase == GenAiChatPhase.cancelled || r.phase == GenAiChatPhase.completed),
+        ),
+      );
+      _applyRemote(remote.archive, restoreModes: false);
+      for (final turn in interrupted) {
+        final index = _turns.indexWhere((t) => t.id == turn.id);
+        if (index >= 0) {
+          _turns[index] = turn;
+        } else {
+          _turns.add(turn);
+        }
+      }
+      if (reconcileHistoryEdit) {
+        // An absent row may still be arriving after cancellation. Do not claim
+        // synchronization succeeded or authorize deleting an unidentifiable turn.
+        if (missing.isNotEmpty) {
+          _recoveryFailure = const GenAiFailure(GenAiFailureKind.historyChanged);
+          return false;
+        }
+      }
+      _recoveryFailure = null;
+      return true;
+    } on GenAiFailure catch (error) {
+      if (!operation.isCancelled) _recoveryFailure = error;
+      return false;
+    } finally {
+      if (identical(_refreshOperation, operation)) _refreshOperation = null;
+      operation.cancel();
+      _notify();
+    }
+  }
+
+  Future<void> retrySaveConversations() async {
+    // This action reconciles existing server data; it never resends a POST.
+    if (!sending) await _refreshBeforeSend(reconcileHistoryEdit: true);
+  }
+
+  Map<String, Object?> _recordFor(GenAiConversationTurn turn) => {
+    'step_id': createGroupId(),
+    'turn': turn.toRemoteInput(),
+    if (_interruptedTurns.isNotEmpty) 'interrupted': _interruptedTurns.values.toList(),
+    'agent': turn.isAgent,
+    'search': false,
+    if (_titleOverride != null) 'title': _titleOverride,
+  };
+
+  void selectModel(GenAiModel model) {
+    if (sending || !models.contains(model)) return;
+    _selectedModel = model;
+    _notify();
+  }
+
+  Future<void> send(String prompt, {VoidCallback? onAccepted}) async {
+    _agentScopeChanged();
+    final model = _selectedModel;
+    final generation = _generation;
+    final revision = _archiveRevision;
+    if (_disposed || sending || !connected || model == null) {
+      return;
+    }
+    if ((_turns.isNotEmpty || _unverifiedHistoryEdits.contains(_groupId)) &&
+        !await _refreshBeforeSend()) {
+      return;
+    }
+    while (hasPendingUploads && generation == _generation) {
+      await Future.wait([for (final upload in _uploads.values) upload.done]);
+    }
+    if (_disposed ||
+        sending ||
+        !connected ||
+        generation != _generation ||
+        revision != _archiveRevision) {
+      return;
+    }
+    if (hasFailedUploads) {
+      return;
+    }
+    if (prompt.trim().isEmpty && _attachments.isEmpty) {
+      return;
+    }
+    final imageAttachments = _attachments.where((a) => a.isImage).toList();
+    final imageUrls = imageAttachments.map((a) => a.imageUrl).whereType<String>().toList();
+    final attachedImageBytesList = [
+      for (final a in imageAttachments)
+        if (a.bytes.isNotEmpty) Uint8List.fromList(a.bytes),
+    ];
+    final turn =
+        GenAiConversationTurn(
+            prompt.trim(),
+            id: createGroupId(),
+            parentId: _turns.lastOrNull?.id,
+            isAgent: _agentEnabled,
+          )
+          ..thinkingStartTime = DateTime.now()
+          ..files = [
+            for (final a in _attachments)
+              if (a.fileId != null)
+                GenAiTurnFile(id: a.fileId!, name: a.name, content: a.documentContent),
+          ]
+          ..attachedImageUrls = imageUrls
+          ..attachedImageBytesList = attachedImageBytesList;
+    _attachments.clear();
+    if (turn.isAgent) {
+      await _executeAgentTurn(turn, model, onAccepted: onAccepted);
+    } else {
+      await _executeSendTurn(turn, model, onAccepted: onAccepted);
+    }
+  }
+
+  bool _matchesHistoryForEdit(List<GenAiConversationTurn> remote) {
+    if (remote.length != _turns.length) return false;
+    Map<String, Object?> request(GenAiConversationTurn turn) => {
+      'id': turn.id,
+      'parentId': turn.parentId,
+      'actionScopeId': turn.actionScopeId ?? turn.id,
+      'prompt': turn.prompt,
+      'isAgent': turn.isAgent,
+      'files': [for (final file in turn.files) file.toJson()],
+      'images': turn.attachedImageUrls,
+    };
+    String output(GenAiConversationTurn turn) => jsonEncode({
+      'answer': turn.answer,
+      'evidence': [for (final entry in turn.evidenceEntries) entry.message.content],
+    });
+    for (var i = 0; i < remote.length; i++) {
+      final local = _turns[i];
+      final saved = remote[i];
+      if (saved.isHistoryGap || jsonEncode(request(local)) != jsonEncode(request(saved))) {
+        return false;
+      }
+      // Cancelling the client does not stop the school's generation/persistence.
+      // Later output from this exact request is expected, even after check-sync.
+      // All user input and the conversation path must still match; completed
+      // turns retain the normal output conflict check.
+      final stopped =
+          _stoppedRequests.contains(local.id) ||
+          local.phase == GenAiChatPhase.cancelled ||
+          local.phase == GenAiChatPhase.interrupted ||
+          local.phase == GenAiChatPhase.failed;
+      if (!stopped && output(local) != output(saved)) return false;
+    }
+    return true;
+  }
+
+  /// Permanent suffix editing. UI confirmation must describe the complete
+  /// turn(s), including tool activity, that will be removed from school history.
+  Future<void> changeTurn(
+    String turnId, {
+    bool keepTurn = false,
+    String? replacement,
+    VoidCallback? onCommitted,
+  }) async {
+    if (_disposed || sending || hasPendingUploads) {
+      throw const GenAiFailure(GenAiFailureKind.busy);
+    }
+    final model = _selectedModel;
+    final target = _turns.where((turn) => turn.id == turnId).firstOrNull;
+    if (target == null ||
+        target.isHistoryGap ||
+        replacement != null &&
+            (replacement.trim().isEmpty || model == null || target.isAgent && !agentAvailable)) {
+      throw const GenAiFailure(GenAiFailureKind.historyChanged);
+    }
+    final operation = GenAiCancellation();
+    final group = _groupId;
+    final generation = _generation;
+    final scope = _archiveScope;
+    final revision = _archiveRevision;
+    if (scope == null) throw const GenAiFailure(GenAiFailureKind.authenticationRequired);
+    _historyEditOperation = operation;
+    _conversationLoad++; // Invalidate a history open already awaiting its GET.
+    _notify();
+    void check() {
+      _checkArchiveScope(scope, revision, operation);
+      if (_groupId != group || generation != _generation) {
+        throw const GenAiFailure(GenAiFailureKind.cancelled);
+      }
+    }
+
+    try {
+      if (_agentDrain != null) await operation.race(_agentDrain!);
+      check();
+      final rows = await _repository.loadConversation(group, operation);
+      check();
+      final before = decodeGenAiConversation(group, rows).archive;
+      if (!_matchesHistoryForEdit(before.turns)) {
+        throw const GenAiFailure(GenAiFailureKind.historyChanged);
+      }
+      // A stopped tool may have executed after its last saved model step. Keep
+      // its confirmed/uncertain receipt when an edit removes that step.
+      final priorEffects = Map<String, Object?>.from(before.mutations['effects']! as Map);
+      for (final snapshot in [
+        _restoredMutations,
+        if (_agentRunner != null) _agentRunner!.snapshotConversation(group),
+      ]) {
+        for (final entry in (snapshot['effects']! as Map<String, Object?>).entries) {
+          if (entry.value case {'ok': true} || {'error': {'code': 'outcome_unknown'}}) {
+            if ((entry.value as Map)['ok'] == true ||
+                (priorEffects[entry.key] as Map?)?['ok'] != true) {
+              priorEffects[entry.key] = entry.value;
+            }
+          }
+        }
+      }
+      final plan = GenAiHistoryEdit.plan(group, rows, turnId, keepTurn: keepTurn);
+      if (plan.removedIds.isEmpty) return;
+      _unverifiedHistoryEdits.add(group);
+      await _repository.deleteMessages(plan.removedIds, operation);
+      check();
+      final remaining = await _repository.loadConversation(group, operation);
+      check();
+      // The endpoint has no transaction/revision token. Verify the actual
+      // server prefix, including content, before allowing edit-and-resend.
+      String signature(List<GenAiSavedTurn> values) => jsonEncode([
+        for (final row in values) [row.recordId, row.prompt, row.answer, row.reasoning],
+      ]);
+      if (signature(remaining) != signature(plan.retained)) {
+        throw const GenAiFailure(GenAiFailureKind.historyChanged);
+      }
+      _interruptedTurns.clear();
+      _agentRunner?.clearConversation(group);
+      _repository.forgetConversationContext(group);
+      _chat.clear();
+      _applyRemote(decodeGenAiConversation(group, remaining).archive, restoreModes: false);
+      _unverifiedHistoryEdits.remove(group);
+      _recoveryFailure = null;
+      _conversationRevision++;
+      onCommitted?.call(); // Release the editor before streaming or tool approval.
+      if (replacement != null) {
+        // An explicit edit is a new request, unlike a retry. Carry external
+        // outcomes into its first normal record, but not old approval denials.
+        // Deleting conversation text cannot undo an already submitted action.
+        _restoredMutations = {
+          'version': 1,
+          'effects': {
+            for (final entry in priorEffects.entries)
+              if (entry.value case {'ok': true} || {'error': {'code': 'outcome_unknown'}})
+                entry.key: entry.value,
+          },
+        };
+        final edited =
+            GenAiConversationTurn(
+                replacement.trim(),
+                id: createGroupId(),
+                parentId: _turns.lastOrNull?.id,
+                isAgent: target.isAgent,
+              )
+              ..files = List.of(target.files)
+              ..attachedImageUrls = List.of(target.attachedImageUrls)
+              ..attachedImageBytesList = List.of(target.attachedImageBytesList)
+              ..thinkingStartTime = DateTime.now();
+        if (edited.isAgent) {
+          await _executeAgentTurn(edited, model!, priorMutations: _restoredMutations);
+        } else {
+          await _executeSendTurn(edited, model!);
+        }
+      }
+    } on GenAiFailure catch (error) {
+      // Ambiguous/partial deletion is reconciled by explicitly reopening the
+      // server history. Never send the stale local transcript or replay DELETE.
+      if (!_disposed &&
+          _groupId == group &&
+          _archiveRevision == revision &&
+          generation == _generation) {
+        _recoveryFailure = error;
+      }
+      rethrow;
+    } finally {
+      if (identical(_historyEditOperation, operation)) _historyEditOperation = null;
+      operation.cancel();
+      _notify();
+    }
+  }
+
+  Future<void> retryTurn(int index) async {
+    // A stale retry must not truncate later exchanges or cancel their work.
+    // Earlier edits use changeTurn with explicit destructive confirmation.
+    if (index < 0 || index != _turns.length - 1 || _turns[index].isHistoryGap) {
+      return;
+    }
+    _agentScopeChanged();
+    if (_active?.isAgent ?? false) stop();
+    final model = _selectedModel;
+    if (_disposed || sending || !connected || model == null) return;
+    if (index < 0 || index >= _turns.length) return;
+
+    if (_turns.isNotEmpty && !await _refreshBeforeSend()) return;
+    if (index != _turns.length - 1) return;
+    final target = _turns[index];
+    if (target.isAgent && (!agentAvailable || _attachments.isNotEmpty || hasPendingUploads)) {
+      return;
+    }
+    final prompt = target.prompt;
+    final files = target.files;
+    final imageUrls = target.attachedImageUrls;
+    final imageBytesList = target.attachedImageBytesList;
+
+    _turns.removeLast();
+
+    final turn =
+        GenAiConversationTurn(
+            prompt,
+            id: createGroupId(),
+            parentId: target.parentId,
+            actionScopeId: target.actionScopeId ?? target.id,
+            isAgent: target.isAgent,
+          )
+          ..approvalBudget.addAll(target.approvalBudget)
+          ..thinkingStartTime = DateTime.now()
+          ..files = List.of(files)
+          ..attachedImageUrls = imageUrls
+          ..attachedImageBytesList = imageBytesList;
+
+    if (turn.isAgent) {
+      await _executeAgentTurn(turn, model);
+    } else {
+      await _executeSendTurn(turn, model);
+    }
+  }
+
+  List<GenAiAgentHistoryEntry> _agentConversationTranscript() {
+    final history = <GenAiAgentHistoryEntry>[];
+    for (final turn in _turns) {
+      if (turn.isHistoryGap) {
+        history.clear();
+      } else if (turn.phase == GenAiChatPhase.completed || turn.agentEvents.isNotEmpty) {
+        history.addAll(turn.evidenceEntries);
+        if (turn.isAgent) {
+          // An interrupted tool result must not look like feedback awaiting
+          // continuation when the user has started a different task.
+          history.add(
+            GenAiAgentHistoryEntry.text(
+              GenAiRole.assistant,
+              jsonEncode({'kind': 'techpie_turn_end', 'status': turn.phase.name}),
+            ),
+          );
+        }
+      }
+    }
+    return history;
+  }
+
+  Future<void> _executeAgentTurn(
+    GenAiConversationTurn turn,
+    GenAiModel model, {
+    Map<String, Object?>? priorMutations,
+    VoidCallback? onAccepted,
+  }) async {
+    final thinking = _thinkingEnabled && model.supportsThinking;
+    final runner = _agentRunner;
+    if (runner == null) return;
+    final groupId = _groupId;
+    final generation = ++_generation;
+    final revision = sessions.revision;
+    final scope = _agentScopeValue;
+    final operation = GenAiCancellation();
+    final previousRun = _agentDrain;
+    final drained = Completer<void>();
+    _agentDrain = drained.future;
+    _agentOperation = operation;
+    _turns.add(turn);
+    _active = turn;
+    onAccepted?.call();
+    turn.agentStatus = '正在处理';
+    _notify();
+    bool owned() =>
+        !_disposed &&
+        generation == _generation &&
+        revision == sessions.revision &&
+        _agentScope?.call() == scope &&
+        identical(_active, turn) &&
+        identical(_agentOperation, operation);
+    bool current() => owned() && !operation.isCancelled;
+    turn.agentTranscript = [GenAiAgentHistoryEntry.text(GenAiRole.user, turn.prompt)];
+    try {
+      // Stop permits another send immediately; wait for the cancelled runner's
+      // finally block before using its session-scoped mutation ledger again.
+      if (previousRun != null) await previousRun;
+      if (!current()) return;
+      if (_ledgerNeedsRestore) {
+        runner.restoreConversation(groupId, _restoredMutations);
+        for (final savedTurn in _turns) {
+          runner.recoverCalls(
+            groupId,
+            savedTurn.agentEvents.values,
+            turnId: savedTurn.actionScopeId ?? savedTurn.id,
+          );
+        }
+        _ledgerNeedsRestore = false;
+      }
+      final transcript = _agentConversationTranscript();
+      final attachments = _conversationAttachments(_turns);
+      if (!current()) return;
+      await for (final event in runner.run(
+        request: GenAiChatRequest(
+          chatGroupId: groupId,
+          prompt: turn.prompt,
+          record: {..._recordFor(turn), if (priorMutations != null) 'mutations': priorMutations},
+          aiType: model.aiType,
+          rootAiType: model.rootAiType,
+          history: const [],
+          thinking: thinking,
+          fileIds: attachments.fileIds,
+          documentContents: attachments.documentContents,
+          imageUrls: attachments.imageUrls,
+          imageUrl: attachments.imageUrls.lastOrNull,
+        ),
+        cancellation: operation,
+        isCurrent: current,
+        transcript: transcript,
+        approvalBudget: turn.approvalBudget,
+        confirmProposalSaved: () async {
+          if (!current()) throw const GenAiFailure(GenAiFailureKind.cancelled);
+          final step = _repository.lastStepFor(groupId);
+          if (step == null) throw const GenAiFailure(GenAiFailureKind.storage);
+          await _repository.confirmStep(groupId, step, operation);
+          if (!current()) throw const GenAiFailure(GenAiFailureKind.cancelled);
+        },
+        approve: (tool, call, prepared) {
+          if (!current()) return Future.value(false);
+          final pending = GenAiPendingAgentApproval(call, prepared);
+          _pendingAgentApproval = pending;
+          _notify();
+          return pending._result.future;
+        },
+      )) {
+        final active = owned();
+        if (!active) {
+          // Drain same-owner receipts after Stop, even if a new send has started.
+          if (_disposed ||
+              !_turns.contains(turn) ||
+              _groupId != groupId ||
+              revision != sessions.revision ||
+              _agentScope?.call() != scope) {
+            break;
+          }
+          if (event.call == null) continue;
+        }
+        final call = event.call;
+        if (call != null) {
+          turn.agentEvents[call.id] = event;
+          if (event.kind == GenAiAgentEventKind.toolProposed) {
+            turn.agentTranscript.add(GenAiAgentHistoryEntry.call(call));
+          } else if (event.result case final result?) {
+            turn.agentTranscript.add(GenAiAgentHistoryEntry.result(result));
+          }
+        }
+        turn.recordAgentActivity(event);
+        if (!active) continue;
+        switch (event.kind) {
+          case GenAiAgentEventKind.contextUsage:
+            turn.contextUsage = event.contextUsage;
+          case GenAiAgentEventKind.contextCompacted:
+            turn.contextCompacted = true;
+          case GenAiAgentEventKind.modelStarted:
+            turn.answer = '';
+            turn.contextUsage = null;
+            turn.phase = GenAiChatPhase.streaming;
+            turn.agentStatus = '正在处理 · 第 ${event.turn} 步';
+            turn.isAgentThinking = thinking;
+            if (turn.reasoning.isNotEmpty) turn.reasoning += '\n\n';
+          case GenAiAgentEventKind.answerDelta:
+            turn.isAgentThinking = false;
+            turn.answer += event.text ?? '';
+            turn.agentStatus = '';
+          case GenAiAgentEventKind.reasoningDelta:
+            turn.isAgentThinking = true;
+            turn.reasoning += event.text ?? '';
+          case GenAiAgentEventKind.toolProposed:
+            turn.isAgentThinking = false;
+            turn.agentStatus = '准备使用工具';
+          case GenAiAgentEventKind.approvalRequired:
+            turn.agentStatus = '等待你的确认';
+          case GenAiAgentEventKind.toolStarted:
+            turn.agentStatus = '正在使用工具';
+          case GenAiAgentEventKind.toolFinished:
+            turn.agentStatus = '已收到工具结果，继续处理';
+          case GenAiAgentEventKind.protocolError:
+            turn.answer = '';
+            turn.isAgentThinking = false;
+            turn.agentStatus = '正在修正工具参数';
+          case GenAiAgentEventKind.completed:
+            turn.isAgentThinking = false;
+            turn.answer = event.text ?? '';
+            turn.agentTranscript.add(GenAiAgentHistoryEntry.text(GenAiRole.assistant, turn.answer));
+            turn.agentStatus = '';
+            turn.phase = GenAiChatPhase.completed;
+          case GenAiAgentEventKind.failed:
+          case GenAiAgentEventKind.cancelled:
+            turn.contextUsage = null;
+            turn.failure = event.failure;
+            if (event.partialText case final partial?) {
+              turn.answer = partial;
+              turn.agentTranscript.add(GenAiAgentHistoryEntry.text(GenAiRole.assistant, partial));
+            }
+            turn.agentStatus = event.text ?? '任务未完成，请检查工具记录后再继续。已提交的操作不要重复执行。';
+            turn.phase = event.kind == GenAiAgentEventKind.cancelled
+                ? GenAiChatPhase.cancelled
+                : GenAiChatPhase.failed;
+        }
+        _notify();
+      }
+    } catch (error) {
+      if (current()) {
+        turn.contextUsage = null;
+        turn.failure = error is GenAiFailure
+            ? error
+            : const GenAiFailure(GenAiFailureKind.protocol);
+        turn.phase = GenAiChatPhase.failed;
+        turn.agentStatus = '无法继续任务，请检查工具记录。已提交的操作不要重复执行。';
+      }
+    } finally {
+      turn.isAgentThinking = false;
+      operation.cancel();
+      if (identical(_agentOperation, operation)) {
+        resolveAgentApproval(false);
+        _agentOperation = null;
+      }
+      if (generation == _generation && identical(_active, turn)) {
+        _active = null;
+        _finishedTurnRevision++;
+      }
+      drained.complete();
+      if (identical(_agentDrain, drained.future)) _agentDrain = null;
+      _notify();
+    }
+  }
+
+  /// Both chat modes carry the same attachment context. A missing-history row
+  /// breaks that context; we must not associate earlier files with later tasks.
+  ({List<String> fileIds, Map<String, String> documentContents, List<String> imageUrls})
+  _conversationAttachments(Iterable<GenAiConversationTurn> turns) {
+    final fileIds = <String>{};
+    final documentContents = <String, String>{};
+    final imageUrls = <String>{};
+    for (final turn in turns) {
+      if (turn.isHistoryGap) {
+        fileIds.clear();
+        documentContents.clear();
+        imageUrls.clear();
+      } else {
+        fileIds.addAll(turn.attachedFileIds);
+        documentContents.addAll(turn.attachedFileContents);
+        for (final image in [
+          ...turn.attachedImageUrls,
+          for (final event in turn.agentEvents.values) ...genAiGeneratedImages(event.result),
+        ]) {
+          imageUrls.remove(image);
+          imageUrls.add(image);
+        }
+      }
+    }
+    return (
+      fileIds: fileIds.toList(),
+      documentContents: documentContents,
+      imageUrls: imageUrls.toList(),
+    );
+  }
+
+  Future<void> _executeSendTurn(
+    GenAiConversationTurn turn,
+    GenAiModel model, {
+    VoidCallback? onAccepted,
+  }) async {
+    final history = <GenAiMessage>[];
+    final attachments = _conversationAttachments([..._turns, turn]);
+    // Bound automatic history, but never silently discard this turn's explicit
+    // attachments. Oversized explicit input still follows the normal budget check.
+    final currentImages = turn.attachedImageUrls.toSet();
+    final historyImageBudget = currentImages.length < 8 ? 8 - currentImages.length : 0;
+    final visibleImages = [
+      ...attachments.imageUrls
+          .where((url) => !currentImages.contains(url))
+          .toList()
+          .reversed
+          .take(historyImageBudget)
+          .toList()
+          .reversed,
+      ...currentImages,
+    ];
+    for (final previous in _turns) {
+      if (previous.isHistoryGap) {
+        history.clear();
+      } else if (previous.phase == GenAiChatPhase.completed ||
+          (previous.isAgent && previous.agentEvents.isNotEmpty)) {
+        history.addAll(
+          previous.evidenceEntries.map(
+            (entry) => GenAiMessage(role: entry.message.role, content: entry.message.content),
+          ),
+        );
+      }
+    }
+    final generation = ++_generation;
+    final revision = sessions.revision;
+    final groupId = _groupId;
+    final thinking = thinkingEnabled;
+    final operation = GenAiCancellation();
+    _sendOperation = operation;
+    _turns.add(turn);
+    _active = turn;
+    onAccepted?.call();
+    _notify();
+
+    try {
+      // Cancellation/account changes must never start a fresh chat POST.
+      if (_disposed ||
+          operation.isCancelled ||
+          generation != _generation ||
+          revision != sessions.revision ||
+          !identical(_active, turn)) {
+        return;
+      }
+      await _chat.send(
+        GenAiChatRequest(
+          chatGroupId: groupId,
+          prompt: turn.prompt,
+          record: _recordFor(turn),
+          aiType: model.aiType,
+          rootAiType: model.rootAiType,
+          history: [
+            GenAiMessage(
+              role: GenAiRole.system,
+              content: genAiSystemPrompt(
+                campusTools: false,
+                documents: attachments.fileIds.isNotEmpty,
+                images: attachments.imageUrls.isNotEmpty,
+                includeAttachmentState: false,
+              ),
+            ),
+            ...history,
+          ],
+          stepContext: attachments.fileIds.isEmpty && attachments.imageUrls.isEmpty
+              ? null
+              : jsonEncode({
+                  'attached_content': {
+                    'documents': attachments.fileIds.isNotEmpty,
+                    'images': visibleImages.isNotEmpty,
+                    'visible_images': visibleImages,
+                    if (attachments.imageUrls.length > visibleImages.length)
+                      'earlier_images_not_attached':
+                          attachments.imageUrls.length - visibleImages.length,
+                  },
+                }),
+          thinking: thinking,
+          fileIds: attachments.fileIds,
+          documentContents: attachments.documentContents,
+          imageUrl: visibleImages.lastOrNull,
+          imageUrls: visibleImages,
+        ),
+        target: turn,
+      );
+    } finally {
+      operation.cancel();
+      if (identical(_sendOperation, operation)) _sendOperation = null;
+      if (generation == _generation && identical(_active, turn)) {
+        _active = null;
+        _finishedTurnRevision++;
+      }
+      _notify();
+    }
+  }
+
+  void _chatChanged() {
+    final turn = _active;
+    if (_disposed || turn == null || turn.isAgent) return;
+    if (turn.thinkingStartTime != null &&
+        turn.thinkingDurationMs == null &&
+        (_chat.answer.isNotEmpty || _chat.phase == GenAiChatPhase.completed)) {
+      turn.thinkingDurationMs = DateTime.now().difference(turn.thinkingStartTime!).inMilliseconds;
+    }
+    _notify();
+  }
+
+  void stop() {
+    _historyEditOperation?.cancel();
+    _historyEditOperation = null;
+    for (final operation in _audioOperations.toList()) {
+      operation.cancel();
+    }
+    _audioOperations.clear();
+    _transcription = null;
+    _recognizingAudio = false;
+    _refreshOperation?.cancel();
+    _refreshOperation = null;
+    _agentOperation?.cancel();
+    _agentOperation = null;
+    resolveAgentApproval(false);
+    _sendOperation?.cancel();
+    _sendOperation = null;
+    _chat.stop();
+    if (_active case final turn?) {
+      _stoppedRequests.add(turn.id);
+      _finishedTurnRevision++;
+      turn.contextUsage = null;
+      turn.isAgentThinking = false;
+      turn.phase = GenAiChatPhase.cancelled;
+      if (turn.isAgent) {
+        turn.agentStatus = '已停止';
+      }
+    }
+    _active = null;
+    _generation++;
+    _notify();
+  }
+
+  void newConversation() {
+    _conversationRevision++;
+    stop();
+    _chat.clear();
+    _turns.clear();
+    _stoppedRequests.clear();
+    _interruptedTurns.clear();
+    _cancelAttachments();
+    _groupId = createGroupId();
+    _archiveScope = _currentArchiveScope();
+    _titleOverride = null;
+    _recoveryFailure = null;
+    _ledgerNeedsRestore = false;
+    _restoredMutations = const {'version': 1, 'effects': <String, Object?>{}};
+    _notify();
+  }
+
+  Future<void> disconnect() async {
+    newConversation();
+    try {
+      await sessions.disconnect();
+    } on GenAiFailure catch (error) {
+      _loginFailure = error;
+      _notify();
+    }
+  }
+
+  void _notify() {
+    if (!_disposed) {
+      imageStudio.updateScope((_archiveScope, sessions.revision));
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _cancelAttachments();
+    stop();
+    _disposed = true;
+    imageStudio.dispose();
+    _agentOperation?.cancel();
+    resolveAgentApproval(false);
+    _agentScopeChanges?.removeListener(_agentScopeChanged);
+    _agentRunner?.clear();
+    _catalogOperation?.cancel();
+    _sendOperation?.cancel();
+    sessions.removeListener(_sessionChanged);
+    _chat.removeListener(_chatChanged);
+    if (sending) _chat.stop();
+    super.dispose();
+  }
+}

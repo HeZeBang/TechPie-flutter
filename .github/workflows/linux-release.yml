@@ -87,6 +87,8 @@ jobs:
             cmake \
             ninja-build \
             pkg-config \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
             libgtk-3-dev \
             liblzma-dev \
             libwebkit2gtk-4.1-dev \

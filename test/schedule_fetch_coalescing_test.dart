@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -71,8 +72,7 @@ void main() {
   // renewal both notify — and the boot's fan-out asks again with `force` for the
   // same account. Once a round has succeeded there is nothing left to ask for,
   // so neither may start a second one.
-  test('triggers during and after a round do not repeat it',
-      () async {
+  test('coalesced fetches and semester switches retain verified ownership', () async {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
@@ -90,7 +90,8 @@ void main() {
 
     final logger = DebugLogger();
     final requests = <Uri>[];
-    final http = LoggingHttpClient(logger, inner: _AnsweringClient(requests));
+    final client = _AnsweringClient(requests);
+    final http = LoggingHttpClient(logger, inner: client);
     final uniAuth = UniAuthService();
     final auth = AuthService(storage, http, uniAuth);
     await auth.loadSession();
@@ -119,6 +120,43 @@ void main() {
       3,
       reason: 'a successful round is the answer; do not ask for it again',
     );
+    expect(schedule.hasVerifiedAccountData, true);
+    await schedule.selectSemester('sem-2');
+    expect(schedule.error, isNull);
+    expect(schedule.hasVerifiedAccountData, true);
+    final oldResponse = Completer<void>();
+    final oldStarted = Completer<void>();
+    client.beforeCourses = () {
+      client.beforeCourses = null;
+      oldStarted.complete();
+      return oldResponse.future;
+    };
+    final oldSelection = schedule.selectSemester('sem-1');
+    await oldStarted.future;
+    await schedule.selectSemester('sem-2');
+    oldResponse.complete();
+    await oldSelection;
+    expect(schedule.selectedSemesterId, 'sem-2');
+    expect(schedule.hasVerifiedAccountData, true);
+    expect(schedule.error, isNull, reason: 'late responses must not invalidate a newer selection');
+    client.failCourses = true;
+    await schedule.selectSemester('sem-1');
+    expect(schedule.error, isNotNull);
+    expect(
+      schedule.hasVerifiedAccountData,
+      false,
+      reason: 'switching back must not revive an older ownership stamp',
+    );
+    client.failCourses = false;
+    client.beforeCourses = () => tpAuth.unbind(ThirdPartyPlatform.cpdaily);
+    await schedule.selectSemester('sem-2');
+    expect(
+      schedule.hasVerifiedAccountData,
+      false,
+      reason: 'a late response after unbinding must not establish ownership',
+    );
+    // Drain the existing coalesced auth-change callback.
+    await Future<void>.delayed(const Duration(milliseconds: 700));
   });
 }
 
@@ -127,11 +165,15 @@ void main() {
 class _AnsweringClient extends http.BaseClient {
   _AnsweringClient(this.requests);
 
+  bool failCourses = false;
+  Future<void> Function()? beforeCourses;
+
   final List<Uri> requests;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     requests.add(request.url);
+    if (request.url.path.endsWith('/course_table')) await beforeCourses?.call();
     final body = switch (request.url.path) {
       // The eams cookie is minted from the parent tgc before a timetable fetch
       // can carry one.
@@ -143,14 +185,14 @@ class _AnsweringClient extends http.BaseClient {
           'success': true,
           'data': {
             'semesters': {
-              '2025-2026': {'秋': 'sem-1'},
+              '2025-2026': {'秋': 'sem-1', '春': 'sem-2'},
             },
             'defaultSemester': 'sem-1',
             'tableId': 't1',
           },
         }),
       '/api/schedule/course_table' => jsonEncode({
-          'success': true,
+          'success': !failCourses,
           'data': {'periods': <Object?>[], 'courses': <Object?>[]},
         }),
       '/api/schedule/term_begin' => jsonEncode({
@@ -172,8 +214,7 @@ class _AnsweringClient extends http.BaseClient {
   }
 }
 
-List<String> _pathsOf(List<Uri> requests) =>
-    [for (final uri in requests) uri.path];
+List<String> _pathsOf(List<Uri> requests) => [for (final uri in requests) uri.path];
 
 /// Counts what was asked for and answers with a failure: this test is about how
 /// many rounds are started, not about what comes back.

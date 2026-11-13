@@ -1,0 +1,363 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html;
+import 'package:http/http.dart' as http;
+
+import 'genai_visual_runtime.dart';
+
+/// Only these exact, versioned resources can be fetched by the host. Generated
+/// frames themselves have no network access, including to library CDNs.
+const genAiVisualLibraries = {
+  'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js',
+  'https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.js',
+  'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js',
+};
+
+const genAiVisualCsp = "default-src 'none'; script-src 'unsafe-inline'; "
+    "style-src 'unsafe-inline'; img-src data: blob:; font-src data:; "
+    "connect-src 'none'; frame-src 'none'; object-src 'none'; "
+    "base-uri 'none'; form-action 'none'; worker-src 'none'";
+
+class GenAiVisualException implements Exception {
+  const GenAiVisualException(this.message);
+  final String message;
+}
+
+/// Builds an inert outer shell around an opaque-origin, scripts-only frame.
+/// The only bridge carries ready/error/height notifications, never app commands.
+class GenAiVisualDocument {
+  static const statusEvents = {'ready', 'height', 'fullscreen-height', 'error', 'escape'};
+  static Map<String, Object?> layoutMessage(bool fullscreen) =>
+      {'kind': 'techpie-visual-layout', 'fullscreen': fullscreen};
+  static Map<String, Object?> themeMessage(Map<String, String> theme) =>
+      {'kind': 'techpie-visual-theme', 'theme': theme};
+  static Map<String, Object?> activityMessage(bool active) =>
+      {'kind': 'techpie-visual-active', 'active': active};
+
+  static const mathLibrary = 'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js';
+  static const mathAutoRenderLibrary =
+      'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/auto-render.min.js';
+  static const maxSourceBytes = 256 * 1024;
+  static const defaultTitle = '交互示例';
+  static const maxTitleLength = 80;
+  static final Map<String, Future<String>> _libraries = {};
+
+  /// A plain-text label for the example card. Only an explicit `<title>` or
+  /// the first heading is used, so markup, scripts and attributes can never
+  /// reach the Flutter text layer; an untitled example keeps the generic label.
+  static String title(String source) {
+    final document = html.parse(source);
+    String clean(String? value) => (value ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final candidates = [
+      document.querySelector('title')?.text,
+      for (final tag in const ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        document.querySelector(tag)?.text,
+    ];
+    for (final candidate in candidates) {
+      final text = clean(candidate);
+      if (text.isEmpty) continue;
+      final runes = text.runes.toList();
+      return runes.length <= maxTitleLength
+          ? text
+          : '${String.fromCharCodes(runes.take(maxTitleLength))}…';
+    }
+    return defaultTitle;
+  }
+
+  static Future<String> prepare(
+    String source, {
+    Future<String> Function(Uri)? loadLibrary,
+  }) async {
+    if (utf8.encode(source).length > maxSourceBytes) {
+      throw const GenAiVisualException('内容过大，请查看源码');
+    }
+    final document = html.parse(source);
+    // Discard document-level controls; policy is always host-owned and first.
+    for (final element in document.querySelectorAll('meta, base, link')) {
+      element.remove();
+    }
+    for (final script in document.querySelectorAll('script[src]')) {
+      final url = script.attributes['src']!;
+      if (!genAiVisualLibraries.contains(url)) {
+        throw const GenAiVisualException('此示例引用了不支持的外部脚本');
+      }
+      final code = await (loadLibrary?.call(Uri.parse(url)) ?? _library(url));
+      script.attributes.remove('src');
+      script.attributes.remove('integrity');
+      script.attributes.remove('crossorigin');
+      script.attributes.remove('async');
+      script.attributes.remove('defer');
+      script.text = code.replaceAll(RegExp('</script', caseSensitive: false), r'<\/script');
+    }
+    final needsAutoRender =
+        source.contains(r'\(') || source.contains(r'\[') || source.contains(r'$$');
+    // Include script-created labels and aliased helper calls as well as initial DOM.
+    final needsMath = needsAutoRender ||
+        source.contains('data-latex') ||
+        source.contains('techpieMath') ||
+        RegExp(r'''dataset\s*(?:\.\s*latex\b|\[\s*['"]latex['"]\s*\])''').hasMatch(source);
+    Future<String?> optionalMathLibrary(String url) async {
+      try {
+        return await (loadLibrary?.call(Uri.parse(url)) ?? _library(url));
+      } catch (_) {
+        // Math is optional: preserve readable formulas and the rest of the demo.
+        return null;
+      }
+    }
+
+    final mathScripts = needsMath
+        ? await Future.wait([
+            optionalMathLibrary(mathLibrary),
+            if (needsAutoRender) optionalMathLibrary(mathAutoRenderLibrary),
+          ])
+        : const <String?>[];
+    final content = dom.Element.tag('div')..id = 'techpie-visual-content';
+    content.nodes.addAll(document.body!.nodes.toList());
+    document.body!.append(content);
+    final head = document.head!;
+    head.nodes.insertAll(0, [
+      dom.Element.tag('meta')
+        ..attributes['http-equiv'] = 'Content-Security-Policy'
+        ..attributes['content'] = genAiVisualCsp,
+      dom.Element.tag('meta')..attributes['charset'] = 'utf-8',
+      dom.Element.tag('meta')
+        ..attributes['name'] = 'viewport'
+        ..attributes['content'] = 'width=device-width, initial-scale=1',
+      dom.Element.tag('style')..text = _baseStyle,
+      dom.Element.tag('script')..text = genAiVisualScheduler,
+      dom.Element.tag('script')..text = _reporter,
+      for (final mathCode in mathScripts)
+        if (mathCode != null)
+          dom.Element.tag('script')
+            ..text = mathCode.replaceAll(RegExp('</script', caseSensitive: false), r'<\/script'),
+      if (needsMath) dom.Element.tag('script')..text = genAiVisualMath,
+    ]);
+    return '<!doctype html>${document.documentElement!.outerHtml}';
+  }
+
+  static Future<String> _library(String url) async {
+    final existing = _libraries[url];
+    if (existing != null) return existing;
+    final pending = _libraries.putIfAbsent(url, () => _download(Uri.parse(url)));
+    try {
+      return await pending;
+    } catch (_) {
+      unawaited(_libraries.remove(url));
+      rethrow;
+    }
+  }
+
+  static Future<String> _download(Uri uri) async {
+    final client = http.Client();
+    try {
+      return await (() async {
+        final response = await client.send(http.Request('GET', uri)..followRedirects = false);
+        if (response.statusCode != 200) throw const FormatException();
+        final bytes = <int>[];
+        await for (final chunk in response.stream) {
+          if (bytes.length + chunk.length > 2 * 1024 * 1024) throw const FormatException();
+          bytes.addAll(chunk);
+        }
+        return utf8.decode(bytes);
+      })()
+          .timeout(const Duration(seconds: 20));
+    } catch (_) {
+      throw const GenAiVisualException('可视化库加载失败，请重试');
+    } finally {
+      client.close();
+    }
+  }
+
+  static String shell(
+    String document, {
+    required bool native,
+    bool active = true,
+    bool fullscreen = false,
+    Map<String, String> theme = const {},
+  }) {
+    final encodedTheme = jsonEncode(theme).replaceAll('<', r'\u003c');
+    final encoded = jsonEncode(
+      document
+          .replaceFirst('{/*techpie-theme*/}', encodedTheme)
+          .replaceFirst('/*techpie-active*/true', '$active')
+          .replaceFirst('/*techpie-fullscreen*/false', '$fullscreen'),
+    ).replaceAll('<', r'\u003c');
+    final csp = const HtmlEscape(HtmlEscapeMode.attribute).convert(genAiVisualCsp);
+    return '''<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="$csp">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{border:0;width:100%;height:100%;display:block;background:transparent}</style>
+</head><body><iframe id="visual" title="交互示例" sandbox="allow-scripts" referrerpolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'"></iframe><script>
+const frame=document.getElementById('visual');
+let theme=$encodedTheme,active=$active,fullscreen=$fullscreen;
+const sendLayout=()=>frame.contentWindow.postMessage({
+  kind:'techpie-visual-layout',fullscreen,scrollBridge:${!native}
+},'*');
+const sendActive=()=>frame.contentWindow.postMessage({kind:'techpie-visual-active',active},'*');
+const sendTheme=()=>frame.contentWindow.postMessage({kind:'techpie-visual-theme',theme},'*');
+window.addEventListener('message',event=>{
+  if(event.source===parent && event.data?.kind==='techpie-visual-active'){
+    active=event.data.active===true;sendActive();return;
+  }
+  if(event.source===parent && event.data?.kind==='techpie-visual-theme'){
+    theme=event.data.theme;sendTheme();return;
+  }
+  if(event.source===parent && event.data?.kind==='techpie-visual-layout'){
+    fullscreen=event.data.fullscreen===true;sendLayout();return;
+  }
+  if(event.source!==frame.contentWindow || !event.data || event.data.kind!=='techpie-visual')return;
+  const d=event.data;
+  if(d.event==='ready'){sendTheme();sendActive();sendLayout();}
+  if(!['ready','error','height','escape','scroll'].includes(d.event))return;
+  if(d.event==='scroll' && (fullscreen || !active || $native))return;
+  const safe={kind:'techpie-visual',event:d.event};
+  if(d.event==='scroll'){
+    if(!Number.isFinite(d.delta))return;
+    safe.delta=Math.max(-800,Math.min(800,d.delta));
+  }
+  if(d.event==='height'){
+    safe.event=d.fullscreen===true?'fullscreen-height':'height';
+    safe.height=Math.max(0,Math.min(100000,Number(d.height)||360));
+  }
+  ${native ? "TechPieVisual.postMessage(JSON.stringify(safe));" : "parent.postMessage(safe,'*');"}
+});
+frame.srcdoc=$encoded;
+</script></body></html>''';
+  }
+
+  static const _baseStyle = '''
+:root{color-scheme:light;--tp-bg:#fff;--tp-surface:#f5f5f5;--tp-text:#202124;--tp-muted:#666;--tp-primary:#67504b;--tp-on-primary:#fff;--tp-border:#ddd;font-family:system-ui,sans-serif;color:var(--tp-text);background:var(--tp-bg)}
+*{box-sizing:border-box}body{margin:0;padding:16px;overflow-wrap:anywhere}
+#techpie-visual-content{display:flow-root;min-width:0}
+html:not([data-techpie-fullscreen=true]),html:not([data-techpie-fullscreen=true]) body{height:auto!important;min-height:0!important}
+body{font-size:14px;line-height:1.5}
+@media(min-width:600px){body{padding:20px}}
+label{font-size:13px}input[type=range]{max-width:100%}
+button,input,select,textarea{max-width:100%}
+button:disabled{opacity:.5;cursor:default}
+html[data-techpie-fullscreen=true]{height:100%;overflow:auto!important}
+html[data-techpie-fullscreen=true] body{
+  min-height:100%;height:auto!important;padding:0!important;overflow:visible!important;
+  display:flex!important;flex-direction:column;align-items:center;
+}
+html[data-techpie-fullscreen=true] #techpie-visual-content{
+  width:min(900px,100%);flex:none;margin-block:auto;
+}
+@media(max-width:600px){
+  html[data-techpie-fullscreen=true] #techpie-visual-content{margin-block:0}
+}
+html[data-techpie-active=false] *,html[data-techpie-active=false] *::before,html[data-techpie-active=false] *::after{animation-play-state:paused!important}
+math{color:inherit;font-size:1.05em}math[display=block]{overflow-x:auto;max-width:100%;padding:6px 0}
+/* An unavailable optional math renderer leaves the exact TeX in place; style it
+   as readable typeset source rather than plain body text. The marker is removed
+   when rendering succeeds, so these rules never outlive a recovered formula. */
+[data-math-error]{font-family:"Latin Modern Math","STIX Two Math","Cambria Math",ui-serif,Georgia,serif;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere;padding:0 .1em;border-bottom:1px dotted var(--tp-muted)}
+[data-math-error][data-math-display=block]{display:block;margin:.5em 0;padding:.5em .75em;border-bottom:0;border-inline-start:3px solid var(--tp-border);border-radius:4px;background:var(--tp-surface)}
+canvas,svg,img{max-width:100%}button,input,select{font:inherit}
+button,input[type=range],select{min-height:44px}button{cursor:pointer}
+html,body{background:var(--tp-bg)!important;color:var(--tp-text)!important}
+h1,h2,h3,h4,h5,h6,label,p,pre{color:var(--tp-text)!important}
+button,input,select,textarea{color:var(--tp-text)!important;background:var(--tp-surface)!important;border:1px solid var(--tp-border)!important;border-radius:8px;accent-color:var(--tp-primary)}
+button{padding:6px 12px}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--tp-primary);outline-offset:2px}
+/* Older saved examples often hard-code light surfaces in these containers. */
+.card,.panel,.controls,.controls>div,.toolbar,.wrap,.box,.head,fieldset{background:var(--tp-bg)!important;color:var(--tp-text)!important;border-color:var(--tp-border)!important;box-shadow:none!important}
+
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+''';
+  static const _reporter = r'''
+(()=>{
+function applyTheme(theme){
+  if(!theme || typeof theme!=='object')return;
+  const safe={};
+  for(const name of ['bg','surface','text','muted','primary','on-primary','border']){
+    const value=theme[name];
+    if(typeof value==='string' && /^#[0-9a-f]{6,8}$/i.test(value)){
+      safe[name]=value;document.documentElement.style.setProperty('--tp-'+name,value);
+    }
+  }
+  safe.mode=theme.mode==='dark'?'dark':'light';
+  document.documentElement.style.colorScheme=safe.mode;
+  document.documentElement.dataset.theme=safe.mode;
+  window.techpieTheme=Object.freeze(safe);
+  window.dispatchEvent(new CustomEvent('techpie-theme',{detail:window.techpieTheme}));
+}
+applyTheme({/*techpie-theme*/});
+let fullscreen=/*techpie-fullscreen*/false;
+let resize=()=>{},scrollBridge=false;
+function applyLayout(value){
+  fullscreen=value===true;
+  document.documentElement.dataset.techpieFullscreen=String(fullscreen);
+  resize();
+}
+applyLayout(fullscreen);
+window.addEventListener('message',event=>{
+  if(event.source===parent && event.data?.kind==='techpie-visual-theme')applyTheme(event.data.theme);
+  if(event.source===parent && event.data?.kind==='techpie-visual-layout'){
+    scrollBridge=event.data.scrollBridge===true;
+    applyLayout(event.data.fullscreen);
+  }
+});
+const emit=(event,extra={})=>parent.postMessage({kind:'techpie-visual',event,...extra},'*');
+// Browsing contexts do not bubble unused wheel/touch gestures to Flutter.
+// Leave native scrollable controls and explicitly handled diagram gestures alone.
+function ownsScroll(target,delta){
+  for(let node=target instanceof Element?target:null;node;node=node.parentElement){
+    const style=getComputedStyle(node);
+    if(node.matches('input,select,textarea,[contenteditable="true"]') ||
+       style.touchAction==='none')return true;
+    if(/auto|scroll/.test(style.overflowY) && node.scrollHeight>node.clientHeight+1 &&
+       (delta<0?node.scrollTop>0:node.scrollTop+node.clientHeight<node.scrollHeight-1))return true;
+  }
+  return false;
+}
+function forwardScroll(event,delta){
+  if(!scrollBridge || fullscreen || event.defaultPrevented || !Number.isFinite(delta) ||
+     ownsScroll(event.target,delta))return;
+  if(event.cancelable)event.preventDefault();
+  emit('scroll',{delta});
+}
+window.addEventListener('wheel',event=>{
+  if(event.ctrlKey || event.metaKey || Math.abs(event.deltaX)>Math.abs(event.deltaY))return;
+  forwardScroll(event,event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?innerHeight:1));
+},{passive:false});
+let touch=null;
+window.addEventListener('touchstart',event=>{
+  touch=event.touches.length===1?{x:event.touches[0].clientX,y:event.touches[0].clientY}:null;
+},{passive:true});
+window.addEventListener('touchmove',event=>{
+  if(!touch || event.touches.length!==1){touch=null;return;}
+  const point=event.touches[0],dx=touch.x-point.clientX,dy=touch.y-point.clientY;
+  touch={x:point.clientX,y:point.clientY};
+  if(Math.abs(dy)>Math.abs(dx))forwardScroll(event,dy);
+},{passive:false});
+window.addEventListener('touchend',()=>{touch=null;},{passive:true});
+window.addEventListener('touchcancel',()=>{touch=null;},{passive:true});
+window.addEventListener('keydown',event=>{if(event.key==='Escape')emit('escape');});
+window.addEventListener('error',()=>emit('error'));
+window.addEventListener('unhandledrejection',()=>emit('error'));
+window.addEventListener('securitypolicyviolation',()=>emit('error'));
+window.addEventListener('DOMContentLoaded',()=>{
+  emit('ready');
+  let queued=false;
+  resize=()=>{
+    if(queued)return;queued=true;
+    requestAnimationFrame(()=>{
+      queued=false;
+      const content=document.getElementById('techpie-visual-content');
+      // body.scrollHeight is at least the iframe viewport height: using it
+      // prevents shrinking after controls collapse or the available width grows.
+      const rect=content.getBoundingClientRect();
+      const style=getComputedStyle(document.body);
+      const height=Math.ceil(Math.max(rect.height,content.scrollHeight)+
+        (parseFloat(style.paddingTop)||0)+(parseFloat(style.paddingBottom)||0));
+      emit('height',{height,fullscreen});
+    });
+  };
+  new ResizeObserver(resize).observe(document.getElementById('techpie-visual-content'));
+  window.addEventListener('resize',resize);resize();
+});
+})();
+''';
+}

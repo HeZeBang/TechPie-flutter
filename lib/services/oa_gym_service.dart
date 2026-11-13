@@ -351,6 +351,7 @@ class OaGymService extends ChangeNotifier {
     required int timeSlot,
     required int courtNumber,
     required int playersCount,
+    bool Function()? shouldContinue,
   }) async {
     _syncIdentity();
     _validateDates(date, date);
@@ -388,6 +389,7 @@ class OaGymService extends ChangeNotifier {
             'email': profile.email,
           },
         },
+        shouldContinue: shouldContinue,
       ),
     );
     final payload = (data['data'] as Map?)?.cast<String, dynamic>() ?? data;
@@ -578,8 +580,9 @@ class OaGymService extends ChangeNotifier {
   /// concurrent callers) and the request retried with the fresh cookie.
   Future<Map<String, dynamic>> _postJson(
     String path,
-    Map<String, dynamic> extra,
-  ) async {
+    Map<String, dynamic> extra, {
+    bool Function()? shouldContinue,
+  }) async {
     _requireAuth();
     final node = _tpAuth.cpdailyNode;
     var identity = _identity;
@@ -587,6 +590,9 @@ class OaGymService extends ChangeNotifier {
     final response = await _tpAuth.sessionTree.withCookie<http.Response>(
       node,
       (cp) async {
+        if (shouldContinue?.call() == false) {
+          throw OaGymException('请求已取消，请重新发起预约');
+        }
         _syncIdentity();
         identity = _identity;
         final body = {...extra, 'auth': _authPayload(cp)};
@@ -610,7 +616,12 @@ class OaGymService extends ChangeNotifier {
         } on http.ClientException {
           throw OaGymException('无法连接场馆服务，请检查网络后重试');
         }
-        return CookieAction(r, expired: r.statusCode == 401);
+        // A booking has no idempotency key. Even a 401 response must not
+        // automatically replay a mutation; let the user confirm a new attempt.
+        return CookieAction(
+          r,
+          expired: r.statusCode == 401 && !path.endsWith('/book'),
+        );
       },
     );
     if (response == null) {
