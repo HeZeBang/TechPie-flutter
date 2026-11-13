@@ -6,8 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
-import '../pages/macos_casdoor_auth_page.dart';
-import '../pages/ohos_casdoor_auth_page.dart';
+import '../pages/uni_auth_webview_page.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import 'debug_logger.dart';
 
@@ -80,6 +79,38 @@ class UniAuthService extends ChangeNotifier {
 
   final DebugLogger? _logger;
 
+  Future<void> deleteAccount(String token, String userId) async {
+    final headers = {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    };
+    final accountResponse = await http.get(
+      Uri.parse('$_uniAuthServerUrl/api/get-account'),
+      headers: headers,
+    ).timeout(const Duration(seconds: 10));
+    final accountBody = jsonDecode(accountResponse.body) as Map<String, dynamic>;
+    final user = accountBody['data'];
+    if (accountResponse.statusCode != 200 || accountBody['status'] != 'ok' ||
+        user is! Map || user['id'] != userId || user['owner'] != _uniAuthOrg ||
+        user['name'] is! String || (user['name'] as String).isEmpty) {
+      throw Exception('无法确认当前账号，请重新登录。');
+    }
+    if (accountBody['data2']?['enableSoftDeletion'] != false) {
+      throw Exception('账号服务未开放永久注销。');
+    }
+    // Use the user's own token; never send an admin credential or the full profile.
+    final response = await http.post(
+      Uri.parse('$_uniAuthServerUrl/api/delete-user'),
+      headers: headers,
+      body: jsonEncode({'owner': user['owner'], 'name': user['name']}),
+    ).timeout(const Duration(seconds: 10));
+    final result = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || result['status'] != 'ok' ||
+        result['data'] != 'Affected') {
+      throw Exception('账号未注销成功。');
+    }
+  }
+
   /// Debug trace of what the SSO token endpoint answered.
   ///
   /// The SDK brings its own HTTP client, so unlike every other call this one is
@@ -139,16 +170,28 @@ class UniAuthService extends ChangeNotifier {
   /// Requires a BuildContext for the full-screen presentation. Returns the
   /// full token bundle (access + refresh + expiry).
   Future<SsoTokens> login(BuildContext context) async {
-    final navigator = Navigator.of(context);
+    // Sign-in is a modal step over the whole app, never a page inside a tab.
+    final navigator = Navigator.of(context, rootNavigator: true);
     _loading = true;
     notifyListeners();
     try {
       final casdoor = _getCasdoor();
       final String callbackUrl;
-      if (defaultTargetPlatform.name == 'ohos') {
-        callbackUrl = await _showOhosLogin(navigator, casdoor);
-      } else if (defaultTargetPlatform == TargetPlatform.macOS) {
-        callbackUrl = await _showMacosLogin(navigator, casdoor);
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.iOS ||
+              defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.macOS ||
+              defaultTargetPlatform.name == 'ohos')) {
+        final result = await navigator.push<String>(
+          adaptivePageRoute<String>(
+            builder: (_) => UniAuthWebViewPage(
+              authorizeUrl: casdoor.getSigninUrl().toString(),
+              callbackUri: Uri.parse(_uniAuthRedirectUri),
+            ),
+          ),
+        );
+        if (result == null || result.isEmpty) throw CasdoorAuthCancelledException();
+        callbackUrl = result;
       } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
         try {
           callbackUrl = await const MethodChannel('techpie/uni_auth')
@@ -161,72 +204,19 @@ class UniAuthService extends ChangeNotifier {
           rethrow;
         }
       } else {
+        // Windows uses the SDK's desktop WebView window; web keeps its
+        // browser OAuth flow. Neither needs an intermediate Flutter page.
         callbackUrl = await casdoor.showFullscreen(context);
       }
       final code = _extractCode(callbackUrl);
       if (code.isEmpty) {
         throw Exception('Login cancelled or failed');
       }
-      return _exchangeCode(casdoor, code);
+      return await _exchangeCode(casdoor, code);
     } finally {
       _loading = false;
       notifyListeners();
     }
-  }
-
-  /// Open the GeekPie Uni-Auth login using a system browser (no BuildContext).
-  /// Used by the native iOS liquid glass login sheet.
-  Future<SsoTokens> loginSdkOnly() async {
-    _loading = true;
-    notifyListeners();
-    try {
-      final casdoor = _getCasdoor();
-      final callbackUrl = await casdoor.show();
-      final code = _extractCode(callbackUrl);
-      if (code.isEmpty) {
-        throw Exception('Login cancelled or failed');
-      }
-      return _exchangeCode(casdoor, code);
-    } finally {
-      _loading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<String> _showOhosLogin(
-    NavigatorState navigator,
-    Casdoor casdoor,
-  ) async {
-    final callbackUrl = await navigator.push<String>(
-      adaptivePageRoute<String>(
-        builder: (_) => OhosCasdoorAuthPage(
-          authorizeUrl: casdoor.getSigninUrl().toString(),
-          callbackScheme: _uniAuthCallbackScheme,
-        ),
-      ),
-    );
-    if (callbackUrl == null || callbackUrl.isEmpty) {
-      throw CasdoorAuthCancelledException();
-    }
-    return callbackUrl;
-  }
-
-  Future<String> _showMacosLogin(
-    NavigatorState navigator,
-    Casdoor casdoor,
-  ) async {
-    final callbackUrl = await navigator.push<String>(
-      adaptivePageRoute<String>(
-        builder: (_) => MacosCasdoorAuthPage(
-          authorizeUrl: casdoor.getSigninUrl().toString(),
-          callbackScheme: _uniAuthCallbackScheme,
-        ),
-      ),
-    );
-    if (callbackUrl == null || callbackUrl.isEmpty) {
-      throw CasdoorAuthCancelledException();
-    }
-    return callbackUrl;
   }
 
   /// Exchange an authorization code for the SSO token bundle.

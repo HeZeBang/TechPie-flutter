@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:techpie/utils/platform.dart';
+import 'package:techpie/widgets/page_refresh.dart';
 
 import '../../app/app_providers.dart';
 import '../../domain/models/card_models.dart';
@@ -154,11 +157,11 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
     var start = _range?.start ?? DateTime(now.year, now.month, 1);
     var end = _range?.end ?? now;
     var editingStart = true;
-    return showModalBottomSheet<_DateRangeSelection>(
+    return CNBottomSheet.show<_DateRangeSelection>(
       context: context,
       useRootNavigator: false,
       useSafeArea: true,
-      builder: (sheetContext) => StatefulBuilder(
+      builder: (sheetContext) => ApplePinnedHeaderLayout.sheetInsets(sheetContext, StatefulBuilder(
         builder: (context, setSheetState) => SizedBox(
           height: 390,
           child: Column(
@@ -231,7 +234,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
             ],
           ),
         ),
-      ),
+      ),),
     );
   }
 
@@ -239,12 +242,14 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
   Widget build(BuildContext context) {
     final cardAsync = ref.watch(cardControllerProvider);
     final card = cardAsync.valueOrNull;
-    final profile = ref.watch(profileControllerProvider).valueOrNull;
 
     return Scaffold(
       key: const Key('card-manage-page'),
       body: AppleWalletPage(
         child: ApplePinnedHeaderLayout(
+          refreshAction: isDesktop() && _segment == 1 && card != null
+              ? PageRefreshButton(onRefresh: _refreshActivity)
+              : null,
           leading: CampusCardHeaderAction(
             id: 'back',
             sfSymbol: 'chevron.left',
@@ -258,7 +263,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
                   20,
                   ApplePinnedHeaderLayout.contentTop(context),
                   20,
-                  20,
+                  ApplePinnedHeaderLayout.contentBottom(context, 20),
                 ),
                 child: GpStateView.error(
                   error,
@@ -287,7 +292,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
                       20,
                       ApplePinnedHeaderLayout.contentTop(context),
                       20,
-                      52,
+                      ApplePinnedHeaderLayout.contentBottom(context, 52),
                     ),
                     sliver: SliverMainAxisGroup(
                       slivers: [
@@ -305,7 +310,7 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
                             ),
                             const SizedBox(height: 22),
                             Text(
-                              '上海科技大学 eCard',
+                              '校园卡',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: context.gpColors.textPrimary,
@@ -333,7 +338,6 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
                                   child: _InformationTab(
                                     key: const ValueKey('info'),
                                     card: card,
-                                    profilePosition: profile?.positionName,
                                   ),
                                 )
                               : _ActivitySliver(
@@ -358,11 +362,9 @@ final class _InformationTab extends ConsumerWidget {
   const _InformationTab({
     super.key,
     required this.card,
-    required this.profilePosition,
   });
 
   final CampusCard card;
-  final String? profilePosition;
 
   String _date(BuildContext context, DateTime? value) => value == null
       ? '—'
@@ -388,7 +390,7 @@ final class _InformationTab extends ConsumerWidget {
             AppleListRow(label: '姓名', value: card.ownerName),
             AppleListRow(
               label: '身份',
-              value: profilePosition ?? card.positionName,
+              value: card.positionName,
             ),
             AppleListRow(
               label: '所属单位',

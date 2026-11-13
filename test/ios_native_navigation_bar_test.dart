@@ -1,103 +1,128 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
 void main() {
+  // These cover the iOS 26 chrome; the pre-26 fallback has its own tests.
+  setUp(() => debugUsesIosLiquidGlass = true);
+  tearDown(() => debugUsesIosLiquidGlass = false);
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  testWidgets('iOS header is backed by the native navigation bar', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('compact title stays centered beside unequal native actions', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final taps = <String>[];
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
         home: Scaffold(
           appBar: IosNativeNavigationBar(
-            title: 'Cloud sync',
-            leadingItems: [
+            title: '已忽略的事项',
+            leadingItems: const [
               IosNativeNavigationBarItem(
                 id: 'back',
-                title: 'Settings',
+                title: 'Deadlines',
                 sfSymbol: 'chevron.left',
-                accessibilityLabel: '返回 Settings',
+                accessibilityLabel: '返回 Deadlines',
+                placementGroup: 'leading-main',
               ),
             ],
+            trailingItems: const [
+              IosNativeNavigationBarItem(
+                id: 'select',
+                title: '选择',
+                placementGroup: 'trailing-main',
+              ),
+            ],
+            onItemPressed: taps.add,
           ),
-          body: SizedBox(),
         ),
       ),
     );
-
-    final platformView = tester.widget<UiKitView>(find.byType(UiKitView));
-    expect(platformView.viewType, 'techpie/native_navigation_bar');
-    expect(platformView.creationParams, {
-      'brightness': 'light',
-      'title': 'Cloud sync',
-      'subtitle': null,
-      'leadingItems': [
-        {
-          'id': 'back',
-          'title': 'Settings',
-          'sfSymbol': 'chevron.left',
-          'role': 'normal',
-          'enabled': true,
-          'hidden': false,
-          'accessibilityLabel': '返回 Settings',
-          'placementGroup': null,
-          'menuItems': <Object?>[],
-        },
-      ],
-      'trailingItems': <Object?>[],
-      'selectionMode': false,
-      'largeTitleMode': false,
-    });
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(tester.getCenter(find.text('已忽略的事项')).dx, closeTo(195, 0.1));
+    final buttons = tester.widgetList<CNButton>(find.byType(CNButton)).toList();
+    final back = buttons.first;
+    expect(back.label, isNull);
+    expect(back.semanticLabel, '返回 Deadlines');
+    back.onPressed!();
+    expect(taps, ['back']);
+    expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
-  testWidgets('native header follows app theme changes without recreation',
+
+  testWidgets('header preserves subtitle, grouped menu values and disabled actions',
       (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    final theme = ValueNotifier(ThemeData.light());
-    addTearDown(theme.dispose);
-    final updates = <Map<Object?, Object?>>[];
-    const channel = MethodChannel('techpie/native_navigation_bar/987');
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      channel,
-      (call) async {
-        updates.add(call.arguments as Map<Object?, Object?>);
-        return null;
-      },
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null),
-    );
-    const page = Scaffold(
-      appBar: IosNativeNavigationBar(title: 'Settings'),
-    );
+    final selected = <String>[];
+    final taps = <String>[];
     await tester.pumpWidget(
-      ValueListenableBuilder<ThemeData>(
-        valueListenable: theme,
-        builder: (_, value, child) => MaterialApp(theme: value, home: child),
-        child: page,
+      MaterialApp(
+        home: Scaffold(
+          appBar: IosNativeNavigationBar(
+            title: 'Schedule',
+            subtitle: '2026 秋季',
+            largeTitleMode: true,
+            leadingItems: const [
+              IosNativeNavigationBarItem(id: 'back', title: 'Back', enabled: false),
+              IosNativeNavigationBarItem(id: 'hidden', title: 'Hidden', hidden: true),
+            ],
+            trailingItems: const [
+              IosNativeNavigationBarItem(
+                id: 'more',
+                sfSymbol: 'ellipsis',
+                accessibilityLabel: '更多操作',
+                menuItems: [
+                  IosNativeNavigationBarMenuItem(
+                    value: 'saturday',
+                    title: 'Saturday',
+                    checked: true,
+                  ),
+                  IosNativeNavigationBarMenuItem(
+                    value: 'section',
+                    title: '',
+                    displayInline: true,
+                    children: [
+                      IosNativeNavigationBarMenuItem(value: 'export', title: 'Export'),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+            onItemPressed: taps.add,
+            onMenuSelected: (id, value) => selected.add('$id:$value'),
+          ),
+        ),
       ),
     );
-    final platformView = tester.widget<UiKitView>(find.byType(UiKitView));
-    platformView.onPlatformViewCreated!(987);
-    await tester.pump();
-    expect(updates.last['brightness'], 'light');
-    for (final value in [
-      ThemeData.dark(),
-      ThemeData.dark().copyWith(scaffoldBackgroundColor: Colors.black),
-      ThemeData.light(),
-    ]) {
-      theme.value = value;
-      await tester.pumpAndSettle();
-      expect(updates.last['brightness'], value.brightness.name);
-      expect(find.byType(UiKitView), findsOneWidget);
-    }
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('2026 秋季'), findsOneWidget);
+    final buttons = tester.widgetList<CNButton>(find.byType(CNButton));
+    final button = buttons.singleWhere((button) => button.label == 'Back');
+    expect(button.enabled, false);
+    // A hidden item stays mounted, so its native view exists when it is shown,
+    // but nothing can reach it while hidden.
+    final hidden = find.byWidgetPredicate(
+      (widget) => widget is CNButton && widget.label == 'Hidden',
+    );
+    expect(hidden, findsOneWidget);
+    expect(hidden.hitTestable(), findsNothing);
+    expect(button.onPressed, null);
+    expect(taps, isEmpty);
+    final menu = tester.widget<CNPopupMenuButton>(find.byType(CNPopupMenuButton));
+    expect(menu.semanticLabel, '更多操作');
+    expect((menu.items.first as CNPopupMenuItem).checked, true);
+    expect(menu.items[1], isA<CNPopupMenuDivider>());
+    menu.onSelected(1);
+    menu.onSelected(99);
+    menu.onSelected(2);
+    expect(selected, ['more:export']);
+    expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
 }

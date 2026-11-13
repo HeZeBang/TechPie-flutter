@@ -1,139 +1,75 @@
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/widgets/adaptive_select.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  testWidgets('iOS select uses a composited Cupertino action sheet', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('an iOS display field only shows the value', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    String? selectedValue;
-
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: AdaptiveSelect(
-            value: 'system',
+            value: 'dark',
+            useIosNativeMenu: false,
             options: const [
               AdaptiveSelectOption(value: 'system', label: 'System'),
               AdaptiveSelectOption(value: 'dark', label: 'Dark'),
             ],
-            onChanged: (value) => selectedValue = value,
+            onChanged: (_) {},
           ),
         ),
       ),
     );
-
-    expect(find.byType(UiKitView), findsNothing);
-    await tester.tap(find.text('System'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(CupertinoActionSheet), findsOneWidget);
-    await tester.tap(find.text('Dark'));
-    await tester.pumpAndSettle();
-    expect(selectedValue, 'dark');
+    expect(find.text('Dark'), findsOneWidget);
+    // The caller owns the tap; the field itself presents nothing.
+    expect(find.byType(CNPopupMenuButton), findsNothing);
+    expect(find.byType(GestureDetector), findsNothing);
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets(
-      'native menu follows selection and appearance and validates events',
-      (tester) async {
+  testWidgets('native menu maps checked values and rejects invalid indices', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    final selection = ValueNotifier('system');
-    addTearDown(selection.dispose);
-    final updates = <Map<Object?, Object?>>[];
-    final selections = <String>[];
-    const channel = MethodChannel('techpie/native_select/986');
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
-        (call) async {
-      expect(call.method, 'updateConfiguration');
-      updates.add(call.arguments as Map<Object?, Object?>);
-      return null;
-    });
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null),
-    );
-
+    String value = 'system';
     await tester.pumpWidget(
-      ValueListenableBuilder<String>(
-        valueListenable: selection,
-        builder: (_, value, __) => MaterialApp(
-          theme: value == 'system' ? ThemeData.light() : ThemeData.dark(),
-          home: Scaffold(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) => Scaffold(
             body: AdaptiveSelect(
               useIosNativeMenu: true,
               accessibilityLabel: 'Theme',
               value: value,
               options: const [
-                AdaptiveSelectOption(
-                  value: 'system',
-                  label: 'System',
-                  sfSymbol: 'circle.lefthalf.filled',
-                ),
-                AdaptiveSelectOption(
-                  value: 'dark',
-                  label: 'Dark',
-                  sfSymbol: 'moon',
-                ),
+                AdaptiveSelectOption(value: 'system', label: 'System'),
+                AdaptiveSelectOption(value: 'dark', label: 'Dark'),
               ],
-              onChanged: (value) {
-                selections.add(value);
-                selection.value = value;
-              },
+              onChanged: (next) => setState(() => value = next),
             ),
           ),
         ),
       ),
     );
-    final viewFinder = find.byType(UiKitView);
-    final view = tester.widget<UiKitView>(viewFinder);
-    final state = tester.state(viewFinder);
-    expect(view.viewType, 'techpie/native_select');
-    final configuration = view.creationParams! as Map<String, Object?>;
-    expect(configuration['value'], 'system');
-    expect(configuration['accessibilityLabel'], 'Theme');
-    expect(configuration['options'], [
-      {
-        'value': 'system',
-        'label': 'System',
-        'sfSymbol': 'circle.lefthalf.filled',
-      },
-      {'value': 'dark', 'label': 'Dark', 'sfSymbol': 'moon'},
-    ]);
-    view.onPlatformViewCreated!(986);
-    await tester.pump();
-
-    Future<void> sendSelection(String value) async {
-      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-        channel.name,
-        const StandardMethodCodec()
-            .encodeMethodCall(MethodCall('onChanged', {'value': value})),
-        (_) {},
-      );
-    }
-
-    await sendSelection('dark');
+    var menu = tester.widget<CNPopupMenuButton>(find.byType(CNPopupMenuButton));
+    expect(menu.semanticLabel, 'Theme');
+    // The list reads top to bottom wherever the menu opens.
+    expect(menu.preserveTopToBottomOrder, isTrue);
+    expect((menu.items.first as CNPopupMenuItem).checked, true);
+    menu.onSelected(-1);
+    menu.onSelected(99);
+    expect(value, 'system');
+    menu.onSelected(1);
     await tester.pumpAndSettle();
-    expect(selections, ['dark']);
-    expect(updates.last['value'], 'dark');
-    expect(updates.last['brightness'], 'dark');
-    expect(tester.state(viewFinder), same(state));
-
-    await sendSelection('removed-option');
-    await tester.pump();
-    expect(selections, ['dark']);
-    expect(find.byType(CupertinoActionSheet), findsNothing);
+    menu = tester.widget<CNPopupMenuButton>(find.byType(CNPopupMenuButton));
+    expect(value, 'dark');
+    expect(menu.buttonLabel, 'Dark');
+    expect((menu.items.last as CNPopupMenuItem).checked, true);
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('native menu opt-in preserves Android dropdown behavior',
-      (tester) async {
+  testWidgets('native menu opt-in preserves Android dropdown behavior', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     String? selected;
     await tester.pumpWidget(
