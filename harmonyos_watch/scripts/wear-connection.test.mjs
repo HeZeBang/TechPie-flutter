@@ -36,7 +36,7 @@ test('two-stage handshake advertises only implemented capabilities', () => {
   const f = fixture();
   f.send('session.hello', {nonce: 'nonce', versions: [1]});
   assert.equal(f.state().connected, false);
-  assert.deepEqual(f.last().body.capabilities, ['account.display', 'ddl.display', 'campusCode.qrMatrix', 'connection.heartbeat']);
+  assert.deepEqual(f.last().body.capabilities, ['account.display', 'ddl.display', 'schedule.display', 'reminder.watchLocal', 'campusCode.qrMatrix', 'connection.heartbeat']);
   f.send('session.open', {nonce: 'wrong', sessionId: 'session', bindingId: 'binding', phoneTimeMs: 1000000, leaseUntilMs: 2000000});
   assert.equal(f.state().connected, false);
   f.open(); assert.equal(f.state().connected, true);
@@ -197,4 +197,46 @@ test('snapshot resynchronizes a delayed opening clock without moving it backward
   assert.equal(f.link.phoneNow(), 1000250);
   f.send('session.ping', {}, {sentAtMs: 1000100});
   assert.equal(f.link.phoneNow(), 1000250);
+});
+
+
+test('timetable is atomic, revisioned, expires and clears with the session', () => {
+  const f = fixture(); f.open();
+  const item = {name: '物理😀', location: '教学楼 201', startAtMs: 1050000, endAtMs: 1100000};
+  f.send('schedule.snapshot', {revision: 2, validUntilMs: 1020000, items: [item]});
+  assert.equal(f.state().scheduleReady, true);
+  assert.equal(f.last().body.resource, 'schedule');
+  f.send('schedule.snapshot', {revision: 1, validUntilMs: 1020000, items: []});
+  assert.equal(f.last().body.code, 'STALE_REVISION');
+  f.send('schedule.snapshot', {revision: 3, validUntilMs: 1020000, items: [{...item, endAtMs: 0}]});
+  assert.equal(f.last().body.code, 'INVALID_PAYLOAD');
+  assert.equal(f.state().schedule.length, 1);
+  f.advance(20000); assert.equal(f.state().schedule.length, 0);
+  f.send('schedule.snapshot', {revision: 3, validUntilMs: 1050000, items: [item]});
+  f.send('session.clear'); assert.equal(f.state().schedule.length, 0);
+});
+test('sync requests negotiate timetable support from the phone hello', () => {
+  const f = fixture(); f.open(); f.link.request('sync');
+  assert.deepEqual(f.last().body.resources, ['account', 'ddl']);
+  f.send('session.hello', {nonce: 'nonce', versions: [1], capabilities: ['schedule.display']});
+  f.send('session.open', {nonce: 'nonce', sessionId: 'session', bindingId: 'binding', phoneTimeMs: 1000000, leaseUntilMs: 2000000});
+  f.link.request('sync'); assert.deepEqual(f.last().body.resources, ['account', 'ddl', 'schedule']);
+});
+test('local reminder fires once, ignores old or completed deadlines, and clears on revoke', () => {
+  const f = fixture(); f.open();
+  const item = {id: 'ddl', title: '实验报告', courseName: '物理', dueAtMs: 1100000, status: 'open', remindAtMs: [1002000]};
+  f.send('ddl.snapshot', {revision: 1, validUntilMs: 1200000, remindersEnabled: true, items: [item,
+    {...item, id: 'old', remindAtMs: [999000]}, {...item, id: 'done', status: 'completed'}]});
+  assert.equal(f.state().alert, null);
+  f.advance(2000); assert.equal(f.state().alert.title, '实验报告'); assert.equal(f.state().alert.count, 1);
+  f.link.alert = null; f.advance(1000); assert.equal(f.state().alert, null);
+  f.send('ddl.snapshot', {revision: 2, validUntilMs: 1200000, remindersEnabled: false, items: [item]});
+  assert.equal(f.state().remindersEnabled, false);
+  f.send('session.close'); assert.equal(f.state().alert, null);
+});
+test('malformed reminder times reject the entire snapshot', () => {
+  const f = fixture(); f.open();
+  f.send('ddl.snapshot', {revision: 1, validUntilMs: 1200000, items: [
+    {id: 'a', title: '作业', courseName: '', dueAtMs: 1100000, status: 'open', remindAtMs: ['invalid']} ]});
+  assert.equal(f.last().body.code, 'INVALID_PAYLOAD'); assert.equal(f.state().ddlReady, false);
 });

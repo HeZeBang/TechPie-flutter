@@ -76,13 +76,13 @@ class WearEngineBridge(private val activity: Activity, messenger: BinaryMessenge
         try {
             when (call.method) {
                 "status" -> {
-                    auth.checkPermissions(arrayOf(Permission.DEVICE_MANAGER, Permission.NOTIFY))
+                    auth.checkPermissions(arrayOf(Permission.DEVICE_MANAGER))
                         .addOnSuccessListener { grants ->
                             handler.post { result.success(mapOf(
                                 "service" to if (serviceReady) "ready" else "unavailable",
                                 "device" to if (selected?.isConnected == true) "connected" else "disconnected",
                                 "permission" to mapOf("p2p" to (grants.getOrNull(0) == true),
-                                    "notify" to (grants.getOrNull(1) == true)))) }
+                                    "notify" to false))) }
                         }.addOnFailureListener { fail(result, it) }
                 }
                 "authorize" -> {

@@ -376,20 +376,30 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                       : '请更新手表应用以使用此功能',
                 ),
               ),
-              if (service.supports('ddl.display'))
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                leading: const Icon(Icons.calendar_month_outlined),
+                title: const Text('未来 7 天课表'),
+                subtitle: Text(
+                  service.supports('schedule.display')
+                      ? _syncLabel(service, 'schedule')
+                      : '请更新手表应用以使用此功能',
+                ),
+              ),
+              if (service.supports('reminder.watchLocal'))
                 SwitchListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                   secondary: const Icon(Icons.notifications_none),
                   title: const Text('DDL 提醒'),
                   subtitle: const Text(
-                    '截止前 1 小时提醒 · 本次授权 24 小时',
+                    '截止前 1 小时振动 · 手表应用打开且连接时生效',
                   ),
-                  value: service.remindersEnabled,
+                  value: service.watchRemindersEnabled,
                   onChanged: _busy
                       ? null
                       : (enabled) => unawaited(
                             _run(
-                              () => service.setRemindersEnabled(enabled),
+                              () => service.setWatchRemindersEnabled(enabled),
                               label: '正在更新提醒',
                             ),
                           ),
@@ -437,7 +447,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                 ),
                 Padding(
                   padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: Text('接收 DDL 提醒需允许运动健康后台运行。授权满 24 小时后，请重新连接并开启提醒。'),
+                  child: Text('DDL 提醒在手表应用打开且连接时生效。连接满 24 小时后，请重新连接并开启提醒。'),
                 ),
               ],
             ),

@@ -5,11 +5,14 @@ import 'package:crypto/crypto.dart';
 
 import '../../features/campus_card/domain/models/card_models.dart';
 import '../../models/assignment_overrides.dart';
+import '../../models/exam_course.dart';
 import '../assignment_service.dart';
 import '../auth_service.dart';
 import '../campus_card_service.dart';
+import '../schedule_service.dart';
 import '../third_party_auth_service.dart';
 import 'wear_protocol.dart';
+import 'wear_schedule.dart';
 
 class TechPieWearDataSource implements WearDataSource {
   TechPieWearDataSource({
@@ -17,12 +20,14 @@ class TechPieWearDataSource implements WearDataSource {
     required this.accounts,
     required this.assignments,
     required this.campusCard,
+    required this.timetable,
     this.reminderOffsets = const [Duration(hours: 1)],
   });
   final AuthService auth;
   final ThirdPartyAuthService accounts;
   final AssignmentService assignments;
   final CampusCardService campusCard;
+  final ScheduleService timetable;
 
   /// Product default: one hour before each open deadline; opt-in at WearLink.open.
   final List<Duration> reminderOffsets;
@@ -71,6 +76,32 @@ class TechPieWearDataSource implements WearDataSource {
                 .toList(),
       );
     }).toList();
+  }
+
+  @override
+  Future<List<WearCourse>> schedule(DateTime from) async {
+    if (timetable.loading) {
+      throw const WearFailure('PEER_NOT_READY', retryable: true);
+    }
+    final table = timetable.courseTable;
+    final begin = timetable.termBegin;
+    if (timetable.error != null ||
+        table == null ||
+        begin == null ||
+        assignments.loading ||
+        assignments.platformErrors.containsKey('exam')) {
+      throw const WearFailure('SERVICE_UNAVAILABLE', retryable: true);
+    }
+    return buildWearSchedule(
+      table: table,
+      termBegin: begin,
+      from: from,
+      customCourses: timetable.customCourses,
+      exams: examsForSemester(
+        assignments.assignments,
+        timetable.selectedSemesterId,
+      ),
+    );
   }
 
   @override

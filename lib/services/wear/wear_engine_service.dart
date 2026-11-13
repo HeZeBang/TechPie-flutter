@@ -25,7 +25,7 @@ class WearEngineService extends ChangeNotifier {
         _binding = stored['binding'] as String?;
         _scopeHash = stored['scopeHash'] as String?;
         _pendingClear = stored['pendingClear'] as String?;
-        for (final resource in ['account', 'ddl']) {
+        for (final resource in ['account', 'ddl', 'schedule']) {
           _revisions[resource] =
               (stored['revisions'] as Map?)?[resource] as int? ?? 0;
         }
@@ -68,7 +68,7 @@ class WearEngineService extends ChangeNotifier {
   final Map<String, _Pending> _pending = {};
   final Map<String, _Reply> _replies = {};
   final Map<String, _Incoming> _inbound = {};
-  final Map<String, int> _revisions = {'account': 0, 'ddl': 0};
+  final Map<String, int> _revisions = {'account': 0, 'ddl': 0, 'schedule': 0};
   final Map<String, dynamic> _sync = {};
   final Map<String, dynamic> _native = {
     'service': 'unavailable',
@@ -91,6 +91,8 @@ class WearEngineService extends ChangeNotifier {
   Map<String, String>? _displayAccount;
   bool _remindersEnabled = false;
   bool get remindersEnabled => ready && _remindersEnabled;
+  bool _watchRemindersEnabled = false;
+  bool get watchRemindersEnabled => ready && _watchRemindersEnabled;
   bool supports(String capability) =>
       ready && _capabilities.contains(capability);
   Map<String, String>? get displayAccount => ready && _displayAccount != null
@@ -119,6 +121,7 @@ class WearEngineService extends ChangeNotifier {
   }
 
   void _invalidate(String reason) {
+    _watchRemindersEnabled = false;
     _epoch++;
     _ready = false;
     _session = null;
@@ -233,6 +236,7 @@ class WearEngineService extends ChangeNotifier {
           resources: [
             if (_capabilities.contains('account.display')) 'account',
             if (_capabilities.contains('ddl.display')) 'ddl',
+            if (_capabilities.contains('schedule.display')) 'schedule',
           ],
         );
       } on WearFailure catch (error) {
@@ -262,6 +266,8 @@ class WearEngineService extends ChangeNotifier {
         'capabilities': [
           'account.display',
           'ddl.display',
+          'schedule.display',
+          'reminder.watchLocal',
           'campusCode.qrBytes',
           'campusCode.qrMatrix',
           'connection.heartbeat',
@@ -284,6 +290,8 @@ class WearEngineService extends ChangeNotifier {
         .intersection({
       'account.display',
       'ddl.display',
+      'schedule.display',
+      'reminder.watchLocal',
       'campusCode.qrBytes',
       'campusCode.qrMatrix',
       'connection.heartbeat',
@@ -527,7 +535,8 @@ class WearEngineService extends ChangeNotifier {
               (body['resources'] as List?)?.whereType<String>().toList();
           if (resources == null ||
               resources.isEmpty ||
-              resources.any((r) => !['account', 'ddl'].contains(r))) {
+              resources
+                  .any((r) => !['account', 'ddl', 'schedule'].contains(r))) {
             throw const WearFailure('INVALID_PAYLOAD');
           }
           await _reply(message, content, {'status': 'ok', 'code': 'OK'});
@@ -556,9 +565,13 @@ class WearEngineService extends ChangeNotifier {
     }
   }
 
-  Future<void> refresh({List<String> resources = const ['account', 'ddl']}) {
+  Future<void> refresh({List<String>? resources}) {
+    final selected = resources ??
+        ['account', 'ddl', 'schedule']
+            .where((resource) => supports('$resource.display'))
+            .toList();
     final operation =
-        _refreshTail.catchError((Object _) {}).then((_) => _refresh(resources));
+        _refreshTail.catchError((Object _) {}).then((_) => _refresh(selected));
     _refreshTail = operation.catchError((Object _) {});
     return operation;
   }
@@ -566,7 +579,7 @@ class WearEngineService extends ChangeNotifier {
   Future<void> _refresh(List<String> resources) async {
     _requireReady();
     if (resources.isEmpty ||
-        resources.any((r) => !['account', 'ddl'].contains(r))) {
+        resources.any((r) => !['account', 'ddl', 'schedule'].contains(r))) {
       throw const WearFailure('INVALID_PAYLOAD');
     }
     final epoch = _epoch;
@@ -580,9 +593,20 @@ class WearEngineService extends ChangeNotifier {
         Map<String, dynamic> body;
         if (resource == 'account') {
           body = {'data': (await source.account()).toJson()};
+        } else if (resource == 'schedule') {
+          final items = await source.schedule(now());
+          body = {
+            'timeZone': 'Asia/Shanghai',
+            'days': 7,
+            'truncated': items.length > 50,
+            'items': items.take(50).map((item) => item.toJson()).toList(),
+          };
         } else {
           final items = await source.deadlines();
           body = _ddlSnapshot(items);
+          if (supports('reminder.watchLocal')) {
+            body['remindersEnabled'] = _watchRemindersEnabled;
+          }
           await _checkAccount(epoch);
           await _schedule(items);
         }
@@ -701,6 +725,29 @@ class WearEngineService extends ChangeNotifier {
 
   Future<String> sendReminder(String reminderId) =>
       transport.sendReminder(reminderId);
+
+  Future<void> setWatchRemindersEnabled(bool enabled) async {
+    _requireReady();
+    if (!supports('reminder.watchLocal')) {
+      throw const WearFailure('UNSUPPORTED_OPERATION');
+    }
+    final epoch = _epoch;
+    final previous = _watchRemindersEnabled;
+    _watchRemindersEnabled = enabled;
+    try {
+      await refresh(resources: ['ddl']);
+      _checkEpoch(epoch);
+    } catch (error) {
+      if (epoch == _epoch) {
+        _watchRemindersEnabled = previous;
+        // A lost receipt leaves the peer's setting unknown. End that session.
+        if (error is WearFailure && error.code == 'SYNC_TIMEOUT') await close();
+      }
+      rethrow;
+    } finally {
+      _changed();
+    }
+  }
 
   Future<void> setRemindersEnabled(bool enabled) async {
     _requireReady();
@@ -856,6 +903,7 @@ class WearEngineService extends ChangeNotifier {
     }
     _invalidate('PEER_NOT_READY');
     _remindersEnabled = false;
+    _watchRemindersEnabled = false;
     await transport.cancelReminders();
     await transport.close();
     _native['device'] = 'disconnected';

@@ -86,6 +86,9 @@ WatchConnection.prototype.reset = function() {
   this.revision = 0; this.accountContent = null; this.ready = false;
   this.remaining = 0; this.silence = 0; this.lastTick = this.now();
   this.ddl = []; this.ddlRevision = 0; this.ddlContent = null;
+  this.schedule = []; this.scheduleRevision = 0; this.scheduleContent = null; this.scheduleUntil = 0;
+  this.scheduleTruncated = false; this.resources = ['account', 'ddl'];
+  this.remindersEnabled = false; this.reminderCursor = 0; this.alert = null;
   this.ddlUntil = 0; this.accountUntil = 0; this.code = null;
   this.pending = {}; this.error = ''; this.truncated = false;
   this.updatedAt = 0; this.phoneTime = 0; this.phoneElapsed = 0; this.publish();
@@ -99,6 +102,8 @@ WatchConnection.prototype.publish = function() {
     studentId: this.account ? this.account.studentId : '', ddl: this.ddl,
     ddlReady: this.ddlUntil > this.phoneNow(), truncated: this.truncated,
     updatedAt: this.updatedAt, code: this.code,
+    schedule: this.schedule, scheduleReady: this.scheduleUntil > this.phoneNow(),
+    scheduleTruncated: this.scheduleTruncated, alert: this.alert, remindersEnabled: this.remindersEnabled,
     codeSeconds: this.code ? Math.max(0, Math.ceil((this.code.until - this.phoneNow()) / 1000)) : 0,
     syncing: !!this.pending.sync, codeLoading: !!this.pending.code, error: this.error});
 };
@@ -112,7 +117,21 @@ WatchConnection.prototype.tick = function() {
   if (this.remaining <= 0 || this.silence >= 30000) { this.reset(); return; }
   if (this.code && this.code.until <= this.phoneNow()) this.code = null;
   if (this.accountUntil <= this.phoneNow()) this.account = null;
-  if (this.ddlUntil <= this.phoneNow()) this.ddl = [];
+  if (this.ddlUntil <= this.phoneNow()) { this.ddl = []; this.alert = null; }
+  if (this.scheduleUntil <= this.phoneNow()) this.schedule = [];
+  if (this.remindersEnabled) {
+    var current = this.phoneNow(), due = [];
+    for (var i = 0; i < this.ddl.length; i++) {
+      var item = this.ddl[i];
+      if (item.status !== 'open' || item.dueAtMs <= current) continue;
+      var times = item.remindAtMs || [];
+      for (var j = 0; j < times.length; j++) {
+        if (times[j] > this.reminderCursor && times[j] <= current && current - times[j] < 60000) { due.push(item); break; }
+      }
+    }
+    this.reminderCursor = current;
+    if (due.length) this.alert = {id: 'r' + current, title: due[0].title, count: due.length};
+  }
   for (var key in this.pending) {
     if (this.now() - this.pending[key].at >= 30000) {
       delete this.pending[key]; this.error = '唔…手机怎么没有响应呢(⊙ω⊙?)';
@@ -133,13 +152,19 @@ WatchConnection.prototype.request = function(kind) {
   if (!this.ready) { this.error = '请先连接手机 TechPie'; this.publish(); return false; }
   if (this.pending[kind]) return false;
   var id = 'w' + (++this.counter);
-  this.pending[kind] = {id: id, at: this.now()}; this.error = '';
+  this.pending[kind] = {id: id, at: this.now(), remaining: this.resources.slice()}; this.error = '';
   // Keep the previous valid code until replacement succeeds or it expires.
   this.publish();
   this.write({v: 1, id: id, replyTo: null, sessionId: this.session,
     bindingId: this.binding, type: kind === 'code' ? 'campusCode.request' : 'sync.request',
-    sentAtMs: this.now(), body: kind === 'code' ? {purpose: 'campus', format: 'qrBytes'} : {resources: ['account', 'ddl']}});
+    sentAtMs: this.now(), body: kind === 'code' ? {purpose: 'campus', format: 'qrBytes'} : {resources: this.resources}});
   return true;
+};
+WatchConnection.prototype.applied = function(resource) {
+  var pending = this.pending.sync;
+  if (!pending) return;
+  pending.remaining = pending.remaining.filter(function(value) { return value !== resource; });
+  if (!pending.remaining.length) delete this.pending.sync;
 };
 WatchConnection.prototype.hideCode = function() {
   this.code = null; delete this.pending.code; this.publish();
@@ -200,8 +225,9 @@ WatchConnection.prototype.handle = function(m) {
   if (m.type === 'session.hello') {
     if (!token(b.nonce) || !Array.isArray(b.versions) || b.versions.indexOf(1) < 0) return;
     this.reset(); this.nonce = b.nonce; this.helloAt = this.now();
+    if (Array.isArray(b.capabilities) && b.capabilities.indexOf('schedule.display') >= 0) this.resources.push('schedule');
     this.reply(m, 'session.welcome', {nonce: b.nonce, version: 1,
-      watchInstanceId: 'techpie-lite', capabilities: ['account.display', 'ddl.display', 'campusCode.qrMatrix', 'connection.heartbeat'],
+      watchInstanceId: 'techpie-lite', capabilities: ['account.display', 'ddl.display', 'schedule.display', 'reminder.watchLocal', 'campusCode.qrMatrix', 'connection.heartbeat'],
       maxQrPayloadBytes: 1024}, true);
   } else if (m.type === 'session.open') {
     if (b.nonce !== this.nonce || this.now() - this.helloAt > 5000 ||
@@ -233,7 +259,7 @@ WatchConnection.prototype.handle = function(m) {
     }
     this.revision = b.revision; this.accountContent = content;
     this.account = {name: d.name, studentId: d.studentId}; this.silence = 0;
-    this.accountUntil = b.validUntilMs; this.publish();
+    this.accountUntil = b.validUntilMs; this.applied('account'); this.publish();
     this.reply(m, 'result', {status: 'ok', code: 'OK', resource: 'account', revision: b.revision});
   } else if (m.type === 'ddl.snapshot') {
     if (!integer(b.revision) || b.revision < 1 || !integer(b.validUntilMs) ||
@@ -247,21 +273,48 @@ WatchConnection.prototype.handle = function(m) {
           typeof item.title !== 'string' || !item.title.trim() || characters(item.title) > 80 ||
           typeof item.courseName !== 'string' || characters(item.courseName) > 40 ||
           !integer(item.dueAtMs) || item.dueAtMs < 1 ||
-          ['open', 'completed'].indexOf(item.status) < 0) {
+          ['open', 'completed'].indexOf(item.status) < 0 ||
+          (item.remindAtMs !== undefined && (!Array.isArray(item.remindAtMs) || item.remindAtMs.length > 3 ||
+            item.remindAtMs.some(function(t) { return !integer(t) || t < 1 || t > item.dueAtMs; })))) {
         this.reject(m, 'INVALID_PAYLOAD'); return;
       }
       ids[item.id] = true; items.push(item);
     }
-    var ddlContent = JSON.stringify(b.items);
+    var ddlContent = JSON.stringify({items: b.items, remindersEnabled: b.remindersEnabled === true});
     if (b.revision < this.ddlRevision || (b.revision === this.ddlRevision && this.ddlContent !== ddlContent)) {
       this.reject(m, 'STALE_REVISION'); return;
     }
     items.sort(function(a, c) { return a.dueAtMs - c.dueAtMs; });
     this.ddl = items; this.ddlContent = ddlContent; this.ddlRevision = b.revision;
     this.ddlUntil = b.validUntilMs; this.truncated = b.truncated === true;
+    if (!this.remindersEnabled && b.remindersEnabled === true) this.reminderCursor = this.phoneNow();
+    this.remindersEnabled = b.remindersEnabled === true;
+    if (!this.remindersEnabled || (this.alert && !items.some(function(item) {
+      return item.status === 'open' && item.title === this.alert.title;
+    }, this))) this.alert = null;
     this.updatedAt = integer(b.generatedAtMs) ? b.generatedAtMs : this.phoneNow();
-    delete this.pending.sync; this.error = ''; this.silence = 0; this.publish();
+    this.applied('ddl'); this.error = ''; this.silence = 0; this.publish();
     this.reply(m, 'result', {status: 'ok', code: 'OK', resource: 'ddl', revision: b.revision});
+  } else if (m.type === 'schedule.snapshot') {
+    if (!integer(b.revision) || b.revision < 1 || !integer(b.validUntilMs) ||
+        b.validUntilMs <= this.phoneNow() || !Array.isArray(b.items) || b.items.length > 50) {
+      this.reject(m, 'INVALID_PAYLOAD'); return;
+    }
+    var valid = b.items.every(function(item) {
+      return item && typeof item.name === 'string' && item.name.trim() && characters(item.name) <= 80 &&
+        typeof item.location === 'string' && characters(item.location) <= 40 &&
+        integer(item.startAtMs) && item.startAtMs > 0 && integer(item.endAtMs) && item.endAtMs > item.startAtMs;
+    });
+    if (!valid) { this.reject(m, 'INVALID_PAYLOAD'); return; }
+    var content = JSON.stringify(b.items);
+    if (b.revision < this.scheduleRevision || (b.revision === this.scheduleRevision && content !== this.scheduleContent)) {
+      this.reject(m, 'STALE_REVISION'); return;
+    }
+    this.schedule = b.items.slice().sort(function(a, c) { return a.startAtMs - c.startAtMs; });
+    this.scheduleRevision = b.revision; this.scheduleContent = content;
+    this.scheduleUntil = b.validUntilMs; this.scheduleTruncated = b.truncated === true;
+    this.silence = 0; this.applied('schedule'); this.error = ''; this.publish();
+    this.reply(m, 'result', {status: 'ok', code: 'OK', resource: 'schedule', revision: b.revision});
   } else if (m.type === 'campusCode.snapshot') {
     var pending = this.pending.code;
     if (!pending || pending.id !== m.replyTo || !token(b.codeId) || b.purpose !== 'campus' || b.format !== 'qrBytes' ||

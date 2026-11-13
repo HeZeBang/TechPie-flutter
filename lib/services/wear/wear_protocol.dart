@@ -178,9 +178,27 @@ class WearCampusCode {
   final DateTime validUntil;
 }
 
+class WearCourse {
+  const WearCourse({
+    required this.name,
+    required this.location,
+    required this.startAt,
+    required this.endAt,
+  });
+  final String name, location;
+  final DateTime startAt, endAt;
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'location': location,
+        'startAtMs': startAt.millisecondsSinceEpoch,
+        'endAtMs': endAt.millisecondsSinceEpoch,
+      };
+}
+
 abstract interface class WearDataSource {
   Future<WearAccount> account();
   Future<List<WearDdl>> deadlines();
+  Future<List<WearCourse>> schedule(DateTime from);
   Future<WearCampusCode> campusCode(String purpose);
 }
 

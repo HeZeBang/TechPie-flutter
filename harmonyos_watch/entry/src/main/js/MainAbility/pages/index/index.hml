@@ -2,8 +2,31 @@
   <list class="content" if="{{ view !== 'code' }}">
     <list-item class="spacer"></list-item>
     <list-item class="section">
-      <text class="brand">{{ view === 'home' ? 'TechPie' : (view === 'ddl' ? '待办 DDL' : (view === 'account' ? '我的账号' : '连接帮助')) }}</text>
+      <text class="brand">{{ view === 'home' ? 'TechPie' : (view === 'ddl' ? '待办 DDL' : (view === 'schedule' ? '未来 7 天课表' : (view === 'account' ? '我的账号' : '连接帮助'))) }}</text>
       <text class="status">{{ status }}</text>
+    </list-item>
+    <list-item class="section" if="{{ alertTitle !== '' }}">
+      <div class="card">
+        <text class="caption">{{ alertHint }}</text>
+        <text class="headline">{{ alertTitle }}</text>
+        <text class="support">{{ vibrationError }}</text>
+      </div>
+      <input class="secondary" type="button" value="知道了" onclick="dismissAlert" />
+    </list-item>
+    <list-item class="section" if="{{ view === 'schedule' }}">
+      <text class="headline">{{ dayLabel }}</text>
+      <input class="secondary" type="button" value="前一天" onclick="previousDay" if="{{ dayOffset > 0 }}" />
+      <input class="secondary" type="button" value="后一天" onclick="nextDay" if="{{ dayOffset < 6 }}" />
+      <text class="support" if="{{ courses.length === 0 }}">{{ scheduleEmpty }}</text>
+      <text class="support" if="{{ scheduleTruncated }}">课程较多，仅同步前 50 项</text>
+      <input class="primary" type="button" value="同步课表" onclick="refreshDdl" />
+    </list-item>
+    <list-item class="section" for="{{ view === 'schedule' ? courses : [] }}">
+      <div class="card">
+        <text class="caption">{{ $item.time }}</text>
+        <text class="headline">{{ $item.name }}</text>
+        <text class="support">{{ $item.location }}</text>
+      </div>
     </list-item>
     <list-item class="section" if="{{ view === 'home' }}">
       <div class="card">
@@ -12,6 +35,7 @@
         <text class="support">{{ nextDue }}</text>
       </div>
       <input class="primary" type="button" value="待办 DDL" onclick="showDdl" />
+      <input class="secondary" type="button" value="课表" onclick="showSchedule" />
       <input class="secondary" type="button" value="校园码" onclick="showCode" />
       <input class="secondary" type="button" value="我的账号" onclick="showAccount" />
       <input class="text-action" type="button" value="连接帮助" onclick="showGuide" />
@@ -34,7 +58,7 @@
       <input class="secondary" if="{{ hasPrevious }}" type="button" value="上一页" onclick="previousPage" />
       <input class="secondary" if="{{ hasNext }}" type="button" value="下一页" onclick="nextPage" />
       <text class="support" if="{{ truncated }}">更多待办请在手机查看</text>
-      <text class="support">在手机连接页开启 DDL 提醒</text>
+      <text class="support">{{ reminderText }}</text>
     </list-item>
     <list-item class="section" if="{{ view === 'account' }}">
       <div class="card">

@@ -1,3 +1,4 @@
+import vibrator from '@system.vibrator';
 import { WearLink } from '../../common/wear-link.js';
 
 var link, paintTimer, refreshTimer;
@@ -15,7 +16,9 @@ export default {
     pageLabel: '', hasPrevious: false, hasNext: false, truncated: false,
     syncing: false, syncLabel: '更新待办', codeVisible: false, codeLoading: false,
     codeLabel: '获取校园码', codeMessage: '校园码仅在连接期间可用', codeSeconds: 0,
-    error: '', updated: ''
+    error: '', updated: '', courses: [], scheduleReady: false, dayOffset: 0, dayLabel: '',
+    scheduleEmpty: '等待手机同步', scheduleTruncated: false,
+    reminderText: '提醒未开启', alertTitle: '', alertHint: '', vibrationError: ''
   },
   onInit() {
     var page = this;
@@ -40,6 +43,15 @@ export default {
     return false;
   },
   applyState(state) {
+    this.alertTitle = state.alert ? state.alert.title : '';
+    this.alertHint = state.alert ? (state.alert.count > 1 ? '另有 ' + (state.alert.count - 1) + ' 项待办即将截止' : '截止前 1 小时提醒') : '';
+    this.reminderText = state.remindersEnabled ? '提醒已开启 · 保持手表应用打开并连接' : '在手机中开启 DDL 提醒';
+    if (!state.alert) this._alertId = null;
+    if (state.alert && this._alertId !== state.alert.id) {
+      this._alertId = state.alert.id; this.vibrationError = '';
+      var page = this;
+      vibrator.vibrate({mode: 'long', fail: function() { page.vibrationError = '振动失败，请查看待办'; }});
+    }
     this.connected = state.connected; this.status = state.connected ? '已连接' : '未连接';
     this.name = state.name || ''; this.studentId = state.studentId || '';
     this.error = state.error || ''; this.syncing = state.syncing || false;
@@ -54,6 +66,16 @@ export default {
         due: dueLabel(item.dueAtMs), hint: item.dueAtMs <= now ? '已逾期' :
           (item.dueAtMs - now < 86400000 ? '24 小时内截止' : '待完成')};
     });
+    var day = new Date(now + 28800000 + this.dayOffset * 86400000);
+    var from = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()) - 28800000;
+    this.dayLabel = (day.getUTCMonth() + 1) + '/' + day.getUTCDate() + ' 周' + '日一二三四五六'.charAt(day.getUTCDay());
+    this.courses = (state.schedule || []).filter(function(item) {
+      return item.startAtMs >= from && item.startAtMs < from + 86400000;
+    }).map(function(item) { return {name: short(item.name, 32), location: short(item.location, 20),
+      time: dueLabel(item.startAtMs).split(' ')[1] + '–' + dueLabel(item.endAtMs).split(' ')[1]}; });
+    this.scheduleReady = state.scheduleReady || false;
+    this.scheduleTruncated = state.scheduleTruncated || false;
+    this.scheduleEmpty = this.scheduleReady ? '当天没有课程' : '等待手机同步课表';
     this.ddlEmpty = this.ddlReady ? '暂时没有待办' : '等待手机同步';
     this.pageLabel = all.length ? (this.pageNumber + 1) + ' / ' + Math.ceil(all.length / 6) : '';
     this.hasPrevious = this.pageNumber > 0; this.hasNext = (this.pageNumber + 1) * 6 < all.length;
@@ -87,6 +109,10 @@ export default {
     if (link) link.connection.hideCode();
   },
   showDdl() { this.view = 'ddl'; this.pageNumber = 0; if (link) link.connection.publish(); },
+  showSchedule() { this.view = 'schedule'; this.dayOffset = 0; if (link) link.connection.publish(); },
+  previousDay() { if (this.dayOffset > 0) { this.dayOffset--; link.connection.publish(); } },
+  nextDay() { if (this.dayOffset < 6) { this.dayOffset++; link.connection.publish(); } },
+  dismissAlert() { if (link) { link.connection.alert = null; link.connection.publish(); } },
   showAccount() { this.view = 'account'; },
   showGuide() { this.view = 'guide'; },
   showCode() { this.view = 'code'; this.refreshCode(); },

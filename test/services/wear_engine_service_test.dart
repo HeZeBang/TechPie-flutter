@@ -22,6 +22,9 @@ class MemoryMetadata implements WearMetadata {
 }
 
 class Source implements WearDataSource {
+  List<WearCourse> courses = [];
+  @override
+  Future<List<WearCourse>> schedule(DateTime from) async => courses;
   String scope = 'account-a';
   bool failDdl = false;
   List<WearDdl> items = [];
@@ -53,8 +56,10 @@ class Peer implements WearTransport {
   final codec = WearFrames();
   final frameStream = StreamController<Uint8List>.broadcast();
   final stateStream = StreamController<Map<String, dynamic>>.broadcast();
+  final authorizations = <bool>[];
   bool ignoreAccount = false;
   bool rejectDdl = false;
+  bool ignoreDdl = false;
   bool ignoreHeartbeat = false;
   List<String> capabilities = [
     'account.display',
@@ -80,8 +85,11 @@ class Peer implements WearTransport {
         {'id': 'watch'},
       ];
   @override
-  Future<Map<String, dynamic>> authorize({required bool notify}) async =>
-      {'p2p': true, 'notify': notify};
+  Future<Map<String, dynamic>> authorize({required bool notify}) async {
+    authorizations.add(notify);
+    return {'p2p': true, 'notify': notify};
+  }
+
   @override
   Future<void> open(String deviceId, String fingerprint) async {}
   @override
@@ -163,7 +171,19 @@ class Peer implements WearTransport {
           'resource': 'account',
           'revision': body['revision'],
         });
+      case 'schedule.snapshot':
+        respond(
+          message,
+          'result',
+          {
+            'status': 'ok',
+            'code': 'OK',
+            'resource': 'schedule',
+            'revision': body['revision'],
+          },
+        );
       case 'ddl.snapshot':
+        if (ignoreDdl) return;
         if (rejectDdl) {
           respond(message, 'result', {
             'status': 'error',
@@ -237,6 +257,71 @@ void main() {
         watchFingerprint: fingerprint,
         notify: notify,
       );
+
+  test(
+      'approved P2P syncs timetable and enables local reminders without NOTIFY',
+      () async {
+    peer.capabilities.addAll(['schedule.display', 'reminder.watchLocal']);
+    source.courses = [
+      WearCourse(
+        name: '大学物理',
+        location: '教学楼 201',
+        startAt: testNow.add(const Duration(hours: 1)),
+        endAt: testNow.add(const Duration(hours: 2)),
+      ),
+    ];
+    await open();
+    final timetable = peer.received
+        .singleWhere((m) => m['type'] == 'schedule.snapshot')['body'] as Map;
+    expect((timetable['items'] as List).single['name'], '大学物理');
+    expect(timetable['timeZone'], 'Asia/Shanghai');
+    expect(service.watchRemindersEnabled, false);
+    await service.setWatchRemindersEnabled(true);
+    expect(service.watchRemindersEnabled, true);
+    expect(
+      (peer.received.lastWhere((m) => m['type'] == 'ddl.snapshot')['body']
+          as Map)['remindersEnabled'],
+      true,
+    );
+    expect(peer.authorizations, [false]);
+    expect(peer.schedule, null);
+    await service.close();
+    expect(service.watchRemindersEnabled, false);
+  });
+  test('failed P2P reminder update retains previous setting', () async {
+    peer.capabilities.add('reminder.watchLocal');
+    await open();
+    peer.rejectDdl = true;
+    await expectLater(
+      service.setWatchRemindersEnabled(true),
+      throwsA(isA<WearFailure>()),
+    );
+    expect(service.watchRemindersEnabled, false);
+    expect(peer.authorizations, [false]);
+  });
+  test('lost local-reminder receipt ends the uncertain session', () async {
+    peer.capabilities.addAll(['reminder.watchLocal', 'connection.heartbeat']);
+    await open();
+    peer.ignoreDdl = true;
+    await expectLater(
+      service.setWatchRemindersEnabled(true),
+      throwsA(isA<WearFailure>()),
+    );
+    expect(service.ready, false);
+    expect(service.watchRemindersEnabled, false);
+    expect(peer.received.last['type'], 'session.close');
+  });
+  test('old watch receives only supported resources', () async {
+    await open();
+    expect(
+      peer.received.where((m) => m['type'] == 'schedule.snapshot'),
+      isEmpty,
+    );
+    await expectLater(
+      service.setWatchRemindersEnabled(true),
+      throwsA(isA<WearFailure>()),
+    );
+  });
 
   test('UTF-8 Chinese framing roundtrips out of order without exceeding 1KB',
       () {

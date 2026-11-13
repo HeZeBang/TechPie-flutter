@@ -2,11 +2,12 @@
   "app": {
     "bundleName": "com.geekpie.techpie.watch",
     "vendor": "geekpie",
-    "version": { "code": 1, "name": "0.1.0" }
+    "version": { "code": 2, "name": "0.2.0" }
   },
   "deviceConfig": {},
   "module": {
     "deviceType": ["liteWearable"],
+    "reqPermissions": [{ "name": "ohos.permission.VIBRATE" }],
     "distro": {
       "deliveryWithInstall": true,
       "moduleName": "entry",

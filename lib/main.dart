@@ -114,6 +114,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
             accounts: thirdPartyAuthService,
             assignments: assignmentService,
             campusCard: campusCardService,
+            timetable: scheduleService,
           ),
         )
       : null;
@@ -243,6 +244,21 @@ Future<void> _realMain(SharedPreferences prefs) async {
       }
     }
 
+    void scheduleChanged() {
+      if (wearEngineService.ready &&
+          !scheduleService.loading &&
+          wearEngineService.supports('schedule.display')) {
+        unawaited(
+          wearEngineService
+              .refresh(resources: ['schedule']).catchError((Object error) {
+            if (error is! WearFailure) throw error;
+          }),
+        );
+      }
+    }
+
+    scheduleService.addListener(scheduleChanged);
+    assignmentService.addListener(scheduleChanged);
     authService.addListener(accountChanged);
     thirdPartyAuthService.addListener(accountChanged);
     campusCardService.addListener(accountChanged);
