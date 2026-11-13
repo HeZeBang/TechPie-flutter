@@ -1,4 +1,4 @@
-# TechPie Linux deadline widgets (first version)
+# TechPie Linux deadline widgets
 
 KDE Plasma 6: a resizable desktop card and compact panel button. GNOME Shell
 45–51: a desktop card and top-bar indicator with an expandable deadline list.
@@ -9,8 +9,8 @@ The widgets show upcoming, visible, incomplete assignments and exams, sorted by
 deadline. They do not contact campus services or receive credentials. They read
 the last snapshot published by TechPie; keep the app running for new data.
 Expired entries and countdowns are refreshed locally at most every 30 seconds.
-The timestamp is when the snapshot was saved, not a claim of a successful server
-sync. A widget click opens the app's Deadlines page.
+The timestamp records when the snapshot was saved. Server-sync status is tracked
+by the app. A widget click opens the app's Deadlines page.
 
 ## Install a release bundle
 
@@ -89,8 +89,8 @@ The existing payment widget and Huawei Watch code remain separate consumers.
 GNOME's `desktopCard.js` owns the desktop actor and placement; `extension.js`
 owns the indicator, reader and lifecycle. GSettings stores card visibility and
 position. KDE keeps its reader/model in `backend` and presentation in QML.
-This version targets an unpacked native bundle; Flatpak/Snap integration is
-outside its scope.
+Install the widgets from an unpacked native bundle. Flatpak/Snap widget integration
+remains pending.
 
 ## Desktop card stacking regression
 
