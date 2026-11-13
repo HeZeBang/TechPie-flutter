@@ -131,7 +131,7 @@ async function currentTexts() {
   return {
     deviceMaterials,
     appName: lang.appName || 'TechPie',
-    appDesc: lang.appDesc || '上海科技大学校园第三方服务客户端。',
+    appDesc: lang.appDesc || 'TechPie 是面向上科大的开源校园工具，集中展示课表、课程任务和截止时间，提供课程录播等校园服务入口。',
     briefInfo: lang.briefInfo || '校园服务一站直达',
     privacyPolicy: app.privacyPolicy || '',
     privacyRightsUrl: app.privacyRightsUrl || '',

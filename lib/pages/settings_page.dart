@@ -8,6 +8,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/api_base_url.dart';
+import '../services/feedback_service.dart';
 import '../services/service_provider.dart';
 import '../services/sync_service.dart';
 import '../services/theme_service.dart';
@@ -28,9 +30,11 @@ import '../widgets/desktop_popup.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/uni_auth_login.dart';
 import '../widgets/update_dialogs.dart';
+import 'account_deletion_page.dart';
 import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
+import 'feedback_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'watch_settings_page.dart';
@@ -262,13 +266,12 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.person_remove_outlined),
-                title: const Text('申请注销账号'),
-                trailing: const Icon(Icons.open_in_new),
+                title: const Text('注销账号'),
+                trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  launchUrl(
-                    Uri.parse(
-                        'https://techpie.geekpie.club/privacy#account-deletion',),
-                    mode: LaunchMode.externalApplication,
+                  pushAdaptivePage<void>(
+                    context,
+                    builder: (_) => AccountDeletionPage(auth: auth),
                   ),
                 ),
               ),
@@ -331,6 +334,21 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const Divider(),
 
+            ListTile(
+              leading: const Icon(Icons.feedback_outlined),
+              title: const Text('问题反馈 / 功能建议'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                if (!auth.isLoggedIn) await startUniAuthLogin(context);
+                if (!context.mounted || !auth.isLoggedIn) return;
+                await pushAdaptivePage<void>(
+                  context,
+                  builder: (_) => FeedbackPage(
+                    service: FeedbackService(auth, apiBaseUrl(sp.storageService)),
+                  ),
+                );
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.privacy_tip_outlined),
               title: const Text('隐私政策与使用支持'),

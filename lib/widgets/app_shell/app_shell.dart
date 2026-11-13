@@ -25,6 +25,7 @@ import 'mobile_shell.dart';
 /// window, and on the root navigator otherwise. A value set before the shell
 /// mounts waits for it, which is what a cold start needs.
 final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
+final appShellPendingDeadlines = ValueNotifier<bool>(false);
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -102,6 +103,10 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     appShellPendingEcardEntry.addListener(_showPendingEcardEntry);
+    appShellPendingDeadlines.addListener(_showDeadlines);
+    if (appShellPendingDeadlines.value) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showDeadlines());
+    }
     if (appShellPendingEcardEntry.value != null) {
       // Deferred: a push during the first build is a build-time side effect.
       WidgetsBinding.instance.addPostFrameCallback(
@@ -113,6 +118,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     appShellPendingEcardEntry.removeListener(_showPendingEcardEntry);
+    appShellPendingDeadlines.removeListener(_showDeadlines);
     for (final controller in _tabHeroControllers.values) {
       controller.dispose();
     }
@@ -120,6 +126,14 @@ class _AppShellState extends State<AppShell> {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  void _showDeadlines() {
+    if (!mounted || !appShellPendingDeadlines.value) return;
+    appShellPendingDeadlines.value = false;
+    _contentNavigatorKeys[2]?.currentState?.popUntil((route) => route.isFirst);
+    _tabNavigatorKeys[2]?.currentState?.popUntil((route) => route.isFirst);
+    _onDestinationSelected(2);
   }
 
   /// Pushes the entry onto the visible navigation stack.

@@ -494,6 +494,19 @@ distinguishable in git, and the file names deliberately do not try to.
   scripts surface that code instead of pretending success — `errorCode 991` on the
   package compile is "invalid package, possibly unsigned", which is exactly what
   an unsigned upload produces.
+
+  A **test** version needs one record the Publishing API cannot write. The age
+  rating lives per version serial (`srvSerialNo` = the versionId), not per app: the
+  app answers a questionnaire once (`contentRate`, here `{"HW":"3+","ClassInd":"L"}`)
+  and the console copies it onto each version. A version created by API has no such
+  record, and the submit is refused with
+  `[AppGalleryConnectAppMetaInfoService]contentRating in amis is invalid`.
+  `extInfo.contentRating` on the version PUT is accepted and ignored (measured on
+  v1.0.4-rc.1+19), and `POST /api/publish/v2/app-age-rating` only rates the app for
+  `releaseType` 1/7 — never 6, the test channel. So the test version's rating is
+  confirmed in the console (分发 → 版本信息 → 测试版本 → 内容分级) once per version;
+  the workflow stops at 待提交 with exit 2 and says so. The 全网 channel needs
+  nothing extra: its rating is the app's.
 - **One concurrency group per platform.** Group names are repository-wide and a
   group holds only one *pending* entry, so platform workflows that share a group
   cancel each other's queued jobs: 1.0.1-rc.2's Windows job was cancelled one

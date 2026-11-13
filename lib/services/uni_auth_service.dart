@@ -72,6 +72,38 @@ class UniAuthService extends ChangeNotifier {
 
   final DebugLogger? _logger;
 
+  Future<void> deleteAccount(String token, String userId) async {
+    final headers = {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    };
+    final accountResponse = await http.get(
+      Uri.parse('$_uniAuthServerUrl/api/get-account'),
+      headers: headers,
+    ).timeout(const Duration(seconds: 10));
+    final accountBody = jsonDecode(accountResponse.body) as Map<String, dynamic>;
+    final user = accountBody['data'];
+    if (accountResponse.statusCode != 200 || accountBody['status'] != 'ok' ||
+        user is! Map || user['id'] != userId || user['owner'] != _uniAuthOrg ||
+        user['name'] is! String || (user['name'] as String).isEmpty) {
+      throw Exception('无法确认当前账号，请重新登录。');
+    }
+    if (accountBody['data2']?['enableSoftDeletion'] != false) {
+      throw Exception('账号服务未开放永久注销。');
+    }
+    // Use the user's own token; never send an admin credential or the full profile.
+    final response = await http.post(
+      Uri.parse('$_uniAuthServerUrl/api/delete-user'),
+      headers: headers,
+      body: jsonEncode({'owner': user['owner'], 'name': user['name']}),
+    ).timeout(const Duration(seconds: 10));
+    final result = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || result['status'] != 'ok' ||
+        result['data'] != 'Affected') {
+      throw Exception('账号未注销成功。');
+    }
+  }
+
   /// Debug trace of what the SSO token endpoint answered.
   ///
   /// The SDK brings its own HTTP client, so unlike every other call this one is

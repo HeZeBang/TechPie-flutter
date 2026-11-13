@@ -26,6 +26,14 @@ class AssignmentService extends ChangeNotifier {
   List<Assignment> _assignments = [];
   AssignmentOverrides _overrides = AssignmentOverrides();
   bool _loading = false;
+  int _identityEpoch = 0;
+  bool _hasCachedData = false;
+  bool _cacheHydrated = false;
+  bool _refetchPending = false;
+  bool _signedOut = false;
+  bool _disposed = false;
+  String? _primaryIdentity;
+  Map<String, String> _sourceIdentities = {};
   String? _error;
   // Per-platform error messages (keyed by lowercase platform id).
   final Map<String, String> _platformErrors = {};
@@ -43,6 +51,8 @@ class AssignmentService extends ChangeNotifier {
   AssignmentOverrides get overrides => _overrides;
 
   bool get loading => _loading;
+  int get identityEpoch => _identityEpoch;
+  bool get hasCachedData => _hasCachedData;
   String? get error => _error;
   Map<String, String> get platformErrors => Map.unmodifiable(_platformErrors);
 
@@ -84,6 +94,8 @@ class AssignmentService extends ChangeNotifier {
     this._tpAuth,
     this._schedule,
   ) {
+    _primaryIdentity = _auth.session?.userId;
+    _sourceIdentities = _currentSources();
     // Refetch when bindings or auth change *after* initial app boot.
     // The initial fetch is kicked off explicitly from main.dart so we
     // don't double-fire during service initialization.
@@ -107,12 +119,69 @@ class AssignmentService extends ChangeNotifier {
     _lastRefetchedSemesterId = _schedule.selectedSemesterId;
   }
 
-  /// Auth or binding changed — always refetch (tokens, accounts differ).
+  /// Queue a refetch during an active sync only when the identity changes.
   void _onBindingsOrAuthChanged() {
+    final primary = _auth.session?.userId;
+    final sources = _currentSources();
+    final primaryChanged = primary != _primaryIdentity;
+    final changed = <String>{
+      for (final key in {..._sourceIdentities.keys, ...sources.keys})
+        if (_sourceIdentities[key] != sources[key]) key,
+    };
+    if (primaryChanged || changed.isNotEmpty) {
+      if (_cacheHydrated) {
+        _identityEpoch++;
+        if (primaryChanged) {
+          _signedOut = _primaryIdentity != null && primary == null;
+        }
+        if (primary != null) _signedOut = false;
+        _assignments = primaryChanged
+            ? []
+            : _assignments.where((a) {
+                final source =
+                    (a.platform == 'blackboard' || a.platform == 'exam')
+                        ? 'cpdaily'
+                        : a.platform;
+                return !changed.contains(source);
+              }).toList();
+        if (primaryChanged) {
+          _hasCachedData = false;
+          unawaited(_storage.clearCachedAssignments());
+        } else if (_hasCachedData) {
+          unawaited(
+            _storage.saveCachedAssignments(
+              _assignments.map((a) => a.toJson()).toList(),
+            ),
+          );
+        }
+        notifyListeners();
+      }
+      _primaryIdentity = primary;
+      _sourceIdentities = sources;
+    }
     if (!_autoRefetchEnabled) return;
+    if (_signedOut) return;
     _lastRefetchedSemesterId = _schedule.selectedSemesterId;
+    if (_loading) {
+      // Renewal status notifications must not retry the active sync.
+      if (primaryChanged || changed.isNotEmpty) _refetchPending = true;
+      return;
+    }
     unawaited(fetchAssignments());
   }
+
+  /// Who each binding is, not which session it holds: renewals rotate the
+  /// Hydro `sid` cookie and the egateApp probe rewrites the cpdaily `sid`, so
+  /// neither may count as an account change (nor may anything derived from it,
+  /// such as `cpdailyStudentId`).
+  Map<String, String> _currentSources() => {
+        for (final account in _tpAuth.accounts)
+          account.platform.id: jsonEncode([
+            account.account,
+            account.hydroOrigin,
+            account.hydroDomains,
+          ]),
+      };
 
   /// Schedule changed — only refetch if the selected semester actually
   /// changed, not on every loading/error/course_table flip. This prevents
@@ -132,6 +201,7 @@ class AssignmentService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _tpAuth.removeListener(_onBindingsOrAuthChanged);
     _auth.removeListener(_onBindingsOrAuthChanged);
     _schedule.removeListener(_onScheduleChanged);
@@ -140,6 +210,8 @@ class AssignmentService extends ChangeNotifier {
 
   /// Clear cached + in-memory deadlines (called on primary logout).
   Future<void> clearCache() async {
+    _identityEpoch++;
+    _hasCachedData = false;
     _verifiedScope = null;
     _verifiedPlatforms = {};
     _assignments = [];
@@ -152,6 +224,8 @@ class AssignmentService extends ChangeNotifier {
   /// Hydrate from local cache so the UI doesn't flash empty on app start
   /// or tab switch. Safe to call before login. Also loads overrides.
   void loadCached() {
+    _cacheHydrated = true;
+    _hasCachedData = _storage.hasCachedAssignments;
     _verifiedScope = null;
     _verifiedPlatforms = {};
     _overrides = _storage.loadAssignmentOverrides();
@@ -228,7 +302,8 @@ class AssignmentService extends ChangeNotifier {
       };
 
   Future<void> fetchAssignments() async {
-    if (_loading) return; // 避免启动时 listener 链触发的并发重复调用
+    if (_loading || _signedOut || _disposed) return;
+    final epoch = _identityEpoch;
     _loading = true;
     _error = null;
     _platformErrors.clear();
@@ -278,6 +353,7 @@ class AssignmentService extends ChangeNotifier {
 
     try {
       await Future.wait(futures);
+      if (_disposed || epoch != _identityEpoch) return;
       if (dataScope == _currentDataScope) {
         _verifiedScope = dataScope;
         _verifiedPlatforms =
@@ -288,6 +364,8 @@ class AssignmentService extends ChangeNotifier {
       );
 
       _assignments = merged;
+      _hasCachedData = _hasCachedData || successfulResults.isNotEmpty;
+      if (!_hasCachedData) return;
       await _storage.saveCachedAssignments(
         merged.map((a) => a.toJson()).toList(),
       );
@@ -295,7 +373,11 @@ class AssignmentService extends ChangeNotifier {
       _error = '同步失败，请检查网络或稍后重试';
     } finally {
       _loading = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
+      if (_refetchPending && !_disposed) {
+        _refetchPending = false;
+        unawaited(fetchAssignments());
+      }
     }
   }
 
@@ -315,6 +397,8 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<void> fetchPlatform(String platformId) async {
+    if (_loading || _signedOut || _disposed) return;
+    final epoch = _identityEpoch;
     _verifiedScope = null;
     _verifiedPlatforms = {};
     _loading = true;
@@ -350,9 +434,10 @@ class AssignmentService extends ChangeNotifier {
       }
     }
 
-    if (future != null) {
-      try {
+    try {
+      if (future != null) {
         await future;
+        if (_disposed || epoch != _identityEpoch) return;
         _verifiedScope = null;
         _verifiedPlatforms = {};
         final merged = _mergeAssignments(
@@ -360,16 +445,22 @@ class AssignmentService extends ChangeNotifier {
         );
 
         _assignments = merged;
+        _hasCachedData = _hasCachedData || successfulResults.isNotEmpty;
+        if (!_hasCachedData) return;
         await _storage.saveCachedAssignments(
           merged.map((a) => a.toJson()).toList(),
         );
-      } catch (e) {
-        _error = e.toString();
+      }
+    } catch (e) {
+      if (epoch == _identityEpoch) _error = e.toString();
+    } finally {
+      _loading = false;
+      if (!_disposed) notifyListeners();
+      if (_refetchPending && !_disposed) {
+        _refetchPending = false;
+        unawaited(fetchAssignments());
       }
     }
-
-    _loading = false;
-    notifyListeners();
   }
 
   Future<List<Assignment>?> _fetchBlackboard() async {
