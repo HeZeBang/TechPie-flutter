@@ -172,8 +172,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     } else if (_isHydro && _hydroOriginCtrl.text.trim().isEmpty) {
       message = '请填写 Hydro 站点 origin';
     } else if (_isHydro) {
-      final domains =
-          _hydroDomainsCtrl.text.split(RegExp(r'[\s,]+')).where((value) => value.trim().isNotEmpty);
+      final domains = _hydroDomainsCtrl.text
+          .split(RegExp(r'[\s,]+'))
+          .where((value) => value.trim().isNotEmpty);
       if (domains.isEmpty) message = '至少填写一个课程 domain';
     }
 

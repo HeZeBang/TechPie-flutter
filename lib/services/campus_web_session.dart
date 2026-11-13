@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:webview_flutter/webview_flutter.dart' show WebViewController, WebViewCookieManager;
+import 'package:webview_flutter/webview_flutter.dart'
+    show WebViewController, WebViewCookieManager;
 
 import 'auth_service.dart';
 import 'session/session_node.dart';
@@ -83,7 +84,8 @@ class CampusWebSession {
 
   Future<T> _queue<T>(Future<T> Function() action) {
     final operation = _pending.then((_) => action());
-    _pending = operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _pending =
+        operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     return operation;
   }
 

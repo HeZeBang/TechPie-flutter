@@ -139,10 +139,17 @@ class OaGymService extends ChangeNotifier {
       final previous = _storage.loadOaSchoolProfile(owner: owner);
       // Never overwrite a contact edit saved while this request was running.
       String merge(String saved, String school, String oldSchool) =>
-          school.isNotEmpty && (overwrite || saved.isEmpty || saved == oldSchool) ? school : saved;
-      final phone = RegExp(r'^1[3-9]\d{9}$').hasMatch(incoming.phone) ? incoming.phone : '';
+          school.isNotEmpty &&
+                  (overwrite || saved.isEmpty || saved == oldSchool)
+              ? school
+              : saved;
+      final phone = RegExp(r'^1[3-9]\d{9}$').hasMatch(incoming.phone)
+          ? incoming.phone
+          : '';
       final email =
-          RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(incoming.email) ? incoming.email : '';
+          RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(incoming.email)
+              ? incoming.email
+              : '';
       if (incoming.name.isEmpty && phone.isEmpty && email.isEmpty) {
         throw OaGymException('OA 暂未提供可同步的个人信息，请手动填写');
       }
@@ -166,7 +173,8 @@ class OaGymService extends ChangeNotifier {
       }
     } catch (error) {
       if (generation == _profileGeneration && owner == profileOwner) {
-        _profileSyncError = error is OaGymException ? error.message : '同步 OA 个人信息失败，可手动填写或稍后重试';
+        _profileSyncError =
+            error is OaGymException ? error.message : '同步 OA 个人信息失败，可手动填写或稍后重试';
       }
     } finally {
       if (generation == _profileGeneration && owner == profileOwner) {
@@ -240,7 +248,10 @@ class OaGymService extends ChangeNotifier {
   }) async {
     _syncIdentity();
     _validateDates(date, date);
-    if (sports.isEmpty || startSlot < 1 || endSlot > 11 || startSlot > endSlot) {
+    if (sports.isEmpty ||
+        startSlot < 1 ||
+        endSlot > 11 ||
+        startSlot > endSlot) {
       throw OaGymException('请选择运动项目和有效时间段');
     }
     final requested = Set<OaSport>.of(sports);
@@ -275,7 +286,10 @@ class OaGymService extends ChangeNotifier {
               throw OaGymException('OA 返回的预约日期或时间段不匹配，请重试');
             }
             native[_sportFromId(row['sport'] as String)] =
-                (row['availableCourts'] as List).cast<num>().map((n) => n.toInt()).toSet();
+                (row['availableCourts'] as List)
+                    .cast<num>()
+                    .map((n) => n.toInt())
+                    .toSet();
           }
           if (!nativeSports.every(native.containsKey)) {
             throw OaGymException('OA 未返回完整场地状态，请刷新后重试');
@@ -289,7 +303,9 @@ class OaGymService extends ChangeNotifier {
                 timeSlot: slot,
                 availableCourts: [
                   for (final court in courts)
-                    if (native[court.bookingSport]!.contains(court.bookingNumber)) court.number,
+                    if (native[court.bookingSport]!
+                        .contains(court.bookingNumber))
+                      court.number,
                 ],
                 totalCourts: courts.length,
               ),
@@ -314,7 +330,8 @@ class OaGymService extends ChangeNotifier {
   }) async {
     _syncIdentity();
     _validateDates(date, date);
-    final choices = oaCourtsForSport(sport).where((court) => court.number == courtNumber);
+    final choices =
+        oaCourtsForSport(sport).where((court) => court.number == courtNumber);
     if (choices.isEmpty || timeSlot < 1 || timeSlot > 11 || playersCount < 1) {
       throw OaGymException('所选场地、时间段或预约人数无效');
     }
@@ -371,9 +388,11 @@ class OaGymService extends ChangeNotifier {
       await _ensureMetadata();
     });
     final venues = _resolveSearchVenues(venueNames);
-    final ranges =
-        timeRanges.isEmpty || timeRanges.contains('') ? <String>[''] : timeRanges.toSet().toList();
-    if (ranges.any((range) => range.isNotEmpty && !_timeSlots.containsKey(range))) {
+    final ranges = timeRanges.isEmpty || timeRanges.contains('')
+        ? <String>['']
+        : timeRanges.toSet().toList();
+    if (ranges
+        .any((range) => range.isNotEmpty && !_timeSlots.containsKey(range))) {
       throw OaGymException('请选择有效时间段');
     }
     Future<List<OaCourtSearchResult>> query(
@@ -395,8 +414,9 @@ class OaGymService extends ChangeNotifier {
               timeRange: json['timeRange'] as String? ?? '',
               rows: (json['rows'] as List<dynamic>? ?? const [])
                   .map(
-                    (row) =>
-                        (row as List<dynamic>).map((value) => value?.toString() ?? '').toList(),
+                    (row) => (row as List<dynamic>)
+                        .map((value) => value?.toString() ?? '')
+                        .toList(),
                   )
                   .toList(),
             );
@@ -577,9 +597,10 @@ class OaGymService extends ChangeNotifier {
       if (venue == '所有场地') {
         resolved.addAll(concrete);
       } else if (groups.contains(venue)) {
-        final sport =
-            OaSport.values.firstWhere((sport) => oaSportConfigs[sport]!.parentName == venue);
-        resolved.addAll(concrete.where((name) => oaVenueMatchesSport(name, sport)));
+        final sport = OaSport.values
+            .firstWhere((sport) => oaSportConfigs[sport]!.parentName == venue);
+        resolved
+            .addAll(concrete.where((name) => oaVenueMatchesSport(name, sport)));
       } else if (_venues.containsKey(venue) && !oaIsUnusedVenue(venue)) {
         resolved.add(venue);
       } else {

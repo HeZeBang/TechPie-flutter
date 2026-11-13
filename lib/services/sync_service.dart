@@ -48,7 +48,9 @@ class SyncCasdoorResult {
   String describe(String shortLabel) {
     if (ok) return shortLabel;
     final m = msg;
-    return m == null || m.isEmpty ? '$shortLabel (HTTP ${httpStatus ?? "?"})' : '$shortLabel: $m';
+    return m == null || m.isEmpty
+        ? '$shortLabel (HTTP ${httpStatus ?? "?"})'
+        : '$shortLabel: $m';
   }
 }
 
@@ -144,7 +146,6 @@ class SyncService extends ChangeNotifier {
     if (times.isEmpty) return null;
     return times.reduce((a, b) => a.isAfter(b) ? a : b);
   }
-
   /// Human-readable text from the most recent failed Casdoor call (for the
   /// "立即备份/恢复" toasts). Null when the last call succeeded.
   String? get lastError => _lastError;
@@ -281,7 +282,9 @@ class SyncService extends ChangeNotifier {
     try {
       decoded = resp.body.isEmpty ? null : jsonDecode(resp.body);
     } catch (_) {
-      final snippet = resp.body.length > 200 ? '${resp.body.substring(0, 200)}...' : resp.body;
+      final snippet = resp.body.length > 200
+          ? '${resp.body.substring(0, 200)}...'
+          : resp.body;
       _debugLog('update-user non-JSON HTTP ${resp.statusCode}: $snippet');
       return SyncCasdoorResult(false, httpStatus: resp.statusCode, msg: '响应非 JSON');
     }
@@ -309,8 +312,9 @@ class SyncService extends ChangeNotifier {
       if (requireReadableAccount) throw StateError('无法读取云端同步状态');
       return null;
     }
-    final props =
-        account['data'] is Map ? (account['data'] as Map)['properties'] : account['properties'];
+    final props = account['data'] is Map
+        ? (account['data'] as Map)['properties']
+        : account['properties'];
     if (props is! Map) return null;
     final v = props[_blobKey];
     return v is String && v.isNotEmpty ? v : null;
@@ -412,9 +416,11 @@ class SyncService extends ChangeNotifier {
         msg: '无法解析云端账号身份，请重新登录主账号',
       );
     }
-    final user =
-        (account['data'] is Map ? (account['data'] as Map) : account) as Map<String, dynamic>;
-    final props = (user['properties'] as Map?)?.cast<String, String>() ?? <String, String>{};
+    final user = (account['data'] is Map
+        ? (account['data'] as Map)
+        : account) as Map<String, dynamic>;
+    final props =
+        (user['properties'] as Map?)?.cast<String, String>() ?? <String, String>{};
     final updated = Map<String, String>.from(props);
     if (blob == null) {
       updated.remove(_blobKey);
@@ -521,9 +527,7 @@ class SyncService extends ChangeNotifier {
       final remoteBlob = await _readBlob(requireReadableAccount: true);
       if (remoteBlob != null) {
         final dot = remoteBlob.indexOf('.');
-        final plain = dot < 0
-            ? null
-            : await SyncCrypto.decrypt(remoteBlob.substring(dot + 1), _cachedKey!.key);
+        final plain = dot < 0 ? null : await SyncCrypto.decrypt(remoteBlob.substring(dot + 1), _cachedKey!.key);
         final remote = plain == null ? null : SyncEnvelope.decode(plain);
         if (remote == null) throw StateError('无法解密云端同步状态，请先恢复云同步');
         final local = SyncEnvelope.decode(payload)!;
@@ -540,7 +544,9 @@ class SyncService extends ChangeNotifier {
           ],
           // Without an eCard store this build has no opinion on the binding, so
           // the cloud's copy is the one that stands.
-          ecard: _ecard == null ? remote.ecard : (local.ecard?.merge(remote.ecard) ?? remote.ecard),
+          ecard: _ecard == null
+              ? remote.ecard
+              : (local.ecard?.merge(remote.ecard) ?? remote.ecard),
           unknown: remote.unknown,
         ).encode();
       }

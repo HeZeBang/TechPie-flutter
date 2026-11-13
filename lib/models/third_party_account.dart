@@ -73,8 +73,9 @@ class ThirdPartyAccount {
   })  : updatedAt = updatedAt ?? boundAt,
         deviceId = deviceId ?? '';
 
-  DateTime? get expireAt =>
-      expire == null ? null : DateTime.fromMillisecondsSinceEpoch(expire! * 1000);
+  DateTime? get expireAt => expire == null
+      ? null
+      : DateTime.fromMillisecondsSinceEpoch(expire! * 1000);
 
   bool get isExpired => expireAt != null && DateTime.now().isAfter(expireAt!);
 
@@ -97,7 +98,10 @@ class ThirdPartyAccount {
   static String idsSchoolId(Object? value) {
     if (value is! String) return '';
     final id = value.trim();
-    return RegExp(r'^\d+$').hasMatch(id) && !RegExp(r'^1[3-9]\d{9}$').hasMatch(id) ? id : '';
+    return RegExp(r'^\d+$').hasMatch(id) &&
+            !RegExp(r'^1[3-9]\d{9}$').hasMatch(id)
+        ? id
+        : '';
   }
 
   /// Comparison key for LWW merge: newer [updatedAt] wins; on a tie the
@@ -132,7 +136,8 @@ class ThirdPartyAccount {
       };
 
   factory ThirdPartyAccount.fromJson(Map<String, dynamic> json) {
-    final boundAt = DateTime.tryParse(json['boundAt'] as String? ?? '') ?? DateTime.now();
+    final boundAt =
+        DateTime.tryParse(json['boundAt'] as String? ?? '') ?? DateTime.now();
     return ThirdPartyAccount(
       platform: ThirdPartyPlatform.fromId(json['platform'] as String? ?? '') ??
           ThirdPartyPlatform.gradescope,
@@ -144,13 +149,15 @@ class ThirdPartyAccount {
       expire: (json['expire'] as num?)?.toInt(),
       raw: (json['raw'] as Map?)?.cast<String, dynamic>() ?? const {},
       hydroOrigin: json['hydroOrigin'] as String?,
-      hydroDomains: (json['hydroDomains'] as List?)?.map((e) => e as String).toList(),
+      hydroDomains:
+          (json['hydroDomains'] as List?)?.map((e) => e as String).toList(),
       boundAt: boundAt,
       autoRenew: json['autoRenew'] as bool? ?? false,
       password: json['password'] as String?,
       // Back-compat: pre-v2 blobs had no updatedAt/deviceId. Fall back to
       // boundAt / empty so they merge as "older than any real write".
-      updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ?? boundAt,
+      updatedAt:
+          DateTime.tryParse(json['updatedAt'] as String? ?? '') ?? boundAt,
       deviceId: json['deviceId'] as String? ?? '',
     );
   }

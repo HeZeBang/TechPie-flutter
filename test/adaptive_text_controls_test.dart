@@ -9,7 +9,8 @@ import 'package:techpie/widgets/secure_password_field.dart';
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  testWidgets('iOS grouped fields use Flutter text input and update controllers', (
+  testWidgets(
+      'iOS grouped fields use Flutter text input and update controllers', (
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;

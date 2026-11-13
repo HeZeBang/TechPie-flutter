@@ -227,14 +227,8 @@ void main() {
 
   test('encrypted cloud backup restores eCard and propagates its deletion', () async {
     const openId = 'SYNTHETIC_OPENID_CLOUD_123456';
-    final firstStore = _EcardStore(
-      EcardSyncBinding(
-        openId: openId,
-        channel: EcardOpenIdChannel.alipay,
-        updatedAt: DateTime.utc(2026),
-        deviceId: 'first',
-      ),
-    );
+    final firstStore = _EcardStore(EcardSyncBinding(openId: openId, channel: EcardOpenIdChannel.alipay,
+      updatedAt: DateTime.utc(2026), deviceId: 'first',),);
     final first = await _Fixture.withSession(ecard: firstStore);
     expect((await first.sync.setupWithMasterPassword('synthetic-password')).ok, isTrue);
     expect(first.server.properties['techpie_sync'], isNot(contains(openId)));
@@ -243,11 +237,8 @@ void main() {
     expect((await second.sync.restoreWithMasterPassword('synthetic-password')).ok, isTrue);
     expect(secondStore.value!.openId, openId);
     expect(secondStore.value!.channel, EcardOpenIdChannel.alipay);
-    secondStore.value = EcardSyncBinding(
-      openId: null,
-      updatedAt: DateTime.utc(2026, 1, 2),
-      deviceId: 'second',
-    );
+    secondStore.value = EcardSyncBinding(openId: null,
+      updatedAt: DateTime.utc(2026, 1, 2), deviceId: 'second',);
     await second.sync.push();
     // An older offline device must not resurrect a remote deletion by pushing.
     await first.sync.push();
@@ -257,7 +248,8 @@ void main() {
 
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('setup -> cloud has blob; restore on a fresh device recovers bindings', () async {
+  test('setup -> cloud has blob; restore on a fresh device recovers bindings',
+      () async {
     final fx = await _Fixture.withSession();
     await fx.tpAuth.replaceAll([
       ThirdPartyAccount(
@@ -361,7 +353,8 @@ void main() {
     expect(withOldPassword.message, contains('不正确'));
   });
 
-  test('a legacy cloud blob is migrated and rewritten in the current schema', () async {
+  test('a legacy cloud blob is migrated and rewritten in the current schema',
+      () async {
     // A device running an older build wrote the pre-tombstone (v1) envelope.
     final legacyPlain = jsonEncode({
       'v': 1,
@@ -405,7 +398,8 @@ void main() {
     expect((await storedEnvelope())['v'], SyncSchema.current);
   });
 
-  test('push writes current bindings; disable clears the cloud blob', () async {
+  test('push writes current bindings; disable clears the cloud blob',
+      () async {
     final fx = await _Fixture.withSession();
     await fx.sync.setupWithMasterPassword('pw');
     expect(fx.server.properties['techpie_sync'], isNotNull);
@@ -454,7 +448,9 @@ void main() {
   });
   // -- LWW merge behavior (the bug these guard against) ----------------------
 
-  test('pull does NOT overwrite a locally-newer binding with an older cloud copy', () async {
+  test(
+      'pull does NOT overwrite a locally-newer binding with an older cloud copy',
+      () async {
     // Device A: set up sync with a gradescope binding (old updatedAt).
     final fx = await _Fixture.withSession();
     await fx.tpAuth.replaceAll([
@@ -494,7 +490,9 @@ void main() {
     );
   });
 
-  test('a deletion (tombstone) on device A is not resurrected when device B pulls', () async {
+  test(
+      'a deletion (tombstone) on device A is not resurrected when device B pulls',
+      () async {
     // Device A: bind gradescope, set up sync.
     final fx = await _Fixture.withSession();
     await fx.tpAuth.replaceAll([
@@ -529,9 +527,7 @@ void main() {
     final fx = await _Fixture.withSession(ecard: ecard);
     // What a newer build left behind: the eCard login parameter plus a field
     // this build has never heard of.
-    const futureField = {
-      'accountList': ['one', 'two'],
-    };
+    const futureField = {'accountList': ['one', 'two']};
     final seeded = SyncEnvelope(
       v: 3,
       accounts: const [],
@@ -543,7 +539,8 @@ void main() {
       ),
       unknown: const {'futureField': futureField},
     ).encode();
-    fx.server.properties['techpie_sync'] = await SyncCrypto.encryptWithSalt(seeded, 'pw');
+    fx.server.properties['techpie_sync'] =
+        await SyncCrypto.encryptWithSalt(seeded, 'pw');
 
     // This device restores (adopting the binding) and then pushes its own
     // state back.
@@ -601,12 +598,14 @@ class _FakeCasdoor {
         });
         return http.Response(body, 200);
       }
-      if (request.method == 'POST' && request.url.path == '/api/update-user') {
+      if (request.method == 'POST' &&
+          request.url.path == '/api/update-user') {
         final decoded = jsonDecode(request.body) as Map<String, dynamic>;
         // Casbin self-update authz: id query must match body owner/name.
         if (enforceAuthz) {
           final idQuery = request.url.queryParameters['id'] ?? '';
-          final bodyId = '${decoded['owner'] ?? ''}/${decoded['name'] ?? ''}';
+          final bodyId =
+              '${decoded['owner'] ?? ''}/${decoded['name'] ?? ''}';
           if (idQuery != bodyId) {
             return http.Response(
               jsonEncode({
@@ -623,7 +622,8 @@ class _FakeCasdoor {
           nextWriteStarted!.complete();
           await pause.future;
         }
-        final props = (decoded['properties'] as Map?)?.cast<String, String>();
+        final props =
+            (decoded['properties'] as Map?)?.cast<String, String>();
         if (props != null) {
           properties
             ..clear()
@@ -690,10 +690,8 @@ class _Fixture {
 class _EcardStore implements EcardSyncStore {
   _EcardStore(this.value);
   EcardSyncBinding? value;
-  @override
-  Future<EcardSyncBinding?> readSyncBinding() async => value;
-  @override
-  Future<void> applySyncBinding(EcardSyncBinding? binding) async {
+  @override Future<EcardSyncBinding?> readSyncBinding() async => value;
+  @override Future<void> applySyncBinding(EcardSyncBinding? binding) async {
     value = value?.merge(binding) ?? binding;
   }
 }

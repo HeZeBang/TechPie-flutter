@@ -22,7 +22,9 @@ import 'support/oa_school_client.dart';
 bool _isContact(http.Request request) => request.url.path.endsWith('/HrmResourceContactEdit.jsp');
 
 void main() {
-  test('shared courts use physical availability and never expose the unused court', () async {
+  test(
+      'shared courts use physical availability and never expose the unused court',
+      () async {
     final fixture = await _serviceFixture();
     final school = OaSchoolClient();
     final service = _service(fixture, school);
@@ -47,24 +49,32 @@ void main() {
     final school = OaSchoolClient();
     final service = _service(fixture, school);
     await service.bookCourt(
-        sport: OaSport.tennis, date: '2026-10-08', timeSlot: 8, courtNumber: 4, playersCount: 2,);
+      sport: OaSport.tennis,
+      date: '2026-10-08',
+      timeSlot: 8,
+      courtNumber: 4,
+      playersCount: 2,
+    );
     await service.bookCourt(
-        sport: OaSport.pickleball,
-        date: '2026-10-08',
-        timeSlot: 8,
-        courtNumber: 2,
-        playersCount: 2,);
+      sport: OaSport.pickleball,
+      date: '2026-10-08',
+      timeSlot: 8,
+      courtNumber: 2,
+      playersCount: 2,
+    );
     final bookings =
         school.requests.where((r) => r.url.path.endsWith('/RequestOperation.jsp')).toList();
     expect(bookings.map((r) => Uri.splitQueryString(r.body)['field31883']), ['63_43', '63_25']);
     await expectLater(
-        service.bookCourt(
-            sport: OaSport.pickleball,
-            date: '2026-10-08',
-            timeSlot: 8,
-            courtNumber: 3,
-            playersCount: 2,),
-        throwsA(isA<OaGymException>()),);
+      service.bookCourt(
+        sport: OaSport.pickleball,
+        date: '2026-10-08',
+        timeSlot: 8,
+        courtNumber: 3,
+        playersCount: 2,
+      ),
+      throwsA(isA<OaGymException>()),
+    );
     expect(
         school.requests.where((r) => r.url.path.endsWith('/RequestOperation.jsp')), hasLength(2),);
   });
@@ -160,15 +170,20 @@ void main() {
       };
     final service = _service(fixture, school);
     final first = service.checkAvailability(
-        sports: {OaSport.badminton},
-        date: '2026-10-08',
-        startSlot: 8,
-        endSlot: 10,
-        shouldContinue: () => current,);
+      sports: {OaSport.badminton},
+      date: '2026-10-08',
+      startSlot: 8,
+      endSlot: 10,
+      shouldContinue: () => current,
+    );
     await started.future;
     current = false;
     final second = service.checkAvailability(
-        sports: {OaSport.badminton}, date: '2026-10-09', startSlot: 9, endSlot: 9,);
+      sports: {OaSport.badminton},
+      date: '2026-10-09',
+      startSlot: 9,
+      endSlot: 9,
+    );
     await Future<void>.delayed(Duration.zero);
     expect(slots, [8]);
     release.complete();
@@ -193,13 +208,14 @@ void main() {
       };
     final service = _service(fixture, school);
     await expectLater(
-        service.bookCourt(
-            sport: OaSport.tennis,
-            date: '2026-10-08',
-            timeSlot: 8,
-            courtNumber: 1,
-            playersCount: 2,),
-        throwsA(
+      service.bookCourt(
+        sport: OaSport.tennis,
+        date: '2026-10-08',
+        timeSlot: 8,
+        courtNumber: 1,
+        playersCount: 2,
+      ),
+      throwsA(
             isA<OaGymException>().having((e) => e.message, 'message', contains('先查询预约记录确认结果')),),);
     expect(submits, 1);
   });
@@ -428,7 +444,10 @@ void main() {
       await current;
       expect(service.bookingProfile().phone, '13700000000');
       expect(service.profileSyncError, isNull);
-      expect(fixture.storage.loadOaBookingProfile(owner: 'user|20240001').phone, isEmpty);
+      expect(
+        fixture.storage.loadOaBookingProfile(owner: 'user|20240001').phone,
+        isEmpty,
+      );
     });
 
     test('OA updates preserve manual overrides unless overwrite was requested', () async {
@@ -457,7 +476,8 @@ void main() {
       final service = _service(fixture, school);
       final request = service.syncBookingProfile(overwrite: true);
       await service.saveBookingProfile(
-          const OaBookingProfile(name: 'Manual', phone: '13800000000', email: ''),);
+        const OaBookingProfile(name: 'Manual', phone: '13800000000', email: ''),
+      );
       response.complete(OaSchoolClient.contacts());
       await request;
       expect(service.bookingProfile().name, 'Manual');
@@ -475,13 +495,15 @@ void main() {
       expect(service.bookingProfile().phone, isEmpty);
       expect(service.bookingProfile().email, 'student@shanghaitech.edu.cn');
       await expectLater(
-          service.bookCourt(
-              sport: OaSport.badminton,
-              date: '2026-10-08',
-              timeSlot: 8,
-              courtNumber: 1,
-              playersCount: 2,),
-          throwsA(isA<OaGymException>()),);
+        service.bookCourt(
+          sport: OaSport.badminton,
+          date: '2026-10-08',
+          timeSlot: 8,
+          courtNumber: 1,
+          playersCount: 2,
+        ),
+        throwsA(isA<OaGymException>()),
+      );
       response = OaSchoolClient.contacts(id: 'different-user');
       await service.syncBookingProfile(overwrite: true);
       expect(service.profileSyncError, contains('当前用户'));
@@ -497,7 +519,8 @@ void main() {
       await service.syncBookingProfile();
       expect(service.profileSyncError, isNotNull);
       await service.saveBookingProfile(
-          const OaBookingProfile(name: 'Manual', phone: '13800000000', email: ''),);
+        const OaBookingProfile(name: 'Manual', phone: '13800000000', email: ''),
+      );
       await service.ensureReady();
       expect(service.sessionReady, true);
       expect(service.bookingProfile().phone, '13800000000');
@@ -509,9 +532,14 @@ void main() {
     final school = OaSchoolClient();
     final service = _service(fixture, school);
     expect(
-        () => service.checkAvailability(
-            sports: {OaSport.badminton}, date: '2026-05-23', startSlot: 8, endSlot: 8,),
-        throwsA(isA<OaGymException>()),);
+      () => service.checkAvailability(
+        sports: {OaSport.badminton},
+        date: '2026-05-23',
+        startSlot: 8,
+        endSlot: 8,
+      ),
+      throwsA(isA<OaGymException>()),
+    );
     expect(school.requests, isEmpty);
   });
 }
@@ -520,19 +548,23 @@ Future<_Fixture> _serviceFixture({bool bindIds = true, bool withBookingProfile =
   SharedPreferences.setMockInitialValues({});
   FlutterSecureStorage.setMockInitialValues({});
   final storage = StorageService(await SharedPreferences.getInstance());
-  await storage.saveSession(UserSession(
+  await storage.saveSession(
+    UserSession(
       userId: 'user',
       userName: 'User',
       schoolName: 'School',
       phoneNumber: '13800000000',
       studentId: '',
-      createdAt: DateTime.utc(2026),),);
+      createdAt: DateTime.utc(2026),
+    ),
+  );
   if (bindIds) {
     await storage.saveThirdPartyAccount(FakeIdsClient.account('20240001'));
     if (withBookingProfile) {
       await storage.saveOaBookingProfile(
-          const OaBookingProfile(name: 'User', phone: '13800000000', email: ''),
-          owner: 'user|20240001',);
+        const OaBookingProfile(name: 'User', phone: '13800000000', email: ''),
+        owner: 'user|20240001',
+      );
     }
   }
   final api = LoggingHttpClient(DebugLogger());

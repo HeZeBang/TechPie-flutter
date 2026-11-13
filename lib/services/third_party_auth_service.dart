@@ -134,7 +134,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// Convenience: the Hydro top-level node.
   SessionNode get hydroNode => _tree.hydro;
 
-  List<ThirdPartyPlatform> get boundPlatforms => _accountsSnapshot.map((a) => a.platform).toList();
+  List<ThirdPartyPlatform> get boundPlatforms =>
+      _accountsSnapshot.map((a) => a.platform).toList();
   Iterable<ThirdPartyAccount> get accounts => _accountsSnapshot;
   ThirdPartyAccount? account(ThirdPartyPlatform p) => _nodeAccount(p);
 
@@ -560,7 +561,9 @@ class ThirdPartyAuthService extends ChangeNotifier {
       'account': account,
       'password': password,
     };
-    if (platform == ThirdPartyPlatform.hydro && hydroOrigin != null && hydroOrigin.isNotEmpty) {
+    if (platform == ThirdPartyPlatform.hydro &&
+        hydroOrigin != null &&
+        hydroOrigin.isNotEmpty) {
       body['args'] = {'url': hydroOrigin};
     }
 

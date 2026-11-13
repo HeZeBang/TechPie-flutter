@@ -147,7 +147,8 @@ String _mergeSetCookie(String existing, String setCookieHeader) {
     final trimmed = part.trim();
     final eq = trimmed.indexOf('=');
     if (eq > 0) {
-      updated[trimmed.substring(0, eq).trim()] = trimmed.substring(eq + 1).trim();
+      updated[trimmed.substring(0, eq).trim()] =
+          trimmed.substring(eq + 1).trim();
     }
   }
   // Apply updates from Set-Cookie.  Multiple cookies may be present in
@@ -295,8 +296,9 @@ class SessionNode extends ChangeNotifier {
     if (parent == null) return; // top-level: no derived cookie
     _derivedCookie = (cookie != null && cookie.isNotEmpty) ? cookie : null;
     if (_derivedCookie == null) _lastProbeDisplay = null;
-    _nextRenewTimestamp =
-        _derivedCookie == null ? null : (_nextRenewTimestamp ?? _defaultNextRenewTimestamp());
+    _nextRenewTimestamp = _derivedCookie == null
+        ? null
+        : (_nextRenewTimestamp ?? _defaultNextRenewTimestamp());
   }
 
   void attachChild(SessionNode child) {
@@ -342,7 +344,9 @@ class SessionNode extends ChangeNotifier {
       final base = (acc.raw['cookies'] as String?) ?? '';
       if (RegExp(r'(^|;)\s*CASTGC=').hasMatch(base)) return base;
       final tgc = (acc.raw['tgc'] as String?) ?? '';
-      return tgc.isEmpty ? base : (base.isNotEmpty ? '$base; CASTGC=$tgc' : 'CASTGC=$tgc');
+      return tgc.isEmpty
+          ? base
+          : (base.isNotEmpty ? '$base; CASTGC=$tgc' : 'CASTGC=$tgc');
     }
     return acc.token;
   }
@@ -362,7 +366,9 @@ class SessionNode extends ChangeNotifier {
       final cp = cookieProvider;
       return _account != null && cp != null && !cp.isEmpty;
     }
-    return (parent?.isAvailable ?? false) && _derivedCookie != null && _derivedCookie!.isNotEmpty;
+    return (parent?.isAvailable ?? false) &&
+        _derivedCookie != null &&
+        _derivedCookie!.isNotEmpty;
   }
 
   bool get canRenew {
@@ -370,7 +376,8 @@ class SessionNode extends ChangeNotifier {
     if (renewMode == RenewMode.idsPasskey) {
       return _account?.raw['authMethod'] == 'passkey' && (localCanRenew?.call() ?? true);
     }
-    return _account?.autoRenew == true && _account?.password?.isNotEmpty == true;
+    return _account?.autoRenew == true &&
+        _account?.password?.isNotEmpty == true;
   }
 
   /// Human-readable display name for this node, suitable for UI labels.
@@ -536,10 +543,10 @@ class SessionNode extends ChangeNotifier {
     // Pre-flight: hit config endpoint to refresh session tokens (e.g. _WEU).
     if (cfg.preFlightPath != null) {
       try {
-        final preUri =
-            cfg.preFlightPath!.startsWith('http://') || cfg.preFlightPath!.startsWith('https://')
-                ? Uri.parse(cfg.preFlightPath!)
-                : Uri.parse('${baseUrl()}${cfg.preFlightPath}');
+        final preUri = cfg.preFlightPath!.startsWith('http://') ||
+                cfg.preFlightPath!.startsWith('https://')
+            ? Uri.parse(cfg.preFlightPath!)
+            : Uri.parse('${baseUrl()}${cfg.preFlightPath}');
         final preResp = await http.get(
           preUri,
           headers: {'Cookie': cookies},
@@ -553,9 +560,10 @@ class SessionNode extends ChangeNotifier {
         // Pre-flight failure is non-fatal — proceed with original cookies.
       }
     }
-    final uri = cfg.path.startsWith('http://') || cfg.path.startsWith('https://')
-        ? Uri.parse(cfg.path)
-        : Uri.parse('${baseUrl()}${cfg.path}');
+    final uri =
+        cfg.path.startsWith('http://') || cfg.path.startsWith('https://')
+            ? Uri.parse(cfg.path)
+            : Uri.parse('${baseUrl()}${cfg.path}');
     final baseHeaders = <String, String>{
       'Cookie': cookies,
       if (cfg.headers != null) ...cfg.headers!,
@@ -672,7 +680,9 @@ class SessionNode extends ChangeNotifier {
         'account': acc.account,
         'password': pw,
       };
-      if (id == 'hydro' && acc.hydroOrigin != null && acc.hydroOrigin!.isNotEmpty) {
+      if (id == 'hydro' &&
+          acc.hydroOrigin != null &&
+          acc.hydroOrigin!.isNotEmpty) {
         body['args'] = {'url': acc.hydroOrigin};
       }
       final resp = await http.post(

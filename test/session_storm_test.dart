@@ -36,7 +36,10 @@ void main() {
         sid: '2024xxxx',
         name: 'Test',
         token: 'tok',
-        expire: DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch ~/ 1000,
+        expire: DateTime.now()
+                .add(const Duration(days: 30))
+                .millisecondsSinceEpoch ~/
+            1000,
         raw: {
           'authMethod': 'passkey',
           'tgc': tgc,
@@ -85,7 +88,8 @@ void main() {
     expect(next.isBefore(before.add(const Duration(minutes: 11))), true);
   });
 
-  test('derived cookie schedules the next renewal ten minutes after success', () async {
+  test('derived cookie schedules the next renewal ten minutes after success',
+      () async {
     final before = DateTime.now();
     await tree.eams.renew();
 
@@ -95,7 +99,8 @@ void main() {
     expect(next.isBefore(before.add(const Duration(minutes: 11))), true);
   });
 
-  test('renewIfNeeded skips when epoch already advanced by a concurrent renew', () async {
+  test('renewIfNeeded skips when epoch already advanced by a concurrent renew',
+      () async {
     final epochBefore = tree.ids.epoch;
     // Fire a renew in the background (don't await yet).
     final pending = tree.ids.renew();
@@ -139,7 +144,8 @@ void main() {
     expect(client.fetchCalls, 2);
   });
 
-  test('two concurrent withCookie callers share ONE renew on simultaneous 401', () async {
+  test('two concurrent withCookie callers share ONE renew on simultaneous 401',
+      () async {
     // Both callers get 401 on first attempt, 200 after renew.
     client.fetchStatuses = [401, 401, 200, 200];
     client.fetchBodies = ['{}', '{}', '{"a":1}', '{"b":2}'];
@@ -215,7 +221,8 @@ void main() {
     expect(cp?.cookies, 'JSESSIONID=js-v2; CASTGC=tgc-v2');
   });
 
-  test('freshCookie leaves a node alone while its schedule is not due', () async {
+  test('freshCookie leaves a node alone while its schedule is not due',
+      () async {
     await tree.ids.renew();
 
     final cp = await tree.freshCookie(tree.ids);
@@ -224,7 +231,8 @@ void main() {
     expect(cp?.cookies, 'JSESSIONID=js-v1; CASTGC=tgc-v1');
   });
 
-  test('freshCookie renews a stale parent before re-minting the child', () async {
+  test('freshCookie renews a stale parent before re-minting the child',
+      () async {
     await tree.eams.renew();
     tree.ids.seedNextRenewTimestamp(
       DateTime.now().subtract(const Duration(seconds: 1)),
@@ -279,7 +287,8 @@ void main() {
     expect(probeDisplays, ['Probe User']);
   });
 
-  test('child 401 retry: eams renew succeeds (single-level, fresh parent)', () async {
+  test('child 401 retry: eams renew succeeds (single-level, fresh parent)',
+      () async {
     // Mint the eams cookie first.
     await tree.eams.renew();
     expect(client.eamsCalls, 1);
@@ -310,7 +319,9 @@ void main() {
     expect(client.eamsCalls, 2);
   });
 
-  test('two-level retry: eams renew 401 (stale parent tgc) triggers parent renew', () async {
+  test(
+      'two-level retry: eams renew 401 (stale parent tgc) triggers parent renew',
+      () async {
     // Reset parent to a stale tgc that the eams endpoint rejects.
     tree.ids.setAccount(seedAccount(tgc: 'tgc-stale'));
     // Configure eams renew to fail on the stale tgc, then succeed after the

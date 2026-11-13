@@ -16,6 +16,7 @@ void main() {
       final recovered = await SyncCrypto.decryptWithSalt(blob, password);
       expect(recovered, payload);
     });
+
     test('wrong master password fails authentication (returns null)',
         () async {
       const payload = 'secret bindings';
