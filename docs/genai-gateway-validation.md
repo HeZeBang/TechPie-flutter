@@ -1,45 +1,48 @@
-# GenAI 网关修复与验收
+# GenAI gateway fixes and acceptance
 
-2026-10-28，已同步本地上游 `b517039`，以及其工作区的原生工具增量、空回复重试更新。对照 `/proj/GenAI2OpenAI/docs/TechPie工具链问题交接.md`。
+On 2026-10-28, this branch incorporated local upstream `b517039` and its native-tool and empty-response retry updates. The handoff reference is `/proj/GenAI2OpenAI/docs/TechPie工具链问题交接.md`.
 
-## 已修复
+## Gateway behavior
 
-- 先接收最后一段正文，再处理结束原因。保留 `length`、`content_filter`；没有 finish 或 DONE 的 EOF 返回错误。
-- 工具解析支持标准对象、嵌套 function、顶层数组、尾随链接、多个 JSON 对象、多个 XML 块。保留全部调用及已有 ID。
-- 工具名称必须在本次声明中，arguments 必须能解析为 JSON 对象。只在上游正常结束、调用及参数已完整时补齐外层数组或唯一 tool_calls 包装对象的闭合符；不补调用、参数、字符串或逗号后缺失的值。未知工具、错误参数不回退成成功正文。普通 name 字段、字段说明和空 tool_calls 数组保留为普通答案。这里不做完整 JSON Schema 校验。
-- 支持 Responses 的函数工具定义、function_call / function_call_output 历史、函数输出和 SSE added/delta/done/completed 生命周期。截断为 incomplete，错误为 failed。
-- 补充执行任务时应当返回工具调用的提示，落实 required 和指定函数；auto 仍允许正常总结。仅在上游正常结束且正文和原生工具调用均为空时，使用相同历史重试一次；首轮纯推理不向客户端发布。两次均为空时报错。错误、EOF、length、已输出正文或工具调用均不重试，不重放工具副作用。
-- Chat 优先采用 max_completion_tokens，其次 max_tokens；Responses 使用 max_output_tokens。
-- 原生 tool_calls 按 index 聚合名称及参数分片，兼容 message 和旧 function_call 字段，聚合后统一校验名称及参数；未启用工具时不接收原生调用。
-- SSE 在等待上游响应头时发送心跳，客户端断开时取消等待并关闭对应上游连接。
-- 请求日志前缀 `genai_request`。只记录请求 ID、路径、模型、计数、tool_choice、输出上限、耗时、结束原因、DONE、取消状态、异常类别，不记录凭据、正文或工具结果。`saw_done=false` 表示本次没有读到 DONE；已有 finish_reason 时也正常结束读取。
+- Consume the final text delta before processing the finish reason. Preserve `length` and `content_filter`; report an error for EOF without a finish marker or DONE.
+- Parse standard tool objects, nested `function` objects, top-level arrays, trailing links, multiple JSON objects and multiple XML blocks. Preserve every call and existing ID.
+- Require declared tool names and arguments that parse as JSON objects. After a normal upstream finish, complete a missing outer array or unique `tool_calls` wrapper only when all calls and arguments are complete. Reject incomplete calls, parameters, strings and values after commas. Treat ordinary `name` fields, field descriptions and empty `tool_calls` arrays as text answers. Validation covers names and JSON-object arguments; full JSON Schema validation remains outside this implementation.
+- Support Responses function definitions, `function_call` / `function_call_output` history, function results and the SSE added/delta/done/completed lifecycle. Map truncation to `incomplete` and errors to `failed`.
+- Prompt for actual tool calls when execution is required, enforce `required` and named-function choices, and allow ordinary summaries in `auto` mode. Retry generation once with the same history after a normal finish containing neither text nor native calls. Buffer reasoning from the first attempt. Report an error if both attempts are empty. Errors, EOF, `length`, published text and tool calls end the retry path; tool side effects are never replayed.
+- Prefer `max_completion_tokens` over `max_tokens` for Chat; use `max_output_tokens` for Responses.
+- Aggregate native tool-name and argument fragments by index, including `message` and legacy `function_call` fields. Validate the completed calls and reject native calls when tools are disabled.
+- Send SSE heartbeats while waiting for upstream headers. Cancel the wait and close its upstream connection when the client disconnects.
+- Log `genai_request` metadata: request ID, path, model, counts, tool choice, output limit, duration, finish reason, DONE, cancellation and exception type. Credentials, message text and tool results stay out of logs. `saw_done=false` means DONE was absent; a finish reason still permits normal completion.
 
-## Token 自动续期
+## Token renewal
 
-- 登录后将账号、密码、上游 Token 和到期时间一起保存到系统安全存储，有效期为 2 小时。
-- 应用运行时到期自动登录；启动应用时恢复计时。休眠恢复后的请求也会先检查有效期。
-- 新 Token 写入本地记录并更新运行中的网关，端口、本地 API Token 和已有流式响应保持不变。
-- 并发请求共用一次刷新；自动登录失败后 1 分钟重试，退出登录会清除账号密码并取消续期。
-- 旧版记录没有账号密码和到期时间，需要重新登录一次。
+Secure storage retains the account, password, upstream token and two-hour expiry after login. The running app renews the token at expiry, restores its timer on startup and checks expiry before requests after resume. The new token updates storage and the live gateway while preserving its port, local API token and existing streams.
 
-本次本地验证：自动续期与 HTTP 服务测试 13 项，原有网关测试 62 项；本分支完整 Flutter 测试 728 项通过，静态检查通过。
+Concurrent requests share one refresh. Automatic login failures retry after one minute. Sign-out clears the credentials and cancels renewal. Older records require one new login to populate credentials and expiry.
 
-## 拆分前的整包验证
+Local validation for this branch: 13 renewal/HTTP-service tests, 62 gateway tests, 728 full Flutter tests and static analysis passed.
 
-以下记录来自 PR #135 的本机安装与整包测试，包含 Linux DDL、手表等模块。本 PR 仅保留 GenAI 网关、功能页和对应测试。
+## Validation before the PR split
 
-- `flutter test test/genai_gateway_test.dart --no-pub`：62 项通过。
-- `flutter test --no-pub`：全套 740 项通过；更新了截止日期空状态断言，以及设置页日志入口的滚动定位。
-- 对修改的 Dart 文件定向运行 `flutter analyze --no-pub`：无问题。
-- `flutter build linux --release --no-pub`：成功。
-- `tool/genai_gateway_smoke.dart`：真实 ChatGLM，在 Chat Completions 和 Responses 上分别完成流式请求工具、夹具返回、非流式总结；开发网关和安装版各验证一次。只提供 fixture_read 夹具，结果为固定编号，没有执行文件或 Git 操作，没有测试 GPT。
-- 安装路径：`/home/jdz/.local/opt/techpie-linux-widgets-v1/bundle`。
-- 本轮安装进程 PID 404337，`127.0.0.1:5000` 属于该进程；核对其加载的 libapp.so 与构建产物一致。
-- libapp.so SHA256：`41666b4dfccc439d6d1622a0f084f4d8816766d204fa11f061cb06e068b7510d`。
-- 上一版备份：`/home/jdz/.local/opt/techpie-linux-widgets-v1/bundle-backup-20261028-194654`。
-- 本次通过 `techpie --genai-api` 恢复 API 服务。平常仍可从 GenAI API 页启动。
+The following evidence belongs to the local installation and combined PR #135 build, which also contained Linux DDL and watch modules. This PR contains the GenAI gateway, feature page and their tests.
 
-日志：
+| Check | Recorded result |
+| --- | --- |
+| `flutter test test/genai_gateway_test.dart --no-pub` | 62 passed |
+| `flutter test --no-pub` | 740 passed; updated deadline empty-state assertions and settings-log scrolling |
+| Targeted `flutter analyze --no-pub` | No issues |
+| `flutter build linux --release --no-pub` | Succeeded |
+| `tool/genai_gateway_smoke.dart` | Real ChatGLM streaming tool request, fixture result and non-streaming summary through both Chat Completions and Responses, in development and installed gateways |
+
+The smoke check exposed only `fixture_read` with fixed IDs. It exercised fixture tool round trips; file/Git execution and GPT models await separate acceptance.
+
+- Installation: `/home/jdz/.local/opt/techpie-linux-widgets-v1/bundle`.
+- Recorded process: PID 404337 owned `127.0.0.1:5000`; its loaded `libapp.so` matched the build.
+- `libapp.so` SHA-256: `41666b4dfccc439d6d1622a0f084f4d8816766d204fa11f061cb06e068b7510d`.
+- Previous bundle: `/home/jdz/.local/opt/techpie-linux-widgets-v1/bundle-backup-20261028-194654`.
+- `techpie --genai-api` restored the API service for this run. The GenAI API page remains the normal entry point.
+
+Logs:
 
 - `/tmp/techpie-all-sync-tests-final.log`
 - `/tmp/techpie-genai-sync-tests.log`
@@ -49,6 +52,6 @@
 - `/tmp/techpie-installed-chatglm-sync.log`
 - `/tmp/techpie-installed-genai-sync.log`
 
-## VS Code 原客户端
+## Original VS Code client
 
-尚未完成原客户端的文件读取、编辑验收；本机无该会话的客户端工具记录。原截图的实际 API 路径和停止原因仍未确定。重测时，用请求日志中的 request_id、path、结束原因与客户端工具记录对应。不要以模型声称完成或界面步骤计数认定实际执行成功。
+File reading and editing in the original client await acceptance. The session has no local client-tool execution record, and the screenshot's API path and stop reason remain unresolved. Match request IDs, paths and finish reasons to client tool records when retesting. Those execution records are the acceptance evidence for actual file operations.
