@@ -15,11 +15,11 @@ The home screen presents the next class and the campus-code action first. Scroll
 | Account | Name, student ID and connection state | Sync, text size, home |
 | Connection help | Pair in Huawei Health, then connect from TechPie | Retry, home |
 
-Read-only cards carry content. Capsule buttons carry actions. Text names every action; status and urgency also have explicit labels. The app uses vertical lists with touch scrolling. Firmware Crown scrolling requires GT 6 Pro acceptance; the source SDK exposes no Lite list-focus or Crown API. Crown presses remain system-owned.
+Read-only cards carry content. Capsule buttons carry actions. Text names every action; status and urgency also have explicit labels. The app uses native vertical lists for touch and Crown scrolling. Huawei's Lite Wearable guide identifies `list`, `slider` and `swiper` as Crown-enabled components. Crown behavior on the target firmware awaits GT 6 Pro acceptance. Crown presses remain system-owned.
 
 ## Visual system
 
-The 466-pixel round target uses a black canvas, neutral cards and one blue action accent. Amber marks due-state labels, accompanied by text. Device system fonts provide Chinese and Latin glyphs. Apple font binaries and SF Symbols are not embedded.
+The 466-logical-pixel round target uses a black canvas, neutral cards and one blue action accent. Amber marks due-state labels, accompanied by text. Device system fonts provide Chinese and Latin glyphs. Apple font binaries and SF Symbols are not embedded.
 
 | Role | Source size |
 | --- | --- |
@@ -62,3 +62,5 @@ The Huawei SDK compiled the redesigned page, and its minified output fits the 48
 - [Digital Crown](https://developer.apple.com/design/human-interface-guidelines/digital-crown)
 - [Scroll views](https://developer.apple.com/design/human-interface-guidelines/scroll-views)
 - [Apple Design Resources](https://developer.apple.com/design/resources/#watchos-apps)
+
+- [Huawei Lite Wearable guide](https://developer.huawei.com/consumer/cn/doc/lite-wearable-guides/lite-wearable-bpta-guide/)
