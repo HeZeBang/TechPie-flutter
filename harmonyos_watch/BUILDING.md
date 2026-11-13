@@ -76,8 +76,11 @@ The local-vibration permission declares its reason and `MainAbility` in-use
 scene in `module.reqPermissions`. Keep permission declarations there; the
 source Lite schema does not accept `abilities.permissions`.
 
-The page now loads Wear Engine after its first render (`onReady`) and loads
-the vibration module when a reminder fires. Each list item has one child flex
-container. Initialization errors are shown and logged at the lifecycle entry.
-These startup changes and the circular icon assets await GT 6 Pro validation;
-they are not yet evidence that the reported black screen is resolved.
+The page loads Wear Engine after first render (`onReady`) and the vibration
+module when a reminder fires. Each list item has one child flex container.
+Initialization errors appear on screen and in the lifecycle log. Startup after
+the reported black screen and the circular icons await GT 6 Pro acceptance.
+
+Version 0.3.0 rebuilds the interface around glanceable content, capsule actions
+and vertical browsing. See [interaction design](DESIGN.md) for the HIG mapping,
+pixel values, platform features and pending device checks.

@@ -8,14 +8,17 @@ function dueLabel(ms) {
 export default {
   data: {
     view: 'home', startupFailed: false, connected: false, status: '未连接', name: '', studentId: '',
-    detail: '打开手机 TechPie 连接手表', nextTitle: '连接后同步待办', nextDue: '',
+    detail: '打开手机 TechPie 连接手表', nextTitle: '连接后查看待办', nextDue: '',
+    nextCourse: '连接后查看课表', nextCourseTime: '', nextLocation: '',
     deadlines: [], ddlReady: false, ddlEmpty: '等待手机同步', pageNumber: 0,
     pageLabel: '', hasPrevious: false, hasNext: false, truncated: false,
     syncing: false, syncLabel: '更新待办', codeVisible: false, codeLoading: false,
     codeLabel: '获取校园码', codeMessage: '校园码仅在连接期间可用', codeSeconds: 0,
     error: '', updated: '', courses: [], scheduleReady: false, dayOffset: 0, dayLabel: '',
     scheduleEmpty: '等待手机同步', scheduleTruncated: false,
-    reminderText: '提醒未开启', alertTitle: '', alertHint: '', vibrationError: ''
+    reminderText: '提醒未开启', alertTitle: '', alertHint: '', vibrationError: '',
+    largeText: false, titleSize: 38, headlineSize: 32, bodySize: 26,
+    captionSize: 24, actionSize: 30
   },
   onInit() { console.info('TechPie watch page created'); },
   onShow() { if (link) link.start(); },
@@ -93,8 +96,14 @@ export default {
     this.pageLabel = all.length ? (this.pageNumber + 1) + ' / ' + Math.ceil(all.length / 6) : '';
     this.hasPrevious = this.pageNumber > 0; this.hasNext = (this.pageNumber + 1) * 6 < all.length;
     var next = all.filter(function(item) { return item.dueAtMs > now; })[0];
-    this.nextTitle = next ? short(next.title, 20) : (this.ddlReady ? '还没有即将截止的待办哦' : '连接后同步待办');
+    this.nextTitle = next ? short(next.title, 20) : (this.ddlReady ? '暂无即将截止的待办' : '连接后查看待办');
     this.nextDue = next ? dueLabel(next.dueAtMs) + ' 截止' : '';
+    var upcoming = (state.schedule || []).filter(function(item) { return item.endAtMs > now; })[0];
+    this.nextCourse = upcoming ? short(upcoming.name, 20) :
+      (this.scheduleReady ? '未来 7 天暂无课程' : '连接后查看课表');
+    this.nextCourseTime = upcoming ? (upcoming.startAtMs <= now ? '正在上课 · ' : '') +
+      dueLabel(upcoming.startAtMs) : '';
+    this.nextLocation = upcoming ? short(upcoming.location, 20) : '';
     this.detail = state.connected ? '与手机 TechPie 保持连接' : '打开手机 TechPie 连接手表';
     this.codeLoading = state.codeLoading || false;
     this.codeLabel = this.codeLoading ? '正在获取…' : '刷新校园码';
@@ -127,6 +136,15 @@ export default {
   nextDay() { if (this.dayOffset < 6) { this.dayOffset++; link.connection.publish(); } },
   dismissAlert() { if (link) { link.connection.alert = null; link.connection.publish(); } },
   showAccount() { this.view = 'account'; },
+  toggleTextSize() {
+    this.largeText = !this.largeText;
+    var scale = this.largeText ? 1.4 : 1;
+    this.titleSize = Math.ceil(38 * scale);
+    this.headlineSize = Math.ceil(32 * scale);
+    this.bodySize = Math.ceil(26 * scale);
+    this.captionSize = Math.ceil(24 * scale);
+    this.actionSize = Math.ceil(30 * scale);
+  },
   showGuide() { this.view = 'guide'; },
   showCode() { this.view = 'code'; this.refreshCode(); },
   refreshCode() {
@@ -159,7 +177,7 @@ export default {
         page._paintedCode = code.id;
       } catch (_) {
         page.codeVisible = false; link.connection.hideCode();
-        page.codeMessage = '呜呜，显示失败了…使用手机校园码吧！可以和开发者反馈哦~';
+        page.codeMessage = '校园码显示失败，请使用手机校园码';
       }
     }, 0);
   }
