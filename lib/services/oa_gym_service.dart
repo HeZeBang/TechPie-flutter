@@ -63,15 +63,17 @@ class OaGymService extends ChangeNotifier {
 
   String get profileOwner {
     if (!_auth.isLoggedIn || !_tpAuth.hasIdsBinding) return '';
-    final campusId =
-        _tpAuth.idsStudentId.isNotEmpty ? _tpAuth.idsStudentId : _tpAuth.idsAccount!.account;
+    final campusId = _tpAuth.idsStudentId.isNotEmpty
+        ? _tpAuth.idsStudentId
+        : _tpAuth.idsAccount!.account;
     return '${_auth.session!.userId}|$campusId';
   }
 
   String get bookingStudentId => profileOwner.isEmpty ? '' : _tpAuth.idsStudentId;
 
-  String get _currentProfileBinding =>
-      profileOwner.isEmpty ? '' : '$profileOwner|${_tpAuth.idsAccount!.boundAt.toIso8601String()}';
+  String get _currentProfileBinding => profileOwner.isEmpty
+      ? ''
+      : '$profileOwner|${_tpAuth.idsAccount!.boundAt.toIso8601String()}';
 
   /// Attach after boot hydration. Binding/rebinding starts a separate,
   /// best-effort read; login and court queries never wait for contact sync.
@@ -214,8 +216,12 @@ class OaGymService extends ChangeNotifier {
     // Contact sync enriches the bound school identity, never the Casdoor UUID.
     final idsName = _tpAuth.idsAccount?.name;
     return saved.copyWith(
-      name: saved.name.isNotEmpty ? saved.name : (idsName?.isNotEmpty == true ? idsName! : ''),
-      email: saved.email.isNotEmpty ? saved.email : (_tpAuth.idsAccount?.email ?? ''),
+      name: saved.name.isNotEmpty
+          ? saved.name
+          : (idsName?.isNotEmpty == true ? idsName! : ''),
+      email: saved.email.isNotEmpty
+          ? saved.email
+          : (_tpAuth.idsAccount?.email ?? ''),
     );
   }
 

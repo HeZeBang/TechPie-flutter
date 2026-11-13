@@ -63,7 +63,8 @@ void main() {
     tree.ids.setAccount(seedAccount());
   });
 
-  test('concurrent renew() calls share one local renewal (single-flight)', () async {
+  test('concurrent renew() calls share one local renewal (single-flight)',
+      () async {
     final results = await Future.wait([
       tree.ids.renew(),
       tree.ids.renew(),

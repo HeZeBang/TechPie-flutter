@@ -73,7 +73,8 @@ class ThirdPartyAuthService extends ChangeNotifier {
 
   late final SessionTree _tree;
   CampusWebSession? _webSession;
-  CampusWebSession get campusWebSession => _webSession ??= CampusWebSession(idsNode, _storage);
+  CampusWebSession get campusWebSession =>
+      _webSession ??= CampusWebSession(idsNode, _storage);
   // Stable per-device id, loaded in [initialize]. Stamped onto every locally
   // mutated account so the cloud-sync LWW merge converges.
   String _deviceId = '';

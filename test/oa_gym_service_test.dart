@@ -37,8 +37,17 @@ void main() {
       onProgress: (rows) => progress.add(rows.length),
     );
     expect(progress, [2, 4]);
-    expect(result.where((row) => row.sport == OaSport.tennis).first.availableCourts, [1, 2, 4]);
-    expect(result.where((row) => row.sport == OaSport.pickleball).first.availableCourts, [1, 2]);
+    expect(
+      result.where((row) => row.sport == OaSport.tennis).first.availableCourts,
+      [1, 2, 4],
+    );
+    expect(
+      result
+          .where((row) => row.sport == OaSport.pickleball)
+          .first
+          .availableCourts,
+      [1, 2],
+    );
     expect(oaCourtForSport(OaSport.pickleball, 2).label, contains('网球场1号'));
     expect(school.requests.every((r) => r.url.host == 'oa.shanghaitech.edu.cn'), true);
   });
@@ -76,10 +85,13 @@ void main() {
       throwsA(isA<OaGymException>()),
     );
     expect(
-        school.requests.where((r) => r.url.path.endsWith('/RequestOperation.jsp')), hasLength(2),);
+      school.requests.where((r) => r.url.path.endsWith('/RequestOperation.jsp')),
+      hasLength(2),
+    );
   });
 
-  test('metadata is single flight and reused until the session is cleared', () async {
+  test('metadata is single flight and reused until the session is cleared',
+      () async {
     final fixture = await _serviceFixture();
     final started = Completer<void>();
     final release = Completer<void>();
@@ -108,7 +120,8 @@ void main() {
     expect(service.loading, false);
   });
 
-  test('local search bounds concurrency and reports failures instead of empty results', () async {
+  test('local search bounds concurrency and reports failures instead of empty results',
+      () async {
     final fixture = await _serviceFixture();
     var active = 0;
     var peak = 0;
@@ -132,18 +145,21 @@ void main() {
       };
     final service = _service(fixture, school);
     await expectLater(
-        service.searchCourts(
-            startDate: '2026-10-08',
-            endDate: '2026-10-08',
-            venueNames: {},
-            timeRanges: ['18:00-19:00'],),
-        throwsA(isA<OaGymException>()),);
+      service.searchCourts(
+        startDate: '2026-10-08',
+        endDate: '2026-10-08',
+        venueNames: {},
+        timeRanges: ['18:00-19:00'],
+      ),
+      throwsA(isA<OaGymException>()),
+    );
     expect(peak, lessThanOrEqualTo(3));
     expect(searches, greaterThanOrEqualTo(3));
     expect(service.loading, false);
   });
 
-  test('superseded availability stops queued hours without overlapping checks', () async {
+  test('superseded availability stops queued hours without overlapping checks',
+      () async {
     final fixture = await _serviceFixture();
     final started = Completer<void>();
     final release = Completer<void>();
@@ -195,7 +211,8 @@ void main() {
     expect(service.loading, false);
   });
 
-  test('booking timeout tells the user to check records and never retries the POST', () async {
+  test('booking timeout tells the user to check records and never retries the POST',
+      () async {
     final fixture = await _serviceFixture();
     var submits = 0;
     final school = OaSchoolClient()
@@ -216,7 +233,13 @@ void main() {
         playersCount: 2,
       ),
       throwsA(
-            isA<OaGymException>().having((e) => e.message, 'message', contains('先查询预约记录确认结果')),),);
+        isA<OaGymException>().having(
+          (e) => e.message,
+          'message',
+          contains('先查询预约记录确认结果'),
+        ),
+      ),
+    );
     expect(submits, 1);
   });
 
@@ -258,7 +281,8 @@ void main() {
       );
     });
 
-    test('Passkey gym reads and submits directly to OA while keeping saved contacts', () async {
+    test('Passkey gym reads and submits directly to OA while keeping saved contacts',
+        () async {
       final fixture = await _serviceFixture(bindIds: false);
       final school = OaSchoolClient();
       final service = _service(fixture, school);
@@ -310,7 +334,8 @@ void main() {
       expect(booking['field31879'], '13900000000');
     });
 
-    test('Passkey OA expiry remints locally and retries without contacting the backend', () async {
+    test('Passkey OA expiry remints locally and retries without contacting the backend',
+        () async {
       final fixture = await _serviceFixture(bindIds: false);
       await fixture.tpAuth.bindIds(
         account: '20240001',
@@ -349,13 +374,18 @@ void main() {
       await expectLater(
         service.ensureReady(),
         throwsA(
-          isA<OaGymException>().having((e) => e.message, 'message', contains('OA 登录态已失效')),
+          isA<OaGymException>().having(
+            (e) => e.message,
+            'message',
+            contains('OA 登录态已失效'),
+          ),
         ),
       );
       expect(school.requests, hasLength(2));
     });
 
-    test('syncs on binding and rebinding without repeating on a session refresh', () async {
+    test('syncs on binding and rebinding without repeating on a session refresh',
+        () async {
       final fixture = await _serviceFixture(bindIds: false);
       var contacts = 0;
       final school = OaSchoolClient()
@@ -369,7 +399,9 @@ void main() {
       await service.syncBookingProfile();
       expect(contacts, 1);
       await fixture.tpAuth.updateRaw(
-          ThirdPartyPlatform.ids, {...fixture.tpAuth.idsAccount!.raw, 'cookies': 'CASTGC=renewed'},);
+        ThirdPartyPlatform.ids,
+        {...fixture.tpAuth.idsAccount!.raw, 'cookies': 'CASTGC=renewed'},
+      );
       await Future<void>.delayed(Duration.zero);
       expect(contacts, 1);
       await _setAccount(fixture, '20240001', DateTime.utc(2026, 10, 9));
@@ -378,7 +410,8 @@ void main() {
       expect(service.bookingProfile().phone, '13900000002');
     });
 
-    test('shares a pending profile request without marking court queries as loading', () async {
+    test('shares a pending profile request without marking court queries as loading',
+        () async {
       final fixture = await _serviceFixture(withBookingProfile: false);
       final started = Completer<void>();
       final response = Completer<http.Response>();
@@ -402,14 +435,18 @@ void main() {
       expect(service.profileSyncing, false);
     });
 
-    test('contacts stay account-scoped and ignore the old unscoped record', () async {
+    test('contacts stay account-scoped and ignore the old unscoped record',
+        () async {
       final fixture = await _serviceFixture(withBookingProfile: false);
       await fixture.storage.saveOaBookingProfile(
-          const OaBookingProfile(name: 'Old contact', phone: '13600000000', email: ''),);
+        const OaBookingProfile(name: 'Old contact', phone: '13600000000', email: ''),
+      );
       final service = _service(fixture, OaSchoolClient());
       expect(service.bookingProfile().phone, isEmpty);
       await service.syncBookingProfile();
-      await service.saveBookingProfile(service.bookingProfile().copyWith(phone: '13800000000'));
+      await service.saveBookingProfile(
+        service.bookingProfile().copyWith(phone: '13800000000'),
+      );
       await _setAccount(fixture, '20240002', DateTime.utc(2026, 10, 8));
       expect(service.bookingProfile().phone, isEmpty);
       await service.syncBookingProfile();
@@ -419,7 +456,8 @@ void main() {
       expect(fixture.storage.loadOaBookingProfile().phone, '13600000000');
     });
 
-    test('late contacts cannot overwrite a replacement account or stop its sync', () async {
+    test('late contacts cannot overwrite a replacement account or stop its sync',
+        () async {
       final fixture = await _serviceFixture(withBookingProfile: false);
       final responses = <Completer<http.Response>>[];
       final school = OaSchoolClient()
@@ -450,16 +488,21 @@ void main() {
       );
     });
 
-    test('OA updates preserve manual overrides unless overwrite was requested', () async {
+    test('OA updates preserve manual overrides unless overwrite was requested',
+        () async {
       final fixture = await _serviceFixture(withBookingProfile: false);
       var response = OaSchoolClient.contacts();
       final school = OaSchoolClient()
         ..intercept = (request) async => _isContact(request) ? response : null;
       final service = _service(fixture, school);
       await service.syncBookingProfile();
-      await service.saveBookingProfile(service.bookingProfile().copyWith(phone: '13800000000'));
-      response =
-          OaSchoolClient.contacts(phone: '13700000000', email: 'updated@shanghaitech.edu.cn');
+      await service.saveBookingProfile(
+        service.bookingProfile().copyWith(phone: '13800000000'),
+      );
+      response = OaSchoolClient.contacts(
+        phone: '13700000000',
+        email: 'updated@shanghaitech.edu.cn',
+      );
       await service.syncBookingProfile();
       expect(service.bookingProfile().name, 'User');
       expect(service.bookingProfile().email, 'updated@shanghaitech.edu.cn');
@@ -468,7 +511,8 @@ void main() {
       expect(service.bookingProfile().phone, '13700000000');
     });
 
-    test('a manual save made during a profile request wins over its late response', () async {
+    test('a manual save made during a profile request wins over its late response',
+        () async {
       final fixture = await _serviceFixture(withBookingProfile: false);
       final response = Completer<http.Response>();
       final school = OaSchoolClient()
@@ -485,7 +529,8 @@ void main() {
       expect(service.bookingProfile().email, isEmpty);
     });
 
-    test('masked phone numbers and a different user contact form are rejected', () async {
+    test('masked phone numbers and a different user contact form are rejected',
+        () async {
       final fixture = await _serviceFixture(withBookingProfile: false);
       var response = OaSchoolClient.contacts(phone: '1390000****');
       final school = OaSchoolClient()
@@ -510,7 +555,8 @@ void main() {
       expect(service.bookingProfile().phone, isEmpty);
     });
 
-    test('unavailable OA contacts still allow manual details and court queries', () async {
+    test('unavailable OA contacts still allow manual details and court queries',
+        () async {
       final fixture = await _serviceFixture(withBookingProfile: false);
       final school = OaSchoolClient()
         ..intercept = (request) async =>
@@ -544,7 +590,10 @@ void main() {
   });
 }
 
-Future<_Fixture> _serviceFixture({bool bindIds = true, bool withBookingProfile = true}) async {
+Future<_Fixture> _serviceFixture({
+  bool bindIds = true,
+  bool withBookingProfile = true,
+}) async {
   SharedPreferences.setMockInitialValues({});
   FlutterSecureStorage.setMockInitialValues({});
   final storage = StorageService(await SharedPreferences.getInstance());
@@ -576,14 +625,24 @@ Future<_Fixture> _serviceFixture({bool bindIds = true, bool withBookingProfile =
 }
 
 OaGymService _service(_Fixture fixture, OaSchoolClient school) {
-  final service = OaGymService(fixture.auth, fixture.storage, fixture.tpAuth, client: school);
+  final service = OaGymService(
+    fixture.auth,
+    fixture.storage,
+    fixture.tpAuth,
+    client: school,
+  );
   addTearDown(service.dispose);
   return service;
 }
 
 Future<void> _setAccount(_Fixture fixture, String username, DateTime time) =>
-    fixture.tpAuth.applyIdsSyncBinding(IdsSyncBinding(
-        credential: FakeIdsClient.key(username), updatedAt: time, deviceId: 'fixture',),);
+    fixture.tpAuth.applyIdsSyncBinding(
+      IdsSyncBinding(
+        credential: FakeIdsClient.key(username),
+        updatedAt: time,
+        deviceId: 'fixture',
+      ),
+    );
 
 class _Fixture {
   const _Fixture(this.storage, this.auth, this.tpAuth);

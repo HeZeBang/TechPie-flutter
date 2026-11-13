@@ -381,8 +381,7 @@ class _TopLevelTileState extends State<_TopLevelTile> {
       MapEntry('账号', acc.displayName),
       if (widget.platform == ThirdPartyPlatform.ids && acc.idsStudentId.isNotEmpty)
         MapEntry('学号', acc.idsStudentId)
-      else if (acc.sid != null && acc.sid!.isNotEmpty)
-        MapEntry('学号', acc.sid!),
+      else if (acc.sid != null && acc.sid!.isNotEmpty) MapEntry('学号', acc.sid!),
       if (widget.platform == ThirdPartyPlatform.ids)
         MapEntry('登录方式', acc.raw['authMethod'] == 'passkey' ? 'Passkey' : '待升级为 Passkey'),
       MapEntry('绑定时间', _formatDateTime(acc.boundAt)),
@@ -420,7 +419,8 @@ class _TopLevelTileState extends State<_TopLevelTile> {
     if (upgrade == true && context.mounted) {
       await pushAdaptivePage<void>(
         context,
-        builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
+        builder: (_) =>
+            const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
       );
     }
   }
@@ -472,7 +472,8 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
         onTap: () => unawaited(
           pushAdaptivePage<void>(
             context,
-            builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
+            builder: (_) =>
+                const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
           ),
         ),
       );

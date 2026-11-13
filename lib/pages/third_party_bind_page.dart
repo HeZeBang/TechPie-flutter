@@ -218,7 +218,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
             TextFormField(
               controller: _accountCtrl,
               autofillHints: const [AutofillHints.username],
-              keyboardType: _isGradescope ? TextInputType.emailAddress : TextInputType.text,
+              keyboardType: _isGradescope
+                  ? TextInputType.emailAddress
+                  : TextInputType.text,
               decoration: InputDecoration(
                 labelText: _isGradescope ? '邮箱' : '用户名',
                 border: const OutlineInputBorder(),
@@ -251,7 +253,8 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                   helperText: '默认 https://acm.shanghaitech.edu.cn',
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) => (v == null || v.trim().isEmpty) ? '必填' : null,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? '必填' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -265,7 +268,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                   alignLabelWithHint: true,
                 ),
                 validator: (v) {
-                  final list = (v ?? '').split(RegExp(r'[\s,]+')).where((e) => e.trim().isNotEmpty);
+                  final list = (v ?? '')
+                      .split(RegExp(r'[\s,]+'))
+                      .where((e) => e.trim().isNotEmpty);
                   return list.isEmpty ? '至少填一个 domain' : null;
                 },
               ),
@@ -354,14 +359,17 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
                 AdaptiveTextFieldGroupItem(
                   placeholder: _isGradescope ? '邮箱' : '用户名',
                   controller: _accountCtrl,
-                  keyboardType: _isGradescope ? TextInputType.emailAddress : TextInputType.text,
+                  keyboardType: _isGradescope
+                      ? TextInputType.emailAddress
+                      : TextInputType.text,
                   textInputAction: TextInputAction.next,
                 ),
                 AdaptiveTextFieldGroupItem(
                   placeholder: '密码',
                   controller: _passwordCtrl,
                   obscureText: _obscure,
-                  textInputAction: _isHydro ? TextInputAction.next : TextInputAction.done,
+                  textInputAction:
+                      _isHydro ? TextInputAction.next : TextInputAction.done,
                   onSubmitted: (_) {
                     if (!_isHydro) unawaited(_submit());
                   },
