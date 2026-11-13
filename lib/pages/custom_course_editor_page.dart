@@ -163,17 +163,14 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
 
   String get _weeksSummary {
     if (_weeks.isEmpty) return '';
-    final ranges = formatWeekRanges(_weeks.toList()..sort())
-        .replaceAll('-', '~')
-        .replaceAll(', ', '、')
-        .replaceAll('周', '');
+    final ranges = formatWeekRanges(_weeks.toList()..sort()).replaceAll('周', '');
     return '第 $ranges 周';
   }
 
   String get _weekdaySummary {
     final days = _effectiveWeekdays;
     if (days.isEmpty) return '';
-    return '周${days.map((day) => _weekdayLabels[day - 1].substring(1)).join('、')}';
+    return '周${days.map((day) => _weekdayLabels[day - 1].substring(1)).join(', ')}';
   }
 
   /// Null when the timetable is shorter than the period asked for.
@@ -232,7 +229,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         title: '上课日期',
         selection: () => pending,
         builder: (_) => SizedBox(
-          height: 200,
+          height: 216,
           child: CupertinoDatePicker(
             mode: CupertinoDatePickerMode.date,
             initialDateTime: initialDate,
@@ -260,7 +257,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
       title: isStart ? '开始时间' : '结束时间',
       selection: () => pending,
       builder: (_) => SizedBox(
-        height: 200,
+        height: 216,
         child: CupertinoDatePicker(
           mode: CupertinoDatePickerMode.time,
           use24hFormat: true,
@@ -512,7 +509,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                 child: TextButton.icon(
                   onPressed: () => setState(() => _scheduleMode = _isOneOff ? 0 : 1),
                   icon: Icon(_isOneOff ? Icons.repeat : Icons.event_outlined, size: 18),
-                  label: Text(_isOneOff ? '按周重复' : '只上一次'),
+                  label: Text(_isOneOff ? '按周重复' : '自定义日期'),
                 ),
               ),
             ],
@@ -676,6 +673,8 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                 value: value,
                 placeholder: placeholder,
                 width: double.infinity,
+                // A display field: tapping opens the period wheel sheet.
+                useIosNativeMenu: false,
                 onChanged: (_) {},
               ),
             ),
@@ -742,6 +741,8 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
           value: value,
           placeholder: placeholder,
           width: double.infinity,
+          // A display field: tapping opens the semester wheel sheet.
+          useIosNativeMenu: false,
           onChanged: onChanged,
         ),
       ),

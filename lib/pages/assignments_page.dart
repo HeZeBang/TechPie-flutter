@@ -12,10 +12,12 @@ import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/page_refresh.dart';
 import '../widgets/swipeable_card.dart';
 import 'hidden_assignments_page.dart';
 import 'third_party_accounts_page.dart';
@@ -154,7 +156,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       builder: (context, _) {
         final allVisible = assignmentService.visibleAssignments;
         final visible = _filterAssignments(allVisible);
-        return Scaffold(
+        return AdaptiveNavigationScaffold(
           extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
           appBar: _selectionMode
               ? _buildSelectionAppBar(context, assignmentService, visible)
@@ -238,6 +240,11 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     return BlurredAppBar(
       title: const Text('Deadlines'),
       actions: [
+        if (isDesktop())
+          PageRefreshButton(
+            onRefresh: () => _refresh(service),
+            refreshing: service.loading,
+          ),
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert),
           onSelected: (v) {
@@ -328,7 +335,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
         leadingItems: const [
           IosNativeNavigationBarItem(
             id: 'cancelSelection',
-            title: 'Cancel',
+            title: '取消',
             accessibilityLabel: '退出多选',
             placementGroup: 'leading-main',
           ),
@@ -336,7 +343,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
         trailingItems: [
           IosNativeNavigationBarItem(
             id: 'toggleSelectAll',
-            title: allSelected ? 'Deselect All' : 'Select All',
+            title: allSelected ? '全不选' : '全选',
             enabled: visible.isNotEmpty,
             accessibilityLabel: allSelected ? '全不选' : '全选',
             placementGroup: 'selection-actions',
@@ -426,7 +433,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
           SizedBox(height: topInset),
           banner,
           Expanded(
-            child: RefreshIndicator(
+            child: PageRefreshIndicator(
               onRefresh: () async => _refresh(service),
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -537,7 +544,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     final todayLabel = DateFormat('yyyy-MM-dd EEE').format(now);
     final itemLabel = _filteredItemLabel;
 
-    return RefreshIndicator(
+    return PageRefreshIndicator(
       onRefresh: () async => _refresh(service),
       child: ListView(
         padding: EdgeInsets.fromLTRB(
@@ -578,12 +585,10 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                 ),
               ),
             ),
+            // One list child per card, not a Column of them: a single tall
+            // child skews the list's extent estimate until it is laid out.
             if (!_pastCollapsed)
-              Column(
-                children: overdue
-                    .map((a) => _buildItem(context, service, a))
-                    .toList(),
-              ),
+              ...overdue.map((a) => _buildItem(context, service, a)),
             const SizedBox(height: 4),
           ],
           Padding(
@@ -948,6 +953,10 @@ class _AssignmentCard extends StatelessWidget {
     final displayDue = isLateWindow ? lateDue : assignment.due;
     final dueLabel = isLateWindow ? 'Late Due: ' : 'Due: ';
     final dueString = formatter.format(displayDue);
+    final subtitle = switch (assignment) {
+      ExamAssignment(:final location) => location.trim(),
+      _ => assignment.course,
+    };
 
     Color statusColor() {
       if (completed) return Colors.green;
@@ -1059,13 +1068,15 @@ class _AssignmentCard extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                assignment.course,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
+              ],
               const SizedBox(height: 16),
               Row(
                 children: [

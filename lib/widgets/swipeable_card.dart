@@ -273,6 +273,14 @@ class _SwipeableCardState extends State<SwipeableCard>
 ///
 /// Uses MD3 emphasized-decelerate easing for the appearance, matching
 /// the spec for "entering elements".
+///
+/// The card keeps itself alive inside a lazy list. A [ListView] disposes
+/// children that scroll out of its cache extent and mounts them again on the
+/// way back; without this the re-mounted card would replay the animation
+/// from zero height, and a card growing above the viewport pushes everything
+/// below it down — the list visibly jumps (most noticeably during the bounce
+/// back from the bottom edge). An entry animation belongs to the item's first
+/// appearance, not to every re-mount.
 class CardEnterAnimation extends StatefulWidget {
   const CardEnterAnimation({
     super.key,
@@ -288,7 +296,7 @@ class CardEnterAnimation extends StatefulWidget {
 }
 
 class _CardEnterAnimationState extends State<CardEnterAnimation>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   static const _emphasizedDecelerate = Cubic(0.05, 0.7, 0.1, 1);
 
   late final AnimationController _ctrl = AnimationController(
@@ -296,6 +304,9 @@ class _CardEnterAnimationState extends State<CardEnterAnimation>
     duration: widget.duration,
   );
   bool _started = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void didChangeDependencies() {
@@ -315,6 +326,7 @@ class _CardEnterAnimationState extends State<CardEnterAnimation>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     if (reduceMotion) return widget.child;

@@ -145,6 +145,15 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.0.8"
+  cupertino_native_better:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: "1c01bff23a383e321f86f174753330a5ac7a7f33"
+      resolved-ref: "1c01bff23a383e321f86f174753330a5ac7a7f33"
+      url: "https://github.com/Honahec/cupertino_native_better.git"
+    source: git
+    version: "1.8.3"
   dbus:
     dependency: transitive
     description:
@@ -484,10 +493,10 @@ packages:
     source: hosted
     version: "0.2.2"
   image_picker_ohos:
-    dependency: "direct overridden"
+    dependency: "direct main"
     description:
       path: "packages/image_picker/image_picker_ohos"
-      ref: "br_image_picker-v1.1.2_ohos"
+      ref: "4500f9da7c8223eb92ddc1fc2bff5ada36cf5cbe"
       resolved-ref: "4500f9da7c8223eb92ddc1fc2bff5ada36cf5cbe"
       url: "https://gitee.com/openharmony-sig/flutter_packages.git"
     source: git
@@ -687,10 +696,10 @@ packages:
     source: hosted
     version: "2.2.1"
   path_provider_ohos:
-    dependency: "direct overridden"
+    dependency: "direct main"
     description:
       path: "packages/path_provider/path_provider_ohos"
-      ref: "br_path_provider-v2.1.4_ohos"
+      ref: d8bf2cf9d726cce4d308521f4fb500d832523002
       resolved-ref: d8bf2cf9d726cce4d308521f4fb500d832523002
       url: "https://gitee.com/openharmony-sig/flutter_packages.git"
     source: git
@@ -872,10 +881,10 @@ packages:
     source: hosted
     version: "2.4.1"
   shared_preferences_ohos:
-    dependency: "direct overridden"
+    dependency: "direct main"
     description:
       path: "packages/shared_preferences/shared_preferences_ohos"
-      ref: HEAD
+      ref: "35fb467533e174411a117b2a030c15d2a3a9687c"
       resolved-ref: "35fb467533e174411a117b2a030c15d2a3a9687c"
       url: "https://gitee.com/openharmony-sig/flutter_packages.git"
     source: git
@@ -1014,10 +1023,10 @@ packages:
     source: hosted
     version: "3.2.2"
   url_launcher_ohos:
-    dependency: "direct overridden"
+    dependency: "direct main"
     description:
       path: "packages/url_launcher/url_launcher_ohos"
-      ref: HEAD
+      ref: "35fb467533e174411a117b2a030c15d2a3a9687c"
       resolved-ref: "35fb467533e174411a117b2a030c15d2a3a9687c"
       url: "https://gitee.com/openharmony-sig/flutter_packages.git"
     source: git
@@ -1098,7 +1107,7 @@ packages:
     source: git
     version: "4.7.0"
   webview_flutter_platform_interface:
-    dependency: "direct overridden"
+    dependency: "direct dev"
     description:
       path: webview_flutter_platform_interface
       ref: main

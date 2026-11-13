@@ -39,7 +39,9 @@ Future<String?> showTechPieScanner(
 }) {
   return showGeneralDialog<String>(
     context: context,
-    useRootNavigator: false,
+    // Scanning owns the whole screen, as the campus card's scanner does: on the
+    // root navigator it covers the iOS tab bar rather than sitting inside a tab.
+    useRootNavigator: true,
     barrierLabel: '关闭',
     barrierDismissible: false,
     barrierColor: Colors.black54,

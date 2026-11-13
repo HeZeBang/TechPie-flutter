@@ -3,6 +3,8 @@
 #include <gmssl/mem.h>
 #include "qrcodegen.h"
 #include <string.h>
+#include <CommonCrypto/CommonCryptor.h>
+#include <limits.h>
 
 static int load_key(SM2_KEY *key, const uint8_t bytes[32]) {
   sm2_z256_t upper;
@@ -90,4 +92,13 @@ int tp_qr_encode(const uint8_t *data, size_t length, uint8_t *modules, size_t ca
   for (int y = 0; y < side; y++) for (int x = 0; x < side; x++) modules[y * side + x] = qrcodegen_getModule(qr, x, y);
   gmssl_secure_clear(buffer, sizeof(buffer));
   return side;
+}
+
+int tp_aes_ecb(const uint8_t key[16], const uint8_t *input, size_t length,
+               int encrypt, uint8_t *output, size_t capacity) {
+  size_t written = 0;
+  CCCryptorStatus status = CCCrypt(encrypt ? kCCEncrypt : kCCDecrypt,
+    kCCAlgorithmAES, kCCOptionECBMode | kCCOptionPKCS7Padding,
+    key, kCCKeySizeAES128, NULL, input, length, output, capacity, &written);
+  return status == kCCSuccess && written <= INT_MAX ? (int)written : -1;
 }

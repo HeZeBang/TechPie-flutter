@@ -113,7 +113,9 @@ class AssignmentService extends ChangeNotifier {
             ? []
             : _assignments.where((a) {
                 final source =
-                    (a.platform == 'blackboard' || a.platform == 'exam') ? 'cpdaily' : a.platform;
+                    (a.platform == 'blackboard' || a.platform == 'exam')
+                        ? 'cpdaily'
+                        : a.platform;
                 return !changed.contains(source);
               }).toList();
         if (primaryChanged) {
@@ -142,11 +144,14 @@ class AssignmentService extends ChangeNotifier {
     unawaited(fetchAssignments());
   }
 
+  /// Who each binding is, not which session it holds: renewals rotate the
+  /// Hydro `sid` cookie and the egateApp probe rewrites the cpdaily `sid`, so
+  /// neither may count as an account change (nor may anything derived from it,
+  /// such as `cpdailyStudentId`).
   Map<String, String> _currentSources() => {
         for (final account in _tpAuth.accounts)
           account.platform.id: jsonEncode([
             account.account,
-            account.sid,
             account.hydroOrigin,
             account.hydroDomains,
           ]),
@@ -176,7 +181,6 @@ class AssignmentService extends ChangeNotifier {
     _schedule.removeListener(_onScheduleChanged);
     super.dispose();
   }
-
 
   /// Clear cached + in-memory deadlines (called on primary logout).
   Future<void> clearCache() async {

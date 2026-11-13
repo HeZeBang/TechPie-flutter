@@ -52,7 +52,21 @@ rm -f "$hap"
 node ohos/scripts/generate-build-profile.mjs
 
 set +e
-flutter build hap --release
+# The store version stamp is X.Y.Z on every platform. A pre-release suffix in
+# pubspec is a release *name*, not a version: hvigor rewrites the packed
+# versionName to digits and dots, so letting it read pubspec directly turns
+# `1.0.4-rc.7` into `1.0.4.7` (measured). Android passes --build-name the same
+# way, iOS's tag carries no suffix at all, and `+B` is what tells two builds of
+# one version apart — so strip it here.
+pubspec_version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -1)"
+build_args=(--release)
+if [[ "$pubspec_version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?\+([0-9]+)$ ]]; then
+  build_args+=(--build-name "${BASH_REMATCH[1]}" --build-number "${BASH_REMATCH[3]}")
+else
+  echo "warning: pubspec version '$pubspec_version' is not X.Y.Z[-pre]+B; building without an explicit stamp" >&2
+fi
+
+flutter build hap "${build_args[@]}"
 build_status=$?
 set -e
 

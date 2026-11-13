@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -19,11 +20,13 @@ class DeadlineWidgetService with WidgetsBindingObserver {
     bool enabled = true,
   })  : _channel = channel ?? const MethodChannel('techpie/deadline_widgets'),
         _enabled = enabled,
+        _linux = !kIsWeb && defaultTargetPlatform == TargetPlatform.linux,
         _now = now ?? DateTime.now;
 
   final AssignmentService _assignments;
   final MethodChannel _channel;
   final DateTime Function() _now;
+  final bool _linux;
   bool _enabled;
   bool get enabled => _enabled;
 
@@ -65,18 +68,36 @@ class DeadlineWidgetService with WidgetsBindingObserver {
             ? order
             : AssignmentOverrides.keyFor(a).compareTo(AssignmentOverrides.keyFor(b));
       });
+    return [
+      for (final a in items)
+        {
+          'id': AssignmentOverrides.keyFor(a),
+          'kind': a.kind.id,
+          'title': a.title,
+          // Exam titles already name the course, so the line under them is
+          // where to go — the same choice the Deadlines and Home pages make.
+          'subtitle': switch (a) {
+            ExamAssignment(:final location) => location.trim(),
+            _ => a.course,
+          },
+          'dueAt': a.due.toUtc().millisecondsSinceEpoch / 1000,
+        },
+    ];
+  }
+
+  static List<Map<String, Object>> _linuxItems(List<Map<String, Object>> items) {
     final result = <Map<String, Object>>[];
     final ids = <String>{};
     var bytes = 1024; // Reserve the envelope and list separators.
-    for (final a in items) {
-      final id = AssignmentOverrides.keyFor(a);
-      final due = a.due.toUtc().millisecondsSinceEpoch / 1000;
+    for (final item in items) {
+      final id = item['id']! as String;
+      final due = item['dueAt']! as num;
       if (utf8.encode(id).length > 4096 || !ids.add(id) || due < 0 || due > 253402300799) continue;
       final row = <String, Object>{
         'id': id,
-        'kind': a.kind.id,
-        'title': String.fromCharCodes(a.title.runes.take(256)),
-        'course': String.fromCharCodes(a.course.runes.take(128)),
+        'kind': item['kind']!,
+        'title': String.fromCharCodes((item['title']! as String).runes.take(256)),
+        'course': String.fromCharCodes((item['subtitle']! as String).runes.take(128)),
         'dueAt': due,
       };
       final size = utf8.encode(jsonEncode(row)).length + 1;
@@ -92,19 +113,20 @@ class DeadlineWidgetService with WidgetsBindingObserver {
 
   Future<void> _publish() async {
     final epoch = _assignments.identityEpoch;
-    // Publish an empty valid snapshot as soon as sharing is enabled. This
-    // keeps the desktop card truthful before the first sync.
-    final ready = _enabled;
-    final items = _assignments.hasCachedData ? displayItems(
-      _assignments.visibleAssignments,
-      _assignments.isCompleted,
-      _now(),
-    ) : <Map<String, Object>>[];
+    final ready = _enabled && (_linux || _assignments.hasCachedData);
+    final display = _assignments.hasCachedData
+        ? displayItems(
+            _assignments.visibleAssignments,
+            _assignments.isCompleted,
+            _now(),
+          )
+        : <Map<String, Object>>[];
+    final items = _linux ? _linuxItems(display) : display;
     final content = ready ? jsonEncode(items) : null;
     _writes = _writes.then((_) async {
       if (_disposed ||
           epoch != _assignments.identityEpoch ||
-          ready != _enabled) {
+          ready != (_enabled && (_linux || _assignments.hasCachedData))) {
         return;
       }
       if (_lastPublished == content && content != null) return;

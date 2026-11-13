@@ -203,6 +203,15 @@ class StorageService {
   Future<void> setMaskPersonalInfo(bool value) =>
       _prefs.setBool(_maskPersonalInfoKey, value);
 
+  // Whether this device has been shown the privacy policy and agreed to it. A
+  // store requires the answer before the app does anything on the user's behalf,
+  // so it is read on the very first frame (see PrivacyGate) and checked again at
+  // every sign-in entry.
+  static const _privacyAcceptedKey = 'privacy_accepted_v1';
+  bool get privacyAccepted => _prefs.getBool(_privacyAcceptedKey) ?? false;
+  Future<void> setPrivacyAccepted(bool value) =>
+      _prefs.setBool(_privacyAcceptedKey, value);
+
   bool get useLocalhost =>
       !kReleaseMode && (_prefs.getBool(_useLocalhostKey) ?? false);
   Future<void> setUseLocalhost(bool value) =>
