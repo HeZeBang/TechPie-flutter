@@ -2,12 +2,16 @@
   "app": {
     "bundleName": "com.geekpie.techpie.watch",
     "vendor": "geekpie",
-    "version": { "code": 2, "name": "0.2.0" }
+    "version": { "code": 3, "name": "0.2.1" }
   },
   "deviceConfig": {},
   "module": {
     "deviceType": ["liteWearable"],
-    "reqPermissions": [{ "name": "ohos.permission.VIBRATE" }],
+    "reqPermissions": [{
+      "name": "ohos.permission.VIBRATE",
+      "reason": "用于待办截止前的振动提醒",
+      "usedScene": { "ability": ["MainAbility"], "when": "inuse" }
+    }],
     "distro": {
       "deliveryWithInstall": true,
       "moduleName": "entry",

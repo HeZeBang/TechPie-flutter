@@ -1,6 +1,3 @@
-import vibrator from '@system.vibrator';
-import { WearLink } from '../../common/wear-link.js';
-
 var link, paintTimer, refreshTimer;
 function short(value, length) { return value.length > length ? value.slice(0, length - 1) + '…' : value; }
 function dueLabel(ms) {
@@ -10,7 +7,7 @@ function dueLabel(ms) {
 }
 export default {
   data: {
-    view: 'home', connected: false, status: '未连接', name: '', studentId: '',
+    view: 'home', startupFailed: false, connected: false, status: '未连接', name: '', studentId: '',
     detail: '打开手机 TechPie 连接手表', nextTitle: '连接后同步待办', nextDue: '',
     deadlines: [], ddlReady: false, ddlEmpty: '等待手机同步', pageNumber: 0,
     pageLabel: '', hasPrevious: false, hasNext: false, truncated: false,
@@ -20,13 +17,23 @@ export default {
     scheduleEmpty: '等待手机同步', scheduleTruncated: false,
     reminderText: '提醒未开启', alertTitle: '', alertHint: '', vibrationError: ''
   },
-  onInit() {
-    var page = this;
-    link = new WearLink(function(state) { page.applyState(state); });
-    link.start();
-  },
+  onInit() { console.info('TechPie watch page created'); },
   onShow() { if (link) link.start(); },
-  onReady() { this.drawCode(); },
+  onReady() {
+    // Paint the page before loading native integrations; startup failures stay visible.
+    var page = this;
+    this.drawCode();
+    try {
+      var WearLink = require('../../common/wear-link.js').WearLink;
+      link = new WearLink(function(state) { page.applyState(state); });
+      link.start();
+      console.info('TechPie watch initialized');
+    } catch (error) {
+      this.startupFailed = true;
+      this.error = '启动失败：' + String(error);
+      console.error(this.error);
+    }
+  },
   onHide() {
     this.view = 'home'; this.codeVisible = false;
     if (paintTimer) clearTimeout(paintTimer);
@@ -50,7 +57,13 @@ export default {
     if (state.alert && this._alertId !== state.alert.id) {
       this._alertId = state.alert.id; this.vibrationError = '';
       var page = this;
-      vibrator.vibrate({mode: 'long', fail: function() { page.vibrationError = '振动失败，请查看待办'; }});
+      try {
+        var vibrator = require('../../common/wear-vibrator.js').default;
+        vibrator.vibrate({mode: 'long', fail: function() { page.vibrationError = '振动失败，请查看待办'; }});
+      } catch (error) {
+        this.vibrationError = '振动不可用，请查看待办';
+        console.error('TechPie watch vibration: ' + String(error));
+      }
     }
     this.connected = state.connected; this.status = state.connected ? '已连接' : '未连接';
     this.name = state.name || ''; this.studentId = state.studentId || '';

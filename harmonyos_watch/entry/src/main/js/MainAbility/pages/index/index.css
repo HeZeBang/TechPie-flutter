@@ -20,3 +20,5 @@
 .code-countdown { width: 250px; height: 24px; font-size: 18px; text-align: center; color: #384c40; }
 .code-refresh { width: 250px; height: 48px; border-radius: 24px; background-color: #d3ecdd; color: #003822; font-size: 20px; margin-top: 6px; }
 .code-back { width: 200px; height: 38px; border-radius: 19px; background-color: #ffffff; color: #384c40; font-size: 18px; }
+
+.startup-error { width: 300px; height: 240px; margin-left: 83px; margin-top: 100px; color: #ffb4ab; font-size: 22px; }

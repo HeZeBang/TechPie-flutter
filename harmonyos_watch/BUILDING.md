@@ -66,3 +66,18 @@ consent. Confirm the Android certificate matches the watch's configured phone
 fingerprint; a debug APK needs the explicit debug-fingerprint override above.
 
 Vendor vibration API: https://developer.huawei.com/consumer/cn/doc/harmonyos-references/js-apis-system-vibrate/
+
+Android authorization callbacks contain Parcelable `Permission` objects.
+Compare their `name` values when reading grants; this SDK does not implement
+value equality for those objects.
+
+
+The local-vibration permission declares its reason and `MainAbility` in-use
+scene in `module.reqPermissions`. Keep permission declarations there; the
+source Lite schema does not accept `abilities.permissions`.
+
+The page now loads Wear Engine after its first render (`onReady`) and loads
+the vibration module when a reminder fires. Each list item has one child flex
+container. Initialization errors are shown and logged at the lifecycle entry.
+These startup changes and the circular icon assets await GT 6 Pro validation;
+they are not yet evidence that the reported black screen is resolved.

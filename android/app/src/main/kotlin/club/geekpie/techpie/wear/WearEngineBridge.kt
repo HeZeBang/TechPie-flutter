@@ -93,10 +93,13 @@ class WearEngineBridge(private val activity: Activity, messenger: BinaryMessenge
                     val answered = AtomicBoolean(false)
                     auth.requestPermission(object : AuthCallback {
                         override fun onOk(grants: Array<Permission>) {
-                            Log.i("TechPieWear", "Device authorization granted=${grants.contains(Permission.DEVICE_MANAGER)}")
+                            // Permission is Parcelable and does not implement value equality.
+                            val p2pGranted = grants.any { it.name == Permission.DEVICE_MANAGER.name }
+                            val notifyGranted = grants.any { it.name == Permission.NOTIFY.name }
+                            Log.i("TechPieWear", "Device authorization granted=$p2pGranted")
                             if (answered.compareAndSet(false, true)) handler.post {
-                                result.success(mapOf("p2p" to grants.contains(Permission.DEVICE_MANAGER),
-                                    "notify" to grants.contains(Permission.NOTIFY)))
+                                result.success(mapOf("p2p" to p2pGranted,
+                                    "notify" to notifyGranted))
                             }
                         }
                         override fun onCancel() {
