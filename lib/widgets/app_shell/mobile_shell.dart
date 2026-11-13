@@ -47,13 +47,18 @@ class _MobileShellState extends State<MobileShell> {
 
   Widget _buildShell(BuildContext context, {required bool tabBarHidden}) {
     final usesIosChrome = isIos();
+    final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     // While a page stands in for the bar it covers nothing, so the page's own
     // toolbar sits on the home indicator's safe area, where the bar was.
-    final bottomObstruction = tabBarHidden
-        ? bottomInset
-        : (usesIosChrome ? 49.0 : TgBottomNavBar.barHeight + TgBottomNavBar.margin * 2) +
-            bottomInset;
+    // Scaffold already stops the body at the keyboard. Reserving the tab bar
+    // here as well would leave a blank strip above every text input's keyboard.
+    final bottomObstruction = keyboardVisible
+        ? 0.0
+        : tabBarHidden
+            ? bottomInset
+            : (usesIosChrome ? 49.0 : TgBottomNavBar.barHeight + TgBottomNavBar.margin * 2) +
+                bottomInset;
 
     return AppShellMetrics(
       bottomObstruction: bottomObstruction,

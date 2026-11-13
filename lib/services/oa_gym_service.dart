@@ -1,14 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/oa_gym.dart';
 import '../models/third_party_account.dart';
-import 'api_base_url.dart';
 import 'auth_service.dart';
-import 'session/cookie_provider.dart';
+import 'oa_gym_local_client.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
@@ -25,7 +23,7 @@ class OaGymService extends ChangeNotifier {
   final AuthService _auth;
   final StorageService _storage;
   final ThirdPartyAuthService _tpAuth;
-  final http.Client _client;
+  final OaGymLocalClient _localClient;
 
   bool _sessionReady = false;
   bool _metadataReady = false;
@@ -34,9 +32,7 @@ class OaGymService extends ChangeNotifier {
   int _generation = 0;
   Future<void>? _metadataRequest;
   Future<void> _availabilityTail = Future.value();
-  String _oaCookies = '';
   String _oaIdentity = '';
-  bool _bulkSearchSupported = false;
   Map<String, String> _venues = {};
   Map<String, String> _allVenues = {};
   Map<String, String> _timeSlots = {};
@@ -54,9 +50,7 @@ class OaGymService extends ChangeNotifier {
     this._storage,
     this._tpAuth, {
     http.Client? client,
-  }) : _client = client ?? http.Client();
-
-  String get _baseUrl => apiBaseUrl(_storage);
+  }) : _localClient = OaGymLocalClient(client ?? http.Client());
 
   bool get loading => _loading;
   bool get sessionReady => _sessionReady;
@@ -68,28 +62,18 @@ class OaGymService extends ChangeNotifier {
   String? get profileSyncError => _profileSyncError;
 
   String get profileOwner {
-    if (!_auth.isLoggedIn || !_tpAuth.hasCpdailyBinding) return '';
-    final campusId = _tpAuth.cpdailyStudentId.isNotEmpty
-        ? _tpAuth.cpdailyStudentId
-        : _tpAuth.cpdailyBinding!.cpdailyUserId.isNotEmpty
-            ? _tpAuth.cpdailyBinding!.cpdailyUserId
-            : _tpAuth.cpdailyBinding!.account;
+    if (!_auth.isLoggedIn || !_tpAuth.hasIdsBinding) return '';
+    final campusId = _tpAuth.idsStudentId.isNotEmpty
+        ? _tpAuth.idsStudentId
+        : _tpAuth.idsAccount!.account;
     return '${_auth.session!.userId}|$campusId';
   }
 
-  String get bookingStudentId {
-    if (profileOwner.isEmpty) return '';
-    if (_tpAuth.cpdailyStudentId.isNotEmpty) return _tpAuth.cpdailyStudentId;
-    // Legacy SMS bindings have a UUID and phone but no school ID. Only a
-    // successful current-user OA response can supply their missing ID.
-    return ThirdPartyAccount.cpdailySchoolId(
-      _storage.loadOaBookingProfile(owner: profileOwner).studentId,
-    );
-  }
+  String get bookingStudentId => profileOwner.isEmpty ? '' : _tpAuth.idsStudentId;
 
   String get _currentProfileBinding => profileOwner.isEmpty
       ? ''
-      : '$profileOwner|${_tpAuth.cpdailyBinding!.boundAt.toIso8601String()}';
+      : '$profileOwner|${_tpAuth.idsAccount!.boundAt.toIso8601String()}';
 
   /// Attach after boot hydration. Binding/rebinding starts a separate,
   /// best-effort read; login and court queries never wait for contact sync.
@@ -145,11 +129,11 @@ class OaGymService extends ChangeNotifier {
       if (generation != _profileGeneration || owner != profileOwner) return;
       final data = (response['data'] as Map?)?.cast<String, dynamic>();
       if (data == null) throw OaGymException('OA 个人信息响应不完整，请手动填写或重试');
-      final studentId = ThirdPartyAccount.cpdailySchoolId(data['studentId']);
+      final studentId = ThirdPartyAccount.idsSchoolId(data['studentId']);
       if (studentId.isNotEmpty &&
-          _tpAuth.cpdailyStudentId.isNotEmpty &&
-          studentId != _tpAuth.cpdailyStudentId) {
-        throw OaGymException('OA 资料与当前 eGate 账号不匹配，请重新绑定');
+          _tpAuth.idsStudentId.isNotEmpty &&
+          studentId != _tpAuth.idsStudentId) {
+        throw OaGymException('OA 资料与当前 IDS 账号不匹配，请重新绑定');
       }
       final incoming = OaBookingProfile.fromJson(data);
       if (revision != _profileRevision) return;
@@ -214,10 +198,8 @@ class OaGymService extends ChangeNotifier {
 
   void clearSession() {
     _generation++;
-    _oaCookies = '';
     _oaIdentity = '';
     _metadataRequest = null;
-    _bulkSearchSupported = false;
     _sessionReady = false;
     _metadataReady = false;
     _venues = {};
@@ -232,14 +214,14 @@ class OaGymService extends ChangeNotifier {
     }
     final saved = _storage.loadOaBookingProfile(owner: profileOwner);
     // Contact sync enriches the bound school identity, never the Casdoor UUID.
-    final cpdailyName = _tpAuth.cpdailyBinding?.name;
+    final idsName = _tpAuth.idsAccount?.name;
     return saved.copyWith(
       name: saved.name.isNotEmpty
           ? saved.name
-          : (cpdailyName?.isNotEmpty == true ? cpdailyName! : ''),
+          : (idsName?.isNotEmpty == true ? idsName! : ''),
       email: saved.email.isNotEmpty
           ? saved.email
-          : (_tpAuth.cpdailyBinding?.email ?? ''),
+          : (_tpAuth.idsAccount?.email ?? ''),
     );
   }
 
@@ -291,7 +273,7 @@ class OaGymService extends ChangeNotifier {
       await previous;
       return await _withLoadingResult(() async {
         final result = <OaAvailability>[];
-        // Bound each backend call to one hour. OA's tree picker is stateful,
+        // Bound each local query to one hour. OA's tree picker is stateful,
         // so requests share one serial queue, including superseded UI checks.
         for (var slot = startSlot; slot <= endSlot; slot++) {
           if (generation != _generation || shouldContinue?.call() == false) {
@@ -369,7 +351,7 @@ class OaGymService extends ChangeNotifier {
       throw OaGymException('请先在「个人信息」里补全姓名和手机号');
     }
     if (studentId.isEmpty) {
-      throw OaGymException('当前 eGate 绑定缺少学号，请重新绑定 eGate');
+      throw OaGymException('当前 IDS 绑定缺少学号，请重新绑定 IDS');
     }
 
     final data = await _withLoadingResult(
@@ -459,13 +441,7 @@ class OaGymService extends ChangeNotifier {
     }
 
     return _withLoadingResult(() async {
-      if (_bulkSearchSupported) {
-        final result = await query(venues, ranges);
-        onProgress?.call(result);
-        return result;
-      }
-      // Compatibility with older deployments: never send their unbounded
-      // venue × hour loop in one 30-second request. Three workers is enough.
+      // Bound local query batches so progress and cancellation can stop queued work.
       final jobs = [
         for (final venue in venues)
           for (var i = 0; i < ranges.length; i += 3)
@@ -518,8 +494,6 @@ class OaGymService extends ChangeNotifier {
     _allVenues = _stringMap(payload['allVenues'])
       ..removeWhere((name, id) => oaIsUnusedVenue(name) || id == '44');
     _timeSlots = _stringMap(payload['timeSlots']);
-    _bulkSearchSupported =
-        (data['capabilities'] as Map?)?['bulkSearch'] == true;
     if (_venues.isEmpty || _timeSlots.isEmpty) {
       throw OaGymException('加载 OA 场馆数据失败，请稍后重试');
     }
@@ -545,115 +519,66 @@ class OaGymService extends ChangeNotifier {
   }
 
   /// Guard for any gym call: requires a logged-in primary account AND a
-  /// bound cpdaily account (the source of the CpDaily/CASTGC session the OA
+  /// bound ids account (the source of the IDS/CASTGC session the OA
   /// system authenticates against).
   AuthService _requireAuth() {
     if (!_auth.isLoggedIn) {
       throw OaGymException('请先登录 TechPie 主账号');
     }
-    if (!_tpAuth.hasCpdailyBinding) {
-      throw OaGymException('场馆预约需要绑定 eGate 账号，请在「第三方账号」中绑定');
+    if (!_tpAuth.hasIdsBinding) {
+      throw OaGymException('场馆预约需要绑定校园账号，请在「第三方账号」中绑定');
     }
     return _auth;
   }
 
-  /// CpDaily auth payload built from a [CookieProvider] snapshot plus the
-  /// cpdaily node's raw session fields (tgc/sessionToken/userId/tenantId). The
-  /// cookie + epoch captured at request time drive the storm-safe renew-retry
-  /// in [_postJson].
-  Map<String, dynamic> _authPayload(CookieProvider cp) {
-    final raw = _tpAuth.cpdailyNode.rawFields;
-    return {
-      'tgc': (raw['tgc'] as String?) ?? '',
-      'cookies': cp.cookies,
-      'sessionToken': (raw['sessionToken'] as String?) ?? '',
-      'userId': (raw['userId'] as String?) ?? '',
-      'tenantId': (raw['tenantId'] as String?) ?? '',
-      if (_oaCookies.isNotEmpty) 'oaCookies': _oaCookies,
-    };
-  }
-
-  /// POST `$_baseUrl/[path]` with CpDaily auth + [extra] body fields. On 401
-  /// the cpdaily node is renewed exactly once (single-flighted across all
-  /// concurrent callers) and the request retried with the fresh cookie.
   Future<Map<String, dynamic>> _postJson(
     String path,
-    Map<String, dynamic> extra,
+    Map<String, dynamic> parameters,
   ) async {
     _requireAuth();
-    final node = _tpAuth.cpdailyNode;
-    var identity = _identity;
     final generation = _generation;
-    final response = await _tpAuth.sessionTree.withCookie<http.Response>(
-      node,
-      (cp) async {
-        _syncIdentity();
-        identity = _identity;
-        final body = {...extra, 'auth': _authPayload(cp)};
-        http.Response r;
-        try {
-          r = await _client
-              .post(
-                Uri.parse('$_baseUrl/$path'),
-                headers: const {
-                  'Content-Type': 'application/json; charset=UTF-8',
-                },
-                body: jsonEncode(body),
-              )
-              .timeout(const Duration(seconds: 30));
-        } on TimeoutException {
-          throw OaGymException(
-            path.endsWith('/book')
-                ? '预约提交超时，请先查询预约记录确认结果，避免重复提交'
-                : '学校 OA 查询超时，请稍后重试或缩小日期范围',
-          );
-        } on http.ClientException {
-          throw OaGymException('无法连接场馆服务，请检查网络后重试');
-        }
-        return CookieAction(r, expired: r.statusCode == 401);
-      },
-    );
-    if (response == null) {
-      throw OaGymException('当前 eGate 登录态已失效，请重新绑定 eGate');
-    }
-    if (response.statusCode == 401) {
-      _sessionReady = false;
-    }
-    if (generation != _generation || identity != _identity) {
-      throw OaGymException('账号或登录态已变更，请重新查询');
-    }
-    if (path == 'oa/gym/profile' && response.statusCode == 404) {
-      throw OaGymException('当前后端暂不支持自动同步，请手动填写个人信息');
-    }
-    Map<String, dynamic> decoded;
+    var identity = _identity;
     try {
-      decoded = (jsonDecode(response.body) as Map).cast<String, dynamic>();
-    } catch (_) {
-      throw OaGymException('场馆服务返回异常（HTTP ${response.statusCode}），请稍后重试');
-    }
-    if (response.statusCode < 200 ||
-        response.statusCode >= 300 ||
-        decoded['success'] == false) {
-      throw OaGymException(
-        decoded['error'] as String? ?? 'OA 场馆服务请求失败，请稍后重试',
+      final result = await _tpAuth.sessionTree.withCookie<Map<String, dynamic>?>(
+        _tpAuth.oaNode,
+        (cp) async {
+          _syncIdentity();
+          identity = _identity;
+          try {
+            final data = await _localClient.request(
+              path,
+              parameters,
+              cookies: cp.cookies,
+              venues: _venues,
+              timeSlots: _timeSlots,
+            );
+            return CookieAction(data, expired: false);
+          } on OaGymLocalException catch (error) {
+            if (!error.sessionExpired) rethrow;
+            return const CookieAction(null, expired: true);
+          }
+        },
       );
+      if (generation != _generation || identity != _identity) {
+        throw OaGymException('账号或登录态已变更，请重新查询');
+      }
+      if (result == null) {
+        throw OaGymException('当前 OA 登录态已失效，请刷新 IDS 登录态后重试');
+      }
+      return result;
+    } on OaGymLocalException catch (error) {
+      throw OaGymException(error.message);
     }
-    final session = decoded['session'];
-    if (session is Map && session['oaCookies'] is String) {
-      _oaCookies = session['oaCookies'] as String;
-    }
-    return decoded;
   }
 
   String get _identity => '${_auth.session?.userId}|'
-      '${_tpAuth.cpdailyBinding?.account}|${_tpAuth.cpdailyNode.epoch}|'
-      '${_tpAuth.cpdailyNode.rawFields['tgc']}';
+      '${_tpAuth.idsAccount?.account}|${_tpAuth.idsNode.epoch}|'
+      '${_tpAuth.idsNode.rawFields['tgc']}';
 
   void _syncIdentity() {
     _requireAuth();
     if (_oaIdentity == _identity) return;
     _oaIdentity = _identity;
-    _oaCookies = '';
     // Metadata contains school-wide IDs. It can survive an automatic token
     // renewal, but an explicit logout/unbind calls clearSession.
   }

@@ -1,6 +1,12 @@
+import 'dart:io';
+
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+
+import '../services/campus_user_agent.dart';
 
 const double iosMinimumInteractiveDimension = 44;
 
@@ -11,6 +17,28 @@ Future<void> initializePlatformCapabilities() async {
   if (!isIos()) return;
 
   _supportsIosLiquidGlass = (PlatformVersion.iosVersion ?? 0) >= 26;
+}
+
+Future<void> initializeCampusUserAgent() async {
+  final package = await PackageInfo.fromPlatform();
+  final scale = WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+  if (isIos()) {
+    final info = (await const MethodChannel('techpie/platform')
+        .invokeMapMethod<String, dynamic>('getUserAgentInfo'))!;
+    CampusUserAgent.value = CampusUserAgent.format(
+      version: package.version, build: package.buildNumber,
+      device: info['device'] as String, system: info['system'] as String,
+      systemVersion: info['systemVersion'] as String,
+      scale: (info['scale'] as num).toDouble(),
+    );
+  } else {
+    CampusUserAgent.value = CampusUserAgent.format(
+      version: package.version, build: package.buildNumber,
+      device: Platform.operatingSystem, system: Platform.operatingSystem,
+      systemVersion: Platform.operatingSystemVersion.replaceAll(RegExp(r'[()\r\n]'), ''),
+      scale: scale,
+    );
+  }
 }
 
 /// Tests run with no native runtime to ask; this picks the chrome they see.

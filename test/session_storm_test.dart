@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/services/debug_logger.dart';
 import 'package:techpie/services/http_client.dart';
+import 'package:techpie/services/ids/campus_http.dart';
 import 'package:techpie/services/session/session_tree.dart';
 
 /// Verifies the anti-renew-storm guarantees of the unified SessionNode tree:
@@ -14,7 +15,7 @@ import 'package:techpie/services/session/session_tree.dart';
 ///   3. withCookie retries a 401 exactly once with the fresh cookie, and two
 ///      concurrent withCookie callers share a single renew.
 ///   4. Child nodes (eams/elearning) mint downstream cookies from the parent
-///      cpdaily tgc; parent renew cascades to clear child derived cookies.
+///      ids tgc; parent renew cascades to clear child derived cookies.
 ///   5. Two-level retry: a child 401 caused by a stale parent tgc triggers
 ///      parent renew → child re-mint → retry.
 ///   6. freshCookie — the webview pre-flight — renews a due node (parent first,
@@ -28,10 +29,9 @@ void main() {
   late List<String> probeDisplays;
   late SessionTree tree;
 
-  /// Seed a cpdaily account so the cpdaily node is available. The renew
-  /// endpoint (/auth/renew) is mocked to rotate tgc + cookies each call.
+  /// Seed a software-Passkey session. Local renewals rotate tgc and cookies.
   ThirdPartyAccount seedAccount({String tgc = 'tgc-v0'}) => ThirdPartyAccount(
-        platform: ThirdPartyPlatform.cpdaily,
+        platform: ThirdPartyPlatform.ids,
         account: 'student',
         sid: '2024xxxx',
         name: 'Test',
@@ -41,10 +41,8 @@ void main() {
                 .millisecondsSinceEpoch ~/
             1000,
         raw: {
-          'sessionToken': 'st-v0',
+          'authMethod': 'passkey',
           'tgc': tgc,
-          'userId': 'u1',
-          'tenantId': 't1',
           'cookies': 'JSESSIONID=js-v0',
         },
         boundAt: DateTime.now(),
@@ -56,61 +54,39 @@ void main() {
     httpClient = LoggingHttpClient(logger, inner: client);
     tree = SessionTree(
       persist: (_, {force = false}) async {},
+      localAccountRenew: client.renewAccount,
+      localCookieMint: client.mintCookie,
       http: httpClient,
       baseUrl: () => 'https://backend.test',
       persistProbe: (_, result) async => probeDisplays.add(result.display),
     );
-    tree.cpdaily.setAccount(seedAccount());
+    tree.ids.setAccount(seedAccount());
   });
 
-  test('concurrent renew() calls share one in-flight POST (single-flight)',
+  test('concurrent renew() calls share one local renewal (single-flight)',
       () async {
     final results = await Future.wait([
-      tree.cpdaily.renew(),
-      tree.cpdaily.renew(),
-      tree.cpdaily.renew(),
+      tree.ids.renew(),
+      tree.ids.renew(),
+      tree.ids.renew(),
     ]);
     expect(results, [true, true, true]);
     expect(client.renewCalls, 1);
     // Cookie advanced to v1.
     expect(
-      tree.cpdaily.cookieProvider!.cookies,
+      tree.ids.cookieProvider!.cookies,
       contains('CASTGC=tgc-v1'),
     );
   });
 
-  test('legacy CpDaily UUID remains the protocol userId during renewal',
-      () async {
-    const userId = '11111111-2222-3333-4444-555555555555';
-    final legacy = ThirdPartyAccount(
-      platform: ThirdPartyPlatform.cpdaily,
-      account: '20240001',
-      sid: userId,
-      token: 'session',
-      raw: const {
-        'sessionToken': 'session',
-        'tgc': 'tgc-v0',
-        'tenantId': 'tenant',
-      },
-      boundAt: DateTime.now(),
-    );
-    tree.cpdaily.setAccount(legacy);
-    expect(tree.cpdaily.rawFields['userId'], userId);
-    expect(tree.cpdaily.cookieProvider!.studentId, '20240001');
-    expect(await tree.cpdaily.renew(), isTrue);
-    expect(client.lastRenewBody!['userId'], userId);
-    expect(tree.cpdaily.rawFields['userId'], userId);
-    expect(tree.cpdaily.account!.cpdailyStudentId, '20240001');
-  });
-
-  test('cpdaily schedules renewal three days before account expiry', () async {
+  test('Passkey renewal schedules the next refresh ten minutes after success', () async {
     final before = DateTime.now();
-    await tree.cpdaily.renew();
+    await tree.ids.renew();
 
-    final next = tree.cpdaily.nextRenewTimestamp;
+    final next = tree.ids.nextRenewTimestamp;
     expect(next, isNotNull);
-    expect(next!.isAfter(before.add(const Duration(days: 26))), true);
-    expect(next.isBefore(before.add(const Duration(days: 28))), true);
+    expect(next!.isAfter(before.add(const Duration(minutes: 9))), true);
+    expect(next.isBefore(before.add(const Duration(minutes: 11))), true);
   });
 
   test('derived cookie schedules the next renewal ten minutes after success',
@@ -126,23 +102,23 @@ void main() {
 
   test('renewIfNeeded skips when epoch already advanced by a concurrent renew',
       () async {
-    final epochBefore = tree.cpdaily.epoch;
+    final epochBefore = tree.ids.epoch;
     // Fire a renew in the background (don't await yet).
-    final pending = tree.cpdaily.renew();
+    final pending = tree.ids.renew();
     // While it's in-flight, renewIfNeeded(epochBefore) should join the same
     // in-flight renew rather than starting a second one.
-    final second = tree.cpdaily.renewIfNeeded(epochBefore);
+    final second = tree.ids.renewIfNeeded(epochBefore);
     await Future.wait([pending, second]);
     expect(client.renewCalls, 1);
   });
 
   test('renewIfNeeded does NOT skip when epoch is still current', () async {
-    final epochBefore = tree.cpdaily.epoch;
+    final epochBefore = tree.ids.epoch;
     // No concurrent renew — renewIfNeeded must actually run.
-    final ok = await tree.cpdaily.renewIfNeeded(epochBefore);
+    final ok = await tree.ids.renewIfNeeded(epochBefore);
     expect(ok, true);
     expect(client.renewCalls, 1);
-    expect(tree.cpdaily.epoch, greaterThan(epochBefore));
+    expect(tree.ids.epoch, greaterThan(epochBefore));
   });
 
   test('withCookie retries 401 once with refreshed cookie', () async {
@@ -154,7 +130,7 @@ void main() {
     ];
 
     final resp = await tree.withCookie<http.Response>(
-      tree.cpdaily,
+      tree.ids,
       (cp) async {
         final r = await httpClient.post(
           Uri.parse('https://backend.test/fetch'),
@@ -177,7 +153,7 @@ void main() {
 
     final results = await Future.wait([
       tree.withCookie<http.Response>(
-        tree.cpdaily,
+        tree.ids,
         (cp) async {
           final r = await httpClient.post(
             Uri.parse('https://backend.test/fetch'),
@@ -187,7 +163,7 @@ void main() {
         },
       ),
       tree.withCookie<http.Response>(
-        tree.cpdaily,
+        tree.ids,
         (cp) async {
           final r = await httpClient.post(
             Uri.parse('https://backend.test/fetch'),
@@ -208,15 +184,15 @@ void main() {
   });
 
   test('withCookie proactively renews when the schedule is due', () async {
-    await tree.cpdaily.renew();
-    tree.cpdaily.seedNextRenewTimestamp(
+    await tree.ids.renew();
+    tree.ids.seedNextRenewTimestamp(
       DateTime.now().subtract(const Duration(seconds: 1)),
     );
     client.fetchStatuses = [200];
     client.fetchBodies = ['{}'];
 
     final response = await tree.withCookie<http.Response>(
-      tree.cpdaily,
+      tree.ids,
       (cp) async {
         final r = await httpClient.post(
           Uri.parse('https://backend.test/fetch'),
@@ -233,24 +209,24 @@ void main() {
   // -- Webview pre-flight (freshCookie) tests --
 
   test('freshCookie renews a due node and hands over the new cookie', () async {
-    await tree.cpdaily.renew();
-    tree.cpdaily.seedNextRenewTimestamp(
+    await tree.ids.renew();
+    tree.ids.seedNextRenewTimestamp(
       DateTime.now().subtract(const Duration(seconds: 1)),
     );
-    final beforeEpoch = tree.cpdaily.epoch;
+    final beforeEpoch = tree.ids.epoch;
 
-    final cp = await tree.freshCookie(tree.cpdaily);
+    final cp = await tree.freshCookie(tree.ids);
 
     expect(client.renewCalls, 2);
-    expect(tree.cpdaily.epoch, greaterThan(beforeEpoch));
+    expect(tree.ids.epoch, greaterThan(beforeEpoch));
     expect(cp?.cookies, 'JSESSIONID=js-v2; CASTGC=tgc-v2');
   });
 
   test('freshCookie leaves a node alone while its schedule is not due',
       () async {
-    await tree.cpdaily.renew();
+    await tree.ids.renew();
 
-    final cp = await tree.freshCookie(tree.cpdaily);
+    final cp = await tree.freshCookie(tree.ids);
 
     expect(client.renewCalls, 1);
     expect(cp?.cookies, 'JSESSIONID=js-v1; CASTGC=tgc-v1');
@@ -259,7 +235,7 @@ void main() {
   test('freshCookie renews a stale parent before re-minting the child',
       () async {
     await tree.eams.renew();
-    tree.cpdaily.seedNextRenewTimestamp(
+    tree.ids.seedNextRenewTimestamp(
       DateTime.now().subtract(const Duration(seconds: 1)),
     );
 
@@ -269,7 +245,7 @@ void main() {
     // which is then minted again against the new tgc.
     expect(client.renewCalls, 1);
     expect(client.eamsCalls, 2);
-    expect(client.lastEamsBody?['tgc'], 'tgc-v1');
+    expect(client.lastParentTgc, 'tgc-v1');
     expect(cp?.cookies, 'JSESSIONID=eams-v2');
   });
 
@@ -283,7 +259,7 @@ void main() {
     expect(tree.eams.cookieProvider, isNotNull);
     expect(tree.eams.cookieProvider!.cookies, 'JSESSIONID=eams-v1');
     // The renew POST body used the parent's current tgc.
-    expect(client.lastEamsBody?['tgc'], 'tgc-v0');
+    expect(client.lastParentTgc, 'tgc-v0');
   });
 
   test('eams isAvailable is false until doRenew succeeds', () {
@@ -294,12 +270,12 @@ void main() {
     expect(tree.eams.cookieProvider, isNull);
   });
 
-  test('parent cpdaily renew clears eams derived cookie (cascade)', () async {
+  test('parent ids renew clears eams derived cookie (cascade)', () async {
     // First mint the eams cookie.
     await tree.eams.renew();
     expect(tree.eams.isAvailable, true);
     // Now renew the parent — the child's derived cookie must be cleared.
-    final ok = await tree.cpdaily.renew();
+    final ok = await tree.ids.renew();
     expect(ok, true);
     expect(tree.eams.isAvailable, false);
     expect(tree.eams.cookieProvider, isNull);
@@ -348,7 +324,7 @@ void main() {
       'two-level retry: eams renew 401 (stale parent tgc) triggers parent renew',
       () async {
     // Reset parent to a stale tgc that the eams endpoint rejects.
-    tree.cpdaily.setAccount(seedAccount(tgc: 'tgc-stale'));
+    tree.ids.setAccount(seedAccount(tgc: 'tgc-stale'));
     // Configure eams renew to fail on the stale tgc, then succeed after the
     // parent renews (rotating tgc to v1).
     client.eamsStatuses = [401, 200];
@@ -409,10 +385,8 @@ void main() {
   });
 }
 
-/// Mock HTTP client that counts /auth/renew and /auth/third-party/eams calls
-/// and serves a configurable sequence of statuses/bodies for other paths.
-/// The renew response rotates tgc + cookies by appending a version suffix so
-/// each renew is observable.
+/// Controlled local session renewals plus HTTP responses for business requests
+/// and probes. Cookie suffixes make each successful renewal observable.
 class _CountingClient extends http.BaseClient {
   int renewCalls = 0;
   int eamsCalls = 0;
@@ -421,50 +395,39 @@ class _CountingClient extends http.BaseClient {
   List<String> fetchBodies = const [];
   List<int> eamsStatuses = const [];
   List<String?> eamsTokens = const [];
-  Map<String, dynamic>? lastEamsBody;
-  Map<String, dynamic>? lastRenewBody;
+  String? lastParentTgc;
   int _renewVersion = 0;
   int _eamsVersion = 0;
+
+  Future<ThirdPartyAccount> renewAccount(ThirdPartyAccount current) async {
+    renewCalls++;
+    _renewVersion++;
+    return current.copyWith(raw: {
+      ...current.raw,
+      'tgc': 'tgc-v$_renewVersion',
+      'cookies': 'JSESSIONID=js-v$_renewVersion',
+    },);
+  }
+
+  Future<String> mintCookie(String nodeId, Map<String, dynamic> raw) async {
+    expect(nodeId, 'eams');
+    eamsCalls++;
+    lastParentTgc = raw['tgc'] as String;
+    _eamsVersion++;
+    final index = eamsCalls - 1;
+    final status = index < eamsStatuses.length ? eamsStatuses[index] : 200;
+    if (status != 200) {
+      throw IdsException('synthetic mint failure', credentialRejected: status == 401);
+    }
+    final token = index < eamsTokens.length ? eamsTokens[index] : 'JSESSIONID=eams-v$_eamsVersion';
+    if (token == null || token.isEmpty) throw const IdsException('synthetic missing cookie');
+    return token;
+  }
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final url = request.url.toString();
 
-    if (url.endsWith('/auth/renew')) {
-      renewCalls++;
-      lastRenewBody = request is http.Request
-          ? jsonDecode(request.body) as Map<String, dynamic>
-          : <String, dynamic>{};
-      _renewVersion++;
-      final resp = jsonEncode({
-        'success': true,
-        'sessionToken': 'st-v$_renewVersion',
-        'tgc': 'tgc-v$_renewVersion',
-        'userId': lastRenewBody?['userId'] ?? 'u1',
-        'tenantId': 't1',
-        'cookies': 'JSESSIONID=js-v$_renewVersion',
-      });
-      return _resp(resp, 200);
-    }
-
-    if (url.endsWith('/auth/third-party/eams')) {
-      eamsCalls++;
-      final body = request is http.Request
-          ? jsonDecode(request.body) as Map<String, dynamic>
-          : <String, dynamic>{};
-      lastEamsBody = body;
-      _eamsVersion++;
-      final idx = eamsCalls - 1;
-      final status = idx < eamsStatuses.length ? eamsStatuses[idx] : 200;
-      final token = idx < eamsTokens.length
-          ? eamsTokens[idx]
-          : 'JSESSIONID=eams-v$_eamsVersion';
-      final resp = jsonEncode({
-        'success': true,
-        'data': {'token': token},
-      });
-      return _resp(resp, status);
-    }
     if (url.contains('eams.shanghaitech.edu.cn/eams/stdDetail.action')) {
       return _resp('姓名：</td><td>Probe User</td>', 200);
     }

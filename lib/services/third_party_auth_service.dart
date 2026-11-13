@@ -3,24 +3,28 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/ids_passkey.dart';
 import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import 'api_base_url.dart';
 import 'campus_web_session.dart';
 import 'http_client.dart';
+import 'ids/ids_client.dart';
 import 'session/session_node.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
+import 'sync_envelope.dart' show SyncTombstone;
 
 /// Every session-node id, top-level and derived, in a stable order. Used to
 /// bulk-load persisted renew status at boot.
 const List<String> _allSessionNodeIds = [
-  'cpdaily',
+  'ids',
   'gradescope',
   'hydro',
   'eams',
   'elearning',
   'egateApp',
+  'oa',
 ];
 
 class ThirdPartyBindException implements Exception {
@@ -42,26 +46,52 @@ class ThirdPartyAuthService extends ChangeNotifier {
   // _onTreeChanged() call knows to bypass the pushIfDue throttle. Consumed
   // (reset to false) the moment _onTreeChanged reads it.
   bool _pendingForcePush = false;
-  // SMS context for cpdaily binding flow (set by sendCpdailySmsCode).
-  Map<String, dynamic>? _cpdailySmsContext;
+  final IdsClient _ids;
+  IdsSyncBinding? _idsBinding;
+  int _idsGeneration = 0;
+  Future<void> _idsWrites = Future.value();
+
+  // Serialize the short persistence/commit phase, never network or captcha waits.
+  Future<T> _writeIds<T>(Future<T> Function() action) {
+    final result = _idsWrites.then((_) => action());
+    _idsWrites = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  IdsSyncBinding? get idsBinding => _idsBinding;
+  bool get hasIdsPasskey => _idsBinding?.credential != null;
+  bool get usesIdsPasskey => idsAccount?.raw['authMethod'] == 'passkey';
+  bool get needsIdsRebind => idsAccount != null && !usesIdsPasskey;
+  Iterable<ThirdPartyAccount> get accountsForSync => accounts
+      .map(
+        (account) =>
+            account.platform == ThirdPartyPlatform.ids && account.raw['authMethod'] == 'passkey'
+                ? IdsSyncBinding.fromAccount(account)?.toAccount()
+                : account,
+      )
+      .whereType<ThirdPartyAccount>();
 
   late final SessionTree _tree;
   CampusWebSession? _webSession;
   CampusWebSession get campusWebSession =>
-      _webSession ??= CampusWebSession(cpdailyNode, _storage);
+      _webSession ??= CampusWebSession(idsNode, _storage);
   // Stable per-device id, loaded in [initialize]. Stamped onto every locally
   // mutated account so the cloud-sync LWW merge converges.
   String _deviceId = '';
 
-  // Renew status per session-node id (cpdaily/gradescope/hydro/eams/
+  // Renew status per session-node id (ids/gradescope/hydro/eams/
   // elearning), for the linked-accounts status indicator. Loaded at boot,
   // updated in-memory + persisted on every renew attempt. Local-only.
   final Map<String, RenewStatus> _renewStatuses = {};
   RenewStatus? renewStatus(String nodeId) => _renewStatuses[nodeId];
 
-  ThirdPartyAuthService(this._storage, this._http) {
+  ThirdPartyAuthService(this._storage, this._http, {IdsClient? idsClient})
+      : _ids = idsClient ?? IdsClient() {
     _tree = SessionTree(
       persist: _persistAccount,
+      localAccountRenew: _renewIdsAccount,
+      localCanRenew: () => hasIdsPasskey,
+      localCookieMint: _ids.mintCookie,
       http: _http,
       baseUrl: () => apiBaseUrl(_storage),
       persistDerived: _persistDerivedCookie,
@@ -84,19 +114,20 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// [SessionTree.withCookie] for 401-renew-retry) go through here.
   SessionTree get sessionTree => _tree;
 
-  /// Convenience: the CpDaily session node — parent of [eamsNode] and
-  /// [elearningNode]. Source of CASTGC / CpDaily cookies.
-  SessionNode get cpdailyNode => _tree.cpdaily;
+  /// Convenience: the IDS session node — parent of [eamsNode] and
+  /// [elearningNode]. Source of CASTGC / IDS cookies.
+  SessionNode get idsNode => _tree.ids;
 
-  /// Convenience: the EAMS downstream node (child of cpdaily).
+  /// Convenience: the EAMS downstream node (child of ids).
   SessionNode get eamsNode => _tree.eams;
 
-  /// Convenience: the eLearning downstream node (child of cpdaily).
+  /// Convenience: the eLearning downstream node (child of ids).
   SessionNode get elearningNode => _tree.elearning;
 
   /// Convenience: the egate-app (xshdapp activity check-in) downstream node
-  /// (child of cpdaily).
+  /// (child of ids).
   SessionNode get egateAppNode => _tree.egateApp;
+  SessionNode get oaNode => _tree.oa;
 
   /// Convenience: the Gradescope top-level node.
   SessionNode get gradescopeNode => _tree.gradescope;
@@ -110,13 +141,13 @@ class ThirdPartyAuthService extends ChangeNotifier {
   ThirdPartyAccount? account(ThirdPartyPlatform p) => _nodeAccount(p);
 
   List<ThirdPartyAccount> get _accountsSnapshot => [
-        _tree.cpdaily.account,
+        _tree.ids.account,
         _tree.gradescope.account,
         _tree.hydro.account,
       ].whereType<ThirdPartyAccount>().toList();
 
   ThirdPartyAccount? _nodeAccount(ThirdPartyPlatform p) => switch (p) {
-        ThirdPartyPlatform.cpdaily => _tree.cpdaily.account,
+        ThirdPartyPlatform.ids => _tree.ids.account,
         ThirdPartyPlatform.gradescope => _tree.gradescope.account,
         ThirdPartyPlatform.hydro => _tree.hydro.account,
       };
@@ -133,7 +164,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// [SyncService] to record a tombstone so the deletion survives the next
   /// LWW merge (instead of being resurrected by an older remote copy).
   /// Null until wired; safe to call.
-  void Function(ThirdPartyPlatform platform)? onUnbind;
+  Future<SyncTombstone> Function(ThirdPartyPlatform platform)? onUnbind;
 
   void _onTreeChanged({bool force = false}) {
     // While [applySyncMerge] is replaying a merged snapshot, suppress ALL
@@ -164,14 +195,30 @@ class ThirdPartyAuthService extends ChangeNotifier {
   Future<void> _persistAccount(
     ThirdPartyAccount updated, {
     bool force = false,
+    ThirdPartyAccount? expectedAccount,
   }) async {
-    // Stamp the renewed/refreshed account with this device's id + a fresh
-    // updatedAt so the cloud-sync LWW merge treats it as the newest version.
+    if (updated.platform == ThirdPartyPlatform.ids) {
+      await _writeIds(() async {
+        if (expectedAccount != null && !identical(_tree.ids.account, expectedAccount)) return;
+        if (updated.raw['authMethod'] != 'passkey' ||
+            _idsBinding?.credential == null ||
+            updated.raw['idsCredentialId'] != _idsBinding!.credential!.credentialId) {
+          throw const IdsException('IDS 绑定已变更');
+        }
+        await _storage.saveThirdPartyAccount(updated);
+        _suppressSyncPush = true;
+        try {
+          _tree.setAccount(updated.platform, updated);
+        } finally {
+          _suppressSyncPush = false;
+        }
+      });
+      notifyListeners();
+      return;
+    }
     final touched = _touch(updated);
     await _storage.saveThirdPartyAccount(touched);
     if (force) _pendingForcePush = true;
-    // Re-sync the node's in-memory copy so UI + cookieProvider see the
-    // stamped version. setAccount notifies; _onTreeChanged funnels it.
     _tree.setAccount(touched.platform, touched);
   }
 
@@ -193,11 +240,17 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// [onBindingsChanged] — the cookies are local, and the cloud push has nothing
   /// to gain from them.
   Future<void> _persistDerivedCookie(String nodeId, String? cookie) async {
-    if (cookie == null) {
-      await _storage.clearDerivedCookie(nodeId);
-    } else {
-      await _storage.saveDerivedCookie(nodeId, cookie);
-    }
+    final parent = _sessionNode(nodeId)?.parent;
+    final owner = parent?.account;
+    final epoch = parent?.epoch;
+    await _writeIds(() async {
+      if (!identical(parent?.account, owner) || parent?.epoch != epoch) return;
+      if (cookie == null) {
+        await _storage.clearDerivedCookie(nodeId);
+      } else {
+        await _storage.saveDerivedCookie(nodeId, cookie);
+      }
+    });
     notifyListeners();
   }
 
@@ -207,90 +260,78 @@ class ThirdPartyAuthService extends ChangeNotifier {
   ) =>
       _storage.saveNextRenewTimestamp(nodeId, timestamp);
 
-  /// Persist data discovered by the silent keepalive probe that follows renew.
-  /// Child cookies are stored locally; probe display values update the parent
-  /// account only when they contain a useful identity value.
+  /// Probes update a service's local cookie only. User identity comes from the
+  /// authenticated campus profile, never a child's display string.
   Future<void> _persistProbe(String nodeId, KeepaliveResult result) async {
-    if (nodeId == 'eams' || nodeId == 'elearning' || nodeId == 'egateApp') {
-      final cookies = result.cookies;
-      if (cookies != null && cookies.isNotEmpty) {
-        await _persistDerivedCookie(nodeId, cookies);
-      }
-    }
-
-    final identity = result.display.trim();
-    if (identity.isEmpty || identity.startsWith('HTTP ')) return;
-    final parent = _treeForNode(nodeId).parent;
-    final account = parent?.account;
-    if (account == null) return;
-
-    final updated = switch (nodeId) {
-      'eams' || 'elearning' => account.copyWith(name: identity),
-      'egateApp' => account.copyWith(sid: identity),
-      _ => null,
-    };
-    if (updated == null) return;
-    if (updated.name == account.name && updated.sid == account.sid) return;
-    await _persistAccount(updated, force: false);
+    final cookies = result.cookies;
+    if (cookies != null && cookies.isNotEmpty) await _persistDerivedCookie(nodeId, cookies);
   }
-
-  SessionNode _treeForNode(String nodeId) => switch (nodeId) {
-        'cpdaily' => _tree.cpdaily,
-        'gradescope' => _tree.gradescope,
-        'hydro' => _tree.hydro,
-        'eams' => _tree.eams,
-        'elearning' => _tree.elearning,
-        'egateApp' => _tree.egateApp,
-        _ => _tree.cpdaily,
-      };
 
   /// Stamp [acc] with this device's id + current time, for LWW merge.
   ThirdPartyAccount _touch(ThirdPartyAccount acc) {
     return acc.copyWith(updatedAt: DateTime.now(), deviceId: _deviceId);
   }
 
-  // -- CpDaily binding (single source of CASTGC / CpDaily session) --
+  // -- IDS binding (single source of CASTGC / IDS session) --
   //
-  // The cpdaily binding is the ONLY place CASTGC lives in the new
+  // The ids binding is the ONLY place CASTGC lives in the new
   // architecture. The primary GeekPie SSO session has no tgc/cookies; every
   // campus-system feature (schedule, blackboard, exam, oa-gym, webview
-  // features) must read its CpDaily session through these accessors instead
+  // features) must read its IDS session through these accessors instead
   // of touching `AuthService.session` fields directly.
 
-  /// True when a cpdaily binding exists. This is the gate every
+  /// True when an IDS binding exists. This is the gate every
   /// CASTGC-dependent feature must check before doing work.
-  bool get hasCpdailyBinding => _tree.cpdaily.account != null;
+  bool get hasIdsBinding => hasIdsPasskey;
 
-  /// The bound cpdaily account, or null.
-  ThirdPartyAccount? get cpdailyBinding => _tree.cpdaily.account;
+  /// The bound ids account, or null.
+  ThirdPartyAccount? get idsAccount => _tree.ids.account;
 
   /// Cookie string for campus-system requests, always ending with
-  /// `CASTGC=<tgc>` when a tgc is present (the form CpDaily/EAMS expects).
+  /// `CASTGC=<tgc>` when a tgc is present (the form IDS/EAMS expects).
   /// Returns '' when there is no binding or no tgc — callers should treat
   /// that as "session unavailable".
-  String cpdailyCookies() => _tree.cpdaily.cookieProvider?.cookies ?? '';
+  String idsCookies() => _tree.ids.cookieProvider?.cookies ?? '';
 
-  /// Student id surfaced by the cpdaily binding, or '' if unbound.
-  String get cpdailyStudentId => _tree.cpdaily.account?.cpdailyStudentId ?? '';
+  /// Student id surfaced by the ids binding, or '' if unbound.
+  String get idsStudentId => _tree.ids.account?.idsStudentId ?? '';
 
-  /// Best-effort renewal of the cpdaily binding's CpDaily session. Delegates
-  /// to [SessionNode.renew], which is single-flighted: concurrent callers
-  /// (two services hitting 401 at once) share ONE `/auth/renew` POST. On
-  /// success the refreshed raw is persisted and listeners notified via the
-  /// tree → [Service._onTreeChanged] path. Returns true on success.
+  /// Hydrate bindings and per-device sessions without network requests.
   Future<void> initialize() async {
     _deviceId = await _storage.ensureDeviceId();
     final loaded = await _storage.loadAllThirdPartyAccounts();
+    _idsBinding = IdsSyncBinding.fromAccount(
+      loaded.where((a) => a.platform == ThirdPartyPlatform.ids).firstOrNull,
+    );
+    final deletions = _storage.loadThirdPartyTombstones();
+    final idsDeletion = deletions.where((t) => t.platform == ThirdPartyPlatform.ids).firstOrNull;
+    if (idsDeletion != null) {
+      final deleted = IdsSyncBinding(
+        credential: null,
+        updatedAt: idsDeletion.deletedAt,
+        deviceId: idsDeletion.deviceId,
+      );
+      _idsBinding = _idsBinding?.merge(deleted) ?? deleted;
+    }
     // Seed each node with its persisted account. setAccount routes to the
     // matching node and notifies (boot hydration — the sync hook is not wired
     // yet, so no cloud push fires).
     for (final acc in loaded) {
+      final deletion = deletions.where((t) => t.platform == acc.platform).firstOrNull;
+      if (deletion != null &&
+          (deletion.deletedAt.isAfter(acc.updatedAt) ||
+              (deletion.deletedAt == acc.updatedAt &&
+                  deletion.deviceId.compareTo(acc.deviceId) >= 0))) {
+        await _storage.clearThirdPartyAccount(acc.platform);
+        if (acc.platform == ThirdPartyPlatform.ids) await _storage.clearAllDerivedCookies();
+        continue;
+      }
       _tree.setAccount(acc.platform, acc);
     }
     // Hydrate child node derived cookies so cold start can skip the SSO
     // bounce. These are best-effort — if stale, withCookie's 401 retry will
     // re-mint transparently.
-    for (final id in const ['eams', 'elearning', 'egateApp']) {
+    for (final id in const ['eams', 'elearning', 'egateApp', 'oa']) {
       final cookie = await _storage.loadDerivedCookie(id);
       _tree.setDerivedCookie(id, cookie);
     }
@@ -307,16 +348,23 @@ class ThirdPartyAuthService extends ChangeNotifier {
       );
     }
     for (final node in [
-      _tree.cpdaily,
+      _tree.ids,
       _tree.gradescope,
       _tree.hydro,
       _tree.eams,
       _tree.elearning,
       _tree.egateApp,
+      _tree.oa,
     ]) {
       if (node.isAvailable && node.nextRenewTimestamp == null) {
         await node.scheduleNextRenew();
       }
+    }
+    final key = _idsBinding?.credential;
+    if (key != null && (!usesIdsPasskey || _tree.ids.account?.account != key.username)) {
+      await _setIdsSession(_idsAccount(const {}));
+    } else if (key == null && usesIdsPasskey) {
+      await _setIdsSession(null);
     }
     _initialized = true;
     notifyListeners();
@@ -325,14 +373,175 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// Look up a [SessionNode] by its stable string id (matches
   /// [ThirdPartyPlatform.id] for top-level nodes, plus 'eams'/'elearning').
   SessionNode? _sessionNode(String nodeId) => switch (nodeId) {
-        'cpdaily' => _tree.cpdaily,
+        'ids' => _tree.ids,
         'gradescope' => _tree.gradescope,
         'hydro' => _tree.hydro,
         'eams' => _tree.eams,
         'elearning' => _tree.elearning,
         'egateApp' => _tree.egateApp,
+        'oa' => _tree.oa,
         _ => null,
       };
+
+  ThirdPartyAccount _idsAccount(Map<String, dynamic> raw, {String? name}) {
+    final account = _idsBinding!.toAccount();
+    final previous = idsAccount?.account == account.account ? idsAccount : null;
+    return account.copyWith(
+      name: name ?? previous?.name,
+      email: previous?.email,
+      raw: {...raw, ...account.raw},
+    );
+  }
+
+  Future<ThirdPartyAccount> _renewIdsAccount(ThirdPartyAccount current) async {
+    final key = _idsBinding?.credential;
+    if (key == null) throw const IdsException('请重新绑定 IDS Passkey', credentialRejected: true);
+    final session = await _ids.login(key, backedUp: _storage.idsBackedUpId == key.credentialId);
+    if (_idsBinding?.credential?.credentialId != key.credentialId) {
+      throw const IdsException('IDS 绑定已变更');
+    }
+    return _idsAccount(session.raw, name: session.name);
+  }
+
+  Future<bool> refreshNode(SessionNode node) async {
+    final parent = node.parent;
+    final owner = parent?.account;
+    final epoch = parent?.epoch;
+    if (await node.renew()) return true;
+    if (parent != null &&
+        parent.isAvailable &&
+        (!identical(parent.account, owner) || parent.epoch != epoch)) {
+      return node.renew();
+    }
+    if (node.parent == null || !node.lastRenewWasCredentialError) return false;
+    if (!await node.parent!.renew()) return false;
+    return node.renew();
+  }
+
+  Future<void> _setIdsSession(ThirdPartyAccount? account) async {
+    // Invalidate the old owner and every child synchronously. Late CAS/probe
+    // results must fail their owner checks before any storage await below.
+    _tree.setAccount(ThirdPartyPlatform.ids, account);
+    for (final id in const ['eams', 'elearning', 'egateApp', 'oa']) {
+      _tree.setDerivedCookie(id, null);
+    }
+    if (account != null && !_tree.ids.isAvailable) _tree.ids.seedNextRenewTimestamp(DateTime.now());
+    for (final id in const ['eams', 'elearning', 'egateApp', 'oa']) {
+      await _storage.clearDerivedCookie(id);
+    }
+    if (account == null) {
+      await _storage.clearThirdPartyAccount(ThirdPartyPlatform.ids);
+    } else {
+      await _storage.saveThirdPartyAccount(account);
+    }
+  }
+
+  Future<void> markIdsBackedUp(IdsSyncBinding? binding) async {
+    final id = binding?.credential?.credentialId;
+    if (id != null) await _storage.markIdsBackedUp(id);
+  }
+
+  Future<void> applyIdsSyncBinding(IdsSyncBinding? binding) async {
+    if (binding == null) return;
+    var changed = false;
+    await _writeIds(() async {
+      // Network results are snapshots. Reconcile against the state *now*, after
+      // any local bind/unbind that happened while the request was in flight.
+      final next = _idsBinding?.merge(binding) ?? binding;
+      if (jsonEncode(_idsBinding?.toJson()) == jsonEncode(next.toJson())) return;
+      final previous = _idsBinding?.credential?.credentialId;
+      final replacesKey = next.credential == null || previous != next.credential?.credentialId;
+      if (replacesKey) _idsGeneration++;
+      _idsBinding = next;
+      if (replacesKey) await _storage.clearIdsCandidate();
+      _suppressSyncPush = true;
+      try {
+        if (replacesKey) {
+          final key = next.credential;
+          if (key != null) {
+            await _setIdsSession(_idsAccount(const {}));
+          } else if (usesIdsPasskey) {
+            await _setIdsSession(null);
+          }
+        } else if (next.credential != null && idsAccount != null) {
+          final account = _idsAccount(idsAccount!.raw);
+          await _storage.saveThirdPartyAccount(account);
+          _tree.setAccount(ThirdPartyPlatform.ids, account);
+        }
+      } finally {
+        _suppressSyncPush = false;
+      }
+      changed = true;
+    });
+    if (changed) notifyListeners();
+  }
+
+  Future<ThirdPartyAccount> bindIds({
+    required String account,
+    required String password,
+    required IdsCaptchaPrompt promptCaptcha,
+    bool Function()? isCancelled,
+  }) async {
+    final generation = ++_idsGeneration;
+    void ensureCurrent() {
+      if (generation != _idsGeneration || isCancelled?.call() == true) {
+        throw const IdsException('IDS 绑定操作已取消或被替换');
+      }
+    }
+
+    IdsPasskey? key;
+    IdsSession? session;
+    final pending = await _writeIds(() async {
+      ensureCurrent();
+      return _storage.loadIdsCandidate();
+    });
+    if (pending?.account == account) {
+      try {
+        session = await _ids.login(pending!.credential);
+        ensureCurrent();
+        key = pending.credential;
+      } on IdsException catch (error) {
+        if (!error.credentialRejected) rethrow;
+        await _writeIds(() async {
+          ensureCurrent();
+          await _storage.clearIdsCandidate();
+        });
+      }
+    }
+    if (key == null) {
+      final registered = await _ids.register(
+        account,
+        password,
+        promptCaptcha: promptCaptcha,
+        saveCandidate: (credential) => _writeIds(() async {
+          ensureCurrent();
+          await _storage.saveIdsCandidate(account, credential);
+          ensureCurrent();
+        }),
+      );
+      ensureCurrent();
+      key = registered.credential;
+      session = registered.session;
+    }
+    final credential = key;
+    final bound = await _writeIds(() async {
+      ensureCurrent();
+      _idsBinding =
+          IdsSyncBinding(credential: credential, updatedAt: DateTime.now(), deviceId: _deviceId);
+      _suppressSyncPush = true;
+      final account = _idsAccount(session!.raw, name: session.name);
+      try {
+        await _setIdsSession(account);
+      } finally {
+        _suppressSyncPush = false;
+      }
+      await _storage.clearIdsCandidate();
+      return account;
+    });
+    ensureCurrent();
+    _onTreeChanged(force: true);
+    return bound;
+  }
 
   Future<ThirdPartyAccount> bind({
     required ThirdPartyPlatform platform,
@@ -346,6 +555,9 @@ class ThirdPartyAuthService extends ChangeNotifier {
     // wait for the next throttle window.
     bool forceSyncPush = false,
   }) async {
+    if (platform == ThirdPartyPlatform.ids) {
+      throw ThirdPartyBindException(platform, '请使用 IDS Passkey 绑定校园账号');
+    }
     final body = <String, dynamic>{
       'account': account,
       'password': password,
@@ -356,8 +568,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
       body['args'] = {'url': hydroOrigin};
     }
 
-    // cpdaily binds via the legacy 'egate' backend route; others use their id.
-    final route = platform.apiPath;
+    final route = platform.id;
     final resp = await _http.post(
       Uri.parse('$_baseUrl/auth/third-party/$route'),
       headers: {'Content-Type': 'application/json; charset=UTF-8'},
@@ -415,20 +626,46 @@ class ThirdPartyAuthService extends ChangeNotifier {
     return touched;
   }
 
+  Future<bool> unbindIdsWithRemote({required IdsVerificationPrompt promptVerification}) async {
+    final key = _idsBinding?.credential;
+    // Local removal and sync tombstones commit independently of school access.
+    // Keep only this operation's key in memory until its remote attempt ends.
+    await unbind(ThirdPartyPlatform.ids);
+    if (key == null) return false;
+    try {
+      await _ids.revoke(key, promptVerification: promptVerification);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> unbind(ThirdPartyPlatform platform) async {
+    if (platform == ThirdPartyPlatform.ids) {
+      ++_idsGeneration;
+      await _writeIds(() async {
+        final deletion = await onUnbind?.call(ThirdPartyPlatform.ids);
+        _idsBinding = IdsSyncBinding(
+          credential: null,
+          updatedAt: deletion?.deletedAt ?? DateTime.now(),
+          deviceId: deletion?.deviceId ?? _deviceId,
+        );
+        await _storage.clearIdsCandidate();
+        _suppressSyncPush = true;
+        try {
+          await _setIdsSession(null);
+        } finally {
+          _suppressSyncPush = false;
+        }
+      });
+      _onTreeChanged(force: true);
+      return;
+    }
+    await onUnbind?.call(platform);
     _tree.setAccount(platform, null);
     await _storage.clearThirdPartyAccount(platform);
-    // Unbinding cpdaily invalidates all downstream derived cookies.
-    if (platform == ThirdPartyPlatform.cpdaily) {
-      for (final id in const ['eams', 'elearning', 'egateApp']) {
-        _tree.setDerivedCookie(id, null);
-        await _storage.clearDerivedCookie(id);
-      }
-    }
     // Record a tombstone for the cloud-sync merge so this deletion is not
     // resurrected by an older remote copy on the next pull.
-    final unbindHook = onUnbind;
-    if (unbindHook != null) unbindHook(platform);
     // Force-push so the removal is immediately reflected in the cloud blob,
     // bypassing the pushIfDue throttle. Without this, a throttled skip would
     // leave the stale binding in the cloud and the next boot's pull would
@@ -446,7 +683,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
       await _storage.clearThirdPartyAccount(p);
     }
     // Downstream derived cookies are invalidated when bindings are replaced.
-    for (final id in const ['eams', 'elearning', 'egateApp']) {
+    for (final id in const ['eams', 'elearning', 'egateApp', 'oa']) {
       _tree.setDerivedCookie(id, null);
       await _storage.clearDerivedCookie(id);
     }
@@ -478,6 +715,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
         for (final a in kept) a.platform: a,
       };
       for (final p in ThirdPartyPlatform.values) {
+        if (p == ThirdPartyPlatform.ids) continue; // IDS is merged separately from local sessions.
         final next = byPlatform[p];
         final cur = _nodeAccount(p);
         // Skip no-op writes: if the merged account equals the current one
@@ -488,13 +726,6 @@ class ThirdPartyAuthService extends ChangeNotifier {
           await _storage.saveThirdPartyAccount(next);
           _tree.setAccount(p, next);
         } else {
-          // Clearing cpdaily invalidates downstream derived cookies.
-          if (p == ThirdPartyPlatform.cpdaily && cur != null) {
-            for (final id in const ['eams', 'elearning', 'egateApp']) {
-              _tree.setDerivedCookie(id, null);
-              await _storage.clearDerivedCookie(id);
-            }
-          }
           _tree.setAccount(p, null);
           await _storage.clearThirdPartyAccount(p);
         }
@@ -519,110 +750,66 @@ class ThirdPartyAuthService extends ChangeNotifier {
         a.deviceId == b.deviceId;
   }
 
-  /// Update the raw data of a bound account (e.g. after CpDaily session renewal).
+  /// Update the raw data of a bound account (e.g. after IDS session renewal).
   Future<void> updateRaw(
     ThirdPartyPlatform platform,
     Map<String, dynamic> newRaw,
   ) async {
     final acc = _nodeAccount(platform);
     if (acc == null) return;
+    if (platform == ThirdPartyPlatform.ids) {
+      final raw = {
+        ...newRaw,
+        'authMethod': acc.raw['authMethod'],
+        'idsCredentialId': acc.raw['idsCredentialId'],
+        'credential': acc.raw['credential'],
+      };
+      await _persistAccount(acc.copyWith(raw: raw), expectedAccount: acc);
+      return;
+    }
     final touched = _touch(acc.copyWith(raw: newRaw));
     await _storage.saveThirdPartyAccount(touched);
     _tree.setAccount(platform, touched);
   }
 
-  // -- CpDaily SMS binding flow --
-
-  /// Step 1: Send an SMS verification code for cpdaily binding.
-  /// Reuses the existing /api/auth/mobile/send-sms endpoint.
-  Future<void> sendCpdailySmsCode(String phone) async {
-    final resp = await _http.post(
-      Uri.parse('$_baseUrl/auth/mobile/send-sms'),
-      headers: {'Content-Type': 'application/json; charset=UTF-8'},
-      body: jsonEncode({'phone': phone}),
-      tag: 'cpdailySendSms',
-    );
-
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (data['success'] != true) {
-      throw ThirdPartyBindException(
-        ThirdPartyPlatform.cpdaily,
-        data['error'] as String? ?? 'Failed to send SMS',
-      );
-    }
-
-    _cpdailySmsContext = data['context'] as Map<String, dynamic>?;
-  }
-
-  /// Step 2: Complete cpdaily binding via SMS verification code.
-  Future<ThirdPartyAccount> bindCpdailySms({
-    required String phone,
-    required String code,
-    bool autoRenew = false,
-  }) async {
-    if (_cpdailySmsContext == null) {
-      throw ThirdPartyBindException(
-        ThirdPartyPlatform.cpdaily,
-        'Send SMS code first',
-      );
-    }
-
-    // cpdaily binds via the legacy 'egate' backend route.
-    final resp = await _http.post(
-      Uri.parse('$_baseUrl/auth/third-party/egate'),
-      headers: {'Content-Type': 'application/json; charset=UTF-8'},
-      body: jsonEncode({
-        'phone': phone,
-        'code': code,
-        'context': _cpdailySmsContext,
-      }),
-      tag: 'cpdailyBindSms',
-    );
-
-    Map<String, dynamic> data;
-    try {
-      data = jsonDecode(resp.body) as Map<String, dynamic>;
-    } catch (_) {
-      throw ThirdPartyBindException(
-        ThirdPartyPlatform.cpdaily,
-        'Invalid response (status ${resp.statusCode})',
-      );
-    }
-
-    if (data['success'] != true) {
-      throw ThirdPartyBindException(
-        ThirdPartyPlatform.cpdaily,
-        (data['error'] as String?) ?? 'login failed (${resp.statusCode})',
-      );
-    }
-
-    final d = (data['data'] as Map?)?.cast<String, dynamic>() ?? const {};
-    final token = d['token'] as String?;
-    if (token == null || token.isEmpty) {
-      throw ThirdPartyBindException(
-        ThirdPartyPlatform.cpdaily,
-        'response missing token',
-      );
-    }
-
-    final acc = ThirdPartyAccount(
-      platform: ThirdPartyPlatform.cpdaily,
-      account: phone,
-      sid: d['sid'] as String?,
-      name: d['name'] as String?,
-      email: d['email'] as String?,
-      token: token,
-      expire: (d['expire'] as num?)?.toInt(),
-      raw: (d['raw'] as Map?)?.cast<String, dynamic>() ?? const {},
-      boundAt: DateTime.now(),
-      autoRenew: false, // SMS binding does not support auto-renew
-    );
-
-    final touched = _touch(acc);
-    await _storage.saveThirdPartyAccount(touched);
-    _tree.setAccount(ThirdPartyPlatform.cpdaily, touched);
-    _cpdailySmsContext = null;
-    return touched;
+  Future<void> applyLegacyCampusSync(ThirdPartyAccount? incoming, SyncTombstone? deletion) async {
+    if (incoming == null && deletion == null) return;
+    var changed = false;
+    await _writeIds(() async {
+      if (hasIdsPasskey) return;
+      final current = idsAccount;
+      if (incoming != null && current == null && _idsBinding != null) {
+        final time = incoming.updatedAt.compareTo(_idsBinding!.updatedAt);
+        if (time < 0 || (time == 0 && incoming.deviceId.compareTo(_idsBinding!.deviceId) < 0)) {
+          return;
+        }
+      }
+      if (incoming != null && current != null && incoming.compareVersionTo(current) <= 0) return;
+      if (incoming == null && current != null && deletion != null) {
+        final time = deletion.deletedAt.compareTo(current.updatedAt);
+        if (time < 0 || (time == 0 && deletion.deviceId.compareTo(current.deviceId) < 0)) return;
+      }
+      if (incoming != null && incoming.raw['authMethod'] == 'passkey') return;
+      if (incoming == null && current == null) return;
+      if (current?.account != incoming?.account || current?.boundAt != incoming?.boundAt) {
+        ++_idsGeneration;
+      }
+      if (incoming == null && deletion != null) {
+        _idsBinding = IdsSyncBinding(
+          credential: null,
+          updatedAt: deletion.deletedAt,
+          deviceId: deletion.deviceId,
+        );
+      }
+      _suppressSyncPush = true;
+      try {
+        await _setIdsSession(incoming);
+      } finally {
+        _suppressSyncPush = false;
+      }
+      changed = true;
+    });
+    if (changed) notifyListeners();
   }
 
   /// Renew nodes whose persisted [SessionNode.nextRenewTimestamp] is due.
@@ -632,14 +819,16 @@ class ThirdPartyAuthService extends ChangeNotifier {
   Future<List<ThirdPartyPlatform>> autoRenewIfNeeded() async {
     final failed = <ThirdPartyPlatform>[];
     final nodes = [
-      _tree.cpdaily,
+      _tree.ids,
       _tree.gradescope,
       _tree.hydro,
       _tree.eams,
       _tree.elearning,
       _tree.egateApp,
+      _tree.oa,
     ];
     for (final node in nodes) {
+      if (node.id == 'oa' && !usesIdsPasskey) continue;
       if (!node.isRenewDue) continue;
       final ok = await node.renewIfDue();
       if (!ok && node.parent == null && node.canRenew) {
@@ -650,15 +839,38 @@ class ThirdPartyAuthService extends ChangeNotifier {
   }
 
   Future<void> clearAll() async {
-    final unbindHook = onUnbind;
-    for (final p in ThirdPartyPlatform.values) {
-      if (_nodeAccount(p) != null) {
-        if (unbindHook != null) unbindHook(p);
+    ++_idsGeneration;
+    await _writeIds(() async {
+      _suppressSyncPush = true;
+      try {
+        if (hasIdsPasskey || idsAccount != null) {
+          _idsBinding =
+              IdsSyncBinding(credential: null, updatedAt: DateTime.now(), deviceId: _deviceId);
+        }
+        final unbindHook = onUnbind;
+        for (final p in ThirdPartyPlatform.values) {
+          if (_nodeAccount(p) != null) {
+            final deletion = await unbindHook?.call(p);
+            if (p == ThirdPartyPlatform.ids && deletion != null) {
+              _idsBinding = IdsSyncBinding(
+                credential: null,
+                updatedAt: deletion.deletedAt,
+                deviceId: deletion.deviceId,
+              );
+            }
+          }
+          _tree.setAccount(p, null);
+        }
+        for (final id in const ['eams', 'elearning', 'egateApp', 'oa']) {
+          _tree.setDerivedCookie(id, null);
+        }
+        await _storage.clearIdsCandidate();
+        await _storage.clearAllThirdPartyAccounts();
+        await _storage.clearAllDerivedCookies();
+      } finally {
+        _suppressSyncPush = false;
       }
-      _tree.setAccount(p, null);
-    }
-    await _storage.clearAllThirdPartyAccounts();
-    await _storage.clearAllDerivedCookies();
+    });
     _onTreeChanged(force: true);
   }
 

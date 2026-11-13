@@ -15,7 +15,7 @@ import 'third_party_accounts_page.dart';
 
 /// "校园签到" — queries the egate-app (xshdapp) sign-in announcement +
 /// history and lets the user submit a check-in for a scanned WID. Session
-/// cookies are derived from the cpdaily binding (see EgateAppService), so
+/// cookies are derived from the ids binding (see EgateAppService), so
 /// this page mirrors OaGymPage's ready/unready gating.
 class EgateAppPage extends StatefulWidget {
   const EgateAppPage({super.key});
@@ -176,7 +176,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
                     listenable: Listenable.merge([auth, tpAuth]),
                     builder: (context, _) => PageRefreshButton(
                       onRefresh: () => _refresh(service),
-                      enabled: auth.isLoggedIn && tpAuth.hasCpdailyBinding,
+                      enabled: auth.isLoggedIn && tpAuth.hasIdsBinding,
                       refreshing: _loading,
                     ),
                   ),
@@ -185,7 +185,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
       body: ListenableBuilder(
         listenable: Listenable.merge([auth, tpAuth]),
         builder: (context, _) {
-          final ready = auth.isLoggedIn && tpAuth.hasCpdailyBinding;
+          final ready = auth.isLoggedIn && tpAuth.hasIdsBinding;
           if (!ready) {
             return ListView(
               padding: EdgeInsets.fromLTRB(16, topInset + 16, 16, 120),
@@ -203,21 +203,21 @@ class _EgateAppPageState extends State<EgateAppPage> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          auth.isLoggedIn ? '需要绑定 eGate 账号' : '需要先登录 TechPie',
+                          auth.isLoggedIn ? '需要绑定 IDS 账号' : '需要先登录 TechPie',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         const SizedBox(height: 8),
                         Text(
                           auth.isLoggedIn
-                              ? '校园签到复用 eGate 绑定的校园网登录态，请在「第三方账号」中绑定 eGate 后再使用。'
-                              : '校园签到复用 eGate 绑定的校园网登录态，不需要单独保存密码。',
+                              ? '校园签到复用 IDS 绑定的校园网登录态，请在「第三方账号」中绑定 IDS 后再使用。'
+                              : '校园签到复用 IDS 绑定的校园网登录态，不需要单独保存密码。',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 16),
                         FilledButton.icon(
                           onPressed: _handleLogin,
                           icon: const Icon(Icons.login),
-                          label: Text(auth.isLoggedIn ? '去绑定 eGate' : '去登录'),
+                          label: Text(auth.isLoggedIn ? '去绑定 IDS' : '去登录'),
                         ),
                       ],
                     ),
