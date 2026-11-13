@@ -7,33 +7,6 @@ import '../theme/colors.dart';
 import '../theme/tokens.dart';
 import 'gp_button.dart';
 
-/// Static skeleton block (no shimmer per Part A §8).
-final class GpSkeleton extends StatelessWidget {
-  const GpSkeleton({
-    super.key,
-    this.height = 16,
-    this.width,
-    this.radius = GpTokens.radiusS,
-  });
-
-  final double height;
-  final double? width;
-  final double radius;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      width: width,
-      decoration: BoxDecoration(
-        color: context.gpColors.surfaceDisabled,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: context.gpColors.border),
-      ),
-    );
-  }
-}
-
 /// Unified 4-state banner family per B1 §20.
 final class GpStateView extends StatelessWidget {
   const GpStateView({

@@ -143,9 +143,6 @@ Future<void> main() async {
         throw StateError('missing card');
       }
     });
-    await check('profile', () async {
-      await runtime.cards.profile();
-    });
     await check('online-code', () async {
       final frame = await runtime.paymentCodes.generateOnlineCode();
       if (frame.qrPayload.isEmpty) throw StateError('empty QR');

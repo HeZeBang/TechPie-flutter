@@ -40,8 +40,7 @@ class AuthService extends ChangeNotifier {
   /// main.dart to avoid a circular construction dependency.
   Future<void> Function()? onLogin;
 
-  AuthService(this._storage, this._http, this._uniAuth, {DebugLogger? logger})
-      : _logger = logger;
+  AuthService(this._storage, this._http, this._uniAuth, {DebugLogger? logger}) : _logger = logger;
 
   final DebugLogger? _logger;
 
@@ -184,6 +183,31 @@ class AuthService extends ChangeNotifier {
     } finally {
       _loading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> deleteAccount({
+    required String expectedUserId,
+  }) async {
+    void checkIdentity() {
+      if (expectedUserId.isEmpty || _session?.userId != expectedUserId) {
+        throw Exception('登录账号已变化，请重新打开注销页面。');
+      }
+    }
+
+    checkIdentity();
+    await tryRenewSession();
+    checkIdentity();
+    final token = _session?.geekpieToken;
+    if (token == null || token.isEmpty) {
+      throw Exception('登录已失效，请重新登录。');
+    }
+    await _uniAuth.deleteAccount(token, expectedUserId);
+    if (_session?.userId == expectedUserId) {
+      await _storage.setSyncEnabled(false);
+      await _storage.clearSyncMasterKey();
+      await _storage.setSyncLastAt('');
+      await logout();
     }
   }
 

@@ -1,6 +1,6 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:techpie/features/campus_card/presentation/scanner/scanner_geometry.dart';
+import 'package:techpie/widgets/scanner/scanner_geometry.dart';
 
 void main() {
   test('recognition window matches the guide on a phone', () {
