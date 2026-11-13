@@ -1,8 +1,26 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
 import 'debug_logger.dart';
+
+String _appProxy = '';
+
+class TechPieHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client = super.createHttpClient(context);
+    // Read the current choice on every request, including existing clients.
+    client.findProxy = (_) => _appProxy.isEmpty ? 'DIRECT' : 'PROXY $_appProxy';
+    return client;
+  }
+}
+
+void configureAppProxy(String value) {
+  _appProxy = value.trim();
+  HttpOverrides.global = TechPieHttpOverrides();
+}
 
 class LoggingHttpClient {
   final http.Client _inner;
