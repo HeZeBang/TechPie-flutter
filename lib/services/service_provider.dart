@@ -15,6 +15,7 @@ import 'theme_service.dart';
 import 'third_party_auth_service.dart';
 import 'uni_auth_service.dart';
 import 'update_service.dart';
+import 'wear/wear_engine_service.dart';
 
 class ServiceProvider extends InheritedWidget {
   final AuthService authService;
@@ -32,6 +33,7 @@ class ServiceProvider extends InheritedWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final WearEngineService? wearEngineService;
 
   const ServiceProvider({
     super.key,
@@ -50,6 +52,7 @@ class ServiceProvider extends InheritedWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.wearEngineService,
     required super.child,
   });
 
@@ -76,5 +79,6 @@ class ServiceProvider extends InheritedWidget {
       updateService != oldWidget.updateService ||
       campusCardService != oldWidget.campusCardService ||
       ecardBindService != oldWidget.ecardBindService ||
-      ecardWidgetService != oldWidget.ecardWidgetService;
+      ecardWidgetService != oldWidget.ecardWidgetService ||
+      wearEngineService != oldWidget.wearEngineService;
 }

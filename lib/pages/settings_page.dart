@@ -37,6 +37,7 @@ import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
 import 'feedback_page.dart';
+import 'huawei_watch_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'third_party_bind_page.dart';
@@ -368,16 +369,36 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const Divider(),
-            if (isIos())
+
+            if (kIsWeb || defaultTargetPlatform != TargetPlatform.linux) ...[
+              // Watch section
+              _sectionHeader(theme, 'Watch'),
               ListTile(
                 leading: const Icon(Icons.watch_outlined),
-                title: const Text('Apple Watch'),
+                title: const Text('Huawei Watch'),
+                subtitle: const Text('华为运动手表'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  pushAdaptivePage<void>(context,
-                      builder: (_) => const WatchSettingsPage(),),
+                  pushAdaptivePage<void>(
+                    context,
+                    builder: (_) => const HuaweiWatchPage(),
+                  ),
                 ),
               ),
+              if (isIos())
+                ListTile(
+                  leading: const Icon(Icons.watch_outlined),
+                  title: const Text('Apple Watch'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => unawaited(
+                    pushAdaptivePage<void>(
+                      context,
+                      builder: (_) => const WatchSettingsPage(),
+                    ),
+                  ),
+                ),
+              const Divider(),
+            ],
 
             // Appearance section
             _sectionHeader(theme, 'Appearance'),

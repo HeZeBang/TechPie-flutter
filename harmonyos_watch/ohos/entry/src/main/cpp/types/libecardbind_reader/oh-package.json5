@@ -1,0 +1,6 @@
+{
+  "name": "libecardbind_reader.so",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "Packet I/O for the eCard bind tunnel's DNS responder (HarmonyOS)"
+}

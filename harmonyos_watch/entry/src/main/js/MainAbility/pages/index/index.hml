@@ -1,0 +1,147 @@
+<div class="screen">
+  <text class="startup-error" style="font-size: {{ bodySize }};" if="{{ startupFailed }}">{{ error }}</text>
+  <list class="content" if="{{ !startupFailed &amp;&amp; view !== 'code' }}">
+    <list-item><div class="edge-space"></div></list-item>
+    <list-item>
+      <div class="section header">
+        <text class="title" style="font-size: {{ titleSize }};">{{ view === 'home' ? 'TechPie' : (view === 'ddl' ? '待办 DDL' : (view === 'schedule' ? '课表' : (view === 'account' ? '我的账号' : '连接帮助'))) }}</text>
+        <text class="status" style="font-size: {{ captionSize }};">{{ status }}</text>
+      </div>
+    </list-item>
+    <list-item if="{{ alertTitle !== '' }}">
+      <div class="section">
+        <div class="card">
+          <text class="caption urgent" style="font-size: {{ captionSize }};">{{ alertHint }}</text>
+          <text class="headline" style="font-size: {{ headlineSize }};">{{ alertTitle }}</text>
+          <text class="support" style="font-size: {{ bodySize }};" if="{{ vibrationError !== '' }}">{{ vibrationError }}</text>
+        </div>
+        <input class="primary" type="button" value="知道了" onclick="dismissAlert" />
+      </div>
+    </list-item>
+    <list-item if="{{ view === 'home' }}">
+      <div class="section">
+        <input class="primary" type="button" value="校园码" onclick="showCode" />
+        <div class="card">
+          <text class="caption accent" style="font-size: {{ captionSize }};">下一节课</text>
+          <text class="headline" style="font-size: {{ headlineSize }};">{{ nextCourse }}</text>
+          <text class="support" style="font-size: {{ bodySize }};">{{ nextCourseTime }}</text>
+          <text class="support" style="font-size: {{ bodySize }};">{{ nextLocation }}</text>
+        </div>
+      </div>
+    </list-item>
+    <list-item if="{{ view === 'home' }}">
+      <div class="section">
+        <input class="secondary" type="button" value="查看课表" onclick="showSchedule" />
+        <div class="card">
+          <text class="caption urgent" style="font-size: {{ captionSize }};">即将截止</text>
+          <text class="headline" style="font-size: {{ headlineSize }};">{{ nextTitle }}</text>
+          <text class="support" style="font-size: {{ bodySize }};">{{ nextDue }}</text>
+        </div>
+        <input class="secondary" type="button" value="待办 DDL" onclick="showDdl" />
+        <input class="secondary" type="button" value="我的账号" onclick="showAccount" />
+        <input class="secondary" type="button" value="连接帮助" onclick="showGuide" />
+      </div>
+    </list-item>
+    <list-item if="{{ view === 'schedule' }}">
+      <div class="section">
+        <text class="day-title" style="font-size: {{ headlineSize }};">{{ dayLabel }}</text>
+        <div class="day-actions">
+          <input class="day-button" type="button" value="前一天" onclick="previousDay" if="{{ dayOffset > 0 }}" />
+          <input class="day-button" type="button" value="后一天" onclick="nextDay" if="{{ dayOffset < 6 }}" />
+        </div>
+        <text class="empty" style="font-size: {{ headlineSize }};" if="{{ courses.length === 0 }}">{{ scheduleEmpty }}</text>
+      </div>
+    </list-item>
+    <list-item for="{{ view === 'schedule' ? courses : [] }}">
+      <div class="section">
+        <div class="card">
+          <text class="caption accent" style="font-size: {{ captionSize }};">{{ $item.time }}</text>
+          <text class="headline" style="font-size: {{ headlineSize }};">{{ $item.name }}</text>
+          <text class="support" style="font-size: {{ bodySize }};">{{ $item.location }}</text>
+        </div>
+      </div>
+    </list-item>
+    <list-item if="{{ view === 'schedule' }}">
+      <div class="section">
+        <text class="support" style="font-size: {{ bodySize }};" if="{{ scheduleTruncated }}">课程较多，已同步前 50 项</text>
+        <input class="secondary" type="button" value="{{ syncing ? '正在更新…' : '同步课表' }}" onclick="refreshDdl" />
+      </div>
+    </list-item>
+    <list-item if="{{ view === 'ddl' }}">
+      <div class="section">
+        <text class="caption centered" style="font-size: {{ captionSize }};">{{ updated }}</text>
+        <text class="empty" style="font-size: {{ headlineSize }};" if="{{ deadlines.length === 0 }}">{{ ddlEmpty }}</text>
+      </div>
+    </list-item>
+    <list-item for="{{ view === 'ddl' ? deadlines : [] }}">
+      <div class="section">
+        <div class="card">
+          <text class="caption urgent" style="font-size: {{ captionSize }};">{{ $item.hint }}</text>
+          <text class="headline" style="font-size: {{ headlineSize }};">{{ $item.title }}</text>
+          <text class="support" style="font-size: {{ bodySize }};" if="{{ $item.course !== '' }}">{{ $item.course }}</text>
+          <text class="due" style="font-size: {{ actionSize }};">{{ $item.due }}</text>
+        </div>
+      </div>
+    </list-item>
+    <list-item if="{{ view === 'ddl' }}">
+      <div class="section">
+        <text class="caption centered" style="font-size: {{ captionSize }};">{{ pageLabel }}</text>
+        <input class="secondary" if="{{ hasPrevious }}" type="button" value="上一页" onclick="previousPage" />
+        <input class="secondary" if="{{ hasNext }}" type="button" value="下一页" onclick="nextPage" />
+        <input class="secondary" type="button" value="{{ syncLabel }}" onclick="refreshDdl" />
+        <text class="support" style="font-size: {{ bodySize }};" if="{{ truncated }}">更多待办请在手机查看</text>
+        <text class="support" style="font-size: {{ bodySize }};">{{ reminderText }}</text>
+      </div>
+    </list-item>
+    <list-item if="{{ view === 'account' }}">
+      <div class="section">
+        <div class="card">
+          <text class="caption" style="font-size: {{ captionSize }};">姓名</text>
+          <text class="headline" style="font-size: {{ headlineSize }};">{{ name || '待同步' }}</text>
+          <text class="caption identity-label" style="font-size: {{ captionSize }};">学号</text>
+          <text class="headline" style="font-size: {{ headlineSize }};">{{ studentId || '待同步' }}</text>
+        </div>
+        <text class="support" style="font-size: {{ bodySize }};">{{ detail }}</text>
+        <input class="secondary" type="button" value="{{ largeText ? '恢复标准字号' : '放大文字 140%' }}" onclick="toggleTextSize" />
+        <input class="secondary" type="button" value="{{ syncing ? '正在更新…' : '同步账号' }}" onclick="refreshDdl" />
+      </div>
+    </list-item>
+    <list-item if="{{ view === 'guide' }}">
+      <div class="section">
+        <div class="card">
+          <text class="headline" style="font-size: {{ headlineSize }};">1. 配对手表</text>
+          <text class="support" style="font-size: {{ bodySize }};">在华为运动健康中连接手表。</text>
+        </div>
+        <div class="card">
+          <text class="headline" style="font-size: {{ headlineSize }};">2. 手机连接</text>
+          <text class="support" style="font-size: {{ bodySize }};">手机 TechPie → Settings → HUAWEI WATCH → 连接。</text>
+        </div>
+        <text class="support" style="font-size: {{ bodySize }};">离开应用会清除账号与校园码。</text>
+        <input class="secondary" type="button" value="重新连接" onclick="retryConnection" />
+      </div>
+    </list-item>
+    <list-item>
+      <div class="section">
+        <text class="error" style="font-size: {{ bodySize }};" if="{{ error !== '' }}">{{ error }}</text>
+        <input class="secondary" if="{{ view !== 'home' }}" type="button" value="返回首页" onclick="goHome" />
+      </div>
+    </list-item>
+    <list-item><div class="edge-space"></div></list-item>
+  </list>
+  <list class="code-page" if="{{ view === 'code' }}">
+    <list-item><div class="edge-space"></div></list-item>
+    <list-item><div class="section">
+    <text class="code-title" style="font-size: {{ actionSize }};">校园码</text>
+    <canvas class="qr" ref="qr" show="{{ codeVisible }}"></canvas>
+    <text class="code-empty" style="font-size: {{ actionSize }};" if="{{ !codeVisible }}">{{ error || codeMessage }}</text>
+    <text class="code-countdown" style="font-size: {{ captionSize }};" if="{{ codeVisible }}">{{ codeMessage }}</text>
+    </div></list-item>
+    <list-item><div class="section">
+    <input class="code-action" type="button" value="{{ codeLabel }}" onclick="refreshCode" />
+    </div></list-item>
+    <list-item><div class="section">
+    <input class="code-action code-back" type="button" value="返回" onclick="goHome" />
+    </div></list-item>
+    <list-item><div class="edge-space"></div></list-item>
+  </list>
+</div>

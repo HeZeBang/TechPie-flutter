@@ -14,6 +14,7 @@ import android.provider.CalendarContract.Events
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import club.geekpie.techpie.ecardbind.EcardBindVpnService
+import club.geekpie.techpie.wear.WearEngineBridge
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -25,6 +26,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var ecardWidgets: EcardWidgetBridge? = null
     private var ecardFeedback: EcardFeedback? = null
+    private var wearEngine: WearEngineBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -32,6 +34,7 @@ class MainActivity : FlutterActivity() {
             it.capture(intent, notifyFlutter = false)
         }
         ecardFeedback = EcardFeedback(this, flutterEngine.dartExecutor.binaryMessenger)
+        wearEngine = WearEngineBridge(this, flutterEngine.dartExecutor.binaryMessenger)
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -82,6 +85,8 @@ class MainActivity : FlutterActivity() {
         ecardWidgets = null
         ecardFeedback?.dispose()
         ecardFeedback = null
+        wearEngine?.dispose()
+        wearEngine = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
