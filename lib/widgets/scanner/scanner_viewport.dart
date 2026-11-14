@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import '../../features/campus_card/domain/ports/platform_ports.dart';
-import '../../features/campus_card/platform/scanner/mobile_scanner_session.dart';
+import 'mobile_scanner_session.dart';
 import 'scanner_geometry.dart';
+import 'scanner_port.dart';
 
 /// Attaches the platform camera preview to the shared scanner page.
 final class ScannerViewport extends StatelessWidget {

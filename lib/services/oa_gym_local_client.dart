@@ -40,8 +40,6 @@ class OaGymLocalClient {
           data = await _search(session, parameters, venues, timeSlots);
         case 'oa/gym/book':
           data = await _book(session, (parameters['booking'] as Map).cast<String, dynamic>());
-        case 'oa/gym/profile':
-          data = await _profile(session);
         default:
           throw const OaGymLocalException('不支持的 OA 请求');
       }
@@ -55,30 +53,6 @@ class OaGymLocalClient {
         path.endsWith('/book') ? '预约连接中断，请先查询预约记录确认结果，避免重复提交' : '无法连接学校 OA，请检查网络后重试',
       );
     }
-  }
-
-  Future<Map<String, String>> _profile(_OaSession session) async {
-    var userId = await session.cookie('loginidweaver');
-    if (userId == null || userId.isEmpty) {
-      await session.send('/workflow/request/AddRequest.jsp', query: {'workflowid': '14862'});
-      userId = await session.cookie('loginidweaver');
-    }
-    if (userId == null || userId.isEmpty) {
-      throw const OaGymLocalException('无法确认 OA 当前用户，请刷新登录态后重试');
-    }
-    // The public resource card masks phone numbers. Read the signed-in user's
-    // own contact form, without submitting it or accepting a caller-supplied ID.
-    final html = await session.send(
-      '/hrm/resource/HrmResourceContactEdit.jsp',
-      query: {'isfromtab': 'true', 'id': userId, 'isView': '1'},
-    );
-    final form = parse(html).querySelector('form#resource');
-    if (form?.querySelector('input[name="id"]')?.attributes['value'] != userId) {
-      throw const OaGymLocalException('OA 未返回当前用户的联系信息，请重试或手动填写');
-    }
-    String value(String name) =>
-        form!.querySelector('input[name="$name"]')?.attributes['value']?.trim() ?? '';
-    return {'phone': value('mobile'), 'email': value('email')};
   }
 
   Future<Map<String, dynamic>> _metadata(_OaSession session) async {

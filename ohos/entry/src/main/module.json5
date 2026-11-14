@@ -27,12 +27,6 @@
         "backgroundModes": [
           "dataTransfer"
         ],
-        "metadata": [
-          {
-            "name": "ohos.ability.shortcuts",
-            "resource": "$profile:shortcuts_config"
-          }
-        ],
         "skills": [
           {
             "entities": [
@@ -43,14 +37,6 @@
             ]
           }
         ]
-      }
-    ],
-    "extensionAbilities": [
-      {
-        "name": "EcardBindVpnAbility",
-        "srcEntry": "./ets/ecardbind/EcardBindVpnAbility.ets",
-        "type": "vpn",
-        "exported": false
       }
     ],
     "requestPermissions": [

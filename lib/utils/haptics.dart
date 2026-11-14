@@ -48,7 +48,7 @@ final class AppHapticPulse {
 /// A named waveform, optionally with the sound that plays with it.
 ///
 /// The dictionary below is the single source of vibration in the app: the
-/// feature's settings screen, the host's navigation bar and the eCard events all
+/// feature's settings screen, the host's navigation bar all
 /// name a waveform from [AppHaptics] instead of each carrying its own idea of
 /// what a tap or a success feels like.
 @immutable
@@ -77,7 +77,7 @@ final class AppHapticWaveform {
 /// The app's vibration dictionary, and the one place that plays it.
 ///
 /// Mechanism only: whether a waveform plays at all belongs to the caller (the
-/// eCard settings screen owns per-scenario vibration and sound switches), and a
+/// settings screen owns per-scenario vibration and sound switches), and a
 /// platform without a player does nothing at all. It is deliberately not faked
 /// with `HapticFeedback`: that would give the same action two different feels
 /// depending on the device, which is the problem this library exists to remove.
@@ -134,31 +134,6 @@ abstract final class AppHaptics {
     ],
   );
 
-  /// The two designed patterns pair short pulses with a sound: a card payment
-  /// landing, and the app noticing it went offline.
-  static const paymentSuccess = AppHapticWaveform(
-    id: 'paymentSuccess',
-    pulses: [
-      AppHapticPulse(atMs: 0, durationMs: 18, intensity: 0.75, sharpness: 0.8),
-      AppHapticPulse(atMs: 140, durationMs: 28, intensity: 1.0, sharpness: 0.9),
-    ],
-    soundAsset: 'assets/campus_card/audio/payment-success.wav',
-    soundDurationMs: 1397,
-  );
-
-  /// Four short ticks spread across the opening of the disconnect sound.
-  static const networkDisconnected = AppHapticWaveform(
-    id: 'networkDisconnected',
-    pulses: [
-      AppHapticPulse(atMs: 0, durationMs: 16, intensity: 0.45, sharpness: 0.6),
-      AppHapticPulse(atMs: 110, durationMs: 16, intensity: 0.40, sharpness: 0.6),
-      AppHapticPulse(atMs: 225, durationMs: 18, intensity: 0.50, sharpness: 0.7),
-      AppHapticPulse(atMs: 340, durationMs: 20, intensity: 0.65, sharpness: 0.7),
-    ],
-    soundAsset: 'assets/campus_card/audio/network-disconnected.wav',
-    soundDurationMs: 1104,
-  );
-
   /// Every waveform, for the contract tests and for the settings screen.
   static const Map<String, AppHapticWaveform> all = {
     'tabHold': tabHold,
@@ -169,8 +144,6 @@ abstract final class AppHaptics {
     'success': success,
     'warning': warning,
     'error': error,
-    'paymentSuccess': paymentSuccess,
-    'networkDisconnected': networkDisconnected,
   };
 
   /// Places that can play a waveform. Anywhere else this is a no-op, on purpose.
@@ -181,7 +154,7 @@ abstract final class AppHaptics {
 
   /// Plays [waveform], with its sound when [sound] is asked for and the waveform
   /// has one. Failures are swallowed: feedback must never fail the action that
-  /// asked for it, and a confirmed payment must not hang on a vibration.
+  /// asked for it, and a navigation action must not hang on a vibration.
   static Future<void> play(
     AppHapticWaveform waveform, {
     bool vibration = true,

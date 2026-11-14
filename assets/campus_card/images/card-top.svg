@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="746" height="126" viewBox="0 0 746 126">
-  <defs>
-    <clipPath id="topCorners"><path d="M0 14A14 14 0 0 1 14 0H732A14 14 0 0 1 746 14V126H0V14Z"/></clipPath>
-  </defs>
-  <g clip-path="url(#topCorners)">
-    <rect width="746" height="126" fill="#A90710"/>
-  </g>
-</svg>

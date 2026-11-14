@@ -19,7 +19,6 @@ import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/schedule_picker_sheet.dart';
-import 'campus_card_account_page.dart';
 import 'ids_bind_page.dart';
 import 'third_party_bind_page.dart';
 
@@ -71,7 +70,6 @@ class ThirdPartyAccountsPage extends StatelessWidget {
     final sp = ServiceProvider.of(context);
     final tpAuth = sp.thirdPartyAuthService;
     final auth = sp.authService;
-    final campusCard = sp.campusCardService;
     final theme = Theme.of(context);
     final useIosChrome = isIos();
     final useLegacyIosChrome = usesLegacyIosChrome();
@@ -101,7 +99,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
             )
           : const BlurredAppBar(title: Text('Linked Accounts')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([tpAuth, auth, campusCard]),
+        listenable: Listenable.merge([tpAuth, auth]),
         builder: (context, _) {
           final idsBound = tpAuth.hasIdsBinding;
           return ListView(
@@ -160,29 +158,11 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                 renewStatus: tpAuth.renewStatus('hydro'),
               ),
               const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.account_balance_wallet_outlined),
-                title: const Text('eCard'),
-                subtitle: Text(
-                  campusCard.configured
-                      ? '${campusCard.openIdChannel.label} · ${campusCard.maskedOpenId}'
-                      : '未连接',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => unawaited(
-                  pushAdaptivePage<void>(
-                    context,
-                    builder: (_) => const CampusCardAccountPage(),
-                  ),
-                ),
-              ),
-              const Divider(height: 1),
-
               const SizedBox(height: 16),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  '绑定信息保存在本机安全存储中。开启 Cloud sync 后，绑定信息与 eCard OPENID 会经过端到端加密后备份。',
+                  '绑定信息保存在本机安全存储中。开启 Cloud sync 后，绑定信息会经过端到端加密后备份。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

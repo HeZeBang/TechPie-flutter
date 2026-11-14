@@ -3,17 +3,12 @@ package club.geekpie.techpie
 import android.Manifest
 import android.content.ContentUris
 import android.content.ContentValues
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.VpnService
-import android.os.Handler
-import android.os.Looper
 import android.provider.CalendarContract
 import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import club.geekpie.techpie.ecardbind.EcardBindVpnService
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -21,17 +16,11 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var pendingCalendarImport: PendingCalendarImport? = null
-    private var pendingVpnConsent: PendingVpnConsent? = null
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var ecardWidgets: EcardWidgetBridge? = null
-    private var ecardFeedback: EcardFeedback? = null
+    private var appFeedback: AppFeedback? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        ecardWidgets = EcardWidgetBridge(this, flutterEngine.dartExecutor.binaryMessenger).also {
-            it.capture(intent, notifyFlutter = false)
-        }
-        ecardFeedback = EcardFeedback(this, flutterEngine.dartExecutor.binaryMessenger)
+        appFeedback = AppFeedback(this, flutterEngine.dartExecutor.binaryMessenger)
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -43,113 +32,12 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            ECARD_BIND_CHANNEL,
-        ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "start" -> handleStartEcardBindHijack(call, result)
-                "stop" -> {
-                    // The service cannot rely on onDestroy here: the VPN
-                    // framework holds a binding for as long as the interface
-                    // exists, so stopService() alone would leave the tunnel up.
-                    EcardBindVpnService.stopTunnel()
-                    stopService(Intent(this, EcardBindVpnService::class.java))
-                    result.success(
-                        if (EcardBindVpnService.active) "active" else "inactive",
-                    )
-                }
-                "status" -> result.success(
-                    if (EcardBindVpnService.active) "active" else "inactive",
-                )
-                else -> result.notImplemented()
-            }
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        ecardWidgets?.capture(intent, notifyFlutter = true)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        pendingVpnConsent?.let {
-            pendingVpnConsent = null
-            it.result.error("engine_detached", "The VPN consent request was dropped.", null)
-        }
-        ecardWidgets?.dispose()
-        ecardWidgets = null
-        ecardFeedback?.dispose()
-        ecardFeedback = null
+        appFeedback?.dispose()
+        appFeedback = null
         super.cleanUpFlutterEngine(flutterEngine)
-    }
-
-    private fun handleStartEcardBindHijack(
-        call: MethodCall,
-        result: MethodChannel.Result,
-    ) {
-        val host = call.argument<String>("host")?.trim()
-        val ip = call.argument<String>("ip")?.trim()
-        if (host.isNullOrEmpty() || ip.isNullOrEmpty()) {
-            result.error("bad_args", "Missing host or ip for the DNS hijack.", null)
-            return
-        }
-        if (pendingVpnConsent != null) {
-            result.error("vpn_request_in_progress", "A VPN consent request is already pending.", null)
-            return
-        }
-
-        val request = PendingVpnConsent(
-            host = host,
-            ip = ip,
-            result = result,
-        )
-        val consent = VpnService.prepare(this)
-        if (consent == null) {
-            // Already prepared (or consented before): straight to the service.
-            startEcardBindHijack(request)
-            return
-        }
-        pendingVpnConsent = request
-        @Suppress("DEPRECATION")
-        startActivityForResult(consent, REQUEST_VPN_CONSENT)
-    }
-
-    @Deprecated("VpnService.prepare hands back an Intent, so consent arrives here.")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode != REQUEST_VPN_CONSENT) return
-        val request = pendingVpnConsent ?: return
-        pendingVpnConsent = null
-
-        if (resultCode == RESULT_OK) {
-            startEcardBindHijack(request)
-        } else {
-            request.result.success("denied")
-        }
-    }
-
-    private fun startEcardBindHijack(request: PendingVpnConsent) {
-        val intent = Intent(this, EcardBindVpnService::class.java)
-            .putExtra(EcardBindVpnService.REQUEST_HOST_ARG, request.host)
-            .putExtra(EcardBindVpnService.REQUEST_IP_ARG, request.ip)
-        startService(intent)
-        // The interface exists a moment after the service starts, so answer with
-        // what is actually true instead of a hopeful "active".
-        reportEcardBindState(request.result)
-    }
-
-    private fun reportEcardBindState(result: MethodChannel.Result, attempt: Int = 0) {
-        if (EcardBindVpnService.active || attempt >= VPN_STATE_ATTEMPTS) {
-            result.success(if (EcardBindVpnService.active) "active" else "inactive")
-            return
-        }
-        mainHandler.postDelayed(
-            { reportEcardBindState(result, attempt + 1) },
-            VPN_STATE_INTERVAL_MS,
-        )
     }
 
     private fun handleImportCalendarEvents(
@@ -324,19 +212,9 @@ class MainActivity : FlutterActivity() {
         val result: MethodChannel.Result,
     )
 
-    private data class PendingVpnConsent(
-        val host: String,
-        val ip: String,
-        val result: MethodChannel.Result,
-    )
-
     private companion object {
         const val CALENDAR_IMPORTER_CHANNEL = "techpie/calendar_importer"
-        const val ECARD_BIND_CHANNEL = "techpie/ecard_bind"
         const val REQUEST_CALENDAR_PERMISSIONS = 48291
-        const val REQUEST_VPN_CONSENT = 0x0ECB
-        const val VPN_STATE_ATTEMPTS = 15
-        const val VPN_STATE_INTERVAL_MS = 100L
         const val LOCAL_ACCOUNT_NAME = "TechPie"
         const val TIME_ZONE = "Asia/Shanghai"
         const val CALENDAR_COLOR = -13660983

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-import '../models/ecard_sync_binding.dart';
 import '../models/third_party_account.dart';
 import 'auth_service.dart';
 import 'debug_logger.dart';
@@ -78,7 +77,6 @@ class SyncService extends ChangeNotifier {
   final ThirdPartyAuthService _tpAuth;
   final StorageService _storage;
   final http.Client _client;
-  final EcardSyncStore? _ecard;
   final DebugLogger? _logger;
   CachedSyncKey? _cachedKey;
   bool _needsRestore = false;
@@ -96,10 +94,8 @@ class SyncService extends ChangeNotifier {
     this._tpAuth,
     this._storage, {
     http.Client? client,
-    EcardSyncStore? ecard,
     DebugLogger? logger,
-  })  : _ecard = ecard,
-        _client = client ?? http.Client(),
+  })  : _client = client ?? http.Client(),
         _logger = logger {
     _tombstones.addAll(_storage.loadThirdPartyTombstones());
   }
@@ -447,7 +443,6 @@ class SyncService extends ChangeNotifier {
   /// through unchanged.
   Future<String> _serializeEnvelope() async {
     final env = SyncEnvelope.fromLocal(
-      ecard: await _ecard?.readSyncBinding(),
       accounts: _tpAuth.accountsForSync,
       tombstones: _tombstones,
     );
@@ -521,7 +516,7 @@ class SyncService extends ChangeNotifier {
     }
     var payload = await _serializeEnvelope();
     // Read-modify-write against the copy in the cloud: this device may be behind
-    // it (a newer eCard edit or deletion, or a field a newer build wrote), and a
+    // it (a field another build wrote), and a
     // blind push would delete what this device has never seen.
     try {
       final remoteBlob = await _readBlob(requireReadableAccount: true);
@@ -542,11 +537,6 @@ class SyncService extends ChangeNotifier {
             ...local.tombstones.where((a) => a.platform != ThirdPartyPlatform.ids),
             ...merged.tombstones.where((a) => a.platform == ThirdPartyPlatform.ids),
           ],
-          // Without an eCard store this build has no opinion on the binding, so
-          // the cloud's copy is the one that stands.
-          ecard: _ecard == null
-              ? remote.ecard
-              : (local.ecard?.merge(remote.ecard) ?? remote.ecard),
           unknown: remote.unknown,
         ).encode();
       }
@@ -603,7 +593,6 @@ class SyncService extends ChangeNotifier {
     final remote = SyncEnvelope.decode(plain);
     if (remote == null) return;
     final local = SyncEnvelope.fromLocal(
-      ecard: await _ecard?.readSyncBinding(),
       accounts: _tpAuth.accountsForSync,
       tombstones: _tombstones,
     );
@@ -620,7 +609,6 @@ class SyncService extends ChangeNotifier {
     await _tpAuth.applySyncMerge(merged.accounts, removed);
     await _tpAuth.markIdsBackedUp(remote.ids);
     await _applyCampusSync(merged);
-    await _ecard?.applySyncBinding(merged.ecard);
     _lastSyncAt = DateTime.now();
     await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());
     _needsRestore = false;
@@ -636,7 +624,6 @@ class SyncService extends ChangeNotifier {
   /// whether a pull changed anything worth pushing back. Compares the
   /// encoded form; envelope encode is deterministic.
   bool _envelopeEquals(SyncEnvelope a, SyncEnvelope b) {
-    if (jsonEncode(a.ecard?.toJson()) != jsonEncode(b.ecard?.toJson())) return false;
     if (jsonEncode(a.unknown) != jsonEncode(b.unknown)) return false;
     if (a.accounts.length != b.accounts.length) return false;
     if (a.tombstones.length != b.tombstones.length) return false;
@@ -744,7 +731,6 @@ class SyncService extends ChangeNotifier {
       return const SyncOutcome(ok: false, message: '云端备份格式损坏');
     }
     final local = SyncEnvelope.fromLocal(
-      ecard: await _ecard?.readSyncBinding(),
       accounts: _tpAuth.accountsForSync,
       tombstones: _tombstones,
     );
@@ -756,7 +742,6 @@ class SyncService extends ChangeNotifier {
     await _tpAuth.applySyncMerge(merged.accounts, removed);
     await _tpAuth.markIdsBackedUp(remote.ids);
     await _applyCampusSync(merged);
-    await _ecard?.applySyncBinding(merged.ecard);
     await _storage.setSyncEnabled(true);
     _lastSyncAt = DateTime.now();
     await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());

@@ -1103,7 +1103,7 @@ class _ProfileTabState extends State<_ProfileTab> {
     final service = _service!;
     final profile = service.bookingProfile();
     final replace = replaceEdits || _owner != service.profileOwner;
-    // A background result fills untouched fields without replacing typing.
+    // Preserve unsaved edits while updating the bound account.
     if (replace || _name.text == _lastProfile.name) _name.text = profile.name;
     if (replace || _phone.text == _lastProfile.phone) {
       _phone.text = profile.phone;
@@ -1142,22 +1142,6 @@ class _ProfileTabState extends State<_ProfileTab> {
       context: context,
       message: '预约信息已保存',
       style: AdaptiveFeedbackStyle.success,
-    );
-  }
-
-  Future<void> _sync() async {
-    final service = _service!;
-    final owner = service.profileOwner;
-    await service.syncBookingProfile(overwrite: true);
-    if (!mounted || owner != service.profileOwner) return;
-    final error = service.profileSyncError;
-    if (error == null) setState(() => _applyProfile(replaceEdits: true));
-    showAdaptiveFeedback(
-      context: context,
-      message: error ?? '个人信息已更新',
-      style: error == null
-          ? AdaptiveFeedbackStyle.success
-          : AdaptiveFeedbackStyle.error,
     );
   }
 
@@ -1222,33 +1206,10 @@ class _ProfileTabState extends State<_ProfileTab> {
                 Text('预约提交信息', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Text(
-                  '绑定 IDS 后自动从 OA 同步，用于场馆预约。姓名和手机号必填，邮箱可选，也可手动修改。',
+                  '请填写场馆预约所需的联系信息。姓名和手机号必填，邮箱可选。',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
-                if (service.profileSyncing) ...[
-                  const LinearProgressIndicator(),
-                  const SizedBox(height: 8),
-                  const Text('正在从 OA 同步个人信息…'),
-                ] else if (service.profileSyncError != null)
-                  Text(
-                    service.profileSyncError!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  )
-                else if (service.profileSynced)
-                  const Text('已同步 OA 提供的信息，空缺项可手动补充。'),
-                const SizedBox(height: 8),
-                AdaptiveButton(
-                  onPressed: service.profileSyncing ? null : _sync,
-                  icon: Icons.sync,
-                  sfSymbol: 'arrow.triangle.2.circlepath',
-                  label: '从 OA 同步',
-                  loading: service.profileSyncing,
-                  accessibilityLabel: '从 OA 同步个人信息',
-                ),
-                const SizedBox(height: 16),
                 TextField(
                   controller: _name,
                   decoration: const InputDecoration(

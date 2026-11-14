@@ -68,7 +68,7 @@ class PrivacyConsentPage extends StatelessWidget {
         builder: (dialogContext) => AlertDialog(
           title: const Text('需要你的同意'),
           content: const Text(
-            '不同意隐私政策时，TechPie 无法连接校园服务，也就无法提供课表、作业和校园卡功能。'
+            '不同意隐私政策时，TechPie 无法连接校园服务，也就无法提供课表和作业功能。'
             '你仍然可以随时重新打开应用并选择同意。',
           ),
           actions: [
@@ -92,7 +92,7 @@ class PrivacyConsentPage extends StatelessWidget {
         Text('隐私政策', style: theme.textTheme.titleLarge),
         const SizedBox(height: 12),
         Text(
-          'TechPie 是第三方校园工具，需要连接校园服务才能显示课表、作业与校园卡信息。'
+          'TechPie 是第三方校园工具，需要连接校园服务才能显示课表与作业信息。'
           '在你使用之前，请阅读并同意《隐私政策》。我们会说明收集哪些信息、'
           '用于什么目的，以及你如何查询、更正或删除它们。',
           style: theme.textTheme.bodyMedium,

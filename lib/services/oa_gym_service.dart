@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/oa_gym.dart';
-import '../models/third_party_account.dart';
 import 'auth_service.dart';
 import 'oa_gym_local_client.dart';
 import 'session/session_tree.dart';
@@ -36,30 +35,30 @@ class OaGymService extends ChangeNotifier {
   Map<String, String> _venues = {};
   Map<String, String> _allVenues = {};
   Map<String, String> _timeSlots = {};
-  bool _profileSyncAttached = false;
-  bool _profileSyncing = false;
-  bool _profileSynced = false;
-  String? _profileSyncError;
-  String _profileBinding = '';
-  int _profileGeneration = 0;
-  int _profileRevision = 0;
-  Future<void>? _profileRequest;
-
   OaGymService(
     this._auth,
     this._storage,
     this._tpAuth, {
     http.Client? client,
-  }) : _localClient = OaGymLocalClient(client ?? http.Client());
+  }) : _localClient = OaGymLocalClient(client ?? http.Client()) {
+    _auth.addListener(_onAccountChanged);
+    _tpAuth.addListener(_onAccountChanged);
+  }
+
+  void _onAccountChanged() => notifyListeners();
+
+  @override
+  void dispose() {
+    _auth.removeListener(_onAccountChanged);
+    _tpAuth.removeListener(_onAccountChanged);
+    super.dispose();
+  }
 
   bool get loading => _loading;
   bool get sessionReady => _sessionReady;
   Map<String, String> get venues => Map.unmodifiable(_venues);
   Map<String, String> get allVenues => Map.unmodifiable(_allVenues);
   Map<String, String> get timeSlots => Map.unmodifiable(_timeSlots);
-  bool get profileSyncing => _profileSyncing;
-  bool get profileSynced => _profileSynced;
-  String? get profileSyncError => _profileSyncError;
 
   String get profileOwner {
     if (!_auth.isLoggedIn || !_tpAuth.hasIdsBinding) return '';
@@ -70,131 +69,6 @@ class OaGymService extends ChangeNotifier {
   }
 
   String get bookingStudentId => profileOwner.isEmpty ? '' : _tpAuth.idsStudentId;
-
-  String get _currentProfileBinding => profileOwner.isEmpty
-      ? ''
-      : '$profileOwner|${_tpAuth.idsAccount!.boundAt.toIso8601String()}';
-
-  /// Attach after boot hydration. Binding/rebinding starts a separate,
-  /// best-effort read; login and court queries never wait for contact sync.
-  void startProfileSync() {
-    if (_profileSyncAttached) return;
-    _profileSyncAttached = true;
-    _auth.addListener(_onProfileBindingChanged);
-    _tpAuth.addListener(_onProfileBindingChanged);
-    _onProfileBindingChanged();
-  }
-
-  void _onProfileBindingChanged() {
-    if (_prepareProfileBinding() && profileOwner.isNotEmpty) {
-      unawaited(syncBookingProfile());
-    }
-  }
-
-  bool _prepareProfileBinding() {
-    final binding = _currentProfileBinding;
-    if (_profileBinding == binding) return false;
-    _profileBinding = binding;
-    _profileGeneration++;
-    _profileRequest = null;
-    _profileSyncing = false;
-    _profileSynced = false;
-    _profileSyncError = null;
-    notifyListeners();
-    return true;
-  }
-
-  Future<void> syncBookingProfile({bool overwrite = false}) {
-    _requireAuth();
-    _prepareProfileBinding();
-    final pending = _profileRequest;
-    if (pending != null) return pending;
-    late final Future<void> request;
-    request = _loadBookingProfile(overwrite: overwrite).whenComplete(() {
-      if (identical(_profileRequest, request)) _profileRequest = null;
-    });
-    _profileRequest = request;
-    return request;
-  }
-
-  Future<void> _loadBookingProfile({required bool overwrite}) async {
-    final owner = profileOwner;
-    final generation = _profileGeneration;
-    final revision = _profileRevision;
-    _profileSyncing = true;
-    _profileSyncError = null;
-    notifyListeners();
-    try {
-      final response = await _postJson('oa/gym/profile', const {});
-      if (generation != _profileGeneration || owner != profileOwner) return;
-      final data = (response['data'] as Map?)?.cast<String, dynamic>();
-      if (data == null) throw OaGymException('OA 个人信息响应不完整，请手动填写或重试');
-      final studentId = ThirdPartyAccount.idsSchoolId(data['studentId']);
-      if (studentId.isNotEmpty &&
-          _tpAuth.idsStudentId.isNotEmpty &&
-          studentId != _tpAuth.idsStudentId) {
-        throw OaGymException('OA 资料与当前 IDS 账号不匹配，请重新绑定');
-      }
-      final incoming = OaBookingProfile.fromJson(data);
-      if (revision != _profileRevision) return;
-      final current = _storage.loadOaBookingProfile(owner: owner);
-      final previous = _storage.loadOaSchoolProfile(owner: owner);
-      // Never overwrite a contact edit saved while this request was running.
-      String merge(String saved, String school, String oldSchool) =>
-          school.isNotEmpty &&
-                  (overwrite || saved.isEmpty || saved == oldSchool)
-              ? school
-              : saved;
-      final phone = RegExp(r'^1[3-9]\d{9}$').hasMatch(incoming.phone)
-          ? incoming.phone
-          : '';
-      final email =
-          RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(incoming.email)
-              ? incoming.email
-              : '';
-      if (incoming.name.isEmpty && phone.isEmpty && email.isEmpty) {
-        throw OaGymException('OA 暂未提供可同步的个人信息，请手动填写');
-      }
-      await _storage.saveOaBookingProfile(
-        OaBookingProfile(
-          name: merge(current.name, incoming.name, previous.name),
-          phone: merge(current.phone, phone, previous.phone),
-          email: merge(current.email, email, previous.email),
-          studentId: studentId.isNotEmpty ? studentId : current.studentId,
-        ),
-        owner: owner,
-        schoolProfile: OaBookingProfile(
-          name: incoming.name.isNotEmpty ? incoming.name : previous.name,
-          phone: phone.isNotEmpty ? phone : previous.phone,
-          email: email.isNotEmpty ? email : previous.email,
-          studentId: studentId.isNotEmpty ? studentId : previous.studentId,
-        ),
-      );
-      if (generation == _profileGeneration && owner == profileOwner) {
-        _profileSynced = true;
-      }
-    } catch (error) {
-      if (generation == _profileGeneration && owner == profileOwner) {
-        _profileSyncError =
-            error is OaGymException ? error.message : '同步 OA 个人信息失败，可手动填写或稍后重试';
-      }
-    } finally {
-      if (generation == _profileGeneration && owner == profileOwner) {
-        _profileSyncing = false;
-        notifyListeners();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    if (_profileSyncAttached) {
-      _auth.removeListener(_onProfileBindingChanged);
-      _tpAuth.removeListener(_onProfileBindingChanged);
-    }
-    _profileGeneration++;
-    super.dispose();
-  }
 
   void clearSession() {
     _generation++;
@@ -213,7 +87,7 @@ class OaGymService extends ChangeNotifier {
       return const OaBookingProfile(name: '', phone: '', email: '');
     }
     final saved = _storage.loadOaBookingProfile(owner: profileOwner);
-    // Contact sync enriches the bound school identity, never the Casdoor UUID.
+    // Use the bound school identity for reservation details.
     final idsName = _tpAuth.idsAccount?.name;
     return saved.copyWith(
       name: saved.name.isNotEmpty
@@ -228,7 +102,6 @@ class OaGymService extends ChangeNotifier {
   Future<void> saveBookingProfile(OaBookingProfile profile) async {
     _requireAuth();
     final owner = profileOwner;
-    _profileRevision++;
     await _storage.saveOaBookingProfile(
       profile.copyWith(studentId: bookingStudentId),
       owner: owner,

@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../features/campus_card/domain/ports/platform_ports.dart';
 import '../../utils/adaptive_motion.dart';
 import '../../utils/haptics.dart';
 import 'scan_overlay.dart';
 import 'scanner_geometry.dart';
+import 'scanner_port.dart';
 import 'scanner_viewport.dart';
 
 typedef ScannerCodeHandler = Future<void> Function(
@@ -28,8 +28,6 @@ typedef ScannerOverlayBuilder = Widget Function(
 Future<String?> showTechPieScanner(
   BuildContext context, {
   required ScannerPort? scanner,
-  AppLifecyclePort? lifecycle,
-  FeedbackPort? feedback,
   String title = '扫描二维码',
   String hint = '将二维码放入框内，即可自动扫描',
   bool torch = true,
@@ -39,7 +37,7 @@ Future<String?> showTechPieScanner(
 }) {
   return showGeneralDialog<String>(
     context: context,
-    // Scanning owns the whole screen, as the campus card's scanner does: on the
+    // Scanning owns the whole screen: on the
     // root navigator it covers the iOS tab bar rather than sitting inside a tab.
     useRootNavigator: true,
     barrierLabel: '关闭',
@@ -48,8 +46,6 @@ Future<String?> showTechPieScanner(
     transitionDuration: const Duration(milliseconds: 320),
     pageBuilder: (dialogContext, animation, secondaryAnimation) => ScannerPage(
       scanner: scanner,
-      lifecycle: lifecycle,
-      feedback: feedback,
       title: title,
       hint: hint,
       torch: torch,
@@ -111,8 +107,6 @@ final class ScannerPage extends StatefulWidget {
   const ScannerPage({
     super.key,
     required this.scanner,
-    this.lifecycle,
-    this.feedback,
     this.title = '扫描二维码',
     this.hint = '将二维码放入框内，即可自动扫描',
     this.torch = true,
@@ -123,8 +117,6 @@ final class ScannerPage extends StatefulWidget {
   });
 
   final ScannerPort? scanner;
-  final AppLifecyclePort? lifecycle;
-  final FeedbackPort? feedback;
   final String title;
   final String hint;
   final bool torch;
@@ -148,12 +140,10 @@ final class ScannerPageController {
 }
 
 final class ScannerPageState extends State<ScannerPage>
-    with TickerProviderStateMixin {
-  late final ScanOverlayController _overlay =
-      ScanOverlayController(vsync: this);
+    with TickerProviderStateMixin, WidgetsBindingObserver {
+  late final ScanOverlayController _overlay = ScanOverlayController(vsync: this);
   late final ScannerPageController pageController = ScannerPageController(this);
   StreamSubscription<ScannerReading>? _codeSubscription;
-  StreamSubscription<AppLifecycleState>? _lifecycleSubscription;
 
   /// Whether this page has a camera session it still has to release.
   bool _started = false;
@@ -166,38 +156,30 @@ final class ScannerPageState extends State<ScannerPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _subscribeLifecycle();
       unawaited(startCamera());
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _overlay.dispose();
     unawaited(stopCamera());
     unawaited(_codeSubscription?.cancel());
-    unawaited(_lifecycleSubscription?.cancel());
     super.dispose();
   }
 
-  void _subscribeLifecycle() {
-    final lifecycle = widget.lifecycle;
-    if (lifecycle == null) return;
-    _lifecycleSubscription = lifecycle.changes.listen((state) {
-      if (!mounted) return;
-      switch (state) {
-        case AppLifecycleState.resumed:
-          if (!_handled) unawaited(startCamera());
-        case AppLifecycleState.inactive:
-        case AppLifecycleState.paused:
-        case AppLifecycleState.detached:
-          // A frozen preview holds no camera — only its last frame, which is
-          // what the result on top of it is being read against.
-          if (!_handled) unawaited(stopCamera());
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_handled) return;
+    if (state == AppLifecycleState.resumed) {
+      unawaited(startCamera());
+    } else {
+      unawaited(stopCamera());
       }
-    });
   }
 
   Future<void> startCamera() async {
@@ -248,7 +230,7 @@ final class ScannerPageState extends State<ScannerPage>
     final next = !_torchOn;
     try {
       await scanner.setTorch(next);
-      await widget.feedback?.play(FeedbackEvent.selection);
+      await AppHaptics.play(AppHaptics.selection);
       if (mounted) setState(() => _torchOn = next);
     } catch (_) {
       if (mounted) setState(() => _error = '手电筒不可用');

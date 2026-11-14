@@ -9,6 +9,7 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
+import '../widgets/scanner/mobile_scanner_session.dart';
 import '../widgets/scanner/scan_page.dart';
 import '../widgets/uni_auth_login.dart';
 import 'third_party_accounts_page.dart';
@@ -89,15 +90,18 @@ class _EgateAppPageState extends State<EgateAppPage> {
   }
 
   Future<void> _scanQrCode(EgateAppService service) async {
-    final runtime = ServiceProvider.of(context).campusCardService.runtime;
-    final wid = await showTechPieScanner(
+    final scanner = MobileScannerSession();
+    final String? wid;
+    try {
+      wid = await showTechPieScanner(
       context,
-      scanner: runtime.scanner,
-      lifecycle: runtime.lifecycle,
-      feedback: runtime.feedback,
+        scanner: scanner,
       title: '扫描签到二维码',
       hint: '将二维码放入框内，即可自动扫描',
     );
+    } finally {
+      await scanner.dispose();
+    }
     if (wid == null || wid.isEmpty || !mounted) return;
     unawaited(_submitCheckin(service, wid));
   }
