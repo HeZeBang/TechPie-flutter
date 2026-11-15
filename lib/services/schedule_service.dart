@@ -330,7 +330,7 @@ class ScheduleService extends ChangeNotifier {
       try {
         _courseTable = _graduateTable(_graduateSchedule!, id, _graduateScheme!);
       } on FormatException {
-        _error = '研究生课表缓存需要刷新，请核对学期起始日';
+        _error = '研究生课表日期缓存需要刷新';
       }
     }
   }
@@ -506,8 +506,8 @@ class ScheduleService extends ChangeNotifier {
   Future<void> _loadGraduateCalendar(String semesterId) async {
     _termCalendar = _storage.loadTermCalendar(semesterId);
     final inferred = _graduateSchedule?.firstMondayFor(semesterId);
-    if (_termCalendar == null && inferred != null) {
-      await setGraduateFirstMonday(inferred);
+    if (inferred != null && _termCalendar?.termBegin != inferred) {
+      await _saveGraduateCalendar(semesterId, inferred);
     }
   }
 
@@ -518,14 +518,15 @@ class ScheduleService extends ChangeNotifier {
         : snapshot.defaultScheme(semesterId);
   }
 
-  CourseTable _graduateTable(GraduateSchedule snapshot, String semester, String scheme) => snapshot
-      .tableFor(semester, scheme, firstMonday: _storage.loadTermCalendar(semester)?.termBegin);
+  CourseTable _graduateTable(GraduateSchedule snapshot, String semester, String scheme) =>
+      snapshot.tableFor(
+        semester,
+        scheme,
+        firstMonday:
+            snapshot.firstMondayFor(semester) ?? _storage.loadTermCalendar(semester)?.termBegin,
+      );
 
-  Future<void> setGraduateFirstMonday(DateTime date) async {
-    if (!isGraduate || _selectedSemesterId == null || date.weekday != DateTime.monday) {
-      throw const FormatException('请选择研究生学期第 1 周的周一');
-    }
-    final semester = _selectedSemesterId!;
+  Future<void> _saveGraduateCalendar(String semester, DateTime date) async {
     final revision = _accountRevision;
     final owner = _campusAccount();
     final table =

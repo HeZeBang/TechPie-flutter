@@ -93,6 +93,14 @@ Map<String, dynamic> fixture() => {
 
 const semester = 'graduate:20261';
 
+Map<String, dynamic> fixtureWithStart() {
+  final raw = fixture();
+  final row = (raw['results'] as List).first as Map;
+  row['ZCMC'] = '1周';
+  row['RQ'] = '2026-09-07';
+  return raw;
+}
+
 Map<String, dynamic> datedFixture() {
   final raw = fixture();
   final original = raw['results'] as List;
@@ -278,9 +286,17 @@ void main() {
     expect(h.storage.loadTermCalendar(semester)!.termBegin, DateTime(2026, 9, 14));
     expect(h.requests.any((r) => r.url.path.contains('/api/')), isFalse);
     expect(h.requests.any((r) => r.url.host == 'eams.shanghaitech.edu.cn'), isFalse);
-    await h.schedule.setGraduateFirstMonday(DateTime(2026, 9, 7));
+    await h.storage.saveTermCalendar(
+      semester,
+      TermCalendar.fromJson({
+        ...h.storage.loadTermCalendar(semester)!.toJson(),
+        'termBegin': '2026-11-02',
+      }),
+    );
     await h.schedule.fetchAll();
-    expect(h.schedule.termBegin, DateTime(2026, 9, 7));
+    expect(h.schedule.error, isNull);
+    expect(h.schedule.termBegin, DateTime(2026, 9, 14));
+    expect(h.storage.loadTermCalendar(semester)!.termBegin, DateTime(2026, 9, 14));
   });
 
   test('the official protected entry establishes graduate cookies before API reads', () async {
@@ -409,8 +425,6 @@ void main() {
       isTrue,
     );
     expect(h.requests.any((r) => r.url.path.contains('/api/')), isFalse);
-    await h.schedule.setGraduateFirstMonday(DateTime(2026, 9, 7));
-    expect(h.schedule.termBegin, DateTime(2026, 9, 7));
     expect(h.schedule.totalWeeks, greaterThanOrEqualTo(16));
     await h.schedule.selectGraduateScheme('B');
     expect(h.schedule.courseTable!.courses.single.name, '合成研选本课程');
@@ -701,11 +715,10 @@ void main() {
     expect(h.requests.every((r) => r.url.host == GraduateScheduleClient.idsHost), isTrue);
   });
 
-  test('selected scheme and local start date survive a cached restart', () async {
-    final h = await harness();
+  test('selected scheme and inferred start date survive a cached restart', () async {
+    final h = await harness(timetable: fixtureWithStart());
     addTearDown(h.schedule.dispose);
     await h.schedule.fetchAll();
-    await h.schedule.setGraduateFirstMonday(DateTime(2026, 9, 7));
     await h.schedule.selectGraduateScheme('B');
     final restored = ScheduleService(h.storage, h.httpClient, h.auth, h.tp);
     addTearDown(restored.dispose);
@@ -947,10 +960,9 @@ void main() {
     'rebindSameAccount',
   ]) {
     test('$removal removes graduate caches before the same account is rebound', () async {
-      final h = await harness();
+      final h = await harness(timetable: fixtureWithStart());
       addTearDown(h.schedule.dispose);
       await h.schedule.fetchAll();
-      await h.schedule.setGraduateFirstMonday(DateTime(2026, 9, 7));
       await h.schedule.selectGraduateScheme('B');
       final prefs = await SharedPreferences.getInstance();
       final snapshot = GraduateSchedule.fromJson(fixture());
@@ -1035,7 +1047,7 @@ void main() {
   });
 
   test('all graduate table writes carry ownership, including non-selected semesters', () async {
-    final h = await harness();
+    final h = await harness(timetable: fixtureWithStart());
     addTearDown(h.schedule.dispose);
     await h.schedule.fetchAll();
     void checkOwner() {
@@ -1045,8 +1057,6 @@ void main() {
 
     checkOwner();
     await h.tp.unbind(ThirdPartyPlatform.gradescope);
-    checkOwner();
-    await h.schedule.setGraduateFirstMonday(DateTime(2026, 9, 7));
     checkOwner();
     await h.schedule.selectGraduateScheme('B');
     checkOwner();
@@ -1094,27 +1104,27 @@ void main() {
 
   for (final phase in ['snapshot', 'selection', 'calendar', 'scheme']) {
     test('an unbind during $phase persistence stops the remaining graduate writes', () async {
-      final h = await harness();
+      final h = await harness(timetable: fixtureWithStart());
       h.schedule.dispose();
       final storage = _PausedStorage(await SharedPreferences.getInstance());
       final schedule = ScheduleService(storage, h.httpClient, h.auth, h.tp);
       addTearDown(schedule.dispose);
-      if (phase == 'calendar' || phase == 'scheme') await schedule.fetchAll();
+      if (phase == 'scheme') await schedule.fetchAll();
       storage.phase = phase;
       storage.writes.clear();
       final pending = switch (phase) {
-        'calendar' => schedule.setGraduateFirstMonday(DateTime(2026, 9, 7)),
         'scheme' => schedule.selectGraduateScheme('B'),
         _ => schedule.fetchAll(),
       };
       await storage.entered.future;
+      final tableWrites = storage.writes.where((name) => name == 'table').length;
       await h.tp.unbind(ThirdPartyPlatform.ids);
       storage.release.complete();
       await pending;
       expect(schedule.courseTable, isNull);
       expect(storage.loadGraduateSchedule(), isNull);
       expect(storage.loadCourseTable(semester, owner: owner), isNull);
-      expect(storage.writes, isNot(contains('table')));
+      expect(storage.writes.where((name) => name == 'table'), hasLength(tableWrites));
       if (phase == 'snapshot') expect(storage.writes, isNot(contains('selection')));
     });
   }
@@ -1201,7 +1211,11 @@ class Harness {
   bool fail = false;
 }
 
-Future<Harness> harness({bool graduate = true, String profileSid = '20260001'}) async {
+Future<Harness> harness({
+  bool graduate = true,
+  String profileSid = '20260001',
+  Map<String, dynamic>? timetable,
+}) async {
   SharedPreferences.setMockInitialValues({});
   FlutterSecureStorage.setMockInitialValues({});
   final storage = StorageService(await SharedPreferences.getInstance());
@@ -1230,7 +1244,7 @@ Future<Harness> harness({bool graduate = true, String profileSid = '20260001'}) 
             'code': '0',
             'datas': {'uid': profileSid, 'categoryName': h.category},
           },
-        'loadKbxx.do' => fixture(),
+        'loadKbxx.do' => timetable ?? fixture(),
         'loadPublicInfo_course.do' => {
             'lcxxMap': {'XNXQDM': '20261', 'XNXQMC': '2026-2027学年秋季学期'},
           },

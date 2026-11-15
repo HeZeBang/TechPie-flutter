@@ -211,7 +211,7 @@ class GraduateSchedule {
         for (final date in dates) {
           final offset = date.difference(monday).inDays;
           if (offset < 0 || offset >= 60 * 7) {
-            throw const FormatException('课程日期超出学期范围，请核对第 1 周周一');
+            throw const FormatException('研究生课程日期与学期范围不一致，请刷新课表');
           }
           weeksByDay.putIfAbsent(date.weekday, () => {}).add(offset ~/ 7 + 1);
         }
@@ -221,7 +221,7 @@ class GraduateSchedule {
         throw const FormatException('研究生课程缺少可识别的周次和日期');
       }
       // Date-only records wait for a confirmed first Monday; they must not be
-      // invented as weekly recurring courses. The page exposes the date control.
+      // invented as weekly recurring courses.
       for (final entry in weeksByDay.entries) {
         final weeks = entry.value.toList()..sort();
         final bits = List.filled(weeks.last + 1, '0');
