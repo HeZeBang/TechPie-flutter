@@ -736,6 +736,76 @@ void main() {
     expect(h.requests, isEmpty);
   });
 
+  for (final graduate in [true, false]) {
+    test('startup exam fetching waits for IDS classification (graduate=$graduate)', () async {
+      final h = await harness(graduate: graduate);
+      addTearDown(h.schedule.dispose);
+      await h.storage.setSelectedSemester('undergrad-term');
+      h.identityGate = Completer<void>();
+      h.overrides['exam_table'] = http.Response(
+        jsonEncode({'success': true, 'data': {'exams': <Object>[]}}),
+        200,
+      );
+      final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule);
+      addTearDown(assignments.dispose);
+      h.schedule.requestFetch(force: true);
+      final exams = assignments.fetchPlatform('exam');
+      await h.identityEntered.future.timeout(const Duration(seconds: 3));
+      final earlyExams = h.requests.where((r) => r.url.path.endsWith('/exam_table')).toList();
+      final scheduleDone = Completer<void>();
+      h.schedule.addListener(() {
+        if (!h.schedule.loading && !scheduleDone.isCompleted) scheduleDone.complete();
+      });
+      h.identityGate!.complete();
+      await Future.wait([exams, scheduleDone.future]);
+      expect(earlyExams, isEmpty);
+      expect(
+        h.requests.where((r) => r.url.path.endsWith('/exam_table')),
+        hasLength(graduate ? 0 : 1),
+      );
+      expect(h.requests.where((r) => r.url.path.endsWith('/getUserConf')), hasLength(1));
+      expect(assignments.platformErrors, isEmpty);
+    });
+  }
+
+  test('an unresolved identity never sends a cached undergraduate semester to EAMS', () async {
+    final h = await harness();
+    addTearDown(h.schedule.dispose);
+    await h.storage.setSelectedSemester('undergrad-term');
+    h.overrides['getUserConf'] = http.Response('offline', 503);
+    final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule);
+    addTearDown(assignments.dispose);
+    await assignments.fetchPlatform('exam');
+    expect(h.requests.any((r) => r.url.path.endsWith('/exam_table')), isFalse);
+    expect(h.requests.any((r) => r.url.path.endsWith('/eams')), isFalse);
+  });
+
+  test('confirmed cached undergraduate identity permits exams when IDS is unavailable', () async {
+    final h = await harness(graduate: false);
+    addTearDown(h.schedule.dispose);
+    await h.storage.saveCampusIdentity(
+      '20260001|20260001', CampusIdentity.fromCategory('学生/本科生'),
+    );
+    h.overrides['getUserConf'] = http.Response('offline', 503);
+    h.overrides['exam_table'] = http.Response(
+      jsonEncode({'success': true, 'data': {'exams': <Object>[]}}), 200,
+    );
+    final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule);
+    addTearDown(assignments.dispose);
+    await assignments.fetchPlatform('exam');
+    expect(h.requests.where((r) => r.url.path.endsWith('/exam_table')), hasLength(1));
+    expect(assignments.platformErrors, isEmpty);
+    h.overrides['getUserConf'] = http.Response(
+      jsonEncode({'code': '0', 'datas': {'uid': 'different-account', 'categoryName': '学生/本科生'}}),
+      200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
+    await h.schedule.fetchAll();
+    h.requests.clear();
+    await assignments.fetchPlatform('exam');
+    expect(h.requests.any((r) => r.url.path.endsWith('/exam_table')), isFalse);
+  });
+
   test('a new campus account fetches once after the previous account finishes', () async {
     final h = await harness();
     addTearDown(h.schedule.dispose);
@@ -795,6 +865,8 @@ class Harness {
   late AuthService auth;
   late ThirdPartyAuthService tp;
   Completer<void>? tableGate;
+  Completer<void>? identityGate;
+  final identityEntered = Completer<void>();
   final tableEntered = Completer<void>();
   final requests = <http.Request>[];
   final overrides = <String, http.Response>{};
@@ -823,6 +895,10 @@ Future<Harness> harness({bool graduate = true, String profileSid = '20260001'}) 
       h.requests.add(request);
       final override = h.overrides[request.url.path.split('/').last];
       if (override != null) return override;
+      if (request.url.path.endsWith('getUserConf') && h.identityGate != null) {
+        h.identityEntered.complete();
+        await h.identityGate!.future;
+      }
       if (request.url.path.endsWith('loadKbxx.do') && h.tableGate != null) {
         h.tableEntered.complete();
         await h.tableGate!.future;

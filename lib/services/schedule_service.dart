@@ -32,6 +32,8 @@ class ScheduleService extends ChangeNotifier {
   GraduateSchedule? _graduateSchedule;
   String? _graduateScheme;
   String? _identityForAccount;
+  bool _identityResolved = false;
+  Completer<void>? _fetchCompletion;
   bool _graduateIdentity = false;
   String? _identityLabel;
   String? _identityWarning;
@@ -50,6 +52,7 @@ class ScheduleService extends ChangeNotifier {
     if (owner == null) throw const FormatException('请先绑定 CpDaily / IDS');
     final saved = _storage.setScheduleSource(owner, source);
     _identityForAccount = null;
+    _identityResolved = false;
     _graduateIdentity = source == CampusScheduleSource.graduate;
     _identityLabel = null;
     _identityWarning = null;
@@ -118,6 +121,7 @@ class ScheduleService extends ChangeNotifier {
       _observedAccount = account;
       _accountRevision++;
       _identityForAccount = null;
+      _identityResolved = false;
       _graduateIdentity = false;
       _identityLabel = null;
       _identityWarning = null;
@@ -337,9 +341,21 @@ class ScheduleService extends ChangeNotifier {
     return info.defaultSemester;
   }
 
+  Future<bool> canFetchUndergraduateExams() async {
+    if (!_hasCpdailyBinding) return false;
+    if (scheduleSource == CampusScheduleSource.undergraduate) return true;
+    final revision = _accountRevision;
+    if (!_identityResolved || _loading) await fetchAll();
+    return revision == _accountRevision && _identityResolved && !_graduateIdentity;
+  }
+
   Future<void> fetchAll() async {
-    if (_loading) return; // 避免启动时并发重复调用
+    if (_loading) {
+      await _fetchCompletion?.future;
+      return;
+    }
     if (!_hasCpdailyBinding) return;
+    final completion = _fetchCompletion = Completer<void>();
     final revision = _accountRevision;
     _loading = true;
     _error = null;
@@ -370,6 +386,8 @@ class ScheduleService extends ChangeNotifier {
       } else if (_hasCpdailyBinding) {
         requestFetch(force: true);
       }
+      _fetchCompletion = null;
+      completion.complete();
       notifyListeners();
     }
   }
@@ -383,6 +401,7 @@ class ScheduleService extends ChangeNotifier {
     final client =
         GraduateScheduleClient(_http, _tpAuth.cpdailyNode.rawFields['tgc'] as String? ?? '');
     if (_identityForAccount != account) {
+      _identityResolved = false;
       final source = scheduleSource;
       if (source != CampusScheduleSource.automatic) {
         _graduateIdentity = source == CampusScheduleSource.graduate;
@@ -415,6 +434,7 @@ class ScheduleService extends ChangeNotifier {
       }
     }
     if (revision != _accountRevision) return true;
+    _identityResolved = true;
     if (_semesterInfo == null || isGraduate != _graduateIdentity) {
       _restoreCachedSchedule(
         _graduateIdentity ? CampusScheduleSource.graduate : CampusScheduleSource.undergraduate,

@@ -361,16 +361,21 @@ class AssignmentService extends ChangeNotifier {
     }
   }
 
+  bool get _graduateExamsUnsupported => _schedule.hasGraduateIdentity ||
+      _schedule.isGraduate ||
+      _selectedSemesterId()?.startsWith(graduateSemesterPrefix) == true;
+
   Future<List<Assignment>?> _fetchExamTable() async {
-    final semesterId = _selectedSemesterId();
+    final undergraduate =
+        !_graduateExamsUnsupported && await _schedule.canFetchUndergraduateExams();
     // Graduate term ids belong to a different school system. Sending one to
     // EAMS would query the wrong term and can disturb its stateful session.
-    if (_schedule.hasGraduateIdentity ||
-        _schedule.isGraduate ||
-        semesterId?.startsWith(graduateSemesterPrefix) == true) {
+    if (_graduateExamsUnsupported) {
       _platformErrors.remove('exam');
       return [];
     }
+    if (!undergraduate) return null;
+    final semesterId = _selectedSemesterId();
     final node = _tpAuth.eamsNode;
     if (!_tpAuth.hasCpdailyBinding ||
         semesterId == null ||
