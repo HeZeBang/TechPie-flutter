@@ -14,11 +14,13 @@ import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
 import 'services/campus_card_service.dart';
+import 'services/deadline_widget_service.dart';
 import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
 import 'services/http_client.dart';
+import 'services/ids/ids_client.dart';
 import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
@@ -30,6 +32,7 @@ import 'services/uni_auth_service.dart';
 import 'services/update_service.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
+import 'widgets/privacy_consent.dart';
 import 'widgets/update_dialogs.dart';
 
 void main(List<String> args) async {
@@ -40,6 +43,7 @@ void main(List<String> args) async {
 
   WidgetsFlutterBinding.ensureInitialized();
   await initializePlatformCapabilities();
+  await initializeCampusUserAgent();
   // OHOS white-screen probe disabled to speed up startup. Re-enable by
   // restoring the runApp(_BootProbe...) calls and wrapping init in try/catch.
   // runApp(const _BootProbe(message: '启动中…'));
@@ -75,6 +79,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final thirdPartyAuthService = ThirdPartyAuthService(
     storageService,
     httpClient,
+    idsClient: IdsClient(logger: debugLogger),
   );
   final scheduleService = ScheduleService(
     storageService,
@@ -99,6 +104,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService,
     scheduleService,
   );
+  final deadlineWidgetService = DeadlineWidgetService(assignmentService);
   final syncService = SyncService(
     authService,
     thirdPartyAuthService,
@@ -124,7 +130,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // state (throttled). Wired via post-construction setter to avoid a circular
   // dependency between ThirdPartyAuthService and SyncService.
   thirdPartyAuthService.onBindingsChanged = ({force = false}) {
-    // The timetable is drawn from the eGate binding, and `fetchAll` does nothing
+    // The timetable is drawn from the IDS binding, and `fetchAll` does nothing
     // at all while there is none — silently, which is how a freshly bound account
     // used to sit on an empty table with nothing to suggest it should reload. This
     // runs for every binding, though, and a timetable does not care about
@@ -184,10 +190,16 @@ Future<void> _realMain(SharedPreferences prefs) async {
       campusCardService: campusCardService,
       ecardBindService: ecardBindService,
       ecardWidgetService: ecardWidgetService,
+      deadlineWidgetService: deadlineWidgetService,
     ),
   );
 
   bootMark('cached data ready');
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS)) {
+    deadlineWidgetService.initialize();
+  }
 
   oaGymService.startProfileSync();
   unawaited(campusCardService.refreshAccount());
@@ -238,7 +250,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       );
     }
 
-    if (thirdPartyAuthService.hasCpdailyBinding) {
+    if (thirdPartyAuthService.hasIdsBinding) {
       // Through the funnel: the token renewals just above fire the same trigger,
       // and this used to be a second round on top of theirs.
       scheduleService.requestFetch(force: true);
@@ -312,6 +324,7 @@ class TechPieApp extends StatefulWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final DeadlineWidgetService? deadlineWidgetService;
 
   const TechPieApp({
     super.key,
@@ -330,6 +343,7 @@ class TechPieApp extends StatefulWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.deadlineWidgetService,
   });
 
   @override
@@ -354,11 +368,16 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     unawaited(_checkForUpdatesQuietly());
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
+    widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
   }
 
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.deadlineWidgetService != widget.deadlineWidgetService) {
+      oldWidget.deadlineWidgetService?.clearOpenHandler();
+      widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
+    }
     if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
     oldWidget.ecardWidgetService?.clearOpenPayHandler();
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
@@ -368,6 +387,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.ecardWidgetService?.clearOpenPayHandler();
+    widget.deadlineWidgetService?.dispose();
     widget.campusCardService.dispose();
     super.dispose();
   }
@@ -414,6 +434,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     if (dialogContext == null || !dialogContext.mounted) return;
     _promptedThisLaunch = true;
     await showUpdateAvailableDialog(dialogContext, release);
+  }
+
+  Future<void> _openDeadlines() async {
+    // Only dialogs and sheets are dismissed: a login or player covering the
+    // shell stays, and back from it lands on the Deadlines tab.
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
+    appShellPendingDeadlines.value = true;
   }
 
   Future<void> _openEcardPayCode() async {
@@ -469,7 +496,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
           theme: widget.themeService.lightTheme,
           darkTheme: widget.themeService.darkTheme,
           themeMode: widget.themeService.themeMode,
-          home: const AppShell(),
+          home: const PrivacyGate(child: AppShell()),
         ),
       ),
     );

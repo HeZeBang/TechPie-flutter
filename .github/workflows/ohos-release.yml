@@ -112,7 +112,46 @@ jobs:
       - uses: ./.github/actions/pub-cache
 
       - name: Resolve dependencies
-        run: flutter pub get
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The mirror is the project default (it is baked into the image, and
+          # `.envrc` sets it on a developer machine), but it has been serving
+          # two kinds of damage: an archive whose bytes miss the lock's sha256
+          # (`wrong content-hash`) and metadata whose `archive_url` 404s
+          # (`Package not available`). Either one aborts the resolve before any
+          # build step, and 1.0.4-rc.2 lost two attempts to exactly that.
+          if flutter pub get; then
+            exit 0
+          fi
+
+          echo "::warning::Resolving from pub.flutter-io.cn failed; retrying on pub.dev."
+          # Switching PUB_HOSTED_URL alone is not enough: pub takes each
+          # package's host from the lock itself, so the retry would keep
+          # talking to the mirror. Rewrite the host in place — and then prove
+          # the retry did not move a version, because a re-resolve would
+          # silently pick newer packages than the lock names (`flutter pub get`
+          # against another host bumped `xml` 6.5.0 to 7.0.1 when measured).
+          sed -i 's#https://pub.flutter-io.cn#https://pub.dev#g' pubspec.lock
+          cp pubspec.lock "$RUNNER_TEMP/lock.host-rewritten"
+          PUB_HOSTED_URL=https://pub.dev FLUTTER_STORAGE_BASE_URL=https://storage.googleapis.com \
+            flutter pub get
+          # Compared without `diff`: this image has no libatomic, and diffutils
+          # dies before it compares anything.
+          before="$(grep -v '^ *url:' "$RUNNER_TEMP/lock.host-rewritten" | sha256sum)"
+          after="$(grep -v '^ *url:' pubspec.lock | sha256sum)"
+          if [[ "$before" != "$after" ]]; then
+            echo "::error::The pub.dev retry re-resolved beyond the lock's hosts, so it would build versions the lock does not name."
+            git diff -- pubspec.lock | head -60
+            exit 1
+          fi
+          # Later steps resolve again inside the build; keep them on the host
+          # whose lock is now in the tree, or they would disagree with it.
+          {
+            echo "PUB_HOSTED_URL=https://pub.dev"
+            echo "FLUTTER_STORAGE_BASE_URL=https://storage.googleapis.com"
+          } >> "$GITHUB_ENV"
 
       - name: Build unsigned hap
         run: scripts/build-unsigned-hap.sh

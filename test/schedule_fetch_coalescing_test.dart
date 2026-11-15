@@ -13,6 +13,8 @@ import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 
+import 'support/fake_ids_client.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -26,14 +28,7 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
     await storage.saveThirdPartyAccount(
-      ThirdPartyAccount(
-        platform: ThirdPartyPlatform.cpdaily,
-        account: '20240001',
-        sid: '20240001',
-        token: 'session',
-        raw: const {'tgc': 'tgc-value'},
-        boundAt: DateTime.utc(2026),
-      ),
+      FakeIdsClient.account('20240001'),
     );
 
     final logger = DebugLogger();
@@ -42,7 +37,7 @@ void main() {
     final uniAuth = UniAuthService();
     final auth = AuthService(storage, http, uniAuth);
     await auth.loadSession();
-    final tpAuth = ThirdPartyAuthService(storage, http);
+    final tpAuth = ThirdPartyAuthService(storage, http, idsClient: FakeIdsClient());
     await tpAuth.initialize();
 
     final schedule = ScheduleService(storage, http, auth, tpAuth);
@@ -53,7 +48,7 @@ void main() {
     // listener, milliseconds apart.
     for (final marker in ['a', 'b', 'c']) {
       await tpAuth.updateRaw(
-        ThirdPartyPlatform.cpdaily,
+        ThirdPartyPlatform.ids,
         {'tgc': 'tgc-value', 'cookies': 'CASTGC=$marker'},
       );
     }
@@ -62,10 +57,9 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 900));
 
     expect(
-      requests.where((uri) => uri.host == 'techpie.geekpie.club').length,
+      _pathsOf(requests).where((path) => path.startsWith('/api/schedule/')).length,
       1,
-      reason: 'the burst is one backend round after the read-only identity probe; '
-          'the client fails on the first backend request, '
+      reason: 'the burst is one round; the client fails on the first business request, '
           'so a second round would show up as a second request',
     );
   });
@@ -80,14 +74,7 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
     await storage.saveThirdPartyAccount(
-      ThirdPartyAccount(
-        platform: ThirdPartyPlatform.cpdaily,
-        account: '20240001',
-        sid: '20240001',
-        token: 'session',
-        raw: const {'tgc': 'tgc-value'},
-        boundAt: DateTime.utc(2026),
-      ),
+      FakeIdsClient.account('20240001'),
     );
 
     final logger = DebugLogger();
@@ -96,7 +83,7 @@ void main() {
     final uniAuth = UniAuthService();
     final auth = AuthService(storage, http, uniAuth);
     await auth.loadSession();
-    final tpAuth = ThirdPartyAuthService(storage, http);
+    final tpAuth = ThirdPartyAuthService(storage, http, idsClient: FakeIdsClient());
     await tpAuth.initialize();
 
     final schedule = ScheduleService(storage, http, auth, tpAuth);
@@ -140,12 +127,6 @@ class _AnsweringClient extends http.BaseClient {
       '/personalInfo/common/getUserConf' => jsonEncode({
           'code': '0',
           'datas': {'uid': '20240001', 'categoryName': '学生/本科生'},
-        }),
-      // The eams cookie is minted from the parent tgc before a timetable fetch
-      // can carry one.
-      '/api/auth/third-party/eams' => jsonEncode({
-          'success': true,
-          'data': {'token': 'CASTGC=eams-cookie'},
         }),
       '/api/schedule/semesters' => jsonEncode({
           'success': true,

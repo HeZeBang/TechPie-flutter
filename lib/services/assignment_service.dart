@@ -27,6 +27,14 @@ class AssignmentService extends ChangeNotifier {
   List<Assignment> _assignments = [];
   AssignmentOverrides _overrides = AssignmentOverrides();
   bool _loading = false;
+  int _identityEpoch = 0;
+  bool _hasCachedData = false;
+  bool _cacheHydrated = false;
+  bool _refetchPending = false;
+  bool _signedOut = false;
+  bool _disposed = false;
+  String? _primaryIdentity;
+  Map<String, String> _sourceIdentities = {};
   String? _error;
   // Per-platform error messages (keyed by lowercase platform id).
   final Map<String, String> _platformErrors = {};
@@ -44,6 +52,8 @@ class AssignmentService extends ChangeNotifier {
   AssignmentOverrides get overrides => _overrides;
 
   bool get loading => _loading;
+  int get identityEpoch => _identityEpoch;
+  bool get hasCachedData => _hasCachedData;
   String? get error => _error;
   Map<String, String> get platformErrors => Map.unmodifiable(_platformErrors);
 
@@ -59,6 +69,8 @@ class AssignmentService extends ChangeNotifier {
     this._tpAuth,
     this._schedule,
   ) {
+    _primaryIdentity = _auth.session?.userId;
+    _sourceIdentities = _currentSources();
     // Refetch when bindings or auth change *after* initial app boot.
     // The initial fetch is kicked off explicitly from main.dart so we
     // don't double-fire during service initialization.
@@ -82,12 +94,67 @@ class AssignmentService extends ChangeNotifier {
     _lastRefetchedSemesterId = _schedule.selectedSemesterId;
   }
 
-  /// Auth or binding changed — always refetch (tokens, accounts differ).
+  /// Queue a refetch during an active sync only when the identity changes.
   void _onBindingsOrAuthChanged() {
+    final primary = _auth.session?.userId;
+    final sources = _currentSources();
+    final primaryChanged = primary != _primaryIdentity;
+    final changed = <String>{
+      for (final key in {..._sourceIdentities.keys, ...sources.keys})
+        if (_sourceIdentities[key] != sources[key]) key,
+    };
+    if (primaryChanged || changed.isNotEmpty) {
+      if (_cacheHydrated) {
+        _identityEpoch++;
+        if (primaryChanged) {
+          _signedOut = _primaryIdentity != null && primary == null;
+        }
+        if (primary != null) _signedOut = false;
+        _assignments = primaryChanged
+            ? []
+            : _assignments.where((a) {
+                final source =
+                    (a.platform == 'blackboard' || a.platform == 'exam')
+                        ? ThirdPartyPlatform.ids.id
+                        : a.platform;
+                return !changed.contains(source);
+              }).toList();
+        if (primaryChanged) {
+          _hasCachedData = false;
+          unawaited(_storage.clearCachedAssignments());
+        } else if (_hasCachedData) {
+          unawaited(
+            _storage.saveCachedAssignments(
+              _assignments.map((a) => a.toJson()).toList(),
+            ),
+          );
+        }
+        notifyListeners();
+      }
+      _primaryIdentity = primary;
+      _sourceIdentities = sources;
+    }
     if (!_autoRefetchEnabled) return;
+    if (_signedOut) return;
     _lastRefetchedSemesterId = _schedule.selectedSemesterId;
+    if (_loading) {
+      // Renewal status notifications must not retry the active sync.
+      if (primaryChanged || changed.isNotEmpty) _refetchPending = true;
+      return;
+    }
     unawaited(fetchAssignments());
   }
+
+  /// Who each binding is, not which session it holds. Token rotations and
+  /// derived campus sessions must not count as an account change.
+  Map<String, String> _currentSources() => {
+        for (final account in _tpAuth.accounts)
+          account.platform.id: jsonEncode([
+            account.account,
+            account.hydroOrigin,
+            account.hydroDomains,
+          ]),
+      };
 
   /// Schedule changed — only refetch if the selected semester actually
   /// changed, not on every loading/error/course_table flip. This prevents
@@ -107,15 +174,17 @@ class AssignmentService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _tpAuth.removeListener(_onBindingsOrAuthChanged);
     _auth.removeListener(_onBindingsOrAuthChanged);
     _schedule.removeListener(_onScheduleChanged);
     super.dispose();
   }
 
-
   /// Clear cached + in-memory deadlines (called on primary logout).
   Future<void> clearCache() async {
+    _identityEpoch++;
+    _hasCachedData = false;
     _assignments = [];
     _platformErrors.clear();
     _error = null;
@@ -126,6 +195,8 @@ class AssignmentService extends ChangeNotifier {
   /// Hydrate from local cache so the UI doesn't flash empty on app start
   /// or tab switch. Safe to call before login. Also loads overrides.
   void loadCached() {
+    _cacheHydrated = true;
+    _hasCachedData = _storage.hasCachedAssignments;
     _overrides = _storage.loadAssignmentOverrides();
     final raw = _storage.loadCachedAssignments();
     if (raw.isEmpty) {
@@ -200,7 +271,8 @@ class AssignmentService extends ChangeNotifier {
       };
 
   Future<void> fetchAssignments() async {
-    if (_loading) return; // 避免启动时 listener 链触发的并发重复调用
+    if (_loading || _signedOut || _disposed) return;
+    final epoch = _identityEpoch;
     _loading = true;
     _error = null;
     _platformErrors.clear();
@@ -210,7 +282,7 @@ class AssignmentService extends ChangeNotifier {
 
     final futures = <Future<void>>[];
 
-    if (_tpAuth.hasCpdailyBinding) {
+    if (_tpAuth.hasIdsBinding) {
       futures.add(
         _fetchBlackboard().then((items) {
           if (items != null) successfulResults['blackboard'] = items;
@@ -239,19 +311,22 @@ class AssignmentService extends ChangeNotifier {
             }),
           );
           break;
-        case ThirdPartyPlatform.cpdaily:
-          // cpdaily provides the CpDaily session, not deadline data — skip.
+        case ThirdPartyPlatform.ids:
+          // ids provides the IDS session, not deadline data — skip.
           break;
       }
     }
 
     try {
       await Future.wait(futures);
+      if (_disposed || epoch != _identityEpoch) return;
       final merged = _mergeAssignments(
         successfulResults: successfulResults,
       );
 
       _assignments = merged;
+      _hasCachedData = _hasCachedData || successfulResults.isNotEmpty;
+      if (!_hasCachedData) return;
       await _storage.saveCachedAssignments(
         merged.map((a) => a.toJson()).toList(),
       );
@@ -259,7 +334,11 @@ class AssignmentService extends ChangeNotifier {
       _error = '同步失败，请检查网络或稍后重试';
     } finally {
       _loading = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
+      if (_refetchPending && !_disposed) {
+        _refetchPending = false;
+        unawaited(fetchAssignments());
+      }
     }
   }
 
@@ -279,6 +358,8 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<void> fetchPlatform(String platformId) async {
+    if (_loading || _signedOut || _disposed) return;
+    final epoch = _identityEpoch;
     _loading = true;
     _error = null;
     _platformErrors.remove(platformId);
@@ -287,11 +368,11 @@ class AssignmentService extends ChangeNotifier {
     final successfulResults = <String, List<Assignment>>{};
     Future<void>? future;
 
-    if (platformId == 'blackboard' && _tpAuth.hasCpdailyBinding) {
+    if (platformId == 'blackboard' && _tpAuth.hasIdsBinding) {
       future = _fetchBlackboard().then((items) {
         if (items != null) successfulResults['blackboard'] = items;
       });
-    } else if (platformId == 'exam' && _tpAuth.hasCpdailyBinding) {
+    } else if (platformId == 'exam' && _tpAuth.hasIdsBinding) {
       future = _fetchExamTable().then((items) {
         if (items != null) successfulResults['exam'] = items;
       });
@@ -312,37 +393,44 @@ class AssignmentService extends ChangeNotifier {
       }
     }
 
-    if (future != null) {
-      try {
+    try {
+      if (future != null) {
         await future;
+        if (_disposed || epoch != _identityEpoch) return;
         final merged = _mergeAssignments(
           successfulResults: successfulResults,
         );
 
         _assignments = merged;
+        _hasCachedData = _hasCachedData || successfulResults.isNotEmpty;
+        if (!_hasCachedData) return;
         await _storage.saveCachedAssignments(
           merged.map((a) => a.toJson()).toList(),
         );
-      } catch (e) {
-        _error = e.toString();
+      }
+    } catch (e) {
+      if (epoch == _identityEpoch) _error = e.toString();
+    } finally {
+      _loading = false;
+      if (!_disposed) notifyListeners();
+      if (_refetchPending && !_disposed) {
+        _refetchPending = false;
+        unawaited(fetchAssignments());
       }
     }
-
-    _loading = false;
-    notifyListeners();
   }
 
   Future<List<Assignment>?> _fetchBlackboard() async {
     final node = _tpAuth.elearningNode;
     // withCookie handles initial minting if the downstream cookie isn't set.
-    if (!_tpAuth.hasCpdailyBinding) return null;
+    if (!_tpAuth.hasIdsBinding) return null;
 
     try {
       final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
         node,
         (cp) async {
           // cp.cookies is the elearning cookie string minted from the
-          // cpdaily CASTGC. The backend uses it directly to query
+          // ids CASTGC. The backend uses it directly to query
           // Blackboard (no SSO bounce needed).
           final r = await _http.post(
             Uri.parse('$_baseUrl/deadlines/blackboard'),
@@ -377,7 +465,7 @@ class AssignmentService extends ChangeNotifier {
     if (!undergraduate) return null;
     final semesterId = _selectedSemesterId();
     final node = _tpAuth.eamsNode;
-    if (!_tpAuth.hasCpdailyBinding ||
+    if (!_tpAuth.hasIdsBinding ||
         semesterId == null ||
         semesterId.isEmpty) {
       return null;

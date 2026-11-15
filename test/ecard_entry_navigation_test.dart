@@ -46,7 +46,10 @@ void main() {
   late AppRuntime runtime;
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      // These tests are about the shell, not the first-launch consent.
+      'privacy_accepted_v1': true,
+    });
     runtime = await buildDemoRuntime();
     await runtime.auth.signIn(const DemoAuthCredential());
     appShellPendingEcardEntry.value = null;

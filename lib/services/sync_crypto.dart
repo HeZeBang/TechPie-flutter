@@ -6,7 +6,7 @@ import 'package:cryptography/cryptography.dart';
 /// End-to-end encryption helpers for the cloud-sync feature.
 ///
 /// The sync blob stored in Casdoor `User.properties["techpie_sync"]` holds the
-/// user's third-party account bindings (eGate CASTGC session, Gradescope/Hydro
+/// user's third-party account bindings (IDS software Passkey, Gradescope/Hydro
 /// tokens, and optionally their stored passwords). It MUST be unreadable to the
 /// server. We use a user-chosen master password — the only secret that never
 /// leaves the device — to derive an AES-256-GCM key via PBKDF2. The server

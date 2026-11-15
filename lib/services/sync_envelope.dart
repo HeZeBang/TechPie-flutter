@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/ecard_sync_binding.dart';
+import '../models/ids_passkey.dart';
 import '../models/third_party_account.dart';
 
 /// Schema version of the cloud-sync blob's plaintext envelope.
@@ -15,10 +16,13 @@ import '../models/third_party_account.dart';
 ///        so per-platform LWW merge can distinguish "deleted on device A"
 ///        from "never had it on device A". Per-account `updatedAt` +
 ///        `deviceId` drive the merge.
-///   v3 — current: adds the optional `ecard` binding, which carries the eCard
+///   v3: adds the optional `ecard` binding, which carries the eCard
 ///        *login parameter* only — cookies, identity pins and keys stay on the
 ///        device — and keeps top-level fields this build does not know, so a
 ///        blob written by a newer build survives a round trip through this one.
+///   v4: campus accounts use the `ids` platform id and can carry an exportable
+///        software Passkey in `raw.credential`. Passkey session cookies stay
+///        device-local; bindings and deletions still use `accounts` and `tombstones`.
 ///
 /// Reading is one-way compatible in both directions, deliberately: every
 /// version is accepted and normalised up to [current] (a v0 bare array, a v1 or
@@ -30,7 +34,7 @@ import '../models/third_party_account.dart';
 /// exists: this build never deletes what a newer one wrote.
 class SyncSchema {
   /// Current schema version produced by this build.
-  static const int current = 3;
+  static const int current = 4;
 
   /// Top-level keys [migrate] understands; everything else is preserved.
   static const Set<String> _knownKeys = {
@@ -148,6 +152,16 @@ class SyncEnvelope {
   final List<ThirdPartyAccount> accounts;
   final List<SyncTombstone> tombstones;
   final EcardSyncBinding? ecard;
+  /// In-memory projection of the standard campus account/deletion records.
+  IdsSyncBinding? get ids {
+    var binding = IdsSyncBinding.fromAccount(accounts.where((a) =>
+        a.platform == ThirdPartyPlatform.ids && a.raw['authMethod'] == 'passkey',).firstOrNull,);
+    for (final tomb in tombstones.where((t) => t.platform == ThirdPartyPlatform.ids)) {
+      final deleted = IdsSyncBinding(credential: null, updatedAt: tomb.deletedAt, deviceId: tomb.deviceId);
+      binding = binding?.merge(deleted) ?? deleted;
+    }
+    return binding;
+  }
 
   /// Top-level fields a newer build wrote and this one does not interpret.
   /// Decoded from the cloud blob and written back unchanged: an older build
@@ -244,10 +258,12 @@ class SyncEnvelope {
       // Collect candidate events: (kind, version-key, payload).
       // kind 0 = tombstone, kind 1 = account.
       final candidates = <_MergeCandidate>[];
-      if (localAcc != null) {
+      final hasPasskey = p == ThirdPartyPlatform.ids &&
+          [localAcc, remoteAcc].any((account) => IdsSyncBinding.fromAccount(account) != null);
+      if (localAcc != null && (!hasPasskey || IdsSyncBinding.fromAccount(localAcc) != null)) {
         candidates.add(_MergeCandidate(1, localAcc.deviceId, localAcc.updatedAt, localAcc));
       }
-      if (remoteAcc != null) {
+      if (remoteAcc != null && (!hasPasskey || IdsSyncBinding.fromAccount(remoteAcc) != null)) {
         candidates.add(_MergeCandidate(1, remoteAcc.deviceId, remoteAcc.updatedAt, remoteAcc));
       }
       if (localTomb != null) {

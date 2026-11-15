@@ -29,6 +29,7 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/course_block_label.dart';
 import '../widgets/course_detail_panel.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/desktop_select_popover.dart';
@@ -96,6 +97,10 @@ class _SchedulePageState extends State<SchedulePage> {
   /// to the current week lands — most visibly at the weekend, which week 1
   /// and the current week rarely share.
   late final PageController _weekPageController;
+
+  /// The week an in-flight [animateToPage] is heading for; see
+  /// [_onWeekPageChanged].
+  int? _pagerTargetWeek;
   final GlobalKey _viewSettingsAnchorKey = GlobalKey();
 
   @override
@@ -221,16 +226,36 @@ class _SchedulePageState extends State<SchedulePage> {
   void _setWeek(int week) {
     _setCurrentWeek(week);
     if (!_weekPageController.hasClients) return;
+    final target = _currentWeek;
+    _pagerTargetWeek = target;
     unawaited(
-      _weekPageController.animateToPage(
-        _currentWeek - 1,
-        duration: appAnimationDuration(
-          context,
-          const Duration(milliseconds: 280),
-        ),
-        curve: appAnimationCurve(Curves.easeOutCubic),
-      ),
+      _weekPageController
+          .animateToPage(
+            target - 1,
+            duration: appAnimationDuration(
+              context,
+              const Duration(milliseconds: 280),
+            ),
+            curve: appAnimationCurve(Curves.easeOutCubic),
+          )
+          .whenComplete(() {
+        if (_pagerTargetWeek == target) _pagerTargetWeek = null;
+      }),
     );
+  }
+
+  /// The pager reports every page it passes, including the ones an
+  /// [animateToPage] only flies over. The week is already set to where that
+  /// animation is going, so those intermediate pages must not overwrite it —
+  /// otherwise the title (and the 回到本周 button) lands on the target, jumps
+  /// back to the next page the animation crosses, and counts down to the
+  /// target again. A drag that takes over ends the animation, which clears
+  /// the target, so the pager drives the week again from then on.
+  void _onWeekPageChanged(int index) {
+    final target = _pagerTargetWeek;
+    if (target != null && index + 1 != target) return;
+    if (index + 1 == _currentWeek) return;
+    _setCurrentWeek(index + 1);
   }
 
   void _setCurrentWeek(int week) {
@@ -678,7 +703,7 @@ class _SchedulePageState extends State<SchedulePage> {
                 if (isDesktop())
                   PageRefreshButton(
                     onRefresh: _refresh,
-                    enabled: auth.isLoggedIn && tpAuth.hasCpdailyBinding,
+                    enabled: auth.isLoggedIn && tpAuth.hasIdsBinding,
                     refreshing: _schedule.loading || _assignments.loading,
                   ),
                 IconButton(
@@ -753,7 +778,7 @@ class _SchedulePageState extends State<SchedulePage> {
               ? 0
               : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top,
         ),
-        child: !auth.isLoggedIn || !tpAuth.hasCpdailyBinding
+        child: !auth.isLoggedIn || !tpAuth.hasIdsBinding
             ? Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -765,14 +790,14 @@ class _SchedulePageState extends State<SchedulePage> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      auth.isLoggedIn ? '绑定 eGate 以查看课表' : '登录以查看课表',
+                      auth.isLoggedIn ? '绑定 IDS 以查看课表' : '登录以查看课表',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 20),
                     AdaptiveButton(
-                      label: auth.isLoggedIn ? '去绑定 eGate' : '登录',
+                      label: auth.isLoggedIn ? '去绑定 IDS' : '登录',
                       icon: auth.isLoggedIn ? Icons.account_tree_outlined : Icons.login,
                       sfSymbol: auth.isLoggedIn
                           ? 'person.crop.circle.badge.plus'
@@ -791,7 +816,7 @@ class _SchedulePageState extends State<SchedulePage> {
                           unawaited(startUniAuthLogin(context));
                         }
                       },
-                      accessibilityLabel: auth.isLoggedIn ? '绑定 eGate 账号' : '登录 TechPie',
+                      accessibilityLabel: auth.isLoggedIn ? '绑定 IDS 账号' : '登录 TechPie',
                     ),
                   ],
                 ),
@@ -804,9 +829,7 @@ class _SchedulePageState extends State<SchedulePage> {
                     ? PageView.builder(
                         controller: _weekPageController,
                         itemCount: _schedule.totalWeeks,
-                        onPageChanged: (index) {
-                          _setCurrentWeek(index + 1);
-                        },
+                        onPageChanged: _onWeekPageChanged,
                         itemBuilder: (context, index) {
                           final week = index + 1;
                           return _buildScheduleWeek(
@@ -1801,72 +1824,14 @@ class _CourseBlock extends StatelessWidget {
         child: InkWell(
           onTap: () => _showCourseDetail(context),
           borderRadius: BorderRadius.circular(8),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final maxH = constraints.maxHeight - 8; // account for padding
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Course name: up to 70% of block height
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: maxH * 0.7),
-                      child: Text(
-                        course.name,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          height: 1.2,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: (maxH * 0.7 / 14.4).floor().clamp(1, 20),
-                      ),
-                    ),
-                    if (course.usesCustomTime) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        '${course.startTime}–${course.endTime}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontSize: 9,
-                          height: 1.1,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    if (maxH >= 48 && course.teachers != null && course.teachers!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        course.teachers!,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontSize: 12,
-                          height: 1.2,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                    if (maxH >= 42 && course.location.isNotEmpty) ...[
-                      const Spacer(),
-                      Text(
-                        course.location,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: textColor,
-                          fontSize: 10,
-                          height: 1.2,
-                        ),
-                        maxLines: (maxH * 0.2 / 12).floor().clamp(1, 5),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            },
+          child: CourseBlockLabel(
+            name: course.name,
+            color: textColor,
+            time: course.usesCustomTime
+                ? '${course.startTime}–${course.endTime}'
+                : null,
+            teachers: course.teachers,
+            location: course.location,
           ),
         ),
       ),

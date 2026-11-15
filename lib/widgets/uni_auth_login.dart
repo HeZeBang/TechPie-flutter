@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import '../services/service_provider.dart';
 import '../services/uni_auth_service.dart';
 import 'adaptive_feedback.dart';
+import 'privacy_consent.dart';
 
 final _pendingLogins = Expando<Future<void>>();
 
@@ -22,6 +23,10 @@ Future<void> startUniAuthLogin(BuildContext context) {
 }
 
 Future<void> _login(BuildContext context, ServiceProvider services, UniAuthService auth) async {
+  // The policy is accepted before an account is touched: a store review asks for
+  // it on the sign-in screen, and every sign-in entry runs through here.
+  if (!await ensurePrivacyAccepted(context)) return;
+  if (!context.mounted) return;
   try {
     final tokens = await auth.login(context);
     await services.authService.geekpieLogin(tokens);

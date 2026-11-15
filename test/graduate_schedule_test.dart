@@ -19,6 +19,8 @@ import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 
+import 'support/fake_ids_client.dart';
+
 Map<String, dynamic> fixture() => {
       'currentTerm': '20261',
       'currentTermName': '2026-2027学年秋季学期',
@@ -736,6 +738,19 @@ void main() {
     expect(h.requests, isEmpty);
   });
 
+  test('a restored Passkey obtains an IDS session before reading graduate identity', () async {
+    final h = await harness();
+    addTearDown(h.schedule.dispose);
+    await h.tp.updateRaw(ThirdPartyPlatform.ids, {'cookies': ''});
+    expect(h.tp.idsNode.rawFields['tgc'], isNull);
+    await h.schedule.fetchAll();
+    expect(h.schedule.error, isNull);
+    expect(h.schedule.isGraduate, isTrue);
+    expect(h.tp.idsNode.rawFields['tgc'], 'tgc-value');
+    expect(h.requests.any((r) => r.url.path.endsWith('getUserConf')), isTrue);
+    expect(h.requests.any((r) => r.url.path.endsWith('loadKbxx.do')), isTrue);
+  });
+
   for (final graduate in [true, false]) {
     test('startup exam fetching waits for IDS classification (graduate=$graduate)', () async {
       final h = await harness(graduate: graduate);
@@ -815,16 +830,10 @@ void main() {
 
     const owner = '20260002|20260002';
     await h.storage.setScheduleSource(owner, CampusScheduleSource.graduate);
-    await h.tp.replaceAll([
-      ThirdPartyAccount(
-        platform: ThirdPartyPlatform.cpdaily,
-        account: '20260002',
-        sid: '20260002',
-        token: 'session-b',
-        raw: const {'tgc': 'test-tgc-b'},
-        boundAt: DateTime(2026),
-      ),
-    ]);
+    await h.tp.bindIds(
+      account: '20260002', password: 'synthetic',
+      promptCaptcha: (_, __, {required refresh}) async => null,
+    );
     // Let B's debounce expire while A is still waiting for the timetable.
     await Future<void>.delayed(const Duration(milliseconds: 700));
     final refreshed = Completer<void>();
@@ -849,7 +858,7 @@ void main() {
     h.tableGate = Completer<void>();
     final pending = h.schedule.fetchAll();
     await h.tableEntered.future;
-    await h.tp.unbind(ThirdPartyPlatform.cpdaily);
+    await h.tp.unbind(ThirdPartyPlatform.ids);
     h.tableGate!.complete();
     await pending;
     expect(h.schedule.courseTable, isNull);
@@ -879,14 +888,7 @@ Future<Harness> harness({bool graduate = true, String profileSid = '20260001'}) 
   FlutterSecureStorage.setMockInitialValues({});
   final storage = StorageService(await SharedPreferences.getInstance());
   await storage.saveThirdPartyAccount(
-    ThirdPartyAccount(
-      platform: ThirdPartyPlatform.cpdaily,
-      account: '20260001',
-      sid: '20260001',
-      token: 'session',
-      raw: const {'tgc': 'test-tgc'},
-      boundAt: DateTime(2026),
-    ),
+    FakeIdsClient.account('20260001'),
   );
   final h = Harness()..category = graduate ? '学生/硕士生' : '学生/本科生';
   final client = LoggingHttpClient(
@@ -947,7 +949,7 @@ Future<Harness> harness({bool graduate = true, String profileSid = '20260001'}) 
     }),
   );
   final auth = AuthService(storage, client, UniAuthService());
-  final tp = ThirdPartyAuthService(storage, client);
+  final tp = ThirdPartyAuthService(storage, client, idsClient: FakeIdsClient());
   await tp.initialize();
   h.storage = storage;
   h.httpClient = client;

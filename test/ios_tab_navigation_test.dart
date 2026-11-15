@@ -40,7 +40,10 @@ void main() {
   late AssignmentService assignmentService;
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      // These tests are about the shell, not the first-launch consent.
+      'privacy_accepted_v1': true,
+    });
     runtime = await buildDemoRuntime();
   });
 

@@ -69,6 +69,21 @@ jobs:
               ;;
           esac
 
+      - name: Show where this ref stands, and guard the version
+        # Two halves of the same question. The report is informational — a master
+        # whose line is behind the newest stable release is a legal state, and the
+        # numbers (product version and build number, side by side with the newest
+        # tag) are what a `chore: bump version` commit is written from. The guard
+        # is the hard one: a version that has already been superseded cannot be
+        # proposed, whatever the build number says.
+        env:
+          REF: ${{ github.ref_name }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/release-plan.mjs --check --ref "$REF"
+          node scripts/release-plan.mjs --require-version "$VERSION" --ref "$REF"
+
       - name: Work out the version to write, and the notes it would ship with
         id: target
         env:

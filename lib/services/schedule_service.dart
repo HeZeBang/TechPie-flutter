@@ -112,7 +112,9 @@ class ScheduleService extends ChangeNotifier {
     // each turn a fetch that was failing into one that works. They all go through
     // requestFetch, which decides whether they amount to anything.
     _observedAccount = _campusAccount();
-    _tpAuth.addListener(_onCampusChanged);
+    // Passkey replacement suppresses facade notifications until persistence
+    // finishes. Observe the IDS node so old timetable requests expire at once.
+    _tpAuth.idsNode.addListener(_onCampusChanged);
   }
 
   void _onCampusChanged() {
@@ -144,7 +146,7 @@ class ScheduleService extends ChangeNotifier {
   Timer? _pendingFetch;
 
   String? _campusAccount() {
-    final account = _tpAuth.cpdailyNode.account;
+    final account = _tpAuth.idsNode.account;
     if (account == null) return null;
     return '${account.sid}|${account.account}';
   }
@@ -207,12 +209,12 @@ class ScheduleService extends ChangeNotifier {
   /// time. The epoch captured alongside is what makes the renew-retry
   /// storm-safe (see [_postWithRetry]).
   Map<String, dynamic> _authBody(CookieProvider cp) => {
-        // eams downstream cookie; studentId comes from the cpdaily binding.
-        'studentId': _tpAuth.cpdailyNode.account?.sid ?? '',
+        // eams downstream cookie; studentId comes from the ids binding.
+        'studentId': _tpAuth.idsNode.account?.sid ?? '',
         'cookies': cp.cookies,
       };
 
-  bool get _hasCpdailyBinding => _tpAuth.cpdailyNode.isAvailable;
+  bool get _hasIdsBinding => _tpAuth.hasIdsBinding;
 
   // ── Sessions the user entered by hand ──
   // Read straight from storage, so no second copy can go stale on a semester
@@ -342,7 +344,7 @@ class ScheduleService extends ChangeNotifier {
   }
 
   Future<bool> canFetchUndergraduateExams() async {
-    if (!_hasCpdailyBinding) return false;
+    if (!_hasIdsBinding) return false;
     if (scheduleSource == CampusScheduleSource.undergraduate) return true;
     final revision = _accountRevision;
     if (!_identityResolved || _loading) await fetchAll();
@@ -354,7 +356,7 @@ class ScheduleService extends ChangeNotifier {
       await _fetchCompletion?.future;
       return;
     }
-    if (!_hasCpdailyBinding) return;
+    if (!_hasIdsBinding) return;
     final completion = _fetchCompletion = Completer<void>();
     final revision = _accountRevision;
     _loading = true;
@@ -383,7 +385,7 @@ class ScheduleService extends ChangeNotifier {
       _loading = false;
       if (revision == _accountRevision) {
         if (_error == null) _fetchedForAccount = _campusAccount();
-      } else if (_hasCpdailyBinding) {
+      } else if (_hasIdsBinding) {
         requestFetch(force: true);
       }
       _fetchCompletion = null;
@@ -392,14 +394,19 @@ class ScheduleService extends ChangeNotifier {
     }
   }
 
+  Future<GraduateScheduleClient> _graduateClient() async {
+    final cookie = await _tpAuth.sessionTree.freshCookie(_tpAuth.idsNode);
+    if (cookie == null) throw const FormatException('IDS 学校会话暂时不可用，请刷新 IDS 绑定');
+    return GraduateScheduleClient(_http, _tpAuth.idsNode.rawFields['tgc'] as String? ?? '');
+  }
+
   /// Resolve the current IDS principal before touching either academic system.
   /// A failed graduate application is never evidence of undergraduate identity.
   Future<bool> _fetchGraduateIfEligible() async {
     final account = _campusAccount();
     if (account == null) return false;
     final revision = _accountRevision;
-    final client =
-        GraduateScheduleClient(_http, _tpAuth.cpdailyNode.rawFields['tgc'] as String? ?? '');
+    late final client = _graduateClient();
     if (_identityForAccount != account) {
       _identityResolved = false;
       final source = scheduleSource;
@@ -409,7 +416,7 @@ class ScheduleService extends ChangeNotifier {
         _identityForAccount = account;
       } else {
         try {
-          final identity = await client.identity(_tpAuth.cpdailyStudentId);
+          final identity = await (await client).identity(_tpAuth.idsStudentId);
           if (revision != _accountRevision) return true;
           if (identity.kind == CampusStudentKind.unknown) {
             throw const CampusIdentityConflict('IDS 未返回可识别的本研身份，请手动选择课表来源');
@@ -447,7 +454,7 @@ class ScheduleService extends ChangeNotifier {
     // timetable. Prefer its term labels only when the metadata is available.
     Map<String, dynamic> public = const {};
     try {
-      public = await client.publicInfo();
+      public = await (await client).publicInfo();
     } catch (error) {
       if (revision != _accountRevision) return true;
       final warning = '学期配置暂时不可用：${_schoolError(error)}；按课表中的学期显示';
@@ -456,7 +463,7 @@ class ScheduleService extends ChangeNotifier {
     if (revision != _accountRevision) return true;
     final Map<String, dynamic> raw;
     try {
-      raw = await client.timetable();
+      raw = await (await client).timetable();
     } catch (error) {
       throw FormatException('研究生课表获取失败：${_schoolError(error)}');
     }
@@ -690,7 +697,7 @@ class ScheduleService extends ChangeNotifier {
     _suppressAssignmentRefetch = true;
     notifyListeners();
 
-    if (!_hasCpdailyBinding) {
+    if (!_hasIdsBinding) {
       _suppressAssignmentRefetch = false;
       return;
     }
@@ -709,7 +716,7 @@ class ScheduleService extends ChangeNotifier {
     } finally {
       _loading = false;
       _suppressAssignmentRefetch = false;
-      if (revision != _accountRevision && _hasCpdailyBinding) requestFetch(force: true);
+      if (revision != _accountRevision && _hasIdsBinding) requestFetch(force: true);
       // This final notify fires _onScheduleChanged again. Because
       // _suppressAssignmentRefetch is now false, AssignmentService will
       // refetch (the EAMS session is primed by our fetchCourseTable above,
@@ -718,11 +725,11 @@ class ScheduleService extends ChangeNotifier {
     }
   }
 
-  /// POST [url] with CpDaily auth + [extra] body fields. On 401 the eams
+  /// POST [url] with IDS auth + [extra] body fields. On 401 the eams
   /// node is renewed exactly once (single-flighted across all concurrent
   /// callers) and the request retried with the fresh cookie. For a stale
   /// parent tgc, [SessionTree.withCookie] falls back to renewing the
-  /// cpdaily parent then re-minting the eams cookie. Throws on any non-200
+  /// ids parent then re-minting the eams cookie. Throws on any non-200
   /// after the retry budget is exhausted.
   Future<http.Response> _postWithRetry(
     String url,
@@ -750,7 +757,7 @@ class ScheduleService extends ChangeNotifier {
     );
     if (revision != _accountRevision) throw StateError('学校账号已切换');
     if (resp == null) {
-      throw Exception('cpdaily session unavailable');
+      throw Exception('ids session unavailable');
     }
     if (resp.statusCode != 200) {
       throw Exception('Request failed with status ${resp.statusCode}');
@@ -761,7 +768,7 @@ class ScheduleService extends ChangeNotifier {
   @override
   void dispose() {
     _pendingFetch?.cancel();
-    _tpAuth.removeListener(_onCampusChanged);
+    _tpAuth.idsNode.removeListener(_onCampusChanged);
     super.dispose();
   }
 }
