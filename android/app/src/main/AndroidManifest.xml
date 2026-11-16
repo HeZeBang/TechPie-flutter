@@ -11,7 +11,10 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
+        android:resizeableActivity="true"
         android:usesCleartextTraffic="false">
+        <meta-data android:name="android.supports_size_changes" android:value="true"/>
+        <meta-data android:name="miui.supportAppContinuity" android:value="true"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

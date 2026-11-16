@@ -22,9 +22,10 @@ Future<void> openPrivacyPolicy() => launchUrl(
 /// behind it may run before the answer, and «not now» has to leave the user with
 /// something readable instead of a dead screen.
 class PrivacyGate extends StatefulWidget {
-  const PrivacyGate({super.key, required this.child});
+  const PrivacyGate({super.key, required this.child, this.onAccepted});
 
   final Widget child;
+  final VoidCallback? onAccepted;
 
   @override
   State<PrivacyGate> createState() => _PrivacyGateState();
@@ -33,7 +34,9 @@ class PrivacyGate extends StatefulWidget {
 class _PrivacyGateState extends State<PrivacyGate> {
   Future<void> _accept() async {
     await ServiceProvider.of(context).storageService.setPrivacyAccepted(true);
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    widget.onAccepted?.call();
   }
 
   @override

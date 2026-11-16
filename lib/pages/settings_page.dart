@@ -37,6 +37,7 @@ import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
 import 'feedback_page.dart';
+import 'glance_settings_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'third_party_bind_page.dart';
@@ -376,6 +377,19 @@ class _SettingsPageState extends State<SettingsPage> {
                 onTap: () => unawaited(
                   pushAdaptivePage<void>(context,
                       builder: (_) => const WatchSettingsPage(),),
+                ),
+              ),
+
+            if (sp.glanceSettings != null && (sp.screenFormFactorService?.supported ?? false))
+              ListTile(
+                leading: const Icon(Icons.flip_outlined),
+                title: const Text('外屏与背屏'),
+                subtitle: const Text('课程、截止日期和付款码'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => unawaited(
+                  pushAdaptivePage<void>(context,
+                    builder: (_) => const GlanceSettingsPage(),
+                  ),
                 ),
               ),
 
