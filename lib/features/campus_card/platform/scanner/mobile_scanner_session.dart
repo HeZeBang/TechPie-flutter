@@ -4,7 +4,9 @@ import 'dart:ui' show Offset, Size;
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import 'scanner_port.dart';
+import '../../core/async_mutex.dart';
+import '../../core/errors/app_failure.dart';
+import '../../domain/ports/platform_ports.dart';
 
 /// Shared scanner controller for every platform the pinned mobile_scanner fork
 /// supports — Android, iOS and OHOS — through one code path.
@@ -18,7 +20,7 @@ final class MobileScannerSession implements ScannerPort {
             MobileScannerController(
               autoStart: false,
               // Decode at most four times a second without throttling preview.
-              // ScannerPage gates duplicate results before any submission.
+              // ScannerModal gates duplicate results before any submission.
               detectionSpeed: DetectionSpeed.normal,
               detectionTimeoutMs: 250,
               facing: CameraFacing.back,
@@ -33,11 +35,12 @@ final class MobileScannerSession implements ScannerPort {
 
   final MobileScannerController controller;
   final ImagePicker _imagePicker;
-  final StreamController<ScannerReading> _codes = StreamController<ScannerReading>.broadcast(
+  final StreamController<ScannerReading> _codes =
+      StreamController<ScannerReading>.broadcast(
     sync: true,
   );
   late final StreamSubscription<BarcodeCapture> _subscription;
-  final _transitions = _AsyncMutex();
+  final _transitions = AsyncMutex();
 
   /// Whether the platform camera session exists: started and not yet stopped.
   bool _live = false;
@@ -75,8 +78,13 @@ final class MobileScannerSession implements ScannerPort {
       await _awaitPreviewFrame(previewStarted);
       _live = true;
       _frozen = false;
-    } on MobileScannerException {
-      throw Exception('无法启动相机，请检查相机权限。');
+    } on MobileScannerException catch (error) {
+      throw AppFailure(
+        FailureKind.permissionDenied,
+        '无法启动相机，请检查相机权限。',
+        code: 'SCANNER_START_FAILED',
+        cause: error,
+      );
     }
   }
 
@@ -127,7 +135,11 @@ final class MobileScannerSession implements ScannerPort {
     _ensureActive();
     final current = controller.value.torchState;
     if (current == TorchState.unavailable) {
-      throw Exception('当前设备不支持手电筒。');
+      throw const AppFailure(
+        FailureKind.unavailable,
+        '当前设备不支持手电筒。',
+        code: 'SCANNER_TORCH_UNAVAILABLE',
+      );
     }
     final isEnabled = current == TorchState.on;
     if (isEnabled != enabled) await controller.toggleTorch();
@@ -136,7 +148,8 @@ final class MobileScannerSession implements ScannerPort {
   @override
   Future<String?> scanImage() async {
     _ensureActive();
-    final path = (await _imagePicker.pickImage(source: ImageSource.gallery))?.path;
+    final path =
+        (await _imagePicker.pickImage(source: ImageSource.gallery))?.path;
     if (path == null) return null;
     final capture = await controller.analyzeImage(path);
     return _firstValue(capture);
@@ -175,7 +188,8 @@ final class MobileScannerSession implements ScannerPort {
     if (corners.isEmpty) return null;
     if (frame.width <= 0 || frame.height <= 0) return null;
     return [
-      for (final point in corners) Offset(point.dx / frame.width, point.dy / frame.height),
+      for (final point in corners)
+        Offset(point.dx / frame.width, point.dy / frame.height),
     ];
   }
 
@@ -190,21 +204,5 @@ final class MobileScannerSession implements ScannerPort {
 
   void _ensureActive() {
     if (_disposed) throw StateError('MobileScannerSession is disposed');
-  }
-}
-
-final class _AsyncMutex {
-  Future<void> _tail = Future<void>.value();
-
-  Future<T> protect<T>(Future<T> Function() action) {
-    final completer = Completer<T>();
-    _tail = _tail.then((_) async {
-      try {
-        completer.complete(await action());
-      } catch (error, stackTrace) {
-        completer.completeError(error, stackTrace);
-      }
-    });
-    return completer.future;
   }
 }

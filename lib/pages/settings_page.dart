@@ -40,6 +40,7 @@ import 'feedback_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'third_party_bind_page.dart';
+import 'watch_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -177,6 +178,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final storage = sp.storageService;
     final themeService = sp.themeService;
     final tpAuth = sp.thirdPartyAuthService;
+    final campusCard = sp.campusCardService;
     final useIosChrome = isIos();
     final useLegacyIosChrome = usesLegacyIosChrome();
     final topInset = useIosChrome || useLegacyIosChrome
@@ -197,6 +199,7 @@ class _SettingsPageState extends State<SettingsPage> {
           logger,
           themeService,
           tpAuth,
+          campusCard,
           sp.syncService,
         ]),
         builder: (context, _) {
@@ -320,12 +323,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 onTap: () => unawaited(startUniAuthLogin(context)),
               ),
             // Bindings are configured independently of the primary account, so
-            // this row sits outside the signed-in block.
+            // this row sits outside the signed-in block (it replaces the old
+            // OPENID row, which was reachable the same way).
             ListTile(
               leading: const Icon(Icons.account_tree_outlined),
               title: const Text('Linked accounts'),
               subtitle: Text(
-                '${tpAuth.boundPlatforms.length} bound · eGate / Gradescope / Hydro',
+                '${tpAuth.boundPlatforms.length + (campusCard.configured ? 1 : 0)} bound · eCard / eGate / Gradescope / Hydro',
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => unawaited(
@@ -364,6 +368,17 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const Divider(),
+            if (isIos())
+              ListTile(
+                leading: const Icon(Icons.watch_outlined),
+                title: const Text('Apple Watch'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => unawaited(
+                  pushAdaptivePage<void>(context,
+                      builder: (_) => const WatchSettingsPage(),),
+                ),
+              ),
+
             // Appearance section
             _sectionHeader(theme, 'Appearance'),
             if (useIosChrome)

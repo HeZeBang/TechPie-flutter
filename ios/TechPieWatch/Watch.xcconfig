@@ -1,0 +1,4 @@
+// Keep the embedded watch app's version aligned with Flutter's iPhone app.
+#include "../Flutter/Generated.xcconfig"
+MARKETING_VERSION = $(FLUTTER_BUILD_NAME)
+CURRENT_PROJECT_VERSION = $(FLUTTER_BUILD_NUMBER)

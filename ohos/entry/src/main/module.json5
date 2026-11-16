@@ -27,6 +27,12 @@
         "backgroundModes": [
           "dataTransfer"
         ],
+        "metadata": [
+          {
+            "name": "ohos.ability.shortcuts",
+            "resource": "$profile:shortcuts_config"
+          }
+        ],
         "skills": [
           {
             "entities": [

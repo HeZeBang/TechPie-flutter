@@ -26,6 +26,15 @@ final class DeveloperLabPage extends StatelessWidget {
         ? 0.0
         : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
     final waveforms = AppHaptics.all.values.toList(growable: false);
+    final sounds = <String, AppHapticWaveform>{};
+    for (final waveform in waveforms) {
+      final asset = waveform.soundAsset;
+      if (asset != null) sounds.putIfAbsent(asset, () => waveform);
+    }
+    final designed = waveforms
+        .where((waveform) => waveform.soundAsset != null)
+        .toList(growable: false);
+
     return Scaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
@@ -53,6 +62,37 @@ final class DeveloperLabPage extends StatelessWidget {
                 ),
             ],
           ),
+          _Section(
+            key: const Key('lab-sounds'),
+            header: 'Sounds',
+            footer: 'Sound only — the assets the app ships.',
+            children: [
+              for (final entry in sounds.entries)
+                _LabTile(
+                  title: _fileName(entry.key),
+                  subtitle: '${entry.value.soundDurationMs ?? entry.value.durationMs} ms'
+                      ' · ${entry.value.id}',
+                  icon: Icons.volume_up_outlined,
+                  onTap: () => unawaited(
+                      AppHaptics.play(entry.value, sound: true, vibration: false),
+                    ),
+                ),
+            ],
+          ),
+          _Section(
+            key: const Key('lab-together'),
+            header: 'Together',
+            footer: 'What the app plays for these two moments: waveform and sound.',
+            children: [
+              for (final waveform in designed)
+                _LabTile(
+                  title: waveform.id,
+                  subtitle: _summary(waveform),
+                  icon: Icons.play_circle_outline,
+                  onTap: () => unawaited(AppHaptics.play(waveform, sound: true)),
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -66,6 +106,7 @@ final class DeveloperLabPage extends StatelessWidget {
     return '$pulses · ${waveform.durationMs} ms$sound';
   }
 
+  static String _fileName(String asset) => asset.split('/').last;
 }
 
 final class _NoPlayerNotice extends StatelessWidget {

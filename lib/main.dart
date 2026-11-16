@@ -9,11 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/utils/platform.dart';
 
+import 'features/campus_card/app/app_providers.dart';
 import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
+import 'services/campus_card_service.dart';
 import 'services/deadline_widget_service.dart';
 import 'services/debug_logger.dart';
+import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
 import 'services/http_client.dart';
 import 'services/ids/ids_client.dart';
@@ -68,6 +71,9 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final authService = AuthService(storageService, httpClient, uniAuthService,
       logger: debugLogger,);
   final themeService = ThemeService(storageService);
+  final campusCardService =
+      CampusCardService(debugLogger: debugLogger, storage: storageService);
+  final ecardWidgetService = EcardWidgetService();
   final thirdPartyAuthService = ThirdPartyAuthService(
     storageService,
     httpClient,
@@ -101,8 +107,10 @@ Future<void> _realMain(SharedPreferences prefs) async {
     authService,
     thirdPartyAuthService,
     storageService,
+    ecard: campusCardService,
     logger: debugLogger,
   );
+  campusCardService.onBindingChanged = syncService.forcePush;
   // It talks to GitHub rather than our backend, so it keeps its own client
   // instead of the logging one the API services share.
   final updateService = UpdateService();
@@ -177,6 +185,8 @@ Future<void> _realMain(SharedPreferences prefs) async {
       uniAuthService: uniAuthService,
       syncService: syncService,
       updateService: updateService,
+      campusCardService: campusCardService,
+      ecardWidgetService: ecardWidgetService,
       deadlineWidgetService: deadlineWidgetService,
     ),
   );
@@ -187,6 +197,17 @@ Future<void> _realMain(SharedPreferences prefs) async {
           defaultTargetPlatform == TargetPlatform.macOS)) {
     deadlineWidgetService.initialize();
   }
+
+  unawaited(campusCardService.refreshAccount());
+
+  // The home-screen widget / shortcut only needs its handler once something
+  // could press it — a widget tap on iOS/Android, a long-press shortcut on OHOS.
+  if (isIos() || isAndroid() || isOhos()) ecardWidgetService.initialize();
+
+  // Build the campus-card runtime now that the first frame is up, so tapping the
+  // pass does not pay for it. Nothing session-related happens here: a request
+  // that needs a session issues one itself.
+  campusCardService.prepare();
 
   // -- Background: renew tokens first (main SSO session + third-party in
   // parallel — they touch independent state), then fan out fetches that
@@ -296,6 +317,8 @@ class TechPieApp extends StatefulWidget {
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
+  final CampusCardService campusCardService;
+  final EcardWidgetService? ecardWidgetService;
   final DeadlineWidgetService? deadlineWidgetService;
 
   const TechPieApp({
@@ -312,6 +335,8 @@ class TechPieApp extends StatefulWidget {
     required this.uniAuthService,
     required this.syncService,
     required this.updateService,
+    required this.campusCardService,
+    this.ecardWidgetService,
     this.deadlineWidgetService,
   });
 
@@ -336,6 +361,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_checkForUpdatesQuietly());
+    widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
     widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
   }
 
@@ -346,12 +372,17 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       oldWidget.deadlineWidgetService?.clearOpenHandler();
       widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
     }
+    if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
+    oldWidget.ecardWidgetService?.clearOpenPayHandler();
+    widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.ecardWidgetService?.clearOpenPayHandler();
     widget.deadlineWidgetService?.dispose();
+    widget.campusCardService.dispose();
     super.dispose();
   }
 
@@ -406,6 +437,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     appShellPendingDeadlines.value = true;
   }
 
+  Future<void> _openEcardPayCode() async {
+    // The shell performs the push: it knows which stack the entry belongs in —
+    // the Home tab's on iOS — and it is still there after a cold start.
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
+    appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
+  }
+
   @override
   Widget build(BuildContext context) {
     // The plugin has no implementation on iOS, web or OHOS, where asking for
@@ -437,6 +475,8 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         uniAuthService: widget.uniAuthService,
         syncService: widget.syncService,
         updateService: widget.updateService,
+        campusCardService: widget.campusCardService,
+        ecardWidgetService: widget.ecardWidgetService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,

@@ -15,6 +15,10 @@
     {
       "name": "camera_reason",
       "value": "使用相机扫描签到码与校园卡付款二维码"
+    },
+    {
+      "name": "ecard_shortcut_label",
+      "value": "消费码"
     }
   ]
 }

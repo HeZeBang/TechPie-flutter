@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../features/campus_card/app/app_providers.dart';
+import '../pages/campus_card_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
@@ -62,6 +64,18 @@ final featureEntries = <Feature>[
     url: 'https://egate.shanghaitech.edu.cn/xsfw/sys/ydxsqjxs/index.html#/',
     cookieType: CookieType.egateApp,
     icon: const Icon(Icons.door_front_door),
+  ),
+  Feature(
+    id: 'campus_card',
+    description: '校园卡',
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const CampusCardPage(
+        entry: CampusCardEntry.paymentCode,
+      ),
+    ),
+    icon: const Icon(Icons.account_balance_wallet_outlined),
   ),
   Feature(
     id: 'oa_gym',
