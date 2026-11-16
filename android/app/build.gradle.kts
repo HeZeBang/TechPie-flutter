@@ -141,6 +141,10 @@ android {
     }
 }
 
+dependencies {
+    implementation(files("libs/xms-wearable-lib_1.4_release.aar"))
+}
+
 tasks.named("preBuild") { dependsOn(prepareEcardWidgetResources) }
 
 flutter {

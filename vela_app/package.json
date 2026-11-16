@@ -1,0 +1,20 @@
+{
+  "name": "techpie-band",
+  "version": "0.1.0",
+  "description": "TechPie 小米手环端快应用（Vela）",
+  "engines": {
+    "node": ">=8.10"
+  },
+  "scripts": {
+    "start": "aiot server --watch --open-nuttx",
+    "build": "aiot build",
+    "release": "aiot release",
+    "watch": "aiot watch --open-nuttx"
+  },
+  "devDependencies": {
+    "aiot-toolkit": "^2.0.5"
+  },
+  "browserslist": [
+    "chrome 65"
+  ]
+}

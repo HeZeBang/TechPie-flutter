@@ -1,0 +1,140 @@
+<template>
+  <div class="page">
+    <text class="title">TechPie</text>
+    <text class="status">连接：{{ connState }}</text>
+    <text class="status">诊断：{{ diagState }}</text>
+    <text class="log">{{ logText }}</text>
+    <input class="btn" type="button" value="发测试消息" @click="sendTest" />
+    <input class="btn" type="button" value="查连接状态" @click="checkState" />
+    <input class="btn" type="button" value="诊断" @click="diagnose" />
+  </div>
+</template>
+
+<style>
+.page {
+  width: 192px;
+  height: 490px;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px;
+}
+.title {
+  font-size: 22px;
+  color: #ffffff;
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+.status {
+  font-size: 14px;
+  color: #9be8ff;
+  margin: 2px 0;
+}
+.log {
+  font-size: 12px;
+  color: #cccccc;
+  width: 176px;
+  height: 190px;
+  margin: 6px 0;
+  overflow: scroll;
+}
+.btn {
+  width: 176px;
+  height: 36px;
+  margin-top: 6px;
+  font-size: 15px;
+  color: #ffffff;
+  background-color: #2a6df4;
+  border-radius: 8px;
+}
+</style>
+
+<script>
+import interconnect from '@system.interconnect'
+
+export default {
+  private: {
+    conn: null,
+    connState: '初始化',
+    diagState: '-',
+    logText: ''
+  },
+  onInit() {
+    try {
+      this.createConn()
+      this.checkState()
+      this.sendTest()
+    } catch (e) {
+      this.log('初始化异常: ' + e)
+    }
+  },
+  createConn() {
+    const conn = interconnect.instance()
+    this.conn = conn
+    conn.onopen = (res) => {
+      this.connState = '已连接'
+      this.log('onopen isReconnected=' + res.isReconnected)
+    }
+    conn.onclose = (res) => {
+      this.connState = '已断开'
+      this.log('onclose code=' + res.code + ' data=' + res.data)
+    }
+    conn.onerror = (res) => {
+      this.connState = '出错'
+      this.log('onerror code=' + res.code + ' data=' + res.data)
+    }
+    conn.onmessage = (res) => {
+      this.log('收到：' + res.data)
+    }
+    this.log('连接对象已创建')
+  },
+  checkState() {
+    if (!this.conn) {
+      return
+    }
+    this.conn.getReadyState({
+      success: (data) => {
+        this.connState = data.status === 1 ? '已连接' : '未连接(' + data.status + ')'
+      },
+      fail: (data, code) => {
+        this.connState = '查询失败'
+        this.log('getReadyState fail code=' + code + ' data=' + data)
+      }
+    })
+  },
+  diagnose() {
+    if (!this.conn) {
+      return
+    }
+    this.diagState = '检测中…'
+    this.conn.diagnosis({
+      timeout: 5000,
+      success: (data) => {
+        this.diagState = data.status === 0 ? 'OK' : 'code ' + data.status
+      },
+      fail: (data, code) => {
+        this.diagState = '失败 ' + code
+        this.log('diagnosis fail code=' + code + ' data=' + data)
+      }
+    })
+  },
+  sendTest() {
+    if (!this.conn) {
+      return
+    }
+    this.conn.send({
+      data: { t: 'ping', ts: Date.now() },
+      success: () => {
+        this.log('已发送 ping')
+      },
+      fail: (data, code) => {
+        this.log('send fail code=' + code + ' data=' + data)
+      }
+    })
+  },
+  log(msg) {
+    const line = new Date().toTimeString().slice(0, 8) + ' ' + msg
+    this.logText = line + '\n' + this.logText.slice(0, 600)
+    console.log('[techpie-band] ' + msg)
+  }
+}
+</script>
