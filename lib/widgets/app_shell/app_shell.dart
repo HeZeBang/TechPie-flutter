@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 
-import '../../features/campus_card/app/app_providers.dart';
 import '../../pages/assignments_page.dart';
 import '../../pages/campus_card_page.dart';
 import '../../pages/home_page.dart';
@@ -12,9 +11,13 @@ import '../../pages/settings_page.dart';
 import '../../utils/adaptive_layout.dart';
 import '../../utils/platform.dart';
 import '../../widgets/adaptive_page_navigation.dart';
+import '../glance/glance_active_scope.dart';
 import 'app_destination.dart';
+import 'app_entry_notifier.dart';
 import 'desktop/desktop_shell.dart';
 import 'mobile_shell.dart';
+
+export 'app_entry_notifier.dart';
 
 /// A campus-card entry the host asked for — a home-screen widget tap, a
 /// shortcut, a `techpie://ecard/pay` link — that has not been shown yet.
@@ -24,7 +27,7 @@ import 'mobile_shell.dart';
 /// tab the user left the app on — or the selected destination on a wide
 /// window, and on the root navigator otherwise. A value set before the shell
 /// mounts waits for it, which is what a cold start needs.
-final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
+// Shared with the glance host through app_entry_notifier.dart.
 final appShellPendingDeadlines = ValueNotifier<bool>(false);
 
 class AppShell extends StatefulWidget {
@@ -140,6 +143,7 @@ class _AppShellState extends State<AppShell> {
   void _showPendingEcardEntry() {
     final entry = appShellPendingEcardEntry.value;
     if (entry == null || !mounted) return;
+    if (GlanceActiveScope.isActive(context)) return;
     appShellPendingEcardEntry.value = null;
     // Login and playback pages can cover the entire tab shell: the code then
     // opens above that page, and back returns to it.

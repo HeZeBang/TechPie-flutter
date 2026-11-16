@@ -19,10 +19,12 @@ import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
+import 'services/glance_settings_service.dart';
 import 'services/http_client.dart';
 import 'services/ids/ids_client.dart';
 import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
+import 'services/screen_form_factor_service.dart';
 import 'services/service_provider.dart';
 import 'services/storage_service.dart';
 import 'services/sync_service.dart';
@@ -32,6 +34,7 @@ import 'services/uni_auth_service.dart';
 import 'services/update_service.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
+import 'widgets/glance/glance_gate.dart';
 import 'widgets/privacy_consent.dart';
 import 'widgets/update_dialogs.dart';
 
@@ -66,6 +69,8 @@ void main(List<String> args) async {
 
 Future<void> _realMain(SharedPreferences prefs) async {
   final storageService = StorageService(prefs);
+  final screenFormFactorService = ScreenFormFactorService();
+  final glanceSettings = GlanceSettings(storageService);
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
   final httpClient = LoggingHttpClient(debugLogger);
   final uniAuthService = UniAuthService(logger: debugLogger);
@@ -191,6 +196,8 @@ Future<void> _realMain(SharedPreferences prefs) async {
       ecardBindService: ecardBindService,
       ecardWidgetService: ecardWidgetService,
       deadlineWidgetService: deadlineWidgetService,
+      screenFormFactorService: screenFormFactorService,
+      glanceSettings: glanceSettings,
     ),
   );
 
@@ -324,6 +331,8 @@ class TechPieApp extends StatefulWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final ScreenFormFactorService? screenFormFactorService;
+  final GlanceSettings? glanceSettings;
   final DeadlineWidgetService? deadlineWidgetService;
 
   const TechPieApp({
@@ -343,6 +352,8 @@ class TechPieApp extends StatefulWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.screenFormFactorService,
+    this.glanceSettings,
     this.deadlineWidgetService,
   });
 
@@ -484,19 +495,23 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        screenFormFactorService: widget.screenFormFactorService,
+        glanceSettings: widget.glanceSettings,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
           navigatorObservers: [FeedbackRouteObserver(), _nativeChromeObserver],
-          builder: (context, child) => AdaptiveFeedbackHost(
-            key: adaptiveFeedbackHostKey,
-            child: child ?? const SizedBox.shrink(),
+          builder: (context, child) => GlanceGate(
+            child: AdaptiveFeedbackHost(
+              key: adaptiveFeedbackHostKey,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
           title: 'TechPie',
           theme: widget.themeService.lightTheme,
           darkTheme: widget.themeService.darkTheme,
           themeMode: widget.themeService.themeMode,
-          home: const PrivacyGate(child: AppShell()),
+          home: PrivacyGate(onAccepted: () { if (mounted) setState(() {}); }, child: const AppShell()),
         ),
       ),
     );
