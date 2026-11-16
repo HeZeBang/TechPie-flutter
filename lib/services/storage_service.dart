@@ -44,6 +44,9 @@ class StorageService {
   String? get campusWebOwner => _prefs.getString('campus_web_owner');
   Future<void> setCampusWebOwner(String owner) => _prefs.setString('campus_web_owner', owner);
 
+  bool get islandEnabled => _prefs.getBool('island_enabled') ?? false;
+  Future<void> setIslandEnabled(bool value) => _prefs.setBool('island_enabled', value);
+
   // Secure session storage
   Future<void> saveSession(UserSession session) async {
     await _secure.write(key: _sessionKey, value: jsonEncode(session.toJson()));

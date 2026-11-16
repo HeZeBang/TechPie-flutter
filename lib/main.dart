@@ -21,6 +21,7 @@ import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
 import 'services/http_client.dart';
 import 'services/ids/ids_client.dart';
+import 'services/island_service.dart';
 import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
@@ -104,6 +105,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService,
     scheduleService,
   );
+  final islandService = IslandService(storageService, scheduleService, assignmentService);
   final deadlineWidgetService = DeadlineWidgetService(assignmentService);
   final syncService = SyncService(
     authService,
@@ -191,6 +193,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       ecardBindService: ecardBindService,
       ecardWidgetService: ecardWidgetService,
       deadlineWidgetService: deadlineWidgetService,
+      islandService: islandService,
     ),
   );
 
@@ -201,6 +204,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     deadlineWidgetService.initialize();
   }
 
+  islandService.start();
   oaGymService.startProfileSync();
   unawaited(campusCardService.refreshAccount());
 
@@ -325,6 +329,7 @@ class TechPieApp extends StatefulWidget {
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
   final DeadlineWidgetService? deadlineWidgetService;
+  final IslandService? islandService;
 
   const TechPieApp({
     super.key,
@@ -344,6 +349,7 @@ class TechPieApp extends StatefulWidget {
     required this.ecardBindService,
     this.ecardWidgetService,
     this.deadlineWidgetService,
+    this.islandService,
   });
 
   @override
@@ -388,6 +394,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.ecardWidgetService?.clearOpenPayHandler();
     widget.deadlineWidgetService?.dispose();
+    widget.islandService?.dispose();
     widget.campusCardService.dispose();
     super.dispose();
   }
@@ -398,6 +405,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       // Coming back is a cheap moment to top the SSO token up, and it is
       // guarded: a token with time left is left alone.
       unawaited(widget.authService.tryRenewSession());
+      unawaited(widget.islandService?.refreshNow(force: true));
       unawaited(_checkForUpdatesQuietly());
     }
   }
@@ -484,6 +492,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        islandService: widget.islandService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,

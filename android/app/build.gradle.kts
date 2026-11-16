@@ -141,6 +141,11 @@ android {
     }
 }
 
+dependencies {
+    implementation("com.xzakota.hyper.notification:focus-api:1.4")
+    implementation("androidx.core:core:1.18.0")
+}
+
 tasks.named("preBuild") { dependsOn(prepareEcardWidgetResources) }
 
 flutter {

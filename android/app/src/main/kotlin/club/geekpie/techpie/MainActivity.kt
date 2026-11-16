@@ -6,6 +6,11 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
+import club.geekpie.techpie.island.FocusSequenceStore
+import club.geekpie.techpie.island.IslandBridge
+import club.geekpie.techpie.island.IslandCapabilityProbe
+import club.geekpie.techpie.island.IslandNotificationFactory
 import android.os.Handler
 import android.os.Looper
 import android.provider.CalendarContract
@@ -25,6 +30,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var ecardWidgets: EcardWidgetBridge? = null
     private var ecardFeedback: EcardFeedback? = null
+    private var islandBridge: IslandBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -32,6 +38,10 @@ class MainActivity : FlutterActivity() {
             it.capture(intent, notifyFlutter = false)
         }
         ecardFeedback = EcardFeedback(this, flutterEngine.dartExecutor.binaryMessenger)
+        islandBridge = IslandBridge(
+            this, flutterEngine.dartExecutor.binaryMessenger,
+            IslandCapabilityProbe(this), IslandNotificationFactory(this, FocusSequenceStore(this)),
+        ) { requestNotificationPermission() }
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -82,7 +92,18 @@ class MainActivity : FlutterActivity() {
         ecardWidgets = null
         ecardFeedback?.dispose()
         ecardFeedback = null
+        islandBridge?.dispose()
+        islandBridge = null
         super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    private fun requestNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) ActivityCompat.requestPermissions(this,
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_ISLAND_NOTIFICATION)
+        return granted
     }
 
     private fun handleStartEcardBindHijack(
@@ -333,6 +354,7 @@ class MainActivity : FlutterActivity() {
     private companion object {
         const val CALENDAR_IMPORTER_CHANNEL = "techpie/calendar_importer"
         const val ECARD_BIND_CHANNEL = "techpie/ecard_bind"
+        const val REQUEST_ISLAND_NOTIFICATION = 48292
         const val REQUEST_CALENDAR_PERMISSIONS = 48291
         const val REQUEST_VPN_CONSENT = 0x0ECB
         const val VPN_STATE_ATTEMPTS = 15
