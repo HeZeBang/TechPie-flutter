@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="island_channel_name">课表动态</string>
+    <string name="island_channel_desc">在灵动岛/实时动态中显示当前课程与日程状态</string>
+</resources>

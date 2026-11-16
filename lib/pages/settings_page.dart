@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/third_party_account.dart';
 import '../services/api_base_url.dart';
 import '../services/feedback_service.dart';
+import '../services/island_service.dart';
 import '../services/service_provider.dart';
 import '../services/sync_service.dart';
 import '../services/theme_service.dart';
@@ -54,6 +55,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _checkingUpdate = false;
   bool? _isPersonalInfoBlurred;
   bool _wasVisible = false;
+  IslandCapability? _islandCapability;
 
   /// The stack a settings subpage is pushed onto in a wide window. A field, not
   /// a local: a GlobalKey rebuilt every frame would drop the stack with it.
@@ -74,7 +76,31 @@ class _SettingsPageState extends State<SettingsPage> {
       _isPersonalInfoBlurred =
           ServiceProvider.of(context).storageService.maskPersonalInfo;
     }
+    if (isVisible && !_wasVisible) unawaited(_loadIslandCapability());
     _wasVisible = isVisible;
+  }
+
+  Future<void> _loadIslandCapability() async {
+    final island = ServiceProvider.of(context).islandService;
+    if (island == null || !island.supported) return;
+    final capability = await island.capability();
+    if (mounted) setState(() => _islandCapability = capability);
+  }
+
+  Future<void> _setIslandEnabled(IslandService island, bool value) async {
+    await island.setEnabled(value);
+    await _loadIslandCapability();
+  }
+
+  String get _islandSubtitle {
+    final capability = _islandCapability;
+    if (capability == null) return '显示当前课程、下一节课和即将到期的作业';
+    if (!capability.notificationsEnabled) return '请允许 TechPie 发送通知';
+    return switch (capability.backend) {
+      'hyper_island' => '通过 HyperOS 超级岛显示',
+      'live_update' => '通过 Android 实时通知显示',
+      _ => '通过普通常驻通知显示',
+    };
   }
 
   void _togglePersonalInfoBlur() {
@@ -435,6 +461,15 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // General section
             _sectionHeader(theme, 'General'),
+            if (sp.islandService case final island? when island.supported)
+              _AdaptiveSwitchTile(
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.notifications_active_outlined),
+                title: '课程与截止日期通知',
+                subtitle: _islandSubtitle,
+                value: storage.islandEnabled,
+                onChanged: (value) => unawaited(_setIslandEnabled(island, value)),
+              ),
             _AdaptiveSwitchTile(
               key: const ValueKey('settings.mask-personal-info'),
               usesIosLiquidGlass: useIosChrome,
