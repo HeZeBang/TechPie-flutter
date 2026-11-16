@@ -1,16 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../features/campus_card/app/app_runtime.dart';
 import '../features/campus_card/app/real_runtime_factory.dart';
 import '../features/campus_card/core/async_mutex.dart';
 import '../features/campus_card/core/config/app_environment.dart';
+import '../features/campus_card/core/errors/app_failure.dart';
 import '../features/campus_card/core/errors/core_error_catalog.dart';
 import '../features/campus_card/data/auth/ecard_openid_auth_port.dart';
 import '../features/campus_card/data/auth/geekpie_ecard_session_issuer.dart';
+import '../features/campus_card/data/crypto/sm2_offline_crypto.dart';
 import '../features/campus_card/data/storage/flutter_secure_credential_store.dart';
 import '../features/campus_card/domain/models/auth_models.dart';
 import '../features/campus_card/domain/ports/auth_port.dart';
@@ -100,6 +104,79 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     final value = List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
     await _secureStore.write(key, value);
     return value;
+  }
+
+  Future<Map<String, Object?>> generateOfflinePaymentImage() async {
+    try {
+      final authorization =
+          await _runtime.offlinePayments.mostRecentAuthorization();
+      if (authorization == null) {
+        return {'error': '未开通离线支付授权'};
+      }
+      final code = await _runtime.offlinePayments.generate(authorization.cardId);
+      const size = 180.0;
+      final painter = QrPainter(
+        data: code.payload,
+        version: QrVersions.auto,
+        gapless: true,
+      );
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      canvas.drawRect(
+        const ui.Rect.fromLTWH(0, 0, size, size),
+        ui.Paint()..color = const ui.Color(0xFFFFFFFF),
+      );
+      painter.paint(canvas, const ui.Size(size, size));
+      final image = await recorder
+          .endRecording()
+          .toImage(size.toInt(), size.toInt());
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      if (data == null) return {'error': '二维码生成失败'};
+      return {
+        'png': base64Encode(data.buffer.asUint8List()),
+        'generatedAt': code.generatedAt.millisecondsSinceEpoch,
+      };
+    } on AppFailure catch (failure) {
+      return {'error': failure.safeMessage};
+    } catch (_) {
+      return {'error': '离线码生成失败'};
+    }
+  }
+
+  /// 为手环导出离线签名凭证：手环本地做 SM2 签名生成消费码。
+  /// 私钥经穿戴通道下发，仅在手环本地签名使用；不要把返回值写入日志。
+  Future<Map<String, Object?>> exportOfflineCredentialForBand() async {
+    try {
+      final authorization =
+          await _runtime.offlinePayments.mostRecentAuthorization();
+      if (authorization == null) {
+        return {'t': 'offline.cred', 'error': '未开通离线支付授权'};
+      }
+      final cred = await _runtime.offlinePayments.exportForWatch(
+        authorization.cardId,
+      );
+      if (cred == null) {
+        return {'t': 'offline.cred', 'error': '离线授权不可用，请联网续期'};
+      }
+      final coords = Sm2OfflineCrypto.publicKeyCoordinates(cred.privateKey);
+      return {
+        't': 'offline.cred',
+        'cardID': cred.authorization.cardId,
+        'privateKey': cred.privateKey,
+        'pubX': coords.x,
+        'pubY': coords.y,
+        'authorInfo': cred.authorization.authorInfo,
+        'checksum': cred.deviceChecksum,
+        'expiresAt':
+            (cred.authorization.expiresOn ?? DateTime.now().toUtc())
+                .millisecondsSinceEpoch /
+            1000,
+        'totalUses': cred.authorization.totalUses,
+      };
+    } catch (_) {
+      return {'t': 'offline.cred', 'error': '离线凭证导出失败'};
+    }
   }
 
   @override

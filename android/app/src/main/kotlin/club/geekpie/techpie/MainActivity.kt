@@ -25,6 +25,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var ecardWidgets: EcardWidgetBridge? = null
     private var ecardFeedback: EcardFeedback? = null
+    private var bandBridge: BandBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -32,6 +33,7 @@ class MainActivity : FlutterActivity() {
             it.capture(intent, notifyFlutter = false)
         }
         ecardFeedback = EcardFeedback(this, flutterEngine.dartExecutor.binaryMessenger)
+        bandBridge = BandBridge(this, flutterEngine.dartExecutor.binaryMessenger).also { it.start() }
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -82,6 +84,8 @@ class MainActivity : FlutterActivity() {
         ecardWidgets = null
         ecardFeedback?.dispose()
         ecardFeedback = null
+        bandBridge?.dispose()
+        bandBridge = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 

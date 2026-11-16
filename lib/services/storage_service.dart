@@ -19,6 +19,7 @@ import '../models/oa_gym.dart';
 import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import '../models/user_session.dart';
+import '../models/wearable_device.dart';
 import '../utils/secure_storage.dart';
 import 'sync_envelope.dart';
 
@@ -43,6 +44,46 @@ class StorageService {
 
   String? get campusWebOwner => _prefs.getString('campus_web_owner');
   Future<void> setCampusWebOwner(String owner) => _prefs.setString('campus_web_owner', owner);
+
+  bool get bandReminderEnabled =>
+      _prefs.getBool('band_reminder_enabled') ?? false;
+  Future<void> setBandReminderEnabled(bool value) =>
+      _prefs.setBool('band_reminder_enabled', value);
+
+  int get bandReminderLeadMinutes =>
+      _prefs.getInt('band_reminder_lead_minutes') ?? 10;
+  Future<void> setBandReminderLeadMinutes(int value) =>
+      _prefs.setInt('band_reminder_lead_minutes', value);
+
+  bool get bandAssignmentReminderEnabled =>
+      _prefs.getBool('band_assignment_reminder_enabled') ?? true;
+  Future<void> setBandAssignmentReminderEnabled(bool value) =>
+      _prefs.setBool('band_assignment_reminder_enabled', value);
+
+  // 手环离线支付凭证（私钥+离线授权）下发开关。
+  bool get bandOfflineCredEnabled =>
+      _prefs.getBool('band_offline_cred_enabled') ?? false;
+  Future<void> setBandOfflineCredEnabled(bool value) =>
+      _prefs.setBool('band_offline_cred_enabled', value);
+
+  List<WearableDevice>? get storedWearableDevices {
+    final raw = _prefs.getString('wearable_devices');
+    if (raw == null) return null;
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) return null;
+    final devices = <WearableDevice>[];
+    for (final item in decoded) {
+      final device = WearableDevice.fromJson(item);
+      if (device != null) devices.add(device);
+    }
+    return devices;
+  }
+
+  Future<void> setWearableDevices(List<WearableDevice> devices) =>
+      _prefs.setString(
+        'wearable_devices',
+        jsonEncode([for (final device in devices) device.toJson()]),
+      );
 
   // Secure session storage
   Future<void> saveSession(UserSession session) async {
