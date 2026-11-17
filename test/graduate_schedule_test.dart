@@ -883,6 +883,148 @@ void main() {
     expect(h.storage.graduateScheduleOwner, isNull);
   });
 
+  test('parent-domain cookies stay within the origin that issued them', () async {
+    final log = LoggingHttpClient(
+      DebugLogger(),
+      inner: MockClient((request) async {
+        final cookie = request.headers['cookie'] ?? '';
+        if (request.url.host == GraduateScheduleClient.idsHost) {
+          expect(cookie, isNot(contains('graduate-secret')));
+          if (request.url.path.endsWith('index.html')) {
+            return http.Response(
+              '<html>IDS</html>',
+              200,
+              headers: {
+                'set-cookie': 'SESSION=ids-secret; Domain=shanghaitech.edu.cn; Path=/; Secure',
+              },
+            );
+          }
+          expect(cookie, contains('SESSION=ids-secret'));
+          return http.Response(
+            jsonEncode({
+              'code': '0',
+              'datas': {'uid': '20260001', 'categoryName': '学生/硕士生'},
+            }),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        expect(cookie, isNot(contains('ids-secret')));
+        if (request.url.path.endsWith('loadKbxx.do')) {
+          expect(cookie, contains('SESSION=graduate-secret'));
+          return http.Response(jsonEncode(fixture()), 200,
+              headers: {'content-type': 'application/json; charset=utf-8'},);
+        }
+        return http.Response(
+          '<html>graduate</html>',
+          200,
+          headers: {
+            'set-cookie': 'SESSION=graduate-secret; Domain=shanghaitech.edu.cn; Path=/; Secure',
+          },
+        );
+      }),
+    );
+    addTearDown(log.close);
+    final client = GraduateScheduleClient(log, 'bound');
+    await client.identity('20260001');
+    await client.timetable();
+    await client.identity('20260001');
+  });
+
+  for (final rawTgc in [null, 'stale-raw']) {
+    test('the authoritative IDS cookie supplies CASTGC when raw tgc is $rawTgc', () async {
+      final h = await harness();
+      addTearDown(h.schedule.dispose);
+      await h.tp.updateRaw(ThirdPartyPlatform.ids, {
+        'cookies': 'SESSION=reference; CASTGC=header-session',
+        if (rawTgc != null) 'tgc': rawTgc,
+      });
+      await h.schedule.fetchAll();
+      expect(h.schedule.error, isNull);
+      expect(h.schedule.isGraduate, isTrue);
+      final requests = h.requests.where((r) => r.url.host == GraduateScheduleClient.idsHost);
+      expect(requests, isNotEmpty);
+      for (final request in requests) {
+        expect(request.headers['cookie'], contains('CASTGC=header-session'));
+        expect(request.headers['cookie'], isNot(contains('stale-raw')));
+      }
+    });
+  }
+
+  for (final graduate in [false, true]) {
+    test('a changed IDS session revalidates the principal (graduate=$graduate)', () async {
+      final h = await harness(graduate: graduate);
+      addTearDown(h.schedule.dispose);
+      await h.schedule.fetchAll();
+      final previous = h.schedule.courseTable;
+      h.overrides['getUserConf'] = http.Response(
+        jsonEncode({'code': '0', 'datas': {'uid': '20260002', 'categoryName': '学生/硕士生'}}),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+      h.overrides['exam_table'] = http.Response(
+        jsonEncode({'success': true, 'data': {'exams': <Object>[]}}), 200,
+      );
+      await h.tp.updateRaw(ThirdPartyPlatform.ids, {'tgc': 'rotated-session'});
+      expect(h.schedule.courseTable, same(previous));
+      h.requests.clear();
+      final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule);
+      addTearDown(assignments.dispose);
+      if (graduate) {
+        await h.schedule.fetchAll();
+      } else {
+        await assignments.fetchPlatform('exam');
+      }
+      expect(h.schedule.error, contains('学号不一致'));
+      expect(h.requests.where((r) => r.url.path.endsWith('getUserConf')), hasLength(1));
+      expect(h.requests.any((r) => r.url.path.endsWith('exam_table')), isFalse);
+      expect(h.requests.any((r) => r.url.host == GraduateScheduleClient.host), isFalse);
+      expect(h.storage.loadCampusIdentity(owner), isNull);
+      h.overrides['getUserConf'] = http.Response('offline', 503);
+      h.requests.clear();
+      await assignments.fetchPlatform('exam');
+      expect(h.requests.any((r) => r.url.path.endsWith('exam_table')), isFalse);
+    });
+  }
+
+  test('a renewed IDS session is revalidated before the EAMS exam request', () async {
+    final h = await harness(graduate: false);
+    addTearDown(h.schedule.dispose);
+    await h.tp.updateRaw(ThirdPartyPlatform.ids, {'tgc': 'old-session'});
+    await h.schedule.fetchAll();
+    h.overrides['getUserConf'] = http.Response(
+      jsonEncode({'code': '0', 'datas': {'uid': '20260002', 'categoryName': '学生/硕士生'}}),
+      200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
+    h.overrides['exam_table'] = http.Response(
+      jsonEncode({'success': true, 'data': {'exams': <Object>[]}}), 200,
+    );
+    h.tp.idsNode.seedNextRenewTimestamp(DateTime(2020));
+    h.requests.clear();
+    final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule);
+    addTearDown(assignments.dispose);
+    await assignments.fetchPlatform('exam');
+    expect(h.tp.idsNode.rawFields['tgc'], 'tgc-value');
+    expect(h.schedule.error, contains('学号不一致'));
+    expect(h.requests.any((r) => r.url.path.endsWith('exam_table')), isFalse);
+  });
+
+  test('a changed IDS session discards an in-flight identity response', () async {
+    final h = await harness();
+    addTearDown(h.schedule.dispose);
+    h.identityGate = Completer<void>();
+    final pending = h.schedule.fetchAll();
+    await h.identityEntered.future;
+    await h.tp.updateRaw(ThirdPartyPlatform.ids, {'tgc': 'rotated-session'});
+    h.identityGate!.complete();
+    await pending;
+    expect(h.schedule.courseTable, isNull);
+    expect(h.storage.loadGraduateSchedule(), isNull);
+    expect(h.storage.loadCampusIdentity(owner), isNull);
+    expect(h.requests.any((r) => r.url.host == GraduateScheduleClient.host), isFalse);
+  });
+
   test('IDS response cookies rotate within the client and stay off the graduate host', () async {
     const ids = GraduateScheduleClient.idsHost;
     const graduate = GraduateScheduleClient.host;

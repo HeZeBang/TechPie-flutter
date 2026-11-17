@@ -304,6 +304,8 @@ class StorageService {
         jsonEncode({'owner': owner, ...identity.toJson()}),
       );
 
+  Future<void> clearCampusIdentity() => _prefs.remove('schedule_campus_identity');
+
   CampusScheduleSource scheduleSourceFor(String? owner) {
     final raw = _prefs.getString('schedule_source_preference');
     if (raw == null || owner == null) return CampusScheduleSource.automatic;

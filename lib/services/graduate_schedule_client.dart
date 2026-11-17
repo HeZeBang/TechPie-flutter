@@ -13,7 +13,7 @@ class GraduateScheduleClient {
 
   final LoggingHttpClient http;
   final String tgc;
-  final List<_SchoolCookie> _cookies = [];
+  final Map<String, List<_SchoolCookie>> _cookieJars = {};
   Future<void>? _graduateSession;
   static const host = 'graduate-course.shanghaitech.edu.cn';
   static const idsHost = 'ids.shanghaitech.edu.cn';
@@ -147,7 +147,8 @@ class GraduateScheduleClient {
     }
     for (var hop = 0; hop < 12; hop++) {
       if (!_allowed(uri)) throw const FormatException('学校登录跳转地址不受支持');
-      final applicable = _cookies
+      final jar = _cookieJars.putIfAbsent(uri.origin, () => []);
+      final applicable = jar
           .where((c) => c.matches(uri) && (c.cookie.name != 'CASTGC' || uri.host == idsHost));
       final cookies = [
         ...applicable.map((c) => '${c.cookie.name}=${c.cookie.value}'),
@@ -192,12 +193,12 @@ class GraduateScheduleClient {
             cookie.domain == null,
             cookie.path?.startsWith('/') == true ? cookie.path! : defaultPath,
           );
-          _cookies.removeWhere(
+          jar.removeWhere(
             (c) => c.cookie.name == cookie.name && c.domain == domain && c.path == stored.path,
           );
           if (cookie.maxAge != 0 &&
               (cookie.expires == null || cookie.expires!.isAfter(DateTime.now()))) {
-            _cookies.add(stored);
+            jar.add(stored);
           }
         } on HttpException {
           // Ignore malformed optional cookie headers.

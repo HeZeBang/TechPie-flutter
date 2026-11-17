@@ -32,6 +32,7 @@ class ScheduleService extends ChangeNotifier {
   GraduateSchedule? _graduateSchedule;
   String? _graduateScheme;
   String? _identityForAccount;
+  String? _identityForSession;
   bool _identityResolved = false;
   Completer<void>? _fetchCompletion;
   bool _graduateIdentity = false;
@@ -45,6 +46,9 @@ class ScheduleService extends ChangeNotifier {
   String? get identityLabel => _identityLabel;
   String? get identityWarning => _identityWarning;
   CampusScheduleSource get scheduleSource => _storage.scheduleSourceFor(_campusAccount());
+  String? get _idsSession => _tpAuth.idsNode.cookieProvider?.cookies;
+  bool get _identityIsCurrent => _identityResolved &&
+      (scheduleSource != CampusScheduleSource.automatic || _identityForSession == _idsSession);
 
   Future<void> selectScheduleSource(CampusScheduleSource source) async {
     if (_loading) throw const FormatException('课表加载中，请稍后切换来源');
@@ -52,6 +56,7 @@ class ScheduleService extends ChangeNotifier {
     if (owner == null) throw const FormatException('请先绑定 CpDaily / IDS');
     final saved = _storage.setScheduleSource(owner, source);
     _identityForAccount = null;
+    _identityForSession = null;
     _identityResolved = false;
     _graduateIdentity = source == CampusScheduleSource.graduate;
     _identityLabel = null;
@@ -123,6 +128,7 @@ class ScheduleService extends ChangeNotifier {
       _observedAccount = account;
       _accountRevision++;
       _identityForAccount = null;
+      _identityForSession = null;
       _identityResolved = false;
       _graduateIdentity = false;
       _identityLabel = null;
@@ -161,7 +167,7 @@ class ScheduleService extends ChangeNotifier {
   void requestFetch({bool force = false}) {
     final account = _campusAccount();
     final accountChanged = account != null && account != _fetchedForAccount;
-    final usable = _semesterInfo != null && _error == null;
+    final usable = _semesterInfo != null && _error == null && _identityIsCurrent;
     if (!force && !accountChanged && usable) return;
 
     _pendingFetch?.cancel();
@@ -175,7 +181,7 @@ class ScheduleService extends ChangeNotifier {
       // a round already fetched in this process for this account is the answer.
       final current = _campusAccount();
       final changed = current != null && current != _fetchedForAccount;
-      if (_fetchedForAccount != null && !changed && _error == null) return;
+      if (_fetchedForAccount != null && !changed && _error == null && _identityIsCurrent) return;
       unawaited(fetchAll());
     });
   }
@@ -347,8 +353,8 @@ class ScheduleService extends ChangeNotifier {
     if (!_hasIdsBinding) return false;
     if (scheduleSource == CampusScheduleSource.undergraduate) return true;
     final revision = _accountRevision;
-    if (!_identityResolved || _loading) await fetchAll();
-    return revision == _accountRevision && _identityResolved && !_graduateIdentity;
+    if (!_identityIsCurrent || _loading) await fetchAll();
+    return revision == _accountRevision && _identityIsCurrent && !_graduateIdentity;
   }
 
   Future<void> fetchAll() async {
@@ -384,7 +390,7 @@ class ScheduleService extends ChangeNotifier {
     } finally {
       _loading = false;
       if (revision == _accountRevision) {
-        if (_error == null) _fetchedForAccount = _campusAccount();
+        if (_error == null && _identityIsCurrent) _fetchedForAccount = _campusAccount();
       } else if (_hasIdsBinding) {
         requestFetch(force: true);
       }
@@ -394,10 +400,12 @@ class ScheduleService extends ChangeNotifier {
     }
   }
 
-  Future<GraduateScheduleClient> _graduateClient() async {
+  Future<({GraduateScheduleClient client, String session})> _graduateClient() async {
     final cookie = await _tpAuth.sessionTree.freshCookie(_tpAuth.idsNode);
     if (cookie == null) throw const FormatException('IDS 学校会话暂时不可用，请刷新 IDS 绑定');
-    return GraduateScheduleClient(_http, _tpAuth.idsNode.rawFields['tgc'] as String? ?? '');
+    final tgc = RegExp(r'(?:^|;)\s*CASTGC=([^;]*)').firstMatch(cookie.cookies)?.group(1) ??
+        _tpAuth.idsNode.rawFields['tgc'] as String? ?? '';
+    return (client: GraduateScheduleClient(_http, tgc), session: cookie.cookies);
   }
 
   /// Resolve the current IDS principal before touching either academic system.
@@ -407,17 +415,22 @@ class ScheduleService extends ChangeNotifier {
     if (account == null) return false;
     final revision = _accountRevision;
     late final client = _graduateClient();
-    if (_identityForAccount != account) {
-      _identityResolved = false;
-      final source = scheduleSource;
-      if (source != CampusScheduleSource.automatic) {
-        _graduateIdentity = source == CampusScheduleSource.graduate;
-        _identityLabel = _graduateIdentity ? '手动选择研究生课表' : '手动选择本科课表';
-        _identityForAccount = account;
-      } else {
-        try {
-          final identity = await (await client).identity(_tpAuth.idsStudentId);
-          if (revision != _accountRevision) return true;
+    final source = scheduleSource;
+    if (source != CampusScheduleSource.automatic) {
+      _graduateIdentity = source == CampusScheduleSource.graduate;
+      _identityLabel = _graduateIdentity ? '手动选择研究生课表' : '手动选择本科课表';
+      _identityForAccount = account;
+      _identityForSession = _idsSession;
+    } else {
+      var session = _idsSession;
+      try {
+        final school = await client;
+        session = school.session;
+        if (revision != _accountRevision || session != _idsSession) return true;
+        if (_identityForAccount != account || !_identityIsCurrent) {
+          _identityResolved = false;
+          final identity = await school.client.identity(_tpAuth.idsStudentId);
+          if (revision != _accountRevision || session != _idsSession) return true;
           if (identity.kind == CampusStudentKind.unknown) {
             throw const CampusIdentityConflict('IDS 未返回可识别的本研身份，请手动选择课表来源');
           }
@@ -425,22 +438,33 @@ class ScheduleService extends ChangeNotifier {
           _identityLabel = 'IDS：${identity.categoryName}';
           _identityWarning = null;
           _identityForAccount = account;
+          _identityForSession = session;
           await _storage.saveCampusIdentity(account, identity);
-        } catch (error) {
-          if (revision != _accountRevision) return true;
-          final cached = _storage.loadCampusIdentity(account);
-          if (error is CampusIdentityConflict ||
-              cached == null ||
-              cached.kind == CampusStudentKind.unknown) {
-            throw FormatException('身份识别失败：${_schoolError(error)}；可手动选择课表来源');
-          }
-          _graduateIdentity = cached.kind == CampusStudentKind.graduate;
-          _identityLabel = 'IDS 已缓存身份：${cached.categoryName}';
-          _identityWarning = 'IDS 身份暂时无法刷新，沿用此账号已确认的身份';
         }
+      } catch (error) {
+        if (revision != _accountRevision || session != _idsSession) return true;
+        _identityResolved = false;
+        _identityForAccount = null;
+        if (error is CampusIdentityConflict) {
+          await _storage.clearCampusIdentity();
+          if (revision != _accountRevision || session != _idsSession) return true;
+        }
+        final cached = _storage.loadCampusIdentity(account);
+        if (error is CampusIdentityConflict ||
+            cached == null ||
+            cached.kind == CampusStudentKind.unknown) {
+          throw FormatException('身份识别失败：${_schoolError(error)}；可手动选择课表来源');
+        }
+        _graduateIdentity = cached.kind == CampusStudentKind.graduate;
+        _identityLabel = 'IDS 已缓存身份：${cached.categoryName}';
+        _identityWarning = 'IDS 身份暂时无法刷新，沿用此账号已确认的身份';
+        _identityForSession = session;
       }
     }
-    if (revision != _accountRevision) return true;
+    if (revision != _accountRevision ||
+        (source == CampusScheduleSource.automatic && _identityForSession != _idsSession)) {
+      return true;
+    }
     _identityResolved = true;
     if (_semesterInfo == null || isGraduate != _graduateIdentity) {
       _restoreCachedSchedule(
@@ -454,20 +478,20 @@ class ScheduleService extends ChangeNotifier {
     // timetable. Prefer its term labels only when the metadata is available.
     Map<String, dynamic> public = const {};
     try {
-      public = await (await client).publicInfo();
+      public = await (await client).client.publicInfo();
     } catch (error) {
-      if (revision != _accountRevision) return true;
+      if (revision != _accountRevision || !_identityIsCurrent) return true;
       final warning = '学期配置暂时不可用：${_schoolError(error)}；按课表中的学期显示';
       _identityWarning = [_identityWarning, warning].whereType<String>().join('；');
     }
-    if (revision != _accountRevision) return true;
+    if (revision != _accountRevision || !_identityIsCurrent) return true;
     final Map<String, dynamic> raw;
     try {
-      raw = await (await client).timetable();
+      raw = await (await client).client.timetable();
     } catch (error) {
       throw FormatException('研究生课表获取失败：${_schoolError(error)}');
     }
-    if (revision != _accountRevision) return true;
+    if (revision != _accountRevision || !_identityIsCurrent) return true;
     final current = public['lcxxMap'];
     final snapshot = GraduateSchedule.fromJson({
       ...raw,
@@ -488,11 +512,11 @@ class ScheduleService extends ChangeNotifier {
     _selectedSemesterId = semester;
     _courseTable = table;
     await _storage.saveGraduateSchedule(account, snapshot);
-    if (revision != _accountRevision) return true;
+    if (revision != _accountRevision || !_identityIsCurrent) return true;
     await _storage.setSelectedSemester(semester);
-    if (revision != _accountRevision) return true;
+    if (revision != _accountRevision || !_identityIsCurrent) return true;
     await _storage.saveCourseTable(semester, table, owner: account);
-    if (revision != _accountRevision) return true;
+    if (revision != _accountRevision || !_identityIsCurrent) return true;
     await _loadGraduateCalendar(semester);
     return true;
   }

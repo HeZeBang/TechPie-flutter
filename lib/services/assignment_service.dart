@@ -475,11 +475,19 @@ class AssignmentService extends ChangeNotifier {
       final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
         node,
         (cp) async {
+          // Minting EAMS cookies can renew IDS after the initial identity check.
+          if (!await _schedule.canFetchUndergraduateExams()) {
+            throw const FormatException('学校身份尚未确认');
+          }
+          final currentSemester = _selectedSemesterId();
+          if (currentSemester == null || currentSemester.isEmpty) {
+            throw const FormatException('本科课表学期尚未确认');
+          }
           final r = await _http.post(
             Uri.parse('$_baseUrl/schedule/exam_table'),
             headers: _jsonHeaders(),
             body: jsonEncode({
-              'semester_id': semesterId,
+              'semester_id': currentSemester,
               'cookies': cp.cookies,
             }),
             tag: 'schedule:exam_table',
@@ -490,6 +498,10 @@ class AssignmentService extends ChangeNotifier {
       if (resp == null) return null;
       return _parseExamTableResponse(resp);
     } catch (e) {
+      if (_graduateExamsUnsupported) {
+        _platformErrors.remove('exam');
+        return [];
+      }
       _platformErrors['exam'] = '同步失败，请检查网络或稍后重试';
       return null;
     }
