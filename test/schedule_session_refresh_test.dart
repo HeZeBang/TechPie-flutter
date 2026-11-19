@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -68,6 +70,19 @@ class _RecordingClient extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     requests.add(request.url);
+    if (request.url.host == 'ids.shanghaitech.edu.cn') {
+      final body = request.url.path.endsWith('index.html')
+          ? '<html>IDS</html>'
+          : jsonEncode({
+              'code': '0',
+              'datas': {'uid': '20240001', 'categoryName': '学生/本科生'},
+            });
+      return http.StreamedResponse(
+        Stream.value(utf8.encode(body)),
+        200,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      );
+    }
     throw const _Refused();
   }
 }

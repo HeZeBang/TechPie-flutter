@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
+import '../models/graduate_schedule.dart';
 import '../models/third_party_account.dart';
 import 'api_base_url.dart';
 import 'auth_service.dart';
@@ -448,7 +449,20 @@ class AssignmentService extends ChangeNotifier {
     }
   }
 
+  bool get _graduateExamsUnsupported => _schedule.hasGraduateIdentity ||
+      _schedule.isGraduate ||
+      _selectedSemesterId()?.startsWith(graduateSemesterPrefix) == true;
+
   Future<List<Assignment>?> _fetchExamTable() async {
+    final undergraduate =
+        !_graduateExamsUnsupported && await _schedule.canFetchUndergraduateExams();
+    // Graduate term ids belong to a different school system. Sending one to
+    // EAMS would query the wrong term and can disturb its stateful session.
+    if (_graduateExamsUnsupported) {
+      _platformErrors.remove('exam');
+      return [];
+    }
+    if (!undergraduate) return null;
     final semesterId = _selectedSemesterId();
     final node = _tpAuth.eamsNode;
     if (!_tpAuth.hasIdsBinding ||
@@ -461,11 +475,19 @@ class AssignmentService extends ChangeNotifier {
       final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
         node,
         (cp) async {
+          // Minting EAMS cookies can renew IDS after the initial identity check.
+          if (!await _schedule.canFetchUndergraduateExams()) {
+            throw const FormatException('学校身份尚未确认');
+          }
+          final currentSemester = _selectedSemesterId();
+          if (currentSemester == null || currentSemester.isEmpty) {
+            throw const FormatException('本科课表学期尚未确认');
+          }
           final r = await _http.post(
             Uri.parse('$_baseUrl/schedule/exam_table'),
             headers: _jsonHeaders(),
             body: jsonEncode({
-              'semester_id': semesterId,
+              'semester_id': currentSemester,
               'cookies': cp.cookies,
             }),
             tag: 'schedule:exam_table',
@@ -476,6 +498,10 @@ class AssignmentService extends ChangeNotifier {
       if (resp == null) return null;
       return _parseExamTableResponse(resp);
     } catch (e) {
+      if (_graduateExamsUnsupported) {
+        _platformErrors.remove('exam');
+        return [];
+      }
       _platformErrors['exam'] = '同步失败，请检查网络或稍后重试';
       return null;
     }
