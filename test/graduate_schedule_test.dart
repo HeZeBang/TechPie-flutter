@@ -17,6 +17,8 @@ import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/debug_logger.dart';
 import 'package:techpie/services/graduate_schedule_client.dart';
 import 'package:techpie/services/http_client.dart';
+import 'package:techpie/services/ics/ics_export_service.dart';
+import 'package:techpie/services/ids/ids_client.dart';
 import 'package:techpie/services/schedule_service.dart';
 import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
@@ -272,6 +274,76 @@ void main() {
     final partial = GraduateSchedule.fromJson(raw)
         .tableFor(semester, 'A', firstMonday: DateTime(2026, 9, 14));
     expect(partial.courses.map((course) => course.classroom), isNot(contains('后半学期教室')));
+  });
+
+  test('an ambiguous move preserves other dated meetings and cancelled weeks', () {
+    final raw = datedFixture();
+    final rows = raw['results'] as List;
+    rows.add({...rows[0] as Map, 'XQ': 3, 'JASMC': '周三教室'});
+    (raw['rqpkjgallList'] as List<Map<String, String>>).addAll([
+      for (final date in ['2026-09-16', '2026-09-22', '2026-10-07'])
+        {'bjdm': 'g1', 'kssj': '0815', 'jssj': '0955', 'rq': date},
+    ]);
+
+    final snapshot = GraduateSchedule.fromJson(raw);
+    expect(snapshot.firstMondayFor(semester), DateTime(2026, 9, 14));
+    final table = snapshot.tableFor(semester, 'A');
+    final meetings = [
+      for (final course in table.courses.where((c) => c.name == '合成研究生课程'))
+        for (final week in course.activeWeeks) (week, course.times.keys.single, course.classroom),
+    ];
+    expect(
+      meetings,
+      unorderedEquals([
+        (1, 1, '示例教室'),
+        (1, 3, '周三教室'),
+        (2, 2, ''),
+        (4, 1, '示例教室'),
+        (4, 3, '周三教室'),
+      ]),
+    );
+  });
+
+  test('today and calendar export include dated courses from both period schemes', () async {
+    final raw = fixture();
+    for (final row in (raw['results'] as List).take(2)) {
+      row['ZCMC'] = '';
+      row['RQ'] = '2026-09-22';
+    }
+    final h = await harness(timetable: raw);
+    addTearDown(h.schedule.dispose);
+    await h.schedule.fetchAll();
+    expect(h.schedule.termBegin, isNull);
+    final exporter = IcsExportService();
+    for (final scheme in ['A', 'B']) {
+      await h.schedule.selectGraduateScheme(scheme);
+      expect(h.schedule.courseTable!.courses, hasLength(1));
+      final table = h.schedule.fullCourseTable!;
+      final today = eamsToDisplayCourses(
+        table.courses,
+        0,
+        timetablePeriods: table.periods.map((p) => p.toPeriod()).toList(),
+        onDate: DateTime(2026, 9, 22),
+      );
+      expect(
+        today.map((c) => (c.name, c.startTime, c.endTime)),
+        unorderedEquals([
+          ('合成研究生课程', '08:15', '09:55'),
+          ('合成研选本课程', '09:00', '10:40'),
+        ]),
+      );
+      final calendar = exporter.buildCalendar(table: table, termBegin: null);
+      expect(calendar, contains('DTSTART;TZID=Asia/Shanghai:20260922T081500'));
+      expect(calendar, contains('DTEND;TZID=Asia/Shanghai:20260922T104000'));
+      final payloads = await exporter.buildCalendarEventPayloads(table: table, termBegin: null);
+      expect(
+        payloads.map((e) => (e['title'], e['startMillis'])),
+        unorderedEquals([
+          ('合成研究生课程', DateTime(2026, 9, 22, 8, 15).millisecondsSinceEpoch),
+          ('合成研选本课程', DateTime(2026, 9, 22, 9).millisecondsSinceEpoch),
+        ]),
+      );
+    }
   });
 
   test('graduate refresh automatically stores the inferred start without an EAMS request',
@@ -1010,6 +1082,74 @@ void main() {
     expect(h.requests.any((r) => r.url.path.endsWith('exam_table')), isFalse);
   });
 
+  test('a failed IDS renewal does not queue another timetable login', () async {
+    final ids = _FailingIdsClient();
+    final h = await harness(graduate: false, idsClient: ids);
+    addTearDown(h.schedule.dispose);
+    await h.schedule.fetchAll();
+    expect(h.schedule.error, isNull);
+    await h.tp.updateRaw(ThirdPartyPlatform.ids, {});
+    expect(await h.tp.idsNode.renew(), isFalse);
+    await Future<void>.delayed(const Duration(milliseconds: 750));
+    expect(ids.loginAttempts, 1);
+  });
+
+  for (final endpoint in ['semesters', 'course_table']) {
+    test('rotating IDS during $endpoint discards the old undergraduate response', () async {
+      final h = await harness(graduate: false);
+      addTearDown(h.schedule.dispose);
+      await h.schedule.fetchAll();
+      final cachedTable = h.schedule.courseTable;
+      final cachedSemesters = h.schedule.semesterInfo;
+      h.requests.clear();
+
+      h.pausedEamsEndpoint = endpoint;
+      final pending = h.schedule.fetchAll();
+      await h.eamsEntered.future;
+      await h.tp.updateRaw(ThirdPartyPlatform.ids, {'tgc': 'rotated-session'});
+      h.resumeEams.complete();
+      await pending;
+
+      expect(h.schedule.error, contains('IDS 会话'));
+      expect(h.schedule.courseTable, same(cachedTable));
+      if (endpoint == 'semesters') {
+        expect(h.schedule.semesterInfo, same(cachedSemesters));
+        expect(
+          h.requests.where((r) => r.url.path.startsWith('/api/schedule/')).map(
+                (r) => r.url.pathSegments.last,
+              ),
+          ['semesters'],
+        );
+      }
+
+      h.requests.clear();
+      h.overrides['getUserConf'] = http.Response(
+        jsonEncode({
+          'code': '0',
+          'datas': {'uid': '20260002', 'categoryName': '学生/本科生'},
+        }),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+      await h.schedule.fetchAll();
+      expect(h.schedule.error, contains('学号不一致'));
+      expect(h.requests.any((r) => r.url.path.startsWith('/api/schedule/')), isFalse);
+    });
+  }
+
+  test('manual source preferences are independent and recognize the legacy owner', () async {
+    SharedPreferences.setMockInitialValues({
+      'schedule_source_preference': jsonEncode({'owner': 'a', 'source': 'graduate'}),
+    });
+    final storage = StorageService(await SharedPreferences.getInstance());
+    await storage.setScheduleSource('b', CampusScheduleSource.undergraduate);
+    expect(storage.scheduleSourceFor('a'), CampusScheduleSource.graduate);
+    expect(storage.scheduleSourceFor('b'), CampusScheduleSource.undergraduate);
+    await storage.setScheduleSource('a', CampusScheduleSource.automatic);
+    expect(storage.scheduleSourceFor('a'), CampusScheduleSource.automatic);
+    expect(storage.scheduleSourceFor('b'), CampusScheduleSource.undergraduate);
+  });
+
   test('a changed IDS session discards an in-flight identity response', () async {
     final h = await harness();
     addTearDown(h.schedule.dispose);
@@ -1347,6 +1487,9 @@ class Harness {
   Completer<void>? identityGate;
   final identityEntered = Completer<void>();
   final tableEntered = Completer<void>();
+  String? pausedEamsEndpoint;
+  final eamsEntered = Completer<void>();
+  final resumeEams = Completer<void>();
   final requests = <http.Request>[];
   final overrides = <String, http.Response>{};
   String category = '';
@@ -1357,6 +1500,7 @@ Future<Harness> harness({
   bool graduate = true,
   String profileSid = '20260001',
   Map<String, dynamic>? timetable,
+  IdsClient? idsClient,
 }) async {
   SharedPreferences.setMockInitialValues({});
   FlutterSecureStorage.setMockInitialValues({});
@@ -1369,7 +1513,13 @@ Future<Harness> harness({
     DebugLogger(),
     inner: MockClient((request) async {
       h.requests.add(request);
-      final override = h.overrides[request.url.path.split('/').last];
+      final endpoint = request.url.pathSegments.last;
+      if (endpoint == h.pausedEamsEndpoint) {
+        h.pausedEamsEndpoint = null;
+        h.eamsEntered.complete();
+        await h.resumeEams.future;
+      }
+      final override = h.overrides[endpoint];
       if (override != null) return override;
       if (request.url.path.endsWith('getUserConf') && h.identityGate != null) {
         h.identityEntered.complete();
@@ -1380,7 +1530,7 @@ Future<Harness> harness({
         await h.tableGate!.future;
       }
       if (h.fail) throw const FormatException('synthetic offline');
-      final Object data = switch (request.url.path.split('/').last) {
+      final Object data = switch (endpoint) {
         'index.html' || 'course.html' || 'login' || 'index.do' => '<html>synthetic entry</html>',
         'getUserConf' => {
             'code': '0',
@@ -1423,7 +1573,7 @@ Future<Harness> harness({
     }),
   );
   final auth = AuthService(storage, client, UniAuthService());
-  final tp = ThirdPartyAuthService(storage, client, idsClient: FakeIdsClient());
+  final tp = ThirdPartyAuthService(storage, client, idsClient: idsClient ?? FakeIdsClient());
   await tp.initialize();
   h.storage = storage;
   h.httpClient = client;
@@ -1431,6 +1581,16 @@ Future<Harness> harness({
   h.tp = tp;
   h.schedule = ScheduleService(storage, client, auth, tp);
   return h;
+}
+
+class _FailingIdsClient extends FakeIdsClient {
+  int loginAttempts = 0;
+
+  @override
+  Future<IdsSession> login(IdsPasskey secret, {bool backedUp = false}) async {
+    loginAttempts++;
+    throw const FormatException('synthetic Passkey failure');
+  }
 }
 
 class _PausedStorage extends StorageService {

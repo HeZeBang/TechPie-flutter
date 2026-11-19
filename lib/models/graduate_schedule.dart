@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'course.dart';
 import 'course_table.dart';
 
 const graduateTableId = 'graduate';
@@ -129,15 +130,19 @@ class GraduateSchedule {
 
   Map<String, String> schemesFor(String semesterId) {
     final result = <String, String>{};
+    final preferred = _text(data['mrjcfadm']);
+    var usesDefault = false;
     for (final row in rows.where((r) => _inTerm(r, rawTerm(semesterId)))) {
       final id = _text(row['JCFADM']);
-      if (id.isNotEmpty) {
+      if (id.isEmpty) {
+        usesDefault = true;
+      } else {
         result[id] = _text(row['JCFAMC']).isEmpty ? '节次方案 $id' : _text(row['JCFAMC']);
       }
     }
-    if (result.isEmpty) {
-      final id = _text(data['mrjcfadm']);
-      result[id] = '默认节次方案';
+    if (result.isEmpty ||
+        (usesDefault && _rows('skjcList').any((p) => _text(p['JCFADM']) == preferred))) {
+      result.putIfAbsent(preferred, () => '默认节次方案');
     }
     return result;
   }
@@ -180,12 +185,17 @@ class GraduateSchedule {
       );
     }
     periods.sort((a, b) => a.index.compareTo(b.index));
+    final periodsByIndex = {for (final period in periods) period.index: period.toPeriod()};
     final cancelled =
         cancelledFor(semesterId).map(_classId).where((id) => id.isNotEmpty).toSet();
     final courses = <EamsCourse>[];
     final anchor = firstMonday ?? firstMondayFor(semesterId);
-    for (final row in rows.where((r) => _inTerm(r, rawTerm(semesterId)))) {
-      if (_text(row['JCFADM']).isNotEmpty && _text(row['JCFADM']) != scheme) continue;
+    final monday = anchor == null ? null : DateTime.utc(anchor.year, anchor.month, anchor.day);
+    final defaultId = defaultScheme(semesterId);
+    final termRows = rows.where((r) => _inTerm(r, rawTerm(semesterId))).toList();
+    for (final row in termRows) {
+      final rowScheme = _text(row['JCFADM']);
+      if ((rowScheme.isEmpty ? defaultId : rowScheme) != scheme) continue;
       if (cancelled.contains(_classId(row))) continue;
       final day = int.tryParse(_text(row['XQ']));
       final first = int.tryParse(_text(row['KSJCDM']));
@@ -201,40 +211,53 @@ class GraduateSchedule {
         throw const FormatException('研究生课表的星期或节次无法识别');
       }
       final units = [for (var unit = first; unit <= last; unit++) unit];
-      if (units.any((n) => !periods.any((p) => p.index == n))) {
+      if (units.any((n) => !periodsByIndex.containsKey(n))) {
         throw const FormatException('研究生课表的排课与节次方案不匹配');
       }
-      final dates = _datesFor(row, semesterId, firstMonday: anchor);
-      final weeksByDay = <int, Set<int>>{};
-      if (anchor != null && dates != null) {
-        final monday = DateTime.utc(anchor.year, anchor.month, anchor.day);
-        for (final date in dates) {
-          final offset = date.difference(monday).inDays;
-          if (offset < 0 || offset >= 60 * 7) {
-            throw const FormatException('研究生课程日期与学期范围不一致，请刷新课表');
-          }
-          weeksByDay.putIfAbsent(date.weekday, () => {}).add(offset ~/ 7 + 1);
+      final clock = ClockCourseTime(
+        startTime: periodsByIndex[first]!.startTime,
+        endTime: periodsByIndex[last]!.endTime,
+      );
+      final weekText = _text(row['ZCMC']);
+      final meetings = _meetingsFor(row, semesterId, termRows, monday);
+      final datesBySlot = <(int, String), List<DateTime>?>{};
+      if (meetings != null) {
+        for (final (date, room) in meetings) {
+          datesBySlot.putIfAbsent((date.weekday, room), () => [])!.add(date);
         }
-      } else if (_text(row['ZCMC']).isNotEmpty) {
-        weeksByDay[day] = graduateWeeks(_text(row['ZCMC'])).toSet();
-      } else if (dates == null) {
-        throw const FormatException('研究生课程缺少可识别的周次和日期');
+      } else {
+        if (weekText.isEmpty) {
+          throw const FormatException('研究生课程缺少可识别的周次和日期');
+        }
+        datesBySlot[(day, _text(row['JASMC']))] = null;
       }
-      // Date-only records wait for a confirmed first Monday; they must not be
-      // invented as weekly recurring courses.
-      for (final entry in weeksByDay.entries) {
-        final weeks = entry.value.toList()..sort();
-        final bits = List.filled(weeks.last + 1, '0');
+      for (final MapEntry(key: (weekday, room), value: dates) in datesBySlot.entries) {
+        final weeks = <int>{};
+        if (monday != null && dates != null) {
+          for (final date in dates) {
+            final offset = date.difference(monday).inDays;
+            if (offset < 0 || offset >= 60 * 7) {
+              throw const FormatException('研究生课程日期与学期范围不一致，请刷新课表');
+            }
+            weeks.add(offset ~/ 7 + 1);
+          }
+        } else if (weekday == day && weekText.isNotEmpty) {
+          weeks.addAll(graduateWeeks(weekText));
+        }
+        final sortedWeeks = weeks.toList()..sort();
+        final bits = List.filled((sortedWeeks.lastOrNull ?? -1) + 1, '0');
         for (final week in weeks) {
           bits[week] = '1';
         }
         courses.add(
           EamsCourse(
             name: _text(row['KCMC']),
-            classroom: _text(row['JASMC']),
+            classroom: room,
             teachers: _text(row['JSXM']).isEmpty ? _text(row['RKJS']) : _text(row['JSXM']),
             weeks: bits.join(),
-            times: {entry.key: units},
+            times: {weekday: units},
+            dates: dates,
+            clockTime: clock,
           ),
         );
       }
@@ -242,15 +265,27 @@ class GraduateSchedule {
     return CourseTable(periods: periods, courses: courses);
   }
 
-  /// Null means use the recurring schedule. An empty list means the dated
-  /// calendar covers this group but has no sessions for this segment.
-  List<DateTime>? _datesFor(Map<String, dynamic> row, String semesterId, {DateTime? firstMonday}) {
+  List<DateTime>? _rowDates(Map<String, dynamic> row) {
     if (_text(row['RQ']).isNotEmpty) {
       return _parseDates([row['RQ']]);
     }
-    if (row['rqs'] is List && (row['rqs'] as List).isNotEmpty) {
-      return _parseDates(row['rqs'] as List);
+    if (row['rqs'] case final List<dynamic> dates when dates.isNotEmpty) {
+      return _parseDates(dates);
     }
+    return null;
+  }
+
+  /// Null means use the recurring schedule. An empty list means the dated
+  /// calendar covers this group but has no sessions for this segment.
+  List<(DateTime, String)>? _meetingsFor(
+    Map<String, dynamic> row,
+    String semesterId,
+    List<Map<String, dynamic>> termRows,
+    DateTime? monday,
+  ) {
+    final room = _text(row['JASMC']);
+    final explicit = _rowDates(row);
+    if (explicit != null) return [for (final date in explicit) (date, room)];
     final records = _rows('rqpkjgallList');
     if (records.isEmpty) return null;
     final key = _rowClockKey(row, semesterId);
@@ -263,25 +298,31 @@ class GraduateSchedule {
         ],
     ]);
     if (dates.isEmpty) return null;
-    final segments = rows.where(
-      (r) => _inTerm(r, rawTerm(semesterId)) &&
-          r['BJDM'] == row['BJDM'] &&
-          _rowClockKey(r, semesterId) == key,
-    ).toList();
-    if (segments.length == 1) return dates;
-    if (firstMonday == null || segments.any((r) => _text(r['ZCMC']).isEmpty)) return null;
+    final segments = termRows.where((r) => _rowClockKey(r, semesterId) == key).toList();
+    if (segments.length == 1) return [for (final date in dates) (date, room)];
 
-    final monday = DateTime.utc(firstMonday.year, firstMonday.month, firstMonday.day);
-    final weeks = {for (final segment in segments) segment: graduateWeeks(_text(segment['ZCMC']))};
-    final assigned = <DateTime>[];
+    final weeks = {
+      for (final segment in segments)
+        if (monday != null && _text(segment['ZCMC']).isNotEmpty)
+          segment: graduateWeeks(_text(segment['ZCMC'])),
+    };
+    final assigned = <(DateTime, String)>[];
     for (final date in dates) {
-      final offset = date.difference(monday).inDays;
-      final candidates = segments.where((s) => offset >= 0 && weeks[s]!.contains(offset ~/ 7 + 1));
-      // A shifted weekday is attributable when just one segment teaches that week.
-      final owner = candidates.singleOrNull ??
-          candidates.where((s) => _text(s['XQ']) == date.weekday.toString()).singleOrNull;
-      if (owner == null) return null;
-      if (identical(owner, row)) assigned.add(date);
+      final offset = monday == null ? -1 : date.difference(monday).inDays;
+      final inWeek = segments
+          .where((s) => offset >= 0 && weeks[s]?.contains(offset ~/ 7 + 1) == true)
+          .toList();
+      var candidates = inWeek.isEmpty ? segments : inWeek;
+      if (candidates.length > 1) {
+        final sameDay = candidates.where((s) => _text(s['XQ']) == date.weekday.toString()).toList();
+        if (sameDay.isNotEmpty) candidates = sameDay;
+      }
+      // The date and clock are known even when the teaching room is ambiguous.
+      // Attach the meeting once and show a room only if the candidates agree.
+      if (identical(candidates.first, row)) {
+        final rooms = candidates.map((s) => _text(s['JASMC'])).toSet();
+        assigned.add((date, rooms.singleOrNull ?? ''));
+      }
     }
     return assigned;
   }
@@ -320,16 +361,26 @@ class GraduateSchedule {
       .toList()
     ..sort();
 
-  /// Infer a Monday from consistent dated sessions and their teaching weeks.
-  /// Ambiguous or conflicting dates keep the local date picker as a fallback.
-  DateTime? firstMondayFor(String semesterId) {
-    if (_rows('rqpkjgallList').any((r) => _text(r['rq']).isNotEmpty)) {
-      return _firstMondayFromCalendarRecords(semesterId);
+  /// Dated sessions take priority over the published school calendar used for
+  /// history with only week numbers.
+  DateTime? firstMondayFor(String semesterId) =>
+      _inferFirstMonday(semesterId) ??
+      switch (rawTerm(semesterId)) {
+        // https://www.shanghaitech.edu.cn/2025/0304/c1024a1107931/page.htm
+        '20251' => DateTime(2025, 9, 15),
+        '20252' => DateTime(2026, 3, 2),
+        _ => null,
+      };
+
+  DateTime? _inferFirstMonday(String semesterId) {
+    if (_rows('rqpkjgallList').isNotEmpty) {
+      final inferred = _firstMondayFromCalendarRecords(semesterId);
+      if (inferred != null) return inferred;
     }
     final anchors = <DateTime>{};
     for (final row in rows.where((r) => _inTerm(r, rawTerm(semesterId)))) {
       if (_text(row['ZCMC']).isEmpty) continue;
-      final dates = _datesFor(row, semesterId);
+      final dates = _rowDates(row);
       final weeks = graduateWeeks(_text(row['ZCMC']));
       if (dates == null || dates.length != weeks.length) continue;
       final day = int.tryParse(_text(row['XQ']));

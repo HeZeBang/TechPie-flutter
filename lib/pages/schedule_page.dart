@@ -189,12 +189,12 @@ class _SchedulePageState extends State<SchedulePage> {
   void _rebuildCourses() {
     if (!mounted) return;
     setState(() {
-      final preserveWeek = isDesktop() &&
-          _hasBuiltCourses &&
-          _displayedSemesterId == _schedule.selectedSemesterId;
-      _currentWeek = (preserveWeek ? _currentWeek : _schedule.currentWeek())
-          .clamp(1, _schedule.totalWeeks)
-          .toInt();
+      final preserveWeek =
+          isDesktop() && _hasBuiltCourses && _displayedSemesterId == _schedule.selectedSemesterId;
+      final initialWeek =
+          _schedule.isGraduate && !_schedule.isTodayInTerm ? 1 : _schedule.currentWeek();
+      _currentWeek =
+          (preserveWeek ? _currentWeek : initialWeek).clamp(1, _schedule.totalWeeks).toInt();
       _hasBuiltCourses = true;
       _displayedSemesterId = _schedule.selectedSemesterId;
       final table = _schedule.courseTable;
@@ -271,16 +271,10 @@ class _SchedulePageState extends State<SchedulePage> {
     _courses = _coursesForWeek(_currentWeek);
   }
 
-  DateTime _weekStartForWeek(int week) {
+  DateTime? _weekStartForWeek(int week) {
     final termBegin = _schedule.termBegin;
-    if (termBegin != null) {
-      final weekStartDate = termBegin.add(
-        Duration(days: (week.clamp(1, _schedule.totalWeeks).toInt() - 1) * 7),
-      );
-      return weekStartDate.subtract(Duration(days: weekStartDate.weekday - 1));
-    }
-    final now = DateTime.now();
-    return now.subtract(Duration(days: now.weekday - 1));
+    if (termBegin == null) return null;
+    return termBegin.add(Duration(days: (week - 1) * 7 - (termBegin.weekday - 1)));
   }
 
   void _showSemesterPicker() {
@@ -417,33 +411,44 @@ class _SchedulePageState extends State<SchedulePage> {
     unawaited(_exportCalendar());
   }
 
-  Future<SavedIcsFile> _saveCalendarFile(
-    IcsSaveLocation location, {
-    required String calendarName,
-  }) {
-    final table = _schedule.courseTable!;
-    final termBegin = _schedule.termBegin!;
-    return _icsExport.saveCalendar(
-      table: table,
-      termBegin: termBegin,
-      fileName: _icsFileName,
-      location: location,
-      calendarName: calendarName,
-      // The user's own sessions are part of the week the calendar describes.
-      customCourses: _schedule.customCourses,
-      exams: _semesterExams,
-    );
-  }
-
   Future<void> _exportCalendar() async {
-    final table = _schedule.courseTable;
+    final table = _schedule.fullCourseTable;
     final termBegin = _schedule.termBegin;
-    if (table == null || termBegin == null || _exportingCalendar) return;
+    if (table == null || _exportingCalendar) return;
+    final customCourses = _schedule.customCourses;
+    final exams = _semesterExams;
+    if (termBegin == null &&
+        !table.courses.any((course) => course.dates?.isNotEmpty == true) &&
+        !customCourses.any((course) => course.isOneOff) &&
+        exams.isEmpty) {
+      showAdaptiveFeedback(
+        context: context,
+        message: '缺少学期日历和上课日期，无法导出课表',
+        style: AdaptiveFeedbackStyle.info,
+      );
+      return;
+    }
 
+    final fileName = _icsFileName;
     final calendarName = (isIos() || isAndroid())
         ? await _promptCalendarName(initialValue: _defaultCalendarName)
         : _defaultCalendarName;
-    if (calendarName == null || calendarName.trim().isEmpty) return;
+    if (!mounted || calendarName == null || calendarName.trim().isEmpty) return;
+
+    Future<SavedIcsFile> saveCalendarFile(IcsSaveLocation location) => _icsExport.saveCalendar(
+          table: table,
+          termBegin: termBegin,
+          fileName: fileName,
+          location: location,
+          calendarName: calendarName,
+          customCourses: customCourses,
+          exams: exams,
+        );
+
+    final missingDates = termBegin == null &&
+        (table.courses.any((course) => course.dates == null) ||
+            customCourses.any((course) => !course.isOneOff));
+    final exportNote = missingDates ? '（仅含日期已知的课程）' : '';
 
     setState(() {
       _exportingCalendar = true;
@@ -456,8 +461,8 @@ class _SchedulePageState extends State<SchedulePage> {
           final events = await _icsExport.buildCalendarEventPayloads(
             table: table,
             termBegin: termBegin,
-            customCourses: _schedule.customCourses,
-            exams: _semesterExams,
+            customCourses: customCourses,
+            exams: exams,
           );
           final imported = await CalendarImporter.importCalendarEvents(
             events,
@@ -466,31 +471,25 @@ class _SchedulePageState extends State<SchedulePage> {
           if (!mounted) return;
           showAdaptiveFeedback(
             context: context,
-            message: imported > 0 ? '已导入 $imported 个日程到“$calendarName”' : '没有可导入的日程',
+            message: imported > 0 ? '已导入 $imported 个日程到“$calendarName”$exportNote' : '没有可导入的日程',
             style: imported > 0 ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.info,
           );
           return;
         } catch (_) {
-          final fallbackFile = await _saveCalendarFile(
-            IcsSaveLocation.downloads,
-            calendarName: calendarName,
-          );
+          final fallbackFile = await saveCalendarFile(IcsSaveLocation.downloads);
           if (!mounted) return;
           showAdaptiveFeedback(
             context: context,
             message: fallbackFile.filePath != null
-                ? '导入失败，已导出到下载目录: ${fallbackFile.filePath}'
-                : '导入失败，ICS 文件已创建。',
+                ? '导入失败，已导出到下载目录$exportNote\n${fallbackFile.filePath}'
+                : '导入失败，ICS 文件已创建$exportNote',
             style: AdaptiveFeedbackStyle.info,
           );
           return;
         }
       }
 
-      final saved = await _saveCalendarFile(
-        IcsSaveLocation.temporary,
-        calendarName: calendarName,
-      );
+      final saved = await saveCalendarFile(IcsSaveLocation.temporary);
 
       bool launched = false;
       if (saved.filePath != null) {
@@ -519,10 +518,7 @@ class _SchedulePageState extends State<SchedulePage> {
       if (!launched && mounted) {
         SavedIcsFile fallbackFile = saved;
         try {
-          fallbackFile = await _saveCalendarFile(
-            IcsSaveLocation.downloads,
-            calendarName: calendarName,
-          );
+          fallbackFile = await saveCalendarFile(IcsSaveLocation.downloads);
         } catch (_) {
           fallbackFile = saved;
         }
@@ -530,8 +526,9 @@ class _SchedulePageState extends State<SchedulePage> {
 
         showAdaptiveFeedback(
           context: context,
-          message:
-              fallbackFile.filePath != null ? '已导出到下载目录: ${fallbackFile.filePath}' : 'ICS 文件已创建。',
+          message: fallbackFile.filePath != null
+              ? '已导出到下载目录$exportNote\n${fallbackFile.filePath}'
+              : 'ICS 文件已创建$exportNote',
           style: AdaptiveFeedbackStyle.info,
         );
         return;
@@ -540,7 +537,7 @@ class _SchedulePageState extends State<SchedulePage> {
       if (!mounted) return;
       showAdaptiveFeedback(
         context: context,
-        message: '课表导出操作成功',
+        message: '课表导出操作成功$exportNote',
         style: AdaptiveFeedbackStyle.success,
       );
     } catch (_) {
@@ -1464,7 +1461,7 @@ class _WeekTitleContent extends StatelessWidget {
 }
 
 class _DayHeader extends StatelessWidget {
-  final DateTime weekStart;
+  final DateTime? weekStart;
   final DateTime today;
   final List<int> visibleDays;
 
@@ -1479,6 +1476,7 @@ class _DayHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final monday = weekStart;
 
     return SizedBox(
       height: 68,
@@ -1492,15 +1490,17 @@ class _DayHeader extends StatelessWidget {
                   context,
                   const Duration(milliseconds: 250),
                 ),
-                child: Text(
-                  '${weekStart.month}\n月',
-                  key: ValueKey<String>('${weekStart.year}-${weekStart.month}'),
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.3,
-                  ),
-                ),
+                child: monday == null
+                    ? null
+                    : Text(
+                        '${monday.month}\n月',
+                        key: ValueKey<String>('${monday.year}-${monday.month}'),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          height: 1.3,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -1509,36 +1509,32 @@ class _DayHeader extends StatelessWidget {
             Expanded(
               child: _DayHeaderCell(
                 dayLabel: _dayLabels[day - 1],
-                date: weekStart.add(Duration(days: day - 1)),
-                isToday: _isSameDay(
-                  weekStart.add(Duration(days: day - 1)),
-                  today,
-                ),
+                date: monday?.add(Duration(days: day - 1)),
+                today: today,
               ),
             ),
         ],
       ),
     );
   }
-
-  bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
 class _DayHeaderCell extends StatelessWidget {
   final String dayLabel;
-  final DateTime date;
-  final bool isToday;
+  final DateTime? date;
+  final DateTime today;
 
   const _DayHeaderCell({
     required this.dayLabel,
     required this.date,
-    required this.isToday,
+    required this.today,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final date = this.date;
+    final isToday = DateUtils.isSameDay(date, today);
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -1549,31 +1545,33 @@ class _DayHeaderCell extends StatelessWidget {
             color: isToday ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 2),
-        AnimatedSwitcher(
-          duration: appAnimationDuration(
-            context,
-            const Duration(milliseconds: 250),
-          ),
-          child: Container(
-            key: ValueKey<String>('${date.year}-${date.month}-${date.day}'),
-            width: 28,
-            height: 28,
-            decoration: isToday
-                ? BoxDecoration(
-                    color: theme.colorScheme.primary,
-                    shape: BoxShape.circle,
-                  )
-                : null,
-            alignment: Alignment.center,
-            child: Text(
-              '${date.day}',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: isToday ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+        if (date != null) ...[
+          const SizedBox(height: 2),
+          AnimatedSwitcher(
+            duration: appAnimationDuration(
+              context,
+              const Duration(milliseconds: 250),
+            ),
+            child: Container(
+              key: ValueKey<String>('${date.year}-${date.month}-${date.day}'),
+              width: 28,
+              height: 28,
+              decoration: isToday
+                  ? BoxDecoration(
+                      color: theme.colorScheme.primary,
+                      shape: BoxShape.circle,
+                    )
+                  : null,
+              alignment: Alignment.center,
+              child: Text(
+                '${date.day}',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: isToday ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -1582,7 +1580,7 @@ class _DayHeaderCell extends StatelessWidget {
 class _TimetableGrid extends StatelessWidget {
   final List<Course> courses;
   final List<Period> periods;
-  final DateTime weekStart;
+  final DateTime? weekStart;
   final DateTime today;
   final List<int> visibleDays;
   final ValueChanged<Course> onEditCustomCourse;
@@ -1624,8 +1622,8 @@ class _TimetableGrid extends StatelessWidget {
                   dayOfWeek: visibleDays[i],
                   courses: courses.where((c) => c.dayOfWeek == visibleDays[i]).toList(),
                   periods: periods,
-                  isToday: _isSameDay(
-                    weekStart.add(Duration(days: visibleDays[i] - 1)),
+                  isToday: DateUtils.isSameDay(
+                    weekStart?.add(Duration(days: visibleDays[i] - 1)),
                     today,
                   ),
                   isLastColumn: i == visibleDays.length - 1,
@@ -1639,8 +1637,6 @@ class _TimetableGrid extends StatelessWidget {
     );
   }
 
-  bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
 class _PeriodLabel extends StatelessWidget {

@@ -18,6 +18,8 @@ import 'session/session_tree.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
 
+typedef _GraduateTerm = ({Map<String, CourseTable> tables, TermCalendar? calendar});
+
 class ScheduleService extends ChangeNotifier {
   final StorageService _storage;
   final LoggingHttpClient _http;
@@ -30,6 +32,7 @@ class ScheduleService extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   GraduateSchedule? _graduateSchedule;
+  Map<String, CourseTable> _graduateTables = const {};
   String? _graduateScheme;
   String? _identityForAccount;
   String? _identityForSession;
@@ -39,6 +42,7 @@ class ScheduleService extends ChangeNotifier {
   String? _identityLabel;
   String? _identityWarning;
   String? _observedAccount;
+  String? _observedIdsSession;
   int _accountRevision = 0;
 
   bool get isGraduate => _semesterInfo?.tableId == graduateTableId;
@@ -90,6 +94,17 @@ class ScheduleService extends ChangeNotifier {
 
   SemesterInfo? get semesterInfo => _semesterInfo;
   CourseTable? get courseTable => _courseTable;
+
+  /// All fetched courses, with the selected period grid for custom courses.
+  CourseTable? get fullCourseTable {
+    final table = _courseTable;
+    if (table == null || _graduateTables.length <= 1) return table;
+    return CourseTable(
+      periods: table.periods,
+      courses: [for (final schemeTable in _graduateTables.values) ...schemeTable.courses],
+    );
+  }
+
   TermCalendar? get termCalendar => _termCalendar;
   DateTime? get termBegin => _termCalendar?.termBegin;
   String? get selectedSemesterId => _selectedSemesterId;
@@ -101,22 +116,17 @@ class ScheduleService extends ChangeNotifier {
   int get totalWeeks {
     final calendar = _termCalendar;
     if (calendar == null) {
-      if (isGraduate && _courseTable != null) {
-        return _courseTable!.courses
-            .fold<int>(_fallbackTotalWeeks, (max, c) => math.max(max, c.weeks.length - 1));
-      }
-      return _fallbackTotalWeeks;
+      return _graduateTables.values
+          .expand((table) => table.courses)
+          .fold<int>(_fallbackTotalWeeks, (max, c) => math.max(max, c.weeks.length - 1));
     }
     final weeks = math.max(calendar.allTeachWeeks, calendar.allTermWeeks);
     return weeks > 0 ? weeks : _fallbackTotalWeeks;
   }
 
   ScheduleService(this._storage, this._http, AuthService _, this._tpAuth) {
-    // A renewed campus session, a cookie minted for a child service (eams,
-    // elearning, egateApp) or a cloud-sync merge that replaced the account can
-    // each turn a fetch that was failing into one that works. They all go through
-    // requestFetch, which decides whether they amount to anything.
     _observedAccount = _campusAccount();
+    _observedIdsSession = _idsSession;
     // Passkey replacement suppresses facade notifications until persistence
     // finishes. Observe the IDS node so old timetable requests expire at once.
     _tpAuth.idsNode.addListener(_onCampusChanged);
@@ -124,7 +134,11 @@ class ScheduleService extends ChangeNotifier {
 
   void _onCampusChanged() {
     final account = _campusAccount();
-    if (account != _observedAccount) {
+    final session = _idsSession;
+    final accountChanged = account != _observedAccount;
+    final sessionChanged = session != _observedIdsSession;
+    _observedIdsSession = session;
+    if (accountChanged) {
       _observedAccount = account;
       _accountRevision++;
       _identityForAccount = null;
@@ -137,7 +151,10 @@ class ScheduleService extends ChangeNotifier {
       _clearSchedule();
       notifyListeners();
     }
-    requestFetch();
+    // Failure notifications and clearing a cookie supply no usable session.
+    if (account != null && (accountChanged || (sessionChanged && session != null))) {
+      requestFetch();
+    }
   }
 
   /// The campus account the timetable currently in hand was fetched for.
@@ -171,18 +188,18 @@ class ScheduleService extends ChangeNotifier {
     if (!force && !accountChanged && usable) return;
 
     _pendingFetch?.cancel();
-    _pendingFetch = Timer(const Duration(milliseconds: 600), () {
-      // Decide again now, not only when the trigger arrived. A round that was
-      // still running then could not answer "is the data usable?" — it had not
-      // finished — so a trigger landing inside it (the keep-alive and renewal
-      // notifications do exactly that) scheduled a second identical round of
-      // semesters, course table and term begin. `force` is not a reason to round
-      // again either: it means "do not trust what a previous launch cached", and
-      // a round already fetched in this process for this account is the answer.
+    _pendingFetch = Timer(const Duration(milliseconds: 600), () async {
+      // Let an in-flight round finish before deciding whether it covered the
+      // account and session that triggered this refresh.
+      final timer = _pendingFetch;
+      final active = _fetchCompletion;
+      if (active != null) await active.future;
+      if (_pendingFetch != timer) return;
+      _pendingFetch = null;
       final current = _campusAccount();
       final changed = current != null && current != _fetchedForAccount;
       if (_fetchedForAccount != null && !changed && _error == null && _identityIsCurrent) return;
-      unawaited(fetchAll());
+      await fetchAll();
     });
   }
 
@@ -293,6 +310,7 @@ class ScheduleService extends ChangeNotifier {
     _courseTable = null;
     _termCalendar = null;
     _graduateSchedule = null;
+    _graduateTables = const {};
     _graduateScheme = null;
     _error = null;
   }
@@ -331,10 +349,9 @@ class ScheduleService extends ChangeNotifier {
     _selectedSemesterId = id;
     _courseTable = _storage.loadCourseTable(id, owner: owner);
     _termCalendar = _storage.loadTermCalendar(id);
-    if (_graduateSchedule != null) {
-      _graduateScheme = _schemeFor(_graduateSchedule!, id);
+    if (_graduateSchedule case final snapshot?) {
       try {
-        _courseTable = _graduateTable(_graduateSchedule!, id, _graduateScheme!);
+        _applyGraduateTerm(_buildGraduateTerm(snapshot, id), _schemeFor(snapshot, id));
       } on FormatException {
         _error = '研究生课表日期缓存需要刷新';
       }
@@ -354,7 +371,10 @@ class ScheduleService extends ChangeNotifier {
     if (scheduleSource == CampusScheduleSource.undergraduate) return true;
     final revision = _accountRevision;
     if (!_identityIsCurrent || _loading) await fetchAll();
-    return revision == _accountRevision && _identityIsCurrent && !_graduateIdentity;
+    return revision == _accountRevision &&
+        _idsSession != null &&
+        _identityIsCurrent &&
+        !_graduateIdentity;
   }
 
   Future<void> fetchAll() async {
@@ -373,12 +393,12 @@ class ScheduleService extends ChangeNotifier {
     try {
       if (await _fetchGraduateIfEligible() || revision != _accountRevision) return;
       await fetchSemesters();
-      if (revision != _accountRevision) return;
+      if (revision != _accountRevision || !_identityIsCurrent) return;
       _selectedSemesterId = _validSemester(_selectedSemesterId);
       if (_selectedSemesterId != null) {
         if (_storage.selectedSemester != _selectedSemesterId) {
           await _storage.setSelectedSemester(_selectedSemesterId!);
-          if (revision != _accountRevision) return;
+          if (revision != _accountRevision || !_identityIsCurrent) return;
         }
         await Future.wait([
           fetchCourseTable(_selectedSemesterId!),
@@ -391,8 +411,6 @@ class ScheduleService extends ChangeNotifier {
       _loading = false;
       if (revision == _accountRevision) {
         if (_error == null && _identityIsCurrent) _fetchedForAccount = _campusAccount();
-      } else if (_hasIdsBinding) {
-        requestFetch(force: true);
       }
       _fetchCompletion = null;
       completion.complete();
@@ -503,21 +521,18 @@ class ScheduleService extends ChangeNotifier {
     final semester =
         ids.contains(_selectedSemesterId) ? _selectedSemesterId! : info.defaultSemester;
     final scheme = _schemeFor(snapshot, semester);
-    final table = _graduateTable(snapshot, semester, scheme);
+    final term = _buildGraduateTerm(snapshot, semester);
     // Parse before committing anything, so malformed responses retain the last
     // good timetable rather than caching an empty success.
     _graduateSchedule = snapshot;
-    _graduateScheme = scheme;
     _semesterInfo = info;
     _selectedSemesterId = semester;
-    _courseTable = table;
+    _applyGraduateTerm(term, scheme);
     await _storage.saveGraduateSchedule(account, snapshot);
     if (revision != _accountRevision || !_identityIsCurrent) return true;
     await _storage.setSelectedSemester(semester);
     if (revision != _accountRevision || !_identityIsCurrent) return true;
-    await _storage.saveCourseTable(semester, table, owner: account);
-    if (revision != _accountRevision || !_identityIsCurrent) return true;
-    await _loadGraduateCalendar(semester);
+    await _saveGraduateTerm(semester, term, scheme);
     return true;
   }
 
@@ -527,14 +542,6 @@ class ScheduleService extends ChangeNotifier {
     return '网络请求失败（${error.runtimeType}），请检查学校会话和连接';
   }
 
-  Future<void> _loadGraduateCalendar(String semesterId) async {
-    _termCalendar = _storage.loadTermCalendar(semesterId);
-    final inferred = _graduateSchedule?.firstMondayFor(semesterId);
-    if (inferred != null && _termCalendar?.termBegin != inferred) {
-      await _saveGraduateCalendar(semesterId, inferred);
-    }
-  }
-
   String _schemeFor(GraduateSchedule snapshot, String semesterId) {
     final saved = _storage.graduateSchemeFor(semesterId);
     return saved != null && snapshot.schemesFor(semesterId).containsKey(saved)
@@ -542,25 +549,21 @@ class ScheduleService extends ChangeNotifier {
         : snapshot.defaultScheme(semesterId);
   }
 
-  CourseTable _graduateTable(GraduateSchedule snapshot, String semester, String scheme) =>
-      snapshot.tableFor(
-        semester,
-        scheme,
-        firstMonday:
-            snapshot.firstMondayFor(semester) ?? _storage.loadTermCalendar(semester)?.termBegin,
-      );
-
-  Future<void> _saveGraduateCalendar(String semester, DateTime date) async {
-    final revision = _accountRevision;
-    final owner = _campusAccount();
-    final table =
-        _graduateSchedule!.tableFor(semester, _graduateScheme!, firstMonday: date);
-    final weeks =
-        table.courses.fold<int>(_fallbackTotalWeeks, (n, c) => math.max(n, c.weeks.length - 1));
-    _termCalendar = TermCalendar(
+  _GraduateTerm _buildGraduateTerm(GraduateSchedule snapshot, String semester) {
+    final date =
+        snapshot.firstMondayFor(semester) ?? _storage.loadTermCalendar(semester)?.termBegin;
+    final tables = {
+      for (final scheme in snapshot.schemesFor(semester).keys)
+        scheme: snapshot.tableFor(semester, scheme, firstMonday: date),
+    };
+    if (date == null) return (tables: tables, calendar: null);
+    final weeks = tables.values
+        .expand((table) => table.courses)
+        .fold<int>(_fallbackTotalWeeks, (n, c) => math.max(n, c.weeks.length - 1));
+    final calendar = TermCalendar(
       code: 200,
       schoolYearTerm: semester,
-      termBegin: DateTime(date.year, date.month, date.day),
+      termBegin: date,
       snapshotDate: null,
       snapshotWeekOfTerm: null,
       allTeachWeeks: weeks,
@@ -569,22 +572,34 @@ class ScheduleService extends ChangeNotifier {
       pmClasses: 0,
       eveClasses: 0,
     );
-    await _storage.saveTermCalendar(semester, _termCalendar!);
-    if (revision != _accountRevision) return;
-    _courseTable = table;
-    await _storage.saveCourseTable(semester, table, owner: owner);
-    if (revision != _accountRevision) return;
-    notifyListeners();
+    return (tables: tables, calendar: calendar);
+  }
+
+  void _applyGraduateTerm(_GraduateTerm term, String scheme) {
+    _graduateTables = term.tables;
+    _termCalendar = term.calendar;
+    _graduateScheme = scheme;
+    _courseTable = term.tables[scheme]!;
+  }
+
+  Future<void> _saveGraduateTerm(String semester, _GraduateTerm term, String scheme) async {
+    final revision = _accountRevision;
+    final owner = _campusAccount();
+    final session = _idsSession;
+    if (term.calendar case final calendar?) {
+      await _storage.saveTermCalendar(semester, calendar);
+      if (revision != _accountRevision || session != _idsSession) return;
+    }
+    await _storage.saveCourseTable(semester, term.tables[scheme]!, owner: owner);
+    if (revision == _accountRevision && session == _idsSession) notifyListeners();
   }
 
   Future<void> selectGraduateScheme(String scheme) async {
     final semester = _selectedSemesterId;
-    if (_graduateSchedule == null || semester == null || !graduateSchemes.containsKey(scheme)) {
-      return;
-    }
+    final table = _graduateTables[scheme];
+    if (semester == null || table == null) return;
     final revision = _accountRevision;
     final owner = _campusAccount();
-    final table = _graduateTable(_graduateSchedule!, semester, scheme);
     _graduateScheme = scheme;
     _courseTable = table;
     await _storage.setGraduateScheme(semester, scheme);
@@ -596,33 +611,26 @@ class ScheduleService extends ChangeNotifier {
 
   Future<void> fetchSemesters() async {
     final owner = _campusAccount();
-    final resp = await _postWithRetry(
+    await _postWithRetry(
       '$_baseUrl/schedule/semesters',
       const <String, dynamic>{},
       'fetchSemesters',
+      (data) async {
+        _semesterInfo = SemesterInfo.fromJson(data);
+        await _storage.saveSemesters(_semesterInfo!, owner: owner);
+        notifyListeners();
+      },
     );
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (data['success'] != true) {
-      throw Exception(data['error'] as String? ?? 'Failed to fetch semesters');
-    }
-
-    _semesterInfo = SemesterInfo.fromJson(data['data'] as Map<String, dynamic>);
-    await _storage.saveSemesters(_semesterInfo!, owner: owner);
-    notifyListeners();
   }
 
   Future<void> fetchCourseTable(String semesterId) async {
     if (semesterId.startsWith(graduateSemesterPrefix)) {
-      if (_graduateSchedule == null) throw const FormatException('请先刷新研究生课表');
-      final revision = _accountRevision;
-      final owner = _campusAccount();
-      final scheme = _schemeFor(_graduateSchedule!, semesterId);
-      final table = _graduateTable(_graduateSchedule!, semesterId, scheme);
-      _graduateScheme = scheme;
-      _courseTable = table;
-      await _storage.saveCourseTable(semesterId, table, owner: owner);
-      if (revision != _accountRevision) return;
-      notifyListeners();
+      final snapshot = _graduateSchedule;
+      if (snapshot == null) throw const FormatException('请先刷新研究生课表');
+      final scheme = _schemeFor(snapshot, semesterId);
+      final term = _buildGraduateTerm(snapshot, semesterId);
+      _applyGraduateTerm(term, scheme);
+      await _saveGraduateTerm(semesterId, term, scheme);
       return;
     }
     final owner = _campusAccount();
@@ -631,30 +639,19 @@ class ScheduleService extends ChangeNotifier {
       if (_semesterInfo?.tableId.isNotEmpty == true) 'table_id': _semesterInfo!.tableId,
     };
 
-    final resp = await _postWithRetry(
+    await _postWithRetry(
       '$_baseUrl/schedule/course_table',
       extra,
       'fetchCourseTable',
+      (data) async {
+        _courseTable = CourseTable.fromApiResponse(data);
+        await _storage.saveCourseTable(semesterId, _courseTable!, owner: owner);
+        notifyListeners();
+      },
     );
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (data['success'] != true) {
-      throw Exception(
-        data['error'] as String? ?? 'Failed to fetch course table',
-      );
-    }
-
-    _courseTable = CourseTable.fromApiResponse(
-      data['data'] as Map<String, dynamic>,
-    );
-    await _storage.saveCourseTable(semesterId, _courseTable!, owner: owner);
-    notifyListeners();
   }
 
   Future<void> _fetchTermBeginForSemester(String semesterId) async {
-    if (semesterId.startsWith(graduateSemesterPrefix)) {
-      await _loadGraduateCalendar(semesterId);
-      return;
-    }
     // Try to find the year and semester number from semesterInfo
     if (_semesterInfo == null) return;
 
@@ -686,25 +683,23 @@ class ScheduleService extends ChangeNotifier {
   ) async {
     final extra = <String, dynamic>{'year': year, 'semester': semester};
 
-    final resp = await _postWithRetry(
+    await _postWithRetry(
       '$_baseUrl/schedule/term_begin',
       extra,
       'fetchTermBegin',
+      (data) async {
+        _termCalendar = TermCalendar.fromJson(data);
+        await _storage.saveTermCalendar(cacheKey, _termCalendar!);
+        notifyListeners();
+      },
     );
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (data['success'] != true) {
-      throw Exception(data['error'] as String? ?? 'Failed to fetch term begin');
-    }
-
-    _termCalendar = TermCalendar.fromJson(data['data'] as Map<String, dynamic>);
-    await _storage.saveTermCalendar(cacheKey, _termCalendar!);
-    notifyListeners();
   }
 
   Future<void> selectSemester(String semesterId) async {
-    // No-op if the semester is already selected.
-    if (_selectedSemesterId == semesterId) return;
     final revision = _accountRevision;
+    final active = _fetchCompletion;
+    if (active != null) await active.future;
+    if (revision != _accountRevision || _selectedSemesterId == semesterId) return;
     _selectedSemesterId = semesterId;
     await _storage.setSelectedSemester(semesterId);
     if (revision != _accountRevision) return;
@@ -712,6 +707,7 @@ class ScheduleService extends ChangeNotifier {
     // Load cached data for the new semester so the UI updates instantly.
     _courseTable = _storage.loadCourseTable(semesterId, owner: _campusAccount());
     _termCalendar = _storage.loadTermCalendar(semesterId);
+    _graduateTables = const {};
     // Notify the cached-swap UI update. AssignmentService._onScheduleChanged
     // sees the semester changed and would fire fetchAssignments here — but
     // that would race our own fetchCourseTable below (both hit
@@ -727,6 +723,15 @@ class ScheduleService extends ChangeNotifier {
       return;
     }
 
+    final graduate = semesterId.startsWith(graduateSemesterPrefix);
+    if (!graduate && scheduleSource == CampusScheduleSource.automatic && !_identityIsCurrent) {
+      await fetchAll();
+      _suppressAssignmentRefetch = false;
+      notifyListeners();
+      return;
+    }
+
+    final completion = _fetchCompletion = Completer<void>();
     _loading = true;
     _error = null;
     notifyListeners();
@@ -734,14 +739,15 @@ class ScheduleService extends ChangeNotifier {
     try {
       await Future.wait([
         fetchCourseTable(semesterId),
-        _fetchTermBeginForSemester(semesterId),
+        if (!graduate) _fetchTermBeginForSemester(semesterId),
       ]);
     } catch (e) {
       if (revision == _accountRevision) _error = e.toString();
     } finally {
       _loading = false;
       _suppressAssignmentRefetch = false;
-      if (revision != _accountRevision && _hasIdsBinding) requestFetch(force: true);
+      _fetchCompletion = null;
+      completion.complete();
       // This final notify fires _onScheduleChanged again. Because
       // _suppressAssignmentRefetch is now false, AssignmentService will
       // refetch (the EAMS session is primed by our fetchCourseTable above,
@@ -750,23 +756,32 @@ class ScheduleService extends ChangeNotifier {
     }
   }
 
-  /// POST [url] with IDS auth + [extra] body fields. On 401 the eams
-  /// node is renewed exactly once (single-flighted across all concurrent
-  /// callers) and the request retried with the fresh cookie. For a stale
-  /// parent tgc, [SessionTree.withCookie] falls back to renewing the
-  /// ids parent then re-minting the eams cookie. Throws on any non-200
-  /// after the retry budget is exhausted.
-  Future<http.Response> _postWithRetry(
+  /// EAMS can renew the IDS parent while acquiring or retrying a cookie.
+  /// A new IDS session in automatic mode must first go through classification.
+  Future<void> _postWithRetry(
     String url,
     Map<String, dynamic> extra,
     String tag,
+    Future<void> Function(Map<String, dynamic>) accept,
   ) async {
     final revision = _accountRevision;
-    final node = _tpAuth.eamsNode;
+    final automatic = scheduleSource == CampusScheduleSource.automatic;
+    const changedSession = FormatException('IDS 会话不可用或已变更，请刷新课表');
+
+    void checkIdentity() {
+      if (revision != _accountRevision) throw StateError('学校账号已切换');
+      if (automatic && (!_identityIsCurrent || _graduateIdentity || _idsSession == null)) {
+        throw changedSession;
+      }
+    }
+
+    checkIdentity();
+    String? requestSession;
     final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
-      node,
+      _tpAuth.eamsNode,
       (cp) async {
-        if (revision != _accountRevision) throw StateError('学校账号已切换');
+        checkIdentity();
+        final session = requestSession = _idsSession;
         final body = {..._authBody(cp), ...extra};
         final r = await _http.post(
           Uri.parse(url),
@@ -774,25 +789,33 @@ class ScheduleService extends ChangeNotifier {
           body: jsonEncode(body),
           tag: tag,
         );
+        checkIdentity();
+        if (session != _idsSession) throw changedSession;
         return CookieAction(
           r,
           expired: r.statusCode == 401,
         );
       },
     );
-    if (revision != _accountRevision) throw StateError('学校账号已切换');
+    checkIdentity();
     if (resp == null) {
       throw Exception('ids session unavailable');
     }
+    if (requestSession != _idsSession) throw changedSession;
     if (resp.statusCode != 200) {
       throw Exception('Request failed with status ${resp.statusCode}');
     }
-    return resp;
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (data['success'] != true) {
+      throw Exception(data['error'] as String? ?? '$tag failed');
+    }
+    await accept(data['data'] as Map<String, dynamic>);
   }
 
   @override
   void dispose() {
     _pendingFetch?.cancel();
+    _pendingFetch = null;
     _tpAuth.idsNode.removeListener(_onCampusChanged);
     super.dispose();
   }

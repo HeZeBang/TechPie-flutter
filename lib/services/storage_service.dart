@@ -287,6 +287,7 @@ class StorageService {
   static const _courseTablePrefix = 'schedule_course_table_';
   static const _termBeginPrefix = 'schedule_term_begin_';
   static const _selectedSemesterKey = 'schedule_selected_semester';
+  static const _scheduleSourceKey = 'schedule_source_preference';
 
   CampusIdentity? loadCampusIdentity(String owner) {
     final raw = _prefs.getString('schedule_campus_identity');
@@ -307,22 +308,27 @@ class StorageService {
   Future<void> clearCampusIdentity() => _prefs.remove('schedule_campus_identity');
 
   CampusScheduleSource scheduleSourceFor(String? owner) {
-    final raw = _prefs.getString('schedule_source_preference');
-    if (raw == null || owner == null) return CampusScheduleSource.automatic;
+    if (owner == null) return CampusScheduleSource.automatic;
+    final sources = CampusScheduleSource.values.asNameMap();
+    final source = _prefs.getString('${_scheduleSourceKey}_$owner');
+    if (source != null) return sources[source] ?? CampusScheduleSource.automatic;
+
+    // Older installations saved one preference together with its owner.
+    final raw = _prefs.getString(_scheduleSourceKey);
+    if (raw == null) return CampusScheduleSource.automatic;
     try {
       final data = jsonDecode(raw) as Map<String, dynamic>;
-      return data['owner'] == owner
-          ? CampusScheduleSource.values.firstWhere((v) => v.name == data['source'])
-          : CampusScheduleSource.automatic;
+      if (data['owner'] == owner) {
+        return sources[data['source']] ?? CampusScheduleSource.automatic;
+      }
     } catch (_) {
       return CampusScheduleSource.automatic;
     }
+    return CampusScheduleSource.automatic;
   }
 
-  Future<void> setScheduleSource(String owner, CampusScheduleSource source) => _prefs.setString(
-        'schedule_source_preference',
-        jsonEncode({'owner': owner, 'source': source.name}),
-      );
+  Future<void> setScheduleSource(String owner, CampusScheduleSource source) =>
+      _prefs.setString('${_scheduleSourceKey}_$owner', source.name);
 
   String? get graduateScheduleOwner {
     final current = _prefs.getString('graduate_schedule_v2');

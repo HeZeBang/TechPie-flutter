@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/models/graduate_schedule.dart';
+import 'package:techpie/services/ics/ics_export_service.dart';
 
 void main() {
   final course = {
@@ -22,7 +23,13 @@ void main() {
         'PKSJDDMS': '3周 星期五[2节]丙教室<br>4周 星期日[1节]丁教室',
       },
       {...course, 'BJDM': null, 'KCDM': 'H3'},
-      {...course, 'BJDM': 'later', 'XNXQDM': '20252', 'XNXQMC': '2025-2026学年 第二学期'},
+      {
+        ...course,
+        'BJDM': 'later',
+        'XNXQDM': '20252',
+        'XNXQMC': '2025-2026学年 第二学期',
+        'PKSJDD': '1周 星期二[1节]历史教室',
+      },
     ],
     'ntkmdList': <Map<String, dynamic>>[],
     'mrjcfadm': 'A',
@@ -65,5 +72,20 @@ void main() {
     final info = GraduateSchedule.fromJson({...raw, 'currentTerm': '20251'}).semesterInfo;
     expect(info.findSemesterLabel(semester), '2025-2026 第一学期');
     expect(info.findSemesterLabel('graduate:20252'), '2025-2026 第二学期');
+  });
+
+  test('text-only historical terms export using the published teaching weeks', () {
+    final schedule = GraduateSchedule.fromJson(raw);
+    final exporter = IcsExportService();
+    for (final (term, firstClass) in [
+      (semester, '20250919T081500'),
+      ('graduate:20252', '20260303T081500'),
+    ]) {
+      final calendar = exporter.buildCalendar(
+        table: schedule.tableFor(term, 'A'),
+        termBegin: schedule.firstMondayFor(term),
+      );
+      expect(calendar, contains('DTSTART;TZID=Asia/Shanghai:$firstClass'));
+    }
   });
 }
