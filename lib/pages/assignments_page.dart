@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
 import '../services/assignment_service.dart';
+import '../services/deadline_reminder_service.dart';
 import '../services/service_provider.dart';
 import '../utils/adaptive_motion.dart';
 import '../utils/platform.dart';
@@ -19,6 +21,7 @@ import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import '../widgets/swipeable_card.dart';
+import 'custom_deadline_editor_page.dart';
 import 'hidden_assignments_page.dart';
 
 class AssignmentsPage extends StatefulWidget {
@@ -28,14 +31,20 @@ class AssignmentsPage extends StatefulWidget {
   State<AssignmentsPage> createState() => _AssignmentsPageState();
 }
 
+enum _SelectionPurpose { manage, addReminders }
+
 class _AssignmentsPageState extends State<AssignmentsPage> {
   bool _pastCollapsed = true;
   bool _completedCollapsed = true;
-  bool _selectionMode = false;
+  _SelectionPurpose? _selectionPurpose;
+  bool _addingReminders = false;
   bool _showAssignments = true;
   bool _showExams = true;
   final Set<String> _selected = {};
   Timer? _countdownTimer;
+
+  bool get _selectionMode => _selectionPurpose != null;
+  bool get _selectingReminders => _selectionPurpose == _SelectionPurpose.addReminders;
 
   @override
   void initState() {
@@ -74,23 +83,32 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   }
 
   void _exitSelection() {
+    if (_addingReminders) return;
     setState(() {
-      _selectionMode = false;
+      _selectionPurpose = null;
       _selected.clear();
     });
   }
 
   void _enterSelectionWith(String key) {
     setState(() {
-      _selectionMode = true;
+      _selectionPurpose = _SelectionPurpose.manage;
       _selected.add(key);
     });
   }
 
+  void _enterReminderSelection() {
+    setState(() {
+      _selectionPurpose = _SelectionPurpose.addReminders;
+      _selected.clear();
+    });
+  }
+
   void _toggleSelection(String key) {
+    if (_addingReminders) return;
     setState(() {
       if (_selected.remove(key)) {
-        if (_selected.isEmpty) _selectionMode = false;
+        if (_selected.isEmpty && !_selectingReminders) _selectionPurpose = null;
       } else {
         _selected.add(key);
       }
@@ -98,11 +116,12 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   }
 
   void _selectAll(List<Assignment> all) {
+    if (_addingReminders) return;
     setState(() {
       final allKeys = all.map(AssignmentOverrides.keyFor).toSet();
-      if (_selected.length == allKeys.length) {
+      if (allKeys.every(_selected.contains)) {
         _selected.clear();
-        _selectionMode = false;
+        if (!_selectingReminders) _selectionPurpose = null;
       } else {
         _selected
           ..clear()
@@ -118,13 +137,73 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       _selected
         ..clear()
         ..addAll(next);
-      if (_selected.isEmpty) _selectionMode = false;
+      if (_selected.isEmpty) _selectionPurpose = null;
     });
   }
 
   Future<void> _resetSelected(AssignmentService service) async {
     await service.resetOverrides(_selected.toList());
     _exitSelection();
+  }
+
+  Future<void> _addSelectedReminders(
+    DeadlineReminderService reminders,
+    List<Assignment> visible,
+  ) async {
+    if (_addingReminders) return;
+    final selected = visible
+        .where((item) => _selected.contains(AssignmentOverrides.keyFor(item)))
+        .toList();
+    if (selected.isEmpty) return;
+
+    setState(() => _addingReminders = true);
+    var finished = false;
+    try {
+      final result = await reminders.add(selected);
+      if (!mounted) return;
+      final message = [
+        if (result.added > 0) '已添加 ${result.added} 项',
+        if (result.existing > 0) '${result.existing} 项已在提醒事项中',
+        if (result.failed > 0) '${result.failed} 项添加失败',
+      ].join('，');
+      showAdaptiveFeedback(
+        context: context,
+        message: message,
+        style: result.failed > 0
+            ? AdaptiveFeedbackStyle.error
+            : AdaptiveFeedbackStyle.success,
+      );
+      finished = result.failed == 0;
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      final message = switch (error.code) {
+        'reminders_denied' => '请在系统设置中允许 TechPie 访问提醒事项',
+        'reminders_no_list' => '找不到可写入的提醒事项列表',
+        _ => '无法添加到提醒事项',
+      };
+      showAdaptiveFeedback(
+        context: context,
+        message: message,
+        style: AdaptiveFeedbackStyle.error,
+      );
+    } on MissingPluginException {
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '当前设备无法添加到提醒事项',
+        style: AdaptiveFeedbackStyle.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _addingReminders = false;
+          if (finished) {
+            _selectionPurpose = null;
+            _selected.clear();
+          }
+        });
+      }
+    }
   }
 
   Future<void> _refresh(AssignmentService service) async {
@@ -143,7 +222,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final assignmentService = ServiceProvider.of(context).assignmentService;
+    final services = ServiceProvider.of(context);
+    final assignmentService = services.assignmentService;
+    final reminders = services.deadlineReminderService;
     final useIosChrome = isIos();
     final useLegacyIosChrome = usesLegacyIosChrome();
     final topInset = useIosChrome || useLegacyIosChrome
@@ -158,8 +239,8 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
         return AdaptiveNavigationScaffold(
           extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
           appBar: _selectionMode
-              ? _buildSelectionAppBar(context, assignmentService, visible)
-              : _buildNormalAppBar(context, assignmentService),
+              ? _buildSelectionAppBar(assignmentService, visible, reminders)
+              : _buildNormalAppBar(context, assignmentService, reminders, visible),
           body: PopScope(
             canPop: !_selectionMode,
             onPopInvokedWithResult: (didPop, _) {
@@ -181,7 +262,10 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   PreferredSizeWidget _buildNormalAppBar(
     BuildContext context,
     AssignmentService service,
+    DeadlineReminderService? reminders,
+    List<Assignment> visible,
   ) {
+    final canAddReminders = reminders != null && visible.isNotEmpty;
     if (isIos()) {
       return IosNativeNavigationBar(
         title: 'Deadlines',
@@ -209,6 +293,17 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                 title: '',
                 displayInline: true,
                 children: [
+                  const IosNativeNavigationBarMenuItem(
+                    value: 'addDeadline',
+                    title: '添加 Deadline',
+                    sfSymbol: 'plus',
+                  ),
+                  if (canAddReminders)
+                    const IosNativeNavigationBarMenuItem(
+                      value: 'addReminders',
+                      title: '添加到提醒事项',
+                      sfSymbol: 'list.bullet.circle',
+                    ),
                   IosNativeNavigationBarMenuItem(
                     value: 'hidden',
                     title: '查看已忽略 (${service.overrides.hidden.length})',
@@ -224,6 +319,10 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               _toggleAssignmentsVisibility();
             case 'toggleExams':
               _toggleExamsVisibility();
+            case 'addDeadline':
+              unawaited(CustomDeadlineEditorPage.open(context));
+            case 'addReminders':
+              if (canAddReminders) _enterReminderSelection();
             case 'hidden':
               unawaited(
                 pushAdaptivePage<void>(
@@ -246,12 +345,17 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
           ),
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert),
+          tooltip: '更多操作',
           onSelected: (v) {
             switch (v) {
               case 'toggleAssignments':
                 _toggleAssignmentsVisibility();
               case 'toggleExams':
                 _toggleExamsVisibility();
+              case 'addDeadline':
+                unawaited(CustomDeadlineEditorPage.open(context));
+              case 'addReminders':
+                if (canAddReminders) _enterReminderSelection();
               case 'hidden':
                 unawaited(
                   pushAdaptivePage<void>(
@@ -273,6 +377,28 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               child: const Text('显示考试'),
             ),
             const PopupMenuDivider(),
+            const PopupMenuItem(
+              value: 'addDeadline',
+              child: Row(
+                children: [
+                  Icon(Icons.add, size: 20),
+                  SizedBox(width: 12),
+                  Text('添加 Deadline'),
+                ],
+              ),
+            ),
+            if (reminders != null)
+              PopupMenuItem(
+                value: 'addReminders',
+                enabled: canAddReminders,
+                child: const Row(
+                  children: [
+                    Icon(Icons.playlist_add, size: 20),
+                    SizedBox(width: 12),
+                    Text('添加到提醒事项'),
+                  ],
+                ),
+              ),
             PopupMenuItem(
               value: 'hidden',
               child: Row(
@@ -294,6 +420,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       return switch (item.kind) {
         DeadlineKind.assignment => _showAssignments,
         DeadlineKind.exam => _showExams,
+        DeadlineKind.custom => true,
       };
     }).toList();
   }
@@ -307,7 +434,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   void _toggleAssignmentsVisibility() {
     setState(() {
       _showAssignments = !_showAssignments;
-      _selectionMode = false;
+      _selectionPurpose = null;
       _selected.clear();
     });
   }
@@ -315,57 +442,74 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   void _toggleExamsVisibility() {
     setState(() {
       _showExams = !_showExams;
-      _selectionMode = false;
+      _selectionPurpose = null;
       _selected.clear();
     });
   }
 
   PreferredSizeWidget _buildSelectionAppBar(
-    BuildContext context,
     AssignmentService service,
     List<Assignment> visible,
+    DeadlineReminderService? reminders,
   ) {
-    final allSelected =
-        visible.isNotEmpty && _selected.length == visible.length;
+    final selectedCount =
+        visible.where((item) => _selected.contains(AssignmentOverrides.keyFor(item))).length;
+    final allSelected = visible.isNotEmpty && selectedCount == visible.length;
+    final title = _selectingReminders && selectedCount == 0 ? '选择截止事项' : '已选择 $selectedCount 个';
+    final VoidCallback? add = reminders != null && selectedCount > 0 && !_addingReminders
+        ? () => unawaited(_addSelectedReminders(reminders, visible))
+        : null;
+    final addLabel = _addingReminders ? '添加中…' : '添加';
     if (isIos()) {
       return IosNativeNavigationBar(
-        title: '已选择 ${_selected.length} 个',
+        title: title,
         selectionMode: true,
-        leadingItems: const [
+        leadingItems: [
           IosNativeNavigationBarItem(
             id: 'cancelSelection',
             title: '取消',
             accessibilityLabel: '退出多选',
             placementGroup: 'leading-main',
+            enabled: !_addingReminders,
           ),
         ],
         trailingItems: [
           IosNativeNavigationBarItem(
             id: 'toggleSelectAll',
             title: allSelected ? '全不选' : '全选',
-            enabled: visible.isNotEmpty,
+            enabled: visible.isNotEmpty && !_addingReminders,
             accessibilityLabel: allSelected ? '全不选' : '全选',
             placementGroup: 'selection-actions',
           ),
-          IosNativeNavigationBarItem(
-            id: 'selectionMore',
-            sfSymbol: 'ellipsis.circle',
-            accessibilityLabel: '更多选择操作',
-            placementGroup: 'selection-actions',
-            menuItems: [
-              const IosNativeNavigationBarMenuItem(
-                value: 'invertSelection',
-                title: '反选',
-                sfSymbol: 'arrow.triangle.2.circlepath',
-              ),
-              IosNativeNavigationBarMenuItem(
-                value: 'resetSelected',
-                title: '重置状态',
-                sfSymbol: 'arrow.counterclockwise',
-                destructive: _selected.isNotEmpty,
-              ),
-            ],
-          ),
+          if (_selectingReminders)
+            IosNativeNavigationBarItem(
+              id: 'confirmAddReminders',
+              title: addLabel,
+              accessibilityLabel: addLabel,
+              enabled: add != null,
+              role: IosNativeNavigationBarItemRole.done,
+              placementGroup: 'selection-actions',
+            )
+          else
+            IosNativeNavigationBarItem(
+              id: 'selectionMore',
+              sfSymbol: 'ellipsis.circle',
+              accessibilityLabel: '更多选择操作',
+              placementGroup: 'selection-actions',
+              menuItems: [
+                const IosNativeNavigationBarMenuItem(
+                  value: 'invertSelection',
+                  title: '反选',
+                  sfSymbol: 'arrow.triangle.2.circlepath',
+                ),
+                IosNativeNavigationBarMenuItem(
+                  value: 'resetSelected',
+                  title: '重置状态',
+                  sfSymbol: 'arrow.counterclockwise',
+                  destructive: _selected.isNotEmpty,
+                ),
+              ],
+            ),
         ],
         onItemPressed: (id) {
           switch (id) {
@@ -373,6 +517,8 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               _exitSelection();
             case 'toggleSelectAll':
               if (visible.isNotEmpty) _selectAll(visible);
+            case 'confirmAddReminders':
+              add?.call();
           }
         },
         onMenuSelected: (_, value) {
@@ -391,28 +537,30 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     return BlurredAppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
-        onPressed: _exitSelection,
+        onPressed: _addingReminders ? null : _exitSelection,
         tooltip: '退出多选',
       ),
-      title: Text('已选择 ${_selected.length} 个'),
+      title: Text(title),
       actions: [
         IconButton(
           icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
           tooltip: allSelected ? '全不选' : '全选',
-          onPressed: () => _selectAll(visible),
+          onPressed: _addingReminders ? null : () => _selectAll(visible),
         ),
-        IconButton(
-          icon: const Icon(Icons.flip_to_front),
-          tooltip: '反选',
-          onPressed: () => _invertSelection(visible),
-        ),
-        IconButton(
-          icon: const Icon(Icons.restart_alt),
-          tooltip: '重置状态',
-          onPressed: _selected.isEmpty
-              ? null
-              : () => unawaited(_resetSelected(service)),
-        ),
+        if (_selectingReminders)
+          TextButton(onPressed: add, child: Text(addLabel))
+        else ...[
+          IconButton(
+            icon: const Icon(Icons.flip_to_front),
+            tooltip: '反选',
+            onPressed: () => _invertSelection(visible),
+          ),
+          IconButton(
+            icon: const Icon(Icons.restart_alt),
+            tooltip: '重置状态',
+            onPressed: _selected.isEmpty ? null : () => unawaited(_resetSelected(service)),
+          ),
+        ],
       ],
     );
   }
@@ -521,7 +669,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       });
 
     final todayLabel = DateFormat('yyyy-MM-dd EEE').format(now);
-    final itemLabel = _filteredItemLabel;
+    final itemLabel = sorted.any((item) => item is CustomDeadline)
+        ? 'ddl'
+        : _filteredItemLabel;
 
     return PageRefreshIndicator(
       onRefresh: () async => _refresh(service),
@@ -685,14 +835,18 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               background: scheme.primaryContainer,
               foreground: scheme.onPrimaryContainer,
             ),
-            endAction: SwipeAction(
-              icon: Icons.delete_outline,
-              label: '删除',
-              background: scheme.errorContainer,
-              foreground: scheme.onErrorContainer,
-            ),
-            onStartSwipe: () => unawaited(service.toggleCompleted(a)),
-            onDismissed: () => _onDismiss(context, service, a, key),
+            endAction: a is CustomDeadline
+                ? null
+                : SwipeAction(
+                    icon: Icons.delete_outline,
+                    label: '删除',
+                    background: scheme.errorContainer,
+                    foreground: scheme.onErrorContainer,
+                  ),
+            onStartSwipe: () => unawaited(_toggleCompleted(context, service, a)),
+            onDismissed: a is CustomDeadline
+                ? null
+                : () => _onDismiss(context, service, a, key),
             child: card,
           );
 
@@ -701,6 +855,23 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     // first appearance) plays the enter animation; existing items just
     // rebuild in place.
     return CardEnterAnimation(key: ValueKey(key), child: inner);
+  }
+
+  Future<void> _toggleCompleted(
+    BuildContext context,
+    AssignmentService service,
+    Assignment assignment,
+  ) async {
+    try {
+      await service.toggleCompleted(assignment);
+    } catch (_) {
+      if (!context.mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '更新完成状态失败，请重试',
+        style: AdaptiveFeedbackStyle.error,
+      );
+    }
   }
 
   void _onDismiss(
@@ -730,6 +901,10 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     final usesIosContextualFeedback = isIos();
     if (_selectionMode) {
       _toggleSelection(key);
+      return;
+    }
+    if (a is CustomDeadline) {
+      await CustomDeadlineEditorPage.open(context, deadline: a);
       return;
     }
     final url = a.url;
@@ -945,9 +1120,7 @@ class _AssignmentCard extends StatelessWidget {
       return theme.colorScheme.primary;
     }
 
-    final statusLabel = completed
-        ? (assignment.status == 'Graded' ? 'Graded' : 'Submitted')
-        : assignment.status;
+    final statusLabel = assignment.status;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -965,7 +1138,7 @@ class _AssignmentCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
@@ -982,24 +1155,26 @@ class _AssignmentCard extends StatelessWidget {
                     const SizedBox(width: 8),
                   ],
                   _DeadlineKindChip(kind: assignment.kind),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      assignment.platform.toUpperCase(),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSecondaryContainer,
-                        fontWeight: FontWeight.bold,
+                  if (assignment is! CustomDeadline) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        assignment.platform.toUpperCase(),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSecondaryContainer,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                   if (hasOverride) ...[
                     const SizedBox(width: 6),
                     Tooltip(
@@ -1057,32 +1232,42 @@ class _AssignmentCard extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
                 children: [
-                  Icon(
-                    Icons.access_time,
-                    size: 16,
-                    color: completed
-                        ? theme.colorScheme.onSurfaceVariant
-                        : (isPast || isLateWindow
-                            ? Colors.red
-                            : theme.colorScheme.onSurfaceVariant),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.access_time,
+                        size: 16,
+                        color: completed
+                            ? theme.colorScheme.onSurfaceVariant
+                            : (isPast || isLateWindow
+                                ? Colors.red
+                                : theme.colorScheme.onSurfaceVariant),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          '$dueLabel$dueString',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: completed
+                                ? theme.colorScheme.onSurfaceVariant
+                                : (isPast || isLateWindow
+                                    ? Colors.red
+                                    : theme.colorScheme.onSurfaceVariant),
+                            fontWeight: (isPast || isLateWindow) && !completed
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '$dueLabel$dueString',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: completed
-                          ? theme.colorScheme.onSurfaceVariant
-                          : (isPast || isLateWindow
-                              ? Colors.red
-                              : theme.colorScheme.onSurfaceVariant),
-                      fontWeight: (isPast || isLateWindow) && !completed
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                    ),
-                  ),
-                  const Spacer(),
                   AnimatedSwitcher(
                     duration: appAnimationDuration(
                       context,

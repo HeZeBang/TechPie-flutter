@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../features/campus_card/core/async_mutex.dart';
 import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
 import '../models/third_party_account.dart';
@@ -23,7 +25,10 @@ class AssignmentService extends ChangeNotifier {
   final ThirdPartyAuthService _tpAuth;
   final ScheduleService _schedule;
 
-  List<Assignment> _assignments = [];
+  List<Assignment> _assignments = const [];
+  List<Assignment> _remoteAssignments = const [];
+  Map<String, CustomDeadline>? _customDeadlines;
+  final _customDeadlineWrites = AsyncMutex();
   AssignmentOverrides _overrides = AssignmentOverrides();
   bool _loading = false;
   int _identityEpoch = 0;
@@ -52,7 +57,8 @@ class AssignmentService extends ChangeNotifier {
 
   bool get loading => _loading;
   int get identityEpoch => _identityEpoch;
-  bool get hasCachedData => _hasCachedData;
+  bool get hasCachedData => _hasCachedData || _customDeadlines != null;
+  String? get customDeadlineOwner => _primaryIdentity;
   String? get error => _error;
   Map<String, String> get platformErrors => Map.unmodifiable(_platformErrors);
 
@@ -60,6 +66,28 @@ class AssignmentService extends ChangeNotifier {
   bool hasCompletionOverride(Assignment a) =>
       _overrides.hasCompletionOverride(a);
   bool isHidden(Assignment a) => _overrides.isHidden(a);
+
+  CustomDeadline? findCustomDeadline(String id) => _customDeadlines?[id];
+
+  void _rebuildAssignments() {
+    _assignments = List.unmodifiable(
+      <Assignment>[
+        ..._remoteAssignments,
+        ...?_customDeadlines?.values,
+      ]..sort((a, b) => a.due.compareTo(b.due)),
+    );
+  }
+
+  String scopedKeyFor(Assignment assignment) => jsonEncode([
+        _primaryIdentity,
+        _sourceIdentities[_sourcePlatform(assignment)],
+        AssignmentOverrides.keyFor(assignment),
+      ]);
+
+  static String _sourcePlatform(Assignment assignment) =>
+      (assignment.platform == 'blackboard' || assignment.platform == 'exam')
+          ? ThirdPartyPlatform.ids.id
+          : assignment.platform;
 
   AssignmentService(
     this._storage,
@@ -103,35 +131,34 @@ class AssignmentService extends ChangeNotifier {
         if (_sourceIdentities[key] != sources[key]) key,
     };
     if (primaryChanged || changed.isNotEmpty) {
+      final wasSignedIn = _primaryIdentity != null;
+      _primaryIdentity = primary;
+      _sourceIdentities = sources;
       if (_cacheHydrated) {
         _identityEpoch++;
         if (primaryChanged) {
-          _signedOut = _primaryIdentity != null && primary == null;
+          _signedOut = wasSignedIn && primary == null;
         }
         if (primary != null) _signedOut = false;
-        _assignments = primaryChanged
-            ? []
-            : _assignments.where((a) {
-                final source =
-                    (a.platform == 'blackboard' || a.platform == 'exam')
-                        ? ThirdPartyPlatform.ids.id
-                        : a.platform;
-                return !changed.contains(source);
-              }).toList();
+        _remoteAssignments = primaryChanged
+            ? const []
+            : _remoteAssignments
+                .where((a) => !changed.contains(_sourcePlatform(a)))
+                .toList();
         if (primaryChanged) {
+          _customDeadlines = _storage.loadCustomDeadlines(primary);
           _hasCachedData = false;
           unawaited(_storage.clearCachedAssignments());
         } else if (_hasCachedData) {
           unawaited(
             _storage.saveCachedAssignments(
-              _assignments.map((a) => a.toJson()).toList(),
+              _remoteAssignments.map((a) => a.toJson()).toList(),
             ),
           );
         }
+        _rebuildAssignments();
         notifyListeners();
       }
-      _primaryIdentity = primary;
-      _sourceIdentities = sources;
     }
     if (!_autoRefetchEnabled) return;
     if (_signedOut) return;
@@ -180,11 +207,12 @@ class AssignmentService extends ChangeNotifier {
     super.dispose();
   }
 
-  /// Clear cached + in-memory deadlines (called on primary logout).
+  /// Clear fetched deadlines (called on primary logout).
   Future<void> clearCache() async {
     _identityEpoch++;
     _hasCachedData = false;
-    _assignments = [];
+    _remoteAssignments = const [];
+    _rebuildAssignments();
     _platformErrors.clear();
     _error = null;
     await _storage.clearCachedAssignments();
@@ -197,15 +225,81 @@ class AssignmentService extends ChangeNotifier {
     _cacheHydrated = true;
     _hasCachedData = _storage.hasCachedAssignments;
     _overrides = _storage.loadAssignmentOverrides();
-    final raw = _storage.loadCachedAssignments();
-    if (raw.isEmpty) {
-      notifyListeners();
-      return;
-    }
-    _assignments = raw.map((e) => Assignment.fromJson(e)).toList()
-      ..sort((a, b) => a.due.compareTo(b.due));
+    _remoteAssignments = _storage
+        .loadCachedAssignments()
+        .map(Assignment.fromJson)
+        .toList();
+    _customDeadlines = _storage.loadCustomDeadlines(_primaryIdentity);
+    _rebuildAssignments();
     notifyListeners();
   }
+
+  Future<void> saveCustomDeadline({
+    required String? owner,
+    String? id,
+    required String title,
+    required DateTime due,
+    String course = '',
+    String notes = '',
+  }) {
+    final name = title.trim();
+    if (name.isEmpty) throw ArgumentError.value(title, 'title', 'Required');
+    return _mutateCustomDeadlines(owner, (deadlines) {
+      final previous = deadlines[id];
+      if (id != null && previous == null) {
+        throw StateError('Custom deadline no longer exists');
+      }
+      final deadlineId = id ?? _newCustomDeadlineId();
+      deadlines[deadlineId] = CustomDeadline(
+        id: deadlineId,
+        title: name,
+        course: course.trim(),
+        due: due,
+        notes: notes.trim(),
+        completed: previous?.completed ?? false,
+        reminderCompletedAt: previous?.reminderCompletedAt,
+      );
+      return true;
+    });
+  }
+
+  static String _newCustomDeadlineId() {
+    final random = Random.secure();
+    return List.generate(
+      16,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+  }
+
+  Future<void> deleteCustomDeadline(String id, {required String? owner}) =>
+      _mutateCustomDeadlines(owner, (deadlines) => deadlines.remove(id) != null);
+
+  Future<void> _mutateCustomDeadlines(
+    String? owner,
+    bool Function(Map<String, CustomDeadline>) apply,
+  ) =>
+      _customDeadlineWrites.protect(() async {
+        if (_disposed || owner != _primaryIdentity) {
+          throw StateError('Deadline workspace changed');
+        }
+        final updated = {...?_customDeadlines};
+        if (!apply(updated)) return;
+        await _storage.saveCustomDeadlines(owner, updated.values);
+        if (_disposed || owner != _primaryIdentity) return;
+        _customDeadlines = updated;
+        _rebuildAssignments();
+        notifyListeners();
+      });
+
+  Future<void> _setCustomCompletion(String id, {bool? completed}) =>
+      _mutateCustomDeadlines(_primaryIdentity, (deadlines) {
+        final deadline = deadlines[id];
+        if (deadline == null || deadline.completed == completed) return false;
+        deadlines[id] = deadline.withCompletion(
+          completed ?? !deadline.completed,
+        );
+        return true;
+      });
 
   // -- Override mutators --
 
@@ -213,12 +307,62 @@ class AssignmentService extends ChangeNotifier {
       _storage.saveAssignmentOverrides(_overrides);
 
   Future<void> setCompleted(Assignment a, bool completed) async {
+    if (a is CustomDeadline) {
+      await _setCustomCompletion(a.id, completed: completed);
+      return;
+    }
     _overrides.completed[AssignmentOverrides.keyFor(a)] = completed;
     notifyListeners();
     await _persistOverrides();
   }
 
+  Future<void> applyReminderCompletions(
+    Map<String, ({Assignment assignment, int completedAt})> completions,
+  ) async {
+    final owner = _primaryIdentity;
+    final customCompletions = <String, int>{};
+    var recorded = false;
+    var changed = false;
+    for (final entry in completions.entries) {
+      final completion = entry.value;
+      if (completion.assignment is CustomDeadline) {
+        customCompletions[completion.assignment.id] = completion.completedAt;
+        continue;
+      }
+      final previous = _overrides.reminderCompletions[entry.key];
+      if (previous != null && previous >= completion.completedAt) continue;
+      _overrides.reminderCompletions[entry.key] = completion.completedAt;
+      recorded = true;
+      if (isCompleted(completion.assignment)) continue;
+      _overrides.completed[AssignmentOverrides.keyFor(completion.assignment)] =
+          true;
+      changed = true;
+    }
+    if (changed) notifyListeners();
+    if (recorded) await _persistOverrides();
+    if (customCompletions.isEmpty || owner != _primaryIdentity || _disposed) {
+      return;
+    }
+    await _mutateCustomDeadlines(owner, (deadlines) {
+      var updated = false;
+      for (final entry in customCompletions.entries) {
+        final deadline = deadlines[entry.key];
+        if (deadline == null ||
+            (deadline.reminderCompletedAt ?? -1) >= entry.value) {
+          continue;
+        }
+        deadlines[entry.key] = deadline.withCompletion(
+          true,
+          reminderCompletedAt: entry.value,
+        );
+        updated = true;
+      }
+      return updated;
+    });
+  }
+
   Future<void> toggleCompleted(Assignment a) async {
+    if (a is CustomDeadline) return _setCustomCompletion(a.id);
     final cur = _overrides.effectiveCompleted(a);
     return setCompleted(a, !cur);
   }
@@ -323,7 +467,8 @@ class AssignmentService extends ChangeNotifier {
         successfulResults: successfulResults,
       );
 
-      _assignments = merged;
+      _remoteAssignments = merged;
+      _rebuildAssignments();
       _hasCachedData = _hasCachedData || successfulResults.isNotEmpty;
       if (!_hasCachedData) return;
       await _storage.saveCachedAssignments(
@@ -347,13 +492,11 @@ class AssignmentService extends ChangeNotifier {
     final successfulPlatforms =
         successfulResults.keys.map((p) => p.toLowerCase()).toSet();
 
-    final merged = <Assignment>[
-      for (final a in _assignments)
+    return <Assignment>[
+      for (final a in _remoteAssignments)
         if (!successfulPlatforms.contains(a.platform.toLowerCase())) a,
       ...successfulResults.values.expand((items) => items),
-    ]..sort((a, b) => a.due.compareTo(b.due));
-
-    return merged;
+    ];
   }
 
   Future<void> fetchPlatform(String platformId) async {
@@ -400,7 +543,8 @@ class AssignmentService extends ChangeNotifier {
           successfulResults: successfulResults,
         );
 
-        _assignments = merged;
+        _remoteAssignments = merged;
+        _rebuildAssignments();
         _hasCachedData = _hasCachedData || successfulResults.isNotEmpty;
         if (!_hasCachedData) return;
         await _storage.saveCachedAssignments(

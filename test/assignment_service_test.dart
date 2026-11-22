@@ -22,6 +22,86 @@ import 'support/fake_ids_client.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('custom changes persist independently of an in-flight refresh', () async {
+    final response = Completer<http.Response>();
+    final requested = Completer<void>();
+    final fixture = await _identityFixture((_, __) {
+      requested.complete();
+      return response.future;
+    });
+    final service = fixture.service;
+    final owner = service.customDeadlineOwner;
+    final due = DateTime(2027, 3, 1, 23, 59);
+    final refresh = service.fetchAssignments();
+    await requested.future;
+
+    await Future.wait([
+      service.saveCustomDeadline(owner: owner, title: 'First', due: due),
+      service.saveCustomDeadline(owner: owner, title: 'Second', due: due),
+    ]);
+    final first = service.assignments.whereType<CustomDeadline>()
+        .singleWhere((a) => a.title == 'First');
+    await Future.wait([
+      service.setCompleted(first, true),
+      service.saveCustomDeadline(
+        owner: owner,
+        id: first.id,
+        title: 'Edited',
+        course: 'Course',
+        notes: 'Bring printed copy',
+        due: due.add(const Duration(hours: 1)),
+      ),
+    ]);
+
+    response.complete(http.Response('{"success":true,"data":[]}', 200));
+    await refresh;
+    expect(fixture.storage.loadCachedAssignments().map((a) => a['id']), ['unrelated']);
+    service.loadCached();
+    expect(service.assignments.whereType<CustomDeadline>().map((a) => a.title), ['Second', 'Edited']);
+    final edited = service.findCustomDeadline(first.id)!;
+    expect(edited, isA<CustomDeadline>());
+    expect(edited.course, 'Course');
+    expect(edited.notes, 'Bring printed copy');
+    expect(edited.due, due.add(const Duration(hours: 1)));
+    expect(service.isCompleted(edited), isTrue);
+    await service.toggleCompleted(edited);
+    expect(service.findCustomDeadline(first.id)?.completed, isFalse);
+    await service.deleteCustomDeadline(first.id, owner: owner);
+    service.loadCached();
+    expect(service.findCustomDeadline(first.id), isNull);
+  });
+
+  test('guest and account workspaces restore their own deadlines', () async {
+    final fixture = await _identityFixture((_, __) => http.Response('', 503));
+    final service = fixture.service;
+    final session = fixture.auth.session!;
+    final due = DateTime(2027, 3, 1, 23, 59);
+    fixture.auth.onLogout = () async {
+      await service.clearCache();
+      await service.clearAllOverrides();
+    };
+    await service.saveCustomDeadline(owner: session.userId, title: 'Account', due: due);
+    final accountDeadline = service.assignments.whereType<CustomDeadline>().single;
+    await service.setCompleted(accountDeadline, true);
+    await fixture.auth.logout();
+    expect(service.assignments, isEmpty);
+    expect(service.hasCachedData, isFalse);
+    await expectLater(
+      service.saveCustomDeadline(owner: session.userId, title: 'Stale draft', due: due),
+      throwsStateError,
+    );
+
+    await service.saveCustomDeadline(owner: null, title: 'Guest', due: due);
+    expect(service.hasCachedData, isTrue);
+    expect(service.visibleAssignments.single.title, 'Guest');
+    await fixture.storage.saveSession(session);
+    await fixture.auth.loadSession();
+    expect(service.visibleAssignments.single.title, 'Account');
+    expect(service.isCompleted(service.visibleAssignments.single), isTrue);
+    await fixture.auth.logout();
+    expect(service.visibleAssignments.single.title, 'Guest');
+  });
+
   test('IDS unbind clears campus deadlines and retains other cached sources', () async {
     final fixture = await _identityFixture(
       (_, __) => http.Response('unavailable', 503),

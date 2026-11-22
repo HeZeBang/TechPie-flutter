@@ -32,6 +32,7 @@
 		48ED735C9A08085011C315DC /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 49D9B073CC80F320BC796DAB /* Cocoa.framework */; };
 		58D1648CBE28C49F4066E59A /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C77EC04E640BA4A10EBE77DB /* Localizable.strings */; };
 		6B21A0E93BEBF45D6366636C /* DeadlineWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AD48055E9A7BAD61A99E6C /* DeadlineWidgetBridge.swift */; };
+		A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */; };
 		863151EA9960F4B362BE6576 /* DeadlineWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF1C5A3900238226A31054A6 /* DeadlineWidget.swift */; };
 		9890447B4E16EA81E26F77C8 /* DeadlineWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EAD23142838A8BD6B6D99DDA /* DeadlineWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9DEF51B6C29B097558BBF13B /* DeadlineWidgetSupport in Frameworks */ = {isa = PBXBuildFile; productRef = EA8AAD9E783AB728FB40AE35 /* DeadlineWidgetSupport */; };
@@ -113,6 +114,7 @@
 		49D9B073CC80F320BC796DAB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		4BDFBC3AA3E36A069BAEFBF3 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		66AD48055E9A7BAD61A99E6C /* DeadlineWidgetBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeadlineWidgetBridge.swift; path = Bridge/DeadlineWidgetBridge.swift; sourceTree = "<group>"; };
+		A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeadlineReminderBridge.swift; path = ../apple/DeadlineReminders/DeadlineReminderBridge.swift; sourceTree = SOURCE_ROOT; };
 		753B8FACAE9206A8DB283EB9 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		87B968DA25A33B553B2B5106 /* DeadlineWidgetView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeadlineWidgetView.swift; path = UI/DeadlineWidgetView.swift; sourceTree = "<group>"; };
@@ -198,6 +200,7 @@
 				D73912EC22F37F3D000D13A0 /* Frameworks */,
 				D4D24F33E96659A2F23E6AF2 /* Pods */,
 				A64E52F225469EE8AA7CE16A /* DeadlineWidgetShared */,
+				A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */,
 				A10631694B746B9DF42968DE /* DeadlineWidgets */,
 			);
 			sourceTree = "<group>";
@@ -565,6 +568,7 @@
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 				6B21A0E93BEBF45D6366636C /* DeadlineWidgetBridge.swift in Sources */,
+				A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

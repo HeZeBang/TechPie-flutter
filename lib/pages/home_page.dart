@@ -26,6 +26,7 @@ import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/uni_auth_login.dart';
+import 'custom_deadline_editor_page.dart';
 import 'generic_webview_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -584,7 +585,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final subtitle = a is ExamAssignment ? a.location.trim() : a.course;
 
     return InkWell(
-      onTap: () => unawaited(_openAssignmentUrl(a)),
+      onTap: () => unawaited(
+        a is CustomDeadline
+            ? CustomDeadlineEditorPage.open(context, deadline: a)
+            : _openAssignmentUrl(a),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Row(

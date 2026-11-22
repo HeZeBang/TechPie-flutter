@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
@@ -375,6 +376,41 @@ class StorageService {
   }
 
   Future<void> clearCachedAssignments() => _prefs.remove(_assignmentsKey);
+
+  static String _customDeadlinesKey(String? owner) => owner == null
+      ? 'custom_deadlines_guest'
+      : 'custom_deadlines_account_${Uri.encodeComponent(owner)}';
+
+  Future<void> saveCustomDeadlines(
+    String? owner,
+    Iterable<CustomDeadline> deadlines,
+  ) async {
+    final saved = await _prefs.setString(
+      _customDeadlinesKey(owner),
+      jsonEncode(deadlines.map((deadline) => deadline.toJson()).toList()),
+    );
+    if (!saved) throw StateError('Could not save custom deadlines');
+  }
+
+  Map<String, CustomDeadline>? loadCustomDeadlines(String? owner) {
+    final raw = _prefs.getString(_customDeadlinesKey(owner));
+    if (raw == null) return null;
+    final deadlines = <String, CustomDeadline>{};
+    try {
+      final items = jsonDecode(raw) as List<dynamic>;
+      for (final item in items.whereType<Map<String, dynamic>>()) {
+        try {
+          final deadline = CustomDeadline.fromJson(item);
+          deadlines[deadline.id] = deadline;
+        } catch (_) {
+          debugPrint('Skipping invalid custom deadline');
+        }
+      }
+    } catch (_) {
+      debugPrint('Could not read custom deadlines');
+    }
+    return deadlines;
+  }
 
   // Local user overrides on assignments (completion flips + hidden ids).
   static const _assignmentOverridesKey = 'assignment_overrides';

@@ -6,6 +6,28 @@ import 'package:flutter/services.dart';
 import '../models/course_table.dart';
 import '../utils/platform.dart';
 
+Future<TimeOfDay?> showScheduleTimePicker({
+  required BuildContext context,
+  required TimeOfDay initialTime,
+  required String title,
+}) {
+  var selected = initialTime;
+  return showSchedulePickerSheet<TimeOfDay>(
+    context: context,
+    title: title,
+    selection: () => selected,
+    builder: (_) => SizedBox(
+      height: 216,
+      child: CupertinoDatePicker(
+        mode: CupertinoDatePickerMode.time,
+        use24hFormat: true,
+        initialDateTime: DateTime(2026, 1, 1, selected.hour, selected.minute),
+        onDateTimeChanged: (value) => selected = TimeOfDay.fromDateTime(value),
+      ),
+    ),
+  );
+}
+
 /// A confirm-or-cancel sheet for a pending choice — the app's pickers (wheels,
 /// dates, times, multi-select lists) all present through it. Edits remain
 /// pending until the user confirms; dismissing returns null.

@@ -13,6 +13,7 @@ import WidgetKit
   private var watchBridge: WatchConnectivityBridge?
   private var flutterConfigured = false
   private let deadlineWidgetBridge = DeadlineWidgetBridge()
+  private let deadlineReminderBridge = DeadlineReminderBridge()
 
   override func application(
     _ application: UIApplication,
@@ -62,6 +63,7 @@ import WidgetKit
     ecardBindTunnel = EcardBindTunnelPlugin(messenger: registrar.messenger())
     watchBridge = WatchConnectivityBridge(registrar: registrar)
     deadlineWidgetBridge.configure(messenger: registrar.messenger())
+    deadlineReminderBridge.configure(messenger: registrar.messenger())
 
     let platformChannel = FlutterMethodChannel(
       name: "techpie/platform", binaryMessenger: registrar.messenger()

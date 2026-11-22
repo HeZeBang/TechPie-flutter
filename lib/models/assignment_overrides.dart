@@ -5,12 +5,15 @@ import 'assignment.dart';
 class AssignmentOverrides {
   final Map<String, bool> completed;
   final Set<String> hidden;
+  final Map<String, int> reminderCompletions;
 
   AssignmentOverrides({
     Map<String, bool>? completed,
     Set<String>? hidden,
+    Map<String, int>? reminderCompletions,
   })  : completed = completed ?? {},
-        hidden = hidden ?? {};
+        hidden = hidden ?? {},
+        reminderCompletions = reminderCompletions ?? {};
 
   static String keyFor(Assignment a) => '${a.platform}:${a.id}';
 
@@ -29,6 +32,8 @@ class AssignmentOverrides {
   Map<String, dynamic> toJson() => {
         'completed': completed,
         'hidden': hidden.toList(),
+        if (reminderCompletions.isNotEmpty)
+          'reminderCompletions': reminderCompletions,
       };
 
   factory AssignmentOverrides.fromJson(Map<String, dynamic> json) {
@@ -38,6 +43,15 @@ class AssignmentOverrides {
         <String, bool>{};
     final h =
         ((json['hidden'] as List?) ?? const []).map((e) => e as String).toSet();
-    return AssignmentOverrides(completed: c, hidden: h);
+    final reminders = json['reminderCompletions'];
+    return AssignmentOverrides(
+      completed: c,
+      hidden: h,
+      reminderCompletions: {
+        if (reminders is Map<String, dynamic>)
+          for (final entry in reminders.entries)
+            if (entry.value is int) entry.key: entry.value as int,
+      },
+    );
   }
 }
