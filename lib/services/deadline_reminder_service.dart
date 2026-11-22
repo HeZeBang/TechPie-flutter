@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../features/campus_card/core/async_mutex.dart';
 import '../models/assignment.dart';
 import 'assignment_service.dart';
 
@@ -18,8 +17,11 @@ class DeadlineReminderService with WidgetsBindingObserver {
 
   final AssignmentService _assignments;
   final MethodChannel _channel;
+  late final _writes = AsyncMutex();
   List<Assignment>? _lastAssignments;
   int? _lastIdentityEpoch;
+  int? _lastChangesRevision;
+  Timer? _removalTimer;
   bool _initialized = false;
   bool _syncing = false;
   bool _syncAgain = false;
@@ -40,6 +42,9 @@ class DeadlineReminderService with WidgetsBindingObserver {
     _initialized = false;
     _lastAssignments = null;
     _lastIdentityEpoch = null;
+    _lastChangesRevision = null;
+    _removalTimer?.cancel();
+    _removalTimer = null;
     WidgetsBinding.instance.removeObserver(this);
     _assignments.removeListener(_assignmentsChanged);
     _channel.setMethodCallHandler(null);
@@ -53,33 +58,39 @@ class DeadlineReminderService with WidgetsBindingObserver {
   void _assignmentsChanged() {
     final assignments = _assignments.assignments;
     final epoch = _assignments.identityEpoch;
-    if (identical(assignments, _lastAssignments) && epoch == _lastIdentityEpoch) {
+    final revision = _assignments.reminderChangesRevision;
+    if (identical(assignments, _lastAssignments) &&
+        epoch == _lastIdentityEpoch &&
+        revision == _lastChangesRevision) {
       return;
     }
     _lastAssignments = assignments;
     _lastIdentityEpoch = epoch;
+    _lastChangesRevision = revision;
     unawaited(syncCompletions());
   }
 
-  String _keyFor(Assignment assignment) =>
-      sha256.convert(utf8.encode(_assignments.scopedKeyFor(assignment))).toString();
-
   Future<ReminderExportResult> add(Iterable<Assignment> assignments) async {
-    final data = await _channel.invokeMapMethod<String, int>('add', [
-      for (final assignment in assignments)
-        {
-          'key': _keyFor(assignment),
-          'title': assignment.title,
-          'notes': switch (assignment) {
-            ExamAssignment(:final location) => location,
-            CustomDeadline(:final course, :final notes) =>
-              [course, notes].where((line) => line.isNotEmpty).join('\n'),
-            _ => assignment.course,
-          },
-          'due': assignment.due.millisecondsSinceEpoch,
-          'completed': _assignments.isCompleted(assignment),
-        },
-    ]);
+    final epoch = _assignments.identityEpoch;
+    final keys = assignments.map(_assignments.reminderKeyFor).toList();
+    final data = await _writes.protect(() async {
+      if (epoch != _assignments.identityEpoch) {
+        throw PlatformException(code: 'reminders_workspace_changed');
+      }
+      final current = {
+        for (final assignment in _assignments.assignments)
+          _assignments.reminderKeyFor(assignment): assignment,
+      };
+      return _channel.invokeMapMethod<String, int>('add', [
+        for (final key in keys)
+          if (current[key] case final assignment?)
+            {
+              'key': key,
+              ..._details(assignment),
+              'completed': _assignments.isCompleted(assignment),
+            },
+      ]);
+    });
     if (data == null) {
       throw PlatformException(code: 'reminders_unavailable');
     }
@@ -91,8 +102,23 @@ class DeadlineReminderService with WidgetsBindingObserver {
     );
   }
 
+  Map<String, Object> _details(Assignment assignment) => {
+        'title': assignment.title,
+        'notes': switch (assignment) {
+          ExamAssignment(:final location) => location,
+          CustomDeadline(:final course, :final location, :final notes) => [
+              if (course.isNotEmpty) course,
+              if (location.isNotEmpty) '地点：$location',
+              if (notes.isNotEmpty) notes,
+            ].join('\n'),
+          _ => assignment.course,
+        },
+        if (assignment is CustomDeadline) 'location': assignment.location,
+        'due': assignment.due.millisecondsSinceEpoch,
+      };
+
   Future<void> syncCompletions() async {
-    if (!_initialized || _assignments.assignments.isEmpty) return;
+    if (!_initialized) return;
     if (_syncing) {
       _syncAgain = true;
       return;
@@ -101,10 +127,18 @@ class DeadlineReminderService with WidgetsBindingObserver {
     _syncing = true;
     try {
       final epoch = _assignments.identityEpoch;
+      await _syncChanges(epoch);
+      if (!_initialized || epoch != _assignments.identityEpoch) return;
+
       final assignments = _assignments.assignments;
+      final pending = _assignments.reminderSyncWork.changes;
       final byKey = {
-        for (final assignment in assignments) _keyFor(assignment): assignment,
+        for (final assignment in assignments)
+          if (_assignments.reminderKeyFor(assignment) case final key
+              when !pending.containsKey(key))
+            key: assignment,
       };
+      if (byKey.isEmpty) return;
       final completed = await _channel.invokeMapMethod<String, int>(
         'completed',
         byKey.keys.toList(),
@@ -115,11 +149,14 @@ class DeadlineReminderService with WidgetsBindingObserver {
           !identical(assignments, _assignments.assignments)) {
         return;
       }
-      await _assignments.applyReminderCompletions({
-        for (final entry in completed.entries)
-          if (byKey[entry.key] case final assignment?)
-            entry.key: (assignment: assignment, completedAt: entry.value),
-      });
+      await _assignments.applyReminderCompletions(
+        {
+          for (final entry in completed.entries)
+            if (byKey[entry.key] case final assignment?)
+              entry.key: (assignment: assignment, completedAt: entry.value),
+        },
+        epoch: epoch,
+      );
     } on MissingPluginException {
       // The native runner may still be connecting its channel on startup.
     } on PlatformException catch (error) {
@@ -132,6 +169,52 @@ class DeadlineReminderService with WidgetsBindingObserver {
         _syncAgain = false;
         unawaited(syncCompletions());
       }
+    }
+  }
+
+  Future<void> _syncChanges(int epoch) async {
+    try {
+      await _writes.protect(() async {
+        if (!_initialized || epoch != _assignments.identityEpoch) return;
+        final (:changes, :nextRemoval) = await _assignments.readReminderSyncWork();
+        if (!_initialized || epoch != _assignments.identityEpoch) return;
+        _removalTimer?.cancel();
+        _removalTimer = nextRemoval == null
+            ? null
+            : Timer(nextRemoval, () => unawaited(syncCompletions()));
+
+        if (changes.isNotEmpty) {
+          final resolved = await _channel.invokeListMethod<String>(
+            'change',
+            changes.map((key, change) => MapEntry(key, change.name)),
+          );
+          if (!_initialized || epoch != _assignments.identityEpoch) return;
+          if (resolved != null && resolved.isNotEmpty) {
+            await _assignments.acknowledgeReminderChanges(
+              {
+                for (final key in resolved)
+                  if (changes[key] case final change?) key: change,
+              },
+              epoch: epoch,
+            );
+          }
+        }
+
+        if (!_initialized || epoch != _assignments.identityEpoch) return;
+        final edits = _assignments.pendingReminderEdits;
+        if (edits.isEmpty) return;
+        final saved = await _channel.invokeListMethod<String>(
+          'edit',
+          edits.map((key, deadline) => MapEntry(key, _details(deadline))),
+        );
+        if (!_initialized || epoch != _assignments.identityEpoch || saved == null) return;
+        await _assignments.acknowledgeReminderEdits(
+          saved.map((key) => edits[key]).whereType<CustomDeadline>(),
+          epoch: epoch,
+        );
+      });
+    } on PlatformException catch (error) {
+      debugPrint('Could not write reminder changes: ${error.code}');
     }
   }
 }

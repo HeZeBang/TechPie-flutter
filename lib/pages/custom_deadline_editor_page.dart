@@ -50,6 +50,7 @@ class CustomDeadlineEditorPage extends StatefulWidget {
 class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
   late final _title = TextEditingController(text: widget.deadline?.title);
   late final _course = TextEditingController(text: widget.deadline?.course);
+  late final _location = TextEditingController(text: widget.deadline?.location);
   late final _notes = TextEditingController(text: widget.deadline?.notes);
   late DateTime? _date = widget.deadline?.due.toLocal();
   late TimeOfDay? _time = _date == null ? null : TimeOfDay.fromDateTime(_date!);
@@ -61,6 +62,7 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
   void dispose() {
     _title.dispose();
     _course.dispose();
+    _location.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -104,6 +106,7 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
         id: _id,
         title: title,
         course: _course.text,
+        location: _location.text,
         notes: _notes.text,
         due: DateTime(date.year, date.month, date.day, time.hour, time.minute),
       ),
@@ -214,6 +217,11 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
                     AdaptiveTextFieldGroupItem(
                       controller: _course,
                       placeholder: '课程名（可选）',
+                      enabled: !_busy,
+                    ),
+                    AdaptiveTextFieldGroupItem(
+                      controller: _location,
+                      placeholder: '地点（可选）',
                       enabled: !_busy,
                       textInputAction: TextInputAction.done,
                     ),

@@ -1,3 +1,18 @@
+enum DeadlineReminderChange {
+  complete,
+  reopen,
+  remove,
+  edit;
+
+  static Map<String, DeadlineReminderChange> decode(dynamic value) => {
+        if (value is Map)
+          for (final entry in value.entries)
+            for (final change in values)
+              if (entry.key is String && entry.value == change.name)
+                entry.key as String: change,
+      };
+}
+
 enum DeadlineKind {
   assignment('assignment', '作业'),
   exam('exam', '考试'),
@@ -114,6 +129,7 @@ class Assignment {
 }
 
 class CustomDeadline extends Assignment {
+  final String location;
   final String notes;
   final bool completed;
   final int? reminderCompletedAt;
@@ -123,6 +139,7 @@ class CustomDeadline extends Assignment {
     required super.title,
     required super.course,
     required super.due,
+    this.location = '',
     this.notes = '',
     this.completed = false,
     this.reminderCompletedAt,
@@ -137,6 +154,7 @@ class CustomDeadline extends Assignment {
         title: title,
         course: course,
         due: due,
+        location: location,
         notes: notes,
         completed: completed,
         reminderCompletedAt: reminderCompletedAt ?? this.reminderCompletedAt,
@@ -147,6 +165,7 @@ class CustomDeadline extends Assignment {
         title: json['title'] as String,
         course: json['course'] as String? ?? '',
         due: DateTime.fromMillisecondsSinceEpoch((json['due'] as int) * 1000),
+        location: json['location'] as String? ?? '',
         notes: json['notes'] as String? ?? '',
         completed: json['completed'] as bool? ?? false,
         reminderCompletedAt: json['reminderCompletedAt'] as int?,
@@ -155,6 +174,7 @@ class CustomDeadline extends Assignment {
   @override
   Map<String, dynamic> toJson() => {
         ...super.toJson(),
+        if (location.isNotEmpty) 'location': location,
         if (notes.isNotEmpty) 'notes': notes,
         'completed': completed,
         if (reminderCompletedAt != null)

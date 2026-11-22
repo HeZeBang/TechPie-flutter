@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -24,12 +25,16 @@ class AssignmentService extends ChangeNotifier {
   final AuthService _auth;
   final ThirdPartyAuthService _tpAuth;
   final ScheduleService _schedule;
+  final bool _syncReminders;
+  final DateTime Function() _now;
 
   List<Assignment> _assignments = const [];
   List<Assignment> _remoteAssignments = const [];
   Map<String, CustomDeadline>? _customDeadlines;
-  final _customDeadlineWrites = AsyncMutex();
+  Map<String, DeadlineReminderChange> _customReminderChanges = {};
+  late final _writes = AsyncMutex();
   AssignmentOverrides _overrides = AssignmentOverrides();
+  int _reminderChangesRevision = 0;
   bool _loading = false;
   int _identityEpoch = 0;
   bool _hasCachedData = false;
@@ -57,6 +62,7 @@ class AssignmentService extends ChangeNotifier {
 
   bool get loading => _loading;
   int get identityEpoch => _identityEpoch;
+  int get reminderChangesRevision => _reminderChangesRevision;
   bool get hasCachedData => _hasCachedData || _customDeadlines != null;
   String? get customDeadlineOwner => _primaryIdentity;
   String? get error => _error;
@@ -84,6 +90,76 @@ class AssignmentService extends ChangeNotifier {
         AssignmentOverrides.keyFor(assignment),
       ]);
 
+  String reminderKeyFor(Assignment assignment) =>
+      _hash(scopedKeyFor(assignment));
+
+  ({
+    Map<String, DeadlineReminderChange> changes,
+    Duration? nextRemoval,
+  }) get reminderSyncWork {
+    final changes = {
+      for (final entry
+          in _activeOverrideReminderKeys(_overrides.reminderChanges.keys).entries)
+        entry.value: _overrides.reminderChanges[entry.key]!,
+      for (final entry in _customReminderChanges.entries)
+        if (entry.value != DeadlineReminderChange.edit) entry.key: entry.value,
+    };
+    final now = _now().millisecondsSinceEpoch;
+    int? nextRemoval;
+    for (final entry
+        in _activeOverrideReminderKeys(_overrides.reminderRemovals.keys).entries) {
+      final after = _overrides.reminderRemovals[entry.key]!.after;
+      if (after <= now) {
+        changes[entry.value] = DeadlineReminderChange.remove;
+      } else if (nextRemoval == null || after < nextRemoval) {
+        nextRemoval = after;
+      }
+    }
+    return (
+      changes: changes,
+      nextRemoval: nextRemoval == null ? null : Duration(milliseconds: nextRemoval - now),
+    );
+  }
+
+  // Read after any local undo that has already started persisting.
+  Future<({Map<String, DeadlineReminderChange> changes, Duration? nextRemoval})>
+      readReminderSyncWork() => _writes.protect(() async => reminderSyncWork);
+
+  Map<String, CustomDeadline> get pendingReminderEdits => {
+        if (_customReminderChanges.containsValue(DeadlineReminderChange.edit))
+          for (final deadline in _customDeadlines?.values ?? const <CustomDeadline>[])
+            if (_customReminderChanges.containsKey(_reminderEditKey(deadline.id)))
+              reminderKeyFor(deadline): deadline,
+      };
+
+  // Details and completion changes can both be pending for the same deadline.
+  static String _reminderEditKey(String id) => 'edit:$id';
+
+  static String _hash(String value) => sha256.convert(utf8.encode(value)).toString();
+
+  String _reminderSourceScope(String source) =>
+      _hash(jsonEncode([_primaryIdentity, source, _sourceIdentities[source]]));
+
+  String _overrideReminderKey(Assignment assignment, String reminderKey) =>
+      '${_reminderSourceScope(_sourcePlatform(assignment))}:$reminderKey';
+
+  // Retry changes from the current account and bindings even when a refresh
+  // or semester switch has removed the original assignment from the list.
+  Map<String, String> _activeOverrideReminderKeys(Iterable<String> storedKeys) {
+    if (storedKeys.isEmpty) return const {};
+    final scopes = {
+      'custom',
+      ...ThirdPartyPlatform.values.map((platform) => platform.id),
+      ..._remoteAssignments.map(_sourcePlatform),
+    }.map(_reminderSourceScope).toSet();
+    return {
+      for (final storedKey in storedKeys)
+        if (storedKey.split(':') case [final scope, final reminderKey]
+            when scopes.contains(scope))
+          storedKey: reminderKey,
+    };
+  }
+
   static String _sourcePlatform(Assignment assignment) =>
       (assignment.platform == 'blackboard' || assignment.platform == 'exam')
           ? ThirdPartyPlatform.ids.id
@@ -94,8 +170,11 @@ class AssignmentService extends ChangeNotifier {
     this._http,
     this._auth,
     this._tpAuth,
-    this._schedule,
-  ) {
+    this._schedule, {
+    bool syncReminders = false,
+    DateTime Function() now = DateTime.now,
+  })  : _syncReminders = syncReminders,
+        _now = now {
     _primaryIdentity = _auth.session?.userId;
     _sourceIdentities = _currentSources();
     // Refetch when bindings or auth change *after* initial app boot.
@@ -146,7 +225,7 @@ class AssignmentService extends ChangeNotifier {
                 .where((a) => !changed.contains(_sourcePlatform(a)))
                 .toList();
         if (primaryChanged) {
-          _customDeadlines = _storage.loadCustomDeadlines(primary);
+          _loadCustomDeadlines();
           _hasCachedData = false;
           unawaited(_storage.clearCachedAssignments());
         } else if (_hasCachedData) {
@@ -229,9 +308,15 @@ class AssignmentService extends ChangeNotifier {
         .loadCachedAssignments()
         .map(Assignment.fromJson)
         .toList();
-    _customDeadlines = _storage.loadCustomDeadlines(_primaryIdentity);
+    _loadCustomDeadlines();
     _rebuildAssignments();
     notifyListeners();
+  }
+
+  void _loadCustomDeadlines() {
+    final saved = _storage.loadCustomDeadlines(_primaryIdentity);
+    _customDeadlines = saved?.deadlines;
+    _customReminderChanges = saved?.reminderChanges ?? {};
   }
 
   Future<void> saveCustomDeadline({
@@ -240,11 +325,12 @@ class AssignmentService extends ChangeNotifier {
     required String title,
     required DateTime due,
     String course = '',
+    String? location,
     String notes = '',
   }) {
     final name = title.trim();
     if (name.isEmpty) throw ArgumentError.value(title, 'title', 'Required');
-    return _mutateCustomDeadlines(owner, (deadlines) {
+    return _mutateCustomDeadlines(owner, (deadlines, changes) {
       final previous = deadlines[id];
       if (id != null && previous == null) {
         throw StateError('Custom deadline no longer exists');
@@ -255,10 +341,14 @@ class AssignmentService extends ChangeNotifier {
         title: name,
         course: course.trim(),
         due: due,
+        location: location?.trim() ?? previous?.location ?? '',
         notes: notes.trim(),
         completed: previous?.completed ?? false,
         reminderCompletedAt: previous?.reminderCompletedAt,
       );
+      if (_syncReminders && previous != null) {
+        changes[_reminderEditKey(deadlineId)] = DeadlineReminderChange.edit;
+      }
       return true;
     });
   }
@@ -272,142 +362,294 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<void> deleteCustomDeadline(String id, {required String? owner}) =>
-      _mutateCustomDeadlines(owner, (deadlines) => deadlines.remove(id) != null);
+      _mutateCustomDeadlines(owner, (deadlines, changes) {
+        final deleted = deadlines.remove(id);
+        if (deleted == null) return false;
+        if (_syncReminders) {
+          changes.remove(_reminderEditKey(id));
+          changes[reminderKeyFor(deleted)] = DeadlineReminderChange.remove;
+        }
+        return true;
+      });
 
   Future<void> _mutateCustomDeadlines(
     String? owner,
-    bool Function(Map<String, CustomDeadline>) apply,
+    bool Function(
+      Map<String, CustomDeadline>,
+      Map<String, DeadlineReminderChange>,
+    ) apply,
   ) =>
-      _customDeadlineWrites.protect(() async {
+      _writes.protect(() async {
         if (_disposed || owner != _primaryIdentity) {
           throw StateError('Deadline workspace changed');
         }
         final updated = {...?_customDeadlines};
-        if (!apply(updated)) return;
-        await _storage.saveCustomDeadlines(owner, updated.values);
+        final changes = {..._customReminderChanges};
+        if (!apply(updated, changes)) return;
+        await _storage.saveCustomDeadlines(owner, updated.values, changes);
         if (_disposed || owner != _primaryIdentity) return;
-        _customDeadlines = updated;
-        _rebuildAssignments();
+        if (!mapEquals(_customDeadlines, updated)) {
+          _customDeadlines = updated;
+          _rebuildAssignments();
+        }
+        if (!mapEquals(_customReminderChanges, changes)) {
+          _customReminderChanges = changes;
+          _reminderChangesRevision++;
+        }
         notifyListeners();
       });
 
   Future<void> _setCustomCompletion(String id, {bool? completed}) =>
-      _mutateCustomDeadlines(_primaryIdentity, (deadlines) {
+      _mutateCustomDeadlines(_primaryIdentity, (deadlines, changes) {
         final deadline = deadlines[id];
-        if (deadline == null || deadline.completed == completed) return false;
-        deadlines[id] = deadline.withCompletion(
-          completed ?? !deadline.completed,
-        );
+        if (deadline == null) return false;
+        final next = completed ?? !deadline.completed;
+        if (deadline.completed == next) return false;
+        deadlines[id] = deadline.withCompletion(next);
+        _recordReminderCompletion(changes, deadline, next);
         return true;
       });
 
   // -- Override mutators --
 
-  Future<void> _persistOverrides() =>
-      _storage.saveAssignmentOverrides(_overrides);
-
-  Future<void> setCompleted(Assignment a, bool completed) async {
-    if (a is CustomDeadline) {
-      await _setCustomCompletion(a.id, completed: completed);
-      return;
-    }
-    _overrides.completed[AssignmentOverrides.keyFor(a)] = completed;
-    notifyListeners();
-    await _persistOverrides();
+  Future<void> _mutateOverrides(bool Function(AssignmentOverrides) apply) {
+    final epoch = _identityEpoch;
+    return _writes.protect(() async {
+      if (_disposed || epoch != _identityEpoch) return;
+      final updated = _overrides.copy();
+      if (!apply(updated)) return;
+      await _storage.saveAssignmentOverrides(updated);
+      if (_disposed) return;
+      if (!mapEquals(_overrides.reminderChanges, updated.reminderChanges) ||
+          !mapEquals(_overrides.reminderRemovals, updated.reminderRemovals)) {
+        _reminderChangesRevision++;
+      }
+      if (epoch == _identityEpoch) {
+        _overrides = updated;
+      } else {
+        _overrides.reminderChanges
+          ..clear()
+          ..addAll(updated.reminderChanges);
+        _overrides.reminderRemovals
+          ..clear()
+          ..addAll(updated.reminderRemovals);
+      }
+      notifyListeners();
+    });
   }
 
-  Future<void> applyReminderCompletions(
-    Map<String, ({Assignment assignment, int completedAt})> completions,
-  ) async {
+  void _recordReminderCompletion(
+    Map<String, DeadlineReminderChange> changes,
+    Assignment assignment,
+    bool completed,
+  ) {
+    if (!_syncReminders) return;
+    final key = reminderKeyFor(assignment);
+    final storedKey = assignment is CustomDeadline
+        ? key
+        : _overrideReminderKey(assignment, key);
+    changes[storedKey] = completed
+        ? DeadlineReminderChange.complete
+        : DeadlineReminderChange.reopen;
+  }
+
+  Future<void> setCompleted(Assignment a, bool completed) {
+    if (a is CustomDeadline) {
+      return _setCustomCompletion(a.id, completed: completed);
+    }
+    return _setOverrideCompletion(a, completed: completed);
+  }
+
+  Future<void> _setOverrideCompletion(Assignment a, {bool? completed}) =>
+      _mutateOverrides((overrides) {
+        final key = AssignmentOverrides.keyFor(a);
+        final previous = overrides.effectiveCompleted(a);
+        final next = completed ?? !previous;
+        if (overrides.completed[key] == next) return false;
+        overrides.completed[key] = next;
+        if (previous != next) {
+          _recordReminderCompletion(overrides.reminderChanges, a, next);
+        }
+        return true;
+      });
+
+  Future<void> acknowledgeReminderChanges(
+    Map<String, DeadlineReminderChange> sent, {
+    required int epoch,
+  }) async {
     final owner = _primaryIdentity;
-    final customCompletions = <String, int>{};
-    var recorded = false;
-    var changed = false;
-    for (final entry in completions.entries) {
-      final completion = entry.value;
-      if (completion.assignment is CustomDeadline) {
-        customCompletions[completion.assignment.id] = completion.completedAt;
-        continue;
+    await _mutateOverrides((overrides) {
+      if (epoch != _identityEpoch) return false;
+      final pending = overrides.reminderChanges;
+      final removals = overrides.reminderRemovals;
+      final now = _now().millisecondsSinceEpoch;
+      var changed = false;
+      for (final entry
+          in _activeOverrideReminderKeys({...pending.keys, ...removals.keys}).entries) {
+        final action = sent[entry.value];
+        if (action == null) continue;
+        final removal = removals[entry.key];
+        if (action == DeadlineReminderChange.remove &&
+            removal != null &&
+            (removal.after <= now || _customReminderChanges[entry.value] == action)) {
+          removals.remove(entry.key);
+          pending.remove(entry.key);
+          changed = true;
+        } else if (pending[entry.key] == action) {
+          pending.remove(entry.key);
+          changed = true;
+        }
       }
-      final previous = _overrides.reminderCompletions[entry.key];
-      if (previous != null && previous >= completion.completedAt) continue;
-      _overrides.reminderCompletions[entry.key] = completion.completedAt;
-      recorded = true;
-      if (isCompleted(completion.assignment)) continue;
-      _overrides.completed[AssignmentOverrides.keyFor(completion.assignment)] =
-          true;
-      changed = true;
-    }
-    if (changed) notifyListeners();
-    if (recorded) await _persistOverrides();
-    if (customCompletions.isEmpty || owner != _primaryIdentity || _disposed) {
-      return;
-    }
-    await _mutateCustomDeadlines(owner, (deadlines) {
-      var updated = false;
-      for (final entry in customCompletions.entries) {
-        final deadline = deadlines[entry.key];
-        if (deadline == null ||
-            (deadline.reminderCompletedAt ?? -1) >= entry.value) {
+      return changed;
+    });
+    if (_disposed || epoch != _identityEpoch) return;
+    await _mutateCustomDeadlines(owner, (_, pending) {
+      if (epoch != _identityEpoch) return false;
+      final previousLength = pending.length;
+      pending.removeWhere((key, change) => sent[key] == change);
+      return pending.length != previousLength;
+    });
+  }
+
+  Future<void> acknowledgeReminderEdits(
+    Iterable<CustomDeadline> saved, {
+    required int epoch,
+  }) =>
+      _mutateCustomDeadlines(_primaryIdentity, (deadlines, pending) {
+        if (epoch != _identityEpoch) return false;
+        var changed = false;
+        for (final deadline in saved) {
+          if (identical(deadlines[deadline.id], deadline) &&
+              pending.remove(_reminderEditKey(deadline.id)) != null) {
+            changed = true;
+          }
+        }
+        return changed;
+      });
+
+  Future<void> applyReminderCompletions(
+    Map<String, ({Assignment assignment, int completedAt})> completions, {
+    required int epoch,
+  }) async {
+    if (completions.isEmpty) return;
+    final owner = _primaryIdentity;
+    await _mutateOverrides((overrides) {
+      if (epoch != _identityEpoch) return false;
+      var recorded = false;
+      for (final entry in completions.entries) {
+        final (:assignment, :completedAt) = entry.value;
+        if (assignment is CustomDeadline ||
+            overrides.reminderChanges.containsKey(
+              _overrideReminderKey(assignment, entry.key),
+            )) {
           continue;
         }
-        deadlines[entry.key] = deadline.withCompletion(
-          true,
-          reminderCompletedAt: entry.value,
-        );
+        final previous = overrides.reminderCompletions[entry.key];
+        if (previous != null && previous >= completedAt) continue;
+        overrides.reminderCompletions[entry.key] = completedAt;
+        recorded = true;
+        if (!overrides.effectiveCompleted(assignment)) {
+          overrides.completed[AssignmentOverrides.keyFor(assignment)] = true;
+        }
+      }
+      return recorded;
+    });
+    if (epoch != _identityEpoch || _disposed) return;
+    await _mutateCustomDeadlines(owner, (deadlines, changes) {
+      if (epoch != _identityEpoch) return false;
+      var updated = false;
+      for (final entry in completions.entries) {
+        final (:assignment, :completedAt) = entry.value;
+        if (assignment is! CustomDeadline || changes.containsKey(entry.key)) continue;
+        final deadline = deadlines[assignment.id];
+        if (deadline == null ||
+            (deadline.reminderCompletedAt ?? -1) >= completedAt) {
+          continue;
+        }
+        deadlines[assignment.id] =
+            deadline.withCompletion(true, reminderCompletedAt: completedAt);
         updated = true;
       }
       return updated;
     });
   }
 
-  Future<void> toggleCompleted(Assignment a) async {
+  Future<void> toggleCompleted(Assignment a) {
     if (a is CustomDeadline) return _setCustomCompletion(a.id);
-    final cur = _overrides.effectiveCompleted(a);
-    return setCompleted(a, !cur);
+    return _setOverrideCompletion(a);
   }
 
-  Future<void> clearCompletionOverride(Assignment a) async {
-    _overrides.completed.remove(AssignmentOverrides.keyFor(a));
-    notifyListeners();
-    await _persistOverrides();
-  }
+  Future<void> clearCompletionOverride(Assignment a) =>
+      resetOverrides([AssignmentOverrides.keyFor(a)]);
 
-  Future<void> resetOverrides(Iterable<String> keys) async {
-    var changed = false;
-    for (final k in keys) {
-      if (_overrides.completed.remove(k) != null) changed = true;
+  Future<void> resetOverrides(Iterable<String> keys) =>
+      _mutateOverrides((overrides) {
+        final removed = <String, bool>{
+          for (final key in keys.toSet())
+            if (overrides.completed.remove(key) case final completed?)
+              key: completed,
+        };
+        for (final assignment in _remoteAssignments) {
+          final previous = removed[AssignmentOverrides.keyFor(assignment)];
+          if (previous != null && previous != assignment.submitted) {
+            _recordReminderCompletion(
+              overrides.reminderChanges,
+              assignment,
+              assignment.submitted,
+            );
+          }
+        }
+        return removed.isNotEmpty;
+      });
+
+  Future<void> hide(Assignment a, {Duration? reminderUndoWindow}) =>
+      _mutateOverrides((overrides) {
+        final key = AssignmentOverrides.keyFor(a);
+        if (!overrides.hidden.add(key)) return false;
+        if (_syncReminders && reminderUndoWindow != null) {
+          overrides.reminderRemovals[_overrideReminderKey(a, reminderKeyFor(a))] = (
+            assignmentKey: key,
+            after: _now().add(reminderUndoWindow).millisecondsSinceEpoch,
+          );
+        }
+        return true;
+      });
+
+  Future<void> unhide(String key) => _mutateOverrides((overrides) {
+        if (!overrides.hidden.remove(key)) return false;
+        _cancelReminderRemovals(overrides, {key});
+        return true;
+      });
+
+  Future<void> unhideAll() => _mutateOverrides((overrides) {
+        if (overrides.hidden.isEmpty) return false;
+        _cancelReminderRemovals(overrides, overrides.hidden);
+        overrides.hidden.clear();
+        return true;
+      });
+
+  void _cancelReminderRemovals(AssignmentOverrides overrides, Set<String> keys) {
+    final removals = overrides.reminderRemovals;
+    for (final storedKey in _activeOverrideReminderKeys(removals.keys).keys) {
+      if (keys.contains(removals[storedKey]!.assignmentKey)) removals.remove(storedKey);
     }
-    if (!changed) return;
-    notifyListeners();
-    await _persistOverrides();
   }
 
-  Future<void> hide(Assignment a) async {
-    _overrides.hidden.add(AssignmentOverrides.keyFor(a));
-    notifyListeners();
-    await _persistOverrides();
-  }
-
-  Future<void> unhide(String key) async {
-    if (_overrides.hidden.remove(key)) {
-      notifyListeners();
-      await _persistOverrides();
-    }
-  }
-
-  Future<void> unhideAll() async {
-    if (_overrides.hidden.isEmpty) return;
-    _overrides.hidden.clear();
-    await _persistOverrides();
-    notifyListeners();
-  }
-
-  Future<void> clearAllOverrides() async {
-    _overrides = AssignmentOverrides();
-    await _storage.clearAssignmentOverrides();
-    notifyListeners();
-  }
+  Future<void> clearAllOverrides() => _writes.protect(() async {
+        if (_disposed) return;
+        final reset = AssignmentOverrides(
+          reminderChanges: {..._overrides.reminderChanges},
+          reminderRemovals: {..._overrides.reminderRemovals},
+        );
+        if (reset.reminderChanges.isEmpty && reset.reminderRemovals.isEmpty) {
+          await _storage.clearAssignmentOverrides();
+        } else {
+          await _storage.saveAssignmentOverrides(reset);
+        }
+        if (_disposed) return;
+        _overrides = reset;
+        notifyListeners();
+      });
 
   Map<String, String> _jsonHeaders() => {
         'Content-Type': 'application/json; charset=UTF-8',

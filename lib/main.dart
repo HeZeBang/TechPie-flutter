@@ -98,17 +98,18 @@ Future<void> _realMain(SharedPreferences prefs) async {
     storageService,
     thirdPartyAuthService,
   );
+  final isApple = !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
   final assignmentService = AssignmentService(
     storageService,
     httpClient,
     authService,
     thirdPartyAuthService,
     scheduleService,
+    syncReminders: isApple,
   );
   final deadlineWidgetService = DeadlineWidgetService(assignmentService);
-  final isApple = !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS);
   final deadlineReminderService =
       isApple ? DeadlineReminderService(assignmentService) : null;
   final syncService = SyncService(

@@ -835,18 +835,14 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               background: scheme.primaryContainer,
               foreground: scheme.onPrimaryContainer,
             ),
-            endAction: a is CustomDeadline
-                ? null
-                : SwipeAction(
-                    icon: Icons.delete_outline,
-                    label: '删除',
-                    background: scheme.errorContainer,
-                    foreground: scheme.onErrorContainer,
-                  ),
+            endAction: SwipeAction(
+              icon: Icons.delete_outline,
+              label: '删除',
+              background: scheme.errorContainer,
+              foreground: scheme.onErrorContainer,
+            ),
             onStartSwipe: () => unawaited(_toggleCompleted(context, service, a)),
-            onDismissed: a is CustomDeadline
-                ? null
-                : () => _onDismiss(context, service, a, key),
+            onDismissed: () => _onDismiss(context, service, a, key),
             child: card,
           );
 
@@ -880,15 +876,19 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     Assignment a,
     String key,
   ) {
-    unawaited(service.hide(a));
+    const undoWindow = Duration(seconds: 4);
+    final epoch = service.identityEpoch;
+    unawaited(service.hide(a, reminderUndoWindow: undoWindow));
 
     showAdaptiveFeedback(
       context: context,
       message: '已忽略「${a.title}」',
       style: AdaptiveFeedbackStyle.info,
-      duration: const Duration(seconds: 4),
+      duration: undoWindow,
       actionLabel: '撤销',
-      onAction: () => unawaited(service.unhide(key)),
+      onAction: () {
+        if (epoch == service.identityEpoch) unawaited(service.unhide(key));
+      },
     );
   }
 
