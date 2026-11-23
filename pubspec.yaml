@@ -206,6 +206,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/logo/Logo-1.png
     - assets/help/ids_passkey.png
     - assets/campus_card/audio/
     - assets/campus_card/data/
