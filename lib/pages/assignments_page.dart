@@ -1182,7 +1182,10 @@ class _AssignmentCard extends StatelessWidget {
         ].join(' · '),
       _ => assignment.course,
     };
-    final notes = assignment is CustomDeadline ? assignment.notes : '';
+    final notes = switch (assignment) {
+      CustomDeadline(:final notes) => notes,
+      _ => '',
+    };
 
     Color statusColor() {
       if (completed) return Colors.green;
