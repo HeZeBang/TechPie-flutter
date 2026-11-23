@@ -73,12 +73,16 @@ void main(List<String> args) async {
 
 Future<void> _realMain(SharedPreferences prefs) async {
   final storageService = StorageService(prefs);
-  configureAppProxy(storageService.appProxyEnabled ? storageService.appProxyUrl : '');
+  final configuredProxy = storageService.appProxyEnabled
+      ? normalizeAppProxy(storageService.appProxyUrl)
+      : '';
+  final activeProxy = isValidAppProxy(configuredProxy) ? configuredProxy : '';
+  configureAppProxy(activeProxy);
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
   final httpClient = LoggingHttpClient(debugLogger);
   final uniAuthService = UniAuthService(
     logger: debugLogger,
-    proxyUrl: storageService.appProxyEnabled ? storageService.appProxyUrl : '',
+    proxyUrl: activeProxy,
   );
   final authService = AuthService(
     storageService,

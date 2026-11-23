@@ -463,28 +463,33 @@ class _SettingsPageState extends State<SettingsPage> {
                 });
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.lan_outlined),
-              title: const Text('Application proxy'),
-              subtitle: Text(
-                storage.appProxyEnabled && storage.appProxyUrl.isNotEmpty
-                    ? storage.appProxyUrl
-                    : 'Disabled',
+            if (!kIsWeb) ...[
+              ListTile(
+                key: const ValueKey('settings.app-proxy-address'),
+                leading: const Icon(Icons.lan_outlined),
+                title: const Text('Application proxy'),
+                subtitle: Text(
+                  storage.appProxyEnabled && storage.appProxyUrl.isNotEmpty
+                      ? storage.appProxyUrl
+                      : (storage.appProxyUrl.isNotEmpty
+                          ? '${storage.appProxyUrl} (Disabled)'
+                          : 'System default'),
+                ),
+                onTap: () =>
+                    unawaited(_showProxySettings(storage, sp.uniAuthService)),
               ),
-              onTap: () => _showProxySettings(storage, sp.uniAuthService),
-            ),
-            SwitchListTile(
-              secondary: const Icon(Icons.power_settings_new),
-              title: const Text('Enable application proxy'),
-              value: storage.appProxyEnabled,
-              onChanged: (value) async {
-                await storage.setAppProxyEnabled(value);
-                final proxy = value ? storage.appProxyUrl : '';
-                configureAppProxy(proxy);
-                sp.uniAuthService.setProxyUrl(proxy);
-                if (mounted) setState(() {});
-              },
-            ),
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.app-proxy-enabled'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.power_settings_new),
+                title: 'Enable application proxy',
+                subtitle: 'Route requests through the configured HTTP proxy',
+                value: storage.appProxyEnabled && storage.appProxyUrl.isNotEmpty,
+                onChanged: (value) => unawaited(
+                  _setProxyEnabled(storage, sp.uniAuthService, value),
+                ),
+              ),
+            ],
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('About'),
@@ -616,28 +621,40 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _showProxySettings(StorageService storage, UniAuthService uniAuth) async {
-    final controller = TextEditingController(text: storage.appProxyUrl);
+  Future<void> _setProxyEnabled(
+    StorageService storage,
+    UniAuthService uniAuth,
+    bool value,
+  ) async {
+    if (value) {
+      final normalized = normalizeAppProxy(storage.appProxyUrl);
+      if (!isValidAppProxy(normalized)) {
+        await _showProxySettings(storage, uniAuth);
+        return;
+      }
+      await storage.setAppProxyUrl(normalized);
+      await storage.setAppProxyEnabled(true);
+      configureAppProxy(normalized);
+      uniAuth.setProxyUrl(normalized);
+    } else {
+      await storage.setAppProxyEnabled(false);
+      configureAppProxy('');
+      uniAuth.setProxyUrl('');
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _showProxySettings(
+    StorageService storage,
+    UniAuthService uniAuth,
+  ) async {
     final value = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Application proxy'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '127.0.0.1:7890'),
-          keyboardType: TextInputType.url,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Save')),
-        ],
-      ),
+      builder: (_) => _ProxySettingsDialog(initialValue: storage.appProxyUrl),
     );
-    controller.dispose();
     if (value == null || !mounted) return;
-    final proxy = value.trim();
-    if (proxy.isNotEmpty && !RegExp(r'^[^\s:]+:\d{1,5}$').hasMatch(proxy)) {
+    final proxy = normalizeAppProxy(value);
+    if (proxy.isNotEmpty && !isValidAppProxy(proxy)) {
       await showAdaptiveAlertDialog<void>(
         context: context,
         title: 'Invalid proxy',
@@ -650,7 +667,7 @@ class _SettingsPageState extends State<SettingsPage> {
     await storage.setAppProxyEnabled(proxy.isNotEmpty);
     configureAppProxy(proxy);
     uniAuth.setProxyUrl(proxy);
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   void _showThemePicker(BuildContext context, ThemeService themeService) {
@@ -940,6 +957,55 @@ class _AdaptiveSwitchTile extends StatelessWidget {
       subtitle: Text(subtitle),
       trailing: AdaptiveSwitch(value: value, onChanged: onChanged),
       onTap: () => onChanged(!value),
+    );
+  }
+}
+
+class _ProxySettingsDialog extends StatefulWidget {
+  const _ProxySettingsDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_ProxySettingsDialog> createState() => _ProxySettingsDialogState();
+}
+
+class _ProxySettingsDialogState extends State<_ProxySettingsDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Application proxy'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: '127.0.0.1:7890'),
+        keyboardType: TextInputType.url,
+        onSubmitted: (value) => Navigator.pop(context, value.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

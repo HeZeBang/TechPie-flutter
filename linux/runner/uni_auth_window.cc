@@ -52,9 +52,12 @@ void UniAuthWindow::Authenticate(FlMethodCall* call) {
     return;
   }
   if (pending_) {
-    gtk_window_present(GTK_WINDOW(window_));
+    if (window_) gtk_window_present(GTK_WINDOW(window_));
     fl_method_call_respond_error(call, "IN_PROGRESS", "Login already open", nullptr, nullptr);
     return;
+  }
+  if (window_) {
+    gtk_widget_destroy(window_);
   }
   pending_ = FL_METHOD_CALL(g_object_ref(call));
   window_ = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -63,10 +66,12 @@ void UniAuthWindow::Authenticate(FlMethodCall* call) {
   gtk_window_set_transient_for(GTK_WINDOW(window_), parent_);
   gtk_window_set_destroy_with_parent(GTK_WINDOW(window_), TRUE);
   gtk_window_set_modal(GTK_WINDOW(window_), TRUE);
-  g_signal_connect(window_, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) {
+  g_signal_connect(window_, "destroy", G_CALLBACK(+[](GtkWidget* widget, gpointer data) {
     auto* self = static_cast<UniAuthWindow*>(data);
-    self->window_ = self->status_ = nullptr;
-    self->webview_ = nullptr;
+    if (self->window_ == widget) {
+      self->window_ = self->status_ = nullptr;
+      self->webview_ = nullptr;
+    }
     self->Complete(nullptr);
   }), this);
 
@@ -87,14 +92,17 @@ void UniAuthWindow::Authenticate(FlMethodCall* call) {
   gtk_box_pack_start(GTK_BOX(box), status_, FALSE, FALSE, 4);
   g_autoptr(WebKitWebContext) context = webkit_web_context_new_ephemeral();
   if (proxy && *proxy) {
+    g_autofree gchar* proxy_uri = g_strstr_len(proxy, -1, "://")
+        ? g_strdup(proxy)
+        : g_strdup_printf("http://%s", proxy);
     g_autoptr(WebKitNetworkProxySettings) settings = webkit_network_proxy_settings_new(nullptr, nullptr);
-    webkit_network_proxy_settings_add_proxy_for_scheme(settings, "http", proxy);
-    webkit_network_proxy_settings_add_proxy_for_scheme(settings, "https", proxy);
+    webkit_network_proxy_settings_add_proxy_for_scheme(settings, "http", proxy_uri);
+    webkit_network_proxy_settings_add_proxy_for_scheme(settings, "https", proxy_uri);
     webkit_website_data_manager_set_network_proxy_settings(
         webkit_web_context_get_website_data_manager(context), WEBKIT_NETWORK_PROXY_MODE_CUSTOM, settings);
   } else {
     webkit_website_data_manager_set_network_proxy_settings(
-        webkit_web_context_get_website_data_manager(context), WEBKIT_NETWORK_PROXY_MODE_NO_PROXY, nullptr);
+        webkit_web_context_get_website_data_manager(context), WEBKIT_NETWORK_PROXY_MODE_DEFAULT, nullptr);
   }
   webview_ = WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
   // Avoid the WebKit/NVIDIA EGL rendering path in this small login window.
@@ -133,7 +141,7 @@ void UniAuthWindow::Authenticate(FlMethodCall* call) {
       if (g_strcmp0(g_uri_get_host(uri), "auth-callback") == 0) {
         self->Complete(url);
         // GTK queues the close request instead of destroying inside WebKit.
-        gtk_window_close(GTK_WINDOW(self->window_));
+        if (self->window_) gtk_window_close(GTK_WINDOW(self->window_));
       }
       return TRUE;
     }

@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../pages/uni_auth_webview_page.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import 'debug_logger.dart';
+import 'http_client.dart';
 
 // ---------------------------------------------------------------------------
 // GeekPie Uni-Auth configuration (powered by Casdoor)
@@ -71,11 +72,16 @@ class UniAuthService extends ChangeNotifier {
 
   UniAuthService({DebugLogger? logger, String proxyUrl = ''})
       : _logger = logger,
-        _proxyUrl = proxyUrl;
+        _proxyUrl = _sanitizeProxy(proxyUrl);
 
   String _proxyUrl;
   String get proxyUrl => _proxyUrl;
-  void setProxyUrl(String value) => _proxyUrl = value.trim();
+  void setProxyUrl(String value) => _proxyUrl = _sanitizeProxy(value);
+
+  static String _sanitizeProxy(String value) {
+    final normalized = normalizeAppProxy(value);
+    return isValidAppProxy(normalized) ? normalized : '';
+  }
 
   final DebugLogger? _logger;
 
@@ -195,10 +201,14 @@ class UniAuthService extends ChangeNotifier {
       } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
         try {
           callbackUrl = await const MethodChannel('techpie/uni_auth')
-              .invokeMethod<String>('authenticate', <String, String>{
-                'url': casdoor.getSigninUrl().toString(),
-                'proxy': proxyUrl,
-              }) ?? '';
+                  .invokeMethod<String>(
+                    'authenticate',
+                    <String, String>{
+                      'url': casdoor.getSigninUrl().toString(),
+                      'proxy': proxyUrl,
+                    },
+                  ) ??
+              '';
         } on PlatformException catch (error) {
           if (error.code == 'CANCELLED') throw CasdoorAuthCancelledException();
           rethrow;
