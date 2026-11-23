@@ -11,6 +11,7 @@ import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/pages/assignments_page.dart';
 import 'package:techpie/pages/custom_deadline_editor_page.dart';
+import 'package:techpie/pages/hidden_assignments_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -23,6 +24,7 @@ import 'package:techpie/services/oa_gym_service.dart';
 import 'package:techpie/services/schedule_service.dart';
 import 'package:techpie/services/service_provider.dart';
 import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/services/student_allowance_service.dart';
 import 'package:techpie/services/sync_service.dart';
 import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
@@ -53,7 +55,7 @@ void main() {
   late bool denyEdits;
   late DateTime Function() now;
   late Completer<Map<String, int>>? blockedRead;
-  late Widget Function() buildPage;
+  late Widget Function({Widget home}) buildPage;
 
   Future<void> flush() => Future<void>.delayed(Duration.zero);
 
@@ -151,9 +153,11 @@ void main() {
       return blockedRead?.future ?? nativeCompletions;
     });
     reminders = DeadlineReminderService(assignments, channel: channel);
-    buildPage = () {
+    buildPage = ({Widget home = const AssignmentsPage()}) {
       final campusCard = CampusCardService();
+      final studentAllowance = StudentAllowanceService(auth, thirdParty);
       addTearDown(campusCard.dispose);
+      addTearDown(studentAllowance.dispose);
       return ServiceProvider(
         authService: auth,
         debugLogger: logger,
@@ -164,6 +168,7 @@ void main() {
         thirdPartyAuthService: thirdParty,
         oaGymService: OaGymService(auth, storage, thirdParty),
         egateAppService: EgateAppService(auth, storage, thirdParty),
+        studentAllowanceService: studentAllowance,
         uniAuthService: uniAuth,
         syncService: SyncService(auth, thirdParty, storage),
         updateService: UpdateService(),
@@ -175,7 +180,7 @@ void main() {
             key: adaptiveFeedbackHostKey,
             child: child!,
           ),
-          home: const AssignmentsPage(),
+          home: home,
         ),
       );
     };
@@ -625,5 +630,84 @@ void main() {
       expect(linkedKeys, {'unrelated'});
     },
     variant: const TargetPlatformVariant({TargetPlatform.iOS, TargetPlatform.macOS}),
+  );
+
+  testWidgets(
+    'iOS swipe-to-restore removes dismissed rows synchronously and formats custom subtitles',
+    (tester) async {
+      await assignments.saveCustomDeadline(
+        owner: null,
+        title: 'Custom hidden',
+        course: 'Physics',
+        location: 'Room 101',
+        due: firstDue,
+      );
+      final custom = assignments.assignments.whereType<CustomDeadline>().single;
+      final remote = assignments.assignments.firstWhere((a) => a is! CustomDeadline);
+      await assignments.hide(custom);
+      await assignments.hide(remote);
+
+      await tester.pumpWidget(buildPage(home: const HiddenAssignmentsPage()));
+      await tester.pumpAndSettle();
+      expect(find.text('自定义 · Physics · Room 101'), findsOneWidget);
+      expect(find.textContaining('CUSTOM'), findsNothing);
+
+      final firstRow = find.byType(Dismissible).first;
+      await tester.drag(firstRow, Offset(-tester.getSize(firstRow).width * 0.7, 0));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.takeException(), isNull);
+
+      final secondRow = find.byType(Dismissible).first;
+      await tester.drag(secondRow, Offset(-tester.getSize(secondRow).width * 0.7, 0));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(assignments.overrides.hidden, isEmpty);
+      expect(find.text('没有被忽略的事项'), findsOneWidget);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'completed remote assignments show Submitted while custom deadlines show details without it',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 950);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await storage.saveCachedAssignments([
+        Assignment(
+          id: 'gs-1',
+          platform: 'gradescope',
+          title: 'Homework 1',
+          course: 'CS101',
+          due: firstDue,
+          status: 'No Submission',
+        ).toJson(),
+      ]);
+      assignments.loadCached();
+      await assignments.saveCustomDeadline(
+        owner: null,
+        title: 'Lab report',
+        course: 'Physics',
+        location: 'Room 202',
+        notes: 'Bring printed copy',
+        due: firstDue.add(const Duration(hours: 2)),
+      );
+      for (final item in assignments.assignments) {
+        await assignments.setCompleted(item, true);
+      }
+
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('已完成 (2)'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('No Submission'), findsNothing);
+      expect(find.text('Submitted'), findsOneWidget);
+      expect(find.text('Physics · Room 202'), findsOneWidget);
+      expect(find.text('Bring printed copy'), findsOneWidget);
+    },
   );
 }

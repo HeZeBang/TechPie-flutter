@@ -591,7 +591,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final scheme = theme.colorScheme;
     final dueColor = _dueColor(a.due, now, scheme);
     final dueLabel = _dueLabel(a.due, now);
-    final subtitle = a is ExamAssignment ? a.location.trim() : a.course;
+    final subtitle = switch (a) {
+      ExamAssignment(:final location) => location.trim(),
+      CustomDeadline(:final course, :final location) => [
+          if (course.isNotEmpty) course,
+          if (location.isNotEmpty) location,
+        ].join(' · '),
+      _ => a.course,
+    };
 
     return InkWell(
       onTap: () => unawaited(

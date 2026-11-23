@@ -1176,8 +1176,13 @@ class _AssignmentCard extends StatelessWidget {
     final dueString = formatter.format(displayDue);
     final subtitle = switch (assignment) {
       ExamAssignment(:final location) => location.trim(),
+      CustomDeadline(:final course, :final location) => [
+          if (course.isNotEmpty) course,
+          if (location.isNotEmpty) location,
+        ].join(' · '),
       _ => assignment.course,
     };
+    final notes = assignment is CustomDeadline ? assignment.notes : '';
 
     Color statusColor() {
       if (completed) return Colors.green;
@@ -1187,7 +1192,11 @@ class _AssignmentCard extends StatelessWidget {
       return theme.colorScheme.primary;
     }
 
-    final statusLabel = assignment.status;
+    final statusLabel = assignment is CustomDeadline
+        ? null
+        : completed
+            ? (assignment.status == 'Graded' ? 'Graded' : 'Submitted')
+            : assignment.status;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -1294,6 +1303,17 @@ class _AssignmentCard extends StatelessWidget {
                 Text(
                   subtitle,
                   style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              if (notes.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  notes,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
