@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/third_party_account.dart';
 import '../services/api_base_url.dart';
+import '../services/deadline_widget_service.dart';
 import '../services/feedback_service.dart';
 import '../services/http_client.dart';
 import '../services/island_service.dart';
@@ -95,6 +96,16 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!mounted) return;
     setState(() {});
     await _loadIslandCapability();
+  }
+
+  Future<void> _setDeadlineWidgetsEnabled(
+    StorageService storage,
+    DeadlineWidgetService widgetService,
+    bool value,
+  ) async {
+    await storage.setDeadlineWidgetsEnabled(value);
+    await widgetService.setEnabled(value);
+    if (mounted) setState(() {});
   }
 
   String get _islandSubtitle {
@@ -467,6 +478,25 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // General section
             _sectionHeader(theme, 'General'),
+            if (!kIsWeb &&
+                defaultTargetPlatform == TargetPlatform.linux &&
+                sp.deadlineWidgetService != null)
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.deadline-widgets'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.widgets_outlined),
+                title: 'Deadline widgets',
+                subtitle: 'Share task titles and dates with your desktop. '
+                    'Widgets use cached data while TechPie is closed.',
+                value: storage.deadlineWidgetsEnabled,
+                onChanged: (value) => unawaited(
+                  _setDeadlineWidgetsEnabled(
+                    storage,
+                    sp.deadlineWidgetService!,
+                    value,
+                  ),
+                ),
+              ),
             if (sp.islandService case final island? when island.supported)
               _AdaptiveSwitchTile(
                 key: const ValueKey('settings.island'),
