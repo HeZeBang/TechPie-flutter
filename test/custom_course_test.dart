@@ -167,6 +167,23 @@ void main() {
 
       expect(withCustomCourses(const [], [recurring], null, termBegin), hasLength(1));
     });
+
+    test('today includes dated courses when the term start is unknown', () {
+      final today = DateTime(2026, 9, 8);
+      const time = PeriodCourseTime(startPeriod: 1, endPeriod: 1);
+      final courses = withCustomCourses(
+        const [],
+        [
+          CustomCourse(id: 'today', name: '今日课程', time: time, date: today),
+          CustomCourse(id: 'tomorrow', name: '明日课程', time: time, date: DateTime(2026, 9, 9)),
+          const CustomCourse(id: 'weekly', name: '周课', time: time, weekdays: [2], weeks: [1]),
+        ],
+        0,
+        null,
+        onDate: today,
+      );
+      expect(courses.map((course) => course.customId), ['today']);
+    });
   });
 
   group('json round trip', () {
