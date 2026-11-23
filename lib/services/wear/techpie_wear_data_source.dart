@@ -75,6 +75,10 @@ class TechPieWearDataSource implements WearDataSource {
     }).toList();
   }
 
+  Future<String> _watchOwner() async => 'wear:${sha256.convert(utf8.encode((await account()).scope))}';
+
+  Future<void> adoptCurrentSchedule() async => timetable.adoptLegacyCourseTable(await _watchOwner());
+
   @override
   Future<List<WearCourse>> schedule(DateTime from) async {
     if (timetable.loading) {
@@ -82,11 +86,7 @@ class TechPieWearDataSource implements WearDataSource {
     }
     final table = timetable.courseTable;
     final begin = timetable.termBegin;
-    if (timetable.error != null ||
-        table == null ||
-        begin == null ||
-        assignments.loading ||
-        assignments.platformErrors.containsKey('exam')) {
+    if (table == null || begin == null || !timetable.canShareCourseTable(await _watchOwner())) {
       throw const WearFailure('SERVICE_UNAVAILABLE', retryable: true);
     }
     return buildWearSchedule(

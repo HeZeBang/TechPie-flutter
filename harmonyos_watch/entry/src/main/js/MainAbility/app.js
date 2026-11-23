@@ -3,7 +3,7 @@ import { readJson, writeJson } from './common/watch-files.js';
 import {encodeQr} from './common/qr-matrix.js';
 
 var link, listener, clock, state, loaded = false, loading = false, foreground = false;
-var offlineReady = false, credential = null, owner = null, vault;
+var offlineReady = false, credential = null, owner = null, vault, grantGeneration = 0, vaultStatus = 'INITIALIZING';
 function publish(value) { state = value; if (listener) listener(value); }
 function load() {
     readJson('watch-cache-v1.json', function(error, cache) {
@@ -12,13 +12,15 @@ function load() {
       if (error) { link.connection.error = '本地数据暂不可读，连接手机重新同步'; link.connection.publish(); }
       loaded = true; if (foreground) link.start();
       try { vault = require('./common/grant-vault.js'); }
-      catch (error) { console.info('TechPie offline module unavailable'); return; }
+      catch (error) { vaultStatus = 'MODULE_UNAVAILABLE'; link.connection.publish(); return; }
       vault.initializeVault(function(error) {
-        offlineReady = !error;
+        offlineReady = !error; vaultStatus = error || 'READY';
         if (error) console.info('TechPie offline keystore: ' + error);
-        function finish() { link.connection.publish(); if (link.receiving) link.connection.notifyReady(); }
+        function finish() { link.connection.publish(); if (offlineReady && link.receiving && link.connection.nonce && !link.connection.offeredOffline) link.connection.notifyReady(); }
         if (!offlineReady || !owner) { finish(); return; }
+        var restoringOwner = owner, generation = grantGeneration;
         vault.loadCredential(owner, function(error, grant) {
+          if (restoringOwner !== owner || generation !== grantGeneration) { finish(); return; }
           if (error) { link.connection.error = '离线授权读取失败，请在手机重新同步'; }
           else credential = grant;
           finish();
@@ -55,11 +57,12 @@ export default {
     link = new WearLink(publish, {onCache: function(cache, done) {
       function store() { writeJson('watch-cache-v1.json', cache, done); }
       if (owner !== cache.owner) {
-        owner = cache.owner; credential = null;
+        grantGeneration++; owner = cache.owner; credential = null;
         writeJson('offline-grant-v1.json', null, function(error) { if (error) done(error); else store(); });
       } else store();
-    }, offlineEnabled: function() { return offlineReady; },
+    }, offlineEnabled: function() { return offlineReady; }, offlineStatus: function() { return vaultStatus; },
     onAuthorization: function(binding, grant, done) {
+      grantGeneration++;
       vault.saveCredential(binding, grant, function(error) {
         if (!error && binding === owner) credential = grant;
         done(error);

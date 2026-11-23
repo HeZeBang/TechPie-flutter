@@ -64,6 +64,9 @@ void main() {
     peer.ignoreHeartbeat = true;
     await tester.pump(const Duration(seconds: 10));
     await tester.pump(const Duration(seconds: 9));
+    expect(service.ready, true); // One missing heartbeat can be a transient send failure.
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 9));
     expect(service.ready, false);
     expect(find.text('张三'), findsNothing);
     await tester.pumpWidget(const SizedBox());

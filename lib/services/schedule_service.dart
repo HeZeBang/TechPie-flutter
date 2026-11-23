@@ -70,6 +70,20 @@ class ScheduleService extends ChangeNotifier {
   /// round of requests. A rebind, a different account or a sync merge that
   /// replaces it does change this, and data fetched for another account has to go.
   String? _fetchedForAccount;
+  String? _tableOwner;
+  bool canShareCourseTable(String watchOwner) =>
+      _tableOwner != null && (_tableOwner == _campusAccount() || _tableOwner == watchOwner);
+
+  /// A manual phone sync can adopt the course table currently shown on this phone.
+  /// Old cache records predate the owner field. Never relabel an owned table.
+  Future<void> adoptLegacyCourseTable(String watchOwner) async {
+    final table = _courseTable;
+    final semester = _selectedSemesterId;
+    if (table == null || semester == null || _tableOwner != null || _loading) return;
+    final owner = _campusAccount() ?? watchOwner;
+    await _storage.saveCourseTable(semester, table, owner: owner);
+    if (identical(table, _courseTable)) _tableOwner = owner;
+  }
 
   Timer? _pendingFetch;
 
@@ -212,6 +226,7 @@ class ScheduleService extends ChangeNotifier {
     _selectedSemesterId = _storage.selectedSemester ?? _semesterInfo?.defaultSemester;
     if (_selectedSemesterId != null) {
       _courseTable = _storage.loadCourseTable(_selectedSemesterId!);
+      _tableOwner = _storage.courseTableOwner(_selectedSemesterId!);
     }
     _termCalendar = _storage.loadTermCalendar(_selectedSemesterId ?? '');
     notifyListeners();
@@ -258,6 +273,7 @@ class ScheduleService extends ChangeNotifier {
   }
 
   Future<void> fetchCourseTable(String semesterId) async {
+    final owner = _campusAccount();
     final extra = <String, dynamic>{
       'semester_id': semesterId,
       if (_semesterInfo?.tableId.isNotEmpty == true) 'table_id': _semesterInfo!.tableId,
@@ -275,10 +291,12 @@ class ScheduleService extends ChangeNotifier {
       );
     }
 
+    if (owner != _campusAccount() || semesterId != _selectedSemesterId) return;
+    _tableOwner = owner;
     _courseTable = CourseTable.fromApiResponse(
       data['data'] as Map<String, dynamic>,
     );
-    await _storage.saveCourseTable(semesterId, _courseTable!);
+    await _storage.saveCourseTable(semesterId, _courseTable!, owner: owner);
     notifyListeners();
   }
 
@@ -337,6 +355,7 @@ class ScheduleService extends ChangeNotifier {
 
     // Load cached data for the new semester so the UI updates instantly.
     _courseTable = _storage.loadCourseTable(semesterId);
+    _tableOwner = _storage.courseTableOwner(semesterId);
     _termCalendar = _storage.loadTermCalendar(semesterId);
     // Notify the cached-swap UI update. AssignmentService._onScheduleChanged
     // sees the semester changed and would fire fetchAssignments here — but

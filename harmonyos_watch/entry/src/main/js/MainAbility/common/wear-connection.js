@@ -87,6 +87,7 @@ export function WatchConnection(send, changed, now, options) {
   this.onCache = options && options.onCache;
   this.onAuthorization = options && options.onAuthorization;
   this.offlineEnabled = options && options.offlineEnabled;
+  this.offlineStatus = options && options.offlineStatus;
   this.reset();
   if (options && options.cache) this.restore(options.cache);
 }
@@ -276,6 +277,7 @@ WatchConnection.prototype.handle = function(m) {
   // The opening message's transit time can differ from a later snapshot's.
   // Advance to the trusted peer's send time, but never move the clock backwards.
   if (!handshake && integer(m.sentAtMs)) {
+    this.silence = 0;
     var correction = Math.max(0, m.sentAtMs - this.phoneNow());
     this.phoneTime += correction; this.remaining -= correction;
   }
@@ -292,11 +294,12 @@ WatchConnection.prototype.handle = function(m) {
     if (!token(b.nonce) || !Array.isArray(b.versions) || b.versions.indexOf(1) < 0) return;
     this.reset(false); this.nonce = b.nonce; this.helloAt = this.now();
     if (Array.isArray(b.capabilities) && b.capabilities.indexOf('schedule.display') >= 0) this.resources.push('schedule');
+    this.offeredOffline = this.offlineEnabled && this.offlineEnabled();
     this.reply(m, 'session.welcome', {nonce: b.nonce, version: 1,
-      watchInstanceId: 'techpie-lite', capabilities: ['account.display', 'ddl.display', 'schedule.display', 'reminder.watchLocal', 'campusCode.qrMatrix', 'connection.heartbeat'].concat(this.offlineEnabled && this.offlineEnabled() ? ['campusCode.offlineSm2'] : []),
-      maxQrPayloadBytes: 1024}, true);
+      watchInstanceId: 'techpie-lite', capabilities: ['account.display', 'ddl.display', 'schedule.display', 'reminder.watchLocal', 'campusCode.qrMatrix', 'connection.heartbeat'].concat(this.offeredOffline ? ['campusCode.offlineSm2'] : []),
+      offlineStatus: this.offlineStatus && this.offlineStatus(), maxQrPayloadBytes: 1024}, true);
   } else if (m.type === 'session.open') {
-    if (b.nonce !== this.nonce || this.now() - this.helloAt > 5000 ||
+    if (b.nonce !== this.nonce || this.now() - this.helloAt > 30000 ||
         !token(b.sessionId) || !token(b.bindingId) || !integer(b.phoneTimeMs) ||
         !integer(b.leaseUntilMs) || b.leaseUntilMs <= b.phoneTimeMs) return;
     if (this.cacheBinding && this.cacheBinding !== b.bindingId) this.reset(true);

@@ -295,8 +295,13 @@ class StorageService {
     return SemesterInfo.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
-  Future<void> saveCourseTable(String semesterId, CourseTable table) =>
-      _prefs.setString('$_courseTablePrefix$semesterId', jsonEncode(table.toJson()));
+  Future<void> saveCourseTable(String semesterId, CourseTable table, {String? owner}) =>
+      _prefs.setString('$_courseTablePrefix$semesterId', jsonEncode({...table.toJson(), 'owner': owner}));
+
+  String? courseTableOwner(String semesterId) {
+    final raw = _prefs.getString('$_courseTablePrefix$semesterId');
+    return raw == null ? null : (jsonDecode(raw) as Map)['owner'] as String?;
+  }
 
   CourseTable? loadCourseTable(String semesterId) {
     final raw = _prefs.getString('$_courseTablePrefix$semesterId');

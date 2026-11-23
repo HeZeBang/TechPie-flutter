@@ -2,10 +2,18 @@
 var pending = [], writing = false;
 export function readJson(name, done) {
   var file = require('./watch-file-native.js').default;
-  file.readText({uri: 'internal://app/' + name, length: 98304,
+  // readText is capped at 4096 bytes on Lite, including existing UTF-8 JSON files.
+  file.readArrayBuffer({uri: 'internal://app/' + name,
     success: function(value) {
       var parsed;
-      try { parsed = JSON.parse(value.text); }
+      try {
+        var bytes = value.buffer, encoded = '';
+        for (var i = 0; i < bytes.length; i++) {
+          var b = bytes[i];
+          encoded += b < 128 && b !== 37 ? String.fromCharCode(b) : '%' + ('0' + b.toString(16)).slice(-2);
+        }
+        parsed = JSON.parse(decodeURIComponent(encoded));
+      }
       catch (error) { done('INVALID_CACHE'); return; }
       done(null, parsed);
     },

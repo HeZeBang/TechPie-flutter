@@ -245,7 +245,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBin
                   const SizedBox(height: 16),
                   Text(
                     connected
-                        ? '连接用于同步。课表和待办保存在手表上，断连后仍可查看。'
+                        ? '同步手机当前显示的课表和待办。同步完成后可在手表离线查看。'
                         : '首次使用先在运动健康中配对，并打开两端 TechPie。之后打开应用会自动恢复同步。',
                     style: theme.textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
                   ),
@@ -263,13 +263,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBin
                           : () => unawaited(
                                 connected
                                     ? _run(
-                                        () => service.refresh(
-                                          resources: [
-                                            'account',
-                                            if (service.supports('ddl.display')) 'ddl',
-                                            if (service.supports('schedule.display')) 'schedule',
-                                          ],
-                                        ),
+                                        service.syncFromPhone,
                                         label: '正在同步',
                                       )
                                     : _findDevices(),
@@ -400,7 +394,9 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBin
                 title: const Text('校园码'),
                 subtitle: Text(
                   service.supports('campusCode.qrMatrix') || service.supports('campusCode.qrBytes')
-                      ? '打开手表应用默认显示校园码。同步离线授权后，手表可独立生成。'
+                      ? (service.supports('campusCode.offlineSm2')
+                          ? '同步离线授权后，手表可独立生成校园码。'
+                          : '可从手机获取校园码。手表离线授权状态：${service.offlineStatus ?? '设备未报告'}。')
                       : '请更新手表应用以使用此功能',
                 ),
               ),

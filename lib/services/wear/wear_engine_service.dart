@@ -15,6 +15,7 @@ class WearEngineService extends ChangeNotifier {
     required this.source,
     required this.metadata,
     this.offlineCredential,
+    this.adoptCurrentSchedule,
     DateTime Function()? now,
     this.timeout = const Duration(seconds: 30),
     this.retryDelays = const [Duration(seconds: 2), Duration(seconds: 5)],
@@ -25,7 +26,9 @@ class WearEngineService extends ChangeNotifier {
         final stored = jsonDecode(raw) as Map<String, dynamic>;
         final savedFingerprint = stored['pairedFingerprint'] as String?;
         // The former test app has separate storage and a different signer.
-        if (savedFingerprint?.startsWith('com.geekpie.techpie.watch_') != true) {
+        const debugPeer = String.fromEnvironment('HUAWEI_WATCH_FINGERPRINT');
+        if (savedFingerprint?.startsWith('com.geekpie.techpie.watch_') != true ||
+            (kDebugMode && savedFingerprint == debugPeer)) {
           _binding = stored['binding'] as String?;
           _scopeHash = stored['scopeHash'] as String?;
           _pendingClear = stored['pendingClear'] as String?;
@@ -73,6 +76,7 @@ class WearEngineService extends ChangeNotifier {
   final WearDataSource source;
   final WearMetadata metadata;
   final Future<Map<String, Object?>?> Function()? offlineCredential;
+  final Future<void> Function()? adoptCurrentSchedule;
   bool _offlineConsent = false, _offlineApplied = false;
   bool get offlineCampusCodeEnabled => _offlineConsent;
   bool get offlineCampusCodeApplied => _offlineApplied;
@@ -108,6 +112,8 @@ class WearEngineService extends ChangeNotifier {
   Timer? _leaseTimer;
   Timer? _heartbeatTimer;
   bool _heartbeatBusy = false;
+  int _missedHeartbeats = 0;
+  String? offlineStatus;
   Map<String, String>? _displayAccount;
   bool _remindersEnabled = false;
   bool get remindersEnabled => ready && _remindersEnabled;
@@ -228,6 +234,16 @@ class WearEngineService extends ChangeNotifier {
       if ((_native['permission'] as Map)['p2p'] != true) {
         throw const WearFailure('PERMISSION_DENIED');
       }
+      if (!automatic && _pendingClear == null) {
+        if (_savedDevice != deviceId || _savedFingerprint != watchFingerprint) {
+          _offlineConsent = false;
+        }
+        _savedDevice = deviceId;
+        _savedFingerprint = watchFingerprint;
+        _autoSync = true;
+        await _persist();
+        if (_foreground) resumeSync();
+      }
       await transport.open(deviceId, watchFingerprint).timeout(timeout);
       _checkEpoch(epoch);
       _device = deviceId;
@@ -291,19 +307,24 @@ class WearEngineService extends ChangeNotifier {
 
   /// Resume a previously authorized pairing without showing an authorization prompt.
   void resumeSync() {
+    final wasAway = !_foreground;
     _foreground = true;
     if (!_autoSync || _disposed) return;
     _autoTimer ??= Timer.periodic(const Duration(seconds: 8), (_) {
       unawaited(_tryAutoSync());
     });
-    unawaited(_tryAutoSync());
+    if (wasAway && ready && supports('connection.heartbeat')) {
+      unawaited(_heartbeat());
+    } else {
+      unawaited(_tryAutoSync());
+    }
   }
 
   void suspendSync() {
     _foreground = false;
     _autoTimer?.cancel();
     _autoTimer = null;
-    if (ready) _invalidate('PEER_NOT_READY');
+    // An Android visibility change is not a Wear Engine disconnect.
   }
 
   Future<void> _tryAutoSync({bool peerRestarted = false}) async {
@@ -350,6 +371,7 @@ class WearEngineService extends ChangeNotifier {
           'reminder.watchLocal',
           'campusCode.qrBytes',
           'campusCode.qrMatrix',
+          if (offlineCredential != null) 'campusCode.offlineSm2',
           'connection.heartbeat',
         ],
       },
@@ -396,6 +418,8 @@ class WearEngineService extends ChangeNotifier {
     _checkEpoch(epoch);
     _session = session;
     _ready = true;
+    _missedHeartbeats = 0;
+    offlineStatus = body['offlineStatus'] is String ? body['offlineStatus'] as String : null;
     _lastError = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (_) {
@@ -430,11 +454,13 @@ class WearEngineService extends ChangeNotifier {
         responseTimeout: const Duration(seconds: 8),
       );
     } catch (_) {
-      if (epoch == _epoch) {
+      if (epoch == _epoch && ++_missedHeartbeats >= 2) {
         _invalidate('DEVICE_DISCONNECTED');
         await transport.close();
-        _native['device'] = 'disconnected';
-        _changed();
+        if (epoch + 1 == _epoch) {
+          _native['device'] = 'disconnected';
+          _changed();
+        }
       }
     } finally {
       _heartbeatBusy = false;
@@ -502,7 +528,18 @@ class WearEngineService extends ChangeNotifier {
     unawaited(answer.then<void>((_) {}, onError: (Object _, StackTrace __) {}));
     try {
       for (var attempt = 0;; attempt++) {
-        await _write(message);
+        if (pending.done.isCompleted) return await answer;
+        try {
+          await _write(message);
+        } on WearFailure catch (error) {
+          if (!retry || attempt >= retryDelays.length || error.nativeCode != 206 ||
+              !_pending.containsKey(id)) {
+            rethrow;
+          }
+          if (pending.done.isCompleted) return await answer;
+          await Future<void>.delayed(retryDelays[attempt]);
+          continue;
+        }
         try {
           return await answer.timeout(responseTimeout ?? timeout);
         } on TimeoutException {
@@ -539,6 +576,7 @@ class WearEngineService extends ChangeNotifier {
       } else if (!ready || message['sessionId'] != _session || message['bindingId'] != _binding) {
         return; // Old session/account must never cause side effects or finish a request.
       }
+      if (!handshake) _missedHeartbeats = 0;
       if (pending != null && (type == pending.expected || type == 'result')) {
         final body = message['body'] as Map;
         if (!pending.done.isCompleted) {
@@ -638,6 +676,15 @@ class WearEngineService extends ChangeNotifier {
         'retryable': failure.retryable,
       });
     }
+  }
+
+  Future<void> syncFromPhone() async {
+    _requireReady();
+    final epoch = _epoch;
+    await _checkAccount(epoch);
+    if (supports('schedule.display')) await adoptCurrentSchedule?.call();
+    await _checkAccount(epoch);
+    await refresh();
   }
 
   Future<void> refresh({List<String>? resources}) {

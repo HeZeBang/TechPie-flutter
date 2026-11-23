@@ -1,6 +1,7 @@
 package club.geekpie.techpie.wear
 
 import android.app.Activity
+import android.content.pm.ApplicationInfo
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -38,7 +39,11 @@ class WearEngineBridge(private val activity: Activity, messenger: BinaryMessenge
                     closeTransport()
                     event("state", mapOf("device" to "disconnected"))
                 }
-            }.addOnFailureListener { event("state", mapOf("service" to "unavailable")) }
+            }.addOnFailureListener {
+                // A failed inventory query is not a disconnect. The service callback
+                // and application heartbeat independently detect a lost peer.
+                if (epoch == generation) Log.d("TechPieWear", "Device status query unavailable")
+            }
             handler.postDelayed(this, 5000)
         }
     }
@@ -133,7 +138,10 @@ class WearEngineBridge(private val activity: Activity, messenger: BinaryMessenge
                             handler.post { result.error("DEVICE_DISCONNECTED", "Selected device is not connected", null) }
                             return@addOnSuccessListener
                         }
-                        p2p.setPeerPkgName("club.geekpie.techpie.wear").setPeerFingerPrint(fingerprint)
+                        val debugBuild = activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+                        val peerPackage = if (debugBuild && fingerprint.startsWith("com.geekpie.techpie.watch_"))
+                            "com.geekpie.techpie.watch" else "club.geekpie.techpie.wear"
+                        p2p.setPeerPkgName(peerPackage).setPeerFingerPrint(fingerprint)
                         val listener = Receiver { message ->
                             if (epoch == generation && message.type == Message.MESSAGE_TYPE_DATA) {
                                 message.data?.let { event("frame", it) }

@@ -39,19 +39,17 @@ function crypt(encrypt, input, nonce, owner, done) {
         huks.abortSession(session.handle, {properties: []}, function() {});
         done('KEYSTORE_CIPHER_FAILED');
       }
-      huks.updateSession(session.handle, {properties: props, inData: data}, function(error, updated) {
+      // The grant fits in one HUKS operation; finish must receive the final data.
+      huks.finishSession(session.handle, {properties: props, inData: data}, function(error, finished) {
         if (error) { failed(error); return; }
-        huks.finishSession(session.handle, {properties: props, inData: new Uint8Array(0)}, function(error, finished) {
-          if (error) { failed(error); return; }
-          done(null, array(updated.outData).concat(array(finished.outData)));
-        });
+        done(null, array(finished.outData));
       });
     });
   } catch (error) { done('KEYSTORE_UNAVAILABLE'); }
 }
 export function initializeVault(done) {
+  try { randomBytes(32); } catch (_) { done('RANDOM_UNAVAILABLE'); return; }
   try {
-    randomBytes(32);
     huks.isKeyItemExist(alias, {properties: []}, function(error, exists) {
       if (error && error.code !== 12000011 && error.code !== -13) { done('KEYSTORE_UNAVAILABLE'); return; }
       function probe() {

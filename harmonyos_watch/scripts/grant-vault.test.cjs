@@ -22,7 +22,7 @@ function fixture() {
     updateSession(handle, options, done) { done(null, {outData: sessions.get(handle).cipher.update(options.inData)}); },
     finishSession(handle, options, done) {
       const s = sessions.get(handle); let final;
-      try { final = s.cipher.final(); } catch (error) { done({code: 1}); return; }
+      try { final = Buffer.concat([s.cipher.update(options.inData), s.cipher.final()]); } catch (error) { done({code: 1}); return; }
       sessions.delete(handle); done(null, {outData: s.encrypt ? Buffer.concat([final, s.cipher.getAuthTag()]) : final});
     },
     abortSession(handle, options, done) { sessions.delete(handle); done(); },

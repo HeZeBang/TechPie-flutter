@@ -57,6 +57,7 @@ class Peer implements WearTransport {
   final stateStream = StreamController<Map<String, dynamic>>.broadcast();
   final authorizations = <bool>[];
   bool p2pAllowed = true;
+  bool asleep = false;
   int opens = 0;
   bool ignoreAccount = false;
   bool rejectDdl = false;
@@ -94,6 +95,7 @@ class Peer implements WearTransport {
   @override
   Future<void> open(String deviceId, String fingerprint) async {
     opens++;
+    if (asleep) throw const WearFailure('PEER_NOT_READY');
   }
 
   @override
@@ -290,6 +292,18 @@ void main() {
     expect(peer.opens, 1);
   });
 
+  test('a first selection while the peer sleeps is retried after it wakes', () async {
+    peer.asleep = true;
+    await expectLater(open(), throwsA(isA<WearFailure>()));
+    expect(service.autoSyncEnabled, true);
+    expect(service.ready, false);
+    peer.asleep = false;
+    service.resumeSync();
+    await settleAuto();
+    expect(service.ready, true);
+    expect(peer.authorizations, [false]);
+  });
+
   test('the release companion starts without the former test app pairing or offline grant', () {
     service.dispose();
     metadata.value = jsonEncode({
@@ -304,13 +318,18 @@ void main() {
     expect(service.offlineCampusCodeEnabled, false);
   });
 
-  test('phone background drops the session, and resume automatically synchronizes again', () async {
+  test('foreground changes keep the live session and a disconnect still triggers repair', () async {
     await open();
     final session = peer.session;
     service.suspendSync();
-    expect(service.ready, false);
+    expect(service.ready, true);
     expect(service.autoSyncEnabled, true);
     expect(peer.received.where((m) => m['type'] == 'session.clear'), isEmpty);
+    service.resumeSync();
+    expect(peer.session, session);
+    peer.stateStream.add({'device': 'disconnected'});
+    await Future<void>.delayed(Duration.zero);
+    expect(service.ready, false);
     service.resumeSync();
     await settleAuto();
     expect(service.ready, true);
