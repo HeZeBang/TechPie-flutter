@@ -52,7 +52,7 @@ The phone's DDL reminder switch sends an opt-in in `ddl.snapshot`. The watch che
 
 The app uses P2P as a synchronization channel. First authorize and select the watch in Android Settings → HUAWEI WATCH. Later launches restore the saved pairing and synchronize automatically while both applications can run. Account, timetable and deadlines remain available from private watch files after disconnect and restart. The watch requests online campus codes from the Android companion. See [interaction design](DESIGN.md) for the receiver lifecycle.
 
-Device acceptance uses matching signed companions. Check Crown switching and right-swipe navigation, the default campus-code screen, cached content after both app exit and full disconnection, automatic sync in both launch orders, logout/account isolation, and local-code latency. Validate optical scanning separately. Keep signing material and credential payloads out of logs and artifacts.
+Device acceptance uses matching signed companions. Check Crown switching and right-swipe navigation, the default campus-code screen, cached content after both app exit and full disconnection, automatic sync in both launch orders, logout/account isolation, and online-code expiry while the phone app is in the background. Validate optical scanning separately. Keep signing material and credential payloads out of logs and artifacts.
 
 Vendor vibration API: https://developer.huawei.com/consumer/cn/doc/harmonyos-references/js-apis-system-vibrate/
 
