@@ -4,14 +4,16 @@ import 'package:flutter/material.dart';
 
 import '../services/service_provider.dart';
 import '../services/sync_service.dart';
-import '../utils/platform.dart';
+import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 
 /// Cloud-sync settings: turn sync on/off, set / restore / change the master
@@ -34,118 +36,136 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tpColors;
     final sp = ServiceProvider.of(context);
     final sync = sp.syncService;
-    // One-time lazy fetch of the cloud version for the comparison tile.
-    // Deliberately NOT in initState — ServiceProvider.of() depends on
-    // InheritedWidget lookup, which throws if called before initState
-    // completes.
     if (!_versionFetchStarted && sync.enabled) {
       _versionFetchStarted = true;
       unawaited(_loadCloudVersion(sync));
     }
-    final useIosChrome = isIos();
-    final useLegacyIosChrome = usesLegacyIosChrome();
-    final topInset = useIosChrome || useLegacyIosChrome
-        ? 0.0
-        : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
+      context,
+      extra: TpTokens.space3,
+    );
 
     return Scaffold(
-      extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
-      appBar: useIosChrome
-          ? IosNativeNavigationBar(
-              title: 'Cloud sync',
-              leadingItems: const [
-                IosNativeNavigationBarItem(
-                  id: 'back',
-                  title: 'Settings',
-                  sfSymbol: 'chevron.left',
-                  accessibilityLabel: '返回 Settings',
-                  placementGroup: 'leading-main',
-                ),
-              ],
-              onItemPressed: (id) {
-                if (id == 'back') {
-                  unawaited(maybePopAdaptivePage<void>(context));
-                }
-              },
-            )
-          : const BlurredAppBar(title: Text('Cloud sync')),
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '云同步',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '我的',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回我的',
+              placementGroup: 'leading-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') {
+              unawaited(maybePopAdaptivePage<void>(context));
+            }
+          },
+        ),
+        material: () => const BlurredAppBar(title: Text('云同步')),
+      ),
       body: ListenableBuilder(
         listenable: sync,
         builder: (context, _) {
           return ListView(
-            padding: EdgeInsets.only(
-              top: topInset,
-              bottom: AppShellMetrics.bottomContentPaddingOf(context),
+            padding: EdgeInsets.fromLTRB(
+              TpTokens.pageHorizontalPadding,
+              topInset,
+              TpTokens.pageHorizontalPadding,
+              AppShellMetrics.bottomContentPaddingOf(context),
             ),
             children: [
-              _ExplanationCard(enabled: sync.enabled),
-              const SizedBox(height: 8),
-              if (sync.enabled) ...[
-                _statusTile(sync),
-                _versionCompareTile(sync),
-                _actionPanel([
-                  _actionButton(
-                    id: 'pull',
-                    label: '立即从云端恢复',
-                    subtitle: '用云端备份覆盖本设备绑定',
-                    icon: Icons.download_for_offline_outlined,
-                    sfSymbol: 'arrow.down.circle',
-                    onPressed: () => unawaited(_pull(sync)),
-                  ),
-                  _actionButton(
-                    id: 'push',
-                    label: '立即备份到云端',
-                    subtitle: '用本设备绑定覆盖云端备份',
-                    icon: Icons.upload_outlined,
-                    sfSymbol: 'arrow.up.circle',
-                    role: AdaptiveButtonRole.prominent,
-                    onPressed: () => unawaited(_push(sync)),
-                  ),
-                  _actionButton(
-                    id: 'password',
-                    label: '修改主密码',
-                    icon: Icons.lock_outline,
-                    sfSymbol: 'key',
-                    role: AdaptiveButtonRole.plain,
-                    onPressed: () => unawaited(_changePassword(sync)),
-                  ),
-                  _actionButton(
-                    id: 'disable',
-                    label: '关闭云同步',
-                    subtitle: '清除云端备份与本设备主密码',
-                    icon: Icons.cloud_off_outlined,
-                    sfSymbol: 'icloud.slash',
-                    role: AdaptiveButtonRole.destructive,
-                    onPressed: () => unawaited(_disable(sync)),
-                  ),
-                ]),
-              ] else ...[
-                _actionPanel([
-                  _actionButton(
-                    id: 'restore',
-                    label: '从云端恢复',
-                    subtitle: '已有备份时输入主密码恢复',
-                    icon: Icons.lock_reset_outlined,
-                    sfSymbol: 'icloud.and.arrow.down',
-                    onPressed: () => unawaited(_restore(sync)),
-                  ),
-                  _actionButton(
-                    id: 'setup',
-                    label: '开启并备份',
-                    subtitle: '首次设置主密码并加密上传',
-                    icon: Icons.cloud_upload_outlined,
-                    sfSymbol: 'icloud.and.arrow.up',
-                    role: AdaptiveButtonRole.prominent,
-                    onPressed: () => unawaited(_setup(sync)),
-                  ),
-                ]),
-              ],
-              if (sync.needsRestore)
-                _RestoreBanner(
-                  onTap: _busy ? null : () => unawaited(_restore(sync)),
+              TpPageBody(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _ExplanationCard(enabled: sync.enabled),
+                    const SizedBox(height: TpTokens.sectionGap),
+                    if (sync.enabled) ...[
+                      TpCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _statusTile(colors, sync),
+                            _versionCompareTile(colors, sync),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: TpTokens.sectionGap),
+                      _actionPanel([
+                        _actionButton(
+                          id: 'pull',
+                          label: '立即从云端恢复',
+                          subtitle: '用云端备份覆盖本设备绑定',
+                          icon: TpIcons.download,
+                          sfSymbol: 'arrow.down.circle',
+                          onPressed: () => unawaited(_pull(sync)),
+                        ),
+                        _actionButton(
+                          id: 'push',
+                          label: '立即备份到云端',
+                          subtitle: '用本设备绑定覆盖云端备份',
+                          icon: TpIcons.sync,
+                          sfSymbol: 'arrow.up.circle',
+                          role: AdaptiveButtonRole.prominent,
+                          onPressed: () => unawaited(_push(sync)),
+                        ),
+                        _actionButton(
+                          id: 'password',
+                          label: '修改主密码',
+                          icon: TpIcons.lock,
+                          sfSymbol: 'key',
+                          role: AdaptiveButtonRole.plain,
+                          onPressed: () => unawaited(_changePassword(sync)),
+                        ),
+                        _actionButton(
+                          id: 'disable',
+                          label: '关闭云同步',
+                          subtitle: '清除云端备份与本设备主密码',
+                          icon: Icons.cloud_off_outlined,
+                          sfSymbol: 'icloud.slash',
+                          role: AdaptiveButtonRole.destructive,
+                          onPressed: () => unawaited(_disable(sync)),
+                        ),
+                      ]),
+                    ] else ...[
+                      _actionPanel([
+                        _actionButton(
+                          id: 'restore',
+                          label: '从云端恢复',
+                          subtitle: '已有备份时输入主密码恢复',
+                          icon: TpIcons.download,
+                          sfSymbol: 'icloud.and.arrow.down',
+                          onPressed: () => unawaited(_restore(sync)),
+                        ),
+                        _actionButton(
+                          id: 'setup',
+                          label: '开启并备份',
+                          subtitle: '首次设置主密码并加密上传',
+                          icon: TpIcons.sync,
+                          sfSymbol: 'icloud.and.arrow.up',
+                          role: AdaptiveButtonRole.prominent,
+                          onPressed: () => unawaited(_setup(sync)),
+                        ),
+                      ]),
+                    ],
+                    if (sync.needsRestore) ...[
+                      const SizedBox(height: TpTokens.sectionGap),
+                      _RestoreBanner(
+                        onTap: _busy ? null : () => unawaited(_restore(sync)),
+                      ),
+                    ],
+                  ],
                 ),
+              ),
             ],
           );
         },
@@ -153,7 +173,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     );
   }
 
-  Widget _statusTile(SyncService sync) {
+  Widget _statusTile(TpColors colors, SyncService sync) {
     final at = sync.lastSyncAt;
     String label;
     if (at == null) {
@@ -163,14 +183,17 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       label =
           '已开启 · 上次同步 ${at.year}-${two(at.month)}-${two(at.day)} ${two(at.hour)}:${two(at.minute)}';
     }
-    return ListTile(
-      leading: const Icon(Icons.sync),
-      title: const Text('同步状态'),
-      subtitle: Text(label),
+    return TpListRow(
+      icon: TpIcons.sync,
+      iconColor: colors.infoBlue,
+      title: '同步状态',
+      subtitle: label,
+      showDivider: true,
+      trailing: const TpBadge(label: '已开启', tone: TpBadgeTone.success),
     );
   }
 
-  Widget _versionCompareTile(SyncService sync) {
+  Widget _versionCompareTile(TpColors colors, SyncService sync) {
     String two(int n) => n.toString().padLeft(2, '0');
     String fmt(DateTime t) =>
         '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
@@ -197,16 +220,14 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       }
     }
 
-    return ListTile(
-      leading: const Icon(Icons.compare_arrows_outlined),
-      title: const Text('版本对比'),
-      subtitle: Text(
-        '本地: $localLabel\n云端: $cloudLabel'
-        '${compareLabel != null ? ' · $compareLabel' : ''}',
-      ),
-      isThreeLine: true,
+    return TpListRow(
+      icon: TpIcons.refresh,
+      iconColor: colors.textSecondary,
+      title: '版本对比',
+      subtitle: '本地: $localLabel\n云端: $cloudLabel'
+          '${compareLabel != null ? ' · $compareLabel' : ''}',
       trailing: IconButton(
-        icon: const Icon(Icons.refresh),
+        icon: const Icon(TpIcons.refresh, size: TpTokens.iconS),
         tooltip: '刷新云端版本',
         onPressed: _loadingCloudVersion
             ? null
@@ -216,13 +237,13 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   Widget _actionPanel(List<Widget> actions) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+    return TpCard(
+      padding: const EdgeInsets.all(TpTokens.space4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var index = 0; index < actions.length; index++) ...[
-            if (index > 0) const SizedBox(height: 10),
+            if (index > 0) const SizedBox(height: TpTokens.space3),
             actions[index],
           ],
         ],
@@ -237,8 +258,6 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       final at = await sync.cloudLastModified();
       if (mounted) setState(() => _cloudLastModified = at);
     } finally {
-      // Always clear the in-flight flag, even if the fetch throws, so the
-      // compare tile's refresh button cannot get stuck disabled.
       if (mounted) setState(() => _loadingCloudVersion = false);
     }
   }
@@ -252,7 +271,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     String? subtitle,
     AdaptiveButtonRole role = AdaptiveButtonRole.standard,
   }) {
-    final theme = Theme.of(context);
+    final colors = context.tpColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -269,21 +288,17 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         if (subtitle != null) ...[
           const SizedBox(height: 4),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: TpTokens.space3),
             child: Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: TpTypography.itemMeta(colors),
             ),
           ),
         ],
       ],
     );
   }
-
-  // -- Actions -----------------------------------------------------------------
 
   Future<void> _guard(
     String action,
@@ -293,8 +308,6 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     try {
       await task();
     } catch (error) {
-      // Without this the page just looks inert: the dialog closes, the task
-      // throws and nothing tells the user what happened.
       _toast('操作失败：$error');
     } finally {
       if (mounted) setState(() => _busyAction = null);
@@ -302,9 +315,6 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
   }
 
   Future<void> _setup(SyncService sync) async {
-    // A device that is not syncing yet reads the cloud only here: if a backup
-    // already exists it is some other device's, and setting up now would
-    // replace it. Ask before touching it.
     final bool hasRemoteBackup;
     try {
       hasRemoteBackup = await sync.cloudHasBlob();
@@ -331,8 +341,6 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
     });
   }
 
-  /// Confirms setting up over a backup the cloud already holds. Returns whether
-  /// the user chose to continue.
   Future<bool> _confirmRemoteBackupOverwrite() async {
     final ok = await showAdaptiveAlertDialog<bool>(
       context: context,
@@ -431,8 +439,6 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
         _toast('已备份到云端');
         unawaited(_loadCloudVersion(sync));
       } else {
-        // Surface Casdoor's real reason (e.g. "Unauthorized operation") so the
-        // user knows whether it's a network/authz/permission issue.
         _toast(res.describe('备份失败'));
       }
     });
@@ -487,34 +493,25 @@ class _ExplanationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card.outlined(
-      margin: const EdgeInsets.all(16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  enabled ? Icons.cloud_done_outlined : Icons.lock_outline,
-                  size: 20,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Text('端到端加密云同步', style: theme.textTheme.titleMedium),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '把第三方账号绑定(eGate / Gradescope / Hydro)加密备份到 Casdoor，'
-              '跟随你的 GeekPie 账号在设备间同步。用一个你设定的主密码派生密钥加密，'
-              '服务器只存密文，无法读取。换设备登录后输入主密码即可恢复全部绑定。',
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-        ),
+    final colors = context.tpColors;
+    return TpCard(
+      leadingIcon: enabled ? TpIcons.checkCircle : TpIcons.lock,
+      title: '端到端加密云同步',
+      trailing: TpBadge(
+        label: enabled ? '已开启' : '未开启',
+        tone: enabled ? TpBadgeTone.success : TpBadgeTone.muted,
+      ),
+      padding: const EdgeInsets.fromLTRB(
+        TpTokens.cardPaddingHorizontal,
+        TpTokens.space1,
+        TpTokens.cardPaddingHorizontal,
+        TpTokens.space4,
+      ),
+      child: Text(
+        '把第三方账号绑定(eGate / Gradescope / Hydro)加密备份到 Casdoor，'
+        '跟随你的 GeekPie 账号在设备间同步。用一个你设定的主密码派生密钥加密，'
+        '服务器只存密文，无法读取。换设备登录后输入主密码即可恢复全部绑定。',
+        style: TpTypography.itemMeta(colors).copyWith(height: 1.45),
       ),
     );
   }
@@ -526,54 +523,44 @@ class _RestoreBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card.filled(
-      margin: const EdgeInsets.all(16),
-      color: theme.colorScheme.secondaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.cloud_download_outlined,
-                  color: theme.colorScheme.onSecondaryContainer,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '云端有可恢复的备份',
-                    style: TextStyle(
-                      color: theme.colorScheme.onSecondaryContainer,
-                      fontWeight: FontWeight.w600,
-                    ),
+    final colors = context.tpColors;
+    return TpCard(
+      color: colors.brandSoft,
+      borderColor: colors.brand.withValues(alpha: 0.25),
+      padding: const EdgeInsets.all(TpTokens.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(TpIcons.download, size: TpTokens.iconM, color: colors.brand),
+              const SizedBox(width: TpTokens.space2),
+              Expanded(
+                child: Text(
+                  '云端有可恢复的备份',
+                  style: TpTypography.itemTitle(colors).copyWith(
+                    color: colors.brand,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '检测到其它设备设置了云同步，输入主密码即可恢复绑定。',
-              style: TextStyle(
-                color: theme.colorScheme.onSecondaryContainer.withValues(
-                  alpha: 0.8,
-                ),
-                fontSize: 12,
               ),
-            ),
-            const SizedBox(height: 12),
-            AdaptiveButton(
-              label: '恢复备份',
-              icon: Icons.cloud_download_outlined,
-              sfSymbol: 'icloud.and.arrow.down',
-              role: AdaptiveButtonRole.prominent,
-              onPressed: onTap,
-              accessibilityLabel: '恢复云端备份',
-            ),
-          ],
-        ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '检测到其它设备设置了云同步，输入主密码即可恢复绑定。',
+            style: TpTypography.itemMeta(colors),
+          ),
+          const SizedBox(height: TpTokens.space3),
+          AdaptiveButton(
+            label: '恢复备份',
+            icon: TpIcons.download,
+            sfSymbol: 'icloud.and.arrow.down',
+            role: AdaptiveButtonRole.prominent,
+            height: 44,
+            onPressed: onTap,
+            accessibilityLabel: '恢复云端备份',
+          ),
+        ],
       ),
     );
   }
