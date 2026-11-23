@@ -24,6 +24,7 @@ const List<String> migratedDesignSystemPages = <String>[
   'lib/pages/third_party_bind_page.dart',
   'lib/pages/ids_bind_page.dart',
   'lib/pages/campus_card_account_page.dart',
+  'lib/pages/elrc_recordings_page.dart',
 ];
 
 final _rawHexColorPattern = RegExp(r'\bColor\s*\(\s*0x[0-9A-Fa-f]+');
