@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/student_allowance.dart';
 import 'auth_service.dart';
+import 'debug_logger.dart';
 import 'session/session_tree.dart';
 import 'student_allowance_client.dart';
 import 'third_party_auth_service.dart';
@@ -13,8 +14,12 @@ enum StudentAllowanceAccess { signIn, bindIds, ready }
 /// Adapts the shared IDS session to a finance query. No finance cookie or
 /// result is retained by this service or by the session tree.
 class StudentAllowanceService extends ChangeNotifier {
-  StudentAllowanceService(this._auth, this._thirdParty, {StudentAllowanceClient? client})
-      : _client = client ?? StudentAllowanceClient() {
+  StudentAllowanceService(
+    this._auth,
+    this._thirdParty, {
+    StudentAllowanceClient? client,
+    DebugLogger? logger,
+  }) : _client = client ?? StudentAllowanceClient(logger: logger) {
     _owner = _currentOwner;
     _auth.addListener(_onOwnerChanged);
     _thirdParty.addListener(_onOwnerChanged);

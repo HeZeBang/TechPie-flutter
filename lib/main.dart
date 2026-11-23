@@ -349,8 +349,11 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _nativeChromeObserver = CNTabBarRouteObserver();
   late StudentAllowanceService _studentAllowanceService;
 
-  StudentAllowanceService _createStudentAllowanceService() =>
-      StudentAllowanceService(widget.authService, widget.thirdPartyAuthService);
+  StudentAllowanceService _createStudentAllowanceService() => StudentAllowanceService(
+        widget.authService,
+        widget.thirdPartyAuthService,
+        logger: widget.debugLogger,
+      );
 
   /// The silent check runs at launch and whenever the app comes back to the
   /// foreground, but not more often than this: a resume is not a reason to hit
@@ -374,7 +377,8 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.authService != widget.authService ||
-        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService) {
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+        oldWidget.debugLogger != widget.debugLogger) {
       _studentAllowanceService.dispose();
       _studentAllowanceService = _createStudentAllowanceService();
     }

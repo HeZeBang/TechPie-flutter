@@ -24,13 +24,17 @@ const allowanceTable = '''
 ''';
 
 class StudentAllowanceFinanceFixture {
-  StudentAllowanceFinanceFixture() {
+  StudentAllowanceFinanceFixture({this.sessionAtCasEntry = false}) {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           requests.add(options);
-          final override = await intercept?.call(options);
-          handler.resolve(override ?? _respond(options));
+          try {
+            final override = await intercept?.call(options);
+            handler.resolve(override ?? _respond(options));
+          } on DioException catch (error) {
+            handler.reject(error);
+          }
         },
       ),
     );
@@ -38,11 +42,19 @@ class StudentAllowanceFinanceFixture {
 
   static const idsHost = 'ids.shanghaitech.edu.cn';
   static const financeHost = 'finance.shanghaitech.edu.cn';
+  static const portalOrigin = 'https://$financeHost';
+  static const callbackOrigin = '$portalOrigin:8099';
+  static const queryOrigin = '$portalOrigin:8088';
+  static const portalHome = '/Home/Index';
+  static const portalLogin = '/Home/IndexLogin';
+  static const idsLogin = '/authserver/login';
   static const externalLogin = '/ExternalLogin.aspx';
   static const queryPage = '/SalaryQuerySalary/SalayQuerySalary';
   static const queryPath = '/SalaryQuerySalary/CtrlSQSalaryInfoSKD';
   static const ticket = 'ST-synthetic-ticket';
+  static const _sessionCookie = 'ASP.NET_SessionId=synthetic-finance-session; Path=/; HttpOnly';
 
+  final bool sessionAtCasEntry;
   final dio = Dio();
   final requests = <RequestOptions>[];
   FutureOr<Response<List<int>>?> Function(RequestOptions)? intercept;
@@ -69,47 +81,64 @@ class StudentAllowanceFinanceFixture {
   Response<List<int>> _respond(RequestOptions request) {
     final url = request.uri;
     final cookie = request.headers['cookie']?.toString() ?? '';
-    if (url.host == idsHost && url.path == '/authserver/login') {
+    const callback = '$callbackOrigin$externalLogin';
+    final ids = Uri.https(idsHost, idsLogin, {'service': callback});
+    if (url == ids) {
       if (!cookie.contains('CASTGC=')) {
         return response(request, body: '<form><input name="execution"></form>');
       }
       return response(
         request,
         status: 302,
-        location: 'https://$financeHost$externalLogin?ticket=$ticket',
+        location: '$callback?ticket=$ticket',
         setCookie: ['IDS_ONLY=never-finance; Domain=shanghaitech.edu.cn; Path=/'],
       );
     }
     if (url.host == financeHost) {
-      switch (url.path) {
-        case externalLogin when url.queryParameters['ticket'] == ticket:
-          if (!cookie.contains('ASP.NET_SessionId=synthetic-finance-session')) {
-            return response(request, status: 401);
-          }
+      final hasSession = cookie.contains('ASP.NET_SessionId=');
+      final hasAuth = cookie.contains('.ASPXAUTH=');
+      final hasVerification = cookie.contains('SFP_Verify_Cookie=');
+      final loggedIn = hasSession && hasAuth && hasVerification;
+      switch ((url.port, url.path)) {
+        case (443, portalLogin) when cookie.isEmpty:
           return response(
             request,
             status: 302,
-            location: 'https://$financeHost$externalLogin',
+            location: callback,
+            setCookie: [if (!sessionAtCasEntry) _sessionCookie],
+          );
+        case (443, portalLogin) when loggedIn:
+          return response(request, status: 302, location: portalHome);
+        case (8099, externalLogin) when hasSession && url.queryParameters['ticket'] == ticket:
+          return response(
+            request,
+            status: 302,
+            location: callback,
             setCookie: ['.ASPXAUTH=synthetic-forms-auth; Path=/; HttpOnly'],
           );
-        case externalLogin when cookie.contains('.ASPXAUTH='):
-          return response(request);
-        case externalLogin:
+        case (8099, externalLogin) when hasSession && hasAuth:
           return response(
             request,
             status: 302,
-            location: 'https://$idsHost/authserver/login',
+            location: '$portalOrigin$portalLogin',
             setCookie: [
-              'ASP.NET_SessionId=synthetic-finance-session; Path=/; HttpOnly',
+              'SFP_Verify_Cookie=synthetic-verification; Domain=shanghaitech.edu.cn; Path=/',
+            ],
+          );
+        case (8099, externalLogin) when !url.hasQuery && (hasSession || sessionAtCasEntry):
+          return response(
+            request,
+            status: 302,
+            location: ids.toString(),
+            setCookie: [
+              if (!hasSession) _sessionCookie,
               'CALLBACK_ONLY=synthetic; Path=$externalLogin',
             ],
           );
-        case queryPage when cookie.contains('.ASPXAUTH='):
-          return response(
-            request,
-            setCookie: ['SFP_Verify_Cookie=synthetic-verification; Path=/SalaryQuerySalary'],
-          );
-        case queryPath when cookie.contains('.ASPXAUTH=') && cookie.contains('SFP_Verify_Cookie='):
+        case (443, portalHome) when loggedIn:
+        case (8088, queryPage) when loggedIn:
+          return response(request);
+        case (8088, queryPath) when loggedIn:
           return response(request, body: html);
       }
     }

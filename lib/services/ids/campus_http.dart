@@ -18,14 +18,15 @@ class IdsException implements Exception {
 /// App-owned HTTP session with host, path, expiry and Secure cookie scoping.
 /// Authentication logs contain diagnostics only, never payloads or cookies.
 class CampusHttp {
-  CampusHttp(this.http, {DebugLogger? logger, this.onlyOrigin})
-      : _logger = logger;
+  CampusHttp(this.http, {DebugLogger? logger, Set<String>? allowedOrigins})
+      : _logger = logger,
+        _allowedOrigins = allowedOrigins == null ? null : Set.unmodifiable(allowedOrigins);
   final Dio http;
   final DebugLogger? _logger;
 
-  /// Restricts this jar and its requests to a single HTTPS origin, including
-  /// redirects, rather than using the campus-wide allowlist.
-  final String? onlyOrigin;
+  /// If set, limits this session's requests and redirects to exact HTTPS
+  /// origins (including ports) instead of the default campus host allowlist.
+  final Set<String>? _allowedOrigins;
   final CookieJar jar = CookieJar();
   final Map<String, Map<String, String>> _stored = {};
   static const hosts = {
@@ -89,10 +90,11 @@ class CampusHttp {
     bool allowErrorResponse = false,
     bool followRedirects = true,
   }) async {
+    final allowedOrigins = _allowedOrigins;
     for (var hop = 0; hop < 10; hop++) {
       if (uri.scheme != 'https' ||
           uri.userInfo.isNotEmpty ||
-          (onlyOrigin == null ? !hosts.contains(uri.host) : uri.origin != onlyOrigin)) {
+          !(allowedOrigins?.contains(uri.origin) ?? hosts.contains(uri.host))) {
         throw const IdsException('学校登录跳转到了不支持的地址');
       }
       Response<List<int>> response;
