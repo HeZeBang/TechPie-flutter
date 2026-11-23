@@ -6,6 +6,7 @@ import '../core/config/app_environment.dart';
 import '../domain/ports/auth_port.dart';
 import '../domain/ports/bill_ports.dart';
 import '../domain/ports/card_ports.dart';
+import '../domain/ports/merchant_alias_port.dart';
 import '../domain/ports/payment_ports.dart';
 import '../domain/ports/platform_ports.dart';
 import '../domain/ports/security_ports.dart';
@@ -25,6 +26,7 @@ final class AppRuntime {
     required this.connectivity,
     required this.lifecycle,
     required this.feedback,
+    this.merchantAliases = const EmptyMerchantAliasPort(),
     this.scanner,
     this.networkStatus,
     this.disposeRuntime,
@@ -43,6 +45,7 @@ final class AppRuntime {
   final ConnectivityPort connectivity;
   final AppLifecyclePort lifecycle;
   final FeedbackPort feedback;
+  final MerchantAliasPort merchantAliases;
   final ScannerPort? scanner;
   final CampusNetworkStatus? networkStatus;
   final Future<void> Function()? disposeRuntime;

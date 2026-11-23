@@ -7,6 +7,106 @@ import 'package:techpie/features/campus_card/domain/money_fen.dart';
 import '../support/fake_ecard_transport.dart';
 
 void main() {
+  test('validates calendar and clock values without changing time zones',
+      () async {
+    final transport = FakeEcardTransport()
+      ..enqueue('GET', '/selftrade/queryCardSelfTradeList', {
+        'success': true,
+        'resultData': {
+          'rows': [
+            for (final date in [
+              '2026-02-30 12:34:56',
+              '2026-13-10 12:34:56',
+              '2026-10-10 24:00:00',
+              '2026-10-10 12:60:00',
+              '2026-10-10T12:34:56+08:60',
+              '999999999999999999',
+              '2024-02-29 12:34:56',
+              '2026-10-10T00:30:00.123+08:00',
+            ])
+              {
+                'id': date,
+                'txdate': date,
+                'txname': '消费',
+                'mername': '合成餐饮公司',
+                'txamt': '-100',
+              },
+          ],
+        },
+      });
+    final page = await EcardTransactionHistoryRepository(
+      transport,
+      subjectReader: () async => 'synthetic-account',
+    ).timelineRange();
+    final valid = page.items.where((record) => record.hasValidDate).toList();
+    expect(valid, hasLength(2));
+    expect(
+      valid.first.occurredAt,
+      DateTime.utc(2026, 10, 9, 16, 30, 0, 123),
+    );
+    expect(page.items.every((record) => !record.isDining), isTrue);
+    expect(page.items.last.details['txdate'], page.items.last.id);
+  });
+
+  test(
+      'retains string identifiers, rejects conflicting fields and invalid dates',
+      () async {
+    final transport = FakeEcardTransport()
+      ..enqueue('GET', '/selftrade/queryCardSelfTradeList', {
+        'success': true,
+        'resultData': {
+          'rows': [
+            {
+              'id': 'SYNTHETIC-ID',
+              'merchantno': '000125',
+              'poscode': '0238',
+              'txdate': '2026-10-10 12:34:56',
+              'txname': '餐饮消费',
+              'txamt': '-100',
+            },
+            {
+              'id': 'SYNTHETIC-ALT',
+              'merno': '000126',
+              'terminalno': '0238',
+              'txdate': 'not-a-date',
+              'txname': '补足信用额度',
+              'txtype': '2',
+              'txamt': '100',
+            },
+            {
+              'id': 'SYNTHETIC-CONFLICT',
+              'merchantno': 'a',
+              'merchantid': 'b',
+              'poscode': '-',
+              'txname': '未知操作',
+              'txamt': '0',
+            },
+          ],
+        },
+      });
+    final page = await EcardTransactionHistoryRepository(
+      transport,
+      subjectReader: () async => 'synthetic-account',
+    ).timelineRange();
+    final records = {for (final record in page.items) record.id: record};
+    expect(records['SYNTHETIC-ID']!.merchantId, '000125');
+    expect(records['SYNTHETIC-ID']!.posCode, '0238');
+    expect(records['SYNTHETIC-ID']!.isDining, isTrue);
+    expect(records['SYNTHETIC-ID']!.hasValidDate, isTrue);
+    expect(records['SYNTHETIC-ID']!.details['poscode'], '0238');
+    expect(records['SYNTHETIC-ALT']!.merchantId, '000126');
+    expect(records['SYNTHETIC-ALT']!.posCode, '0238');
+    expect(records['SYNTHETIC-ALT']!.kind, TransactionKind.creditReplenishment);
+    expect(records['SYNTHETIC-ALT']!.isHiddenFromHistory, isTrue);
+    expect(isTransactionVisible(records['SYNTHETIC-ID']!), isTrue);
+    expect(isTransactionVisible(records['SYNTHETIC-ALT']!), isFalse);
+    expect(records['SYNTHETIC-ALT']!.hasValidDate, isFalse);
+    expect(records['SYNTHETIC-CONFLICT']!.merchantId, isNull);
+    expect(records['SYNTHETIC-CONFLICT']!.posCode, isNull);
+    expect(records['SYNTHETIC-CONFLICT']!.kind, TransactionKind.adjustment);
+    expect(records['SYNTHETIC-CONFLICT']!.hasValidDate, isFalse);
+  });
+
   test(
     'maps a paged read-only transaction response and caches detail',
     () async {

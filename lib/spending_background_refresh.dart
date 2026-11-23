@@ -26,6 +26,8 @@ Future<void> runSpendingBackgroundRefresh() async {
         sessionIssuer: GeekPieEcardSessionIssuer(
           endpoint: () => Uri.parse('${apiBaseUrl(storage)}/auth/third-party/ecard'),
         ),
+        merchantAliasesEndpoint: () =>
+            Uri.parse('${apiBaseUrl(storage)}/campus-card/merchant-aliases.json'),
       );
       runtime = card;
       final history = card.transactions;

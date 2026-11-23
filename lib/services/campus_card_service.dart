@@ -61,11 +61,15 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     Uri sessionEndpoint() => Uri.parse(
       '${_storage == null ? prodApiBaseUrl : apiBaseUrl(_storage)}/auth/third-party/ecard',
     );
+    Uri merchantAliasesEndpoint() => Uri.parse(
+      '${_storage == null ? prodApiBaseUrl : apiBaseUrl(_storage)}/campus-card/merchant-aliases.json',
+    );
     final runtime = _runtimeFactory?.call() ??
         buildRealRuntime(
           AppEnvironment.production,
           secureCredentialStore: _secureStore,
           sessionIssuer: GeekPieEcardSessionIssuer(endpoint: sessionEndpoint),
+          merchantAliasesEndpoint: merchantAliasesEndpoint,
           httpTrace: _debugLogger == null
               ? null
               : campusCardHttpTrace(_debugLogger),

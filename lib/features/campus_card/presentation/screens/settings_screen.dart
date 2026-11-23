@@ -23,6 +23,8 @@ final class SettingsScreen extends ConsumerWidget {
     final maximizeBrightness =
         ref.watch(maximizePaymentCodeBrightnessProvider).valueOrNull;
     final offlineCodeFirst = ref.watch(offlineCodeFirstProvider).valueOrNull;
+    final showAllRecords =
+        ref.watch(showAllTransactionRecordsProvider).valueOrNull;
     return Scaffold(
       body: AppleWalletPage(
         child: ApplePinnedHeaderLayout(
@@ -106,6 +108,24 @@ final class SettingsScreen extends ConsumerWidget {
                             .read(skipScanConfirmationProvider.notifier)
                             .setEnabled(value),
                       ),
+                    ),
+                  ),
+                  AppleListRow(
+                    icon: GpPlatformIcons.debug(context),
+                    label: '显示所有记录',
+                    verticalPadding: 4,
+                    trailing: _SettingsSwitch(
+                      key: const Key('show-all-transaction-records'),
+                      value: showAllRecords ?? false,
+                      onChanged: showAllRecords == null
+                          ? null
+                          : (enabled) => unawaited(
+                                ref
+                                    .read(
+                                      showAllTransactionRecordsProvider.notifier,
+                                    )
+                                    .setEnabled(enabled),
+                              ),
                     ),
                   ),
                   if (debugModeFeaturesAvailable)

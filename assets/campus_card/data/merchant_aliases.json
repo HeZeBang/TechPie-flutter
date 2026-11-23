@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "version": 5,
+  "updatedAt": "2026-10-12T00:00:00Z",
+  "entries": [
+    {
+      "merchantId": "243000125",
+      "posCode": "0238",
+      "alias": "丝路二楼 · 米粉",
+      "verifiedAt": "2026-10-11",
+      "evidence": "User confirmation on 2026-10-11 of the merchant/POS/location pair listed in HeZeBang/TechPie-flutter#118.",
+      "enabled": true,
+      "category": "dining"
+    },
+    {
+      "merchantId": "243000125",
+      "posCode": "0237",
+      "alias": "丝路二楼 · 炸鸡",
+      "verifiedAt": "2026-10-11",
+      "evidence": "User confirmation on 2026-10-11 of the merchant/POS/location pair listed in HeZeBang/TechPie-flutter#118.",
+      "enabled": true,
+      "category": "dining"
+    },
+    {
+      "merchantId": "243000125",
+      "posCode": "0235",
+      "alias": "丝路二楼 · 煲仔饭",
+      "verifiedAt": "2026-10-12",
+      "evidence": "User confirmation on 2026-10-12 of the merchant/POS/location pair.",
+      "enabled": true,
+      "category": "dining"
+    },
+    {
+      "merchantId": "243000481",
+      "posCode": "0302",
+      "alias": "校内全家",
+      "verifiedAt": "2026-10-12",
+      "evidence": "User confirmation on 2026-10-12 of the merchant/POS/location pair.",
+      "enabled": true,
+      "category": "other"
+    },
+    {
+      "merchantId": "243000481",
+      "posCode": "0305",
+      "alias": "校内全家",
+      "verifiedAt": "2026-10-12",
+      "evidence": "User confirmation on 2026-10-12 of the merchant/POS/location pair.",
+      "enabled": true,
+      "category": "other"
+    },
+    {
+      "merchantId": "243000161",
+      "posCode": "0213",
+      "alias": "尚科二楼 · 滑蛋饭窗口",
+      "verifiedAt": "2026-10-12",
+      "evidence": "User confirmation on 2026-10-12 of the merchant/POS/location pair.",
+      "enabled": true,
+      "category": "dining"
+    },
+    {
+      "merchantId": "243000161",
+      "posCode": "0209",
+      "alias": "尚科二楼 · 铁板窗口",
+      "verifiedAt": "2026-10-12",
+      "evidence": "User confirmation on 2026-10-12 of the merchant/POS/location pair.",
+      "enabled": true,
+      "category": "dining"
+    },
+    {
+      "merchantId": "243000381",
+      "posCode": "0310",
+      "alias": "白玉兰一楼 · 麻辣香锅",
+      "verifiedAt": "2026-10-12",
+      "evidence": "User confirmation on 2026-10-12 of the merchant/POS/location pair.",
+      "enabled": true,
+      "category": "dining"
+    },
+    {
+      "merchantId": "243000381",
+      "posCode": "0315",
+      "alias": "白玉兰一楼 · 港式烧腊窗口",
+      "verifiedAt": "2026-10-12",
+      "evidence": "User confirmation on 2026-10-12 of the merchant/POS/location pair.",
+      "enabled": true,
+      "category": "dining"
+    }
+  ]
+}

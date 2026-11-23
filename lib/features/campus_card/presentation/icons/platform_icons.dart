@@ -167,6 +167,14 @@ abstract final class GpPlatformIcons {
     apple: CupertinoIcons.arrow_down_circle_fill,
     android: Icons.arrow_circle_down_rounded,
   );
+  static const dining = GpPlatformIcon(
+    apple: Icons.restaurant_rounded,
+    android: Icons.restaurant_rounded,
+  );
+  static const creditReplenishment = GpPlatformIcon(
+    apple: CupertinoIcons.creditcard_fill,
+    android: Icons.add_card_rounded,
+  );
   static const gift = GpPlatformIcon(
     apple: CupertinoIcons.gift_fill,
     android: Icons.card_giftcard_rounded,
@@ -221,6 +229,8 @@ abstract final class GpPlatformIcons {
     infoCircle,
     debug,
     recharge,
+    dining,
+    creditReplenishment,
     gift,
     transfer,
     refund,

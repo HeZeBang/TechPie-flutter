@@ -16,9 +16,11 @@ import '../core/config/offline_authorization_banner_controller.dart';
 import '../core/config/payment_code_preferences.dart';
 import '../core/errors/app_failure.dart';
 import '../data/mock/debug_transactions.dart';
+import '../data/storage/merchant_contribution_preferences.dart';
 import '../domain/models/auth_models.dart';
 import '../domain/models/bill_models.dart';
 import '../domain/models/card_models.dart';
+import '../domain/models/merchant_alias_models.dart';
 import '../domain/models/offline_models.dart';
 import '../domain/models/payment_models.dart';
 import '../domain/models/scan_models.dart';
@@ -56,6 +58,20 @@ final campusCardAccountProvider = Provider<VoidCallback?>((ref) => null);
 
 final homeWidgetPortProvider = Provider<HomeWidgetPort?>((ref) => null);
 final spendingAlertPortProvider = Provider<SpendingAlertPort?>((ref) => null);
+
+final _merchantAliasUpdatesProvider = StreamProvider<MerchantAliasConfig>(
+  (ref) => ref.watch(appRuntimeProvider).merchantAliases.changes,
+);
+
+final merchantAliasConfigProvider = Provider<MerchantAliasConfig>((ref) {
+  ref.watch(_merchantAliasUpdatesProvider);
+  return ref.watch(appRuntimeProvider).merchantAliases.current;
+});
+
+final merchantContributionPreferencesProvider =
+    Provider<MerchantContributionPreferences>(
+  (ref) => MerchantContributionPreferences(),
+);
 
 enum CampusCardEntry { paymentCode, cardManagement }
 
@@ -411,13 +427,22 @@ final class CardController extends AsyncNotifier<CampusCard?> {
 }
 
 final transactionDetailProvider =
-    FutureProvider.family<TransactionRecord, String>((ref, id) {
+    FutureProvider.family<TransactionRecord, String>((ref, id) async {
   if (debugModeFeaturesAvailable && ref.watch(debugModeProvider)) {
     for (final record in debugTransactionRecords(DateTime.now())) {
       if (record.id == id) return record;
     }
   }
-  return ref.watch(appRuntimeProvider).transactions.detail(id);
+  final record = await ref.watch(appRuntimeProvider).transactions.detail(id);
+  final showAll = await ref.watch(showAllTransactionRecordsProvider.future);
+  if (!isTransactionVisible(record, showAllRecords: showAll)) {
+    throw const AppFailure(
+      FailureKind.invalidInput,
+      '这类记录不在交易历史中显示。',
+      code: 'TRANSACTION_HIDDEN',
+    );
+  }
+  return record;
 });
 
 typedef TransactionDateRange = ({DateTime? begin, DateTime? end});

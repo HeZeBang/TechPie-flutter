@@ -8,7 +8,38 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('manual offline choice survives restart until explicitly disabled', () async {
+  test('all-record visibility defaults off and persists both choices',
+      () async {
+    var container = ProviderContainer();
+    expect(
+      await container.read(showAllTransactionRecordsProvider.future),
+      isFalse,
+    );
+    await container
+        .read(showAllTransactionRecordsProvider.notifier)
+        .setEnabled(true);
+    container.dispose();
+
+    container = ProviderContainer();
+    expect(
+      await container.read(showAllTransactionRecordsProvider.future),
+      isTrue,
+    );
+    await container
+        .read(showAllTransactionRecordsProvider.notifier)
+        .setEnabled(false);
+    container.dispose();
+
+    container = ProviderContainer();
+    addTearDown(container.dispose);
+    expect(
+      await container.read(showAllTransactionRecordsProvider.future),
+      isFalse,
+    );
+  });
+
+  test('manual offline choice survives restart until explicitly disabled',
+      () async {
     var container = ProviderContainer();
     await container.read(manualOfflineModeProvider.notifier).setEnabled(true);
     container.dispose();
