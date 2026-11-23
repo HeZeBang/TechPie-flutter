@@ -5,6 +5,7 @@ import '../pages/campus_card_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
+import '../pages/student_allowance_page.dart';
 import '../widgets/adaptive_page_navigation.dart';
 
 enum FeatureMode {
@@ -96,6 +97,16 @@ final featureEntries = <Feature>[
       builder: (_) => const EgateAppPage(),
     ),
     icon: const Icon(Icons.qr_code_scanner),
+  ),
+  Feature(
+    id: 'student_allowance',
+    description: '学生津贴',
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const StudentAllowancePage(),
+    ),
+    icon: const Icon(Icons.payments_outlined),
   ),
 ];
 
