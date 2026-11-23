@@ -118,7 +118,9 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
     _firstFrameHoldTimer = null;
     if (!_holdingFirstFrame) return;
     _holdingFirstFrame = false;
-    WidgetsBinding.instance.allowFirstFrame();
+    // Releasing during a frame would make Flutter drop its warm-up request.
+    // Let the current frame finish so allowFirstFrame can schedule normally.
+    scheduleMicrotask(WidgetsBinding.instance.allowFirstFrame);
   }
 
   int get _selected => widget.selectedIndex.clamp(0, widget.items.length - 1);

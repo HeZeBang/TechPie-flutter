@@ -117,13 +117,13 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
     if (_supported) unawaited(_prepare());
   }
 
-  /// Brings the shared store and the CpDaily session up to date, then writes the
+  /// Brings the shared store and the IDS session up to date, then writes the
   /// session's cookies into the store the given controller will use: the hidden
   /// webview below writes nothing itself, so it cannot answer a 401 either.
   /// Best effort — both callers fall back to the SSO redirect.
   Future<void> _writeCampusSession(WebViewController controller) async {
     try {
-      final session = CampusSessionHandle(_tpAuth!, _tpAuth!.cpdailyNode);
+      final session = CampusSessionHandle(_tpAuth!, _tpAuth!.idsNode);
       await session.prepare();
       await _tpAuth!.campusWebSession.clearLocalStorageIfDue(controller);
       final cookieManager = WebViewCookieManager();
@@ -170,7 +170,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
             }
             if (_isLogin(uri) &&
                 !_campusAttempted &&
-                _tpAuth!.hasCpdailyBinding) {
+                _tpAuth!.hasIdsBinding) {
               _expectedMainFrameCancellations++;
               unawaited(_openLogin());
               return NavigationDecision.prevent;

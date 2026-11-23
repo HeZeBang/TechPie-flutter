@@ -53,7 +53,7 @@ class EgateAppCheckinResult {
 
 /// Native "校园签到" feature: queries the egate-app (xshdapp) sign-in
 /// announcement + history, and submits a check-in for a scanned WID. Session
-/// cookies (MOD_AUTH_CAS/_WEU) are derived from the cpdaily CASTGC via
+/// cookies (MOD_AUTH_CAS/_WEU) are derived from the ids CASTGC via
 /// [ThirdPartyAuthService.egateAppNode], the same pattern AssignmentService
 /// uses for eams/elearning.
 class EgateAppService extends ChangeNotifier {
@@ -72,14 +72,14 @@ class EgateAppService extends ChangeNotifier {
   String get _baseUrl => apiBaseUrl(_storage);
 
   /// Guard for any egate-app call: requires a logged-in primary account AND
-  /// a bound cpdaily account (the source of the CASTGC that egate-app's
+  /// a bound ids account (the source of the CASTGC that egate-app's
   /// session is derived from).
   void _requireReady() {
     if (!_auth.isLoggedIn) {
       throw EgateAppException('请先登录 TechPie 主账号');
     }
-    if (!_tpAuth.hasCpdailyBinding) {
-      throw EgateAppException('校园签到需要绑定 eGate 账号，请在「第三方账号」中绑定');
+    if (!_tpAuth.hasIdsBinding) {
+      throw EgateAppException('校园签到需要绑定 IDS 账号，请在「第三方账号」中绑定');
     }
   }
 
@@ -89,9 +89,9 @@ class EgateAppService extends ChangeNotifier {
   }
 
   Future<List<EgateAppSignRecord>> fetchSignHistory() async {
-    final studentId = _tpAuth.cpdailyStudentId;
+    final studentId = _tpAuth.idsStudentId;
     if (studentId.isEmpty) {
-      throw EgateAppException('当前 eGate 绑定缺少学号，请重新绑定 eGate');
+      throw EgateAppException('当前 IDS 绑定缺少学号，请重新绑定 IDS');
     }
     final data = await _postJson('egate-app/history', {'studentId': studentId});
     final rows = (data['data'] as Map?)?['rows'] as List<dynamic>? ?? const [];
@@ -117,7 +117,7 @@ class EgateAppService extends ChangeNotifier {
 
   /// POST `$_baseUrl/[path]` with the egate-app derived cookie + [extra] body
   /// fields. On 401 the egateApp node (and, if its own tgc turns out stale,
-  /// the parent cpdaily node) is renewed via [SessionTree.withCookie]'s
+  /// the parent ids node) is renewed via [SessionTree.withCookie]'s
   /// two-level retry, then the request is retried once.
   Future<Map<String, dynamic>> _postJson(
     String path,
@@ -142,7 +142,7 @@ class EgateAppService extends ChangeNotifier {
       },
     );
     if (response == null) {
-      throw EgateAppException('当前 eGate 登录态已失效，请重新绑定 eGate');
+      throw EgateAppException('当前 eGate 登录态已失效，请重新绑定 IDS');
     }
     final decoded = response.body.isEmpty
         ? <String, dynamic>{}

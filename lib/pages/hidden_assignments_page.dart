@@ -27,6 +27,7 @@ class HiddenAssignmentsPage extends StatefulWidget {
 class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
   bool _selectionMode = false;
   final Set<String> _selected = {};
+  final Set<String> _restoring = {};
 
   /// On iOS the selection toolbar takes the tab bar's place, as it does in
   /// Photos, Files and Mail, instead of stacking a second bar above it.
@@ -69,10 +70,16 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
   void _onServiceChanged() {
     final hidden = _service!.overrides.hidden;
     if (!_selectionMode) return;
-    if (hidden.isEmpty) {
+    if (hidden.every(_restoring.contains)) {
       _exitSelectionMode();
-    } else if (_selected.any((key) => !hidden.contains(key))) {
-      setState(() => _selected.removeWhere((key) => !hidden.contains(key)));
+    } else if (_selected.any(
+      (key) => !hidden.contains(key) || _restoring.contains(key),
+    )) {
+      setState(
+        () => _selected.removeWhere(
+          (key) => !hidden.contains(key) || _restoring.contains(key),
+        ),
+      );
     }
   }
 
@@ -110,17 +117,35 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
     });
   }
 
-  void _restoreSelected() {
+  Future<void> _restoreSelected() async {
     final service = ServiceProvider.of(context).assignmentService;
-    final count = _selected.length;
-    for (final key in _selected.toList()) {
-      unawaited(service.unhide(key));
-    }
+    final keys = _selected.where((key) => !_restoring.contains(key)).toList();
+    if (keys.isEmpty) return;
+    setState(() => _restoring.addAll(keys));
     _exitSelectionMode();
+    var restored = 0;
+    var failed = 0;
+    for (final key in keys) {
+      try {
+        await service.unhide(key);
+        restored++;
+      } catch (_) {
+        failed++;
+      } finally {
+        if (mounted) {
+          setState(() => _restoring.remove(key));
+        } else {
+          _restoring.remove(key);
+        }
+      }
+    }
+    if (!mounted) return;
     showAdaptiveFeedback(
       context: context,
-      message: '已恢复 $count 项',
-      style: AdaptiveFeedbackStyle.success,
+      message: failed == 0 ? '已恢复 $restored 项' : '恢复部分事项失败，请重试',
+      style: failed == 0
+          ? AdaptiveFeedbackStyle.success
+          : AdaptiveFeedbackStyle.error,
     );
   }
 
@@ -141,7 +166,9 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
     return ListenableBuilder(
       listenable: service,
       builder: (context, _) {
-        final hiddenKeys = service.overrides.hidden.toList();
+        final hiddenKeys = service.overrides.hidden
+            .where((key) => !_restoring.contains(key))
+            .toList();
         final selectedAll =
             hiddenKeys.isNotEmpty && _selected.length == hiddenKeys.length;
 
@@ -224,8 +251,9 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                     if (_selectionMode)
                       IconButton(
                         tooltip: '恢复',
-                        onPressed:
-                            _selected.isNotEmpty ? _restoreSelected : null,
+                        onPressed: _selected.isNotEmpty
+                            ? () => unawaited(_restoreSelected())
+                            : null,
                         icon: const Icon(Icons.restore),
                       ),
                     if (hiddenKeys.isNotEmpty)
@@ -259,7 +287,9 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                             label: '恢复',
                             semanticLabel: '恢复所选事项',
                             enabled: _selected.isNotEmpty,
-                            onPressed: _selected.isEmpty ? null : _restoreSelected,
+                            onPressed: _selected.isEmpty
+                                ? null
+                                : () => unawaited(_restoreSelected()),
                             tint: theme.colorScheme.primary,
                             config: const CNButtonConfig(
                               style: CNButtonStyle.glass,
@@ -315,13 +345,30 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
 
   Future<void> _restoreOne(String key) async {
     final service = ServiceProvider.of(context).assignmentService;
-    await service.unhide(key);
-    if (!mounted) return;
-    showAdaptiveFeedback(
-      context: context,
-      message: '已恢复事项',
-      style: AdaptiveFeedbackStyle.success,
-    );
+    if (!_restoring.add(key)) return;
+    setState(() {});
+    try {
+      await service.unhide(key);
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '已恢复事项',
+        style: AdaptiveFeedbackStyle.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '恢复事项失败，请重试',
+        style: AdaptiveFeedbackStyle.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _restoring.remove(key));
+      } else {
+        _restoring.remove(key);
+      }
+    }
   }
 
   Widget _buildList(
@@ -351,9 +398,16 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
         final selected = _selected.contains(key);
 
         final title = a?.title ?? key;
-        final subtitle = a == null
-            ? '(已无缓存数据)'
-            : '${a.kind.label} · ${a.platform.toUpperCase()} · ${a.course}';
+        final subtitle = switch (a) {
+          null => '(已无缓存数据)',
+          CustomDeadline(:final kind, :final course, :final location) => [
+              kind.label,
+              if (course.isNotEmpty) course,
+              if (location.isNotEmpty) location,
+            ].join(' · '),
+          final item =>
+            '${item.kind.label} · ${item.platform.toUpperCase()} · ${item.course}',
+        };
         if (isIos()) {
           return _buildIosRow(context, theme, key, title, subtitle, selected);
         }
@@ -370,11 +424,9 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                       : theme.colorScheme.onSurfaceVariant,
                 )
               : const Icon(Icons.visibility_off_outlined),
-          title: Text(a?.title ?? key),
+          title: Text(title),
           subtitle: Text(
-            a == null
-                ? '(已无缓存数据)'
-                : '${a.kind.label} · ${a.platform.toUpperCase()} · ${a.course}',
+            subtitle,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -467,8 +519,9 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
           ),
         ),
       ),
-      // Restoring removes the key from the hidden set synchronously, so the
-      // row has left the list by the time Dismissible checks for it.
+      // _restoreOne excludes the key via _restoring synchronously before
+      // awaiting persistence, so the row leaves the list before Dismissible
+      // checks for it.
       onDismissed: (_) => unawaited(_restoreOne(key)),
       child: CupertinoContextMenu(
         actions: [

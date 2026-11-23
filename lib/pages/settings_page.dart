@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/third_party_account.dart';
 import '../services/api_base_url.dart';
 import '../services/feedback_service.dart';
 import '../services/http_client.dart';
@@ -30,6 +31,7 @@ import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
+import '../widgets/ids_rebind_banner.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/uni_auth_login.dart';
 import '../widgets/update_dialogs.dart';
@@ -40,6 +42,7 @@ import 'developer_lab_page.dart';
 import 'feedback_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
+import 'third_party_bind_page.dart';
 import 'watch_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -201,6 +204,7 @@ class _SettingsPageState extends State<SettingsPage> {
           tpAuth,
           campusCard,
           sp.syncService,
+          if (sp.spendingAlertService != null) sp.spendingAlertService!,
         ]),
         builder: (context, _) {
           final session = auth.session;
@@ -210,6 +214,10 @@ class _SettingsPageState extends State<SettingsPage> {
               bottom: AppShellMetrics.bottomContentPaddingOf(context),
             ),
             children: [
+              if (tpAuth.needsIdsRebind || storage.debugForceIdsRebindBanner)
+                IdsRebindBanner(onRebind: () => unawaited(pushAdaptivePage<void>(
+                  context, builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
+                ),),),
               // Account section
               _sectionHeader(theme, 'Account'),
               if (session != null) ...[
@@ -431,7 +439,18 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // General section
             _sectionHeader(theme, 'General'),
+            if (sp.spendingAlertService case final spending? when spending.supported)
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.spending-alerts'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.notifications_active_outlined),
+                title: '校园卡消费提醒',
+                subtitle: '刷新发现新消费时通知；后台检查受系统调度限制',
+                value: spending.enabled,
+                onChanged: (value) => unawaited(spending.setEnabled(value)),
+              ),
             _AdaptiveSwitchTile(
+              key: const ValueKey('settings.mask-personal-info'),
               usesIosLiquidGlass: useIosChrome,
               secondary: const Icon(Icons.visibility_off_outlined),
               title: 'Mask personal info',
@@ -493,6 +512,20 @@ class _SettingsPageState extends State<SettingsPage> {
             if (!kReleaseMode) _sectionHeader(theme, 'Developer'),
             if (!kReleaseMode)
               _AdaptiveSwitchTile(
+                key: const ValueKey('settings.ids-rebind-preview'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.key_outlined),
+                title: '强制显示 IDS 重绑横幅',
+                subtitle: '仅用于调试迁移提示',
+                value: storage.debugForceIdsRebindBanner,
+                onChanged: (value) {
+                  unawaited(storage.setDebugForceIdsRebindBanner(value));
+                  setState(() {});
+                },
+              ),
+            if (!kReleaseMode)
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.debug-mode'),
                 usesIosLiquidGlass: useIosChrome,
                 secondary: const Icon(Icons.bug_report_outlined),
                 title: 'Debug mode',
@@ -505,6 +538,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             if (!kReleaseMode)
               _AdaptiveSwitchTile(
+                key: const ValueKey('settings.use-localhost'),
                 usesIosLiquidGlass: useIosChrome,
                 secondary: const Icon(Icons.dns_outlined),
                 title: 'Use localhost',
@@ -872,6 +906,7 @@ class _ThemeModeOptions extends StatelessWidget {
 
 class _AdaptiveSwitchTile extends StatelessWidget {
   const _AdaptiveSwitchTile({
+    super.key,
     required this.usesIosLiquidGlass,
     required this.secondary,
     required this.title,

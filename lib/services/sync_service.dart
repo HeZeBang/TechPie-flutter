@@ -87,9 +87,8 @@ class SyncService extends ChangeNotifier {
   // Stable per-device id, loaded once at boot and stamped onto every
   // locally-touched account / tombstone so the LWW merge converges.
   String _deviceId = '';
-  // In-memory tombstones for platforms unbound on THIS device since the last
-  // push. Cleared after a successful push. Survives across pulls so a remote
-  // account older than our deletion is not resurrected.
+  // Latest per-platform deletion versions survive restart and successful
+  // uploads, so a late old cloud copy cannot resurrect an unbound account.
   final List<SyncTombstone> _tombstones = [];
 
   SyncService(
@@ -101,7 +100,9 @@ class SyncService extends ChangeNotifier {
     DebugLogger? logger,
   })  : _ecard = ecard,
         _client = client ?? http.Client(),
-        _logger = logger;
+        _logger = logger {
+    _tombstones.addAll(_storage.loadThirdPartyTombstones());
+  }
 
   bool get enabled => _storage.syncEnabled;
   bool get hasLocalKey => _cachedKey != null;
@@ -112,11 +113,14 @@ class SyncService extends ChangeNotifier {
   /// for comparison against [cloudLastModified] in the sync settings UI.
   /// Null when there are no local bindings at all.
   DateTime? get localLastModified {
-    final accounts = _tpAuth.accounts;
-    if (accounts.isEmpty) return null;
-    return accounts.map((a) => a.updatedAt).reduce(
-          (a, b) => a.isAfter(b) ? a : b,
-        );
+    final times = [
+      ..._tpAuth.accountsForSync.map((a) => a.updatedAt),
+      ..._tombstones.map((t) => t.deletedAt),
+    ];
+    if (times.isEmpty) return null;
+    return times.reduce(
+      (a, b) => a.isAfter(b) ? a : b,
+    );
   }
 
   /// Best-effort read of the cloud blob's most recent modification time,
@@ -437,14 +441,14 @@ class SyncService extends ChangeNotifier {
   /// Does not decrypt — just checks presence. Cheap probe for the UI.
   Future<bool> cloudHasBlob() async => (await _readBlob()) != null;
 
-  /// Serialize the current local bindings + pending tombstones into the v2
+  /// Serialize the current local bindings + retained tombstones into the
   /// envelope plaintext. Accounts are stamped with this device's id and a
   /// fresh [updatedAt] only via [touchLocal]; already-stamped accounts pass
   /// through unchanged.
   Future<String> _serializeEnvelope() async {
     final env = SyncEnvelope.fromLocal(
       ecard: await _ecard?.readSyncBinding(),
-      accounts: _tpAuth.accounts,
+      accounts: _tpAuth.accountsForSync,
       tombstones: _tombstones,
     );
     return env.encode();
@@ -463,24 +467,55 @@ class SyncService extends ChangeNotifier {
   /// Record that [platform] was deliberately unbound on this device. The
   /// tombstone is carried in the next push and participates in LWW merge so a
   /// remote account older than this deletion is not resurrected on pull.
-  void recordTombstone(ThirdPartyPlatform platform) {
-    final now = DateTime.now();
+  Future<SyncTombstone> recordTombstone(ThirdPartyPlatform platform) async {
+    final deviceId = await _storage.ensureDeviceId();
+    final now = DateTime.now().toUtc();
+    final tombstone = SyncTombstone(platform: platform, deletedAt: now, deviceId: deviceId);
     // Replace any existing tombstone for the same platform (keep newest).
     _tombstones.removeWhere((t) => t.platform == platform);
-    _tombstones.add(
-      SyncTombstone(
-        platform: platform,
-        deletedAt: now,
-        deviceId: _deviceId,
-      ),
-    );
+    _tombstones.add(tombstone);
+    await _storage.saveThirdPartyTombstones(_tombstones);
+    return tombstone;
+  }
+
+  Future<void> _mergeTombstones(List<SyncTombstone> incoming) async {
+    for (final tomb in incoming) {
+      final current = _tombstones.where((t) => t.platform == tomb.platform).firstOrNull;
+      if (current != null && current.compareVersionTo(tomb) >= 0) continue;
+      _tombstones.removeWhere((t) => t.platform == tomb.platform);
+      _tombstones.add(tomb);
+    }
+    await _storage.saveThirdPartyTombstones(_tombstones);
   }
 
   /// Push current local bindings to the cloud (encrypted). Requires a cached
   /// key (i.e. the device has already been set up / restored). Returns a result
   /// whose [msg] carries Casdoor's error text on failure. On success pending
-  /// tombstones are cleared (they are now persisted in the cloud blob).
-  Future<SyncCasdoorResult> push() async {
+  /// deletion versions remain local as well as in the cloud blob.
+  Future<SyncCasdoorResult>? _pushInFlight;
+  bool _pushPending = false;
+
+  Future<SyncCasdoorResult> push() {
+    final current = _pushInFlight;
+    if (current != null) {
+      _pushPending = true;
+      return current;
+    }
+    final pending = _drainPushes().whenComplete(() => _pushInFlight = null);
+    _pushInFlight = pending;
+    return pending;
+  }
+
+  Future<SyncCasdoorResult> _drainPushes() async {
+    late SyncCasdoorResult result;
+    do {
+      _pushPending = false;
+      result = await _pushOnce();
+    } while (_pushPending);
+    return result;
+  }
+
+  Future<SyncCasdoorResult> _pushOnce() async {
     if (!enabled || _cachedKey == null) {
       return const SyncCasdoorResult(false, msg: '云同步未开启或缺少主密码');
     }
@@ -496,10 +531,17 @@ class SyncService extends ChangeNotifier {
         final remote = plain == null ? null : SyncEnvelope.decode(plain);
         if (remote == null) throw StateError('无法解密云端同步状态，请先恢复云同步');
         final local = SyncEnvelope.decode(payload)!;
+        final merged = local.mergeWith(remote);
         payload = SyncEnvelope(
           v: local.v,
-          accounts: local.accounts,
-          tombstones: local.tombstones,
+          accounts: [
+            ...local.accounts.where((a) => a.platform != ThirdPartyPlatform.ids),
+            ...merged.accounts.where((a) => a.platform == ThirdPartyPlatform.ids),
+          ],
+          tombstones: [
+            ...local.tombstones.where((a) => a.platform != ThirdPartyPlatform.ids),
+            ...merged.tombstones.where((a) => a.platform == ThirdPartyPlatform.ids),
+          ],
           // Without an eCard store this build has no opinion on the binding, so
           // the cloud's copy is the one that stands.
           ecard: _ecard == null
@@ -520,7 +562,10 @@ class SyncService extends ChangeNotifier {
     final res = await _writeBlob(blob);
     _lastError = res.ok ? null : res.msg;
     if (res.ok) {
-      _tombstones.clear();
+      final uploaded = SyncEnvelope.decode(payload)!;
+      await _mergeTombstones(uploaded.tombstones);
+      await _tpAuth.markIdsBackedUp(uploaded.ids);
+      await _applyCampusSync(uploaded);
       _lastSyncAt = DateTime.now();
       await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());
       notifyListeners();
@@ -559,10 +604,11 @@ class SyncService extends ChangeNotifier {
     if (remote == null) return;
     final local = SyncEnvelope.fromLocal(
       ecard: await _ecard?.readSyncBinding(),
-      accounts: _tpAuth.accounts,
+      accounts: _tpAuth.accountsForSync,
       tombstones: _tombstones,
     );
     final merged = local.mergeWith(remote);
+    await _mergeTombstones(merged.tombstones);
     // Apply the merged account set locally. applySyncMerge does NOT record
     // tombstones (the merge already accounted for them); it just writes the
     // winning account per platform and clears platforms whose tombstone won.
@@ -572,38 +618,18 @@ class SyncService extends ChangeNotifier {
         )
         .toSet();
     await _tpAuth.applySyncMerge(merged.accounts, removed);
+    await _tpAuth.markIdsBackedUp(remote.ids);
+    await _applyCampusSync(merged);
     await _ecard?.applySyncBinding(merged.ecard);
-    // Adopt the merged tombstone set so the next push propagates any remote
-    // tombstones this device didn't have. Local tombstones that won are
-    // already in [merged.tombstones]; ones that lost (an account won) are
-    // correctly absent.
-    _tombstones
-      ..clear()
-      ..addAll(merged.tombstones);
     _lastSyncAt = DateTime.now();
     await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());
     _needsRestore = false;
     // If the merge produced a state that differs from the cloud (e.g. a local
     // account won), push the merged envelope back so other devices converge.
     if (!_envelopeEquals(remote, merged)) {
-      await _writeMergedEnvelope(merged);
+      await push();
     }
     notifyListeners();
-  }
-
-  /// Encrypt [env] and write it to the cloud, reusing the cached salt.
-  Future<SyncCasdoorResult> _writeMergedEnvelope(SyncEnvelope env) async {
-    final payload = env.encode();
-    final salted = base64.encode(_cachedKey!.salt);
-    final inner = await SyncCrypto.encrypt(payload, _cachedKey!.key);
-    final blob = '$salted.$inner';
-    final res = await _writeBlob(blob);
-    _lastError = res.ok ? null : res.msg;
-    if (res.ok) {
-      _lastSyncAt = DateTime.now();
-      await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());
-    }
-    return res;
   }
 
   /// Cheap structural equality between two envelopes — enough to decide
@@ -634,6 +660,14 @@ class SyncService extends ChangeNotifier {
       }
     }
     return true;
+  }
+
+  Future<void> _applyCampusSync(SyncEnvelope envelope) async {
+    await _tpAuth.applyIdsSyncBinding(envelope.ids);
+    await _tpAuth.applyLegacyCampusSync(
+      envelope.accounts.where((a) => a.platform == ThirdPartyPlatform.ids).firstOrNull,
+      envelope.tombstones.where((t) => t.platform == ThirdPartyPlatform.ids).firstOrNull,
+    );
   }
 
   /// First-time setup on a device that is not syncing yet: derive a key from
@@ -671,10 +705,16 @@ class SyncService extends ChangeNotifier {
       );
     }
     await _cacheKey(CachedSyncKey(salt, key));
+    await _tpAuth.markIdsBackedUp(SyncEnvelope.decode(payload)?.ids);
     await _storage.setSyncEnabled(true);
     _lastSyncAt = DateTime.now();
     await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());
     _lastError = null;
+    if (jsonEncode(SyncEnvelope.decode(payload)?.ids?.toJson()) !=
+        jsonEncode(_tpAuth.idsBinding?.toJson())) {
+      final latest = await push();
+      if (!latest.ok) return SyncOutcome(ok: false, message: latest.describe('最新 IDS 绑定备份失败'));
+    }
     notifyListeners();
     return SyncOutcome(
       ok: true,
@@ -705,18 +745,18 @@ class SyncService extends ChangeNotifier {
     }
     final local = SyncEnvelope.fromLocal(
       ecard: await _ecard?.readSyncBinding(),
-      accounts: _tpAuth.accounts,
+      accounts: _tpAuth.accountsForSync,
       tombstones: _tombstones,
     );
     final merged = local.mergeWith(remote);
+    await _mergeTombstones(merged.tombstones);
     final removed = ThirdPartyPlatform.values
         .where((p) => !merged.accounts.any((a) => a.platform == p))
         .toSet();
     await _tpAuth.applySyncMerge(merged.accounts, removed);
+    await _tpAuth.markIdsBackedUp(remote.ids);
+    await _applyCampusSync(merged);
     await _ecard?.applySyncBinding(merged.ecard);
-    _tombstones
-      ..clear()
-      ..addAll(merged.tombstones);
     await _storage.setSyncEnabled(true);
     _lastSyncAt = DateTime.now();
     await _storage.setSyncLastAt(_lastSyncAt!.toIso8601String());
@@ -724,7 +764,7 @@ class SyncService extends ChangeNotifier {
     _lastError = null;
     // Push the merged envelope back so the cloud reflects this device's
     // local winners (and so other devices converge on the next pull).
-    await _writeMergedEnvelope(merged);
+    await push();
     notifyListeners();
     return const SyncOutcome(ok: true, message: '已从云端恢复绑定');
   }
@@ -773,6 +813,7 @@ class SyncService extends ChangeNotifier {
     }
     await _clearCachedKey();
     _tombstones.clear();
+    await _storage.saveThirdPartyTombstones(_tombstones);
     await _storage.setSyncEnabled(false);
     await _storage.setSyncLastAt('');
     _lastSyncAt = null;

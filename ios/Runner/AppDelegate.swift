@@ -6,12 +6,14 @@ import WidgetKit
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private var ecardDeepLinkChannel: FlutterMethodChannel?
+  private var platformChannel: FlutterMethodChannel?
   private var pendingEcardRoute: String?
   private var ecardFeedback: EcardFeedback?
   private var ecardBindTunnel: EcardBindTunnelPlugin?
   private var watchBridge: WatchConnectivityBridge?
   private var flutterConfigured = false
   private let deadlineWidgetBridge = DeadlineWidgetBridge()
+  private let deadlineReminderBridge = DeadlineReminderBridge()
 
   override func application(
     _ application: UIApplication,
@@ -61,6 +63,24 @@ import WidgetKit
     ecardBindTunnel = EcardBindTunnelPlugin(messenger: registrar.messenger())
     watchBridge = WatchConnectivityBridge(registrar: registrar)
     deadlineWidgetBridge.configure(messenger: registrar.messenger())
+    deadlineReminderBridge.configure(messenger: registrar.messenger())
+
+    let platformChannel = FlutterMethodChannel(
+      name: "techpie/platform", binaryMessenger: registrar.messenger()
+    )
+    platformChannel.setMethodCallHandler { call, result in
+      guard call.method == "getUserAgentInfo" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      result([
+        "device": UIDevice.current.model,
+        "system": UIDevice.current.systemName,
+        "systemVersion": UIDevice.current.systemVersion,
+        "scale": window.screen.scale,
+      ])
+    }
+    self.platformChannel = platformChannel
 
     let deepLinkChannel = FlutterMethodChannel(
       name: "techpie/ecard_deep_link",

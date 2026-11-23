@@ -134,6 +134,12 @@ class AdaptiveFeedbackHostState extends State<AdaptiveFeedbackHost>
     );
   }
 
+  void _runAction(_FeedbackEntry entry) {
+    if (!identical(_entry, entry) || _dismissTimer == null) return;
+    entry.onAction?.call();
+    if (identical(_entry, entry)) dismiss();
+  }
+
   @override
   void dispose() {
     _dismissTimer?.cancel();
@@ -250,10 +256,7 @@ class _FeedbackBanner extends StatelessWidget {
           if (entry.actionLabel != null) ...[
             const SizedBox(width: 8),
             TextButton(
-              onPressed: () {
-                entry.onAction?.call();
-                adaptiveFeedbackHostKey.currentState?.dismiss();
-              },
+              onPressed: () => adaptiveFeedbackHostKey.currentState?._runAction(entry),
               child: Text(entry.actionLabel!),
             ),
           ],

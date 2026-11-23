@@ -9,6 +9,7 @@ import '../application/campus_network_status.dart';
 import '../application/payment_code_controller.dart';
 import '../application/scan_payment_controller.dart';
 import '../core/async_mutex.dart';
+import '../core/config/app_environment.dart';
 import '../core/config/debug_mode_controller.dart';
 import '../core/config/debug_mode_features.dart';
 import '../core/config/offline_authorization_banner_controller.dart';
@@ -54,6 +55,7 @@ final campusNetworkStateProvider = StreamProvider<PaymentConnectionState>(
 final campusCardAccountProvider = Provider<VoidCallback?>((ref) => null);
 
 final homeWidgetPortProvider = Provider<HomeWidgetPort?>((ref) => null);
+final spendingAlertPortProvider = Provider<SpendingAlertPort?>((ref) => null);
 
 enum CampusCardEntry { paymentCode, cardManagement }
 
@@ -710,9 +712,10 @@ final class OfflineAuthorizationController
 }
 
 final accountHistoryRefreshProvider = Provider<AccountHistoryRefresh>((ref) {
-  ref.watch(appRuntimeProvider);
+  final runtime = ref.watch(appRuntimeProvider);
   final coordinator = AccountHistoryRefresh(
     loadHistory: () async {
+      final subject = ref.read(authControllerProvider).valueOrNull?.session?.subjectId;
       const range = (begin: null, end: null);
       final provider = transactionFeedProvider(range);
       final exists = ref.exists(provider);
@@ -721,6 +724,12 @@ final accountHistoryRefreshProvider = Provider<AccountHistoryRefresh>((ref) {
           : null;
       ref.invalidate(transactionFeedProvider);
       final page = await ref.read(provider.future);
+      if (subject != null &&
+          ref.read(authControllerProvider).valueOrNull?.session?.subjectId == subject &&
+          runtime.environment != AppEnvironment.demo &&
+          !(debugModeFeaturesAvailable && ref.read(debugModeProvider))) {
+        unawaited(ref.read(spendingAlertPortProvider)?.observeTransactions(page.items, subjectId: subject));
+      }
       return previous != null &&
           page.items.any((item) => !previous.contains(item.id));
     },

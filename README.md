@@ -42,7 +42,8 @@
     - [ ] Soooo many...
 - API
   - [x] GeekPie SSO (Casdoor) login + token refresh
-  - [x] eGate binding / CpDaily keep-alive (via /api/auth/renew)
+  - [x] eGate support (local IDS Passkey authentication)
+  - [x] IDS Passkey binding / local campus session renewal
   - [ ] Schedule
   - [ ] Homework / Resources
     - [ ] GradeScope

@@ -26,6 +26,7 @@ import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/uni_auth_login.dart';
+import 'custom_deadline_editor_page.dart';
 import 'generic_webview_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -120,35 +121,43 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _doRebuild() {
-    final table = _schedule.courseTable;
+    final table = _schedule.fullCourseTable;
     if (table != null && table.periods.isNotEmpty) {
       _periods = table.periods.map((p) => p.toPeriod()).toList();
     }
-    final week = _schedule.currentWeek();
-    final today = _now.weekday;
+    final termBegin = _schedule.termBegin;
+    final now = _now;
+    final week =
+        _schedule.isGraduate ? teachingWeekOf(now, termBegin) ?? 0 : _schedule.currentWeek();
     final timetableCourses = table?.courses ?? const <EamsCourse>[];
     final withCustom = withCustomCourses(
       eamsToDisplayCourses(
         timetableCourses,
         week,
         timetablePeriods: _periods,
+        onDate: now,
       ),
       _schedule.customCourses,
       week,
-      _schedule.termBegin,
+      termBegin,
       periods: _periods,
+      onDate: now,
     );
     final all = withExamCourses(
       withCustom,
       examsForSemester(_assignments.assignments, _schedule.selectedSemesterId),
       week,
-      _schedule.termBegin,
+      termBegin,
       periods: _periods,
     );
     final newCourses = all
-        .where((course) => course.dayOfWeek == today && course.occursOn(_now))
+        .where((course) => course.dayOfWeek == now.weekday && course.occursOn(now))
         .toList()
-      ..sort((a, b) => a.gridStart.compareTo(b.gridStart));
+      ..sort((a, b) {
+        final startA = parseClockMinutes(a.startTime) ?? 0;
+        final startB = parseClockMinutes(b.startTime) ?? 0;
+        return startA.compareTo(startB);
+      });
 
     final previousCount = _todayCourses.length;
     setState(() {
@@ -323,7 +332,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(height: 16),
-          _buildAppCard(featureEntries),
+          // On compact screens only three app tiles fit per row.
+          _buildAppCard(featureEntries, rows: 3),
           const SizedBox(height: 16),
           _buildTodayClasses(theme, auth.isLoggedIn),
           const SizedBox(height: 8),
@@ -581,10 +591,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final scheme = theme.colorScheme;
     final dueColor = _dueColor(a.due, now, scheme);
     final dueLabel = _dueLabel(a.due, now);
-    final subtitle = a is ExamAssignment ? a.location.trim() : a.course;
+    final subtitle = switch (a) {
+      ExamAssignment(:final location) => location.trim(),
+      CustomDeadline(:final course, :final location) => [
+          if (course.isNotEmpty) course,
+          if (location.isNotEmpty) location,
+        ].join(' · '),
+      _ => a.course,
+    };
 
     return InkWell(
-      onTap: () => unawaited(_openAssignmentUrl(a)),
+      onTap: () => unawaited(
+        a is CustomDeadline
+            ? CustomDeadlineEditorPage.open(context, deadline: a)
+            : _openAssignmentUrl(a),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Row(
