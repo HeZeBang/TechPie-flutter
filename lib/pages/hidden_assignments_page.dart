@@ -401,14 +401,24 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
           (constraints.maxWidth - TpTokens.singleColumnMaxWidth) / 2,
         );
         return ListView.separated(
-          padding: EdgeInsets.fromLTRB(
-            iosToolbar ? 0 : horizontal,
-            topPad + TpTokens.space3,
-            iosToolbar ? 0 : horizontal,
-            iosToolbar && !_selectionMode
-                ? AppShellMetrics.bottomContentPaddingOf(context, margin: 0)
-                : AppShellMetrics.bottomContentPaddingOf(context),
-          ),
+          padding: iosToolbar
+              ? EdgeInsets.only(
+                  top: topPad,
+                  // The offstage selection toolbar makes Scaffold strip body
+                  // padding even while the shell tab bar is visible.
+                  bottom: _selectionMode
+                      ? 0
+                      : AppShellMetrics.bottomContentPaddingOf(
+                          context,
+                          margin: 0,
+                        ),
+                )
+              : EdgeInsets.fromLTRB(
+                  horizontal,
+                  topPad + TpTokens.space3,
+                  horizontal,
+                  AppShellMetrics.bottomContentPaddingOf(context),
+                ),
           itemCount: hiddenKeys.length,
           separatorBuilder: (_, __) => iosToolbar
               ? Divider(height: 1, thickness: 0.5, color: colors.divider)
