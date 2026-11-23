@@ -84,12 +84,12 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     });
     final cards = runtime.cards;
     if (cards is CardSnapshotSource) {
-      _cardSubscription = (cards as CardSnapshotSource).snapshots.listen((card) {
+      _cardSubscription = cards.snapshots.listen((card) {
         _applyCachedBalance(card?.balance);
       });
     }
     if (cards is CacheFirstCardRepository) {
-      unawaited(_hydrateCachedBalance(cards as CacheFirstCardRepository));
+      unawaited(_hydrateCachedBalance(cards));
     }
     if (kDebugMode) {
       debugPrint('[ecard] runtime built ${watch.elapsedMilliseconds}ms');
