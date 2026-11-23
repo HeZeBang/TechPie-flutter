@@ -86,7 +86,7 @@ class _WidgetSetupScreenState extends ConsumerState<WidgetSetupScreen> {
               20,
               ApplePinnedHeaderLayout.contentTop(context) + 20,
               20,
-              40,
+              ApplePinnedHeaderLayout.contentBottom(context, 40),
             ),
             children: [
               const Center(child: PayWidgetPreview()),

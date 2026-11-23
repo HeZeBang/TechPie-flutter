@@ -11,8 +11,9 @@ used for future remote updates.
 No account credentials, cookies, account identifiers, or transaction data are
 sent when requesting the public file. On each application launch the runtime
 loads its last valid cached configuration and the bundled configuration,
-selecting the newer version, then makes one asynchronous request to the fixed
-URL. A valid remote configuration with a higher version updates memory and the
+selects the newer version, then makes one asynchronous request to
+`<apiBaseUrl>/campus-card/merchant-aliases.json` (respecting the shared
+localhost test-server switch with `prodApiBaseUrl` as fallback). A valid remote configuration with a higher version updates memory and the
 local cache. Network failures, invalid responses, and older versions preserve
 the current configuration. The refresh does not delay the transaction list,
 and a new application installation is not required after the server publishes

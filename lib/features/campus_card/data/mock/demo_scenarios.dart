@@ -9,7 +9,6 @@ enum DemoScenario {
   scanOpenDevice,
   scanBindTray,
   scanUnknownType,
-  emptyBillMonth,
   offlineExpired,
   offlineExhausted,
   cardFrozen,

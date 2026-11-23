@@ -10,23 +10,25 @@ final skipScanConfirmationProvider =
 
 final class SkipScanConfirmationController extends Notifier<bool> {
   static const _key = 'geekpay.skip_scan_confirmation';
+  int _revision = 0;
 
   @override
   bool build() {
-    unawaited(_restore());
+    unawaited(_restore(++_revision));
     return false;
   }
 
-  Future<void> _restore() async {
+  Future<void> _restore(int revision) async {
     try {
       final preferences = await SharedPreferences.getInstance();
-      state = preferences.getBool(_key) ?? false;
+      if (revision == _revision) state = preferences.getBool(_key) ?? false;
     } catch (_) {
       // Tests may run without a platform preference channel.
     }
   }
 
   Future<void> setEnabled(bool enabled) async {
+    ++_revision;
     state = enabled;
     try {
       final preferences = await SharedPreferences.getInstance();

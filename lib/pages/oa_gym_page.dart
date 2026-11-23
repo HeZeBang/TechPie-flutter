@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../models/oa_gym.dart';
@@ -14,7 +14,7 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
-import 'login_page.dart';
+import '../widgets/uni_auth_login.dart';
 import 'third_party_accounts_page.dart';
 
 class OaGymPage extends StatefulWidget {
@@ -54,7 +54,7 @@ class _OaGymPageState extends State<OaGymPage>
       await _openThirdPartyAccounts();
       return;
     }
-    await presentLoginPage(context);
+    await startUniAuthLogin(context);
     if (!mounted) return;
     setState(() {});
   }
@@ -102,7 +102,7 @@ class _OaGymPageState extends State<OaGymPage>
       body: ListenableBuilder(
         listenable: Listenable.merge([auth, tpAuth]),
         builder: (context, _) {
-          final ready = auth.isLoggedIn && tpAuth.hasCpdailyBinding;
+          final ready = auth.isLoggedIn && tpAuth.hasIdsBinding;
           return ready
               ? Column(
                   children: [
@@ -110,18 +110,11 @@ class _OaGymPageState extends State<OaGymPage>
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                       child: isIos()
-                          ? CupertinoSlidingSegmentedControl<int>(
-                              groupValue: _selectedTab,
-                              children: const {
-                                0: Text('预约'),
-                                1: Text('查询'),
-                                2: Text('个人信息'),
-                              },
-                              onValueChanged: (value) {
-                                if (value != null) {
-                                  _tabController.animateTo(value);
-                                }
-                              },
+                          ? CNSegmentedControl(
+                              labels: const ['预约', '查询', '个人信息'],
+                              selectedIndex: _selectedTab,
+                              shrinkWrap: true,
+                              onValueChanged: _tabController.animateTo,
                             )
                           : Card.outlined(
                               clipBehavior: Clip.antiAlias,
@@ -175,15 +168,15 @@ class _OaGymPageState extends State<OaGymPage>
                             const SizedBox(height: 16),
                             Text(
                               auth.isLoggedIn
-                                  ? '需要绑定 eGate 账号'
+                                  ? '需要绑定 IDS 账号'
                                   : '需要先登录 TechPie',
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
                             const SizedBox(height: 8),
                             Text(
                               auth.isLoggedIn
-                                  ? '场馆预约复用 eGate 绑定的校园网登录态，请在「第三方账号」中绑定 eGate 后再使用。'
-                                  : '场馆预约复用 eGate 绑定的校园网登录态，不需要单独保存 OA 密码。',
+                                  ? '场馆预约复用 IDS 绑定的校园网登录态，请在「第三方账号」中绑定 IDS 后再使用。'
+                                  : '场馆预约复用 IDS 绑定的校园网登录态，不需要单独保存 OA 密码。',
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                             const SizedBox(height: 16),
@@ -195,10 +188,10 @@ class _OaGymPageState extends State<OaGymPage>
                               sfSymbol: auth.isLoggedIn
                                   ? 'key.horizontal'
                                   : 'person.crop.circle.badge.plus',
-                              label: auth.isLoggedIn ? '去绑定 eGate' : '去登录',
+                              label: auth.isLoggedIn ? '去绑定 IDS' : '去登录',
                               role: AdaptiveButtonRole.prominent,
                               accessibilityLabel:
-                                  auth.isLoggedIn ? '前往绑定 eGate' : '登录 TechPie',
+                                  auth.isLoggedIn ? '前往绑定 IDS' : '登录 TechPie',
                             ),
                           ],
                         ),
@@ -254,6 +247,7 @@ class _BookingTabState extends State<_BookingTab> {
         : DateTime(now.year, now.month, now.day + 1);
     final picked = await showAdaptiveDatePicker(
       context: context,
+      title: '预约日期',
       initialDate: _date,
       firstDate: DateTime(now.year, now.month, now.day),
       lastDate: maxDate,
@@ -707,6 +701,7 @@ class _SearchTabState extends State<_SearchTab> {
   Future<void> _pickStartDate() async {
     final picked = await showAdaptiveDatePicker(
       context: context,
+      title: '开始日期',
       initialDate: _startDate,
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now().add(const Duration(days: 30)),
@@ -723,6 +718,7 @@ class _SearchTabState extends State<_SearchTab> {
   Future<void> _pickEndDate() async {
     final picked = await showAdaptiveDatePicker(
       context: context,
+      title: '结束日期',
       initialDate: _endDate,
       firstDate: _startDate,
       lastDate: DateTime.now().add(const Duration(days: 30)),
@@ -1170,17 +1166,17 @@ class _ProfileTabState extends State<_ProfileTab> {
     final sp = ServiceProvider.of(context);
     final tpAuth = sp.thirdPartyAuthService;
     final service = sp.oaGymService;
-    final cpdaily = tpAuth.cpdailyBinding;
+    final ids = tpAuth.idsAccount;
 
-    // Identity card prefers cpdaily binding (real name + student id) over the
+    // Identity card prefers ids binding (real name + student id) over the
     // primary SSO account, whose userName/userId are Casdoor UUIDs with no
     // meaning in the OA booking context.
     final displayName = service.bookingProfile().name.isNotEmpty
         ? service.bookingProfile().name
-        : cpdaily?.name?.isNotEmpty == true
-            ? cpdaily!.name!
-            : (cpdaily?.account.isNotEmpty == true
-                ? cpdaily!.account
+        : ids?.name?.isNotEmpty == true
+            ? ids!.name!
+            : (ids?.account.isNotEmpty == true
+                ? ids!.account
                 : 'TechPie 用户');
     final studentId = service.bookingStudentId;
     final avatarText = displayName.characters.firstOrNull ?? 'U';
@@ -1226,7 +1222,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                 Text('预约提交信息', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Text(
-                  '绑定 eGate 后自动从 OA 同步，用于场馆预约。姓名和手机号必填，邮箱可选，也可手动修改。',
+                  '绑定 IDS 后自动从 OA 同步，用于场馆预约。姓名和手机号必填，邮箱可选，也可手动修改。',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),

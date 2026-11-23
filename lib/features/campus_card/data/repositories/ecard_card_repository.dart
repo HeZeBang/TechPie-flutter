@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import '../../application/campus_network_status.dart';
 import '../../core/async_mutex.dart';
 import '../../core/errors/app_failure.dart';
 import '../../domain/models/card_models.dart';
-import '../../domain/models/profile_models.dart';
 import '../../domain/money_fen.dart';
 import '../../domain/ports/card_ports.dart';
 import '../api/ecard_api_client.dart';
@@ -19,11 +18,14 @@ final class EcardCardRepository implements CacheFirstCardRepository, CardSnapsho
     required SecureCardCache cache,
     required LocalSecurityPurge purgeLocalSecurityState,
     required VerifiedCardIdSerialReader verifiedIdSerialReader,
+    CampusNetworkStatus? networkStatus,
   })  : _cache = cache,
+        _networkStatus = networkStatus,
         _purgeLocalSecurityState = purgeLocalSecurityState,
         _verifiedIdSerialReader = verifiedIdSerialReader;
 
   final EcardTransport _client;
+  final CampusNetworkStatus? _networkStatus;
   final SecureCardCache _cache;
   final LocalSecurityPurge _purgeLocalSecurityState;
   final VerifiedCardIdSerialReader _verifiedIdSerialReader;
@@ -176,59 +178,6 @@ final class EcardCardRepository implements CacheFirstCardRepository, CardSnapsho
   }
 
   @override
-  Future<UserProfile> profile() async {
-    try {
-      final account = await _account();
-      final card = requireObjectMap(
-        account['cardinfo'],
-        context: 'PROFILE_CARD',
-      );
-      final user = account['userInfo'] is Map
-          ? requireObjectMap(account['userInfo'], context: 'PROFILE_USER')
-          : const <String, Object?>{};
-      final id = card['idserial']?.toString() ?? '';
-      await _assertVerifiedIdSerial(id);
-      final displayCardNumber = id;
-      Uint8List? avatar;
-      if (id.isNotEmpty) {
-        final avatarFlag = requireObjectMap(
-          await _client.get('/home/userImageIsexists', {'idserial': id}),
-          context: 'AVATAR_FLAG',
-        );
-        if (avatarFlag['photoIsOrNot'] == true) {
-          avatar = Uint8List.fromList(
-            await _client.download(
-              '/repair/showImage?filename=${Uri.encodeQueryComponent('$id.jpg')}',
-            ),
-          );
-        }
-      }
-      await _assertVerifiedIdSerial(id);
-      await validateEcardResponse(account);
-      return UserProfile(
-        displayName: card['username']?.toString() ??
-            user['username']?.toString() ??
-            '校园用户',
-        maskedCardNumber: maskCardNumber(displayCardNumber),
-        positionName: CampusPositionCatalog.displayName(
-          card['pcode'],
-          fallback: card['pname']?.toString(),
-        ),
-        avatarBytes: avatar,
-      );
-    } on AppFailure catch (failure) {
-      if (!failure.permitsCachedFallback) rethrow;
-      final cached = await _cache.read();
-      if (cached == null) rethrow;
-      return UserProfile(
-        displayName: cached.ownerName.isEmpty ? '校园用户' : cached.ownerName,
-        maskedCardNumber: cached.maskedNumber,
-        positionName: cached.positionName,
-      );
-    }
-  }
-
-  @override
   Future<BindCardResult> bind(BindCardCommand command) async {
     command.validate();
     final response = requireObjectMap(
@@ -310,7 +259,11 @@ final class EcardCardRepository implements CacheFirstCardRepository, CardSnapsho
     await _purgeLocalSecurityState();
   }
 
-  Future<Map<String, Object?>> _account() async {
+  Future<Map<String, Object?>> _account() =>
+      _networkStatus?.track('/myaccount/openMyAccountApp', _requestAccount) ??
+          _requestAccount();
+
+  Future<Map<String, Object?>> _requestAccount() async {
     final response = requireObjectMap(
       await _client.post('/myaccount/openMyAccountApp', const {}),
       context: 'ACCOUNT',

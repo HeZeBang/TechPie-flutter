@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -72,17 +73,17 @@ class _SecurityLimitScreenState extends ConsumerState<SecurityLimitScreen> {
     required MoneyFen perDay,
     required bool needsPassword,
   }) =>
-      showModalBottomSheet<_LimitEdit>(
+      CNBottomSheet.show<_LimitEdit>(
         context: context,
         useRootNavigator: false,
         isScrollControlled: true,
         useSafeArea: true,
-        builder: (sheetContext) => _LimitEditorSheet(
+        builder: (sheetContext) => ApplePinnedHeaderLayout.sheetInsets(sheetContext, _LimitEditorSheet(
           title: title,
           perTransaction: perTransaction,
           perDay: perDay,
           needsPassword: needsPassword,
-        ),
+        ),),
       );
 
   Future<void> _showMessage(String message) => showAdaptiveDialog<void>(
@@ -119,7 +120,7 @@ class _SecurityLimitScreenState extends ConsumerState<SecurityLimitScreen> {
               20,
               ApplePinnedHeaderLayout.contentTop(context),
               20,
-              52,
+              ApplePinnedHeaderLayout.contentBottom(context, 52),
             ),
             children: [
               switch (limits) {

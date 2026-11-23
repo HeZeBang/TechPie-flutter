@@ -1,5 +1,6 @@
 import 'package:clock/clock.dart';
 
+import '../../application/campus_network_status.dart';
 import '../../core/errors/app_failure.dart';
 import '../../domain/models/payment_models.dart';
 import '../../domain/money_fen.dart';
@@ -8,8 +9,13 @@ import '../api/ecard_api_client.dart';
 import '../api/qr_payload_codec.dart';
 
 final class EcardPaymentCodeRepository implements PaymentCodeRepository {
-  EcardPaymentCodeRepository(this._client, {Clock? clock, this.onBalance})
-      : _clock = clock ?? const Clock();
+  EcardPaymentCodeRepository(
+    this._client, {
+    Clock? clock,
+    this.onBalance,
+    CampusNetworkStatus? networkStatus,
+  }) : _networkStatus = networkStatus,
+        _clock = clock ?? const Clock();
 
   static const _gatewayFallbackMessages = {'开放平台返回失败', '开放平台请求超时'};
   static const _successResultPaths = {
@@ -30,9 +36,14 @@ final class EcardPaymentCodeRepository implements PaymentCodeRepository {
   final Future<bool> Function(Map<String, Object?>, MoneyFen)? onBalance;
   final EcardTransport _client;
   final Clock _clock;
+  final CampusNetworkStatus? _networkStatus;
 
   @override
-  Future<PaymentCodeFrame> generateOnlineCode() async {
+  Future<PaymentCodeFrame> generateOnlineCode() =>
+      _networkStatus?.track('/offlineCode/openVirtualcard', _generateOnlineCode) ??
+          _generateOnlineCode();
+
+  Future<PaymentCodeFrame> _generateOnlineCode() async {
     final response = requireObjectMap(
       await _client.post('/offlineCode/openVirtualcard', {
         'usertype': '8',
@@ -123,6 +134,12 @@ final class EcardPaymentCodeRepository implements PaymentCodeRepository {
 
   @override
   Future<PaymentCodePollResult> pollTransaction(String payCode,
+      {PaymentRequestContext? context,}) =>
+      _networkStatus?.track('/virtualcard/queryOrderStatus',
+          () => _pollTransaction(payCode, context: context),) ??
+          _pollTransaction(payCode, context: context);
+
+  Future<PaymentCodePollResult> _pollTransaction(String payCode,
       {PaymentRequestContext? context,}) async {
     final response = requireObjectMap(
       await (_client is EcardApiClient
@@ -177,7 +194,7 @@ final class EcardPaymentCodeRepository implements PaymentCodeRepository {
     }
     if (resultUrl.isNotEmpty) return const PaymentNotCompleted();
     // No result yet is a normal polling response, not a network failure.
-    return const PaymentPending();
+    return PaymentPending(querySucceeded: !apiRejected(response) && !apiRejected(data));
   }
 
   MoneyFen _paymentResultAmount(Object? value) {

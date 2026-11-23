@@ -21,10 +21,11 @@
 #   command-line-tools/   <- DevEco Command Line Tools ($CLD_DIR)
 #   flutter_flutter/      <- the OHOS Flutter fork      ($FLUTTER_DIR)
 #
-# Trimmed below, because the image has to fit a hosted runner's disk: 9.7 GB of
-# local payload becomes 3.3 GB to download and 5.5 GB extracted (the 1.9 GB of
-# Flutter git history has to stay — see the note in the trim step). What is
-# dropped is listed with the reason, and every drop is validated by a real
+# Trimmed below, because the image has to fit a hosted runner's disk: 10.5 GB of
+# local payload (DevEco command-line tools 7.1 GB + Flutter 3.4 GB) becomes
+# 3.68 GB to download and 6.02 GB extracted — most of what is left is the Flutter
+# fork, including the 2.0 GB of git history that has to stay (see the trim step).
+# What is dropped is listed with the reason, and every drop is validated by a real
 # `flutter build hap` run, not by inspection.
 
 # ============================================================================
@@ -50,16 +51,17 @@ COPY flutter_flutter/ /opt/ohos/flutter_flutter/
 # edit that was never compiled cannot pass unnoticed. `libs/` is packaged as it
 # is, which means a hap still needs no compiler here.
 #
-# That is worth 4.5 GB: `openharmony/native/llvm` (2.3 GB of clang), its sysroot,
-# the bundled cmake/ninja, `hms/native/BiSheng` (1.7 GB, a compiler this build
-# never selects — it resolves native/llvm/bin/clang through
+# That is worth 4.7 GB: `openharmony/native/llvm` (2.3 GB of clang), its two
+# sysroots, the bundled cmake/ninja, `hms/native/BiSheng` (1.9 GB, a compiler this
+# build never selects — it resolves native/llvm/bin/clang through
 # hms/native/build/cmake/hmos.toolchain.cmake) and the second sysroot.
 #
 # Native code that has to be compiled *at build time* is the one thing that
-# would take this back: delete this block then, and the image grows by 4.5 GB.
+# would take this back: delete this block then, and the image grows by 4.7 GB.
 RUN rm -rf \
         /opt/ohos/command-line-tools/sdk/default/openharmony/native/llvm \
         /opt/ohos/command-line-tools/sdk/default/openharmony/native/sysroot \
+        /opt/ohos/command-line-tools/sdk/default/openharmony/native/sysroot_lite \
         /opt/ohos/command-line-tools/sdk/default/openharmony/native/build-tools \
         /opt/ohos/command-line-tools/sdk/default/openharmony/native/docs \
         /opt/ohos/command-line-tools/sdk/default/hms/native/BiSheng \
@@ -86,10 +88,14 @@ RUN rm -rf \
         /opt/ohos/command-line-tools/sdk/default/openharmony/previewer/liteWearable \
         /opt/ohos/command-line-tools/sdk/default/hms/previewer/resources
 
-# --- code linter ------------------------------------------------------------
-# Standalone linter CLI. hvigor does not call it during a build (the module has
-# no code-linter.json5), and it is dead weight in a release image.
-RUN rm -rf /opt/ohos/command-line-tools/codelinter
+# --- standalone CLIs and docs nothing in a build calls ----------------------
+# codelinter (linter; the module has no code-linter.json5), emulator (the device
+# emulator) and arktsdoc (API documentation). hvigor reaches none of them during
+# `assembleHap`; together they are 474 MB of the 7.1 GB toolchain.
+RUN rm -rf \
+        /opt/ohos/command-line-tools/codelinter \
+        /opt/ohos/command-line-tools/emulator \
+        /opt/ohos/command-line-tools/arktsdoc
 
 # --- OHOS Flutter fork ------------------------------------------------------
 # bin/cache/flutter_web_sdk is the web (dart2js) compiler, 274 MB. Only
@@ -101,12 +107,13 @@ RUN rm -rf /opt/ohos/command-line-tools/codelinter
 #     directory is not a clone of the GitHub project"), which is how this image's
 #     own build caught the first attempt at deleting it;
 #   - the framework version is derived from `git describe --match *.*.* --long
-#     --tags` (3.27.5-ohos-1.0.5-0-gd9cf54be36c here), so a stub repository would
+#     --tags` (3.41.9+ohos-1.0.2-0-g62357a93d65 here), so a stub repository would
 #     either fail the tool or invent a revision for the build.
 # A sparse checkout or a stub repository was considered and rejected: the fork's
 # version comes from a tag, so shrinking the history means either fetching it
 # again on the runner or inventing a revision — a fragility not worth 1.3 GB when
-# the finished image measures 3.3 GB against a runner's 14 GB.
+# the finished image measures 3.68 GB to download (6.02 GB extracted)
+# against a runner's 14 GB.
 RUN rm -rf /opt/ohos/flutter_flutter/bin/cache/flutter_web_sdk
 
 # ============================================================================
@@ -189,8 +196,19 @@ RUN git config --system --add safe.directory '*'
 
 # Fail the image build, not the release, if the toolchain does not actually work.
 # `flutter --version` proves the fork still runs after the trim — it is the check
-# that caught `.git` being load-bearing — and `hvigorw --version` proves hvigor
-# resolves and warms ~/.hvigor/wrapper so CI does not download it on every run.
+# that caught `.git` being load-bearing.
+#
+# `flutter precache --force` is what makes the baked cache internally consistent.
+# `flutter --version` only settles the Dart SDK and the engine stamp; the host
+# artifacts (gen_snapshot, font-subset) keep whatever the developer machine last
+# downloaded. Copying a cache whose stamp says 3.41.9 while those binaries are
+# 3.35.8-era is invisible to the tool — the stamp matches — until a release dies
+# with "Invalid kernel binary format version (expected 127, found 125)", which is
+# exactly how it was found. Forcing the two platforms this image builds for also
+# bakes the OHOS engine artifacts, so a release does not download them.
+#
+# `hvigorw --version` then proves hvigor resolves and warms ~/.hvigor/wrapper so
+# CI does not download it on every run.
 #
 # The last check is the trim's own regression test: the resource compiler dlopens
 # libimage_transcoder_shared.so during CompileResource, so every library in its
@@ -210,6 +228,7 @@ RUN set -eux; \
         exit 1; \
     fi; \
     flutter --version; \
+    flutter precache --linux --ohos --force; \
     hvigorw --version
 
 WORKDIR /workspace

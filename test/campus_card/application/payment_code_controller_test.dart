@@ -21,9 +21,12 @@ void main() {
   test('the shipped poll cadence stays deliberately slow', () {
     // While the pass is open the poll is the app's steady traffic. A change here
     // is a product decision, not a detail: it should be made on purpose.
-    expect(PaymentCodeController.defaultPollInterval, const Duration(seconds: 5));
-    expect(PaymentCodeController.defaultRefreshInterval,
-        const Duration(seconds: 30),);
+    expect(
+        PaymentCodeController.defaultPollInterval, const Duration(seconds: 5),);
+    expect(
+      PaymentCodeController.defaultRefreshInterval,
+      const Duration(seconds: 30),
+    );
   });
 
   test('manual refresh joins an automatic generation already in flight', () {
@@ -52,8 +55,11 @@ void main() {
   test('expired polling context regenerates once before surfacing failure', () {
     fakeAsync((async) {
       final repository = _PaymentRepository();
-      repository.pollFailure = const AppFailure(FailureKind.authenticationExpired, 'expired',
-          code: 'AUTH_PAYMENT_CONTEXT_EXPIRED',);
+      repository.pollFailure = const AppFailure(
+        FailureKind.authenticationExpired,
+        'expired',
+        code: 'AUTH_PAYMENT_CONTEXT_EXPIRED',
+      );
       final controller = PaymentCodeController(repository: repository);
       unawaited(controller.start());
       async.flushMicrotasks();
@@ -627,7 +633,9 @@ final class _RefreshAndPollRepository implements PaymentCodeRepository {
   }
 
   @override
-  Future<PaymentCodePollResult> pollTransaction(String payCode, {PaymentRequestContext? context}) => poll.future;
+  Future<PaymentCodePollResult> pollTransaction(String payCode,
+          {PaymentRequestContext? context,}) =>
+      poll.future;
 }
 
 final class _PaymentRepository implements PaymentCodeRepository {
@@ -674,7 +682,8 @@ final class _PaymentRepository implements PaymentCodeRepository {
   }
 
   @override
-  Future<PaymentCodePollResult> pollTransaction(String payCode, {PaymentRequestContext? context}) {
+  Future<PaymentCodePollResult> pollTransaction(String payCode,
+      {PaymentRequestContext? context,}) {
     pollCalls += 1;
     if (pollFailure != null) return Future.error(pollFailure!);
     return pollFuture ?? Future.value(nextPoll);
@@ -711,7 +720,8 @@ final class _RestartDuringRefreshRepository implements PaymentCodeRepository {
   }
 
   @override
-  Future<PaymentCodePollResult> pollTransaction(String payCode, {PaymentRequestContext? context}) async =>
+  Future<PaymentCodePollResult> pollTransaction(String payCode,
+          {PaymentRequestContext? context,}) async =>
       const PaymentPending();
 }
 

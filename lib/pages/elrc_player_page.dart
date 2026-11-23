@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../services/elrc_client.dart';
+import '../utils/platform.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class ElrcPlayerPage extends StatefulWidget {
   const ElrcPlayerPage({
@@ -303,10 +305,22 @@ document.querySelectorAll('video, audio').forEach(media => {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          leading: BackButton(onPressed: _close),
-          title: Text(widget.courseName),
-        ),
+        appBar: isIos()
+            ? IosNativeNavigationBar(
+                title: widget.courseName,
+                leadingItems: const [
+                  IosNativeNavigationBarItem(
+                    id: 'back',
+                    sfSymbol: 'chevron.left',
+                    accessibilityLabel: '返回',
+                  ),
+                ],
+                onItemPressed: (_) => unawaited(_close()),
+              )
+            : AppBar(
+                leading: BackButton(onPressed: _close),
+                title: Text(widget.courseName),
+              ),
         body: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

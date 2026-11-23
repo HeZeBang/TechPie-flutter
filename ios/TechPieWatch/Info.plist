@@ -11,5 +11,5 @@
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>WKApplication</key><true/>
   <key>WKCompanionAppBundleIdentifier</key><string>com.example.techpie</string>
-  <key>WKRunsIndependentlyOfCompanionApp</key><false/>
+  <key>WKRunsIndependentlyOfCompanionApp</key><true/>
 </dict></plist>

@@ -1,31 +1,22 @@
 enum ThirdPartyPlatform {
   gradescope,
   hydro,
-  cpdaily;
+  ids;
 
-  /// Stable id used for storage keys and cloud-sync payloads. Note: the
-  /// backend bind route for cpdaily is still 'egate' (unrenamed); see
-  /// [apiPath].
+  /// Stable id used for storage keys and cloud-sync payloads.
   String get id => name;
   String get label => switch (this) {
         ThirdPartyPlatform.gradescope => 'Gradescope',
         ThirdPartyPlatform.hydro => 'Hydro',
-        ThirdPartyPlatform.cpdaily => 'CpDaily / IDS',
+        ThirdPartyPlatform.ids => 'IDS',
       };
 
-  /// Backend bind/renew route name. cpdaily maps to 'egate' (the backend
-  /// route was not renamed); all others map to their own [id].
-  String get apiPath => switch (this) {
-        ThirdPartyPlatform.cpdaily => 'egate',
-        _ => id,
-      };
-
-  /// Parse a platform id, accepting the legacy 'egate' alias for cpdaily.
+  /// Published campus-account ids remain readable for the Passkey upgrade.
   static ThirdPartyPlatform? fromId(String id) {
     return switch (id) {
       'gradescope' => ThirdPartyPlatform.gradescope,
       'hydro' => ThirdPartyPlatform.hydro,
-      'cpdaily' || 'egate' => ThirdPartyPlatform.cpdaily,
+      'ids' || 'cpdaily' || 'egate' => ThirdPartyPlatform.ids,
       _ => null,
     };
   }
@@ -93,34 +84,23 @@ class ThirdPartyAccount {
     return account;
   }
 
-  /// School identity is distinct from CpDaily's internal user UUID. Older
-  /// backends put that UUID in sid and omitted it from raw.userId.
-  String get cpdailyStudentId {
-    if (platform != ThirdPartyPlatform.cpdaily) return '';
+  /// Old upgrade records can contain an opaque UUID in sid. Only expose a
+  /// school ID, never that UUID or a phone number.
+  String get idsStudentId {
+    if (platform != ThirdPartyPlatform.ids) return '';
     for (final value in [raw['studentId'], raw['openId'], account, sid]) {
-      final id = cpdailySchoolId(value);
+      final id = idsSchoolId(value);
       if (id.isNotEmpty) return id;
     }
     return '';
   }
 
-  static String cpdailySchoolId(Object? value) {
+  static String idsSchoolId(Object? value) {
     if (value is! String) return '';
     final id = value.trim();
     return RegExp(r'^\d+$').hasMatch(id) &&
             !RegExp(r'^1[3-9]\d{9}$').hasMatch(id)
         ? id
-        : '';
-  }
-
-  String get cpdailyUserId {
-    if (platform != ThirdPartyPlatform.cpdaily) return '';
-    final value = raw['userId'];
-    if (value is String && value.isNotEmpty) return value;
-    final legacy = sid ?? '';
-    return RegExp(r'^[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}$')
-            .hasMatch(legacy)
-        ? legacy
         : '';
   }
 

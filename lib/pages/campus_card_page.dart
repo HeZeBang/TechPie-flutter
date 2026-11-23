@@ -15,7 +15,7 @@ import 'campus_card_account_page.dart';
 /// Presents the campus-card routes inside TechPie's theme and navigation.
 ///
 /// The OpenID/JSESSIONID account remains independent from TechPie's primary
-/// SSO and CpDaily sessions, while the feature runtime is owned by TechPie.
+/// SSO and IDS sessions, while the feature runtime is owned by TechPie.
 class CampusCardPage extends StatelessWidget {
   const CampusCardPage({
     super.key,
@@ -47,6 +47,7 @@ class CampusCardPage extends StatelessWidget {
           ),
           campusCardEntryProvider.overrideWithValue(entry),
           homeWidgetPortProvider.overrideWithValue(services?.ecardWidgetService),
+          spendingAlertPortProvider.overrideWithValue(services?.spendingAlertService),
         ],
         child: const CampusCardFeature(),
       ),

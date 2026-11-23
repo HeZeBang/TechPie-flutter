@@ -8,7 +8,9 @@ import '../services/auth_service.dart';
 import '../services/elrc_client.dart';
 import '../services/service_provider.dart';
 import '../services/third_party_auth_service.dart';
+import '../utils/platform.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'campus_session_handle.dart';
 import 'elrc_player_page.dart';
 
@@ -115,13 +117,13 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
     if (_supported) unawaited(_prepare());
   }
 
-  /// Brings the shared store and the CpDaily session up to date, then writes the
+  /// Brings the shared store and the IDS session up to date, then writes the
   /// session's cookies into the store the given controller will use: the hidden
   /// webview below writes nothing itself, so it cannot answer a 401 either.
   /// Best effort — both callers fall back to the SSO redirect.
   Future<void> _writeCampusSession(WebViewController controller) async {
     try {
-      final session = CampusSessionHandle(_tpAuth!, _tpAuth!.cpdailyNode);
+      final session = CampusSessionHandle(_tpAuth!, _tpAuth!.idsNode);
       await session.prepare();
       await _tpAuth!.campusWebSession.clearLocalStorageIfDue(controller);
       final cookieManager = WebViewCookieManager();
@@ -168,7 +170,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
             }
             if (_isLogin(uri) &&
                 !_campusAttempted &&
-                _tpAuth!.hasCpdailyBinding) {
+                _tpAuth!.hasIdsBinding) {
               _expectedMainFrameCancellations++;
               unawaited(_openLogin());
               return NavigationDecision.prevent;
@@ -483,8 +485,10 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       final sources = await client.sources(course, lesson);
       if (!mounted || request != _request) return;
       setState(() => _busy = false);
+      // Playback is immersive, so it covers the tab bar.
       await pushAdaptivePage<void>(
         context,
+        rootNavigator: true,
         builder: (_) => ElrcPlayerPage(
           courseName: course.name,
           lessonTitle: lesson.title,
@@ -679,28 +683,64 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
           if (!didPop) _showCourses();
         },
         child: Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: _selectedCourse == null,
-            leading: _selectedCourse == null
-                ? null
-                : IconButton(
-                    onPressed: _busy ? null : _showCourses,
-                    icon: const Icon(Icons.arrow_back),
-                  ),
-            title: Text(_webVisible ? '登录课程录播' : '课程录播'),
-            actions: [
-              if (!_webVisible && !_starting)
-                IconButton(
-                  tooltip: '刷新',
-                  onPressed: _busy
+          appBar: isIos()
+              ? IosNativeNavigationBar(
+                  title: _webVisible ? '登录课程录播' : '课程录播',
+                  leadingItems: [
+                    IosNativeNavigationBarItem(
+                      id: 'back',
+                      sfSymbol: 'chevron.left',
+                      accessibilityLabel: '返回',
+                      enabled: _selectedCourse == null || !_busy,
+                    ),
+                  ],
+                  trailingItems: [
+                    if (!_webVisible && !_starting)
+                      IosNativeNavigationBarItem(
+                        id: 'refresh',
+                        sfSymbol: 'arrow.clockwise',
+                        accessibilityLabel: '刷新',
+                        enabled: !_busy,
+                      ),
+                  ],
+                  onItemPressed: (id) {
+                    if (id == 'back') {
+                      if (_selectedCourse != null) {
+                        _showCourses();
+                      } else {
+                        unawaited(Navigator.of(context).maybePop());
+                      }
+                    } else if (id == 'refresh') {
+                      if (_selectedCourse == null) {
+                        _retryCourses();
+                      } else {
+                        _retryLessons(_selectedCourse!);
+                      }
+                    }
+                  },
+                )
+              : AppBar(
+                  automaticallyImplyLeading: _selectedCourse == null,
+                  leading: _selectedCourse == null
                       ? null
-                      : _selectedCourse == null
-                          ? _retryCourses
-                          : () => _retryLessons(_selectedCourse!),
-                  icon: const Icon(Icons.refresh),
+                      : IconButton(
+                          onPressed: _busy ? null : _showCourses,
+                          icon: const Icon(Icons.arrow_back),
+                        ),
+                  title: Text(_webVisible ? '登录课程录播' : '课程录播'),
+                  actions: [
+                    if (!_webVisible && !_starting)
+                      IconButton(
+                        tooltip: '刷新',
+                        onPressed: _busy
+                            ? null
+                            : _selectedCourse == null
+                                ? _retryCourses
+                                : () => _retryLessons(_selectedCourse!),
+                        icon: const Icon(Icons.refresh),
+                      ),
+                  ],
                 ),
-            ],
-          ),
           body: SafeArea(
             child: Stack(
               children: [

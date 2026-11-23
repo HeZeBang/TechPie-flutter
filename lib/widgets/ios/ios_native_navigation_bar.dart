@@ -1,9 +1,9 @@
-import 'dart:async';
-import 'dart:convert';
-
+import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:techpie/utils/platform.dart';
+
+import 'sf_symbol_glyphs.dart';
 
 enum IosNativeNavigationBarItemRole { normal, done, destructive }
 
@@ -29,20 +29,6 @@ class IosNativeNavigationBarItem {
   final String? accessibilityLabel;
   final String? placementGroup;
   final List<IosNativeNavigationBarMenuItem> menuItems;
-
-  Map<String, Object?> toMap() {
-    return <String, Object?>{
-      'id': id,
-      'title': title,
-      'sfSymbol': sfSymbol,
-      'role': role.name,
-      'enabled': enabled,
-      'hidden': hidden,
-      'accessibilityLabel': accessibilityLabel,
-      'placementGroup': placementGroup,
-      'menuItems': menuItems.map((item) => item.toMap()).toList(),
-    };
-  }
 }
 
 class IosNativeNavigationBarMenuItem {
@@ -63,22 +49,9 @@ class IosNativeNavigationBarMenuItem {
   final bool destructive;
   final bool displayInline;
   final List<IosNativeNavigationBarMenuItem> children;
-
-  Map<String, Object?> toMap() {
-    return <String, Object?>{
-      'value': value,
-      'title': title,
-      'sfSymbol': sfSymbol,
-      'checked': checked,
-      'destructive': destructive,
-      'displayInline': displayInline,
-      'children': children.map((item) => item.toMap()).toList(),
-    };
-  }
 }
 
-class IosNativeNavigationBar extends StatefulWidget
-    implements PreferredSizeWidget {
+class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWidget {
   const IosNativeNavigationBar({
     super.key,
     required this.title,
@@ -106,124 +79,472 @@ class IosNativeNavigationBar extends StatefulWidget
   double get _barHeight {
     final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
     if (largeTitleMode) {
-      return hasSubtitle && usesIosLiquidGlass() ? 112.0 : 96.0;
+      return hasSubtitle ? 112.0 : 96.0;
     }
-    return hasSubtitle ? 56.0 : 44.0;
+    // Keep 44pt touch targets inside the bar, with room for glass edges and
+    // shadows instead of placing them directly against the page content.
+    return hasSubtitle ? 76.0 : 64.0;
   }
 
-  @override
-  State<IosNativeNavigationBar> createState() => _IosNativeNavigationBarState();
-}
-
-class _IosNativeNavigationBarState extends State<IosNativeNavigationBar> {
-  MethodChannel? _channel;
-  Brightness _brightness = Brightness.light;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final brightness = Theme.of(context).brightness;
-    if (_brightness == brightness) return;
-    _brightness = brightness;
-    final channel = _channel;
-    if (channel != null) unawaited(_sendConfigurationUpdate(channel));
-  }
-
-  @override
-  void didUpdateWidget(covariant IosNativeNavigationBar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final channel = _channel;
-    if (channel == null || !_configurationChanged(oldWidget)) return;
-    unawaited(_sendConfigurationUpdate(channel));
-  }
-
-  @override
-  void dispose() {
-    _channel?.setMethodCallHandler(null);
-    _channel = null;
-    super.dispose();
+  /// Scrollable counterpart: Cupertino owns the title transition, while the
+  /// toolbar keeps using the native button and menu adapters below.
+  Widget buildSliver(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
+    return CupertinoSliverNavigationBar(
+      automaticallyImplyLeading: false,
+      automaticallyImplyTitle: false,
+      alwaysShowMiddle: false,
+      // Platform views must stay in one toolbar, not be copied into a Hero.
+      transitionBetweenRoutes: false,
+      border: null,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.9),
+      largeTitle: Text(title, style: TextStyle(color: scheme.onSurface)),
+      middle: hasSubtitle
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  subtitle!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                ),
+              ],
+            )
+          : Text(title, style: TextStyle(color: scheme.onSurface)),
+      leading: leadingItems.isNotEmpty ? _actions(context, leadingItems) : null,
+      trailing: trailingItems.isNotEmpty ? _actions(context, trailingItems) : null,
+      bottom: hasSubtitle
+          ? PreferredSize(
+              preferredSize: const Size.fromHeight(26),
+              child: Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 8),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 15, color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              ),
+            )
+          : null,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!isIos()) return AppBar(title: Text(widget.title));
-
+    if (!isIos()) return AppBar(title: Text(title));
+    final scheme = Theme.of(context).colorScheme;
+    final titleWidget = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: largeTitleMode ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      children: [
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: largeTitleMode ? TextAlign.start : TextAlign.center,
+          style: TextStyle(
+            fontSize: largeTitleMode ? 34 : 17,
+            height: 1.15,
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurface,
+          ),
+        ),
+        if (subtitle != null && subtitle!.isNotEmpty)
+          Text(
+            subtitle!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: largeTitleMode ? 15 : 12,
+              height: 1.15,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+      ],
+    );
     return SafeArea(
       bottom: false,
       child: SizedBox(
-        height: widget._barHeight,
-        child: UiKitView(
-          viewType: _viewType,
-          layoutDirection: Directionality.of(context),
-          creationParams: _configuration,
-          creationParamsCodec: const StandardMessageCodec(),
-          onPlatformViewCreated: _onPlatformViewCreated,
+        height: _barHeight,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: largeTitleMode ? 0 : 8),
+          child: Column(
+            children: [
+              SizedBox(
+                height: largeTitleMode ? 44 : _barHeight - 16,
+                child: NavigationToolbar(
+                  centerMiddle: true,
+                  middleSpacing: 8,
+                  leading: leadingItems.isNotEmpty
+                      ? _actions(context, leadingItems)
+                      : null,
+                  middle: largeTitleMode ? null : titleWidget,
+                  trailing: trailingItems.isNotEmpty
+                      ? _actions(context, trailingItems)
+                      : null,
+                ),
+              ),
+              if (largeTitleMode)
+                Expanded(
+                  child: Align(alignment: AlignmentDirectional.centerStart, child: titleWidget),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  bool _configurationChanged(IosNativeNavigationBar oldWidget) {
-    return _signature(oldWidget) != _signature(widget);
-  }
-
-  Object _signature(IosNativeNavigationBar widget) {
-    return jsonEncode(<String, Object?>{
-      'title': widget.title,
-      'subtitle': widget.subtitle,
-      'leadingItems': widget.leadingItems.map((item) => item.toMap()).toList(),
-      'trailingItems':
-          widget.trailingItems.map((item) => item.toMap()).toList(),
-      'selectionMode': widget.selectionMode,
-      'largeTitleMode': widget.largeTitleMode,
-    });
-  }
-
-  Map<String, Object?> get _configuration => <String, Object?>{
-        'brightness': _brightness.name,
-        'title': widget.title,
-        'subtitle': widget.subtitle,
-        'leadingItems':
-            widget.leadingItems.map((item) => item.toMap()).toList(),
-        'trailingItems':
-            widget.trailingItems.map((item) => item.toMap()).toList(),
-        'selectionMode': widget.selectionMode,
-        'largeTitleMode': widget.largeTitleMode,
-      };
-
-  Future<void> _sendConfigurationUpdate(MethodChannel channel) async {
-    try {
-      await channel.invokeMethod<void>('updateConfiguration', _configuration);
-    } on PlatformException {
-      // Platform view may be tearing down.
-    } on MissingPluginException {
-      // Platform view may not be wired yet.
-    }
-  }
-
-  void _onPlatformViewCreated(int viewId) {
-    final channel = MethodChannel('$_channelPrefix/$viewId');
-    _channel?.setMethodCallHandler(null);
-    _channel = channel;
-    unawaited(_sendConfigurationUpdate(channel));
-
-    channel.setMethodCallHandler((call) async {
-      final arguments = call.arguments as Map<Object?, Object?>?;
-      switch (call.method) {
-        case 'onItemPressed':
-          final id = arguments?['id'] as String?;
-          if (id != null) widget.onItemPressed?.call(id);
-        case 'onMenuSelected':
-          final id = arguments?['id'] as String?;
-          final value = arguments?['value'] as String?;
-          if (id != null && value != null) {
-            widget.onMenuSelected?.call(id, value);
-          }
+  Widget _actions(BuildContext context, List<IosNativeNavigationBarItem> items) {
+    final controls = <Widget>[];
+    IosNativeNavigationBarItem? previousVisible;
+    for (var i = 0; i < items.length;) {
+      final first = items[i];
+      if (first.hidden) {
+        // Same key and same slot widget as when it is shown, in the same Row,
+        // so toggling `hidden` keeps the element — and its native view.
+        controls.add(
+          KeyedSubtree(
+            key: ValueKey(first.id),
+            child: _HideableSlot(hidden: true, child: _action(context, first)),
+          ),
+        );
+        i++;
+        continue;
       }
-      return null;
-    });
+      var end = i + 1;
+      if (_canGroup(first)) {
+        while (end < items.length &&
+            !items[end].hidden &&
+            _canGroup(items[end]) &&
+            items[end].placementGroup == first.placementGroup) {
+          end++;
+        }
+      }
+      if (previousVisible != null) {
+        controls.add(
+          SizedBox(width: first.placementGroup == previousVisible.placementGroup ? 4 : 12),
+        );
+      }
+      final group = items.sublist(i, end);
+      // Different actions must not inherit a previous native button's image.
+      controls.add(
+        KeyedSubtree(
+          key: ValueKey(group.map((item) => item.id).join('/')),
+          child: group.length > 1
+              ? _group(context, group)
+              : _HideableSlot(hidden: false, child: _action(context, first)),
+        ),
+      );
+      previousVisible = items[end - 1];
+      i = end;
+    }
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.4,
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: controls,
+        ),
+      ),
+    );
+  }
+
+  bool _canGroup(IosNativeNavigationBarItem item) =>
+      usesIosLiquidGlass() &&
+      item.placementGroup != null &&
+      item.sfSymbol != null &&
+      (item.title == null || item.title!.isEmpty) &&
+      item.menuItems.isEmpty &&
+      item.role == IosNativeNavigationBarItemRole.normal;
+
+  Widget _group(BuildContext context, List<IosNativeNavigationBarItem> items) {
+    final tint = Theme.of(context).colorScheme.primary;
+    return Stack(
+      children: [
+        ExcludeSemantics(
+          child: CNGlassButtonGroup(
+            spacing: 0,
+            buttons: [
+              for (final item in items)
+                CNButtonData.icon(
+                  icon: CNSymbol(item.sfSymbol!, size: 20, color: tint),
+                  tint: tint,
+                  enabled: item.enabled,
+                  onPressed: item.enabled ? () => onItemPressed?.call(item.id) : null,
+                  config: CNButtonDataConfig(
+                    width: 44,
+                    minHeight: 44,
+                    padding: const EdgeInsets.all(12),
+                    glassEffectUnionId: item.placementGroup,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        // The group's API has no semantic labels. Give each action its own
+        // accessible target while native views keep handling pointer events.
+        Positioned.fill(
+          child: Row(
+            children: [
+              for (final item in items)
+                SizedBox(
+                  width: 44,
+                  child: Semantics(
+                    button: true,
+                    enabled: item.enabled,
+                    label: item.accessibilityLabel ?? item.id,
+                    onTap: item.enabled ? () => onItemPressed?.call(item.id) : null,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _action(BuildContext context, IosNativeNavigationBarItem item) {
+    if (!usesIosLiquidGlass()) return _legacyAction(context, item);
+    final tint = item.role == IosNativeNavigationBarItemRole.destructive
+        ? CupertinoColors.systemRed.resolveFrom(context)
+        : Theme.of(context).colorScheme.primary;
+    final label = item.accessibilityLabel ?? item.title ?? item.id;
+    if (item.menuItems.isNotEmpty) {
+      // Inline UIMenu sections map to dividers. Named submenus retain their
+      // hierarchy in the label because CNPopupMenuButton has a flat API.
+      final entries = <CNPopupMenuEntry>[];
+      final values = <String?>[];
+      void addItems(List<IosNativeNavigationBarMenuItem> items, String prefix) {
+        for (final entry in items) {
+          if (entry.children.isNotEmpty) {
+            if (entries.isNotEmpty && entries.last is! CNPopupMenuDivider) {
+              entries.add(const CNPopupMenuDivider());
+              values.add(null);
+            }
+            addItems(
+              entry.children,
+              entry.displayInline || entry.title.isEmpty ? prefix : '$prefix${entry.title} › ',
+            );
+          } else {
+            entries.add(
+              CNPopupMenuItem(
+                label: '$prefix${entry.title}',
+                // Zero leaves sizing to UIMenu. The package otherwise starts
+                // at 24pt, then drops sizes on updates containing null entries.
+                icon: entry.sfSymbol == null ? null : CNSymbol(entry.sfSymbol!, size: 0),
+                checked: entry.checked,
+                isDestructive: entry.destructive,
+              ),
+            );
+            values.add(entry.value);
+          }
+        }
+      }
+
+      addItems(item.menuItems, '');
+      void select(int index) {
+        if (item.enabled && index >= 0 && index < values.length && values[index] != null) {
+          onMenuSelected?.call(item.id, values[index]!);
+        }
+      }
+
+      final menu = item.sfSymbol != null
+          ? CNPopupMenuButton.icon(
+              buttonIcon: CNSymbol(item.sfSymbol!, size: 20, color: tint),
+              semanticLabel: label,
+              items: entries,
+              onSelected: select,
+              tint: tint,
+            )
+          : CNPopupMenuButton(
+              buttonLabel: item.title ?? label,
+              semanticLabel: label,
+              items: entries,
+              onSelected: select,
+              height: 44,
+              shrinkWrap: true,
+              buttonStyle: CNButtonStyle.glass,
+              tint: tint,
+            );
+      return IgnorePointer(
+        ignoring: !item.enabled,
+        child: Opacity(opacity: item.enabled ? 1 : 0.4, child: menu),
+      );
+    }
+    final config = CNButtonConfig(
+      style: item.role == IosNativeNavigationBarItemRole.done
+          ? CNButtonStyle.prominentGlass
+          : CNButtonStyle.glass,
+      minHeight: 44,
+      shrinkWrap: true,
+      // These are separate platform views, not a shared glass group. Passing
+      // a union ID selects the package's SwiftUI path, whose intrinsic width
+      // is hardcoded to 80pt and truncates longer toolbar labels.
+    );
+    final callback = item.enabled ? () => onItemPressed?.call(item.id) : null;
+    // Use a compact back chevron; the previous page's name remains available
+    // to VoiceOver without squeezing the title or becoming an ellipsis.
+    final isBack = item.sfSymbol == 'chevron.left';
+    if (!isBack && item.title != null && item.title!.isNotEmpty) {
+      return CNButton(
+        label: item.title!,
+        icon: item.sfSymbol == null ? null : CNSymbol(item.sfSymbol!, size: 20, color: tint),
+        semanticLabel: label,
+        onPressed: callback,
+        enabled: item.enabled,
+        tint: tint,
+        config: config,
+      );
+    }
+    return CNButton.icon(
+      icon: CNSymbol(item.sfSymbol ?? 'ellipsis', size: 20, color: tint),
+      semanticLabel: label,
+      onPressed: callback,
+      enabled: item.enabled,
+      tint: tint,
+      config: CNButtonConfig(
+        style: config.style,
+        width: 44,
+        minHeight: 44,
+      ),
+    );
   }
 }
 
-const _viewType = 'techpie/native_navigation_bar';
-const _channelPrefix = 'techpie/native_navigation_bar';
+extension on IosNativeNavigationBar {
+  /// Before iOS 26: a plain bar button, drawn by Flutter. The library's
+  /// fallback still renders SF Symbols as native views, which take the tap and
+  /// leave only the edges of an icon button responsive.
+  Widget _legacyAction(BuildContext context, IosNativeNavigationBarItem item) {
+    final tint = item.role == IosNativeNavigationBarItemRole.destructive
+        ? CupertinoColors.systemRed.resolveFrom(context)
+        : Theme.of(context).colorScheme.primary;
+    final label = item.accessibilityLabel ?? item.title ?? item.id;
+    final isBack = item.sfSymbol == 'chevron.left';
+    final title = item.title;
+    final showTitle = !isBack && title != null && title.isNotEmpty;
+    final onPressed = !item.enabled
+        ? null
+        : item.menuItems.isNotEmpty
+            ? () => _showLegacyMenu(context, item)
+            : () => onItemPressed?.call(item.id);
+    return Semantics(
+      button: true,
+      enabled: item.enabled,
+      label: label,
+      excludeSemantics: true,
+      child: CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size.square(iosMinimumInteractiveDimension),
+        onPressed: onPressed,
+        child: showTitle
+            ? Text(
+                title,
+                style: TextStyle(
+                  color: tint,
+                  fontSize: 17,
+                  fontWeight: item.role == IosNativeNavigationBarItemRole.done
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                ),
+              )
+            : Icon(
+                cupertinoGlyphFor(item.sfSymbol ?? 'ellipsis'),
+                color: tint,
+                size: isBack ? 28 : 24,
+              ),
+      ),
+    );
+  }
+
+  /// Before iOS 26: a pull-down menu becomes an action sheet, the way those
+  /// releases present a short list of choices from a bar button.
+  Future<void> _showLegacyMenu(BuildContext context, IosNativeNavigationBarItem item) async {
+    final leaves = <(String, IosNativeNavigationBarMenuItem)>[];
+    void collect(List<IosNativeNavigationBarMenuItem> entries, String prefix) {
+      for (final entry in entries) {
+        if (entry.children.isNotEmpty) {
+          collect(
+            entry.children,
+            entry.displayInline || entry.title.isEmpty ? prefix : '$prefix${entry.title} › ',
+          );
+        } else {
+          leaves.add(('$prefix${entry.title}', entry));
+        }
+      }
+    }
+
+    collect(item.menuItems, '');
+    final value = await showCupertinoModalPopup<String>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        actions: [
+          for (final (label, entry) in leaves)
+            CupertinoActionSheetAction(
+              isDestructiveAction: entry.destructive,
+              onPressed: () => Navigator.of(sheetContext).pop(entry.value),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (entry.checked) ...[
+                    const Icon(CupertinoIcons.checkmark, size: 18),
+                    const SizedBox(width: 8),
+                  ],
+                  Flexible(child: Text(label)),
+                ],
+              ),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.of(sheetContext).pop(),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+    if (value != null) onMenuSelected?.call(item.id, value);
+  }
+}
+
+/// Shows its child, or keeps it mounted and composited while taking no space,
+/// touches or semantics and drawing none of it.
+///
+/// Hiding by removing (or by Offstage) is what made a navigation bar flash when
+/// it switched modes: a platform view that leaves the scene has to be created,
+/// or composited back in, on the frame it is shown, and that frame the slot is
+/// empty. Here a hidden child stays in the scene at zero size. It has to be the
+/// child itself that shrinks, not just a clip around it: UIKit hit-tests native
+/// views by frame and ignores Flutter's clips, so a full-size hidden button
+/// left over its neighbour swallowed the neighbour's taps. The widget types are
+/// the same in both states, so the child's element — and its native view —
+/// survives the toggle.
+class _HideableSlot extends StatelessWidget {
+  const _HideableSlot({required this.hidden, required this.child});
+
+  final bool hidden;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ClipRect(
+        clipBehavior: hidden ? Clip.hardEdge : Clip.none,
+        child: SizedBox(
+          width: hidden ? 0 : null,
+          height: hidden ? 0 : null,
+          child: IgnorePointer(
+            ignoring: hidden,
+            child: ExcludeSemantics(excluding: hidden, child: child),
+          ),
+        ),
+      );
+}

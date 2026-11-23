@@ -310,14 +310,46 @@ void main() {
     });
   }
 
-  testWidgets('manual offline mode does not start an online request',
+  testWidgets('stored manual offline mode avoids online requests and renewal on startup',
       (tester) async {
-    final h = await _Harness.create();
-    h.container.read(manualOfflineModeProvider.notifier).setEnabled(true);
+    final h = await _Harness.create(manualOffline: true, offlineCodeFirst: false);
     await h.mount(tester);
+    expect(h.container.read(manualOfflineModeProvider), isTrue);
     expect(find.text('离线付款码'), findsOneWidget);
     expect(find.byKey(const Key('payment-code-qr')), findsOneWidget);
     expect(h.online.calls, 0);
+    expect(h.remote.renewals, 0);
+    await h.close(tester);
+  });
+
+  testWidgets('the offline switch follows a loaded grant while the online API is pending', (tester) async {
+    final h = await _Harness.create(offlineCodeFirst: false);
+    h.credentials.readGate = Completer<void>();
+    await h.mount(tester);
+    final indicator = find.byKey(const Key('payment-online-status-indicator'));
+    final icon = tester.widget<Image>(find.descendant(of: indicator, matching: find.byType(Image)));
+    expect((icon.image as AssetImage).assetName, GeekPayAssets.online);
+    await tester.tap(find.descendant(
+      of: find.byKey(const Key('payment-online-status-indicator')),
+      matching: find.byType(GestureDetector),
+    ),);
+    await _pump(tester);
+    expect(tester.widget<Switch>(find.byType(Switch)).onChanged, isNull);
+
+    h.credentials.readGate!.complete();
+    await _pump(tester);
+    expect(tester.widget<Switch>(find.byType(Switch)).onChanged, isNotNull);
+    expect(h.online.pending.isCompleted, isFalse);
+    await tester.tap(find.byType(Switch));
+    await _pump(tester);
+    expect(h.container.read(manualOfflineModeProvider), isTrue);
+    expect(find.byKey(const Key('payment-code-qr')), findsOneWidget);
+    expect(find.text('离线付款码'), findsOneWidget);
+    expect(h.online.calls, 1);
+
+    h.online.pending.complete(_frame());
+    await _pump(tester);
+    expect(find.text('离线付款码'), findsOneWidget);
     await h.close(tester);
   });
 
@@ -348,7 +380,7 @@ void main() {
       'leaving manual offline mode keeps its code during online loading',
       (tester) async {
     final h = await _Harness.create();
-    h.container.read(manualOfflineModeProvider.notifier).setEnabled(true);
+    await h.container.read(manualOfflineModeProvider.notifier).setEnabled(true);
     await h.mount(tester);
     await tester.tap(find.bySemanticsLabel('在线状态'));
     await _pump(tester);
@@ -445,13 +477,13 @@ void main() {
     h.remote.pending.complete(null);
     await pumpEventQueue();
 
-    h.container.read(manualOfflineModeProvider.notifier).setEnabled(true);
+    await h.container.read(manualOfflineModeProvider.notifier).setEnabled(true);
     h.container.invalidate(offlineAuthorizationProvider('card'));
     h.container.read(offlineAuthorizationProvider('card'));
     await pumpEventQueue();
     expect(h.remote.renewals, 1, reason: 'manual offline mode must not renew');
 
-    h.container.read(manualOfflineModeProvider.notifier).setEnabled(false);
+    await h.container.read(manualOfflineModeProvider.notifier).setEnabled(false);
     h.container.invalidate(offlineAuthorizationProvider('card'));
     h.container.read(offlineAuthorizationProvider('card'));
     await pumpEventQueue();
@@ -586,9 +618,11 @@ class _Harness {
     // The app ships with 离线码优先 on; a test that is about the fallback-only
     // flow turns it off explicitly rather than assuming it.
     bool offlineCodeFirst = true,
+    bool manualOffline = false,
   }) async {
     SharedPreferences.setMockInitialValues({
       OfflineCodeFirstController.preferenceKey: offlineCodeFirst,
+      ManualOfflineModeController.preferenceKey: manualOffline,
     });
     final base = await buildDemoRuntime();
     final credentials = _Credentials(
@@ -718,6 +752,7 @@ class _Credentials implements OfflineCredentialRepository {
   _Credentials(this.delegate);
   final OfflineCredentialRepository delegate;
   Completer<void>? gate;
+  Completer<void>? readGate;
   int reservations = 0;
   int reads = 0;
   int keyReads = 0;
@@ -735,8 +770,9 @@ class _Credentials implements OfflineCredentialRepository {
   Future<OfflineAuthorization?> read(
     String cardId, {
     required String deviceCode,
-  }) {
+  }) async {
     reads++;
+    await readGate?.future;
     return delegate.read(cardId, deviceCode: deviceCode);
   }
   @override

@@ -1,10 +1,5 @@
 import '../models/bill_models.dart';
 
-abstract interface class BillSummaryRepository {
-  Future<List<String>> availableMonths();
-  Future<BillSummary> summary(String month);
-}
-
 abstract interface class TransactionHistoryPort {
   Future<TransactionPage> timeline({
     required String month,
@@ -22,4 +17,10 @@ abstract interface class DateRangeTransactionHistoryPort {
     String? cursor,
     int pageSize = 20,
   });
+}
+
+/// Optional host integration. A complete recent page establishes or advances
+/// the notification baseline; demos and filtered/history pages never call it.
+abstract interface class SpendingAlertPort {
+  Future<void> observeTransactions(List<TransactionRecord> records, {required String subjectId});
 }

@@ -1,6 +1,22 @@
+enum DeadlineReminderChange {
+  complete,
+  reopen,
+  remove,
+  edit;
+
+  static Map<String, DeadlineReminderChange> decode(dynamic value) => {
+        if (value is Map)
+          for (final entry in value.entries)
+            for (final change in values)
+              if (entry.key is String && entry.value == change.name)
+                entry.key as String: change,
+      };
+}
+
 enum DeadlineKind {
   assignment('assignment', '作业'),
-  exam('exam', '考试');
+  exam('exam', '考试'),
+  custom('custom', '自定义');
 
   final String id;
   final String label;
@@ -40,6 +56,14 @@ class Assignment {
   });
 
   bool get submitted => status == 'Submitted' || status == 'Graded';
+
+  /// Only Gradescope exposes a late-submission deadline. Other platforms use
+  /// their primary [due] time as the final deadline.
+  bool get supportsLateDue => platform.toLowerCase() == 'gradescope';
+
+  DateTime? get effectiveLateDue => supportsLateDue ? lateDue : null;
+
+  DateTime get effectiveDue => effectiveLateDue ?? due;
 
   factory Assignment.fromJson(Map<String, dynamic> json) {
     DateTime parseDate(dynamic v) {
@@ -101,6 +125,60 @@ class Assignment {
         if (lateDue != null) 'lateDue': lateDue!.millisecondsSinceEpoch ~/ 1000,
         'status': status,
         'url': url,
+      };
+}
+
+class CustomDeadline extends Assignment {
+  final String location;
+  final String notes;
+  final bool completed;
+  final int? reminderCompletedAt;
+
+  const CustomDeadline({
+    required super.id,
+    required super.title,
+    required super.course,
+    required super.due,
+    this.location = '',
+    this.notes = '',
+    this.completed = false,
+    this.reminderCompletedAt,
+  }) : super(platform: 'custom', kind: DeadlineKind.custom);
+
+  @override
+  bool get submitted => completed;
+
+  CustomDeadline withCompletion(bool completed, {int? reminderCompletedAt}) =>
+      CustomDeadline(
+        id: id,
+        title: title,
+        course: course,
+        due: due,
+        location: location,
+        notes: notes,
+        completed: completed,
+        reminderCompletedAt: reminderCompletedAt ?? this.reminderCompletedAt,
+      );
+
+  factory CustomDeadline.fromJson(Map<String, dynamic> json) => CustomDeadline(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        course: json['course'] as String? ?? '',
+        due: DateTime.fromMillisecondsSinceEpoch((json['due'] as int) * 1000),
+        location: json['location'] as String? ?? '',
+        notes: json['notes'] as String? ?? '',
+        completed: json['completed'] as bool? ?? false,
+        reminderCompletedAt: json['reminderCompletedAt'] as int?,
+      );
+
+  @override
+  Map<String, dynamic> toJson() => {
+        ...super.toJson(),
+        if (location.isNotEmpty) 'location': location,
+        if (notes.isNotEmpty) 'notes': notes,
+        'completed': completed,
+        if (reminderCompletedAt != null)
+          'reminderCompletedAt': reminderCompletedAt,
       };
 }
 

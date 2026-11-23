@@ -18,13 +18,16 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/privacy_consent.dart';
+import '../widgets/uni_auth_login.dart';
+import 'custom_deadline_editor_page.dart';
 import 'generic_webview_page.dart';
-import 'login_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -118,35 +121,43 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _doRebuild() {
-    final table = _schedule.courseTable;
+    final table = _schedule.fullCourseTable;
     if (table != null && table.periods.isNotEmpty) {
       _periods = table.periods.map((p) => p.toPeriod()).toList();
     }
-    final week = _schedule.currentWeek();
-    final today = _now.weekday;
+    final termBegin = _schedule.termBegin;
+    final now = _now;
+    final week =
+        _schedule.isGraduate ? teachingWeekOf(now, termBegin) ?? 0 : _schedule.currentWeek();
     final timetableCourses = table?.courses ?? const <EamsCourse>[];
     final withCustom = withCustomCourses(
       eamsToDisplayCourses(
         timetableCourses,
         week,
         timetablePeriods: _periods,
+        onDate: now,
       ),
       _schedule.customCourses,
       week,
-      _schedule.termBegin,
+      termBegin,
       periods: _periods,
+      onDate: now,
     );
     final all = withExamCourses(
       withCustom,
       examsForSemester(_assignments.assignments, _schedule.selectedSemesterId),
       week,
-      _schedule.termBegin,
+      termBegin,
       periods: _periods,
     );
     final newCourses = all
-        .where((course) => course.dayOfWeek == today && course.occursOn(_now))
+        .where((course) => course.dayOfWeek == now.weekday && course.occursOn(now))
         .toList()
-      ..sort((a, b) => a.gridStart.compareTo(b.gridStart));
+      ..sort((a, b) {
+        final startA = parseClockMinutes(a.startTime) ?? 0;
+        final startB = parseClockMinutes(b.startTime) ?? 0;
+        return startA.compareTo(startB);
+      });
 
     final previousCount = _todayCourses.length;
     setState(() {
@@ -194,7 +205,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       );
     }
 
-    _staggerController!.forward();
+    unawaited(_staggerController!.forward());
   }
 
   String _timeForCourse(Course course) {
@@ -280,7 +291,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ? 16.0
         : 16 + adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
 
-    return Scaffold(
+    return AdaptiveNavigationScaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
           ? const IosNativeNavigationBar(title: 'Home', largeTitleMode: true)
@@ -321,7 +332,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(height: 16),
-          _buildAppCard(featureEntries),
+          // On compact screens only three app tiles fit per row.
+          _buildAppCard(featureEntries, rows: 3),
           const SizedBox(height: 16),
           _buildTodayClasses(theme, auth.isLoggedIn),
           const SizedBox(height: 8),
@@ -382,7 +394,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   void _handleFeatureTap(Feature feature) {
     if (!ServiceProvider.of(context).authService.isLoggedIn) {
-      unawaited(presentLoginPage(context));
+      unawaited(startUniAuthLogin(context));
       return;
     }
     switch (feature.mode) {
@@ -417,8 +429,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         subtitle: '连接你的教务系统账号',
         actionLabel: '登录',
         actionSfSymbol: 'person.crop.circle.badge.checkmark',
+        footer: const PrivacyNotice(),
         onTap: () async {
-          await presentLoginPage(context);
+          await startUniAuthLogin(context);
           if (!mounted) return;
           setState(() {});
         },
@@ -578,9 +591,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final scheme = theme.colorScheme;
     final dueColor = _dueColor(a.due, now, scheme);
     final dueLabel = _dueLabel(a.due, now);
+    final subtitle = switch (a) {
+      ExamAssignment(:final location) => location.trim(),
+      CustomDeadline(:final course, :final location) => [
+          if (course.isNotEmpty) course,
+          if (location.isNotEmpty) location,
+        ].join(' · '),
+      _ => a.course,
+    };
 
     return InkWell(
-      onTap: () => unawaited(_openAssignmentUrl(a)),
+      onTap: () => unawaited(
+        a is CustomDeadline
+            ? CustomDeadlineEditorPage.open(context, deadline: a)
+            : _openAssignmentUrl(a),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Row(
@@ -597,15 +622,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    a.course,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -685,6 +712,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     String? actionLabel,
     String? actionSfSymbol,
     VoidCallback? onTap,
+    Widget? footer,
   }) {
     final inner = SizedBox(
       width: double.infinity,
@@ -725,6 +753,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 onPressed: onTap,
                 accessibilityLabel: actionLabel,
               ),
+            ],
+            if (footer != null) ...[
+              const SizedBox(height: 12),
+              footer,
             ],
           ],
         ),

@@ -1,14 +1,23 @@
 import 'dart:async';
+import 'dart:ui';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/third_party_account.dart';
+import '../services/api_base_url.dart';
+import '../services/feedback_service.dart';
+import '../services/http_client.dart';
+import '../services/island_service.dart';
 import '../services/service_provider.dart';
+import '../services/storage_service.dart';
 import '../services/sync_service.dart';
 import '../services/theme_service.dart';
+import '../services/uni_auth_service.dart';
 import '../services/update_service.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
@@ -16,20 +25,25 @@ import '../utils/product_version.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_confirmation_button.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/desktop_popup.dart';
+import '../widgets/ids_rebind_banner.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/uni_auth_login.dart';
 import '../widgets/update_dialogs.dart';
+import 'account_deletion_page.dart';
 import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
-import 'login_page.dart';
+import 'feedback_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
+import 'third_party_bind_page.dart';
 import 'watch_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -42,6 +56,9 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   String _appVersion = '';
   bool _checkingUpdate = false;
+  bool? _isPersonalInfoBlurred;
+  bool _wasVisible = false;
+  IslandCapability? _islandCapability;
 
   /// The stack a settings subpage is pushed onto in a wide window. A field, not
   /// a local: a GlobalKey rebuilt every frame would drop the stack with it.
@@ -51,6 +68,50 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     unawaited(_loadAppVersion());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ignore: deprecated_member_use
+    final isVisible = TickerMode.of(context);
+    if (isVisible && !_wasVisible) {
+      _isPersonalInfoBlurred =
+          ServiceProvider.of(context).storageService.maskPersonalInfo;
+    }
+    if (isVisible && !_wasVisible) unawaited(_loadIslandCapability());
+    _wasVisible = isVisible;
+  }
+
+  Future<void> _loadIslandCapability() async {
+    final island = ServiceProvider.of(context).islandService;
+    if (island == null || !island.supported) return;
+    final capability = await island.capability();
+    if (mounted) setState(() => _islandCapability = capability);
+  }
+
+  Future<void> _setIslandEnabled(IslandService island, bool value) async {
+    await island.setEnabled(value);
+    if (!mounted) return;
+    setState(() {});
+    await _loadIslandCapability();
+  }
+
+  String get _islandSubtitle {
+    final capability = _islandCapability;
+    if (capability == null) return '显示当前课程、下一节课和即将到期的截止日期';
+    if (!capability.notificationsEnabled) return '请允许 TechPie 发送通知';
+    return switch (capability.backend) {
+      'hyper_island' => '通过 HyperOS 超级岛显示',
+      'live_update' => '通过 Android 实时通知显示',
+      _ => '通过普通常驻通知显示',
+    };
+  }
+
+  void _togglePersonalInfoBlur() {
+    setState(() {
+      _isPersonalInfoBlurred = !(_isPersonalInfoBlurred ?? true);
+    });
   }
 
   Future<void> _loadAppVersion() async {
@@ -155,7 +216,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ? 0.0
         : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
 
-    return Scaffold(
+    return AdaptiveNavigationScaffold(
       extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
       appBar: useIosChrome
           ? const IosNativeNavigationBar(
@@ -170,30 +231,66 @@ class _SettingsPageState extends State<SettingsPage> {
           themeService,
           tpAuth,
           campusCard,
+          sp.syncService,
+          if (sp.spendingAlertService != null) sp.spendingAlertService!,
         ]),
-        builder: (context, _) => ListView(
-          padding: EdgeInsets.only(
-            top: topInset,
-            bottom: AppShellMetrics.bottomContentPaddingOf(context),
-          ),
-          children: [
-            // Account section
-            _sectionHeader(theme, 'Account'),
+        builder: (context, _) {
+          final session = auth.session;
+          return ListView(
+            padding: EdgeInsets.only(
+              top: topInset,
+              bottom: AppShellMetrics.bottomContentPaddingOf(context),
+            ),
+            children: [
+              if (tpAuth.needsIdsRebind || storage.debugForceIdsRebindBanner)
+                IdsRebindBanner(onRebind: () => unawaited(pushAdaptivePage<void>(
+                  context, builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
+                ),),),
+              // Account section
+              _sectionHeader(theme, 'Account'),
+              if (session != null) ...[
+                Semantics(
+                  button: true,
+                  label: (_isPersonalInfoBlurred ?? true)
+                      ? 'Personal info hidden, tap to show'
+                      : 'Personal info shown, tap to hide',
+                  child: ListTile(
+                    leading: const Icon(Icons.person),
+                    title: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      enabled: _isPersonalInfoBlurred ?? true,
+                      child: Text(
+                        session.userName.isNotEmpty
+                            ? session.userName
+                            : session.userId,
+                      ),
+                    ),
+                    subtitle: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      enabled: _isPersonalInfoBlurred ?? true,
+                      child: Text(
+                        [
+                          'GeekPie Uni-Auth',
+                          if (session.userId.isNotEmpty) session.userId,
+                        ].join(' · '),
+                      ),
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(
+                        (_isPersonalInfoBlurred ?? true)
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                      ),
+                      tooltip: (_isPersonalInfoBlurred ?? true)
+                          ? 'Show personal info'
+                          : 'Hide personal info',
+                      onPressed: _togglePersonalInfoBlur,
+                    ),
+                    onTap: _togglePersonalInfoBlur,
+                  ),
+                ),
+              ],
             if (auth.isLoggedIn) ...[
-              ListTile(
-                leading: const Icon(Icons.person),
-                title: Text(
-                  auth.session!.userName.isNotEmpty
-                      ? auth.session!.userName
-                      : auth.session!.userId,
-                ),
-                subtitle: Text(
-                  [
-                    'GeekPie Uni-Auth',
-                    if (auth.session!.userId.isNotEmpty) auth.session!.userId,
-                  ].join(' · '),
-                ),
-              ),
               ListTile(
                 leading: const Icon(Icons.cloud_sync_outlined),
                 title: const Text('Cloud sync'),
@@ -208,12 +305,12 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.person_remove_outlined),
-                title: const Text('申请注销账号'),
-                trailing: const Icon(Icons.open_in_new),
+                title: const Text('注销账号'),
+                trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  launchUrl(
-                    Uri.parse('https://techpie.geekpie.club/privacy#account-deletion'),
-                    mode: LaunchMode.externalApplication,
+                  pushAdaptivePage<void>(
+                    context,
+                    builder: (_) => AccountDeletionPage(auth: auth),
                   ),
                 ),
               ),
@@ -247,7 +344,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   label: '通过 GeekPie Uni-Auth 登录',
                   role: AdaptiveButtonRole.prominent,
                   accessibilityLabel: '登录 TechPie',
-                  onPressed: () => unawaited(presentLoginPage(context)),
+                  onPressed: () => unawaited(startUniAuthLogin(context)),
                 ),
               )
             else
@@ -255,7 +352,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 leading: const Icon(Icons.login),
                 title: const Text('Login'),
                 subtitle: const Text('通过 GeekPie Uni-Auth 登录'),
-                onTap: () => unawaited(presentLoginPage(context)),
+                onTap: () => unawaited(startUniAuthLogin(context)),
               ),
             // Bindings are configured independently of the primary account, so
             // this row sits outside the signed-in block (it replaces the old
@@ -277,6 +374,21 @@ class _SettingsPageState extends State<SettingsPage> {
             const Divider(),
 
             ListTile(
+              leading: const Icon(Icons.feedback_outlined),
+              title: const Text('问题反馈 / 功能建议'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                if (!auth.isLoggedIn) await startUniAuthLogin(context);
+                if (!context.mounted || !auth.isLoggedIn) return;
+                await pushAdaptivePage<void>(
+                  context,
+                  builder: (_) => FeedbackPage(
+                    service: FeedbackService(auth, apiBaseUrl(sp.storageService)),
+                  ),
+                );
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.privacy_tip_outlined),
               title: const Text('隐私政策与使用支持'),
               trailing: const Icon(Icons.open_in_new),
@@ -294,7 +406,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: const Text('Apple Watch'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => unawaited(
-                  pushAdaptivePage<void>(context, builder: (_) => const WatchSettingsPage()),
+                  pushAdaptivePage<void>(context,
+                      builder: (_) => const WatchSettingsPage(),),
                 ),
               ),
 
@@ -304,14 +417,24 @@ class _SettingsPageState extends State<SettingsPage> {
               ListTile(
                 leading: Icon(themeService.mode.icon),
                 title: const Text('Theme'),
-                subtitle: Text(themeService.mode.label),
+                // The menu button shows the value; a subtitle would repeat it.
                 trailing: AdaptiveSelect(
                   value: themeService.mode.name,
                   placeholder: 'Choose theme',
-                  width: 156,
+                  accessibilityLabel: 'Theme',
+                  shrinkWrap: true,
                   options: [
                     for (final mode in AppThemeMode.values)
-                      AdaptiveSelectOption(value: mode.name, label: mode.label),
+                      AdaptiveSelectOption(
+                        value: mode.name,
+                        label: mode.label,
+                        sfSymbol: switch (mode) {
+                          AppThemeMode.system => 'circle.lefthalf.filled',
+                          AppThemeMode.light => 'sun.max',
+                          AppThemeMode.dark => 'moon',
+                          AppThemeMode.amoled => 'moon.fill',
+                        },
+                      ),
                   ],
                   onChanged: (value) {
                     final mode = AppThemeMode.values.firstWhere(
@@ -344,6 +467,67 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // General section
             _sectionHeader(theme, 'General'),
+            if (sp.islandService case final island? when island.supported)
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.island'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.notifications_active_outlined),
+                title: '课程与截止日期通知',
+                subtitle: _islandSubtitle,
+                value: storage.islandEnabled,
+                onChanged: (value) => unawaited(_setIslandEnabled(island, value)),
+              ),
+            if (sp.spendingAlertService case final spending? when spending.supported)
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.spending-alerts'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.notifications_active_outlined),
+                title: '校园卡消费提醒',
+                subtitle: '刷新发现新消费时通知；后台检查受系统调度限制',
+                value: spending.enabled,
+                onChanged: (value) => unawaited(spending.setEnabled(value)),
+              ),
+            _AdaptiveSwitchTile(
+              key: const ValueKey('settings.mask-personal-info'),
+              usesIosLiquidGlass: useIosChrome,
+              secondary: const Icon(Icons.visibility_off_outlined),
+              title: 'Mask personal info',
+              subtitle: 'Blur sensitive profile details by default',
+              value: storage.maskPersonalInfo,
+              onChanged: (value) {
+                unawaited(storage.setMaskPersonalInfo(value));
+                setState(() {
+                  _isPersonalInfoBlurred = value;
+                });
+              },
+            ),
+            if (!kIsWeb) ...[
+              ListTile(
+                key: const ValueKey('settings.app-proxy-address'),
+                leading: const Icon(Icons.lan_outlined),
+                title: const Text('Application proxy'),
+                subtitle: Text(
+                  storage.appProxyEnabled && storage.appProxyUrl.isNotEmpty
+                      ? storage.appProxyUrl
+                      : (storage.appProxyUrl.isNotEmpty
+                          ? '${storage.appProxyUrl} (Disabled)'
+                          : 'System default'),
+                ),
+                onTap: () =>
+                    unawaited(_showProxySettings(storage, sp.uniAuthService)),
+              ),
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.app-proxy-enabled'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.power_settings_new),
+                title: 'Enable application proxy',
+                subtitle: 'Route requests through the configured HTTP proxy',
+                value: storage.appProxyEnabled && storage.appProxyUrl.isNotEmpty,
+                onChanged: (value) => unawaited(
+                  _setProxyEnabled(storage, sp.uniAuthService, value),
+                ),
+              ),
+            ],
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('About'),
@@ -369,30 +553,47 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // Developer section
             if (!kReleaseMode) _sectionHeader(theme, 'Developer'),
-            if (!kReleaseMode) _AdaptiveSwitchTile(
-              usesIosLiquidGlass: useIosChrome,
-              secondary: const Icon(Icons.bug_report_outlined),
-              title: 'Debug mode',
-              subtitle: 'Log all API requests',
-              value: logger.enabled,
-              onChanged: (value) {
-                logger.enabled = value;
-                unawaited(storage.setDebugMode(value));
-              },
-            ),
-            if (!kReleaseMode) _AdaptiveSwitchTile(
-              usesIosLiquidGlass: useIosChrome,
-              secondary: const Icon(Icons.dns_outlined),
-              title: 'Use localhost',
-              subtitle: isAndroid()
-                  ? 'Connect to local server via 10.0.2.2:3000'
-                  : 'Connect to local development server',
-              value: storage.useLocalhost,
-              onChanged: (value) {
-                unawaited(storage.setUseLocalhost(value));
-                setState(() {});
-              },
-            ),
+            if (!kReleaseMode)
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.ids-rebind-preview'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.key_outlined),
+                title: '强制显示 IDS 重绑横幅',
+                subtitle: '仅用于调试迁移提示',
+                value: storage.debugForceIdsRebindBanner,
+                onChanged: (value) {
+                  unawaited(storage.setDebugForceIdsRebindBanner(value));
+                  setState(() {});
+                },
+              ),
+            if (!kReleaseMode)
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.debug-mode'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.bug_report_outlined),
+                title: 'Debug mode',
+                subtitle: 'Log all API requests',
+                value: logger.enabled,
+                onChanged: (value) {
+                  logger.enabled = value;
+                  unawaited(storage.setDebugMode(value));
+                },
+              ),
+            if (!kReleaseMode)
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.use-localhost'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.dns_outlined),
+                title: 'Use localhost',
+                subtitle: isAndroid()
+                    ? 'Connect to local server via 10.0.2.2:3000'
+                    : 'Connect to local development server',
+                value: storage.useLocalhost,
+                onChanged: (value) {
+                  unawaited(storage.setUseLocalhost(value));
+                  setState(() {});
+                },
+              ),
             if (!kReleaseMode)
               ListTile(
                 leading: const Icon(Icons.science_outlined),
@@ -432,9 +633,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
           ],
-        ),
-      ),
-    );
+        );
+      },
+    ),
+  );
   }
 
   Future<void> _confirmLogout(AuthService auth) async {
@@ -457,6 +659,55 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _setProxyEnabled(
+    StorageService storage,
+    UniAuthService uniAuth,
+    bool value,
+  ) async {
+    if (value) {
+      final normalized = normalizeAppProxy(storage.appProxyUrl);
+      if (!isValidAppProxy(normalized)) {
+        await _showProxySettings(storage, uniAuth);
+        return;
+      }
+      await storage.setAppProxyUrl(normalized);
+      await storage.setAppProxyEnabled(true);
+      configureAppProxy(normalized);
+      uniAuth.setProxyUrl(normalized);
+    } else {
+      await storage.setAppProxyEnabled(false);
+      configureAppProxy('');
+      uniAuth.setProxyUrl('');
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _showProxySettings(
+    StorageService storage,
+    UniAuthService uniAuth,
+  ) async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => _ProxySettingsDialog(initialValue: storage.appProxyUrl),
+    );
+    if (value == null || !mounted) return;
+    final proxy = normalizeAppProxy(value);
+    if (proxy.isNotEmpty && !isValidAppProxy(proxy)) {
+      await showAdaptiveAlertDialog<void>(
+        context: context,
+        title: 'Invalid proxy',
+        message: 'Use host:port, for example 127.0.0.1:7890.',
+        actions: const [AdaptiveAlertAction<void>(label: 'OK')],
+      );
+      return;
+    }
+    await storage.setAppProxyUrl(proxy);
+    await storage.setAppProxyEnabled(proxy.isNotEmpty);
+    configureAppProxy(proxy);
+    uniAuth.setProxyUrl(proxy);
+    if (mounted) setState(() {});
+  }
+
   void _showThemePicker(BuildContext context, ThemeService themeService) {
     if (usesSidebarLayout(context)) {
       showDesktopPopover(
@@ -464,6 +715,7 @@ class _SettingsPageState extends State<SettingsPage> {
         width: 260,
         placement: DesktopPopoverPlacement.belowEnd,
         offset: const Offset(0, 8),
+        scrollable: true,
         builder: (context, close) {
           final theme = Theme.of(context);
           return DesktopPopoverSurface(
@@ -479,30 +731,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const Divider(height: 1),
-                for (final mode in AppThemeMode.values)
-                  DesktopMenuRow(
-                    leading: Icon(mode.icon, size: 20),
-                    title: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            mode.label,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ),
-                        if (themeService.mode == mode)
-                          Icon(
-                            Icons.check,
-                            size: 20,
-                            color: theme.colorScheme.primary,
-                          ),
-                      ],
-                    ),
-                    onTap: () {
-                      unawaited(themeService.setMode(mode));
-                      close();
-                    },
-                  ),
+                _ThemeModeOptions(
+                  themeService: themeService,
+                  desktop: true,
+                  onSelected: (mode) {
+                    unawaited(themeService.setMode(mode));
+                    close();
+                  },
+                ),
               ],
             ),
           );
@@ -512,8 +748,9 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
+        useRootNavigator: true,
         builder: (context) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -525,21 +762,13 @@ class _SettingsPageState extends State<SettingsPage> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              for (final mode in AppThemeMode.values)
-                ListTile(
-                  leading: Icon(mode.icon),
-                  title: Text(mode.label),
-                  trailing: themeService.mode == mode
-                      ? Icon(
-                          Icons.check,
-                          color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () {
-                    unawaited(themeService.setMode(mode));
-                    Navigator.pop(context);
-                  },
-                ),
+              _ThemeModeOptions(
+                themeService: themeService,
+                onSelected: (mode) {
+                  unawaited(themeService.setMode(mode));
+                  Navigator.pop(context);
+                },
+              ),
               const SizedBox(height: 8),
             ],
           ),
@@ -611,8 +840,9 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     unawaited(
-      showModalBottomSheet<void>(
+      CNBottomSheet.show<void>(
         context: context,
+        useRootNavigator: true,
         builder: (context) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -672,8 +902,66 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
+class _ThemeModeOptions extends StatelessWidget {
+  const _ThemeModeOptions({
+    required this.themeService,
+    required this.onSelected,
+    this.desktop = false,
+  });
+
+  final ThemeService themeService;
+  final ValueChanged<AppThemeMode> onSelected;
+  final bool desktop;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final mode in AppThemeMode.values)
+          if (desktop)
+            DesktopMenuRow(
+              leading: Icon(mode.icon, size: 20),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      mode.label,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  if (themeService.mode == mode)
+                    Icon(
+                      Icons.check,
+                      size: 20,
+                      color: theme.colorScheme.primary,
+                    ),
+                ],
+              ),
+              onTap: () => onSelected(mode),
+            )
+          else
+            ListTile(
+              leading: Icon(mode.icon),
+              title: Text(mode.label),
+              trailing: themeService.mode == mode
+                  ? Icon(
+                      Icons.check,
+                      color: theme.colorScheme.primary,
+                    )
+                  : null,
+              onTap: () => onSelected(mode),
+            ),
+      ],
+    );
+  }
+}
+
 class _AdaptiveSwitchTile extends StatelessWidget {
   const _AdaptiveSwitchTile({
+    super.key,
     required this.usesIosLiquidGlass,
     required this.secondary,
     required this.title,
@@ -707,6 +995,55 @@ class _AdaptiveSwitchTile extends StatelessWidget {
       subtitle: Text(subtitle),
       trailing: AdaptiveSwitch(value: value, onChanged: onChanged),
       onTap: () => onChanged(!value),
+    );
+  }
+}
+
+class _ProxySettingsDialog extends StatefulWidget {
+  const _ProxySettingsDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_ProxySettingsDialog> createState() => _ProxySettingsDialogState();
+}
+
+class _ProxySettingsDialogState extends State<_ProxySettingsDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Application proxy'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: '127.0.0.1:7890'),
+        keyboardType: TextInputType.url,
+        onSubmitted: (value) => Navigator.pop(context, value.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

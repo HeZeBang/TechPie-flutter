@@ -3,8 +3,8 @@ import 'package:flutter/foundation.dart';
 /// A read-only snapshot of cookies + identity a downstream consumer (campus
 /// service, webview feature) injects into its requests.
 ///
-/// Implementations: [CpdailyCookieProvider] (CASTGC-bearing CpDaily session),
-/// [IdsCookieProvider] (IDS SSO cookies minted from the CpDaily session), and
+/// Implementations: [IdsCookieProvider] (CASTGC-bearing IDS session),
+/// [IdsCookieProvider] (IDS SSO cookies minted from the IDS session), and
 /// a no-op empty view for leaf nodes that expose no cookies (Gradescope/Hydro
 /// work via bearer tokens server-side, not browser cookies).
 @immutable

@@ -38,11 +38,12 @@ public struct WatchSnapshot: Codable, Equatable, Sendable {
   public var subject: String?
   public var card: WatchCard?
   public var credential: WatchCredential?
+  public var onlineAccount: WatchOnlineAccount?
 
   public func validate() throws {
     guard version == 1, revision > 0, !sourceID.isEmpty, !targetID.isEmpty else { throw WatchFailure.invalidSnapshot }
     if !enabled {
-      guard card == nil, credential == nil, subject == nil else { throw WatchFailure.invalidSnapshot }
+      guard card == nil, credential == nil, onlineAccount == nil, subject == nil else { throw WatchFailure.invalidSnapshot }
       return
     }
     guard let subject, !subject.isEmpty else { throw WatchFailure.invalidSnapshot }
@@ -53,6 +54,11 @@ public struct WatchSnapshot: Codable, Equatable, Sendable {
     if let credential {
       try credential.validate()
       guard credential.cardID == card?.studentID, card?.permitsPayment == true else { throw WatchFailure.invalidSnapshot }
+    }
+    if let onlineAccount {
+      try onlineAccount.validate()
+      guard onlineAccount.subject == subject, onlineAccount.idSerial == card?.studentID,
+        card?.permitsPayment == true else { throw WatchFailure.invalidSnapshot }
     }
   }
 

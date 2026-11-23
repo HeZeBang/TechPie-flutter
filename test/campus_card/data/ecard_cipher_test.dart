@@ -410,7 +410,7 @@ void main() {
           onIdentityMismatch: () {},
         );
 
-        final response = await client.get('/home/userImageIsexists', const {});
+        final response = await client.get('/selftrade/queryCardSelfTradeList', const {});
 
         expect(response, {'success': true});
         expect(recoveries, 1);

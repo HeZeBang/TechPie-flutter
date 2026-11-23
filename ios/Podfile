@@ -39,6 +39,11 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    # The OHOS package_info_plus fork predates privacy manifests.
+    if target.name == 'package_info_plus'
+      manifest = installer.pods_project.new_file('../PrivacyManifests/package_info_plus/PrivacyInfo.xcprivacy')
+      target.resources_build_phase.add_file_reference(manifest, true)
+    end
     target.build_configurations.each do |config|
       version = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] || '0'
       if Gem::Version.new(version) < Gem::Version.new(minimum_ios_version)

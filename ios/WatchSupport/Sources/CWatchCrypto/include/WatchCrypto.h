@@ -8,4 +8,7 @@ int tp_sm2_verify(const uint8_t public_key[33], const uint8_t *message, size_t l
 void tp_sm3(const uint8_t *message, size_t length, uint8_t digest[32]);
 // Row-major modules; returns side length, or zero on error. Capacity >= 177*177.
 int tp_qr_encode(const uint8_t *data, size_t length, uint8_t *modules, size_t capacity);
+// AES-128-ECB with PKCS7, matching eCard's datajson transport. Returns bytes or -1.
+int tp_aes_ecb(const uint8_t key[16], const uint8_t *input, size_t length,
+               int encrypt, uint8_t *output, size_t capacity);
 #endif

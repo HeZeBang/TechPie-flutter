@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:techpie/services/api_base_url.dart';
 
 import '../../domain/models/merchant_alias_models.dart';
 import '../../domain/ports/merchant_alias_port.dart';
@@ -30,20 +31,22 @@ final class MerchantAliasRepository implements MerchantAliasPort {
     http.Client? client,
     MerchantAliasCache? cache,
     Future<String> Function()? bundledConfigReader,
+    Uri Function()? endpoint,
     this.timeout = const Duration(seconds: 8),
   })  : _client = client ?? http.Client(),
         _cache = cache ?? SharedPreferencesMerchantAliasCache(),
-        _bundledConfigReader = bundledConfigReader;
+        _bundledConfigReader = bundledConfigReader,
+        _endpoint = endpoint ?? defaultEndpoint;
 
   static const bundledConfigAsset =
       'assets/campus_card/data/merchant_aliases.json';
-  static final endpoint = Uri.https(
-    'techpie.geekpie.club',
-    '/api/campus-card/merchant-aliases.json',
-  );
+  static Uri defaultEndpoint() =>
+      Uri.parse('$prodApiBaseUrl/campus-card/merchant-aliases.json');
+  static final endpoint = defaultEndpoint();
   final http.Client _client;
   final MerchantAliasCache _cache;
   final Future<String> Function()? _bundledConfigReader;
+  final Uri Function() _endpoint;
   final Duration timeout;
   final _changes = StreamController<MerchantAliasConfig>.broadcast(sync: true);
   MerchantAliasConfig _current = const MerchantAliasConfig.empty();
@@ -87,8 +90,11 @@ final class MerchantAliasRepository implements MerchantAliasPort {
   Future<void> _refresh() async {
     try {
       // This public configuration client never receives account credentials.
-      final response = await _client.get(endpoint).timeout(timeout);
-      if (response.statusCode != 200 || _disposed) return;
+      final target = _endpoint();
+      final response = await _client.get(target).timeout(timeout);
+      if (response.statusCode != 200 || _disposed || _endpoint() != target) {
+        return;
+      }
       final next = MerchantAliasConfig.decode(utf8.decode(response.bodyBytes));
       if (next.version <= _current.version) return;
       _publish(next);

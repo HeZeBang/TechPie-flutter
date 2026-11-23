@@ -25,6 +25,7 @@ import 'package:techpie/services/oa_gym_service.dart';
 import 'package:techpie/services/schedule_service.dart';
 import 'package:techpie/services/service_provider.dart';
 import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/services/student_allowance_service.dart';
 import 'package:techpie/services/sync_service.dart';
 import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
@@ -72,6 +73,8 @@ void main() {
         AssignmentService(storage, http, hostAuth, tpAuth, schedule);
     final oaGym = OaGymService(hostAuth, storage, tpAuth);
     final egateApp = EgateAppService(hostAuth, storage, tpAuth);
+    final studentAllowance = StudentAllowanceService(hostAuth, tpAuth);
+    addTearDown(studentAllowance.dispose);
 
     secureStore = InMemorySecureCredentialStore();
     sessionStore = SecureSessionCredentialStore(secureStore);
@@ -133,6 +136,7 @@ void main() {
       thirdPartyAuthService: tpAuth,
       oaGymService: oaGym,
       egateAppService: egateApp,
+      studentAllowanceService: studentAllowance,
       uniAuthService: uniAuth,
       syncService: sync,
       updateService: UpdateService(),
@@ -470,6 +474,15 @@ void main() {
     expect(find.byKey(const Key('ecard-bind-hijack-button')), findsNothing);
     expect(find.byKey(const Key('ecard-bind-redeem-button')), findsNothing);
     expect(find.byKey(const Key('openid-field')), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('openid-field')), openId);
+    await tester.tap(find.byKey(const Key('openid-save-button')));
+    await tester.pumpAndSettle();
+
+    expect(auth.signInCalls, 1);
+    expect(await service.readOpenId(), openId);
+    expect(find.text('eCard 已连接'), findsOneWidget);
+    expect(tunnel.stopCalls, 0);
   });
 
   testWidgets('an unknown tunnel state offers stopping instead of starting', (

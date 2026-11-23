@@ -14,6 +14,7 @@ final class WatchConnectivityBridge: NSObject, WCSessionDelegate {
     var acknowledgedExpiry: Double?
     var grantStatus: String?
     var revocationReason: String?
+    var onlineAcknowledged: Bool?
   }
   private let channel: FlutterMethodChannel
   private var state = State()
@@ -59,6 +60,7 @@ final class WatchConnectivityBridge: NSObject, WCSessionDelegate {
       "ready": storageReady && peer.canEnroll,
       "enabled": state.enabled,
       "revision": state.revision, "acknowledged": state.acknowledged]
+    value["onlineReady"] = state.enabled && state.onlineAcknowledged == true && state.acknowledged == state.revision
     if let reason = state.revocationReason { value["revocationReason"] = reason }
     if let expiry = state.acknowledgedExpiry { value["watchExpiresAt"] = expiry }
     if let data = state.pending, let snapshot = try? JSONDecoder().decode(WatchSnapshot.self, from: data),
@@ -102,7 +104,7 @@ final class WatchConnectivityBridge: NSObject, WCSessionDelegate {
         var envelope: [String: Any] = ["version": 1, "sourceID": sourceID, "targetID": target,
           "revision": state.revision + 1, "enabled": true,
           "subject": input["subject"] ?? NSNull(), "card": input["card"] ?? NSNull(),
-          "credential": input["credential"] ?? NSNull()]
+          "credential": input["credential"] ?? NSNull(), "onlineAccount": input["onlineAccount"] ?? NSNull()]
         if enroll { envelope["enrollmentNonce"] = nonce }
         stage = "encode"
         let data = try JSONSerialization.data(withJSONObject: envelope)
@@ -114,7 +116,7 @@ final class WatchConnectivityBridge: NSObject, WCSessionDelegate {
         if !enroll, let old = state.pending,
           let previous = try? JSONDecoder().decode(WatchSnapshot.self, from: old),
           previous.subject == snapshot.subject, previous.card == snapshot.card,
-          previous.credential == snapshot.credential {
+          previous.credential == snapshot.credential, previous.onlineAccount == snapshot.onlineAccount {
           deliver(); result(status()); return
         }
         state.revision += 1
@@ -124,6 +126,7 @@ final class WatchConnectivityBridge: NSObject, WCSessionDelegate {
         let grantStatus = input["grantStatus"] as? String ?? "unknown"
         state.grantStatus = ["ready", "cardUnavailable", "missing", "limited", "missingExpiry", "expired", "changed"].contains(grantStatus) ? grantStatus : "unknown"
         state.acknowledgedExpiry = nil
+        state.onlineAcknowledged = nil
         stage = "persist"
         try save()
         deliver()
@@ -160,6 +163,7 @@ final class WatchConnectivityBridge: NSObject, WCSessionDelegate {
     state.revocationReason = reason
     state.grantStatus = nil
     state.acknowledgedExpiry = nil
+    state.onlineAcknowledged = nil
     guard let target = state.targetID else { state.pending = nil; try save(); return }
     state.revision += 1
     let envelope: [String: Any] = ["version": 1, "sourceID": sourceID, "targetID": target,
@@ -215,6 +219,7 @@ final class WatchConnectivityBridge: NSObject, WCSessionDelegate {
       message["accepted"] as? Bool == true {
       state.acknowledged = revision
       state.acknowledgedExpiry = message["expiresAt"] as? Double
+      state.onlineAcknowledged = message["onlineReady"] as? Bool == true
       try? save()
       if let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first,
         let data = try? JSONSerialization.data(withJSONObject: ["stage": "acknowledged",

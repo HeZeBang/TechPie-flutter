@@ -8,13 +8,14 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/page_refresh.dart';
 import '../widgets/scanner/scan_page.dart';
-import 'login_page.dart';
+import '../widgets/uni_auth_login.dart';
 import 'third_party_accounts_page.dart';
 
 /// "校园签到" — queries the egate-app (xshdapp) sign-in announcement +
 /// history and lets the user submit a check-in for a scanned WID. Session
-/// cookies are derived from the cpdaily binding (see EgateAppService), so
+/// cookies are derived from the ids binding (see EgateAppService), so
 /// this page mirrors OaGymPage's ready/unready gating.
 class EgateAppPage extends StatefulWidget {
   const EgateAppPage({super.key});
@@ -33,7 +34,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
   Future<void> _handleLogin() async {
     final sp = ServiceProvider.of(context);
     final alreadyLoggedIn = sp.authService.isLoggedIn;
-    await presentLoginPage(context);
+    await startUniAuthLogin(context);
     if (!mounted) return;
     if (alreadyLoggedIn && sp.authService.isLoggedIn) {
       unawaited(_openThirdPartyAccounts());
@@ -167,11 +168,24 @@ class _EgateAppPageState extends State<EgateAppPage> {
                 }
               },
             )
-          : const BlurredAppBar(title: Text('校园签到')),
+          : BlurredAppBar(
+              title: const Text('校园签到'),
+              actions: [
+                if (isDesktop())
+                  ListenableBuilder(
+                    listenable: Listenable.merge([auth, tpAuth]),
+                    builder: (context, _) => PageRefreshButton(
+                      onRefresh: () => _refresh(service),
+                      enabled: auth.isLoggedIn && tpAuth.hasIdsBinding,
+                      refreshing: _loading,
+                    ),
+                  ),
+              ],
+            ),
       body: ListenableBuilder(
         listenable: Listenable.merge([auth, tpAuth]),
         builder: (context, _) {
-          final ready = auth.isLoggedIn && tpAuth.hasCpdailyBinding;
+          final ready = auth.isLoggedIn && tpAuth.hasIdsBinding;
           if (!ready) {
             return ListView(
               padding: EdgeInsets.fromLTRB(16, topInset + 16, 16, 120),
@@ -189,21 +203,21 @@ class _EgateAppPageState extends State<EgateAppPage> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          auth.isLoggedIn ? '需要绑定 eGate 账号' : '需要先登录 TechPie',
+                          auth.isLoggedIn ? '需要绑定 IDS 账号' : '需要先登录 TechPie',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         const SizedBox(height: 8),
                         Text(
                           auth.isLoggedIn
-                              ? '校园签到复用 eGate 绑定的校园网登录态，请在「第三方账号」中绑定 eGate 后再使用。'
-                              : '校园签到复用 eGate 绑定的校园网登录态，不需要单独保存密码。',
+                              ? '校园签到复用 IDS 绑定的校园网登录态，请在「第三方账号」中绑定 IDS 后再使用。'
+                              : '校园签到复用 IDS 绑定的校园网登录态，不需要单独保存密码。',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 16),
                         FilledButton.icon(
                           onPressed: _handleLogin,
                           icon: const Icon(Icons.login),
-                          label: Text(auth.isLoggedIn ? '去绑定 eGate' : '去登录'),
+                          label: Text(auth.isLoggedIn ? '去绑定 IDS' : '去登录'),
                         ),
                       ],
                     ),
@@ -225,7 +239,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
             });
           }
 
-          return RefreshIndicator(
+          return PageRefreshIndicator(
             onRefresh: () async => _refresh(service),
             child: ListView(
               padding: EdgeInsets.fromLTRB(16, topInset + 16, 16, 120),

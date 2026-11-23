@@ -1,4 +1,4 @@
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../utils/platform.dart';
@@ -24,15 +24,14 @@ class AdaptiveSwitch extends StatelessWidget {
       );
     }
 
-    return SizedBox(
-      width: 52,
+    // UISwitch on iOS 26+; CNSwitch falls back to CupertinoSwitch before that.
+    // It sizes its own platform view from the height, so it is not boxed.
+    return CNSwitch(
+      value: value,
+      enabled: enabled,
+      onChanged: onChanged,
       height: iosMinimumInteractiveDimension,
-      child: Center(
-        child: CupertinoSwitch(
-          value: value,
-          onChanged: enabled ? onChanged : null,
-        ),
-      ),
+      color: Theme.of(context).colorScheme.primary,
     );
   }
 }

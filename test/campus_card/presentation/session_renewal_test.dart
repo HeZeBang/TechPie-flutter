@@ -544,7 +544,7 @@ void main() {
     final originalElement = tester.element(page);
     final container = ProviderScope.containerOf(originalElement);
     expect(find.byKey(const Key('payment-code-qr')), findsOneWidget);
-    container.read(manualOfflineModeProvider.notifier).setEnabled(true);
+    await container.read(manualOfflineModeProvider.notifier).setEnabled(true);
     await container
         .read(paymentCodeControllerProvider.notifier)
         .enter(online: false);

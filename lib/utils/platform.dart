@@ -1,8 +1,12 @@
+import 'dart:io';
+
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
-const MethodChannel _platformChannel = MethodChannel('techpie/platform');
+import '../services/campus_user_agent.dart';
 
 const double iosMinimumInteractiveDimension = 44;
 
@@ -12,17 +16,34 @@ bool _supportsIosLiquidGlass = false;
 Future<void> initializePlatformCapabilities() async {
   if (!isIos()) return;
 
-  try {
-    final majorVersion = await _platformChannel.invokeMethod<int>(
-      'iosMajorVersion',
+  _supportsIosLiquidGlass = (PlatformVersion.iosVersion ?? 0) >= 26;
+}
+
+Future<void> initializeCampusUserAgent() async {
+  final package = await PackageInfo.fromPlatform();
+  final scale = WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+  if (isIos()) {
+    final info = (await const MethodChannel('techpie/platform')
+        .invokeMapMethod<String, dynamic>('getUserAgentInfo'))!;
+    CampusUserAgent.value = CampusUserAgent.format(
+      version: package.version, build: package.buildNumber,
+      device: info['device'] as String, system: info['system'] as String,
+      systemVersion: info['systemVersion'] as String,
+      scale: (info['scale'] as num).toDouble(),
     );
-    _supportsIosLiquidGlass = (majorVersion ?? 0) >= 26;
-  } on PlatformException {
-    _supportsIosLiquidGlass = false;
-  } on MissingPluginException {
-    _supportsIosLiquidGlass = false;
+  } else {
+    CampusUserAgent.value = CampusUserAgent.format(
+      version: package.version, build: package.buildNumber,
+      device: Platform.operatingSystem, system: Platform.operatingSystem,
+      systemVersion: Platform.operatingSystemVersion.replaceAll(RegExp(r'[()\r\n]'), ''),
+      scale: scale,
+    );
   }
 }
+
+/// Tests run with no native runtime to ask; this picks the chrome they see.
+@visibleForTesting
+set debugUsesIosLiquidGlass(bool value) => _supportsIosLiquidGlass = value;
 
 /// Check if the current platform is iOS and not web.
 bool isIos() => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
@@ -35,6 +56,16 @@ bool usesLegacyIosChrome() => isIos() && !_supportsIosLiquidGlass;
 
 /// Height for the app's top chrome, matching roomier iOS 26 toolbar controls.
 double adaptiveTopBarHeight() => usesIosLiquidGlass() ? 64.0 : kToolbarHeight;
+
+/// Check if the current platform is native Linux, independently of window size.
+bool isLinux() => !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
+
+/// Check if the current platform is a native desktop target.
+bool isDesktop() =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows);
 
 /// Check if the current platform is Android and not web.
 bool isAndroid() => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;

@@ -65,7 +65,13 @@ function readAppVersion() {
         `so stores and iOS get a numeric build number.`,
     );
   }
-  return { name, code };
+  // hvigor/restool rewrites the packed versionName to digits and dots only, so a
+  // pre-release name would reach the store as `1.0.4.7` (measured: `1.0.4-rc.7`
+  // packs as `1.0.4.7`). Android and iOS never stamp the suffix either — the
+  // store version is X.Y.Z everywhere and `+B` is what tells builds apart — so
+  // strip it here rather than let the toolchain flatten it into a third shape.
+  const storeName = name.split('-')[0];
+  return { name, storeName, code };
 }
 
 /// AppScope/app.json5 — bundle identity plus the version pubspec declares.
@@ -76,10 +82,10 @@ function generateAppManifest() {
     throw new Error(`Template not found: ${templatePath}`);
   }
 
-  const { name, code } = readAppVersion();
+  const { storeName, code } = readAppVersion();
   let content = readFileSync(templatePath, 'utf8');
   content = content
-    .replaceAll('__APP_VERSION_NAME__', name)
+    .replaceAll('__APP_VERSION_NAME__', storeName)
     .replaceAll('__APP_VERSION_CODE__', String(code));
   if (content.includes('__APP_VERSION_')) {
     throw new Error(`Unsubstituted version placeholder in ${templatePath}`);
@@ -98,8 +104,8 @@ function generateBuildProfile() {
     // Drop the signing block and the product's reference to it: hvigor then has
     // nothing to sign with and writes `entry-default-unsigned.hap`.
     content = content
-      .replace(/"signingConfigs":\s*\[[\s\S]*?\n    \],\n/, '')
-      .replace(/"signingConfig": "default",\n/, '');
+      .replace(/"signingConfigs":\s*\[[\s\S]*?\r?\n    \],\r?\n/, '')
+      .replace(/"signingConfig": "default",\r?\n/, '');
     if (content.includes('signingConfig')) {
       throw new Error('Could not strip the signing block from the template');
     }

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/course.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
+import '../models/graduate_schedule.dart' show graduateSemesterPrefix;
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
 import '../utils/platform.dart';
@@ -40,6 +41,8 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
   final _teachers = TextEditingController();
 
   late ScheduleService _schedule;
+  late int _campusAccountRevision;
+  late bool _openedForGraduate;
   List<Period> _periods = const [];
   late int _totalWeeks;
 
@@ -72,7 +75,9 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     _initialized = true;
 
     _schedule = ServiceProvider.of(context).scheduleService;
+    _campusAccountRevision = _schedule.campusAccountRevision;
     _semesterId = _schedule.selectedSemesterId;
+    _openedForGraduate = _semesterId?.startsWith(graduateSemesterPrefix) == true;
     _loadSemesterContext(_semesterId);
 
     final existing = widget.course;
@@ -163,17 +168,14 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
 
   String get _weeksSummary {
     if (_weeks.isEmpty) return '';
-    final ranges = formatWeekRanges(_weeks.toList()..sort())
-        .replaceAll('-', '~')
-        .replaceAll(', ', '、')
-        .replaceAll('周', '');
+    final ranges = formatWeekRanges(_weeks.toList()..sort()).replaceAll('周', '');
     return '第 $ranges 周';
   }
 
   String get _weekdaySummary {
     final days = _effectiveWeekdays;
     if (days.isEmpty) return '';
-    return '周${days.map((day) => _weekdayLabels[day - 1].substring(1)).join('、')}';
+    return '周${days.map((day) => _weekdayLabels[day - 1].substring(1)).join(', ')}';
   }
 
   /// Null when the timetable is shorter than the period asked for.
@@ -232,7 +234,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         title: '上课日期',
         selection: () => pending,
         builder: (_) => SizedBox(
-          height: 200,
+          height: 216,
           child: CupertinoDatePicker(
             mode: CupertinoDatePickerMode.date,
             initialDateTime: initialDate,
@@ -254,20 +256,10 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
   }
 
   Future<void> _pickTime({required bool isStart}) async {
-    var pending = isStart ? _startTime : _endTime;
-    final picked = await showSchedulePickerSheet<TimeOfDay>(
+    final picked = await showScheduleTimePicker(
       context: context,
+      initialTime: isStart ? _startTime : _endTime,
       title: isStart ? '开始时间' : '结束时间',
-      selection: () => pending,
-      builder: (_) => SizedBox(
-        height: 200,
-        child: CupertinoDatePicker(
-          mode: CupertinoDatePickerMode.time,
-          use24hFormat: true,
-          initialDateTime: DateTime(2026, 1, 1, pending.hour, pending.minute),
-          onDateTimeChanged: (date) => pending = TimeOfDay.fromDateTime(date),
-        ),
-      ),
     );
     if (picked == null || !mounted) return;
     setState(() {
@@ -279,10 +271,25 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     });
   }
 
+  bool _checkGraduateAccount(String? semesterId) {
+    if ((_openedForGraduate || semesterId?.startsWith(graduateSemesterPrefix) == true) &&
+        _campusAccountRevision != _schedule.campusAccountRevision) {
+      showAdaptiveFeedback(
+        context: context,
+        message: '学校账号已切换，请重新打开课程编辑页',
+        style: AdaptiveFeedbackStyle.error,
+      );
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     final name = _name.text.trim();
     final semesterId = _semesterId;
+    if (!_checkGraduateAccount(semesterId)) return;
+    final periodTime = PeriodCourseTime(startPeriod: _startPeriod, endPeriod: _endPeriod);
 
     final problem = switch (true) {
       _ when name.isEmpty => '请填写课程名称',
@@ -291,6 +298,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
       _ when !_isOneOff && _weeks.isEmpty => '请至少选择一周',
       _ when _effectiveWeekdays.isEmpty => '请至少选择一个星期',
       _ when _timeMode == 0 && _periods.isEmpty => '该学期没有可用的节次信息',
+      _ when _timeMode == 0 && periodTime.clockRange(_periods) == null => '请选择有效的上课节次',
       _
           when _timeMode == 1 &&
               (_endTime.hour * 60 + _endTime.minute) <=
@@ -320,10 +328,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         // disagree with it later.
         weekdays: _isOneOff ? const [] : (_weekdays.toList()..sort()),
         time: _timeMode == 0
-            ? PeriodCourseTime(
-                startPeriod: _startPeriod,
-                endPeriod: _endPeriod,
-              )
+            ? periodTime
             : ClockCourseTime(
                 startTime: _formatTime(_startTime),
                 endTime: _formatTime(_endTime),
@@ -332,6 +337,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         date: _isOneOff ? _date : null,
         color: _color,
       ),
+      periods: _periods,
     );
     if (!mounted) return;
     Navigator.pop(context);
@@ -341,6 +347,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     final semesterId = _originSemesterId ?? _semesterId;
     final id = _id;
     if (semesterId == null || id == null) return;
+    if (!_checkGraduateAccount(semesterId)) return;
 
     await _schedule.deleteCustomCourse(semesterId, id);
     if (!mounted) return;
@@ -512,7 +519,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                 child: TextButton.icon(
                   onPressed: () => setState(() => _scheduleMode = _isOneOff ? 0 : 1),
                   icon: Icon(_isOneOff ? Icons.repeat : Icons.event_outlined, size: 18),
-                  label: Text(_isOneOff ? '按周重复' : '只上一次'),
+                  label: Text(_isOneOff ? '按周重复' : '自定义日期'),
                 ),
               ),
             ],
@@ -676,6 +683,8 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                 value: value,
                 placeholder: placeholder,
                 width: double.infinity,
+                // A display field: tapping opens the period wheel sheet.
+                useIosNativeMenu: false,
                 onChanged: (_) {},
               ),
             ),
@@ -742,6 +751,8 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
           value: value,
           placeholder: placeholder,
           width: double.infinity,
+          // A display field: tapping opens the semester wheel sheet.
+          useIosNativeMenu: false,
           onChanged: onChanged,
         ),
       ),

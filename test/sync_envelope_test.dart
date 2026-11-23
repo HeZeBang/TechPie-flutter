@@ -24,7 +24,7 @@ ThirdPartyAccount _acc({
 
 void main() {
   group('SyncSchema.migrate', () {
-    test('v0 bare array is wrapped into a v2 envelope', () {
+    test('v0 bare array is wrapped into the current envelope', () {
       final v0 = jsonEncode([
         {'platform': 'gradescope', 'account': 'a', 'token': 't1'},
       ]);
@@ -39,7 +39,7 @@ void main() {
       expect(env.accounts.first.deviceId, '');
     });
 
-    test('v1 envelope (no tombstones) migrates to v2 with empty tombstones', () {
+    test('v1 envelope migrates to the current schema with empty tombstones', () {
       final v1 = jsonEncode({
         'v': 1,
         'accounts': [
@@ -52,12 +52,12 @@ void main() {
       expect(env.tombstones, isEmpty);
     });
 
-    test('v2 envelope round-trips accounts + tombstones', () {
+    test('current envelope round-trips accounts + tombstones', () {
       final original = SyncEnvelope(
         v: SyncSchema.current,
         accounts: [
           _acc(
-            platform: ThirdPartyPlatform.cpdaily,
+            platform: ThirdPartyPlatform.ids,
             token: 'tgc',
             updatedAt: DateTime.utc(2026, 1, 2),
             deviceId: 'devA',
@@ -82,10 +82,15 @@ void main() {
     });
 
     test('a newer build\'s fields survive decode, merge and encode', () {
-      // v4 is not a version this build knows: it is read as far as it can be
+      // A future version is read as far as it can be
       // understood, and the part it cannot read is carried, not dropped.
       final decoded = SyncSchema.migrate(
-        jsonDecode('{"v":4,"futureField":{"a":1},"accounts":[],"tombstones":[]}'),
+        {
+          'v': SyncSchema.current + 1,
+          'futureField': {'a': 1},
+          'accounts': <dynamic>[],
+          'tombstones': <dynamic>[],
+        },
       )!;
       expect(decoded.v, SyncSchema.current);
       expect(decoded.unknown, {
@@ -247,7 +252,7 @@ void main() {
         v: SyncSchema.current,
         accounts: [
           _acc(
-            platform: ThirdPartyPlatform.cpdaily,
+            platform: ThirdPartyPlatform.ids,
             token: 'A',
             updatedAt: ts,
             deviceId: 'aaa',
@@ -259,7 +264,7 @@ void main() {
         v: SyncSchema.current,
         accounts: [
           _acc(
-            platform: ThirdPartyPlatform.cpdaily,
+            platform: ThirdPartyPlatform.ids,
             token: 'B',
             updatedAt: ts,
             deviceId: 'zzz',
@@ -278,7 +283,7 @@ void main() {
         v: SyncSchema.current,
         accounts: [
           _acc(
-            platform: ThirdPartyPlatform.cpdaily,
+            platform: ThirdPartyPlatform.ids,
             token: 'legacy',
             updatedAt: ts,
             deviceId: '',
@@ -290,7 +295,7 @@ void main() {
         v: SyncSchema.current,
         accounts: [
           _acc(
-            platform: ThirdPartyPlatform.cpdaily,
+            platform: ThirdPartyPlatform.ids,
             token: 'real',
             updatedAt: ts,
             deviceId: 'dev',

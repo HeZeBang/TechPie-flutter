@@ -9,7 +9,9 @@ import 'package:webview_flutter/webview_flutter.dart' show WebViewCookie;
 import '../models/feature.dart';
 import '../services/service_provider.dart';
 import '../services/webview_bridge.dart';
+import '../utils/platform.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'campus_session_handle.dart';
 import 'generic_webview_page.dart';
 
@@ -62,6 +64,24 @@ mixin BhWebViewHost<T extends StatefulWidget> on State<T>
 
   /// Whether the native bar above the page is currently shown.
   bool get hostNavBarVisible => _navBarVisible;
+
+  PreferredSizeWidget? buildHostNavigationBar(String fallbackTitle) {
+    if (!hostNavBarVisible) return null;
+    final title = hostPageTitle ?? fallbackTitle;
+    return isIos()
+        ? IosNativeNavigationBar(
+            title: title,
+            leadingItems: const [
+              IosNativeNavigationBarItem(
+                id: 'back',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+              ),
+            ],
+            onItemPressed: (_) => closeWebView(),
+          )
+        : AppBar(title: Text(title), centerTitle: true);
+  }
 
   /// Runs JavaScript in the page this host drives.
   Future<void> runPageJavaScript(String script);

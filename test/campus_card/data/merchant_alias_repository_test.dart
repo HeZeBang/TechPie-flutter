@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:techpie/features/campus_card/data/repositories/merchant_alias_repository.dart';
 import 'package:techpie/features/campus_card/domain/models/merchant_alias_models.dart';
+import 'package:techpie/services/api_base_url.dart';
 
 Map<String, Object?> entry(
   String merchant, {
@@ -278,6 +279,59 @@ void main() {
     addTearDown(repository.dispose);
     await repository.initialize();
     expect(repository.current.resolve('A', null), isNotNull);
+  });
+
+  test('endpoint resolver follows apiBaseUrl switch and ignores stale target',
+      () async {
+    var useLocalhost = false;
+    final requestedUrls = <Uri>[];
+    final staleResponse = Completer<http.Response>();
+    final staleStarted = Completer<void>();
+    final repository = MerchantAliasRepository(
+      cache: _Cache(null),
+      endpoint: () => Uri.parse(
+        '${useLocalhost ? localApiBaseUrl : prodApiBaseUrl}/campus-card/merchant-aliases.json',
+      ),
+      client: MockClient((request) async {
+        requestedUrls.add(request.url);
+        if (requestedUrls.length == 1) {
+          return http.Response(config([entry('PROD')], version: 1), 200);
+        }
+        if (requestedUrls.length == 2) {
+          staleStarted.complete();
+          return staleResponse.future;
+        }
+        return http.Response(config([entry('LOCAL')], version: 2), 200);
+      }),
+    );
+    addTearDown(repository.dispose);
+
+    await repository.initialize();
+    expect(
+      requestedUrls.first,
+      Uri.parse('$prodApiBaseUrl/campus-card/merchant-aliases.json'),
+    );
+    expect(repository.current.resolve('PROD', null), isNotNull);
+
+    // Switch target while a refresh is in flight; stale response is discarded.
+    final staleRefresh = repository.refresh();
+    await staleStarted.future;
+    useLocalhost = true;
+    staleResponse.complete(
+      http.Response(config([entry('STALE')], version: 99), 200),
+    );
+    await staleRefresh;
+    expect(repository.current.version, 1);
+    expect(repository.current.resolve('STALE', null), isNull);
+
+    // Subsequent refresh queries the local API base URL.
+    await repository.refresh();
+    expect(
+      requestedUrls.last,
+      Uri.parse('$localApiBaseUrl/campus-card/merchant-aliases.json'),
+    );
+    expect(repository.current.version, 2);
+    expect(repository.current.resolve('LOCAL', null), isNotNull);
   });
 }
 

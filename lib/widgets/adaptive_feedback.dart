@@ -120,7 +120,7 @@ class AdaptiveFeedbackHostState extends State<AdaptiveFeedbackHost>
         onAction: onAction,
       );
     });
-    _controller.forward(from: _controller.value == 0 ? 0 : _controller.value);
+    unawaited(_controller.forward(from: _controller.value == 0 ? 0 : _controller.value));
     _dismissTimer = Timer(duration, dismiss);
   }
 
@@ -132,6 +132,12 @@ class AdaptiveFeedbackHostState extends State<AdaptiveFeedbackHost>
         if (mounted && _dismissTimer == null) setState(() => _entry = null);
       }),
     );
+  }
+
+  void _runAction(_FeedbackEntry entry) {
+    if (!identical(_entry, entry) || _dismissTimer == null) return;
+    entry.onAction?.call();
+    if (identical(_entry, entry)) dismiss();
   }
 
   @override
@@ -250,10 +256,7 @@ class _FeedbackBanner extends StatelessWidget {
           if (entry.actionLabel != null) ...[
             const SizedBox(width: 8),
             TextButton(
-              onPressed: () {
-                entry.onAction?.call();
-                adaptiveFeedbackHostKey.currentState?.dismiss();
-              },
+              onPressed: () => adaptiveFeedbackHostKey.currentState?._runAction(entry),
               child: Text(entry.actionLabel!),
             ),
           ],

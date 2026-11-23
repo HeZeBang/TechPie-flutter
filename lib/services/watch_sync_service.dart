@@ -12,6 +12,7 @@ import '../features/campus_card/domain/models/card_models.dart';
 import '../features/campus_card/domain/models/offline_models.dart';
 import '../features/campus_card/domain/ports/card_ports.dart';
 import '../features/campus_card/domain/ports/credential_store.dart';
+import 'api_base_url.dart';
 
 final class WatchSyncEvent {
   const WatchSyncEvent(
@@ -23,12 +24,14 @@ final class WatchSyncEvent {
 
 /// The phone remains the only authority for shared watch credentials and data.
 final class WatchSyncService extends ChangeNotifier {
-  WatchSyncService(this._runtime, this._session, {MethodChannel? channel})
-      : _channel = channel ?? const MethodChannel('techpie/watch');
+  WatchSyncService(this._runtime, this._session, {MethodChannel? channel, Uri Function()? sessionEndpoint})
+      : _channel = channel ?? const MethodChannel('techpie/watch'),
+        _sessionEndpoint = sessionEndpoint ?? (() => Uri.parse('$prodApiBaseUrl/auth/third-party/ecard'));
 
   final AppRuntime _runtime;
   final SessionCredentialStore _session;
   final MethodChannel _channel;
+  final Uri Function() _sessionEndpoint;
   final _mutex = AsyncMutex();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   bool _disposed = false;
@@ -154,9 +157,11 @@ final class WatchSyncService extends ChangeNotifier {
         final epoch = _epoch;
         String? openID;
         String? verifiedID;
+        String? verifiedCardID;
         try {
           openID = await _session.readOpenId();
           verifiedID = await _session.readVerifiedIdSerial();
+          verifiedCardID = await _session.readVerifiedCardId();
         } catch (_) {
           _notice('请解锁手机后重新同步', error: true);
           if (!_disposed) notifyListeners();
@@ -177,12 +182,13 @@ final class WatchSyncService extends ChangeNotifier {
           if (!_disposed) notifyListeners();
           return;
         }
-        if (verifiedID == null) {
+        if (verifiedID == null || verifiedCardID == null) {
           _notice(enabled ? '正在等待校园卡身份恢复，已保留手表授权' : '请先在手机完成校园卡身份校验', error: true);
           if (!_disposed) notifyListeners();
           return;
         }
         final showProgress = enroll || refresh;
+        final endpoint = _sessionEndpoint();
         if (showProgress) {
           busy = true;
           _record(enroll ? '正在准备手表授权' : '正在更新卡片与离线授权');
@@ -236,10 +242,13 @@ final class WatchSyncService extends ChangeNotifier {
               epoch != _epoch ||
               await _session.readOpenId() != openID ||
               await _session.readOpenIdChannel() != channel ||
-              await _session.readVerifiedIdSerial() != verifiedID) {
+              await _session.readVerifiedIdSerial() != verifiedID ||
+              await _session.readVerifiedCardId() != verifiedCardID ||
+              _sessionEndpoint() != endpoint) {
             return;
           }
           final previousRevision = status['revision'];
+          final exportOnline = card.status.permitsPayment && endpoint.scheme == 'https';
           final value =
               await _channel.invokeMapMethod<String, dynamic>('publish', {
             'enroll': enroll,
@@ -255,6 +264,15 @@ final class WatchSyncService extends ChangeNotifier {
               'permitsPayment': card.status.permitsPayment,
             },
             'credential': grant?.toMessage(),
+            'onlineAccount': exportOnline
+                ? {
+                    'openID': openID,
+                    'method': channel.method,
+                    'idSerial': verifiedID,
+                    'cardID': verifiedCardID,
+                    'sessionEndpoint': endpoint.toString(),
+                  }
+                : null,
           });
           if (_disposed || epoch != _epoch) return;
           status = value ?? {};
@@ -264,7 +282,9 @@ final class WatchSyncService extends ChangeNotifier {
           }
           if (!showProgress && hasError && status['revision'] == previousRevision) return;
           _notice(grant == null
-              ? '卡片信息已发送；请在手机开通或续期离线授权后同步'
+              ? exportOnline
+                  ? '在线码授权已发送；离线码需在手机开通或续期后同步'
+                  : '卡片信息已发送；请在手机开通或续期离线授权后同步'
               : isAcknowledged
                   ? '手表已确认同步'
                   : '已发送，等待手表确认',);

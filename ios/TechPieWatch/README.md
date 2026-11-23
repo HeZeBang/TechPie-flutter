@@ -8,10 +8,12 @@ the phone and embedded watch app remain aligned.
 
 The home screen opens a native vertical `TabView` inside a `NavigationStack`.
 The system owns back navigation. Payment uses a transparent, zero-padding deep-red
-binary QR; tapping the QR or caption regenerates it locally. A valid code is
-prepared on foreground entry; periodic generation runs only on the active payment
-page. Brief inactivity, page previews and Always On retain the rendered code and
-card information. Renewal replaces the image only when the new one is ready;
+binary QR; tapping the QR or caption refreshes it. Settings saves the default
+online/offline mode. The watch requests online codes independently and refreshes
+them every 30 seconds while visible. Without network access, it uses a valid
+offline grant; reconnection restores the selected default. Brief inactivity,
+page previews and Always On retain offline codes and card information.
+Renewal replaces the offline image only when the new one is ready;
 revocation, expiry or an account switch clears it. Card data contains the holder name, student ID,
 balance in fen, and the phone fetch time.
 
@@ -19,9 +21,9 @@ balance in fen, and the phone fetch time.
 
 1. Install the phone and watch apps, and open TechPie on the watch.
 2. In the phone's Settings, open Apple Watch and enable the campus card.
-3. The phone must have a verified campus-card identity and an offline authorization.
-   It sends a complete matching key/authorization bundle to the enrolled watch
-   installation. Missing/expired credentials still allow card information to sync.
+3. The phone sends the verified card's OPENID, login channel and HTTPS API endpoint
+   to the enrolled watch. A valid offline authorization is optional for online
+   codes and required for offline codes.
 4. Phone card refreshes and successful authorization renewals trigger sync.
    “更新并同步” refreshes the card and attempts renewal when due. The watch stores
    the version atomically in Keychain and acknowledges it before the phone reports
@@ -35,8 +37,8 @@ merely because an older revision was acknowledged.
 
 Both devices share the existing private key and author info. The phone derives
 the offline protocol's one-byte SM3/XOR device checksum, so the watch produces
-the same time field without receiving the raw campus-card OpenID. No login
-identifier, session cookie or SSO credential is exported.
+the same time field. The enrolled watch stores OPENID in device-only Keychain
+and acquires its own session. Phone cookies and SSO credentials stay on the phone.
 Only unlimited grants with a known expiry are eligible for watch export. The
 upstream inclusive UTC expiry is sent as the next day's exclusive boundary.
 A bounded/undated grant requires phone-side renewal; the watch invents no allowance.
@@ -61,7 +63,7 @@ it contains no identity or credential values.
 ## Validation
 
 Run `swift test --package-path ios/WatchSupport` for signature interoperability,
-binary QR, expiry, credential matching and snapshot version tests. Flutter tests
+binary QR, expiry, credential matching, snapshot version and online requests. Flutter tests
 in `test/watch_sync_service_test.dart` cover enrollment and account/disable races.
 Actual background delivery and payment acceptance require paired physical devices.
 Simulator arguments `--watch-preview --preview-pay` / `--preview-info` exist only

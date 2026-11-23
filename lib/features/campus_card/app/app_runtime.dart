@@ -1,3 +1,4 @@
+import '../application/campus_network_status.dart';
 import '../application/offline_payment_service.dart';
 import '../application/payment_code_controller.dart';
 import '../application/scan_payment_controller.dart';
@@ -27,6 +28,7 @@ final class AppRuntime {
     required this.feedback,
     this.merchantAliases = const EmptyMerchantAliasPort(),
     this.scanner,
+    this.networkStatus,
     this.disposeRuntime,
   });
 
@@ -45,6 +47,7 @@ final class AppRuntime {
   final FeedbackPort feedback;
   final MerchantAliasPort merchantAliases;
   final ScannerPort? scanner;
+  final CampusNetworkStatus? networkStatus;
   final Future<void> Function()? disposeRuntime;
 
   PaymentCodeExperienceController createPaymentCodeController() =>

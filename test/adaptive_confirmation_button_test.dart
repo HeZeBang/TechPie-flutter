@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/widgets/adaptive_confirmation_button.dart';
 
 void main() {
-  const presenterChannel = MethodChannel('techpie/native_glass_presenter');
+  const presenterChannel = MethodChannel('cn_alert');
 
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
@@ -18,7 +18,7 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(presenterChannel, (call) async {
       nativeCall = call;
-      return 1;
+      return {'index': 1};
     });
     addTearDown(
       () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -45,7 +45,7 @@ void main() {
     await tester.tap(find.text('Logout'));
     await tester.pump();
 
-    expect(nativeCall?.method, 'showAlert');
+    expect(nativeCall?.method, 'show');
     expect(confirmed, isTrue);
     debugDefaultTargetPlatformOverride = null;
   });

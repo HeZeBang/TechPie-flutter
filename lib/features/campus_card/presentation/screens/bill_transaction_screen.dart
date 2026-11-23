@@ -42,7 +42,7 @@ final class BillTransactionScreen extends ConsumerWidget {
                   20,
                   ApplePinnedHeaderLayout.contentTop(context),
                   20,
-                  52,
+                  ApplePinnedHeaderLayout.contentBottom(context, 52),
                 ),
                 sliver: SliverList.list(
                   children: [

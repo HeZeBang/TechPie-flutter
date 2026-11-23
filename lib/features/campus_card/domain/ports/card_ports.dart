@@ -1,9 +1,7 @@
 import '../models/card_models.dart';
-import '../models/profile_models.dart';
 
 abstract interface class CardRepository {
   Future<CampusCard?> currentCard();
-  Future<UserProfile> profile();
   Future<BindCardResult> bind(BindCardCommand command);
   Future<void> unbind({required String cardPassword});
 }

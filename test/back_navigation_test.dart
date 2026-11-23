@@ -29,12 +29,15 @@ void main() {
     // Wide enough for the non-compact layout, and tall enough that the debug
     // tiles at the bottom of the settings list are not under the navigation bar —
     // a tap on an obscured tile does nothing, silently.
-    tester.view.physicalSize = const Size(1200, 1400);
+    tester.view.physicalSize = const Size(1200, 1800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      // These tests are about the shell, not the first-launch consent.
+      'privacy_accepted_v1': true,
+    });
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
     // The settings page hides its debug tiles unless debug mode is on, and those
