@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/assignment.dart';
+import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/pages/assignments_page.dart';
 import 'package:techpie/pages/custom_deadline_editor_page.dart';
@@ -39,9 +40,11 @@ void main() {
   final firstDue = DateTime.utc(2027, 3, 1, 9, 30);
   late StorageService storage;
   late AuthService auth;
+  late ThirdPartyAuthService thirdParty;
   late AssignmentService assignments;
   late DeadlineReminderService reminders;
   late List<Map<Object?, Object?>> exported;
+  late List<String> removed;
   late Map<String, int> nativeCompletions;
   late Set<String> linkedKeys;
   late List<Map<String, String>> writes;
@@ -68,7 +71,7 @@ void main() {
     final http = LoggingHttpClient(logger);
     final uniAuth = UniAuthService();
     auth = AuthService(storage, http, uniAuth);
-    final thirdParty = ThirdPartyAuthService(storage, http);
+    thirdParty = ThirdPartyAuthService(storage, http);
     final schedule = ScheduleService(storage, http, auth, thirdParty);
     now = DateTime.now;
     await storage.saveCachedAssignments([
@@ -92,6 +95,7 @@ void main() {
       now: () => now(),
     )..loadCached();
     exported = [];
+    removed = [];
     nativeCompletions = {};
     linkedKeys = {};
     writes = [];
@@ -100,10 +104,24 @@ void main() {
     denyEdits = false;
     blockedRead = null;
     messenger.setMockMethodCallHandler(channel, (call) async {
-      if (call.method == 'add') {
-        exported = (call.arguments as List).cast<Map<Object?, Object?>>();
-        linkedKeys.addAll(exported.map((item) => item['key'] as String));
-        return {'added': 1, 'existing': 1, 'failed': 0};
+      if (call.method == 'linked') {
+        return (call.arguments as List<Object?>).where(linkedKeys.contains).toList();
+      }
+      if (call.method == 'saveSelection') {
+        final args = call.arguments as Map<Object?, Object?>;
+        exported = (args['add'] as List<Object?>).cast<Map<Object?, Object?>>();
+        removed = (args['remove'] as List<Object?>).cast<String>();
+        final added = <String>[];
+        final existing = <String>[];
+        for (final item in exported) {
+          final key = item['key'] as String;
+          (linkedKeys.add(key) ? added : existing).add(key);
+        }
+        linkedKeys.removeAll(removed);
+        for (final key in removed) {
+          nativeCompletions.remove(key);
+        }
+        return {'added': added, 'existing': existing, 'removed': removed};
       }
       if (call.method == 'change') {
         final changes = (call.arguments as Map).cast<String, String>();
@@ -173,11 +191,11 @@ void main() {
   });
 
   test('exports a single batch with distinct stable keys and original due times', () async {
-    expect(await reminders.add(assignments.assignments), (added: 1, existing: 1, failed: 0));
+    expect(await reminders.add(assignments.assignments), (added: 2, existing: 0, failed: 0));
     final keys = exported.map((item) => item['key']).toList();
     expect(keys.toSet(), hasLength(2));
     expect(exported.first['due'], firstDue.millisecondsSinceEpoch);
-    await reminders.add(assignments.assignments);
+    expect(await reminders.add(assignments.assignments), (added: 0, existing: 2, failed: 0));
     expect(exported.map((item) => item['key']), keys);
   });
 
@@ -377,6 +395,64 @@ void main() {
   });
 
   testWidgets(
+    'rebinding clears normal selection and rejects the old reset callback',
+    (tester) async {
+      final assignment = assignments.assignments.first;
+      Future<void> bindGradescope(String account) async {
+        await thirdParty.replaceAll([
+          ThirdPartyAccount(
+            platform: ThirdPartyPlatform.gradescope,
+            account: account,
+            token: 'test-token',
+            boundAt: firstDue,
+          ),
+        ]);
+        await storage.saveCachedAssignments([assignment.toJson()]);
+        assignments.loadCached();
+      }
+
+      IosNativeNavigationBar bar() => tester
+          .widget<AdaptiveNavigationScaffold>(find.byType(AdaptiveNavigationScaffold))
+          .appBar as IosNativeNavigationBar;
+
+      await bindGradescope('old-account');
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text(assignment.title));
+      await tester.pumpAndSettle();
+      final oldBar = bar();
+      expect(oldBar.selectionMode, isTrue);
+
+      await bindGradescope('new-account');
+      final replacement = assignments.assignments.single;
+      final newKey = assignments.reminderKeyFor(replacement);
+      await reminders.add([replacement]);
+      nativeCompletions[newKey] = 100;
+      reminders.initialize();
+      await tester.pumpAndSettle();
+      expect(bar().selectionMode, isFalse);
+      expect(assignments.isCompleted(replacement), isTrue);
+
+      await tester.tap(find.text('已完成 (1)'));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text(replacement.title));
+      await tester.pumpAndSettle();
+      expect(bar().selectionMode, isTrue);
+
+      oldBar.onMenuSelected!('selectionMore', 'resetSelected');
+      await tester.pumpAndSettle();
+      expect(assignments.isCompleted(replacement), isTrue);
+      expect(writes, isEmpty);
+
+      bar().onMenuSelected!('selectionMore', 'resetSelected');
+      await tester.pumpAndSettle();
+      expect(assignments.isCompleted(replacement), isFalse);
+      expect(writes, [{newKey: 'reopen'}]);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
     'removes the reminder only if a swipe is left without undo',
     (tester) async {
       now = tester.binding.clock.now;
@@ -466,38 +542,87 @@ void main() {
   );
 
   testWidgets(
-    'adds selected deadlines from the overflow menu on both Apple platforms',
+    'manages linked reminders and saves removals with no remaining selection',
     (tester) async {
+      tester.view.physicalSize = const Size(1100, 950);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final firstKey = assignments.reminderKeyFor(assignments.assignments.first);
+      final secondKey = assignments.reminderKeyFor(assignments.assignments.last);
+      linkedKeys.addAll([firstKey, 'unrelated']);
+
+      final isIos = defaultTargetPlatform == TargetPlatform.iOS;
+      IosNativeNavigationBar bar() =>
+          tester.widget<AdaptiveNavigationScaffold>(find.byType(AdaptiveNavigationScaffold)).appBar
+              as IosNativeNavigationBar;
+
+      Future<void> openSelection() async {
+        if (isIos) {
+          final more = bar().trailingItems.single;
+          expect(
+            more.menuItems.expand((item) => item.children).map((item) => item.title),
+            contains('添加到提醒事项'),
+          );
+          bar().onMenuSelected!(more.id, 'manageReminders');
+        } else {
+          await tester.tap(find.byType(PopupMenuButton<String>));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('添加到提醒事项'));
+        }
+        await tester.pumpAndSettle();
+      }
+
+      bool canSave() => isIos
+          ? bar().trailingItems.singleWhere((item) => item.id == 'saveReminders').enabled
+          : tester.widget<TextButton>(find.widgetWithText(TextButton, '保存')).onPressed != null;
+
+      Future<void> save() async {
+        expect(canSave(), isTrue);
+        if (isIos) {
+          bar().onItemPressed!('saveReminders');
+        } else {
+          await tester.tap(find.text('保存'));
+        }
+        await tester.pumpAndSettle();
+      }
+
       await tester.pumpWidget(buildPage());
       await tester.pumpAndSettle();
-      if (defaultTargetPlatform == TargetPlatform.iOS) {
-        IosNativeNavigationBar bar() => tester
-            .widget<AdaptiveNavigationScaffold>(
-              find.byType(AdaptiveNavigationScaffold),
-            )
-            .appBar as IosNativeNavigationBar;
-        final more = bar().trailingItems.single;
-        expect(
-          more.menuItems.expand((item) => item.children).map((item) => item.title),
-          contains('添加到提醒事项'),
-        );
-        bar().onMenuSelected!(more.id, 'addReminders');
-        await tester.pumpAndSettle();
-        bar().onItemPressed!('toggleSelectAll');
-        await tester.pumpAndSettle();
-        bar().onItemPressed!('confirmAddReminders');
+      await openSelection();
+      expect(find.byIcon(Icons.check_circle), findsOneWidget);
+      expect(find.byIcon(Icons.radio_button_unchecked), findsOneWidget);
+      expect(canSave(), isFalse);
+      await tester.tap(find.byIcon(Icons.check_circle));
+      await tester.pumpAndSettle();
+      expect(canSave(), isTrue);
+      if (isIos) {
+        bar().onItemPressed!('cancelSelection');
       } else {
-        await tester.tap(find.byType(PopupMenuButton<String>));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('添加到提醒事项'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('全选'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('添加'));
+        await tester.tap(find.byTooltip('退出多选'));
       }
       await tester.pumpAndSettle();
-      expect(exported, hasLength(2));
-      expect(find.text('已选择 2 个'), findsNothing);
+      expect(linkedKeys, {firstKey, 'unrelated'});
+
+      await openSelection();
+      await tester.tap(find.byIcon(Icons.radio_button_unchecked));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.check_circle).first);
+      await tester.pumpAndSettle();
+      await save();
+      expect(exported.map((item) => item['key']), [secondKey]);
+      expect(removed, [firstKey]);
+      expect(linkedKeys, {secondKey, 'unrelated'});
+
+      await openSelection();
+      expect(find.byIcon(Icons.check_circle), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.check_circle));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.check_circle), findsNothing);
+      await save();
+      expect(exported, isEmpty);
+      expect(removed, [secondKey]);
+      expect(linkedKeys, {'unrelated'});
     },
     variant: const TargetPlatformVariant({TargetPlatform.iOS, TargetPlatform.macOS}),
   );

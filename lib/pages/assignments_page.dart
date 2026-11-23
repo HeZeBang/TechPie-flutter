@@ -31,20 +31,26 @@ class AssignmentsPage extends StatefulWidget {
   State<AssignmentsPage> createState() => _AssignmentsPageState();
 }
 
-enum _SelectionPurpose { manage, addReminders }
+enum _SelectionPurpose { manage, reminders }
 
 class _AssignmentsPageState extends State<AssignmentsPage> {
   bool _pastCollapsed = true;
   bool _completedCollapsed = true;
   _SelectionPurpose? _selectionPurpose;
-  bool _addingReminders = false;
+  AssignmentService? _assignmentService;
+  int? _manageSelectionEpoch;
+  int? _reminderSelectionEpoch;
+  bool _savingReminders = false;
   bool _showAssignments = true;
   bool _showExams = true;
   final Set<String> _selected = {};
+  final Set<String> _initialReminderKeys = {};
   Timer? _countdownTimer;
 
   bool get _selectionMode => _selectionPurpose != null;
-  bool get _selectingReminders => _selectionPurpose == _SelectionPurpose.addReminders;
+  bool get _selectingReminders => _selectionPurpose == _SelectionPurpose.reminders;
+  bool get _loadingReminders => _selectingReminders && _reminderSelectionEpoch == null;
+  bool get _remindersBusy => _loadingReminders || _savingReminders;
 
   @override
   void initState() {
@@ -64,6 +70,12 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final service = ServiceProvider.of(context).assignmentService;
+    if (!identical(_assignmentService, service)) {
+      _assignmentService?.removeListener(_onAssignmentServiceChanged);
+      _assignmentService = service..addListener(_onAssignmentServiceChanged);
+      if (_selectionPurpose == _SelectionPurpose.manage) _clearSelection();
+    }
     // ignore: deprecated_member_use
     final isVisible = TickerMode.of(context);
     if (isVisible) {
@@ -78,50 +90,85 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
 
   @override
   void dispose() {
+    _assignmentService?.removeListener(_onAssignmentServiceChanged);
     _countdownTimer?.cancel();
     super.dispose();
   }
 
-  void _exitSelection() {
-    if (_addingReminders) return;
-    setState(() {
-      _selectionPurpose = null;
-      _selected.clear();
-    });
+  void _onAssignmentServiceChanged() {
+    if (_selectionPurpose == _SelectionPurpose.manage &&
+        _manageSelectionEpoch != _assignmentService?.identityEpoch) {
+      setState(_clearSelection);
+    }
   }
 
-  void _enterSelectionWith(String key) {
+  void _exitSelection() {
+    if (_remindersBusy) return;
+    setState(_clearSelection);
+  }
+
+  void _clearSelection() {
+    _selectionPurpose = null;
+    _manageSelectionEpoch = null;
+    _selected.clear();
+    _initialReminderKeys.clear();
+    _reminderSelectionEpoch = null;
+  }
+
+  void _enterSelectionWith(AssignmentService service, String key, int epoch) {
+    if (_selectionMode ||
+        !identical(_assignmentService, service) ||
+        epoch != service.identityEpoch) {
+      return;
+    }
     setState(() {
       _selectionPurpose = _SelectionPurpose.manage;
+      _manageSelectionEpoch = epoch;
       _selected.add(key);
     });
   }
 
-  void _enterReminderSelection() {
-    setState(() {
-      _selectionPurpose = _SelectionPurpose.addReminders;
-      _selected.clear();
-    });
+  Future<void> _enterReminderSelection(
+    AssignmentService service,
+    DeadlineReminderService? reminders,
+    List<Assignment> visible,
+  ) async {
+    if (_selectionMode || reminders == null || visible.isEmpty) return;
+    final epoch = service.identityEpoch;
+    final keys = visible.map(service.reminderKeyFor).toSet();
+    setState(() => _selectionPurpose = _SelectionPurpose.reminders);
+    try {
+      final linked = await reminders.linkedKeys(keys, epoch: epoch);
+      if (!mounted) return;
+      setState(() {
+        _reminderSelectionEpoch = epoch;
+        _initialReminderKeys.addAll(linked);
+        _selected.addAll(linked);
+      });
+    } on Exception catch (error) {
+      if (!mounted) return;
+      setState(_clearSelection);
+      _showReminderError(error, '无法读取提醒事项');
+    }
   }
 
   void _toggleSelection(String key) {
-    if (_addingReminders) return;
+    if (_remindersBusy) return;
     setState(() {
       if (_selected.remove(key)) {
-        if (_selected.isEmpty && !_selectingReminders) _selectionPurpose = null;
+        if (_selected.isEmpty && !_selectingReminders) _clearSelection();
       } else {
         _selected.add(key);
       }
     });
   }
 
-  void _selectAll(List<Assignment> all) {
-    if (_addingReminders) return;
+  void _selectAll(Set<String> allKeys) {
+    if (_remindersBusy || allKeys.isEmpty) return;
     setState(() {
-      final allKeys = all.map(AssignmentOverrides.keyFor).toSet();
       if (allKeys.every(_selected.contains)) {
         _selected.clear();
-        if (!_selectingReminders) _selectionPurpose = null;
+        if (!_selectingReminders) _clearSelection();
       } else {
         _selected
           ..clear()
@@ -137,73 +184,82 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       _selected
         ..clear()
         ..addAll(next);
-      if (_selected.isEmpty) _selectionPurpose = null;
+      if (_selected.isEmpty) _clearSelection();
     });
   }
 
-  Future<void> _resetSelected(AssignmentService service) async {
+  Future<void> _resetSelected(AssignmentService service, int? epoch) async {
+    if (_selectionPurpose != _SelectionPurpose.manage ||
+        !identical(_assignmentService, service) ||
+        _manageSelectionEpoch != epoch ||
+        service.identityEpoch != epoch ||
+        _selected.isEmpty) {
+      return;
+    }
     await service.resetOverrides(_selected.toList());
-    _exitSelection();
+    if (mounted &&
+        identical(_assignmentService, service) &&
+        _manageSelectionEpoch == epoch) {
+      _exitSelection();
+    }
   }
 
-  Future<void> _addSelectedReminders(
+  Future<void> _saveReminderSelection(
     DeadlineReminderService reminders,
-    List<Assignment> visible,
+    Set<String> visibleKeys,
   ) async {
-    if (_addingReminders) return;
-    final selected = visible
-        .where((item) => _selected.contains(AssignmentOverrides.keyFor(item)))
-        .toList();
-    if (selected.isEmpty) return;
+    final epoch = _reminderSelectionEpoch;
+    if (_remindersBusy || epoch == null) return;
+    final add = _selected.difference(_initialReminderKeys).intersection(visibleKeys);
+    final remove = _initialReminderKeys.difference(_selected).intersection(visibleKeys);
+    if (add.isEmpty && remove.isEmpty) return;
 
-    setState(() => _addingReminders = true);
-    var finished = false;
+    setState(() => _savingReminders = true);
     try {
-      final result = await reminders.add(selected);
+      final result = await reminders.saveSelection(epoch: epoch, add: add, remove: remove);
       if (!mounted) return;
+      setState(() {
+        if (result.failed == 0) {
+          _clearSelection();
+        } else {
+          _initialReminderKeys
+            ..addAll(result.added)
+            ..addAll(result.existing)
+            ..removeAll(result.removed);
+        }
+      });
       final message = [
-        if (result.added > 0) '已添加 ${result.added} 项',
-        if (result.existing > 0) '${result.existing} 项已在提醒事项中',
-        if (result.failed > 0) '${result.failed} 项添加失败',
+        if (result.added.isNotEmpty) '已添加 ${result.added.length} 项',
+        if (result.removed.isNotEmpty) '已移除 ${result.removed.length} 项',
+        if (result.existing.isNotEmpty) '${result.existing.length} 项已在提醒事项中',
+        if (result.failed > 0) '${result.failed} 项保存失败',
       ].join('，');
       showAdaptiveFeedback(
         context: context,
         message: message,
-        style: result.failed > 0
-            ? AdaptiveFeedbackStyle.error
-            : AdaptiveFeedbackStyle.success,
+        style: result.failed > 0 ? AdaptiveFeedbackStyle.error : AdaptiveFeedbackStyle.success,
       );
-      finished = result.failed == 0;
-    } on PlatformException catch (error) {
+    } on Exception catch (error) {
       if (!mounted) return;
-      final message = switch (error.code) {
-        'reminders_denied' => '请在系统设置中允许 TechPie 访问提醒事项',
-        'reminders_no_list' => '找不到可写入的提醒事项列表',
-        _ => '无法添加到提醒事项',
-      };
-      showAdaptiveFeedback(
-        context: context,
-        message: message,
-        style: AdaptiveFeedbackStyle.error,
-      );
-    } on MissingPluginException {
-      if (!mounted) return;
-      showAdaptiveFeedback(
-        context: context,
-        message: '当前设备无法添加到提醒事项',
-        style: AdaptiveFeedbackStyle.error,
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _addingReminders = false;
-          if (finished) {
-            _selectionPurpose = null;
-            _selected.clear();
-          }
-        });
+      if (error is PlatformException && error.code == 'reminders_workspace_changed') {
+        setState(_clearSelection);
       }
+      _showReminderError(error, '无法保存提醒事项');
+    } finally {
+      if (mounted) setState(() => _savingReminders = false);
     }
+  }
+
+  void _showReminderError(Exception error, String fallback) {
+    final message = switch (error) {
+      PlatformException(code: 'reminders_denied') => '请在系统设置中允许 TechPie 访问提醒事项',
+      PlatformException(code: 'reminders_no_list') => '找不到可写入的提醒事项列表',
+      PlatformException(code: 'reminders_list_creation_failed') => '无法创建 Deadline 提醒事项列表',
+      PlatformException(code: 'reminders_workspace_changed') => '当前账户已切换，请重新选择提醒事项',
+      MissingPluginException() => '当前设备无法访问提醒事项',
+      _ => fallback,
+    };
+    showAdaptiveFeedback(context: context, message: message, style: AdaptiveFeedbackStyle.error);
   }
 
   Future<void> _refresh(AssignmentService service) async {
@@ -265,7 +321,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     DeadlineReminderService? reminders,
     List<Assignment> visible,
   ) {
-    final canAddReminders = reminders != null && visible.isNotEmpty;
+    final canManageReminders = reminders != null && visible.isNotEmpty;
     if (isIos()) {
       return IosNativeNavigationBar(
         title: 'Deadlines',
@@ -298,9 +354,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                     title: '添加 Deadline',
                     sfSymbol: 'plus',
                   ),
-                  if (canAddReminders)
+                  if (canManageReminders)
                     const IosNativeNavigationBarMenuItem(
-                      value: 'addReminders',
+                      value: 'manageReminders',
                       title: '添加到提醒事项',
                       sfSymbol: 'list.bullet.circle',
                     ),
@@ -321,8 +377,8 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               _toggleExamsVisibility();
             case 'addDeadline':
               unawaited(CustomDeadlineEditorPage.open(context));
-            case 'addReminders':
-              if (canAddReminders) _enterReminderSelection();
+            case 'manageReminders':
+              unawaited(_enterReminderSelection(service, reminders, visible));
             case 'hidden':
               unawaited(
                 pushAdaptivePage<void>(
@@ -354,8 +410,8 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                 _toggleExamsVisibility();
               case 'addDeadline':
                 unawaited(CustomDeadlineEditorPage.open(context));
-              case 'addReminders':
-                if (canAddReminders) _enterReminderSelection();
+              case 'manageReminders':
+                unawaited(_enterReminderSelection(service, reminders, visible));
               case 'hidden':
                 unawaited(
                   pushAdaptivePage<void>(
@@ -389,11 +445,11 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             ),
             if (reminders != null)
               PopupMenuItem(
-                value: 'addReminders',
-                enabled: canAddReminders,
+                value: 'manageReminders',
+                enabled: canManageReminders,
                 child: const Row(
                   children: [
-                    Icon(Icons.playlist_add, size: 20),
+                    Icon(Icons.checklist, size: 20),
                     SizedBox(width: 12),
                     Text('添加到提醒事项'),
                   ],
@@ -434,16 +490,14 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   void _toggleAssignmentsVisibility() {
     setState(() {
       _showAssignments = !_showAssignments;
-      _selectionPurpose = null;
-      _selected.clear();
+      _clearSelection();
     });
   }
 
   void _toggleExamsVisibility() {
     setState(() {
       _showExams = !_showExams;
-      _selectionPurpose = null;
-      _selected.clear();
+      _clearSelection();
     });
   }
 
@@ -452,14 +506,23 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     List<Assignment> visible,
     DeadlineReminderService? reminders,
   ) {
-    final selectedCount =
-        visible.where((item) => _selected.contains(AssignmentOverrides.keyFor(item))).length;
-    final allSelected = visible.isNotEmpty && selectedCount == visible.length;
-    final title = _selectingReminders && selectedCount == 0 ? '选择截止事项' : '已选择 $selectedCount 个';
-    final VoidCallback? add = reminders != null && selectedCount > 0 && !_addingReminders
-        ? () => unawaited(_addSelectedReminders(reminders, visible))
-        : null;
-    final addLabel = _addingReminders ? '添加中…' : '添加';
+    final manageEpoch = _manageSelectionEpoch;
+    final keyFor = _selectingReminders ? service.reminderKeyFor : AssignmentOverrides.keyFor;
+    final visibleKeys = visible.map(keyFor).toSet();
+    final selectedCount = visibleKeys.intersection(_selected).length;
+    final allSelected = visibleKeys.isNotEmpty && selectedCount == visibleKeys.length;
+    final title = _loadingReminders
+        ? '正在读取提醒事项…'
+        : _selectingReminders && selectedCount == 0
+            ? '选择截止事项'
+            : '已选择 $selectedCount 个';
+    final hasChanges =
+        visibleKeys.any((key) => _selected.contains(key) != _initialReminderKeys.contains(key));
+    final VoidCallback? save =
+        _selectingReminders && reminders != null && hasChanges && !_remindersBusy
+            ? () => unawaited(_saveReminderSelection(reminders, visibleKeys))
+            : null;
+    final saveLabel = _savingReminders ? '保存中…' : '保存';
     if (isIos()) {
       return IosNativeNavigationBar(
         title: title,
@@ -470,23 +533,23 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             title: '取消',
             accessibilityLabel: '退出多选',
             placementGroup: 'leading-main',
-            enabled: !_addingReminders,
+            enabled: !_remindersBusy,
           ),
         ],
         trailingItems: [
           IosNativeNavigationBarItem(
             id: 'toggleSelectAll',
             title: allSelected ? '全不选' : '全选',
-            enabled: visible.isNotEmpty && !_addingReminders,
+            enabled: visibleKeys.isNotEmpty && !_remindersBusy,
             accessibilityLabel: allSelected ? '全不选' : '全选',
             placementGroup: 'selection-actions',
           ),
           if (_selectingReminders)
             IosNativeNavigationBarItem(
-              id: 'confirmAddReminders',
-              title: addLabel,
-              accessibilityLabel: addLabel,
-              enabled: add != null,
+              id: 'saveReminders',
+              title: saveLabel,
+              accessibilityLabel: saveLabel,
+              enabled: save != null,
               role: IosNativeNavigationBarItemRole.done,
               placementGroup: 'selection-actions',
             )
@@ -516,9 +579,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             case 'cancelSelection':
               _exitSelection();
             case 'toggleSelectAll':
-              if (visible.isNotEmpty) _selectAll(visible);
-            case 'confirmAddReminders':
-              add?.call();
+              _selectAll(visibleKeys);
+            case 'saveReminders':
+              save?.call();
           }
         },
         onMenuSelected: (_, value) {
@@ -526,9 +589,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             case 'invertSelection':
               _invertSelection(visible);
             case 'resetSelected':
-              if (_selected.isNotEmpty) {
-                unawaited(_resetSelected(service));
-              }
+              unawaited(_resetSelected(service, manageEpoch));
           }
         },
       );
@@ -537,7 +598,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     return BlurredAppBar(
       leading: IconButton(
         icon: const Icon(Icons.close),
-        onPressed: _addingReminders ? null : _exitSelection,
+        onPressed: _remindersBusy ? null : _exitSelection,
         tooltip: '退出多选',
       ),
       title: Text(title),
@@ -545,10 +606,10 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
         IconButton(
           icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
           tooltip: allSelected ? '全不选' : '全选',
-          onPressed: _addingReminders ? null : () => _selectAll(visible),
+          onPressed: _remindersBusy || visibleKeys.isEmpty ? null : () => _selectAll(visibleKeys),
         ),
         if (_selectingReminders)
-          TextButton(onPressed: add, child: Text(addLabel))
+          TextButton(onPressed: save, child: Text(saveLabel))
         else ...[
           IconButton(
             icon: const Icon(Icons.flip_to_front),
@@ -558,7 +619,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
           IconButton(
             icon: const Icon(Icons.restart_alt),
             tooltip: '重置状态',
-            onPressed: _selected.isEmpty ? null : () => unawaited(_resetSelected(service)),
+            onPressed: _selected.isEmpty
+                ? null
+                : () => unawaited(_resetSelected(service, manageEpoch)),
           ),
         ],
       ],
@@ -810,7 +873,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     Assignment a,
   ) {
     final key = AssignmentOverrides.keyFor(a);
-    final selected = _selected.contains(key);
+    final epoch = service.identityEpoch;
+    final selectionKey = _selectingReminders ? service.reminderKeyFor(a) : key;
+    final selected = _selected.contains(selectionKey);
     final completed = service.isCompleted(a);
     final scheme = Theme.of(context).colorScheme;
 
@@ -819,9 +884,11 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       completed: completed,
       hasOverride: service.hasCompletionOverride(a),
       selected: selected,
-      selectionMode: _selectionMode,
-      onTap: () => unawaited(_onTapItem(context, service, a, key)),
-      onLongPress: _selectionMode ? null : () => _enterSelectionWith(key),
+      selectionMode: _selectionMode && !_loadingReminders,
+      onTap: () => unawaited(_onTapItem(context, service, a, selectionKey)),
+      onLongPress: _selectionMode
+          ? null
+          : () => _enterSelectionWith(service, key, epoch),
     );
 
     final inner = _selectionMode

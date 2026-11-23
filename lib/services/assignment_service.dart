@@ -68,9 +68,10 @@ class AssignmentService extends ChangeNotifier {
   String? get error => _error;
   Map<String, String> get platformErrors => Map.unmodifiable(_platformErrors);
 
-  bool isCompleted(Assignment a) => _overrides.effectiveCompleted(a);
+  bool isCompleted(Assignment a) =>
+      _overrides.effectiveCompleted(a, reminderKey: reminderKeyFor(a));
   bool hasCompletionOverride(Assignment a) =>
-      _overrides.hasCompletionOverride(a);
+      _overrides.hasCompletionOverride(a, reminderKey: reminderKeyFor(a));
   bool isHidden(Assignment a) => _overrides.isHidden(a);
 
   CustomDeadline? findCustomDeadline(String id) => _customDeadlines?[id];
@@ -84,14 +85,25 @@ class AssignmentService extends ChangeNotifier {
     );
   }
 
-  String scopedKeyFor(Assignment assignment) => jsonEncode([
-        _primaryIdentity,
-        _sourceIdentities[_sourcePlatform(assignment)],
+  String scopedKeyFor(Assignment assignment) => _scopedAssignmentKey(
         AssignmentOverrides.keyFor(assignment),
+        assignment.platform,
+      );
+
+  String _scopedAssignmentKey(String key, String platform) => jsonEncode([
+        _primaryIdentity,
+        _sourceIdentities[_sourcePlatform(platform)],
+        key,
       ]);
 
   String reminderKeyFor(Assignment assignment) =>
       _hash(scopedKeyFor(assignment));
+
+  String? _reminderKeyForOverride(String key) {
+    final separator = key.indexOf(':');
+    if (separator < 0) return null;
+    return _hash(_scopedAssignmentKey(key, key.substring(0, separator)));
+  }
 
   ({
     Map<String, DeadlineReminderChange> changes,
@@ -141,7 +153,7 @@ class AssignmentService extends ChangeNotifier {
       _hash(jsonEncode([_primaryIdentity, source, _sourceIdentities[source]]));
 
   String _overrideReminderKey(Assignment assignment, String reminderKey) =>
-      '${_reminderSourceScope(_sourcePlatform(assignment))}:$reminderKey';
+      '${_reminderSourceScope(_sourcePlatform(assignment.platform))}:$reminderKey';
 
   // Retry changes from the current account and bindings even when a refresh
   // or semester switch has removed the original assignment from the list.
@@ -150,7 +162,7 @@ class AssignmentService extends ChangeNotifier {
     final scopes = {
       'custom',
       ...ThirdPartyPlatform.values.map((platform) => platform.id),
-      ..._remoteAssignments.map(_sourcePlatform),
+      ..._remoteAssignments.map((assignment) => _sourcePlatform(assignment.platform)),
     }.map(_reminderSourceScope).toSet();
     return {
       for (final storedKey in storedKeys)
@@ -160,10 +172,10 @@ class AssignmentService extends ChangeNotifier {
     };
   }
 
-  static String _sourcePlatform(Assignment assignment) =>
-      (assignment.platform == 'blackboard' || assignment.platform == 'exam')
+  static String _sourcePlatform(String platform) =>
+      (platform == 'blackboard' || platform == 'exam')
           ? ThirdPartyPlatform.ids.id
-          : assignment.platform;
+          : platform;
 
   AssignmentService(
     this._storage,
@@ -222,7 +234,7 @@ class AssignmentService extends ChangeNotifier {
         _remoteAssignments = primaryChanged
             ? const []
             : _remoteAssignments
-                .where((a) => !changed.contains(_sourcePlatform(a)))
+                .where((a) => !changed.contains(_sourcePlatform(a.platform)))
                 .toList();
         if (primaryChanged) {
           _loadCustomDeadlines();
@@ -304,6 +316,7 @@ class AssignmentService extends ChangeNotifier {
     _cacheHydrated = true;
     _hasCachedData = _storage.hasCachedAssignments;
     _overrides = _storage.loadAssignmentOverrides();
+    _migrateLegacyReminderCompletions();
     _remoteAssignments = _storage
         .loadCachedAssignments()
         .map(Assignment.fromJson)
@@ -311,6 +324,37 @@ class AssignmentService extends ChangeNotifier {
     _loadCustomDeadlines();
     _rebuildAssignments();
     notifyListeners();
+  }
+
+  void _migrateLegacyReminderCompletions() {
+    if (_overrides.reminderCompletions.isEmpty) return;
+    final migrated = <String, String>{};
+    for (final entry in _overrides.completed.entries) {
+      if (!entry.value) continue;
+      final reminderKey = _reminderKeyForOverride(entry.key);
+      if (reminderKey != null &&
+          _overrides.reminderCompletions.containsKey(reminderKey)) {
+        migrated[entry.key] = reminderKey;
+      }
+    }
+    if (migrated.isEmpty) return;
+
+    // Older builds stored Apple completions under an unscoped assignment key.
+    // Move entries we can match to a reminder and preserve the other overrides.
+    for (final entry in migrated.entries) {
+      _overrides.scopedCompleted.putIfAbsent(entry.value, () => true);
+      _overrides.completed.remove(entry.key);
+    }
+    unawaited(
+      _writes.protect(() async {
+        if (_disposed) return;
+        try {
+          await _storage.saveAssignmentOverrides(_overrides);
+        } catch (error) {
+          debugPrint('Could not migrate legacy reminder completions: $error');
+        }
+      }),
+    );
   }
 
   void _loadCustomDeadlines() {
@@ -424,16 +468,16 @@ class AssignmentService extends ChangeNotifier {
           !mapEquals(_overrides.reminderRemovals, updated.reminderRemovals)) {
         _reminderChangesRevision++;
       }
-      if (epoch == _identityEpoch) {
-        _overrides = updated;
-      } else {
-        _overrides.reminderChanges
-          ..clear()
-          ..addAll(updated.reminderChanges);
-        _overrides.reminderRemovals
-          ..clear()
-          ..addAll(updated.reminderRemovals);
-      }
+      _overrides = epoch == _identityEpoch
+          ? updated
+          : AssignmentOverrides(
+              completed: _overrides.completed,
+              hidden: _overrides.hidden,
+              scopedCompleted: updated.scopedCompleted,
+              reminderCompletions: updated.reminderCompletions,
+              reminderChanges: updated.reminderChanges,
+              reminderRemovals: updated.reminderRemovals,
+            );
       notifyListeners();
     });
   }
@@ -462,11 +506,12 @@ class AssignmentService extends ChangeNotifier {
 
   Future<void> _setOverrideCompletion(Assignment a, {bool? completed}) =>
       _mutateOverrides((overrides) {
-        final key = AssignmentOverrides.keyFor(a);
-        final previous = overrides.effectiveCompleted(a);
+        final key = reminderKeyFor(a);
+        final previous = overrides.effectiveCompleted(a, reminderKey: key);
         final next = completed ?? !previous;
-        if (overrides.completed[key] == next) return false;
-        overrides.completed[key] = next;
+        if (overrides.scopedCompleted[key] == next) return false;
+        overrides.scopedCompleted[key] = next;
+        overrides.completed.remove(AssignmentOverrides.keyFor(a));
         if (previous != next) {
           _recordReminderCompletion(overrides.reminderChanges, a, next);
         }
@@ -548,8 +593,8 @@ class AssignmentService extends ChangeNotifier {
         if (previous != null && previous >= completedAt) continue;
         overrides.reminderCompletions[entry.key] = completedAt;
         recorded = true;
-        if (!overrides.effectiveCompleted(assignment)) {
-          overrides.completed[AssignmentOverrides.keyFor(assignment)] = true;
+        if (!overrides.effectiveCompleted(assignment, reminderKey: entry.key)) {
+          overrides.scopedCompleted[entry.key] = true;
         }
       }
       return recorded;
@@ -584,11 +629,14 @@ class AssignmentService extends ChangeNotifier {
 
   Future<void> resetOverrides(Iterable<String> keys) =>
       _mutateOverrides((overrides) {
-        final removed = <String, bool>{
-          for (final key in keys.toSet())
-            if (overrides.completed.remove(key) case final completed?)
-              key: completed,
-        };
+        final removed = <String, bool>{};
+        for (final key in keys.toSet()) {
+          final reminderKey = _reminderKeyForOverride(key);
+          if (reminderKey == null) continue;
+          final scoped = overrides.scopedCompleted.remove(reminderKey);
+          final legacy = overrides.completed.remove(key);
+          if ((scoped ?? legacy) case final completed?) removed[key] = completed;
+        }
         for (final assignment in _remoteAssignments) {
           final previous = removed[AssignmentOverrides.keyFor(assignment)];
           if (previous != null && previous != assignment.submitted) {

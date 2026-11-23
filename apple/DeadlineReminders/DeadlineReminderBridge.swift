@@ -7,6 +7,10 @@ import Flutter
 #endif
 
 final class DeadlineReminderBridge {
+  private static let listTitle = "Deadline"
+  // The previous key could contain a list found by its title alone.
+  private static let listIdentifierKey = "TechPieCreatedDeadlineReminderListIdentifier"
+
   private enum Change: String {
     case complete
     case reopen
@@ -35,7 +39,7 @@ final class DeadlineReminderBridge {
   private lazy var store = EKEventStore()
   private var channel: FlutterMethodChannel?
   private var changeObserver: NSObjectProtocol?
-  private var adding = false
+  private var savingSelection = false
   private let scheme = Bundle.main.object(forInfoDictionaryKey: "TechPieWidgetURLScheme")
     as? String ?? "techpie"
 
@@ -51,12 +55,21 @@ final class DeadlineReminderBridge {
     channel.setMethodCallHandler { [weak self] call, result in
       guard let self else { result(nil); return }
       switch call.method {
-      case "add":
-        guard let entries = call.arguments as? [[String: Any]] else {
+      case "linked":
+        guard let keys = call.arguments as? [String] else {
           result(self.error("reminders_invalid_arguments"))
           return
         }
-        self.add(entries, result: result)
+        self.linked(keys: Set(keys), result: result)
+      case "saveSelection":
+        guard let arguments = call.arguments as? [String: Any],
+          let entries = arguments["add"] as? [[String: Any]],
+          let removedKeys = arguments["remove"] as? [String]
+        else {
+          result(self.error("reminders_invalid_arguments"))
+          return
+        }
+        self.saveSelection(entries, removing: Set(removedKeys), result: result)
       case "completed":
         guard let keys = call.arguments as? [String] else {
           result(self.error("reminders_invalid_arguments"))
@@ -125,6 +138,34 @@ final class DeadlineReminderBridge {
     }
   }
 
+  private func fetchWithAccess(
+    result: @escaping FlutterResult, completion: @escaping ([EKReminder]) -> Void
+  ) {
+    requestAccess { granted in
+      guard granted else {
+        result(self.error("reminders_denied"))
+        return
+      }
+      self.fetchReminders { reminders in
+        guard self.hasAccess else {
+          result(self.error("reminders_denied"))
+          return
+        }
+        guard let reminders else {
+          result(self.error("reminders_unavailable"))
+          return
+        }
+        completion(reminders)
+      }
+    }
+  }
+
+  private func linked(keys: Set<String>, result: @escaping FlutterResult) {
+    fetchWithAccess(result: result) { reminders in
+      result(Array(keys.intersection(reminders.compactMap(self.key(for:)))))
+    }
+  }
+
   private func completed(keys: Set<String>, result: @escaping FlutterResult) {
     guard hasAccess, !keys.isEmpty else {
       result([String: Int64]())
@@ -152,8 +193,10 @@ final class DeadlineReminderBridge {
       switch change {
       case .complete, .reopen:
         let completed = change == .complete
-        guard reminder.isCompleted != completed else { return }
-        reminder.isCompleted = completed
+        let completionChanged = reminder.isCompleted != completed
+        if completionChanged { reminder.isCompleted = completed }
+        let alarmRestored = !completed && self.restoreDueAlarm(on: reminder)
+        guard completionChanged || alarmRestored else { return }
         try self.store.save(reminder, commit: true)
       case .remove:
         try self.store.remove(reminder, commit: true)
@@ -185,60 +228,67 @@ final class DeadlineReminderBridge {
         result(self.error("reminders_unavailable"))
         return
       }
-      var failed = Set<String>()
-      for reminder in reminders {
-        guard let key = self.key(for: reminder), keys.contains(key) else { continue }
-        do {
-          try apply(reminder, key)
-        } catch {
-          failed.insert(key)
-        }
-      }
-      result(Array(keys.subtracting(failed)))
+      result(Array(self.apply(to: reminders, keys: keys, mutation: apply)))
     }
   }
 
-  private func add(_ entries: [[String: Any]], result: @escaping FlutterResult) {
-    guard !adding else {
+  private func apply(
+    to reminders: [EKReminder], keys: Set<String>,
+    mutation: (EKReminder, String) throws -> Void
+  ) -> Set<String> {
+    var failed = Set<String>()
+    for reminder in reminders {
+      guard let key = self.key(for: reminder), keys.contains(key) else { continue }
+      do {
+        try mutation(reminder, key)
+      } catch {
+        failed.insert(key)
+      }
+    }
+    return keys.subtracting(failed)
+  }
+
+  private func saveSelection(
+    _ entries: [[String: Any]], removing removedKeys: Set<String>, result: @escaping FlutterResult
+  ) {
+    guard !savingSelection else {
       result(error("reminders_busy"))
       return
     }
-    adding = true
+    savingSelection = true
     let finish: FlutterResult = { value in
-      self.adding = false
+      self.savingSelection = false
       result(value)
     }
-    requestAccess { granted in
-      guard granted else {
-        finish(self.error("reminders_denied"))
-        return
-      }
-      self.fetchReminders { reminders in
-        guard let reminders else {
-          finish(self.error("reminders_unavailable"))
-          return
-        }
-        self.save(entries, existingKeys: Set(reminders.compactMap(self.key(for:))), result: finish)
-      }
+    fetchWithAccess(result: finish) { reminders in
+      self.save(entries, removing: removedKeys, from: reminders, result: finish)
     }
   }
 
   private func save(
-    _ entries: [[String: Any]], existingKeys: Set<String>, result: FlutterResult
+    _ entries: [[String: Any]], removing removedKeys: Set<String>,
+    from reminders: [EKReminder], result: FlutterResult
   ) {
-    let list = store.defaultCalendarForNewReminders()
-    var keys = existingKeys
-    var added = 0
-    var existing = 0
-    var failed = 0
+    let existingKeys = Set(reminders.compactMap(key(for:)))
+    var list: EKCalendar?
+    var added = Set<String>()
+    var existing = Set<String>()
     for entry in entries {
-      guard let key = entry["key"] as? String, !key.isEmpty, let details = Details(entry) else {
-        failed += 1
+      guard let key = entry["key"] as? String, !key.isEmpty,
+        !removedKeys.contains(key), let details = Details(entry)
+      else { continue }
+      if existingKeys.contains(key) {
+        existing.insert(key)
         continue
       }
-      if keys.contains(key) {
-        existing += 1
-        continue
+      if added.contains(key) { continue }
+      if list == nil {
+        do {
+          list = try resolveDeadlineList()
+        } catch {
+          result(self.error("reminders_list_creation_failed"))
+          return
+        }
       }
       guard let list, list.allowsContentModifications else {
         result(error("reminders_no_list"))
@@ -253,13 +303,50 @@ final class DeadlineReminderBridge {
 
       do {
         try store.save(reminder, commit: true)
-        keys.insert(key)
-        added += 1
+        added.insert(key)
       } catch {
-        failed += 1
+        continue
       }
     }
-    result(["added": added, "existing": existing, "failed": failed])
+    let removed = apply(to: reminders, keys: removedKeys) { reminder, _ in
+      try self.store.remove(reminder, commit: true)
+    }
+    result(["added": Array(added), "existing": Array(existing), "removed": Array(removed)])
+  }
+
+  private func resolveDeadlineList() throws -> EKCalendar? {
+    let lists = store.calendars(for: .reminder).filter(\.allowsContentModifications)
+    let defaults = UserDefaults.standard
+    if let identifier = defaults.string(forKey: Self.listIdentifierKey),
+      let list = lists.first(where: { $0.calendarIdentifier == identifier }) {
+      return list
+    }
+
+    let defaultSource = store.defaultCalendarForNewReminders()?.source
+    let sources = store.sources
+    guard let source = defaultSource ?? lists.first?.source
+      ?? sources.first(where: { $0.sourceType == .calDAV })
+      ?? sources.first(where: { $0.sourceType == .local }) else { return nil }
+
+    let list = EKCalendar(for: .reminder, eventStore: store)
+    list.title = Self.listTitle
+    list.source = source
+    try store.saveCalendar(list, commit: true)
+    defaults.set(list.calendarIdentifier, forKey: Self.listIdentifierKey)
+    return list
+  }
+
+  private func restoreDueAlarm(on reminder: EKReminder) -> Bool {
+    guard !reminder.hasAlarms, let due = date(from: reminder.dueDateComponents),
+      due > Date()
+    else { return false }
+    reminder.addAlarm(EKAlarm(absoluteDate: due))
+    return true
+  }
+
+  private func date(from components: DateComponents?) -> Date? {
+    guard let components else { return nil }
+    return (components.calendar ?? Calendar(identifier: .gregorian)).date(from: components)
   }
 
   private func setDetails(_ details: Details, on reminder: EKReminder) -> Bool {
@@ -271,17 +358,12 @@ final class DeadlineReminderBridge {
       reminder.location = details.location
     }
 
-    let calendar = Calendar(identifier: .gregorian)
-    func date(from components: DateComponents?) -> Date? {
-      guard let components else { return nil }
-      return (components.calendar ?? calendar).date(from: components)
-    }
     let oldDue = date(from: reminder.dueDateComponents)
     let dueChanged = oldDue != details.due
     guard dueChanged || date(from: reminder.startDateComponents) != details.due else {
       return fieldsChanged
     }
-    let components = calendar.dateComponents(
+    let components = Calendar(identifier: .gregorian).dateComponents(
       [.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: details.due)
     reminder.startDateComponents = components
     reminder.dueDateComponents = components

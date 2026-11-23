@@ -260,6 +260,99 @@ void main() {
     });
   }
 
+  test('reminder completion overrides follow the third-party binding', () async {
+    final shared = _assignmentJson(
+      id: 'shared-assignment',
+      platform: 'gradescope',
+      due: DateTime.utc(2027),
+    );
+    final fixture = await _identityFixture(
+      (_, __) => http.Response(
+        jsonEncode({'success': true, 'data': [shared]}),
+        200,
+      ),
+      cached: [shared],
+    );
+    final service = fixture.service;
+    final oldAssignment = service.assignments.single;
+    final oldKey = service.reminderKeyFor(oldAssignment);
+    await service.applyReminderCompletions(
+      {oldKey: (assignment: oldAssignment, completedAt: 100)},
+      epoch: service.identityEpoch,
+    );
+    service.loadCached();
+    expect(service.isCompleted(service.assignments.single), isTrue);
+
+    await fixture.thirdParty.replaceAll([
+      _gradescopeAccount('new-account', 'new-token'),
+    ]);
+    await service.fetchPlatform('gradescope');
+    final newAssignment = service.assignments.single;
+    expect(service.reminderKeyFor(newAssignment), isNot(oldKey));
+    expect(service.isCompleted(newAssignment), isFalse);
+    expect(service.hasCompletionOverride(newAssignment), isFalse);
+    await service.setCompleted(newAssignment, true);
+    await service.clearCompletionOverride(newAssignment);
+    expect(service.isCompleted(newAssignment), isFalse);
+
+    await fixture.thirdParty.replaceAll([
+      _gradescopeAccount('old-account', 'old-token'),
+    ]);
+    await service.fetchPlatform('gradescope');
+    expect(service.isCompleted(service.assignments.single), isTrue);
+  });
+
+  test('scopes matching legacy reminder completions and keeps manual overrides', () async {
+    final fixture = await _identityFixture(
+      (_, __) => http.Response(
+        jsonEncode({
+          'success': true,
+          'data': [
+            _assignmentJson(id: 'old-cache', platform: 'gradescope', due: DateTime.utc(2027)),
+          ],
+        }),
+        200,
+      ),
+    );
+    final service = fixture.service;
+    Assignment gradescopeAssignment() =>
+        service.assignments.singleWhere((a) => a.platform == 'gradescope');
+    final key = service.reminderKeyFor(gradescopeAssignment());
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'assignment_overrides',
+      jsonEncode({
+        'completed': {
+          'gradescope:old-cache': true,
+          'synthetic:unrelated': true,
+          'synthetic:manual-open': false,
+        },
+        'reminderCompletions': {key: 100},
+      }),
+    );
+    service.loadCached();
+    await service.readReminderSyncWork();
+    expect(service.isCompleted(gradescopeAssignment()), isTrue);
+    final unrelated =
+        service.assignments.singleWhere((a) => a.platform == 'synthetic');
+    expect(service.isCompleted(unrelated), isTrue);
+    final saved = fixture.storage.loadAssignmentOverrides();
+    expect(saved.completed, {
+      'synthetic:unrelated': true,
+      'synthetic:manual-open': false,
+    });
+    expect(saved.scopedCompleted, {key: true});
+    expect(saved.reminderCompletions, {key: 100});
+
+    await fixture.thirdParty.replaceAll([
+      _gradescopeAccount('new-account', 'new-token'),
+    ]);
+    await service.fetchPlatform('gradescope');
+    service.loadCached();
+    expect(service.isCompleted(gradescopeAssignment()), isFalse);
+    expect(service.isCompleted(unrelated), isTrue);
+  });
+
   test('a renewal that rotates sid is not an account change', () async {
     var deadlineCalls = 0;
     final fixture = await _identityFixture(

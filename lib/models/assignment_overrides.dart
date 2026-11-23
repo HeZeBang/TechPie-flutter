@@ -5,7 +5,9 @@ typedef ScheduledReminderRemoval = ({String assignmentKey, int after});
 /// Local user-side overrides on top of the deadline data we fetch from
 /// the backend. Stored in SharedPreferences (non-sensitive).
 class AssignmentOverrides {
+  // Legacy local overrides used the platform and assignment ID alone.
   final Map<String, bool> completed;
+  final Map<String, bool> scopedCompleted;
   final Set<String> hidden;
   final Map<String, int> reminderCompletions;
   final Map<String, DeadlineReminderChange> reminderChanges;
@@ -13,11 +15,13 @@ class AssignmentOverrides {
 
   AssignmentOverrides({
     Map<String, bool>? completed,
+    Map<String, bool>? scopedCompleted,
     Set<String>? hidden,
     Map<String, int>? reminderCompletions,
     Map<String, DeadlineReminderChange>? reminderChanges,
     Map<String, ScheduledReminderRemoval>? reminderRemovals,
   })  : completed = completed ?? {},
+        scopedCompleted = scopedCompleted ?? {},
         hidden = hidden ?? {},
         reminderCompletions = reminderCompletions ?? {},
         reminderChanges = reminderChanges ?? {},
@@ -25,6 +29,7 @@ class AssignmentOverrides {
 
   AssignmentOverrides copy() => AssignmentOverrides(
         completed: {...completed},
+        scopedCompleted: {...scopedCompleted},
         hidden: {...hidden},
         reminderCompletions: {...reminderCompletions},
         reminderChanges: {...reminderChanges},
@@ -37,16 +42,18 @@ class AssignmentOverrides {
 
   /// Returns the effective "submitted" state for the assignment, applying
   /// any local override on top of the platform-derived [Assignment.submitted].
-  bool effectiveCompleted(Assignment a) {
-    final ov = completed[keyFor(a)];
-    if (ov != null) return ov;
-    return a.submitted;
-  }
+  bool effectiveCompleted(Assignment a, {String? reminderKey}) =>
+      _completionOverride(a, reminderKey) ?? a.submitted;
 
-  bool hasCompletionOverride(Assignment a) => completed.containsKey(keyFor(a));
+  bool hasCompletionOverride(Assignment a, {String? reminderKey}) =>
+      _completionOverride(a, reminderKey) != null;
+
+  bool? _completionOverride(Assignment a, String? reminderKey) =>
+      scopedCompleted[reminderKey] ?? completed[keyFor(a)];
 
   Map<String, dynamic> toJson() => {
         'completed': completed,
+        'scopedCompleted': scopedCompleted,
         'hidden': hidden.toList(),
         if (reminderCompletions.isNotEmpty)
           'reminderCompletions': reminderCompletions,
@@ -67,15 +74,22 @@ class AssignmentOverrides {
     final h =
         ((json['hidden'] as List?) ?? const []).map((e) => e as String).toSet();
     final reminders = json['reminderCompletions'];
+    final reminderCompletions = {
+      if (reminders is Map<String, dynamic>)
+        for (final entry in reminders.entries)
+          if (entry.value is int) entry.key: entry.value as int,
+    };
+    final scoped = json['scopedCompleted'];
     final removals = json['reminderRemovals'];
     return AssignmentOverrides(
       completed: c,
-      hidden: h,
-      reminderCompletions: {
-        if (reminders is Map<String, dynamic>)
-          for (final entry in reminders.entries)
-            if (entry.value is int) entry.key: entry.value as int,
+      scopedCompleted: {
+        if (scoped is Map<String, dynamic>)
+          for (final entry in scoped.entries)
+            if (entry.value is bool) entry.key: entry.value as bool,
       },
+      hidden: h,
+      reminderCompletions: reminderCompletions,
       reminderChanges: DeadlineReminderChange.decode(json['reminderChanges']),
       reminderRemovals: {
         if (removals is Map<String, dynamic>)
