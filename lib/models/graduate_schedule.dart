@@ -290,15 +290,29 @@ class GraduateSchedule {
     if (records.isEmpty) return null;
     final key = _rowClockKey(row, semesterId);
     if (key == null) return null;
+    final id = _text(row['BJDM']);
     final dates = _parseDates([
       for (final r in records)
-        if (r['bjdm'] == row['BJDM'] && _clockKey(_text(r['bjdm']), r['kssj'], r['jssj']) == key) ...[
+        if (_text(r['bjdm']) == id && _clockKey(id, r['kssj'], r['jssj']) == key) ...[
           if (_text(r['rq']).isNotEmpty) r['rq'],
           if (r['rqs'] is List) ...(r['rqs'] as List),
         ],
     ]);
     if (dates.isEmpty) return null;
-    final segments = termRows.where((r) => _rowClockKey(r, semesterId) == key).toList();
+
+    // Explicitly dated rows already account for their own meetings.
+    final segments = <Map<String, dynamic>>[];
+    final explicitDates = <DateTime>{};
+    for (final segment in termRows) {
+      if (_rowClockKey(segment, semesterId) != key) continue;
+      final segmentDates = _rowDates(segment);
+      if (segmentDates == null) {
+        segments.add(segment);
+      } else {
+        explicitDates.addAll(segmentDates);
+      }
+    }
+    dates.removeWhere(explicitDates.contains);
     if (segments.length == 1) return [for (final date in dates) (date, room)];
 
     final weeks = {
@@ -364,11 +378,15 @@ class GraduateSchedule {
   /// Dated sessions take priority over the published school calendar used for
   /// history with only week numbers.
   DateTime? firstMondayFor(String semesterId) =>
-      _inferFirstMonday(semesterId) ??
+      _inferFirstMonday(semesterId) ?? publishedCalendarFor(semesterId)?.firstMonday;
+
+  ({DateTime firstMonday, int teachingWeeks, int termWeeks})? publishedCalendarFor(
+    String semesterId,
+  ) =>
       switch (rawTerm(semesterId)) {
         // https://www.shanghaitech.edu.cn/2025/0304/c1024a1107931/page.htm
-        '20251' => DateTime(2025, 9, 15),
-        '20252' => DateTime(2026, 3, 2),
+        '20251' => (firstMonday: DateTime(2025, 9, 15), teachingWeeks: 16, termWeeks: 18),
+        '20252' => (firstMonday: DateTime(2026, 3, 2), teachingWeeks: 16, termWeeks: 18),
         _ => null,
       };
 

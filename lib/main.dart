@@ -130,13 +130,6 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // state (throttled). Wired via post-construction setter to avoid a circular
   // dependency between ThirdPartyAuthService and SyncService.
   thirdPartyAuthService.onBindingsChanged = ({force = false}) {
-    // The timetable is drawn from the IDS binding, and `fetchAll` does nothing
-    // at all while there is none — silently, which is how a freshly bound account
-    // used to sit on an empty table with nothing to suggest it should reload. This
-    // runs for every binding, though, and a timetable does not care about
-    // Gradescope: requestFetch is what decides whether the campus account this
-    // data belongs to actually changed, and collapses the burst around a login
-    // into one round.
     scheduleService.requestFetch();
     return force ? syncService.forcePush() : syncService.pushIfDue();
   };

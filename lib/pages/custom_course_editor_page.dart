@@ -280,6 +280,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     if (_saving) return;
     final name = _name.text.trim();
     final semesterId = _semesterId;
+    final periodTime = PeriodCourseTime(startPeriod: _startPeriod, endPeriod: _endPeriod);
 
     final problem = switch (true) {
       _ when name.isEmpty => '请填写课程名称',
@@ -288,6 +289,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
       _ when !_isOneOff && _weeks.isEmpty => '请至少选择一周',
       _ when _effectiveWeekdays.isEmpty => '请至少选择一个星期',
       _ when _timeMode == 0 && _periods.isEmpty => '该学期没有可用的节次信息',
+      _ when _timeMode == 0 && periodTime.clockRange(_periods) == null => '请选择有效的上课节次',
       _
           when _timeMode == 1 &&
               (_endTime.hour * 60 + _endTime.minute) <=
@@ -317,10 +319,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         // disagree with it later.
         weekdays: _isOneOff ? const [] : (_weekdays.toList()..sort()),
         time: _timeMode == 0
-            ? PeriodCourseTime(
-                startPeriod: _startPeriod,
-                endPeriod: _endPeriod,
-              )
+            ? periodTime
             : ClockCourseTime(
                 startTime: _formatTime(_startTime),
                 endTime: _formatTime(_endTime),
@@ -329,6 +328,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         date: _isOneOff ? _date : null,
         color: _color,
       ),
+      periods: _periods,
     );
     if (!mounted) return;
     Navigator.pop(context);

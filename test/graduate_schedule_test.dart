@@ -8,7 +8,9 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/assignment.dart';
 import 'package:techpie/models/campus_identity.dart';
+import 'package:techpie/models/course.dart';
 import 'package:techpie/models/course_table.dart';
+import 'package:techpie/models/custom_course.dart';
 import 'package:techpie/models/graduate_schedule.dart';
 import 'package:techpie/models/ids_passkey.dart';
 import 'package:techpie/models/third_party_account.dart';
@@ -302,6 +304,28 @@ void main() {
         (4, 3, '周三教室'),
       ]),
     );
+  });
+
+  test('explicit and date-level meetings coexist in either row order', () {
+    final raw = fixture();
+    final row = (raw['results'] as List<Map<String, dynamic>>).first;
+    final explicit = {...row, 'RQ': '2026-09-07', 'JASMC': '周一教室'};
+    final recurring = {...row, 'JASMC': '调课教室'};
+    raw['rqpkjgallList'] = [
+      {'bjdm': 'g1', 'kssj': '0815', 'jssj': '0955', 'rqs': ['2026-09-07', '2026-09-08']},
+    ];
+    for (final rows in [[explicit, recurring], [recurring, explicit]]) {
+      final courses = GraduateSchedule.fromJson({...raw, 'results': rows})
+          .tableFor(semester, 'A', firstMonday: DateTime(2026, 9, 7))
+          .courses;
+      expect(
+        courses.map((course) => (course.dates!.single, course.classroom)),
+        unorderedEquals([
+          (DateTime.utc(2026, 9, 7), '周一教室'),
+          (DateTime.utc(2026, 9, 8), '调课教室'),
+        ]),
+      );
+    }
   });
 
   test('today and calendar export include dated courses from both period schemes', () async {
@@ -802,6 +826,80 @@ void main() {
     expect(restored.courseTable!.courses.single.name, '合成研选本课程');
   });
 
+  test('saved and legacy custom courses keep their times across graduate period schemes',
+      () async {
+    final h = await harness(timetable: fixtureWithStart());
+    addTearDown(h.schedule.dispose);
+    await h.schedule.fetchAll();
+    const selectedByPeriod = CustomCourse(
+      id: 'recitation',
+      name: '习题课',
+      weekdays: [1],
+      weeks: [1],
+      time: PeriodCourseTime(startPeriod: 1, endPeriod: 1),
+    );
+    const legacy = CustomCourse(
+      id: 'legacy',
+      name: '已有课程',
+      weekdays: [1],
+      weeks: [1],
+      time: PeriodCourseTime(startPeriod: 2, endPeriod: 2),
+    );
+    await h.storage.saveCustomCourses(semester, [legacy]);
+    await h.schedule.saveCustomCourse(semester, selectedByPeriod);
+
+    final exporter = IcsExportService();
+    for (final scheme in ['A', 'B']) {
+      await h.schedule.selectGraduateScheme(scheme);
+      final table = h.schedule.fullCourseTable!;
+      final periods = table.periods.map((p) => p.toPeriod()).toList();
+      final courses = h.schedule.customCourses;
+      expect(
+        withCustomCourses([], courses, 1, h.schedule.termBegin, periods: periods)
+            .map((course) => (course.name, course.startTime, course.endTime)),
+        unorderedEquals([('习题课', '08:15', '09:00'), ('已有课程', '09:10', '09:55')]),
+      );
+      final events = await exporter.buildCalendarEventPayloads(
+        table: CourseTable(periods: table.periods, courses: []),
+        termBegin: h.schedule.termBegin,
+        customCourses: courses,
+      );
+      expect(
+        events.map((event) => event['startMillis']),
+        unorderedEquals([
+          DateTime.utc(2026, 9, 7, 0, 15).millisecondsSinceEpoch,
+          DateTime.utc(2026, 9, 7, 1, 10).millisecondsSinceEpoch,
+        ]),
+      );
+    }
+  });
+
+  test('published graduate calendars store the teaching and exam weeks for both terms',
+      () async {
+    const terms = ['20251', '20252'];
+    final raw = fixture();
+    raw['results'] = <Map<String, dynamic>>[];
+    raw['xkjgList'] = [
+      for (var i = 0; i < terms.length; i++)
+        {
+          'XNXQDM': terms[i],
+          'XNXQMC': '2025-2026学年 第${i == 0 ? '一' : '二'}学期',
+          'BJDM': 'history-$i',
+          'PKSJDD': '1-16周 星期一[1节]历史教室',
+        },
+    ];
+    final h = await harness(timetable: raw);
+    addTearDown(h.schedule.dispose);
+    await h.schedule.fetchAll();
+    for (final term in terms) {
+      final id = 'graduate:$term';
+      await h.schedule.selectSemester(id);
+      expect(h.schedule.termCalendar?.allTeachWeeks, 16);
+      expect(h.schedule.totalWeeks, 18);
+      expect(h.storage.loadTermCalendar(id)?.allTermWeeks, 18);
+    }
+  });
+
   test('a cached graduate term never reaches EAMS even before identity hydration', () async {
     final h = await harness();
     addTearDown(h.schedule.dispose);
@@ -1086,12 +1184,22 @@ void main() {
     final ids = _FailingIdsClient();
     final h = await harness(graduate: false, idsClient: ids);
     addTearDown(h.schedule.dispose);
-    await h.schedule.fetchAll();
-    expect(h.schedule.error, isNull);
     await h.tp.updateRaw(ThirdPartyPlatform.ids, {});
-    expect(await h.tp.idsNode.renew(), isFalse);
+    h.tp.onBindingsChanged = ({force = false}) async {
+      h.schedule.requestFetch();
+    };
+    final failed = Completer<void>();
+    h.schedule.addListener(() {
+      if (!h.schedule.loading && h.schedule.error != null && !failed.isCompleted) {
+        failed.complete();
+      }
+    });
+    h.schedule.requestFetch(force: true);
+    await failed.future.timeout(const Duration(seconds: 3));
     await Future<void>.delayed(const Duration(milliseconds: 750));
     expect(ids.loginAttempts, 1);
+    await h.schedule.fetchAll();
+    expect(ids.loginAttempts, 2);
   });
 
   for (final endpoint in ['semesters', 'course_table']) {
@@ -1475,6 +1583,69 @@ void main() {
     expect(assignments.platformErrors, isEmpty);
     expect(h.requests, isEmpty);
   });
+
+  for (final pausedEndpoint in ['exam_table', 'blackboard']) {
+    test('switching to graduate discards old exams while $pausedEndpoint is pending',
+        () async {
+      final h = await harness(graduate: false);
+      addTearDown(h.schedule.dispose);
+      await h.schedule.fetchAll();
+      h.overrides['exam_table'] = http.Response(
+        jsonEncode({
+          'success': true,
+          'data': {
+            'semesterId': 'undergrad-term',
+            'exams': [
+              {'courseName': '本科考试', 'examDate': '2026-10-15', 'examTimeRange': '08:15-09:55'},
+            ],
+          },
+        }),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+      h.overrides['blackboard'] = http.Response('{"success":true,"data":[]}', 200);
+      final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule)
+        ..loadCached()
+        ..enableAutoRefetch();
+      addTearDown(assignments.dispose);
+      h.pausedEamsEndpoint = pausedEndpoint;
+      final pending = pausedEndpoint == 'exam_table'
+          ? assignments.fetchPlatform('exam')
+          : assignments.fetchAssignments();
+      await h.eamsEntered.future;
+      if (pausedEndpoint == 'blackboard') {
+        await h.examAnswered.future;
+        await Future<void>.delayed(Duration.zero);
+      }
+      await h.schedule.selectScheduleSource(CampusScheduleSource.graduate);
+      expect(h.schedule.isGraduate, isTrue);
+      h.resumeEams.complete();
+      await pending;
+      expect(assignments.assignments.whereType<ExamAssignment>(), isEmpty);
+      expect(h.storage.loadCachedAssignments().where((a) => a['platform'] == 'exam'), isEmpty);
+    });
+  }
+
+  test('assignments wait for the undergraduate source switch before fetching exams', () async {
+    final h = await harness(graduate: false);
+    addTearDown(h.schedule.dispose);
+    await h.schedule.fetchAll();
+    final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule)
+      ..loadCached()
+      ..enableAutoRefetch();
+    addTearDown(assignments.dispose);
+    h.overrides['exam_table'] = http.Response('{"success":true,"data":{"exams":[]}}', 200);
+    h.overrides['blackboard'] = http.Response('{"success":true,"data":[]}', 200);
+    h.pausedEamsEndpoint = 'course_table';
+    final switching = h.schedule.selectScheduleSource(CampusScheduleSource.undergraduate);
+    await h.eamsEntered.future;
+    await Future<void>.delayed(Duration.zero);
+    expect(h.examAnswered.isCompleted, isFalse);
+    h.resumeEams.complete();
+    await switching;
+    await h.examAnswered.future.timeout(const Duration(seconds: 3));
+    expect(h.requests.where((request) => request.url.path.endsWith('/exam_table')), hasLength(1));
+  });
 }
 
 class Harness {
@@ -1490,6 +1661,7 @@ class Harness {
   String? pausedEamsEndpoint;
   final eamsEntered = Completer<void>();
   final resumeEams = Completer<void>();
+  final examAnswered = Completer<void>();
   final requests = <http.Request>[];
   final overrides = <String, http.Response>{};
   String category = '';
@@ -1520,6 +1692,7 @@ Future<Harness> harness({
         await h.resumeEams.future;
       }
       final override = h.overrides[endpoint];
+      if (endpoint == 'exam_table' && !h.examAnswered.isCompleted) h.examAnswered.complete();
       if (override != null) return override;
       if (request.url.path.endsWith('getUserConf') && h.identityGate != null) {
         h.identityEntered.complete();

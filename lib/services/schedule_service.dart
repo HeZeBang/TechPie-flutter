@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/campus_identity.dart';
+import '../models/course.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
 import '../models/graduate_schedule.dart';
@@ -19,6 +20,7 @@ import 'storage_service.dart';
 import 'third_party_auth_service.dart';
 
 typedef _GraduateTerm = ({Map<String, CourseTable> tables, TermCalendar? calendar});
+typedef _FetchContext = ({int accountRevision, String? idsSession});
 
 class ScheduleService extends ChangeNotifier {
   final StorageService _storage;
@@ -66,9 +68,15 @@ class ScheduleService extends ChangeNotifier {
     _identityLabel = null;
     _identityWarning = null;
     _restoreCachedSchedule(source);
+    _suppressAssignmentRefetch = true;
     notifyListeners();
-    await saved;
-    if (owner == _campusAccount()) await fetchAll();
+    try {
+      await saved;
+      if (owner == _campusAccount()) await fetchAll();
+    } finally {
+      _suppressAssignmentRefetch = false;
+      notifyListeners();
+    }
   }
 
   Map<String, String> get graduateSchemes => _selectedSemesterId == null
@@ -81,9 +89,8 @@ class ScheduleService extends ChangeNotifier {
   List<Map<String, dynamic>> get graduateCancelled => _selectedSemesterId == null
       ? const []
       : _graduateSchedule?.cancelledFor(_selectedSemesterId!) ?? const [];
-  // While true, AssignmentService should NOT refetch on our notifies —
-  // selectSemester sets this during its own network fetch to avoid a
-  // concurrent exam_table + course_table race on EAMS's stateful session.
+  // Delay exam refreshes until a changed timetable selection has finished
+  // priming the stateful EAMS session.
   bool _suppressAssignmentRefetch = false;
   bool get suppressAssignmentRefetch => _suppressAssignmentRefetch;
 
@@ -95,7 +102,7 @@ class ScheduleService extends ChangeNotifier {
   SemesterInfo? get semesterInfo => _semesterInfo;
   CourseTable? get courseTable => _courseTable;
 
-  /// All fetched courses, with the selected period grid for custom courses.
+  /// All fetched courses, with the selected period grid for display.
   CourseTable? get fullCourseTable {
     final table = _courseTable;
     if (table == null || _graduateTables.length <= 1) return table;
@@ -113,16 +120,18 @@ class ScheduleService extends ChangeNotifier {
 
   /// Calendar weeks in the selected semester, including an exam period after
   /// teaching ends. Falls back to a generous default until the calendar loads.
-  int get totalWeeks {
+  int get totalWeeks => _lastGraduateWeek(_graduateTables, _calendarWeeks);
+
+  int get _calendarWeeks {
     final calendar = _termCalendar;
-    if (calendar == null) {
-      return _graduateTables.values
-          .expand((table) => table.courses)
-          .fold<int>(_fallbackTotalWeeks, (max, c) => math.max(max, c.weeks.length - 1));
-    }
+    if (calendar == null) return _fallbackTotalWeeks;
     final weeks = math.max(calendar.allTeachWeeks, calendar.allTermWeeks);
     return weeks > 0 ? weeks : _fallbackTotalWeeks;
   }
+
+  static int _lastGraduateWeek(Map<String, CourseTable> tables, int minimum) => tables.values
+      .expand((table) => table.courses)
+      .fold<int>(minimum, (max, course) => math.max(max, course.weeks.length - 1));
 
   ScheduleService(this._storage, this._http, AuthService _, this._tpAuth) {
     _observedAccount = _campusAccount();
@@ -147,7 +156,6 @@ class ScheduleService extends ChangeNotifier {
       _graduateIdentity = false;
       _identityLabel = null;
       _identityWarning = null;
-      _fetchedForAccount = null;
       _clearSchedule();
       notifyListeners();
     }
@@ -157,15 +165,8 @@ class ScheduleService extends ChangeNotifier {
     }
   }
 
-  /// The campus account the timetable currently in hand was fetched for.
-  ///
-  /// Only who it belongs to — not the session token, not when it was refreshed. A
-  /// renewal of the same account leaves the timetable as valid as it was, and
-  /// treating that as a change is how a routine token refresh turned into another
-  /// round of requests. A rebind, a different account or a sync merge that
-  /// replaces it does change this, and data fetched for another account has to go.
-  String? _fetchedForAccount;
-
+  _FetchContext? _lastFetch;
+  _FetchContext get _fetchContext => (accountRevision: _accountRevision, idsSession: _idsSession);
   Timer? _pendingFetch;
 
   String? _campusAccount() {
@@ -174,18 +175,23 @@ class ScheduleService extends ChangeNotifier {
     return '${account.sid}|${account.account}';
   }
 
-  /// The one way anything asks for the timetable to be refetched.
-  ///
-  /// Three things used to ask on their own — the app starting, a binding
-  /// changing, a session being renewed — and around a login they all fire inside
-  /// the same second, so one login meant three rounds of three requests. Bursts
-  /// collapse into a single fetch here, and a trigger that neither the user asked
-  /// for nor changed the account does nothing at all.
+  bool _needsFetch({required bool retry}) {
+    if (!_hasIdsBinding) return false;
+    final previous = _lastFetch;
+    if (previous == null || previous.accountRevision != _accountRevision) return true;
+    if (retry && _error != null) return true;
+    return previous.idsSession != _idsSession &&
+        (scheduleSource == CampusScheduleSource.automatic ||
+            _loading ||
+            _semesterInfo == null ||
+            _error != null);
+  }
+
+  /// Combine boot and binding notifications for the same IDS account and
+  /// session. A failed renewal still notifies listeners, with the same session.
   void requestFetch({bool force = false}) {
-    final account = _campusAccount();
-    final accountChanged = account != null && account != _fetchedForAccount;
-    final usable = _semesterInfo != null && _error == null && _identityIsCurrent;
-    if (!force && !accountChanged && usable) return;
+    final retry = force && !_loading;
+    if (!_needsFetch(retry: retry)) return;
 
     _pendingFetch?.cancel();
     _pendingFetch = Timer(const Duration(milliseconds: 600), () async {
@@ -196,10 +202,7 @@ class ScheduleService extends ChangeNotifier {
       if (active != null) await active.future;
       if (_pendingFetch != timer) return;
       _pendingFetch = null;
-      final current = _campusAccount();
-      final changed = current != null && current != _fetchedForAccount;
-      if (_fetchedForAccount != null && !changed && _error == null && _identityIsCurrent) return;
-      await fetchAll();
+      if (_needsFetch(retry: retry)) await fetchAll();
     });
   }
 
@@ -213,7 +216,7 @@ class ScheduleService extends ChangeNotifier {
 
   /// Whether "today" actually falls within the selected semester — false
   /// before the calendar has loaded, before the term begins, or after its
-  /// last teaching week. Callers should hide "this week"/"today" indicators
+  /// last calendar week. Callers should hide "this week"/"today" indicators
   /// when this is false, since there is no meaningful "current week".
   bool get isTodayInTerm {
     final begin = termBegin;
@@ -221,7 +224,7 @@ class ScheduleService extends ChangeNotifier {
     final diff = DateTime.now().difference(begin).inDays;
     if (diff < 0) return false;
     final week = (diff ~/ 7) + 1;
-    return week <= totalWeeks;
+    return week <= _calendarWeeks;
   }
 
   Map<String, String> _jsonHeaders() => {
@@ -267,11 +270,19 @@ class ScheduleService extends ChangeNotifier {
 
   /// Adds [course], or replaces the session sharing its id. A session moved to
   /// another semester is dropped from the old one in the same step.
-  Future<void> saveCustomCourse(String semesterId, CustomCourse course) async {
+  Future<void> saveCustomCourse(
+    String semesterId,
+    CustomCourse course, {
+    List<Period>? periods,
+  }) async {
     final previous = course.semesterId;
     final courses = [...customCoursesFor(semesterId)];
     final index = courses.indexWhere((existing) => existing.id == course.id);
-    final stored = course.copyWith(semesterId: semesterId);
+    var stored = course.copyWith(semesterId: semesterId);
+    if (semesterId.startsWith(graduateSemesterPrefix) && stored.usesPeriods) {
+      final grid = periods ?? courseTableFor(semesterId)?.periods.map((p) => p.toPeriod()).toList();
+      if (grid != null) stored = stored.withFixedTime(grid);
+    }
     if (index < 0) {
       courses.add(stored);
     } else {
@@ -367,14 +378,21 @@ class ScheduleService extends ChangeNotifier {
   }
 
   Future<bool> canFetchUndergraduateExams() async {
-    if (!_hasIdsBinding) return false;
-    if (scheduleSource == CampusScheduleSource.undergraduate) return true;
+    if (!_hasIdsBinding || scheduleSource == CampusScheduleSource.graduate) return false;
     final revision = _accountRevision;
-    if (!_identityIsCurrent || _loading) await fetchAll();
-    return revision == _accountRevision &&
-        _idsSession != null &&
-        _identityIsCurrent &&
-        !_graduateIdentity;
+    final active = _fetchCompletion;
+    if (active != null) {
+      await active.future;
+    } else if (scheduleSource == CampusScheduleSource.automatic && !_identityIsCurrent) {
+      await fetchAll();
+    }
+    if (revision != _accountRevision) return false;
+    return switch (scheduleSource) {
+      CampusScheduleSource.undergraduate => true,
+      CampusScheduleSource.graduate => false,
+      CampusScheduleSource.automatic =>
+        _idsSession != null && _identityIsCurrent && !_graduateIdentity,
+    };
   }
 
   Future<void> fetchAll() async {
@@ -383,6 +401,9 @@ class ScheduleService extends ChangeNotifier {
       return;
     }
     if (!_hasIdsBinding) return;
+    _pendingFetch?.cancel();
+    _pendingFetch = null;
+    _lastFetch = _fetchContext;
     final completion = _fetchCompletion = Completer<void>();
     final revision = _accountRevision;
     _loading = true;
@@ -409,8 +430,8 @@ class ScheduleService extends ChangeNotifier {
       if (revision == _accountRevision) _error = e.toString();
     } finally {
       _loading = false;
-      if (revision == _accountRevision) {
-        if (_error == null && _identityIsCurrent) _fetchedForAccount = _campusAccount();
+      if (revision == _accountRevision && _error == null && _identityIsCurrent) {
+        _lastFetch = _fetchContext;
       }
       _fetchCompletion = null;
       completion.complete();
@@ -419,8 +440,11 @@ class ScheduleService extends ChangeNotifier {
   }
 
   Future<({GraduateScheduleClient client, String session})> _graduateClient() async {
+    final revision = _accountRevision;
     final cookie = await _tpAuth.sessionTree.freshCookie(_tpAuth.idsNode);
     if (cookie == null) throw const FormatException('IDS 学校会话暂时不可用，请刷新 IDS 绑定');
+    // This fetch already uses the session reported by the renewal notification.
+    if (revision == _accountRevision && cookie.cookies == _idsSession) _lastFetch = _fetchContext;
     final tgc = RegExp(r'(?:^|;)\s*CASTGC=([^;]*)').firstMatch(cookie.cookies)?.group(1) ??
         _tpAuth.idsNode.rawFields['tgc'] as String? ?? '';
     return (client: GraduateScheduleClient(_http, tgc), session: cookie.cookies);
@@ -557,16 +581,15 @@ class ScheduleService extends ChangeNotifier {
         scheme: snapshot.tableFor(semester, scheme, firstMonday: date),
     };
     if (date == null) return (tables: tables, calendar: null);
-    final weeks = tables.values
-        .expand((table) => table.courses)
-        .fold<int>(_fallbackTotalWeeks, (n, c) => math.max(n, c.weeks.length - 1));
+    final published = snapshot.publishedCalendarFor(semester);
+    final weeks = published?.termWeeks ?? _lastGraduateWeek(tables, _fallbackTotalWeeks);
     final calendar = TermCalendar(
       code: 200,
       schoolYearTerm: semester,
       termBegin: date,
       snapshotDate: null,
       snapshotWeekOfTerm: null,
-      allTeachWeeks: weeks,
+      allTeachWeeks: published?.teachingWeeks ?? weeks,
       allTermWeeks: weeks,
       amClasses: 0,
       pmClasses: 0,
@@ -597,9 +620,20 @@ class ScheduleService extends ChangeNotifier {
   Future<void> selectGraduateScheme(String scheme) async {
     final semester = _selectedSemesterId;
     final table = _graduateTables[scheme];
-    if (semester == null || table == null) return;
+    if (semester == null || table == null || scheme == _graduateScheme) return;
     final revision = _accountRevision;
     final owner = _campusAccount();
+    // Older records have only period numbers. Preserve their current clock
+    // times before the selected grid changes.
+    final courses = customCourses;
+    if (courses.any((course) => course.usesPeriods)) {
+      final periods = _courseTable!.periods.map((p) => p.toPeriod()).toList();
+      await _storage.saveCustomCourses(
+        semester,
+        courses.map((course) => course.withFixedTime(periods)).toList(),
+      );
+      if (revision != _accountRevision || semester != _selectedSemesterId) return;
+    }
     _graduateScheme = scheme;
     _courseTable = table;
     await _storage.setGraduateScheme(semester, scheme);

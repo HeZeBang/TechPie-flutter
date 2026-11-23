@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart' show DateUtils;
+
 import 'course.dart';
 
 /// A tutorial / recitation session the user entered by hand, stored locally
@@ -105,14 +107,22 @@ class CustomCourse {
     ];
   }
 
-  CustomCourse copyWith({String? semesterId}) => CustomCourse(
+  /// Save the clock range picked on this timetable's period grid.
+  CustomCourse withFixedTime(List<Period> periods) {
+    if (!usesPeriods) return this;
+    final range = time.clockRange(periods);
+    if (range == null) return this;
+    return copyWith(time: ClockCourseTime(startTime: range.$1, endTime: range.$2));
+  }
+
+  CustomCourse copyWith({String? semesterId, CourseTime? time}) => CustomCourse(
         id: id,
         semesterId: semesterId ?? this.semesterId,
         name: name,
         location: location,
         teachers: teachers,
         weekdays: weekdays,
-        time: time,
+        time: time ?? this.time,
         weeks: weeks,
         date: date,
         color: color,
@@ -215,7 +225,7 @@ String _formatDate(DateTime date) => '${date.year}-${date.month.toString().padLe
     '-${date.day.toString().padLeft(2, '0')}';
 
 /// Overlay the user's own sessions onto a week's display list. A null [week]
-/// means no filtering, matching [eamsToDisplayCourses].
+/// means no week filtering. [onDate] matches one-off sessions by their date.
 List<Course> withCustomCourses(
   List<Course> courses,
   List<CustomCourse> custom,
@@ -223,10 +233,14 @@ List<Course> withCustomCourses(
   DateTime? termBegin, {
   bool includeGhosts = false,
   List<Period> periods = defaultPeriods,
+  DateTime? onDate,
 }) {
   final result = [...courses];
   for (final session in custom) {
-    final active = week == null || session.isActiveInWeek(week, termBegin);
+    final date = session.date;
+    final active = date != null && onDate != null
+        ? DateUtils.isSameDay(date, onDate)
+        : week == null || session.isActiveInWeek(week, termBegin);
     if (!active && !includeGhosts) continue;
     result.addAll(session.toCourses(isGhost: !active, periods: periods));
   }

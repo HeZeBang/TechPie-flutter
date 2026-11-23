@@ -140,6 +140,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       week,
       termBegin,
       periods: _periods,
+      onDate: now,
     );
     final all = withExamCourses(
       withCustom,
