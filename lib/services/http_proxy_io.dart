@@ -24,7 +24,7 @@ String resolveAppProxyImpl(Uri uri, {Map<String, String>? environment}) {
 
 void configureAppProxyImpl(String normalizedProxy) {
   _appProxy = normalizedProxy;
-  final current = HttpOverrides.global;
+  final current = HttpOverrides.current;
   if (current is! TechPieHttpOverrides) {
     HttpOverrides.global = TechPieHttpOverrides(current);
   }

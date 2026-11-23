@@ -9,7 +9,7 @@ void main() {
   late HttpOverrides? previousOverrides;
 
   setUp(() {
-    previousOverrides = HttpOverrides.global;
+    previousOverrides = HttpOverrides.current;
     configureAppProxy('');
   });
 
@@ -94,10 +94,10 @@ void main() {
       configureAppProxy('127.0.0.1:99999');
       expect(resolveAppProxy(target, environment: const {}), 'DIRECT');
 
-      final installed = HttpOverrides.global;
+      final installed = HttpOverrides.current;
       expect(installed, isA<TechPieHttpOverrides>());
       configureAppProxy('127.0.0.1:7890');
-      expect(identical(HttpOverrides.global, installed), isTrue);
+      expect(identical(HttpOverrides.current, installed), isTrue);
     });
   });
 
