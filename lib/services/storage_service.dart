@@ -421,21 +421,29 @@ class StorageService {
   String? get selectedSemester => _prefs.getString(_selectedSemesterKey);
   Future<void> setSelectedSemester(String id) => _prefs.setString(_selectedSemesterKey, id);
 
-  // Sessions the user added by hand, keyed by semester like the course table
-  // is — they belong to the timetable they were made on.
   static const _customCoursesPrefix = 'schedule_custom_courses_';
+
+  String? _customCoursesKey(String semesterId, String? owner) {
+    if (!semesterId.startsWith(graduateSemesterPrefix)) {
+      return '$_customCoursesPrefix$semesterId';
+    }
+    // Older graduate entries have no owner and cannot be assigned safely.
+    return owner == null ? null : '$_customCoursesPrefix${semesterId}_$owner';
+  }
 
   Future<void> saveCustomCourses(
     String semesterId,
-    List<CustomCourse> courses,
-  ) =>
-      _prefs.setString(
-        '$_customCoursesPrefix$semesterId',
-        jsonEncode(courses.map((course) => course.toJson()).toList()),
-      );
+    List<CustomCourse> courses, {
+    String? owner,
+  }) async {
+    final key = _customCoursesKey(semesterId, owner);
+    if (key == null) return;
+    await _prefs.setString(key, jsonEncode(courses.map((course) => course.toJson()).toList()));
+  }
 
-  List<CustomCourse> loadCustomCourses(String semesterId) {
-    final raw = _prefs.getString('$_customCoursesPrefix$semesterId');
+  List<CustomCourse> loadCustomCourses(String semesterId, {String? owner}) {
+    final key = _customCoursesKey(semesterId, owner);
+    final raw = key == null ? null : _prefs.getString(key);
     if (raw == null) return const [];
     try {
       final decoded = jsonDecode(raw);

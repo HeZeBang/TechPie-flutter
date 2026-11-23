@@ -115,6 +115,7 @@ class ScheduleService extends ChangeNotifier {
   TermCalendar? get termCalendar => _termCalendar;
   DateTime? get termBegin => _termCalendar?.termBegin;
   String? get selectedSemesterId => _selectedSemesterId;
+  int get campusAccountRevision => _accountRevision;
   bool get loading => _loading;
   String? get error => _error;
 
@@ -263,7 +264,7 @@ class ScheduleService extends ChangeNotifier {
   }
 
   List<CustomCourse> customCoursesFor(String? semesterId) =>
-      semesterId == null ? const [] : _storage.loadCustomCourses(semesterId);
+      semesterId == null ? const [] : _storage.loadCustomCourses(semesterId, owner: _campusAccount());
 
   CustomCourse? findCustomCourse(String id) =>
       customCourses.where((course) => course.id == id).firstOrNull;
@@ -275,8 +276,9 @@ class ScheduleService extends ChangeNotifier {
     CustomCourse course, {
     List<Period>? periods,
   }) async {
+    final owner = _campusAccount();
     final previous = course.semesterId;
-    final courses = [...customCoursesFor(semesterId)];
+    final courses = [..._storage.loadCustomCourses(semesterId, owner: owner)];
     final index = courses.indexWhere((existing) => existing.id == course.id);
     var stored = course.copyWith(semesterId: semesterId);
     if (semesterId.startsWith(graduateSemesterPrefix) && stored.usesPeriods) {
@@ -288,21 +290,26 @@ class ScheduleService extends ChangeNotifier {
     } else {
       courses[index] = stored;
     }
-    await _storage.saveCustomCourses(semesterId, courses);
+    await _storage.saveCustomCourses(semesterId, courses, owner: owner);
     if (previous.isNotEmpty && previous != semesterId) {
-      await _removeCustomCourse(previous, course.id);
+      await _removeCustomCourse(previous, course.id, owner);
     }
     notifyListeners();
   }
 
   Future<void> deleteCustomCourse(String semesterId, String id) async {
-    await _removeCustomCourse(semesterId, id);
+    await _removeCustomCourse(semesterId, id, _campusAccount());
     notifyListeners();
   }
 
-  Future<void> _removeCustomCourse(String semesterId, String id) => _storage.saveCustomCourses(
+  Future<void> _removeCustomCourse(String semesterId, String id, String? owner) =>
+      _storage.saveCustomCourses(
         semesterId,
-        customCoursesFor(semesterId).where((course) => course.id != id).toList(),
+        _storage
+            .loadCustomCourses(semesterId, owner: owner)
+            .where((course) => course.id != id)
+            .toList(),
+        owner: owner,
       );
 
   Future<void> loadCachedData() async {
@@ -631,6 +638,7 @@ class ScheduleService extends ChangeNotifier {
       await _storage.saveCustomCourses(
         semester,
         courses.map((course) => course.withFixedTime(periods)).toList(),
+        owner: owner,
       );
       if (revision != _accountRevision || semester != _selectedSemesterId) return;
     }

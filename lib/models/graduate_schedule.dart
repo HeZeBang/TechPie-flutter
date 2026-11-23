@@ -396,8 +396,9 @@ class GraduateSchedule {
       if (inferred != null) return inferred;
     }
     final anchors = <DateTime>{};
+    final cancelled = cancelledFor(semesterId).map(_classId).where((id) => id.isNotEmpty).toSet();
     for (final row in rows.where((r) => _inTerm(r, rawTerm(semesterId)))) {
-      if (_text(row['ZCMC']).isEmpty) continue;
+      if (cancelled.contains(_classId(row)) || _text(row['ZCMC']).isEmpty) continue;
       final dates = _rowDates(row);
       final weeks = graduateWeeks(_text(row['ZCMC']));
       if (dates == null || dates.length != weeks.length) continue;

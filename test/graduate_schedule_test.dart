@@ -180,6 +180,20 @@ void main() {
     expect(GraduateSchedule.fromJson(raw).firstMondayFor(semester), DateTime(2026, 9, 7));
   });
 
+  test('explicit dates from cancelled classes do not determine the term start', () {
+    final raw = fixture();
+    final rows = raw['results'] as List;
+    rows.last
+      ..['ZCMC'] = '1周'
+      ..['RQ'] = '2026-09-22';
+    expect(GraduateSchedule.fromJson(raw).firstMondayFor(semester), isNull);
+
+    rows.first
+      ..['ZCMC'] = '1周'
+      ..['RQ'] = '2026-09-07';
+    expect(GraduateSchedule.fromJson(raw).firstMondayFor(semester), DateTime(2026, 9, 7));
+  });
+
   test('explicit server dates override recurring weeks and preserve rescheduling', () {
     final raw = fixture();
     final row = (raw['results'] as List).first as Map;
@@ -845,7 +859,7 @@ void main() {
       weeks: [1],
       time: PeriodCourseTime(startPeriod: 2, endPeriod: 2),
     );
-    await h.storage.saveCustomCourses(semester, [legacy]);
+    await h.storage.saveCustomCourses(semester, [legacy], owner: owner);
     await h.schedule.saveCustomCourse(semester, selectedByPeriod);
 
     final exporter = IcsExportService();
@@ -867,11 +881,50 @@ void main() {
       expect(
         events.map((event) => event['startMillis']),
         unorderedEquals([
-          DateTime.utc(2026, 9, 7, 0, 15).millisecondsSinceEpoch,
-          DateTime.utc(2026, 9, 7, 1, 10).millisecondsSinceEpoch,
+          DateTime(2026, 9, 7, 8, 15).millisecondsSinceEpoch,
+          DateTime(2026, 9, 7, 9, 10).millisecondsSinceEpoch,
         ]),
       );
     }
+  });
+
+  test('graduate custom courses stay with their IDS accounts across rebinds', () async {
+    final h = await harness(timetable: fixtureWithStart());
+    addTearDown(h.schedule.dispose);
+    const course = CustomCourse(
+      id: 'recitation',
+      name: '习题课',
+      weekdays: [1],
+      weeks: [1],
+      time: PeriodCourseTime(startPeriod: 1, endPeriod: 1),
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('schedule_custom_courses_$semester', jsonEncode([course.toJson()]));
+    await h.schedule.fetchAll();
+    expect(h.schedule.selectedSemesterId, semester);
+    expect(h.schedule.customCourses, isEmpty);
+    await h.schedule.saveCustomCourse(semester, course);
+
+    await h.storage.setScheduleSource('20260002|20260002', CampusScheduleSource.graduate);
+    await h.tp.bindIds(
+      account: '20260002',
+      password: 'synthetic',
+      promptCaptcha: (_, __, {required refresh}) async => null,
+    );
+    await h.schedule.fetchAll();
+    expect(h.schedule.selectedSemesterId, semester);
+    expect(h.schedule.customCourses, isEmpty);
+    await h.schedule.saveCustomCourse(semester, course);
+    await h.schedule.deleteCustomCourse(semester, course.id);
+    expect(h.schedule.customCourses, isEmpty);
+
+    await h.tp.bindIds(
+      account: '20260001',
+      password: 'synthetic',
+      promptCaptcha: (_, __, {required refresh}) async => null,
+    );
+    await h.schedule.fetchAll();
+    expect(h.schedule.customCourses.single.id, course.id);
   });
 
   test('published graduate calendars store the teaching and exam weeks for both terms',
