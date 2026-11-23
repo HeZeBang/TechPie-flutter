@@ -6,16 +6,18 @@ import 'package:intl/intl.dart';
 import '../models/assignment.dart';
 import '../services/assignment_service.dart';
 import '../services/service_provider.dart';
-import '../utils/platform.dart';
+import '../theme/theme.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_confirmation_button.dart';
 import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_area.dart';
 import '../widgets/adaptive_text_field_group.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/schedule_picker_sheet.dart';
 
@@ -140,36 +142,41 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tpColors;
     final title = _id == null ? '添加 Deadline' : '编辑 Deadline';
-    final ios = isIos();
-    final extendBody = !ios && !usesLegacyIosChrome();
-    final topInset =
-        extendBody ? adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top : 0.0;
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
+      context,
+      extra: TpTokens.space3,
+    );
 
     return Scaffold(
-      extendBodyBehindAppBar: extendBody,
-      appBar: ios
-          ? IosNativeNavigationBar(
-              title: title,
-              leadingItems: const [
-                IosNativeNavigationBarItem(
-                  id: 'back',
-                  title: '返回',
-                  sfSymbol: 'chevron.left',
-                  accessibilityLabel: '返回',
-                  placementGroup: 'leading-main',
-                ),
-              ],
-              onItemPressed: (id) {
-                if (id == 'back') unawaited(maybePopAdaptivePage<void>(context));
-              },
-            )
-          : BlurredAppBar(title: Text(title)),
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: title,
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') unawaited(maybePopAdaptivePage<void>(context));
+          },
+        ),
+        material: () => BlurredAppBar(title: Text(title)),
+      ),
       body: ListenableBuilder(
         listenable: widget.service,
         builder: (context, _) {
           final id = _id;
-          final current = id == null ? null : widget.service.findCustomDeadline(id);
+          final current =
+              id == null ? null : widget.service.findCustomDeadline(id);
           if (widget.owner != widget.service.customDeadlineOwner ||
               (id != null && current == null)) {
             return const Center(child: Text('此 Deadline 已无法访问'));
@@ -177,18 +184,13 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
           return ListView(
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: EdgeInsets.fromLTRB(
-              16,
-              topInset + 12,
-              16,
+              TpTokens.pageHorizontalPadding,
+              topInset,
+              TpTokens.pageHorizontalPadding,
               AppShellMetrics.bottomContentPaddingOf(context),
             ),
             children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640),
-                  child: _buildForm(current),
-                ),
-              ),
+              TpPageBody(child: _buildForm(current)),
             ],
           );
         },
@@ -197,83 +199,93 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
   }
 
   Widget _buildForm(CustomDeadline? current) {
+    final colors = context.tpColors;
     final date = _date;
     final time = _time;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Card.outlined(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                AdaptiveTextFieldGroup(
-                  items: [
-                    AdaptiveTextFieldGroupItem(
-                      controller: _title,
-                      placeholder: '标题',
-                      enabled: !_busy,
-                    ),
-                    AdaptiveTextFieldGroupItem(
-                      controller: _course,
-                      placeholder: '课程名（可选）',
-                      enabled: !_busy,
-                    ),
-                    AdaptiveTextFieldGroupItem(
-                      controller: _location,
-                      placeholder: '地点（可选）',
-                      enabled: !_busy,
-                      textInputAction: TextInputAction.done,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                AdaptiveTextArea(
-                  controller: _notes,
-                  placeholder: '备注（可选）',
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  minLines: 2,
-                  maxLines: 4,
-                  enabled: !_busy,
-                ),
-              ],
-            ),
+        TpCard(
+          title: '事项信息',
+          padding: const EdgeInsets.fromLTRB(
+            TpTokens.cardPaddingHorizontal,
+            TpTokens.space1,
+            TpTokens.cardPaddingHorizontal,
+            TpTokens.space4,
           ),
-        ),
-        const SizedBox(height: 8),
-        Card.outlined(
           child: Column(
             children: [
-              ListTile(
-                leading: const Icon(Icons.event_outlined),
-                title: const Text('截止日期'),
-                subtitle: Text(date == null ? '未选择' : DateFormat('yyyy-MM-dd').format(date)),
-                trailing: const Icon(Icons.chevron_right),
+              AdaptiveTextFieldGroup(
+                items: [
+                  AdaptiveTextFieldGroupItem(
+                    controller: _title,
+                    placeholder: '标题',
+                    enabled: !_busy,
+                  ),
+                  AdaptiveTextFieldGroupItem(
+                    controller: _course,
+                    placeholder: '课程名（可选）',
+                    enabled: !_busy,
+                  ),
+                  AdaptiveTextFieldGroupItem(
+                    controller: _location,
+                    placeholder: '地点（可选）',
+                    enabled: !_busy,
+                    textInputAction: TextInputAction.done,
+                  ),
+                ],
+              ),
+              const SizedBox(height: TpTokens.space3),
+              AdaptiveTextArea(
+                controller: _notes,
+                placeholder: '备注（可选）',
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                minLines: 2,
+                maxLines: 4,
+                enabled: !_busy,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: TpTokens.sectionGap),
+        TpCard(
+          child: Column(
+            children: [
+              TpListRow(
+                icon: TpIcons.calendar,
+                iconColor: colors.brand,
+                title: '截止日期',
+                subtitle: date == null
+                    ? '未选择'
+                    : DateFormat('yyyy-MM-dd').format(date),
+                showChevron: true,
+                showDivider: true,
                 onTap: _busy ? null : _pickDate,
               ),
-              const Divider(height: 1, indent: 16, endIndent: 16),
-              ListTile(
-                leading: const Icon(Icons.schedule_outlined),
-                title: const Text('截止时间'),
-                subtitle: Text(time == null ? '未选择' : _formatTime(time)),
-                trailing: const Icon(Icons.chevron_right),
+              TpListRow(
+                icon: TpIcons.deadlines,
+                iconColor: colors.infoBlue,
+                title: '截止时间',
+                subtitle: time == null ? '未选择' : _formatTime(time),
+                showChevron: true,
                 onTap: _busy ? null : _pickTime,
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: TpTokens.space4),
         AdaptiveButton(
           onPressed: _busy ? null : _save,
-          icon: Icons.check_rounded,
+          icon: TpIcons.check,
           sfSymbol: 'checkmark',
           label: '保存',
           role: AdaptiveButtonRole.prominent,
           loading: _busy,
+          height: 46,
         ),
         if (current != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: TpTokens.space2),
           AdaptiveButton(
             onPressed: _busy
                 ? null
@@ -283,8 +295,9 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
                         errorMessage: '更新完成状态失败，请重试',
                       ),
                     ),
-            icon: current.completed ? Icons.undo : Icons.check_circle_outline,
-            sfSymbol: current.completed ? 'arrow.uturn.backward' : 'checkmark.circle',
+            icon: current.completed ? TpIcons.refresh : TpIcons.checkCircle,
+            sfSymbol:
+                current.completed ? 'arrow.uturn.backward' : 'checkmark.circle',
             label: current.completed ? '取消完成' : '标记完成',
             role: AdaptiveButtonRole.plain,
           ),
@@ -294,7 +307,7 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
               label: '删除',
               confirmTitle: '删除此 Deadline？',
               confirmLabel: '删除',
-              icon: Icons.delete_outline,
+              icon: TpIcons.delete,
               sfSymbol: 'trash',
               destructive: true,
               onConfirmed: () => unawaited(

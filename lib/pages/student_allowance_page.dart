@@ -1,17 +1,20 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart' show CupertinoDatePicker, CupertinoDatePickerMode;
+import 'package:flutter/cupertino.dart'
+    show CupertinoDatePicker, CupertinoDatePickerMode;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/student_allowance.dart';
 import '../services/service_provider.dart';
 import '../services/student_allowance_service.dart';
-import '../utils/platform.dart';
+import '../theme/theme.dart';
 import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/schedule_picker_sheet.dart';
 import '../widgets/uni_auth_login.dart';
@@ -22,95 +25,133 @@ class StudentAllowancePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tpColors;
     final service = ServiceProvider.of(context).studentAllowanceService;
-    final ios = isIos();
-    final overlay = !ios && !usesLegacyIosChrome();
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
+      context,
+      extra: TpTokens.space4,
+    );
     final padding = EdgeInsets.fromLTRB(
-      16,
-      16 + (overlay ? adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top : 0),
-      16,
+      TpTokens.pageHorizontalPadding,
+      topInset,
+      TpTokens.pageHorizontalPadding,
       AppShellMetrics.bottomContentPaddingOf(context),
     );
     return Scaffold(
-      extendBodyBehindAppBar: overlay,
-      appBar: ios
-          ? IosNativeNavigationBar(
-              title: '学生津贴',
-              leadingItems: const [
-                IosNativeNavigationBarItem(
-                  id: 'back',
-                  title: 'Home',
-                  sfSymbol: 'chevron.left',
-                  accessibilityLabel: '返回首页',
-                  placementGroup: 'leading-main',
-                ),
-              ],
-              onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
-            )
-          : const BlurredAppBar(title: Text('学生津贴')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: ListenableBuilder(
-            listenable: service,
-            builder: (context, _) {
-              final access = service.access;
-              if (access == StudentAllowanceAccess.ready) {
-                return _AllowanceQuery(
-                  // Changing accounts discards loaded amounts and in-flight UI
-                  // state, including when another account is already bound.
-                  key: ValueKey((service, service.accountRevision)),
-                  service: service,
-                  padding: padding,
-                );
-              }
-              final needsLogin = access == StudentAllowanceAccess.signIn;
-              return ListView(
-                padding: padding,
-                children: [
-                  Card.outlined(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '学生津贴',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '首页',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回首页',
+              placementGroup: 'leading-main',
+            ),
+          ],
+          onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+        ),
+        material: () => const BlurredAppBar(title: Text('学生津贴')),
+      ),
+      body: ListenableBuilder(
+        listenable: service,
+        builder: (context, _) {
+          final access = service.access;
+          if (access == StudentAllowanceAccess.ready) {
+            return _AllowanceQuery(
+              // Changing accounts discards loaded amounts and in-flight UI
+              // state, including when another account is already bound.
+              key: ValueKey((service, service.accountRevision)),
+              service: service,
+              padding: padding,
+            );
+          }
+          final needsLogin = access == StudentAllowanceAccess.signIn;
+          return ListView(
+            padding: padding,
+            children: [
+              TpPageBody(
+                child: TpCard(
+                  padding: const EdgeInsets.all(TpTokens.space5),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Text(
-                            needsLogin ? '需要先登录 TechPie' : '需要绑定 IDS 账号',
-                            style: Theme.of(context).textTheme.titleLarge,
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: colors.brandSoft,
+                              borderRadius:
+                                  BorderRadius.circular(TpTokens.radiusS),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              TpIcons.allowance,
+                              size: TpTokens.iconM,
+                              color: colors.brand,
+                            ),
                           ),
-                          const SizedBox(height: 8),
-                          const Text('学生津贴使用已绑定的校园 IDS 账号直接向学校财务系统查询。'),
-                          const SizedBox(height: 16),
-                          AdaptiveButton(
-                            onPressed: needsLogin
-                                ? () => unawaited(startUniAuthLogin(context))
-                                : () => unawaited(
-                                      pushAdaptivePage<void>(
-                                        context,
-                                        builder: (_) => const ThirdPartyAccountsPage(),
-                                      ),
-                                    ),
-                            icon: needsLogin ? Icons.login : Icons.vpn_key_outlined,
-                            sfSymbol: needsLogin ? 'person.crop.circle' : 'key.horizontal',
-                            label: needsLogin ? '去登录' : '去绑定 IDS',
-                            role: AdaptiveButtonRole.prominent,
+                          const SizedBox(width: TpTokens.space3),
+                          Expanded(
+                            child: Text(
+                              needsLogin ? '需要先登录 TechPie' : '需要绑定 IDS 账号',
+                              style: TpTypography.cardTitle(colors)
+                                  .copyWith(fontSize: 17),
+                            ),
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: TpTokens.space3),
+                      Text(
+                        '学生津贴使用已绑定的校园 IDS 账号直接向学校财务系统查询。',
+                        style: TpTypography.itemMeta(colors).copyWith(
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      const SizedBox(height: TpTokens.space4),
+                      AdaptiveButton(
+                        onPressed: needsLogin
+                            ? () => unawaited(startUniAuthLogin(context))
+                            : () => unawaited(
+                                  pushAdaptivePage<void>(
+                                    context,
+                                    builder: (_) =>
+                                        const ThirdPartyAccountsPage(),
+                                  ),
+                                ),
+                        icon:
+                            needsLogin ? TpIcons.login : TpIcons.linkedAccounts,
+                        sfSymbol: needsLogin
+                            ? 'person.crop.circle'
+                            : 'key.horizontal',
+                        label: needsLogin ? '去登录' : '去绑定 IDS',
+                        height: 44,
+                        role: AdaptiveButtonRole.prominent,
+                      ),
+                    ],
                   ),
-                ],
-              );
-            },
-          ),
-        ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
 class _AllowanceQuery extends StatefulWidget {
-  const _AllowanceQuery({super.key, required this.service, required this.padding});
+  const _AllowanceQuery({
+    super.key,
+    required this.service,
+    required this.padding,
+  });
 
   final StudentAllowanceService service;
   final EdgeInsets padding;
@@ -183,7 +224,8 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
       _report = null;
     });
     try {
-      final report = await widget.service.query(StudentAllowancePeriod(_start, _end));
+      final report =
+          await widget.service.query(StudentAllowancePeriod(_start, _end));
       if (mounted) setState(() => _report = report);
     } on StudentAllowanceException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -196,111 +238,196 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final colors = context.tpColors;
     final report = _report;
     return ListView(
       padding: widget.padding,
       children: [
-        Card.outlined(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('发放月份', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+        TpPageBody(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TpCard(
+                leadingIcon: TpIcons.calendar,
+                title: '发放月份',
+                padding: const EdgeInsets.fromLTRB(
+                  TpTokens.cardPaddingHorizontal,
+                  TpTokens.space1,
+                  TpTokens.cardPaddingHorizontal,
+                  TpTokens.space4,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    OutlinedButton(
-                      onPressed: _loading ? null : () => _selectMonth(start: true),
-                      child: Text('开始：${_monthText(_start)}'),
+                    Wrap(
+                      spacing: TpTokens.space2,
+                      runSpacing: TpTokens.space2,
+                      children: [
+                        OutlinedButton(
+                          onPressed:
+                              _loading ? null : () => _selectMonth(start: true),
+                          child: Text('开始：${_monthText(_start)}'),
+                        ),
+                        OutlinedButton(
+                          onPressed: _loading
+                              ? null
+                              : () => _selectMonth(start: false),
+                          child: Text('结束：${_monthText(_end)}'),
+                        ),
+                      ],
                     ),
-                    OutlinedButton(
-                      onPressed: _loading ? null : () => _selectMonth(start: false),
-                      child: Text('结束：${_monthText(_end)}'),
+                    const SizedBox(height: TpTokens.space3),
+                    AdaptiveButton(
+                      onPressed: _query,
+                      icon: TpIcons.search,
+                      sfSymbol: 'magnifyingglass',
+                      label: '查询津贴',
+                      accessibilityLabel: _loading ? '正在查询津贴' : '查询津贴',
+                      loading: _loading,
+                      height: 44,
+                      role: AdaptiveButtonRole.prominent,
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                AdaptiveButton(
-                  onPressed: _query,
-                  icon: Icons.search,
-                  sfSymbol: 'magnifyingglass',
-                  label: '查询津贴',
-                  accessibilityLabel: _loading ? '正在查询津贴' : '查询津贴',
-                  loading: _loading,
-                  role: AdaptiveButtonRole.prominent,
+              ),
+              const SizedBox(height: TpTokens.sectionGap),
+              if (_error case final error?)
+                TpCard(
+                  color: colors.dangerRed
+                      .withValues(alpha: colors.isDark ? 0.16 : 0.08),
+                  borderColor: colors.dangerRed.withValues(alpha: 0.25),
+                  padding: const EdgeInsets.all(TpTokens.space4),
+                  child: Text(
+                    error,
+                    style: TpTypography.itemMeta(colors).copyWith(
+                      color: colors.dangerRed,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                )
+              else if (report != null) ...[
+                if (report.total case final total?) ...[
+                  _AllowanceTile(title: '查询区间合计', entry: total, isTotal: true),
+                  const SizedBox(height: TpTokens.sectionGap),
+                ],
+                if (report.months.isEmpty)
+                  TpCard(
+                    padding: const EdgeInsets.all(TpTokens.space4),
+                    child: Text(
+                      '所选月份没有津贴发放记录',
+                      style: TpTypography.itemMeta(colors).copyWith(
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ),
+                for (final entry in report.months) ...[
+                  _AllowanceTile(
+                    title: _monthText(entry.month!),
+                    entry: entry,
+                  ),
+                  const SizedBox(height: TpTokens.space2),
+                ],
+              ] else if (!_loading)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: TpTokens.space2,
+                    vertical: TpTokens.space1,
+                  ),
+                  child: Text(
+                    '按月份查询学校财务记录，结果仅在当前页面显示。',
+                    style: TpTypography.itemMeta(colors),
+                  ),
                 ),
-              ],
-            ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        if (_error case final error?)
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Text(error, style: TextStyle(color: theme.colorScheme.error)),
-          )
-        else if (report != null) ...[
-          if (report.total case final total?) _AllowanceTile(title: '查询区间合计', entry: total),
-          if (report.months.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text('所选月份没有津贴发放记录'),
-            ),
-          for (final entry in report.months)
-            _AllowanceTile(title: _monthText(entry.month!), entry: entry),
-        ] else if (!_loading)
-          const Padding(
-            padding: EdgeInsets.all(12),
-            child: Text('按月份查询学校财务记录，结果仅在当前页面显示。'),
-          ),
       ],
     );
   }
 }
 
 class _AllowanceTile extends StatelessWidget {
-  const _AllowanceTile({required this.title, required this.entry});
+  const _AllowanceTile({
+    required this.title,
+    required this.entry,
+    this.isTotal = false,
+  });
 
   final String title;
   final StudentAllowanceEntry entry;
+  final bool isTotal;
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Card.outlined(
-      clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        title: Text(title),
-        subtitle: Text('实发 ${_amountText(entry.netFen)}'),
-        expandedCrossAxisAlignment: CrossAxisAlignment.start,
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        children: [
-          Wrap(
-            spacing: 16,
-            runSpacing: 4,
-            children: [
-              Text('应发 ${_amountText(entry.grossFen)}'),
-              Text('扣款 ${_amountText(entry.deductionsFen)}'),
-              Text('扣税 ${_amountText(entry.taxFen)}'),
-            ],
+    final colors = context.tpColors;
+    return TpCard(
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          title: Text(
+            title,
+            style: TpTypography.itemTitle(colors),
           ),
-          for (final category in entry.categories) ...[
-            const Divider(),
-            Text(category.label, style: text.titleSmall),
+          subtitle: Text(
+            '实发 ${_amountText(entry.netFen)}',
+            style: TpTypography.itemMeta(colors).copyWith(
+              color: isTotal ? colors.brand : colors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+          childrenPadding: const EdgeInsets.fromLTRB(
+            TpTokens.cardPaddingHorizontal,
+            0,
+            TpTokens.cardPaddingHorizontal,
+            TpTokens.space4,
+          ),
+          children: [
             Wrap(
-              spacing: 16,
-              runSpacing: 4,
+              spacing: TpTokens.space4,
+              runSpacing: TpTokens.space1,
               children: [
-                Text('应发 ${_amountText(category.grossFen)}'),
-                Text('实发 ${_amountText(category.netFen)}'),
+                Text(
+                  '应发 ${_amountText(entry.grossFen)}',
+                  style: TpTypography.itemMeta(colors),
+                ),
+                Text(
+                  '扣款 ${_amountText(entry.deductionsFen)}',
+                  style: TpTypography.itemMeta(colors),
+                ),
+                Text(
+                  '扣税 ${_amountText(entry.taxFen)}',
+                  style: TpTypography.itemMeta(colors),
+                ),
               ],
             ),
+            for (final category in entry.categories) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: TpTokens.space2),
+                child: Divider(height: 1, thickness: 0.5, color: colors.divider),
+              ),
+              Text(
+                category.label,
+                style: TpTypography.itemTitle(colors).copyWith(fontSize: 14),
+              ),
+              const SizedBox(height: 2),
+              Wrap(
+                spacing: TpTokens.space4,
+                runSpacing: TpTokens.space1,
+                children: [
+                  Text(
+                    '应发 ${_amountText(category.grossFen)}',
+                    style: TpTypography.itemMeta(colors),
+                  ),
+                  Text(
+                    '实发 ${_amountText(category.netFen)}',
+                    style: TpTypography.itemMeta(colors),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

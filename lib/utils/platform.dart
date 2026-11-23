@@ -98,3 +98,6 @@ bool supportsDirectCalendarImport() => isIos() || isAndroid();
 
 /// Whether the timetable uses horizontal paging across weeks.
 bool usesHorizontalWeekPaging() => isIos();
+
+/// Whether selection mode replaces the bottom tab bar with a native action bar.
+bool usesIosSelectionToolbar() => isIos();

@@ -167,11 +167,10 @@ void main() {
 
     final tiles = find.byType(ExpansionTile);
     expect(tiles, findsNWidgets(3));
-    final cards = tester.widgetList<Card>(
-      find.ancestor(of: tiles, matching: find.byType(Card)),
+    final cards = tester.widgetList<Material>(
+      find.ancestor(of: tiles, matching: find.byType(Material)),
     );
-    expect(cards, hasLength(3));
-    expect(cards.map((card) => card.clipBehavior), everyElement(Clip.antiAlias));
+    expect(cards.where((m) => m.clipBehavior == Clip.antiAlias).length, greaterThanOrEqualTo(3));
 
     await tester.tap(find.text('查询区间合计'));
     await tester.pumpAndSettle();
