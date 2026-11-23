@@ -26,9 +26,7 @@ void main() {
   testWidgets('the system back leaves a settings subpage rather than the app', (
     WidgetTester tester,
   ) async {
-    // Wide enough for the non-compact layout, and tall enough that the debug
-    // tiles at the bottom of the settings list are not under the navigation bar —
-    // a tap on an obscured tile does nothing, silently.
+    // Exercise the sidebar layout, which has its own navigation stack.
     tester.view.physicalSize = const Size(1200, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -93,9 +91,10 @@ void main() {
     await tester.tap(find.text('Settings').first);
     await tester.pumpAndSettle();
 
-    // Only the debug section is reachable without an account; the window above is
-    // tall enough for it to be on screen.
-    await tester.tap(find.text('View Logs'));
+    final logsTile = find.text('View Logs');
+    await tester.ensureVisible(logsTile);
+    await tester.pumpAndSettle();
+    await tester.tap(logsTile);
     await tester.pumpAndSettle();
     expect(find.byType(DebugLogPage), findsOneWidget);
 
