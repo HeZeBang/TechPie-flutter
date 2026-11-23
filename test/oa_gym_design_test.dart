@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/pages/oa_gym_page.dart';
 import 'package:techpie/services/assignment_service.dart';
@@ -43,8 +44,24 @@ class _SignedInAuth extends AuthService {
 class _BoundThirdParty extends ThirdPartyAuthService {
   _BoundThirdParty(super.storage, super.http);
 
+  static final ThirdPartyAccount _mockIdsAccount = ThirdPartyAccount(
+    platform: ThirdPartyPlatform.ids,
+    account: '20240001',
+    sid: '20240001',
+    name: '测试同学',
+    email: 'test@shanghaitech.edu.cn',
+    token: 'mock-token',
+    boundAt: DateTime(2026, 1, 1),
+  );
+
   @override
   bool get hasIdsBinding => true;
+
+  @override
+  ThirdPartyAccount? get idsAccount => _mockIdsAccount;
+
+  @override
+  String get idsStudentId => _mockIdsAccount.idsStudentId;
 }
 
 Future<Widget> _buildGymHost({
