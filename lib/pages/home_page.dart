@@ -331,7 +331,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(height: 16),
-          _buildAppCard(featureEntries),
+          // On compact screens only three app tiles fit per row.
+          _buildAppCard(featureEntries, rows: 3),
           const SizedBox(height: 16),
           _buildTodayClasses(theme, auth.isLoggedIn),
           const SizedBox(height: 8),

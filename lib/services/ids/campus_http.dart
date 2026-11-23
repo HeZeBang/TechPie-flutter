@@ -18,9 +18,14 @@ class IdsException implements Exception {
 /// App-owned HTTP session with host, path, expiry and Secure cookie scoping.
 /// Authentication logs contain diagnostics only, never payloads or cookies.
 class CampusHttp {
-  CampusHttp(this.http, {DebugLogger? logger}) : _logger = logger;
+  CampusHttp(this.http, {DebugLogger? logger, this.onlyOrigin})
+      : _logger = logger;
   final Dio http;
   final DebugLogger? _logger;
+
+  /// Restricts this jar and its requests to a single HTTPS origin, including
+  /// redirects, rather than using the campus-wide allowlist.
+  final String? onlyOrigin;
   final CookieJar jar = CookieJar();
   final Map<String, Map<String, String>> _stored = {};
   static const hosts = {
@@ -82,9 +87,12 @@ class CampusHttp {
     Object? data,
     Map<String, String>? headers,
     bool allowErrorResponse = false,
+    bool followRedirects = true,
   }) async {
     for (var hop = 0; hop < 10; hop++) {
-      if (uri.scheme != 'https' || !hosts.contains(uri.host) || uri.userInfo.isNotEmpty) {
+      if (uri.scheme != 'https' ||
+          uri.userInfo.isNotEmpty ||
+          (onlyOrigin == null ? !hosts.contains(uri.host) : uri.origin != onlyOrigin)) {
         throw const IdsException('学校登录跳转到了不支持的地址');
       }
       Response<List<int>> response;
@@ -131,7 +139,7 @@ class CampusHttp {
       }
       await _save(uri, response.headers['set-cookie'] ?? []);
       final status = response.statusCode ?? 0;
-      final location = response.headers.value('location');
+      final location = followRedirects ? response.headers.value('location') : null;
       if ([301, 302, 303, 307, 308].contains(status) && location != null) {
         uri = uri.resolve(location);
         if (status == 303 || ((status == 301 || status == 302) && method == 'POST')) {
