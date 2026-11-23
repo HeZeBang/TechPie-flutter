@@ -262,8 +262,7 @@ void main() {
     await tester.tap(find.text('第三方账号'));
     await tester.pumpAndSettle();
     expect(find.text('eCard'), findsOneWidget);
-    final icon = tester.widget<Icon>(find.byIcon(Icons.account_balance_wallet_outlined));
-    expect(icon.color, isNull);
+    expect(find.byIcon(TpIcons.wallet), findsOneWidget);
     await tester.tap(find.text('eCard'));
     await tester.pumpAndSettle();
     expect(find.text('eCard'), findsWidgets);
