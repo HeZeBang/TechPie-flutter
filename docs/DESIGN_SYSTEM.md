@@ -74,7 +74,8 @@ Access via `context.tpColors` (registered as a `ThemeExtension<TpColors>` by `Th
 
 ## 6. Guardrails & Enforcement
 
-`test/architecture/design_system_guard_test.dart` enforces these rules automatically on every PR:
+`test/architecture/design_system_guard_test.dart` enforces these rules automatically in **repository-wide default-on (opt-out) mode** on every PR:
 
-- Pages listed in `migratedDesignSystemPages` are locked against raw `Color(0x...)`, `Card.outlined`, `Card.filled`, direct `isIos()` / `usesIosLiquidGlass()` style branches, and non-token `BorderRadius.circular(...)` magic numbers.
-- Every PR that migrates a page adds that file to `migratedDesignSystemPages` until the full repository switches to opt-out enforcement.
+- Every `.dart` file in `lib/pages/` (and modular page feature widgets such as `lib/widgets/gym/`) is automatically scanned against raw `Color(0x...)`, `Card.outlined`, `Card.filled`, direct `isIos()` / `usesIosLiquidGlass()` / `usesLegacyIosChrome()` style branches, and non-token `BorderRadius.circular(...)` magic numbers.
+- Only narrowly scoped exemptions listed in `designSystemExemptPages` are skipped: WebView/SSO bridges, the immersive video player (`elrc_player_page.dart`), the Campus Card dedicated feature host (`campus_card_page.dart`, bridged via `GpColors.fromTheme`), and developer/debug utilities.
+- New product pages added to `lib/pages/` are protected automatically from their very first commit.

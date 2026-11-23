@@ -3,29 +3,28 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/theme/tp_icons.dart';
 
-/// Pages locked to the unified TechPie Design System (`docs/DESIGN_SYSTEM.md`).
+/// Pages explicitly exempted from the TechPie Design System content guardrails.
 ///
-/// Each migration PR appends newly migrated pages here until PR 8 enables
-/// repository-wide enforcement with explicit exemptions.
-const List<String> migratedDesignSystemPages = <String>[
-  'lib/pages/home_page.dart',
-  'lib/pages/schedule_page.dart',
-  'lib/pages/assignments_page.dart',
-  'lib/pages/settings_page.dart',
-  'lib/pages/custom_course_editor_page.dart',
-  'lib/pages/custom_deadline_editor_page.dart',
-  'lib/pages/student_allowance_page.dart',
-  'lib/pages/feedback_page.dart',
-  'lib/pages/sync_settings_page.dart',
-  'lib/pages/watch_settings_page.dart',
-  'lib/pages/hidden_assignments_page.dart',
-  'lib/pages/account_deletion_page.dart',
-  'lib/pages/third_party_accounts_page.dart',
-  'lib/pages/third_party_bind_page.dart',
-  'lib/pages/ids_bind_page.dart',
-  'lib/pages/campus_card_account_page.dart',
-  'lib/pages/elrc_recordings_page.dart',
-];
+/// Repository-wide enforcement is **default-on** for every `.dart` file in
+/// `lib/pages/` and `lib/widgets/gym/`. Only WebView/auth bridges, immersive
+/// video playback, the dedicated Campus Card host (bridged separately via
+/// `GpColors.fromTheme`), and developer/debug utilities belong here.
+const Set<String> designSystemExemptPages = <String>{
+  // WebView & SSO bridges
+  'lib/pages/campus_session_handle.dart',
+  'lib/pages/egate_app_page.dart',
+  'lib/pages/generic_webview_page.dart',
+  'lib/pages/uni_auth_webview_page.dart',
+  'lib/pages/webview_host.dart',
+  // Immersive video player
+  'lib/pages/elrc_player_page.dart',
+  // Dedicated Campus Card host (bridges via GpColors.fromTheme)
+  'lib/pages/campus_card_page.dart',
+  // Developer & debug utilities
+  'lib/pages/debug_log_page.dart',
+  'lib/pages/debug_webview_page.dart',
+  'lib/pages/developer_lab_page.dart',
+};
 
 final _rawHexColorPattern = RegExp(r'\bColor\s*\(\s*0x[0-9A-Fa-f]+');
 final _legacyMaterialCardPattern = RegExp(r'\bCard\.(outlined|filled)\b');
@@ -67,6 +66,18 @@ List<String> findDesignSystemViolations(String source) {
   return violations;
 }
 
+List<String> _dartFilesIn(String directoryPath) {
+  final dir = Directory(directoryPath);
+  if (!dir.existsSync()) return const [];
+  return dir
+      .listSync(recursive: true)
+      .whereType<File>()
+      .map((file) => file.path.replaceAll('\\', '/'))
+      .where((path) => path.endsWith('.dart'))
+      .toList()
+    ..sort();
+}
+
 void main() {
   test('design system specification and foundation files exist', () {
     for (final path in [
@@ -76,6 +87,7 @@ void main() {
       'lib/theme/tp_colors.dart',
       'lib/theme/tp_typography.dart',
       'lib/theme/tp_icons.dart',
+      'lib/widgets/design_system/design_system.dart',
     ]) {
       expect(
         File(path).existsSync(),
@@ -131,20 +143,42 @@ Widget build(BuildContext context) {
     expect(findDesignSystemViolations(cleanSnippet), isEmpty);
   });
 
-  test('migrated pages conform to the TechPie Design System guardrails', () {
-    for (final path in migratedDesignSystemPages) {
-      final file = File(path);
+  test('all exempt design system paths exist on disk', () {
+    for (final path in designSystemExemptPages) {
       expect(
-        file.existsSync(),
+        File(path).existsSync(),
         isTrue,
-        reason: 'Migrated page listed in guard does not exist: $path',
-      );
-      final violations = findDesignSystemViolations(file.readAsStringSync());
-      expect(
-        violations,
-        isEmpty,
-        reason: '$path violates docs/DESIGN_SYSTEM.md:\n${violations.join('\n')}',
+        reason: 'Stale exemption in designSystemExemptPages: $path',
       );
     }
   });
+
+  test(
+    'every non-exempt page and gym module conforms to TechPie Design System guardrails',
+    () {
+      final targets = <String>[
+        ..._dartFilesIn('lib/pages')
+            .where((path) => !designSystemExemptPages.contains(path)),
+        ..._dartFilesIn('lib/widgets/gym'),
+      ];
+      expect(targets, isNotEmpty);
+
+      final allViolations = <String>[];
+      for (final path in targets) {
+        final violations = findDesignSystemViolations(
+          File(path).readAsStringSync(),
+        );
+        for (final violation in violations) {
+          allViolations.add('$path: $violation');
+        }
+      }
+
+      expect(
+        allViolations,
+        isEmpty,
+        reason: 'Files violate docs/DESIGN_SYSTEM.md:\n'
+            '${allViolations.join('\n')}',
+      );
+    },
+  );
 }
