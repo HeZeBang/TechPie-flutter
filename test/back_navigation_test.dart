@@ -90,7 +90,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Settings').first);
+    await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
 
     // Only the debug section is reachable without an account; the window above is

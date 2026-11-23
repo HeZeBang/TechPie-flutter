@@ -9,6 +9,7 @@ import '../../pages/campus_card_page.dart';
 import '../../pages/home_page.dart';
 import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
+import '../../theme/tp_icons.dart';
 import '../../utils/adaptive_layout.dart';
 import '../../utils/platform.dart';
 import '../../widgets/adaptive_page_navigation.dart';
@@ -26,6 +27,7 @@ import 'mobile_shell.dart';
 /// mounts waits for it, which is what a cold start needs.
 final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
 final appShellPendingDeadlines = ValueNotifier<bool>(false);
+final appShellPendingTab = ValueNotifier<int?>(null);
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -66,35 +68,35 @@ class _AppShellState extends State<AppShell> {
   final _tabScrollControllers = <int, ScrollController>{};
   static const List<AppDestination> _destinations = [
     AppDestination(
-      label: 'Home',
-      icon: Icons.home_outlined,
-      selectedIcon: Icons.home,
+      label: '首页',
+      icon: TpIcons.home,
+      selectedIcon: TpIcons.home,
       sfSymbol: 'house',
       selectedSfSymbol: 'house.fill',
       page: HomePage(key: ValueKey('home')),
     ),
     AppDestination(
-      label: 'Schedule',
-      icon: Icons.calendar_month_outlined,
-      selectedIcon: Icons.calendar_month,
+      label: '课表',
+      icon: TpIcons.schedule,
+      selectedIcon: TpIcons.schedule,
       sfSymbol: 'calendar',
       selectedSfSymbol: 'calendar.circle.fill',
       page: SchedulePage(key: ValueKey('schedule')),
     ),
     AppDestination(
       label: 'Deadlines',
-      icon: Icons.assignment_outlined,
-      selectedIcon: Icons.assignment,
+      icon: TpIcons.deadlines,
+      selectedIcon: TpIcons.deadlines,
       sfSymbol: 'checkmark.circle',
       selectedSfSymbol: 'checkmark.circle.fill',
       page: AssignmentsPage(key: ValueKey('assignments')),
     ),
     AppDestination(
-      label: 'Settings',
-      icon: Icons.settings_outlined,
-      selectedIcon: Icons.settings,
-      sfSymbol: 'gearshape',
-      selectedSfSymbol: 'gearshape.fill',
+      label: '我的',
+      icon: TpIcons.profile,
+      selectedIcon: TpIcons.profile,
+      sfSymbol: 'person',
+      selectedSfSymbol: 'person.fill',
       page: SettingsPage(key: ValueKey('settings')),
     ),
   ];
@@ -104,8 +106,12 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     appShellPendingEcardEntry.addListener(_showPendingEcardEntry);
     appShellPendingDeadlines.addListener(_showDeadlines);
+    appShellPendingTab.addListener(_showPendingTab);
     if (appShellPendingDeadlines.value) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showDeadlines());
+    }
+    if (appShellPendingTab.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showPendingTab());
     }
     if (appShellPendingEcardEntry.value != null) {
       // Deferred: a push during the first build is a build-time side effect.
@@ -119,6 +125,7 @@ class _AppShellState extends State<AppShell> {
   void dispose() {
     appShellPendingEcardEntry.removeListener(_showPendingEcardEntry);
     appShellPendingDeadlines.removeListener(_showDeadlines);
+    appShellPendingTab.removeListener(_showPendingTab);
     for (final controller in _tabHeroControllers.values) {
       controller.dispose();
     }
@@ -126,6 +133,14 @@ class _AppShellState extends State<AppShell> {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  void _showPendingTab() {
+    final target = appShellPendingTab.value;
+    if (!mounted || target == null) return;
+    appShellPendingTab.value = null;
+    if (target < 0 || target >= _destinations.length) return;
+    _onDestinationSelected(target);
   }
 
   void _showDeadlines() {
