@@ -276,23 +276,98 @@ String formatWeekRanges(List<int> weeks) {
 }
 
 extension CourseColorScheme on CourseColor {
-  /// Seed color for generating a proper tonal [ColorScheme] per course color.
-  /// Using [ColorScheme.fromSeed] ensures every container/onContainer pair
-  /// meets MD3's contrast requirements (WCAG 4.5:1 for normal text).
-  Color get _seed => switch (this) {
-        CourseColor.primary => Colors.deepPurple,
-        CourseColor.secondary => Colors.blueGrey,
-        CourseColor.tertiary => Colors.teal,
-        CourseColor.error => Colors.red,
-        CourseColor.green => Colors.green,
-        CourseColor.orange => Colors.deepOrange,
-        CourseColor.pink => Colors.pink,
-      };
+  /// Curated high-legibility light/dark course block palette aligned with the
+  /// unified neutral canvas and TechRed brand. Every (container, onContainer)
+  /// pair comfortably clears WCAG AA 4.5:1 contrast.
+  ({Color container, Color onContainer, Color accent}) _tokens(
+    Brightness brightness,
+  ) {
+    final isDark = brightness == Brightness.dark;
+    return switch (this) {
+      CourseColor.primary => isDark
+          ? (
+              container: const Color(0xFF1A2A44),
+              onContainer: const Color(0xFF93C5FD),
+              accent: const Color(0xFF60A5FA),
+            )
+          : (
+              container: const Color(0xFFE8F1FF),
+              onContainer: const Color(0xFF1D4ED8),
+              accent: const Color(0xFF2563EB),
+            ),
+      CourseColor.secondary => isDark
+          ? (
+              container: const Color(0xFF142E2E),
+              onContainer: const Color(0xFF5EEAD4),
+              accent: const Color(0xFF2DD4BF),
+            )
+          : (
+              container: const Color(0xFFE6F6F4),
+              onContainer: const Color(0xFF0F766E),
+              accent: const Color(0xFF0D9488),
+            ),
+      CourseColor.tertiary => isDark
+          ? (
+              container: const Color(0xFF281F44),
+              onContainer: const Color(0xFFC4B5FD),
+              accent: const Color(0xFFA78BFA),
+            )
+          : (
+              container: const Color(0xFFF1EBFF),
+              onContainer: const Color(0xFF6D28D9),
+              accent: const Color(0xFF7C3AED),
+            ),
+      CourseColor.error => isDark
+          ? (
+              container: const Color(0xFF3E1920),
+              onContainer: const Color(0xFFFCA5A5),
+              accent: const Color(0xFFF87171),
+            )
+          : (
+              container: const Color(0xFFFDECEF),
+              onContainer: const Color(0xFFA30B19),
+              accent: const Color(0xFFDC2626),
+            ),
+      CourseColor.green => isDark
+          ? (
+              container: const Color(0xFF163324),
+              onContainer: const Color(0xFF86EFAC),
+              accent: const Color(0xFF4ADE80),
+            )
+          : (
+              container: const Color(0xFFE7F8EE),
+              onContainer: const Color(0xFF15803D),
+              accent: const Color(0xFF16A34A),
+            ),
+      CourseColor.orange => isDark
+          ? (
+              container: const Color(0xFF3B2714),
+              onContainer: const Color(0xFFFCD34D),
+              accent: const Color(0xFFFBBF24),
+            )
+          : (
+              container: const Color(0xFFFFF2E2),
+              onContainer: const Color(0xFFB45309),
+              accent: const Color(0xFFD97706),
+            ),
+      CourseColor.pink => isDark
+          ? (
+              container: const Color(0xFF3C192B),
+              onContainer: const Color(0xFFF9A8D4),
+              accent: const Color(0xFFF472B6),
+            )
+          : (
+              container: const Color(0xFFFCEBF3),
+              onContainer: const Color(0xFFBE185D),
+              accent: const Color(0xFFDB2777),
+            ),
+    };
+  }
 
-  ColorScheme _scheme(Brightness brightness) =>
-      ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);
+  Color containerColor(ColorScheme scheme) => _tokens(scheme.brightness).container;
 
-  Color containerColor(ColorScheme scheme) => _scheme(scheme.brightness).primaryContainer;
+  Color onContainerColor(ColorScheme scheme) =>
+      _tokens(scheme.brightness).onContainer;
 
-  Color onContainerColor(ColorScheme scheme) => _scheme(scheme.brightness).onPrimaryContainer;
+  Color accentColor(Brightness brightness) => _tokens(brightness).accent;
 }

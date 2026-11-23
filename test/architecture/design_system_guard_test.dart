@@ -9,6 +9,9 @@ import 'package:techpie/theme/tp_icons.dart';
 /// repository-wide enforcement with explicit exemptions.
 const List<String> migratedDesignSystemPages = <String>[
   'lib/pages/home_page.dart',
+  'lib/pages/schedule_page.dart',
+  'lib/pages/assignments_page.dart',
+  'lib/pages/settings_page.dart',
 ];
 
 final _rawHexColorPattern = RegExp(r'\bColor\s*\(\s*0x[0-9A-Fa-f]+');

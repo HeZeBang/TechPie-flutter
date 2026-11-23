@@ -89,3 +89,12 @@ bool supportsSystemDynamicColor() =>
         defaultTargetPlatform == TargetPlatform.linux ||
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows);
+
+/// Whether this platform has a paired Apple Watch companion settings surface.
+bool supportsAppleWatch() => isIos();
+
+/// Whether calendar export can import events directly into the device calendar.
+bool supportsDirectCalendarImport() => isIos() || isAndroid();
+
+/// Whether the timetable uses horizontal paging across weeks.
+bool usesHorizontalWeekPaging() => isIos();
