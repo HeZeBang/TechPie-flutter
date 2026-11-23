@@ -8,6 +8,7 @@ import 'debug_logger.dart';
 import 'ecard_bind_service.dart';
 import 'ecard_widget_service.dart';
 import 'egate_app_service.dart';
+import 'island_service.dart';
 import 'oa_gym_service.dart';
 import 'schedule_service.dart';
 import 'spending_alert_service.dart';
@@ -38,6 +39,7 @@ class ServiceProvider extends InheritedWidget {
   final EcardWidgetService? ecardWidgetService;
   final DeadlineReminderService? deadlineReminderService;
   final SpendingAlertService? spendingAlertService;
+  final IslandService? islandService;
 
   const ServiceProvider({
     super.key,
@@ -59,6 +61,7 @@ class ServiceProvider extends InheritedWidget {
     this.ecardWidgetService,
     this.deadlineReminderService,
     this.spendingAlertService,
+    this.islandService,
     required super.child,
   });
 
@@ -71,6 +74,7 @@ class ServiceProvider extends InheritedWidget {
 
   @override
   bool updateShouldNotify(ServiceProvider oldWidget) =>
+      islandService != oldWidget.islandService ||
       authService != oldWidget.authService ||
       debugLogger != oldWidget.debugLogger ||
       storageService != oldWidget.storageService ||

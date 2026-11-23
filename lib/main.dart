@@ -22,6 +22,7 @@ import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
 import 'services/http_client.dart';
 import 'services/ids/ids_client.dart';
+import 'services/island_service.dart';
 import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
@@ -128,6 +129,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     scheduleService,
     syncReminders: isApple,
   );
+  final islandService = IslandService(storageService, scheduleService, assignmentService);
   final deadlineWidgetService = DeadlineWidgetService(assignmentService);
   final deadlineReminderService =
       isApple ? DeadlineReminderService(assignmentService) : null;
@@ -212,6 +214,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       deadlineWidgetService: deadlineWidgetService,
       deadlineReminderService: deadlineReminderService,
       spendingAlertService: spendingAlertService,
+      islandService: islandService,
     ),
   );
 
@@ -219,6 +222,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   bootMark('cached data ready');
   if (isApple) deadlineWidgetService.initialize();
 
+  islandService.start();
   oaGymService.startProfileSync();
   unawaited(campusCardService.refreshAccount());
 
@@ -345,6 +349,7 @@ class TechPieApp extends StatefulWidget {
   final DeadlineWidgetService? deadlineWidgetService;
   final DeadlineReminderService? deadlineReminderService;
   final SpendingAlertService? spendingAlertService;
+  final IslandService? islandService;
 
   const TechPieApp({
     super.key,
@@ -366,6 +371,7 @@ class TechPieApp extends StatefulWidget {
     this.deadlineWidgetService,
     this.deadlineReminderService,
     this.spendingAlertService,
+    this.islandService,
   });
 
   @override
@@ -431,6 +437,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.deadlineWidgetService?.dispose();
     widget.deadlineReminderService?.dispose();
     widget.spendingAlertService?.dispose();
+    widget.islandService?.dispose();
     _studentAllowanceService.dispose();
     widget.campusCardService.dispose();
     super.dispose();
@@ -443,6 +450,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       // guarded: a token with time left is left alone.
       unawaited(widget.authService.tryRenewSession());
       unawaited(widget.spendingAlertService?.synchronize());
+      unawaited(widget.islandService?.refreshNow(force: true));
       unawaited(_checkForUpdatesQuietly());
     }
   }
@@ -532,6 +540,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         ecardWidgetService: widget.ecardWidgetService,
         deadlineReminderService: widget.deadlineReminderService,
         spendingAlertService: widget.spendingAlertService,
+        islandService: widget.islandService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,

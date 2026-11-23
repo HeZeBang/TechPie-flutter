@@ -142,6 +142,8 @@ android {
 }
 
 dependencies {
+    implementation("com.xzakota.hyper.notification:focus-api:1.4")
+    implementation("androidx.core:core:1.18.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     testImplementation("junit:junit:4.13.2")
 }
