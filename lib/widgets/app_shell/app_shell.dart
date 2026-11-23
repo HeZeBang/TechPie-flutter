@@ -37,12 +37,7 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  // Temporarily disabled: the wide-window sidebar (DesktopShell) is turned
-  // off so every window width uses MobileShell's bottom nav bar instead.
-  // Flip this back to true to restore the sidebar at width >= 600. The
-  // nav-bar-clearance check in adaptive_feedback.dart was changed to match —
-  // re-enabling this alone is not enough, see that call site as well.
-  static const bool _desktopShellEnabled = false;
+  static const bool _desktopShellEnabled = true;
 
   /// The tab the campus card lives in on iOS: it is entered from Home's feature
   /// grid, so a widget or shortcut opens it there too, the way a system app's
@@ -293,30 +288,15 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final windowSizeClass = appWindowSizeClassOf(context);
     final pageView = _buildPageView(context);
 
-    if (_desktopShellEnabled &&
-        windowSizeClass == AppWindowSizeClass.expanded) {
+    if (_desktopShellEnabled && usesDesktopSidebarShell(context)) {
       return DesktopShell(
         destinations: _destinations,
         selectedIndex: _selectedIndex,
         sidebarCollapsed: _sidebarCollapsed,
         onDestinationSelected: _onDestinationSelected,
         onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
-        child: _buildDesktopContentNavigator(pageView),
-      );
-    }
-
-    if (_desktopShellEnabled &&
-        windowSizeClass == AppWindowSizeClass.medium) {
-      return DesktopShell(
-        destinations: _destinations,
-        selectedIndex: _selectedIndex,
-        sidebarCollapsed: true,
-        showToggleButton: false,
-        onDestinationSelected: _onDestinationSelected,
-        onToggleSidebarCollapsed: () {},
         child: _buildDesktopContentNavigator(pageView),
       );
     }

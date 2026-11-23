@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import 'app_shell/tg_bottom_nav_bar.dart';
 
@@ -158,12 +159,10 @@ class AdaptiveFeedbackHostState extends State<AdaptiveFeedbackHost>
               valueListenable: _pageRouteDepth,
               builder: (context, depth, banner) {
                 final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-                // MobileShell's bottom nav bar is always the shell now (the
-                // sidebar is temporarily disabled, see
-                // AppShell._desktopShellEnabled), so nav-bar clearance no
-                // longer depends on window width — only whether a full-screen
-                // page currently covers it (depth > 1).
-                final navVisible = depth <= 1;
+                // Only clear the bottom nav bar when MobileShell is showing it
+                // (not covered by a pushed page and not replaced by DesktopShell).
+                final navVisible =
+                    depth <= 1 && !usesDesktopSidebarShell(context);
                 final navClearance = isIos()
                     ? 52.0 + 12
                     : TgBottomNavBar.barHeight + 2 * TgBottomNavBar.margin;

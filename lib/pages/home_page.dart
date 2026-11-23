@@ -321,50 +321,80 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         '${now.month}月${now.day}日 星期${_dayLabels[now.weekday - 1]}'
         '${week > 0 ? ' · 第 $week 周' : ''}';
 
+    final isBento =
+        MediaQuery.sizeOf(context).width >= TpTokens.bentoBreakpoint;
+    final horizontalPadding = isBento
+        ? TpTokens.pageHorizontalPaddingWide
+        : TpTokens.pageHorizontalPadding;
+
+    final header = TpPageHeader(
+      key: const ValueKey('home.greeting-header'),
+      subtitle: dateSubtitle,
+      title: _greeting(now),
+      trailing: TpAvatarBadge(
+        key: const ValueKey('home.avatar'),
+        text: _avatarLabel(auth, storage),
+        tooltip: auth.isLoggedIn ? '我的' : '登录',
+        onTap: () {
+          if (auth.isLoggedIn) {
+            appShellPendingTab.value = 3;
+          } else {
+            unawaited(startUniAuthLogin(context));
+          }
+        },
+      ),
+    );
+    final campusCardStrip = _buildCampusCardStrip(campusCard, storage);
+    final todayClasses = _buildTodayClasses(colors, auth.isLoggedIn);
+    final deadlines = _buildPendingAssignments(colors);
+    final quickActions = _buildQuickActions();
+    final debugPanel = isDebug ? _buildDebugPanel(colors) : null;
+
     return Scaffold(
       backgroundColor: colors.canvas,
       body: SafeArea(
         bottom: false,
         child: ListView(
           padding: EdgeInsets.fromLTRB(
-            TpTokens.pageHorizontalPadding,
-            TpTokens.space3,
-            TpTokens.pageHorizontalPadding,
+            horizontalPadding,
+            isBento ? TpTokens.space5 : TpTokens.space3,
+            horizontalPadding,
             AppShellMetrics.bottomContentPaddingOf(context),
           ),
           children: [
             TpPageBody(
+              maxWidth: isBento ? 1120 : TpTokens.singleColumnMaxWidth,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  TpPageHeader(
-                    key: const ValueKey('home.greeting-header'),
-                    subtitle: dateSubtitle,
-                    title: _greeting(now),
-                    trailing: TpAvatarBadge(
-                      key: const ValueKey('home.avatar'),
-                      text: _avatarLabel(auth, storage),
-                      tooltip: auth.isLoggedIn ? '我的' : '登录',
-                      onTap: () {
-                        if (auth.isLoggedIn) {
-                          appShellPendingTab.value = 3;
-                        } else {
-                          unawaited(startUniAuthLogin(context));
-                        }
-                      },
-                    ),
+                  header,
+                  SizedBox(
+                    height: isBento ? TpTokens.space4 : TpTokens.sectionGap,
                   ),
-                  const SizedBox(height: TpTokens.sectionGap),
-                  _buildCampusCardStrip(campusCard, storage),
-                  const SizedBox(height: TpTokens.sectionGap),
-                  _buildTodayClasses(colors, auth.isLoggedIn),
-                  const SizedBox(height: TpTokens.sectionGap),
-                  _buildPendingAssignments(colors),
-                  const SizedBox(height: TpTokens.sectionGap),
-                  _buildQuickActions(),
-                  if (isDebug) ...[
+                  if (isBento)
+                    TpBentoGrid(
+                      primaryColumn: [
+                        todayClasses,
+                        deadlines,
+                        if (debugPanel != null) debugPanel,
+                      ],
+                      secondaryColumn: [
+                        campusCardStrip,
+                        quickActions,
+                      ],
+                    )
+                  else ...[
+                    campusCardStrip,
                     const SizedBox(height: TpTokens.sectionGap),
-                    _buildDebugPanel(colors),
+                    todayClasses,
+                    const SizedBox(height: TpTokens.sectionGap),
+                    deadlines,
+                    const SizedBox(height: TpTokens.sectionGap),
+                    quickActions,
+                    if (debugPanel != null) ...[
+                      const SizedBox(height: TpTokens.sectionGap),
+                      debugPanel,
+                    ],
                   ],
                 ],
               ),
