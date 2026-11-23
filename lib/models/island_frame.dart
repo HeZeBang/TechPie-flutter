@@ -110,7 +110,7 @@ IslandFrame? buildIslandFrame({
       kind: 'deadline',
       title: deadline.title,
       statusLine: _deadlineStatus(deadline.due, now),
-      detail: '${deadline.course} · ${deadline.kind.label}',
+      detail: _deadlineDetail(deadline),
       expiresAt: deadline.due,
     );
   }
@@ -118,6 +118,21 @@ IslandFrame? buildIslandFrame({
   // Nothing imminent: a class hours away or a deadline tomorrow is the home
   // page's business, not the status bar's.
   return null;
+}
+
+String _deadlineDetail(Assignment deadline) {
+  final course = deadline.course.trim();
+  final location = switch (deadline) {
+    CustomDeadline(:final location) => location.trim(),
+    ExamAssignment(:final location) => location.trim(),
+    _ => '',
+  };
+  final parts = <String>[
+    if (course.isNotEmpty) course,
+    if (location.isNotEmpty) location,
+    deadline.kind.label,
+  ];
+  return parts.join(' · ');
 }
 
 Assignment? _nearestDeadline(

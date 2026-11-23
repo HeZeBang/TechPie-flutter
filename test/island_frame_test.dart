@@ -224,4 +224,106 @@ void main() {
 
     expect(frame!.expiresAt, due);
   });
+
+  test('custom deadlines format course, location, and kind cleanly', () {
+    final due = DateTime(2026, 3, 9, 18, 0);
+
+    final bare = buildIslandFrame(
+      dayCourses: const [],
+      upcomingDeadlines: [
+        CustomDeadline(
+          id: 'c1',
+          title: '交材料',
+          course: '',
+          due: due,
+          notes: '私密备注不应出现在锁屏',
+        ),
+      ],
+      now: mondayMorning,
+    );
+    expect(bare?.kind, 'deadline');
+    expect(bare?.title, '交材料');
+    expect(bare?.detail, '自定义');
+    expect(bare?.statusLine, '今天截止 18:00');
+    expect(bare?.expiresAt, due);
+
+    final withLocationOnly = buildIslandFrame(
+      dayCourses: const [],
+      upcomingDeadlines: [
+        CustomDeadline(
+          id: 'c2',
+          title: '预约体检',
+          course: '',
+          location: '校医院 201',
+          due: due,
+        ),
+      ],
+      now: mondayMorning,
+    );
+    expect(withLocationOnly?.detail, '校医院 201 · 自定义');
+
+    final full = buildIslandFrame(
+      dayCourses: const [],
+      upcomingDeadlines: [
+        CustomDeadline(
+          id: 'c3',
+          title: '组会汇报',
+          course: 'CS101',
+          location: '信息学院 1B-201',
+          due: due,
+        ),
+      ],
+      now: mondayMorning,
+    );
+    expect(full?.detail, 'CS101 · 信息学院 1B-201 · 自定义');
+  });
+
+  test('an earlier custom deadline beats a later remote assignment and enters timeline', () {
+    final now = DateTime(2026, 3, 9, 8, 0);
+    final customDue = DateTime(2026, 3, 10, 10, 0);
+    final remoteDue = DateTime(2026, 3, 10, 18, 0);
+    final deadlines = <Assignment>[
+      _deadline(title: '远端作业', due: remoteDue),
+      CustomDeadline(
+        id: 'c-early',
+        title: '自定义 DDL',
+        course: '算法',
+        location: 'H101',
+        due: customDue,
+      ),
+    ];
+
+    final timeline = buildIslandTimeline(
+      coursesForDay: (_) => const [],
+      deadlines: deadlines,
+      now: now,
+    );
+
+    final showAt = customDue.subtract(deadlineLead).millisecondsSinceEpoch;
+    expect(timeline[showAt]?.title, '自定义 DDL');
+    expect(timeline[showAt]?.detail, '算法 · H101 · 自定义');
+    // Once the custom deadline passes, the remaining remote assignment takes over.
+    expect(timeline[customDue.millisecondsSinceEpoch]?.title, '远端作业');
+    expect(timeline[remoteDue.millisecondsSinceEpoch], isNull);
+  });
+
+  test('exam deadlines include room location when present', () {
+    final frame = buildIslandFrame(
+      dayCourses: const [],
+      upcomingDeadlines: [
+        ExamAssignment(
+          id: 'exam-1',
+          title: '高等数学期末考',
+          course: '高等数学',
+          due: DateTime(2026, 3, 9, 14, 0),
+          semesterId: '20261',
+          location: 'H102',
+          batchName: '期末考试',
+        ),
+      ],
+      now: mondayMorning,
+    );
+
+    expect(frame?.detail, '高等数学 · H102 · 考试');
+  });
 }
