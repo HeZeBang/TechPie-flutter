@@ -46,3 +46,14 @@ test('cold starts read existing UTF-8 snapshots and encrypted grants larger than
   });
   assert.equal(JSON.stringify(result), json);
 });
+
+test('app destruction during a cold cache read cannot open Wear Engine or initialize the vault', () => {
+  let loaded, started = 0, cryptoLoads = 0;
+  const context = {setInterval: () => 1, clearInterval() {}, readJson(name, done) { loaded = done; },
+    require() { cryptoLoads++; }, WearLink: function() { this.start = () => { started++; }; }};
+  vm.createContext(context); vm.runInContext(source, context);
+  const app = context.application;
+  app.onCreate(); app.data.api.watchResume(); app.onDestroy();
+  loaded(null, null);
+  assert.equal(started, 0); assert.equal(cryptoLoads, 0);
+});

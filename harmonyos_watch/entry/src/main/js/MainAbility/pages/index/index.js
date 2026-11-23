@@ -24,28 +24,32 @@ export default {
     try { application = getApp().data.api; }
     catch (error) { this.codeMessage = '应用状态读取失败'; console.error('TechPie app state: ' + String(error)); }
   },
-  onReady() {
-    try {
-      this.observe(); application.watchResume(); this.focusCrown(); this.refreshCode();
-      this._started = true; console.info('TechPie page ready');
-    } catch (error) {
-      this.codeMessage = '数据初始化失败，请重新打开';
-      console.error('TechPie page startup: ' + String(error));
-    }
+  onReady() { this.enterPage(); },
+  onShow() { this.enterPage(); },
+  enterPage() {
+    if (this._visible || !application) return;
+    this._visible = true; this._visit = (this._visit || 0) + 1;
+    this._needCode = true;
+    var page = this, visit = this._visit;
+    application.watchResume();
+    application.watchObserve(function(state) {
+      if (page._visible && visit === page._visit) page.applyState(state);
+    }, function() { page.leavePage(); });
+    this.focusCrown();
+    console.info('TechPie page ready');
   },
-  onShow() {
-    if (this._started) { this.observe(); application.watchResume(); this.focusCrown(); }
-  },
-  observe() {
-    var page = this;
-    application.watchObserve(function(state) { page.applyState(state); });
-  },
-  onHide() { this.cancelCode(); this.view = 'deck'; this.pageIndex = 0; this.codeVisible = false; this._localCode = null; if (this._started) application.watchPause(); },
-  onDestroy() {
+  onHide() { this.leavePage(); },
+  onDestroy() { this.leavePage(); },
+  leavePage() {
+    if (!this._visible) return;
+    this._visible = false;
+    application.watchPause();
     this.cancelCode();
-    if (focusTimer) clearTimeout(focusTimer);
-    if (paintTimer) clearTimeout(paintTimer);
-    if (this._started) application.watchPause();
+    clearTimeout(focusTimer); clearTimeout(paintTimer);
+    focusTimer = null; paintTimer = null;
+    this._prepared = null; this._localCode = null; this._failedGrant = null;
+    this._codeId = null; this._codeStarted = null;
+    // Do not change the swiper or canvas while the native view is being hidden.
   },
   onBackPress() { if (this.view !== 'deck') { this.goBack(); return true; } return false; },
   onSwipe(event) { if (event.direction === 'right') this.goBack(); },
@@ -55,14 +59,17 @@ export default {
     if (this.pageIndex === 0) this.refreshCode();
   },
   onPageChange(event) {
+    if (!this._visible || event.index === this.pageIndex) return;
+    this._needCode = true;
     this.pageIndex = event.index;
-    if (event.index === 0) { this.applyState(application.watchState()); this.refreshCode(); }
+    if (event.index === 0) this.applyState(application.watchState());
     else { this.cancelCode(); application.watchHideCode(); }
   },
   focusCrown() {
-    var page = this;
+    var page = this, visit = this._visit;
     if (focusTimer) clearTimeout(focusTimer);
     focusTimer = setTimeout(function() {
+      if (!page._visible || page._visit !== visit) return;
       try {
         var control = page.view === 'deck' ? page.$refs.deck : page.$refs.details;
         control.rotation({focus: true}); page.crownError = '';
@@ -79,10 +86,9 @@ export default {
   nextDay() { if (this.dayOffset < 6) { this.dayOffset++; this.applyState(application.watchState()); } },
   synchronize() { application.watchSync(); },
   applyState(state) {
-    if (!state) return;
+    if (!this._visible || !state) return;
     var now = application.watchNow(), d = new Date(now + 28800000);
     var start = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - 28800000;
-    var becameConnected = state.connected && !this.connected;
     this.connected = state.connected;
     this.lastSync = state.updatedAt ? date(state.updatedAt) + ' ' + time(state.updatedAt) : '尚未同步';
     this.status = state.connected ? '已同步' : (state.updatedAt ? '本地数据 · ' + this.lastSync : '等待首次同步');
@@ -126,11 +132,11 @@ export default {
     var seconds = code ? Math.max(0, Math.ceil((code.until - now) / 1000)) : 0;
     this.codeVisible = !!code && this.pageIndex === 0 && this.view === 'deck';
     this.codeMessage = code ? (this._localCode ? '离线码 · ' : '') + seconds + ' 秒' :
-      (this._failedGrant ? '离线码生成失败，轻触重试' : this._work || state.codeLoading ? '正在更新校园码' : (state.connected ? '轻触此处获取校园码' : '连接手机同步离线授权'));
+      (this._failedGrant ? '离线码生成失败，轻触重试' : this._work || state.codeLoading ? '正在更新校园码' : (credential || state.connected ? '轻触此处刷新校园码' : '连接手机同步离线授权'));
     if (this.codeVisible && this._codeId !== code.id) this.drawCode(code);
-    if (this.pageIndex === 0 && this.view === 'deck' && !this._work && !this._failedGrant &&
-        ((credential && !code) || (becameConnected && !code) || (code && seconds <= 10 && !state.codeLoading && this._requested !== code.id))) {
-      this._requested = code ? code.id : 'initial'; this.refreshCode();
+    if (this._needCode && this.pageIndex === 0 && this.view === 'deck' && (credential || state.connected)) {
+      this._needCode = false;
+      if (!code) this.refreshCode();
     }
     if (!this.codeVisible) this._codeId = null;
   },
@@ -139,16 +145,18 @@ export default {
     this._codeTimer = null; this._work = null;
   },
   refreshCode() {
+    if (!this._visible || this.pageIndex !== 0 || this.view !== 'deck') return;
+    this._needCode = false;
     var page = this, grant = application.watchCredential();
     if (!grant) { application.watchCode(); return; }
     if (this._work) return;
-    var work = {}, began = Date.now(), signer, frame, matrixStep;
+    var work = {}, began = Date.now(), lastStep = began, signer, frame, matrixStep;
     console.info('TechPie offline start');
     this._work = work; this._failedGrant = null;
     this.codeMessage = '正在生成离线码';
     function run() {
       if (page._work !== work) return;
-      if (page.view !== 'deck' || page.pageIndex !== 0 || application.watchCredential() !== grant) {
+      if (!page._visible || page.view !== 'deck' || page.pageIndex !== 0 || Date.now() - lastStep > 2000 || application.watchCredential() !== grant) {
         page.cancelCode(); return;
       }
       try {
@@ -168,6 +176,7 @@ export default {
             page.applyState(application.watchState()); page.cancelCode(); return;
           }
         }
+        lastStep = Date.now();
         page._codeTimer = setTimeout(run, 1);
       } catch (error) {
         page.cancelCode(); page._failedGrant = grant;
@@ -178,10 +187,10 @@ export default {
     this._codeTimer = setTimeout(run, 1);
   },
   drawCode(code) {
-    var page = this;
+    var page = this, visit = this._visit;
     if (paintTimer) clearTimeout(paintTimer);
     paintTimer = setTimeout(function() {
-      if (!page.codeVisible) return;
+      if (!page._visible || page._visit !== visit || !page.codeVisible || code.until <= application.watchNow()) return;
       var ctx = page.$refs.qr.getContext('2d'), size = code.size;
       var cell = Math.floor(264 / (size + 8)), offset = Math.floor((264 - size * cell) / 2);
       ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 264, 264); ctx.fillStyle = '#000000';
