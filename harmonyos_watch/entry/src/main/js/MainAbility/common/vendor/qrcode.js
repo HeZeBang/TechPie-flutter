@@ -93,26 +93,6 @@ var qrcode = function() {
       }
     };
 
-    var getBestMaskPattern = function() {
-
-      var minLostPoint = 0;
-      var pattern = 0;
-
-      for (var i = 0; i < 8; i += 1) {
-
-        makeImpl(true, i);
-
-        var lostPoint = QRUtil.getLostPoint(_this);
-
-        if (i == 0 || minLostPoint > lostPoint) {
-          minLostPoint = lostPoint;
-          pattern = i;
-        }
-      }
-
-      return pattern;
-    };
-
     var setupTimingPattern = function() {
 
       for (var r = 8; r < _moduleCount - 8; r += 1) {
@@ -407,7 +387,7 @@ var qrcode = function() {
       return _moduleCount;
     };
 
-    _this.make = function() {
+    _this.start = function() {
       if (_typeNumber < 1) {
         var typeNumber = 1;
 
@@ -435,7 +415,15 @@ var qrcode = function() {
         _typeNumber = typeNumber;
       }
 
-      makeImpl(false, getBestMaskPattern() );
+      var mask = 0, bestMask = 0, bestScore = Infinity;
+      return function step() {
+        if (mask === 8) { makeImpl(false, bestMask); return true; }
+        makeImpl(true, mask);
+        var score = QRUtil.getLostPoint(_modules, bestScore);
+        if (score < bestScore) { bestMask = mask; bestScore = score; }
+        mask++;
+        return false;
+      };
     };
 
 
@@ -752,19 +740,20 @@ var qrcode = function() {
       }
     };
 
-    _this.getLostPoint = function(qrcode) {
+    _this.getLostPoint = function(modules, best) {
 
-      var moduleCount = qrcode.getModuleCount();
+      var moduleCount = modules.length;
 
       var lostPoint = 0;
 
+      if (lostPoint >= best) return lostPoint;
       // LEVEL1
 
       for (var row = 0; row < moduleCount; row += 1) {
         for (var col = 0; col < moduleCount; col += 1) {
 
           var sameCount = 0;
-          var dark = qrcode.isDark(row, col);
+          var dark = modules[row][col];
 
           for (var r = -1; r <= 1; r += 1) {
 
@@ -782,7 +771,7 @@ var qrcode = function() {
                 continue;
               }
 
-              if (dark == qrcode.isDark(row + r, col + c) ) {
+              if (dark == modules[row + r][col + c] ) {
                 sameCount += 1;
               }
             }
@@ -794,32 +783,34 @@ var qrcode = function() {
         }
       };
 
+      if (lostPoint >= best) return lostPoint;
       // LEVEL2
 
       for (var row = 0; row < moduleCount - 1; row += 1) {
         for (var col = 0; col < moduleCount - 1; col += 1) {
           var count = 0;
-          if (qrcode.isDark(row, col) ) count += 1;
-          if (qrcode.isDark(row + 1, col) ) count += 1;
-          if (qrcode.isDark(row, col + 1) ) count += 1;
-          if (qrcode.isDark(row + 1, col + 1) ) count += 1;
+          if (modules[row][col] ) count += 1;
+          if (modules[row + 1][col] ) count += 1;
+          if (modules[row][col + 1] ) count += 1;
+          if (modules[row + 1][col + 1] ) count += 1;
           if (count == 0 || count == 4) {
             lostPoint += 3;
           }
         }
       }
 
+      if (lostPoint >= best) return lostPoint;
       // LEVEL3
 
       for (var row = 0; row < moduleCount; row += 1) {
         for (var col = 0; col < moduleCount - 6; col += 1) {
-          if (qrcode.isDark(row, col)
-              && !qrcode.isDark(row, col + 1)
-              &&  qrcode.isDark(row, col + 2)
-              &&  qrcode.isDark(row, col + 3)
-              &&  qrcode.isDark(row, col + 4)
-              && !qrcode.isDark(row, col + 5)
-              &&  qrcode.isDark(row, col + 6) ) {
+          if (modules[row][col]
+              && !modules[row][col + 1]
+              &&  modules[row][col + 2]
+              &&  modules[row][col + 3]
+              &&  modules[row][col + 4]
+              && !modules[row][col + 5]
+              &&  modules[row][col + 6] ) {
             lostPoint += 40;
           }
         }
@@ -827,25 +818,26 @@ var qrcode = function() {
 
       for (var col = 0; col < moduleCount; col += 1) {
         for (var row = 0; row < moduleCount - 6; row += 1) {
-          if (qrcode.isDark(row, col)
-              && !qrcode.isDark(row + 1, col)
-              &&  qrcode.isDark(row + 2, col)
-              &&  qrcode.isDark(row + 3, col)
-              &&  qrcode.isDark(row + 4, col)
-              && !qrcode.isDark(row + 5, col)
-              &&  qrcode.isDark(row + 6, col) ) {
+          if (modules[row][col]
+              && !modules[row + 1][col]
+              &&  modules[row + 2][col]
+              &&  modules[row + 3][col]
+              &&  modules[row + 4][col]
+              && !modules[row + 5][col]
+              &&  modules[row + 6][col] ) {
             lostPoint += 40;
           }
         }
       }
 
+      if (lostPoint >= best) return lostPoint;
       // LEVEL4
 
       var darkCount = 0;
 
       for (var col = 0; col < moduleCount; col += 1) {
         for (var row = 0; row < moduleCount; row += 1) {
-          if (qrcode.isDark(row, col) ) {
+          if (modules[row][col] ) {
             darkCount += 1;
           }
         }

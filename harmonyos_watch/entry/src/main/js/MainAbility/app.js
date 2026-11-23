@@ -1,6 +1,6 @@
 import { WearLink } from './common/wear-link.js';
 import { readJson, writeJson } from './common/watch-files.js';
-import {encodeQr} from './common/qr-matrix.js';
+import {startQr} from './common/qr-matrix.js';
 
 var link, listener, clock, state, loaded = false, loading = false, foreground = false;
 var offlineReady = false, credential = null, owner = null, vault, grantGeneration = 0, vaultStatus = 'INITIALIZING';
@@ -51,7 +51,7 @@ export default {
   watchNow() { return link.connection.phoneNow(); },
   watchCredential() { return owner && owner === link.connection.cacheBinding && credential && credential.expiresAt * 1000 > link.connection.phoneNow() ? credential : null; },
   watchRandom(length) { return vault.randomBytes(length); },
-  watchMatrix(bytes) { return encodeQr(bytes); }
+  watchMatrix(bytes) { return startQr(bytes); }
   }},
   onCreate() {
     link = new WearLink(publish, {onCache: function(cache, done) {

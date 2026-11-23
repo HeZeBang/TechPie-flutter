@@ -1,18 +1,7 @@
 /* eslint-disable no-bitwise, no-mixed-operators, no-use-before-define, max-len */
-const {BigInteger, SecureRandom} = require('./jsbn')
+const {BigInteger} = require('./jsbn')
 const {ECCurveFp} = require('./ec')
 
-const rng = new SecureRandom()
-const {curve, G, n} = generateEcparam()
-
-/**
- * 获取公共椭圆曲线
- */
-
-
-/**
- * 生成ecparam
- */
 function generateEcparam() {
   // 椭圆曲线
   const p = new BigInteger('FFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFF', 16)
@@ -30,30 +19,6 @@ function generateEcparam() {
   return {curve, G, n}
 }
 
-/**
- * 生成密钥对：publicKey = privateKey * G
- */
-function generateKeyPairHex(a, b, c) {
-  const random = a ? new BigInteger(a, b, c) : new BigInteger(n.bitLength(), rng)
-  const d = random.mod(n.subtract(BigInteger.ONE)).add(BigInteger.ONE) // 随机数
-  const privateKey = leftPad(d.toString(16), 64)
-
-  const P = G.multiply(d) // P = dG，p 为公钥，d 为私钥
-  const Px = leftPad(P.getX().toBigInteger().toString(16), 64)
-  const Py = leftPad(P.getY().toBigInteger().toString(16), 64)
-  const publicKey = '04' + Px + Py
-
-  return {privateKey, publicKey}
-}
-
-/**
- * 生成压缩公钥
- */
-
-
-/**
- * utf8串转16进制串
- */
 function utf8ToHex(input) {
   const encoded = encodeURIComponent(input)
   let result = ''
@@ -119,7 +84,7 @@ function hexToArray(hexStr) {
 
 module.exports = {
   generateEcparam,
-  generateKeyPairHex,
+
   utf8ToHex,
   leftPad,
   arrayToHex,
