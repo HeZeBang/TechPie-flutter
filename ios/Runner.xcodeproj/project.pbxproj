@@ -20,6 +20,7 @@
 		674C1E9FBF132F0F79A1B9EB /* EcardBindTunnelPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A57A3E0C7844F433A2F16B /* EcardBindTunnelPlugin.swift */; };
 		6BFBE954DB868241E9E9810B /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 052EF181B45C1F8AB028A91F /* Pods_Runner.framework */; };
 		713F49B77717FAE6822B2F3C /* DeadlineWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38716F6453DEE11F5FB03567 /* DeadlineWidgetBridge.swift */; };
+		A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		75CE913AF0FADB4E2A1F4D42 /* WatchSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 5D3F4FB42B7E14FFEF02E328 /* WatchSupport */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
@@ -127,6 +128,7 @@
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		38716F6453DEE11F5FB03567 /* DeadlineWidgetBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeadlineWidgetBridge.swift; path = Bridge/DeadlineWidgetBridge.swift; sourceTree = "<group>"; };
+		A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeadlineReminderBridge.swift; path = ../apple/DeadlineReminders/DeadlineReminderBridge.swift; sourceTree = SOURCE_ROOT; };
 		3A18B1C545E34121D35EA8DC /* Watch.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = Watch.xcconfig; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		3B7035B6F9EF034B7C94942F /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -332,6 +334,7 @@
 				99B11879EDB0416AA00498FB /* TechPieWatch */,
 				46D609042B9BA1A3F0658A68 /* EcardBindTunnel */,
 				393B1575DB43C81A10ABFC5F /* DeadlineWidgetShared */,
+				A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -742,6 +745,7 @@
 				8F7428AE32B6D2B9B94C07A2 /* WatchConnectivityBridge.swift in Sources */,
 				674C1E9FBF132F0F79A1B9EB /* EcardBindTunnelPlugin.swift in Sources */,
 				713F49B77717FAE6822B2F3C /* DeadlineWidgetBridge.swift in Sources */,
+				A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

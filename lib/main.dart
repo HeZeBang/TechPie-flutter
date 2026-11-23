@@ -14,6 +14,7 @@ import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
 import 'services/campus_card_service.dart';
+import 'services/deadline_reminder_service.dart';
 import 'services/deadline_widget_service.dart';
 import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
@@ -98,14 +99,20 @@ Future<void> _realMain(SharedPreferences prefs) async {
     storageService,
     thirdPartyAuthService,
   );
+  final isApple = !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
   final assignmentService = AssignmentService(
     storageService,
     httpClient,
     authService,
     thirdPartyAuthService,
     scheduleService,
+    syncReminders: isApple,
   );
   final deadlineWidgetService = DeadlineWidgetService(assignmentService);
+  final deadlineReminderService =
+      isApple ? DeadlineReminderService(assignmentService) : null;
   final syncService = SyncService(
     authService,
     thirdPartyAuthService,
@@ -185,15 +192,12 @@ Future<void> _realMain(SharedPreferences prefs) async {
       ecardBindService: ecardBindService,
       ecardWidgetService: ecardWidgetService,
       deadlineWidgetService: deadlineWidgetService,
+      deadlineReminderService: deadlineReminderService,
     ),
   );
 
   bootMark('cached data ready');
-  if (!kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS)) {
-    deadlineWidgetService.initialize();
-  }
+  if (isApple) deadlineWidgetService.initialize();
 
   oaGymService.startProfileSync();
   unawaited(campusCardService.refreshAccount());
@@ -319,6 +323,7 @@ class TechPieApp extends StatefulWidget {
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
   final DeadlineWidgetService? deadlineWidgetService;
+  final DeadlineReminderService? deadlineReminderService;
 
   const TechPieApp({
     super.key,
@@ -338,6 +343,7 @@ class TechPieApp extends StatefulWidget {
     required this.ecardBindService,
     this.ecardWidgetService,
     this.deadlineWidgetService,
+    this.deadlineReminderService,
   });
 
   @override
@@ -371,6 +377,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     unawaited(_checkForUpdatesQuietly());
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
     widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
+    widget.deadlineReminderService?.initialize();
   }
 
   @override
@@ -386,6 +393,10 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       oldWidget.deadlineWidgetService?.clearOpenHandler();
       widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
     }
+    if (oldWidget.deadlineReminderService != widget.deadlineReminderService) {
+      oldWidget.deadlineReminderService?.dispose();
+      widget.deadlineReminderService?.initialize();
+    }
     if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
     oldWidget.ecardWidgetService?.clearOpenPayHandler();
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
@@ -396,6 +407,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.ecardWidgetService?.clearOpenPayHandler();
     widget.deadlineWidgetService?.dispose();
+    widget.deadlineReminderService?.dispose();
     _studentAllowanceService.dispose();
     widget.campusCardService.dispose();
     super.dispose();
@@ -494,6 +506,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        deadlineReminderService: widget.deadlineReminderService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,

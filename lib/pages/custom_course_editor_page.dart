@@ -256,20 +256,10 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
   }
 
   Future<void> _pickTime({required bool isStart}) async {
-    var pending = isStart ? _startTime : _endTime;
-    final picked = await showSchedulePickerSheet<TimeOfDay>(
+    final picked = await showScheduleTimePicker(
       context: context,
+      initialTime: isStart ? _startTime : _endTime,
       title: isStart ? '开始时间' : '结束时间',
-      selection: () => pending,
-      builder: (_) => SizedBox(
-        height: 216,
-        child: CupertinoDatePicker(
-          mode: CupertinoDatePickerMode.time,
-          use24hFormat: true,
-          initialDateTime: DateTime(2026, 1, 1, pending.hour, pending.minute),
-          onDateTimeChanged: (date) => pending = TimeOfDay.fromDateTime(date),
-        ),
-      ),
     );
     if (picked == null || !mounted) return;
     setState(() {

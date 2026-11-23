@@ -109,6 +109,23 @@ void main() {
     expect(items.map((e) => e['id']), isNot(contains('synthetic:1')));
   });
 
+  test('publishes a custom deadline with no fetched cache', () async {
+    await assignments.clearCache();
+    service.initialize();
+    await assignments.saveCustomDeadline(
+      owner: null,
+      title: 'Personal deadline',
+      due: now.add(const Duration(hours: 4)),
+      notes: 'Private notes',
+    );
+    await service.flush();
+    final payload = jsonDecode(calls.last.arguments as String) as Map;
+    final item = (payload['items'] as List).single as Map;
+    expect(item['title'], 'Personal deadline');
+    expect(item['kind'], 'assignment');
+    expect(calls.last.arguments, isNot(contains('Private notes')));
+  });
+
   test('clearing identity invalidates queued old publications', () async {
     final blocked = Completer<void>();
     messenger.setMockMethodCallHandler(channel, (call) async {

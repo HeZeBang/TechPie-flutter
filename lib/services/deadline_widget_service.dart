@@ -60,7 +60,8 @@ class DeadlineWidgetService with WidgetsBindingObserver {
       for (final a in items)
         {
           'id': AssignmentOverrides.keyFor(a),
-          'kind': a.kind.id,
+          // Schema v1 shares the assignment icon for all non-exam deadlines.
+          'kind': a is CustomDeadline ? DeadlineKind.assignment.id : a.kind.id,
           'title': a.title,
           // Exam titles already name the course, so the line under them is
           // where to go — the same choice the Deadlines and Home pages make.
