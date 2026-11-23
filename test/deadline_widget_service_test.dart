@@ -104,6 +104,23 @@ void main() {
     expect(items.map((e) => e['id']), isNot(contains('synthetic:1')));
   });
 
+  test('publishes a custom deadline with no fetched cache', () async {
+    await assignments.clearCache();
+    service.initialize();
+    await assignments.saveCustomDeadline(
+      owner: null,
+      title: 'Personal deadline',
+      due: now.add(const Duration(hours: 4)),
+      notes: 'Private notes',
+    );
+    await service.flush();
+    final payload = jsonDecode(calls.last.arguments as String) as Map;
+    final item = (payload['items'] as List).single as Map;
+    expect(item['title'], 'Personal deadline');
+    expect(item['kind'], 'assignment');
+    expect(calls.last.arguments, isNot(contains('Private notes')));
+  });
+
   test('clearing identity invalidates queued old publications', () async {
     final blocked = Completer<void>();
     messenger.setMockMethodCallHandler(channel, (call) async {
@@ -230,5 +247,40 @@ void main() {
     await disabling;
     expect(calls.where((call) => call.method == 'publish'), hasLength(1));
     expect(calls.last.method, 'clear');
+  });
+
+  test('Linux publishes custom deadlines with location fallback and excludes notes', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await assignments.clearCache();
+    service.dispose();
+    service = DeadlineWidgetService(assignments, channel: channel, now: () => now);
+    service.initialize();
+    await service.flush();
+
+    await assignments.saveCustomDeadline(
+      owner: null,
+      title: 'Lab Check-in',
+      course: '',
+      location: ' SIST 1B-201 ',
+      notes: 'Secret reminder notes',
+      due: now.add(const Duration(hours: 3)),
+    );
+    await service.flush();
+
+    final payload = jsonDecode(calls.last.arguments as String) as Map<Object?, Object?>;
+    final items = payload['items'] as List<dynamic>;
+    expect(items, hasLength(1));
+    final item = items.single as Map<Object?, Object?>;
+    expect(item.keys.toSet(), {'id', 'kind', 'title', 'course', 'dueAt'});
+    expect(item['kind'], 'assignment');
+    expect(item['title'], 'Lab Check-in');
+    expect(item['course'], 'SIST 1B-201');
+    expect(calls.last.arguments, isNot(contains('Secret reminder notes')));
+
+    await assignments.setCompleted(assignments.visibleAssignments.single, true);
+    await service.flush();
+    final afterComplete = jsonDecode(calls.last.arguments as String) as Map<Object?, Object?>;
+    expect(afterComplete['items'] as List<dynamic>, isEmpty);
   });
 }

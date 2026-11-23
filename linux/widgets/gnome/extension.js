@@ -125,7 +125,8 @@ export default class TechPieDeadlines extends Extension {
                 ? {orientation: Clutter.Orientation.VERTICAL} : {vertical: true};
             const box = new St.BoxLayout({...direction, style_class: 'techpie-deadline-row'});
             box.add_child(new St.Label({text: `${item.kind === 'exam' ? '◷' : '•'} ${item.title}  ·  ${remaining(item.dueAt)}`}));
-            box.add_child(new St.Label({text: `${item.course}  ·  ${new Date(item.dueAt * 1000).toLocaleString()}`,
+            const dueText = new Date(item.dueAt * 1000).toLocaleString();
+            box.add_child(new St.Label({text: item.course ? `${item.course}  ·  ${dueText}` : dueText,
                 style_class: 'techpie-deadline-detail'}));
             row.add_child(box);
             row.connect('activate', () => this._open());

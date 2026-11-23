@@ -64,7 +64,7 @@ PlasmoidItem {
             delegate: PlasmaComponents.ItemDelegate {
                 required property var modelData
                 width: list.width
-                Accessible.name: modelData.title + ", " + modelData.course + ", " +
+                Accessible.name: (modelData.course ? modelData.title + ", " + modelData.course : modelData.title) + ", " +
                     new Date(modelData.dueAt * 1000).toLocaleString()
                 onClicked: deadlines.openApp()
                 contentItem: ColumnLayout {
@@ -85,7 +85,7 @@ PlasmoidItem {
                         }
                     }
                     PlasmaComponents.Label {
-                        text: modelData.course + " · " + new Date(modelData.dueAt * 1000).toLocaleString()
+                        text: (modelData.course ? modelData.course + " · " : "") + new Date(modelData.dueAt * 1000).toLocaleString()
                         elide: Text.ElideRight; Layout.fillWidth: true; opacity: 0.7
                     }
                 }

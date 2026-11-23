@@ -134,7 +134,8 @@ export class DesktopCard {
         for (const item of items) {
             const row = column({style_class: 'techpie-deadline-row'});
             row.add_child(new St.Label({text: item.title, x_expand: true}));
-            row.add_child(new St.Label({text: `${item.course} · ${remaining(item.dueAt)}`,
+            const remain = remaining(item.dueAt);
+            row.add_child(new St.Label({text: item.course ? `${item.course} · ${remain}` : remain,
                 style_class: 'techpie-deadline-detail'}));
             const button = new St.Button({child: row, x_expand: true, can_focus: true,
                 style_class: 'techpie-desktop-item'});

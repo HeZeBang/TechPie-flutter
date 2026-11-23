@@ -23,7 +23,7 @@ class CampusSessionHandle {
   final ThirdPartyAuthService tpAuth;
 
   /// The node this page reads cookies from. Each feature uses a different
-  /// derived session: ecourse runs on the CpDaily/CASTGC session directly, eams
+  /// derived session: ecourse runs on the IDS/CASTGC session directly, eams
   /// and the egate apps on their own downstream cookies.
   final SessionNode node;
 
@@ -59,7 +59,7 @@ class CampusSessionHandle {
 /// The session node an app feature authenticates against.
 SessionNode _nodeFor(ThirdPartyAuthService tpAuth, CookieType cookieType) =>
     switch (cookieType) {
-      CookieType.ecourse => tpAuth.cpdailyNode,
+      CookieType.ecourse => tpAuth.idsNode,
       CookieType.eams => tpAuth.eamsNode,
       CookieType.egateApp => tpAuth.egateAppNode,
     };

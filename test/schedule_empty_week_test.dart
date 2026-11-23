@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/pages/schedule_page.dart';
 
 void main() {
-  // The timetable is only fetched once an eGate binding exists, and that fetch can
+  // The timetable is only fetched once an IDS binding exists, and that fetch can
   // fail — so "this week is empty" is a claim the app can only make in one of the
   // three cases below. Getting it wrong is what a freshly bound account saw.
   test('an empty week says which of the three things it is', () {

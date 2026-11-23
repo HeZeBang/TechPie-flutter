@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../utils/platform.dart';
+import 'secure_password_field.dart';
 
 class AdaptiveTextFieldGroupItem {
   const AdaptiveTextFieldGroupItem({
@@ -73,7 +74,10 @@ class AdaptiveTextFieldGroup extends StatelessWidget {
   ) {
     return SizedBox(
       height: 56,
-      child: CupertinoTextField(
+      child: item.obscureText
+          ? SecurePasswordField(controller: item.controller, placeholder: item.placeholder,
+              enabled: item.enabled, textInputAction: item.textInputAction, onSubmitted: item.onSubmitted,)
+          : CupertinoTextField(
         controller: item.controller,
         placeholder: item.placeholder,
         keyboardType: item.keyboardType,
@@ -96,6 +100,10 @@ class AdaptiveTextFieldGroup extends StatelessWidget {
   }
 
   Widget _buildMaterialField(AdaptiveTextFieldGroupItem item) {
+    if (item.obscureText) {
+      return SecurePasswordField(controller: item.controller, placeholder: item.placeholder,
+          enabled: item.enabled, textInputAction: item.textInputAction, onSubmitted: item.onSubmitted,);
+    }
     return TextField(
       controller: item.controller,
       decoration: InputDecoration(hintText: item.placeholder),
