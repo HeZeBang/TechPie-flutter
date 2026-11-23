@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="spending_channel_name">Spending alerts</string>
+    <string name="spending_channel_desc">Reports campus card payments the app has just read from the ledger</string>
+</resources>

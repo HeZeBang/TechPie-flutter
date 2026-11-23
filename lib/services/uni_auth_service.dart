@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'package:casdoor_flutter_sdk/casdoor_flutter_sdk.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../pages/uni_auth_webview_page.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import 'debug_logger.dart';
+import 'http_client.dart';
 
 // ---------------------------------------------------------------------------
 // GeekPie Uni-Auth configuration (powered by Casdoor)
@@ -68,7 +70,18 @@ class UniAuthService extends ChangeNotifier {
 
   bool get loading => _loading;
 
-  UniAuthService({DebugLogger? logger}) : _logger = logger;
+  UniAuthService({DebugLogger? logger, String proxyUrl = ''})
+      : _logger = logger,
+        _proxyUrl = _sanitizeProxy(proxyUrl);
+
+  String _proxyUrl;
+  String get proxyUrl => _proxyUrl;
+  void setProxyUrl(String value) => _proxyUrl = _sanitizeProxy(value);
+
+  static String _sanitizeProxy(String value) {
+    final normalized = normalizeAppProxy(value);
+    return isValidAppProxy(normalized) ? normalized : '';
+  }
 
   final DebugLogger? _logger;
 
@@ -185,8 +198,23 @@ class UniAuthService extends ChangeNotifier {
         );
         if (result == null || result.isEmpty) throw CasdoorAuthCancelledException();
         callbackUrl = result;
+      } else if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+        try {
+          callbackUrl = await const MethodChannel('techpie/uni_auth')
+                  .invokeMethod<String>(
+                    'authenticate',
+                    <String, String>{
+                      'url': casdoor.getSigninUrl().toString(),
+                      'proxy': proxyUrl,
+                    },
+                  ) ??
+              '';
+        } on PlatformException catch (error) {
+          if (error.code == 'CANCELLED') throw CasdoorAuthCancelledException();
+          rethrow;
+        }
       } else {
-        // Windows/Linux use the SDK's desktop WebView window; web keeps its
+        // Windows uses the SDK's desktop WebView window; web keeps its
         // browser OAuth flow. Neither needs an intermediate Flutter page.
         callbackUrl = await casdoor.showFullscreen(context);
       }

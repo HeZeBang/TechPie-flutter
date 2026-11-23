@@ -14,6 +14,7 @@ import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
 import 'services/campus_card_service.dart';
+import 'services/deadline_reminder_service.dart';
 import 'services/deadline_widget_service.dart';
 import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
@@ -25,16 +26,22 @@ import 'services/island_service.dart';
 import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
+import 'services/spending_alert_service.dart';
 import 'services/storage_service.dart';
+import 'services/student_allowance_service.dart';
 import 'services/sync_service.dart';
 import 'services/theme_service.dart';
 import 'services/third_party_auth_service.dart';
 import 'services/uni_auth_service.dart';
 import 'services/update_service.dart';
+import 'spending_background_refresh.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
 import 'widgets/privacy_consent.dart';
 import 'widgets/update_dialogs.dart';
+
+@pragma('vm:entry-point')
+Future<void> spendingBackgroundRefresh() => runSpendingBackgroundRefresh();
 
 void main(List<String> args) async {
   // If this Flutter engine is a desktop_webview_window title bar (secondary
@@ -67,14 +74,27 @@ void main(List<String> args) async {
 
 Future<void> _realMain(SharedPreferences prefs) async {
   final storageService = StorageService(prefs);
+  final configuredProxy = storageService.appProxyEnabled
+      ? normalizeAppProxy(storageService.appProxyUrl)
+      : '';
+  final activeProxy = isValidAppProxy(configuredProxy) ? configuredProxy : '';
+  configureAppProxy(activeProxy);
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
   final httpClient = LoggingHttpClient(debugLogger);
-  final uniAuthService = UniAuthService(logger: debugLogger);
-  final authService = AuthService(storageService, httpClient, uniAuthService,
-      logger: debugLogger,);
+  final uniAuthService = UniAuthService(
+    logger: debugLogger,
+    proxyUrl: activeProxy,
+  );
+  final authService = AuthService(
+    storageService,
+    httpClient,
+    uniAuthService,
+    logger: debugLogger,
+  );
   final themeService = ThemeService(storageService);
   final campusCardService =
       CampusCardService(debugLogger: debugLogger, storage: storageService);
+  final spendingAlertService = SpendingAlertService(storageService);
   final ecardBindService = EcardBindService();
   final ecardWidgetService = EcardWidgetService();
   final thirdPartyAuthService = ThirdPartyAuthService(
@@ -98,15 +118,21 @@ Future<void> _realMain(SharedPreferences prefs) async {
     storageService,
     thirdPartyAuthService,
   );
+  final isApple = !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
   final assignmentService = AssignmentService(
     storageService,
     httpClient,
     authService,
     thirdPartyAuthService,
     scheduleService,
+    syncReminders: isApple,
   );
   final islandService = IslandService(storageService, scheduleService, assignmentService);
   final deadlineWidgetService = DeadlineWidgetService(assignmentService);
+  final deadlineReminderService =
+      isApple ? DeadlineReminderService(assignmentService) : null;
   final syncService = SyncService(
     authService,
     thirdPartyAuthService,
@@ -132,13 +158,6 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // state (throttled). Wired via post-construction setter to avoid a circular
   // dependency between ThirdPartyAuthService and SyncService.
   thirdPartyAuthService.onBindingsChanged = ({force = false}) {
-    // The timetable is drawn from the IDS binding, and `fetchAll` does nothing
-    // at all while there is none — silently, which is how a freshly bound account
-    // used to sit on an empty table with nothing to suggest it should reload. This
-    // runs for every binding, though, and a timetable does not care about
-    // Gradescope: requestFetch is what decides whether the campus account this
-    // data belongs to actually changed, and collapses the burst around a login
-    // into one round.
     scheduleService.requestFetch();
     return force ? syncService.forcePush() : syncService.pushIfDue();
   };
@@ -193,16 +212,15 @@ Future<void> _realMain(SharedPreferences prefs) async {
       ecardBindService: ecardBindService,
       ecardWidgetService: ecardWidgetService,
       deadlineWidgetService: deadlineWidgetService,
+      deadlineReminderService: deadlineReminderService,
+      spendingAlertService: spendingAlertService,
       islandService: islandService,
     ),
   );
 
+  spendingAlertService.start(authService, campusCardService);
   bootMark('cached data ready');
-  if (!kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS)) {
-    deadlineWidgetService.initialize();
-  }
+  if (isApple) deadlineWidgetService.initialize();
 
   islandService.start();
   oaGymService.startProfileSync();
@@ -329,6 +347,8 @@ class TechPieApp extends StatefulWidget {
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
   final DeadlineWidgetService? deadlineWidgetService;
+  final DeadlineReminderService? deadlineReminderService;
+  final SpendingAlertService? spendingAlertService;
   final IslandService? islandService;
 
   const TechPieApp({
@@ -349,6 +369,8 @@ class TechPieApp extends StatefulWidget {
     required this.ecardBindService,
     this.ecardWidgetService,
     this.deadlineWidgetService,
+    this.deadlineReminderService,
+    this.spendingAlertService,
     this.islandService,
   });
 
@@ -359,6 +381,13 @@ class TechPieApp extends StatefulWidget {
 class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
   final _nativeChromeObserver = CNTabBarRouteObserver();
+  late StudentAllowanceService _studentAllowanceService;
+
+  StudentAllowanceService _createStudentAllowanceService() => StudentAllowanceService(
+        widget.authService,
+        widget.thirdPartyAuthService,
+        logger: widget.debugLogger,
+      );
 
   /// The silent check runs at launch and whenever the app comes back to the
   /// foreground, but not more often than this: a resume is not a reason to hit
@@ -372,17 +401,29 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _studentAllowanceService = _createStudentAllowanceService();
     unawaited(_checkForUpdatesQuietly());
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
     widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
+    widget.deadlineReminderService?.initialize();
   }
 
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.authService != widget.authService ||
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+        oldWidget.debugLogger != widget.debugLogger) {
+      _studentAllowanceService.dispose();
+      _studentAllowanceService = _createStudentAllowanceService();
+    }
     if (oldWidget.deadlineWidgetService != widget.deadlineWidgetService) {
       oldWidget.deadlineWidgetService?.clearOpenHandler();
       widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
+    }
+    if (oldWidget.deadlineReminderService != widget.deadlineReminderService) {
+      oldWidget.deadlineReminderService?.dispose();
+      widget.deadlineReminderService?.initialize();
     }
     if (oldWidget.ecardWidgetService == widget.ecardWidgetService) return;
     oldWidget.ecardWidgetService?.clearOpenPayHandler();
@@ -394,7 +435,10 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.ecardWidgetService?.clearOpenPayHandler();
     widget.deadlineWidgetService?.dispose();
+    widget.deadlineReminderService?.dispose();
+    widget.spendingAlertService?.dispose();
     widget.islandService?.dispose();
+    _studentAllowanceService.dispose();
     widget.campusCardService.dispose();
     super.dispose();
   }
@@ -405,6 +449,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       // Coming back is a cheap moment to top the SSO token up, and it is
       // guarded: a token with time left is left alone.
       unawaited(widget.authService.tryRenewSession());
+      unawaited(widget.spendingAlertService?.synchronize());
       unawaited(widget.islandService?.refreshNow(force: true));
       unawaited(_checkForUpdatesQuietly());
     }
@@ -486,12 +531,15 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         thirdPartyAuthService: widget.thirdPartyAuthService,
         oaGymService: widget.oaGymService,
         egateAppService: widget.egateAppService,
+        studentAllowanceService: _studentAllowanceService,
         uniAuthService: widget.uniAuthService,
         syncService: widget.syncService,
         updateService: widget.updateService,
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        deadlineReminderService: widget.deadlineReminderService,
+        spendingAlertService: widget.spendingAlertService,
         islandService: widget.islandService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,

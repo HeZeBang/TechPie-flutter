@@ -11,10 +11,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/third_party_account.dart';
 import '../services/api_base_url.dart';
 import '../services/feedback_service.dart';
+import '../services/http_client.dart';
 import '../services/island_service.dart';
 import '../services/service_provider.dart';
+import '../services/storage_service.dart';
 import '../services/sync_service.dart';
 import '../services/theme_service.dart';
+import '../services/uni_auth_service.dart';
 import '../services/update_service.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
@@ -89,12 +92,14 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _setIslandEnabled(IslandService island, bool value) async {
     await island.setEnabled(value);
+    if (!mounted) return;
+    setState(() {});
     await _loadIslandCapability();
   }
 
   String get _islandSubtitle {
     final capability = _islandCapability;
-    if (capability == null) return '显示当前课程、下一节课和即将到期的作业';
+    if (capability == null) return '显示当前课程、下一节课和即将到期的截止日期';
     if (!capability.notificationsEnabled) return '请允许 TechPie 发送通知';
     return switch (capability.backend) {
       'hyper_island' => '通过 HyperOS 超级岛显示',
@@ -227,6 +232,7 @@ class _SettingsPageState extends State<SettingsPage> {
           tpAuth,
           campusCard,
           sp.syncService,
+          if (sp.spendingAlertService != null) sp.spendingAlertService!,
         ]),
         builder: (context, _) {
           final session = auth.session;
@@ -463,12 +469,23 @@ class _SettingsPageState extends State<SettingsPage> {
             _sectionHeader(theme, 'General'),
             if (sp.islandService case final island? when island.supported)
               _AdaptiveSwitchTile(
+                key: const ValueKey('settings.island'),
                 usesIosLiquidGlass: useIosChrome,
                 secondary: const Icon(Icons.notifications_active_outlined),
                 title: '课程与截止日期通知',
                 subtitle: _islandSubtitle,
                 value: storage.islandEnabled,
                 onChanged: (value) => unawaited(_setIslandEnabled(island, value)),
+              ),
+            if (sp.spendingAlertService case final spending? when spending.supported)
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.spending-alerts'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.notifications_active_outlined),
+                title: '校园卡消费提醒',
+                subtitle: '刷新发现新消费时通知；后台检查受系统调度限制',
+                value: spending.enabled,
+                onChanged: (value) => unawaited(spending.setEnabled(value)),
               ),
             _AdaptiveSwitchTile(
               key: const ValueKey('settings.mask-personal-info'),
@@ -484,6 +501,33 @@ class _SettingsPageState extends State<SettingsPage> {
                 });
               },
             ),
+            if (!kIsWeb) ...[
+              ListTile(
+                key: const ValueKey('settings.app-proxy-address'),
+                leading: const Icon(Icons.lan_outlined),
+                title: const Text('Application proxy'),
+                subtitle: Text(
+                  storage.appProxyEnabled && storage.appProxyUrl.isNotEmpty
+                      ? storage.appProxyUrl
+                      : (storage.appProxyUrl.isNotEmpty
+                          ? '${storage.appProxyUrl} (Disabled)'
+                          : 'System default'),
+                ),
+                onTap: () =>
+                    unawaited(_showProxySettings(storage, sp.uniAuthService)),
+              ),
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.app-proxy-enabled'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.power_settings_new),
+                title: 'Enable application proxy',
+                subtitle: 'Route requests through the configured HTTP proxy',
+                value: storage.appProxyEnabled && storage.appProxyUrl.isNotEmpty,
+                onChanged: (value) => unawaited(
+                  _setProxyEnabled(storage, sp.uniAuthService, value),
+                ),
+              ),
+            ],
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('About'),
@@ -613,6 +657,55 @@ class _SettingsPageState extends State<SettingsPage> {
     if (ok == true) {
       await auth.logout();
     }
+  }
+
+  Future<void> _setProxyEnabled(
+    StorageService storage,
+    UniAuthService uniAuth,
+    bool value,
+  ) async {
+    if (value) {
+      final normalized = normalizeAppProxy(storage.appProxyUrl);
+      if (!isValidAppProxy(normalized)) {
+        await _showProxySettings(storage, uniAuth);
+        return;
+      }
+      await storage.setAppProxyUrl(normalized);
+      await storage.setAppProxyEnabled(true);
+      configureAppProxy(normalized);
+      uniAuth.setProxyUrl(normalized);
+    } else {
+      await storage.setAppProxyEnabled(false);
+      configureAppProxy('');
+      uniAuth.setProxyUrl('');
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _showProxySettings(
+    StorageService storage,
+    UniAuthService uniAuth,
+  ) async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => _ProxySettingsDialog(initialValue: storage.appProxyUrl),
+    );
+    if (value == null || !mounted) return;
+    final proxy = normalizeAppProxy(value);
+    if (proxy.isNotEmpty && !isValidAppProxy(proxy)) {
+      await showAdaptiveAlertDialog<void>(
+        context: context,
+        title: 'Invalid proxy',
+        message: 'Use host:port, for example 127.0.0.1:7890.',
+        actions: const [AdaptiveAlertAction<void>(label: 'OK')],
+      );
+      return;
+    }
+    await storage.setAppProxyUrl(proxy);
+    await storage.setAppProxyEnabled(proxy.isNotEmpty);
+    configureAppProxy(proxy);
+    uniAuth.setProxyUrl(proxy);
+    if (mounted) setState(() {});
   }
 
   void _showThemePicker(BuildContext context, ThemeService themeService) {
@@ -902,6 +995,55 @@ class _AdaptiveSwitchTile extends StatelessWidget {
       subtitle: Text(subtitle),
       trailing: AdaptiveSwitch(value: value, onChanged: onChanged),
       onTap: () => onChanged(!value),
+    );
+  }
+}
+
+class _ProxySettingsDialog extends StatefulWidget {
+  const _ProxySettingsDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_ProxySettingsDialog> createState() => _ProxySettingsDialogState();
+}
+
+class _ProxySettingsDialogState extends State<_ProxySettingsDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Application proxy'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: '127.0.0.1:7890'),
+        keyboardType: TextInputType.url,
+        onSubmitted: (value) => Navigator.pop(context, value.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

@@ -7,10 +7,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
-import club.geekpie.techpie.island.FocusSequenceStore
-import club.geekpie.techpie.island.IslandBridge
-import club.geekpie.techpie.island.IslandCapabilityProbe
-import club.geekpie.techpie.island.IslandNotificationFactory
 import android.os.Handler
 import android.os.Looper
 import android.provider.CalendarContract
@@ -19,6 +15,11 @@ import android.provider.CalendarContract.Events
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import club.geekpie.techpie.ecardbind.EcardBindVpnService
+import club.geekpie.techpie.island.FocusSequenceStore
+import club.geekpie.techpie.island.IslandBridge
+import club.geekpie.techpie.island.IslandCapabilityProbe
+import club.geekpie.techpie.island.IslandNotificationFactory
+import club.geekpie.techpie.notification.SpendingNotificationBridge
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -31,6 +32,7 @@ class MainActivity : FlutterActivity() {
     private var ecardWidgets: EcardWidgetBridge? = null
     private var ecardFeedback: EcardFeedback? = null
     private var islandBridge: IslandBridge? = null
+    private var spendingAlerts: SpendingNotificationBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -42,6 +44,7 @@ class MainActivity : FlutterActivity() {
             this, flutterEngine.dartExecutor.binaryMessenger,
             IslandCapabilityProbe(this), IslandNotificationFactory(this, FocusSequenceStore(this)),
         ) { requestNotificationPermission() }
+        spendingAlerts = SpendingNotificationBridge(this, flutterEngine.dartExecutor.binaryMessenger, this)
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -94,6 +97,8 @@ class MainActivity : FlutterActivity() {
         ecardFeedback = null
         islandBridge?.dispose()
         islandBridge = null
+        spendingAlerts?.dispose()
+        spendingAlerts = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
@@ -214,6 +219,7 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 48293) spendingAlerts?.refreshSchedule()
 
         if (requestCode != REQUEST_CALENDAR_PERMISSIONS) return
 

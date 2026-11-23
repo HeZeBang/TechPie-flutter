@@ -421,10 +421,13 @@ class ThirdPartyAuthService extends ChangeNotifier {
   Future<void> _setIdsSession(ThirdPartyAccount? account) async {
     // Invalidate the old owner and every child synchronously. Late CAS/probe
     // results must fail their owner checks before any storage await below.
+    // Rebinding the same user must also invalidate in-flight timetable writes.
+    if (idsAccount != null && account != null) _tree.setAccount(ThirdPartyPlatform.ids, null);
     _tree.setAccount(ThirdPartyPlatform.ids, account);
     for (final id in const ['eams', 'elearning', 'egateApp', 'oa']) {
       _tree.setDerivedCookie(id, null);
     }
+    await _storage.clearGraduateScheduleCache();
     if (account != null && !_tree.ids.isAvailable) _tree.ids.seedNextRenewTimestamp(DateTime.now());
     for (final id in const ['eams', 'elearning', 'egateApp', 'oa']) {
       await _storage.clearDerivedCookie(id);
@@ -678,6 +681,13 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// existing platform binding, writes each entry in [next] to secure storage,
   /// and rebuilds the in-memory map. Fires a single notification.
   Future<void> replaceAll(List<ThirdPartyAccount> next) async {
+    final currentCampus = _tree.ids.account;
+    final nextCampus = next.where((a) => a.platform == ThirdPartyPlatform.ids).firstOrNull;
+    if (currentCampus != null &&
+        (nextCampus?.sid != currentCampus.sid || nextCampus?.account != currentCampus.account)) {
+      _tree.setAccount(ThirdPartyPlatform.ids, null);
+      await _storage.clearGraduateScheduleCache();
+    }
     // Clear storage for every platform first.
     for (final p in ThirdPartyPlatform.values) {
       await _storage.clearThirdPartyAccount(p);
@@ -865,6 +875,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
           _tree.setDerivedCookie(id, null);
         }
         await _storage.clearIdsCandidate();
+        await _storage.clearGraduateScheduleCache();
         await _storage.clearAllThirdPartyAccounts();
         await _storage.clearAllDerivedCookies();
       } finally {
