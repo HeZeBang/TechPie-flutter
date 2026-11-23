@@ -22,6 +22,7 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
+import 'package:techpie/theme/tp_icons.dart';
 import 'package:techpie/widgets/adaptive_select.dart';
 import 'package:techpie/widgets/app_shell/app_shell.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
@@ -117,10 +118,10 @@ void main() {
     );
 
     expect(find.byType(NavigationRail), findsNothing);
-    expect(find.text('Home'), findsWidgets);
-    expect(find.text('Schedule'), findsWidgets);
+    expect(find.text('首页'), findsWidgets);
+    expect(find.text('课表'), findsWidgets);
     expect(find.text('Deadlines'), findsWidgets);
-    expect(find.text('Settings'), findsWidgets);
+    expect(find.text('我的'), findsWidgets);
   });
 
   testWidgets('deadline widget cold and repeated warm routes reuse the page',
@@ -179,7 +180,7 @@ void main() {
       expect(find.text('Deadline detail'), findsOneWidget);
       tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(0);
     } else {
-      await tester.tap(find.text('Home').first);
+      await tester.tap(find.text('首页').first);
     }
     await tester.pumpAndSettle();
     expect(find.byType(AssignmentsPage), findsNothing);
@@ -234,15 +235,16 @@ void main() {
 
     expect(find.byType(TgBottomNavBar), findsOneWidget);
     // Starts on Home
-    expect(find.text('Welcome to TechPie'), findsOneWidget);
-    expect(find.text('校园卡'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home.greeting-header')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home.campus-card-strip')), findsOneWidget);
+    expect(find.text('校园卡'), findsWidgets);
     expect(find.text('消费码'), findsNothing);
 
     // Tap Schedule
-    await tester.tap(find.text('Schedule').first);
+    await tester.tap(find.text('课表').first);
     await tester.pumpAndSettle();
     // Not logged in, so shows login prompt
-    expect(find.byIcon(Icons.calendar_month), findsOneWidget);
+    expect(find.byIcon(TpIcons.schedule), findsOneWidget);
     expect(find.text('登录以查看课表'), findsOneWidget);
 
     // Tap Deadlines
@@ -251,8 +253,8 @@ void main() {
     expect(find.text('连接课程平台以获取Deadlines'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsNothing);
 
-    // Tap Settings
-    await tester.tap(find.text('Settings').first);
+    // Tap Settings (我的)
+    await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
     expect(find.text('Appearance'), findsOneWidget);
     expect(find.text('OPENID'), findsNothing);

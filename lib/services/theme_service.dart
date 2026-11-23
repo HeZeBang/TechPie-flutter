@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -145,6 +146,11 @@ class ThemeService extends ChangeNotifier {
       platform: _usesIosTheme ? TargetPlatform.iOS : null,
       fontFamilyFallback: TpTypography.fontFamilyFallback,
       colorScheme: scheme,
+      cupertinoOverrideTheme: CupertinoThemeData(
+        brightness: brightness,
+        primaryColor: tp.brand,
+        scaffoldBackgroundColor: tp.canvas,
+      ),
       scaffoldBackgroundColor: tp.canvas,
       canvasColor: tp.canvas,
       cardColor: tp.surface,

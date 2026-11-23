@@ -13,7 +13,10 @@ import '../features/campus_card/data/auth/ecard_openid_auth_port.dart';
 import '../features/campus_card/data/auth/geekpie_ecard_session_issuer.dart';
 import '../features/campus_card/data/storage/flutter_secure_credential_store.dart';
 import '../features/campus_card/domain/models/auth_models.dart';
+import '../features/campus_card/domain/models/card_models.dart';
+import '../features/campus_card/domain/money_fen.dart';
 import '../features/campus_card/domain/ports/auth_port.dart';
+import '../features/campus_card/domain/ports/card_ports.dart';
 import '../features/campus_card/domain/ports/credential_store.dart';
 import '../models/ecard_sync_binding.dart';
 import 'api_base_url.dart';
@@ -79,6 +82,15 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     _authSubscription = runtime.auth.changes.listen((_) {
       unawaited(refreshAccount());
     });
+    final cards = runtime.cards;
+    if (cards is CardSnapshotSource) {
+      _cardSubscription = (cards as CardSnapshotSource).snapshots.listen((card) {
+        _applyCachedBalance(card?.balance);
+      });
+    }
+    if (cards is CacheFirstCardRepository) {
+      unawaited(_hydrateCachedBalance(cards as CacheFirstCardRepository));
+    }
     if (kDebugMode) {
       debugPrint('[ecard] runtime built ${watch.elapsedMilliseconds}ms');
     }
@@ -162,7 +174,9 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
   late final WatchSyncService watchSync;
 
   StreamSubscription<AuthSnapshot>? _authSubscription;
+  StreamSubscription<CampusCard?>? _cardSubscription;
   String? _maskedOpenId;
+  MoneyFen? _cachedBalance;
   EcardOpenIdChannel _channel = EcardOpenIdChannel.wechat;
   EcardOpenIdChannel get openIdChannel => _channel;
   bool _busy = false;
@@ -171,16 +185,34 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
   bool get busy => _busy;
   bool get configured => _maskedOpenId != null;
   String? get maskedOpenId => _maskedOpenId;
+  MoneyFen? get cachedBalance => configured ? _cachedBalance : null;
   Object? get lastError => _lastError;
   AppRuntime get runtime => _runtime;
+
+  void _applyCachedBalance(MoneyFen? balance) {
+    if (_cachedBalance == balance) return;
+    _cachedBalance = balance;
+    notifyListeners();
+  }
+
+  Future<void> _hydrateCachedBalance(CacheFirstCardRepository cards) async {
+    try {
+      final cached = await cards.readCachedCard();
+      if (cached != null) _applyCachedBalance(cached.balance);
+    } catch (_) {
+      // Optional home balance preview degrades cleanly when cache is unavailable.
+    }
+  }
 
   Future<void> refreshAccount() async {
     final openId = await _sessionStore.readOpenId();
     final masked = _maskOpenId(openId);
     final channel = await _sessionStore.readOpenIdChannel();
-    if (_maskedOpenId == masked && _channel == channel) return;
+    final clearedBalance = masked == null && _cachedBalance != null;
+    if (_maskedOpenId == masked && _channel == channel && !clearedBalance) return;
     _channel = channel;
     _maskedOpenId = masked;
+    if (masked == null) _cachedBalance = null;
     notifyListeners();
   }
 
@@ -276,6 +308,8 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     }
     unawaited(_authSubscription?.cancel());
     _authSubscription = null;
+    unawaited(_cardSubscription?.cancel());
+    _cardSubscription = null;
     super.dispose();
   }
 }

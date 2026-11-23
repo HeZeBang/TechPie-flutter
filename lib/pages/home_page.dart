@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../features/campus_card/app/app_providers.dart';
 import '../models/assignment.dart';
 import '../models/course.dart';
 import '../models/course_table.dart';
@@ -11,21 +12,23 @@ import '../models/custom_course.dart';
 import '../models/exam_course.dart';
 import '../models/feature.dart';
 import '../services/assignment_service.dart';
+import '../services/auth_service.dart';
+import '../services/campus_card_service.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
+import '../services/storage_service.dart';
+import '../theme/theme.dart';
 import '../utils/adaptive_motion.dart';
-import '../utils/platform.dart';
-import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
-import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_shell/app_shell.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
-import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/uni_auth_login.dart';
+import 'campus_card_page.dart';
 import 'custom_deadline_editor_page.dart';
 import 'generic_webview_page.dart';
 
@@ -44,15 +47,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _initialized = false;
   bool _animationsEnabled = true;
 
-  // Refresh every minute to update course now/past state and day changes
+  // Refresh every minute to update course now/past state and day changes.
   Timer? _refreshTimer;
   int _lastWeekday = DateTime.now().weekday;
 
-  // Debug time override (only active when debugMode is on)
+  // Debug time override (only active when debugMode is on).
   DateTime? _debugNow;
   bool _debugPanelExpanded = false;
 
-  // Staggered entrance animation for course items
+  // Staggered entrance animation for course items.
   AnimationController? _staggerController;
   List<Animation<double>> _itemSlides = [];
   List<Animation<double>> _itemFades = [];
@@ -120,6 +123,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
+  int _resolvedWeek(DateTime now) {
+    final termBegin = _schedule.termBegin;
+    if (_schedule.isGraduate) {
+      return teachingWeekOf(now, termBegin) ?? 0;
+    }
+    return _schedule.currentWeek();
+  }
+
   void _doRebuild() {
     final table = _schedule.fullCourseTable;
     if (table != null && table.periods.isNotEmpty) {
@@ -127,8 +138,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
     final termBegin = _schedule.termBegin;
     final now = _now;
-    final week =
-        _schedule.isGraduate ? teachingWeekOf(now, termBegin) ?? 0 : _schedule.currentWeek();
+    final week = _resolvedWeek(now);
     final timetableCourses = table?.courses ?? const <EamsCourse>[];
     final withCustom = withCustomCourses(
       eamsToDisplayCourses(
@@ -151,7 +161,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       periods: _periods,
     );
     final newCourses = all
-        .where((course) => course.dayOfWeek == now.weekday && course.occursOn(now))
+        .where(
+          (course) => course.dayOfWeek == now.weekday && course.occursOn(now),
+        )
         .toList()
       ..sort((a, b) {
         final startA = parseClockMinutes(a.startTime) ?? 0;
@@ -164,7 +176,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _todayCourses = newCourses;
     });
 
-    // Run stagger animation when courses appear for the first time
     if (previousCount == 0 && newCourses.isNotEmpty) {
       _runStaggerAnimation(newCourses.length);
     }
@@ -194,7 +205,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         curve: appAnimationCurve(Curves.easeOutCubic),
       );
       _itemSlides.add(
-        Tween<double>(begin: 24.0, end: 0.0).animate(
+        Tween<double>(begin: 20.0, end: 0.0).animate(
           CurvedAnimation(parent: _staggerController!, curve: interval),
         ),
       );
@@ -208,10 +219,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     unawaited(_staggerController!.forward());
   }
 
-  String _timeForCourse(Course course) {
-    return course.timeLabel;
-  }
-
   _CourseStatus _courseStatus(Course course) {
     final nowMinutes = _now.hour * 60 + _now.minute;
     final start = _parseMinutes(course.startTime);
@@ -222,9 +229,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         return _CourseStatus.ongoing;
       }
       final diff = start - nowMinutes;
-      return diff > 0 && diff <= 15 ? _CourseStatus.soon : _CourseStatus.upcoming;
+      return diff > 0 && diff <= 15
+          ? _CourseStatus.soon
+          : _CourseStatus.upcoming;
     }
-
     return _CourseStatus.upcoming;
   }
 
@@ -235,6 +243,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final m = int.tryParse(parts[1]);
     if (h == null || m == null) return null;
     return h * 60 + m;
+  }
+
+  static String _greeting(DateTime now) {
+    final hour = now.hour;
+    if (hour < 6) return '夜深了';
+    if (hour < 11) return '早上好';
+    if (hour < 14) return '中午好';
+    if (hour < 18) return '下午好';
+    return '晚上好';
+  }
+
+  static String _avatarLabel(AuthService auth, StorageService storage) {
+    if (!auth.isLoggedIn || storage.maskPersonalInfo) return 'GP';
+    final name = auth.session?.userName.trim() ?? '';
+    if (name.isEmpty) return 'GP';
+    final runes = name.runes.toList();
+    if (runes.first > 127) {
+      return String.fromCharCode(runes.first);
+    }
+    return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
   }
 
   // ── Debug controls ──
@@ -281,113 +309,118 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final colors = context.tpColors;
     final sp = ServiceProvider.of(context);
     final auth = sp.authService;
-    final isDebug = sp.storageService.debugMode;
-    final useIosChrome = isIos();
-    final useLegacyIosChrome = usesLegacyIosChrome();
-    final topInset = useIosChrome || useLegacyIosChrome
-        ? 16.0
-        : 16 + adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
+    final storage = sp.storageService;
+    final campusCard = sp.campusCardService;
+    final isDebug = storage.debugMode;
+    final now = _now;
+    final week = _resolvedWeek(now);
+    final dateSubtitle =
+        '${now.month}月${now.day}日 星期${_dayLabels[now.weekday - 1]}'
+        '${week > 0 ? ' · 第 $week 周' : ''}';
 
-    return AdaptiveNavigationScaffold(
-      extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
-      appBar: useIosChrome
-          ? const IosNativeNavigationBar(title: 'Home', largeTitleMode: true)
-          : const BlurredAppBar(title: Text('Home')),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          topInset,
-          16,
-          AppShellMetrics.bottomContentPaddingOf(context),
-        ),
-        children: [
-          Card.filled(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
+    return Scaffold(
+      backgroundColor: colors.canvas,
+      body: SafeArea(
+        bottom: false,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+            TpTokens.pageHorizontalPadding,
+            TpTokens.space3,
+            TpTokens.pageHorizontalPadding,
+            AppShellMetrics.bottomContentPaddingOf(context),
+          ),
+          children: [
+            TpPageBody(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    Icons.school_outlined,
-                    size: 48,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Welcome to TechPie',
-                    style: theme.textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Your academic dashboard at a glance.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                  TpPageHeader(
+                    key: const ValueKey('home.greeting-header'),
+                    subtitle: dateSubtitle,
+                    title: _greeting(now),
+                    trailing: TpAvatarBadge(
+                      key: const ValueKey('home.avatar'),
+                      text: _avatarLabel(auth, storage),
+                      tooltip: auth.isLoggedIn ? '我的' : '登录',
+                      onTap: () {
+                        if (auth.isLoggedIn) {
+                          appShellPendingTab.value = 3;
+                        } else {
+                          unawaited(startUniAuthLogin(context));
+                        }
+                      },
                     ),
                   ),
+                  const SizedBox(height: TpTokens.sectionGap),
+                  _buildCampusCardStrip(campusCard, storage),
+                  const SizedBox(height: TpTokens.sectionGap),
+                  _buildTodayClasses(colors, auth.isLoggedIn),
+                  const SizedBox(height: TpTokens.sectionGap),
+                  _buildPendingAssignments(colors),
+                  const SizedBox(height: TpTokens.sectionGap),
+                  _buildQuickActions(),
+                  if (isDebug) ...[
+                    const SizedBox(height: TpTokens.sectionGap),
+                    _buildDebugPanel(colors),
+                  ],
                 ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // On compact screens only three app tiles fit per row.
-          _buildAppCard(featureEntries, rows: 3),
-          const SizedBox(height: 16),
-          _buildTodayClasses(theme, auth.isLoggedIn),
-          const SizedBox(height: 8),
-          _buildPendingAssignments(theme),
-          if (isDebug) ...[const SizedBox(height: 16), _buildDebugPanel(theme)],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAppCard(
-    List<Feature> features, {
-    int rows = 2,
-  }) {
-    final theme = Theme.of(context);
-
-    return Card.outlined(
-      clipBehavior: Clip.antiAlias,
-      child: AnimatedSize(
-        duration: appAnimationDuration(
-          context,
-          const Duration(milliseconds: 350),
-        ),
-        curve: appAnimationCurve(Curves.easeOutCubic),
-        alignment: Alignment.topCenter,
-        child: Column(
-          key: ValueKey('apps-${features.length}-$rows'),
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.apps_rounded,
-                    size: 18,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text('应用', style: theme.textTheme.titleSmall),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: AppCard(
-                features: features,
-                rows: rows,
-                onFeatureTap: _handleFeatureTap,
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCampusCardStrip(
+    CampusCardService campusCard,
+    StorageService storage,
+  ) {
+    return ListenableBuilder(
+      listenable: campusCard,
+      builder: (context, _) {
+        final balance = campusCard.cachedBalance;
+        final balanceText =
+            balance == null ? null : '¥ ${balance.toYuanFixed()}';
+        return TpCampusCardStrip(
+          configured: campusCard.configured,
+          balanceText: balanceText,
+          maskPersonalInfo: storage.maskPersonalInfo,
+          onOpenPayCode: () => unawaited(
+            pushAdaptivePage<void>(
+              context,
+              builder: (_) => const CampusCardPage(
+                entry: CampusCardEntry.paymentCode,
+              ),
+            ),
+          ),
+          onOpenCard: () => unawaited(
+            pushAdaptivePage<void>(
+              context,
+              builder: (_) => CampusCardPage(
+                entry: campusCard.configured
+                    ? CampusCardEntry.cardManagement
+                    : CampusCardEntry.paymentCode,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildQuickActions() {
+    return TpCard(
+      key: const ValueKey('home.quick-actions'),
+      title: '快捷功能',
+      child: AppCard(
+        features: featureEntries,
+        rows: 2,
+        columns: 4,
+        onFeatureTap: _handleFeatureTap,
       ),
     );
   }
@@ -418,13 +451,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
-  Widget _buildTodayClasses(ThemeData theme, bool isLoggedIn) {
+  Widget _buildTodayClasses(TpColors colors, bool isLoggedIn) {
+    final String trailingText;
     Widget content;
     if (!isLoggedIn) {
-      content = _buildEmptyContent(
+      trailingText = '未登录';
+      content = _buildCompactEmpty(
         key: const ValueKey('not-logged-in'),
-        theme: theme,
-        icon: Icons.login_rounded,
+        colors: colors,
+        icon: TpIcons.login,
         title: '登录以查看今日课程',
         subtitle: '连接你的教务系统账号',
         actionLabel: '登录',
@@ -437,265 +472,282 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         },
       );
     } else if (_todayCourses.isEmpty) {
-      content = _buildEmptyContent(
+      trailingText = '0 节';
+      content = _buildCompactEmpty(
         key: ValueKey('no-courses-${_now.weekday}'),
-        theme: theme,
-        icon: Icons.wb_sunny_outlined,
+        colors: colors,
+        icon: TpIcons.sun,
         title: '今天没有课程',
         subtitle: '享受你的自由时间吧',
       );
     } else {
+      trailingText = '${_todayCourses.length} 节';
       content = _buildCourseContent(
         key: ValueKey('courses-${_now.weekday}'),
-        theme: theme,
+        colors: colors,
       );
     }
 
-    return Card.outlined(
-      clipBehavior: Clip.antiAlias,
+    return TpCard(
+      key: const ValueKey('home.today-courses'),
+      title: '今日课程',
+      trailing: Text(trailingText),
       child: AnimatedSize(
-        duration: appAnimationDuration(
-          context,
-          const Duration(milliseconds: 350),
-        ),
+        duration: appAnimationDuration(context, TpTokens.durationSlow),
         curve: appAnimationCurve(Curves.easeOutCubic),
         alignment: Alignment.topCenter,
         child: AnimatedSwitcher(
-          duration: appAnimationDuration(
-            context,
-            const Duration(milliseconds: 300),
-          ),
+          duration: appAnimationDuration(context, TpTokens.durationNormal),
           switchInCurve: appAnimationCurve(Curves.easeOutCubic),
           switchOutCurve: appAnimationCurve(
             Curves.easeInCubic,
             iosCurve: Curves.easeInOut,
           ),
-          transitionBuilder: (child, animation) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-          layoutBuilder: (currentChild, previousChildren) {
-            return Stack(
-              alignment: Alignment.topCenter,
-              children: [
-                ...previousChildren,
-                if (currentChild != null) currentChild,
-              ],
-            );
-          },
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
           child: content,
         ),
       ),
     );
   }
 
-  Widget _buildPendingAssignments(ThemeData theme) {
+  Widget _buildCourseContent({required Key key, required TpColors colors}) {
+    final hasStagger = _staggerController != null &&
+        _itemSlides.length == _todayCourses.length;
+
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.only(bottom: TpTokens.space1),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < _todayCourses.length; i++)
+            if (hasStagger)
+              AnimatedBuilder(
+                animation: _staggerController!,
+                builder: (context, child) {
+                  return Transform.translate(
+                    offset: Offset(0, _itemSlides[i].value),
+                    child: Opacity(opacity: _itemFades[i].value, child: child),
+                  );
+                },
+                child: _buildCourseItem(colors, _todayCourses[i], i),
+              )
+            else
+              _buildCourseItem(colors, _todayCourses[i], i),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCourseItem(TpColors colors, Course course, int index) {
+    final status = _courseStatus(course);
+    final isActive = status == _CourseStatus.ongoing;
+    final isSoon = status == _CourseStatus.soon;
+    final isPast = status == _CourseStatus.past;
+
+    final Color barColor;
+    if (course.isCustom || course.source is ExamCourseSource) {
+      barColor = colors.successGreen;
+    } else if (isActive || index.isEven) {
+      barColor = colors.brand;
+    } else {
+      barColor = colors.infoBlue;
+    }
+
+    final subtitle = course.location.isNotEmpty
+        ? '${course.timeLabel} · ${course.location}'
+        : course.timeLabel;
+
+    Widget? trailing;
+    if (isActive) {
+      trailing = const TpBadge(label: '进行中', tone: TpBadgeTone.brand);
+    } else if (isSoon) {
+      trailing = const TpBadge(label: '即将开始', tone: TpBadgeTone.success);
+    }
+
+    return TpAccentRow(
+      accentColor: barColor,
+      title: course.name,
+      subtitle: subtitle,
+      trailing: trailing,
+      boldTitle: isActive,
+      opacity: isPast ? 0.45 : 1.0,
+      showDivider: index < _todayCourses.length - 1,
+    );
+  }
+
+  Widget _buildPendingAssignments(TpColors colors) {
     final now = _now;
     final pending = _assignments.visibleAssignments
         .where((a) => !_assignments.isCompleted(a) && a.due.isAfter(now))
         .toList()
       ..sort((a, b) => a.due.compareTo(b.due));
 
-    final showCount = pending.length.clamp(0, 5);
+    final showCount = pending.length.clamp(0, 4);
     final overflow = pending.length - showCount;
+
+    final String trailingText =
+        pending.isEmpty ? '0 项' : '${pending.length} 项待完成';
 
     Widget content;
     if (pending.isEmpty) {
-      content = _buildEmptyContent(
+      content = _buildCompactEmpty(
         key: const ValueKey('no-pending'),
-        theme: theme,
-        icon: Icons.assignment_turned_in_outlined,
+        colors: colors,
+        icon: TpIcons.checkCircle,
         title: '没有待办事项',
         subtitle: 'All caught up!',
       );
     } else {
-      content = Column(
+      content = Padding(
         key: ValueKey('pending-${pending.length}-${now.day}-${now.hour}'),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.event_note_outlined,
-                  size: 18,
-                  color: theme.colorScheme.tertiary,
-                ),
-                const SizedBox(width: 8),
-                Text('待办事项', style: theme.textTheme.titleSmall),
-                const Spacer(),
-                Text(
-                  '${pending.length} 项',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+        padding: const EdgeInsets.only(bottom: TpTokens.space1),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < showCount; i++)
+              _buildPendingItem(
+                colors,
+                pending[i],
+                now,
+                showDivider: i < showCount - 1,
+              ),
+            if (overflow > 0)
+              InkWell(
+                onTap: () => appShellPendingDeadlines.value = true,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    TpTokens.cardPaddingHorizontal,
+                    TpTokens.space2,
+                    TpTokens.cardPaddingHorizontal,
+                    TpTokens.space3,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '还有 $overflow 项 · 前往 Deadlines 查看全部',
+                        style: TpTypography.cardMeta(colors).copyWith(
+                          color: colors.brand,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(
+                        TpIcons.chevronRight,
+                        size: TpTokens.iconXs,
+                        color: colors.brand,
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          for (int i = 0; i < showCount; i++) ...[
-            _buildPendingItem(theme, pending[i], now),
-            if (i < showCount - 1) const Divider(height: 1),
-          ],
-          if (overflow > 0)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Text(
-                '还有 $overflow 项,前往 Deadlines 查看全部',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
               ),
-            ),
-        ],
+          ],
+        ),
       );
     }
 
-    return Card.outlined(
-      clipBehavior: Clip.antiAlias,
+    return TpCard(
+      key: const ValueKey('home.deadlines'),
+      title: 'Deadlines',
+      trailing: Text(trailingText),
       child: AnimatedSize(
-        duration: appAnimationDuration(
-          context,
-          const Duration(milliseconds: 350),
-        ),
+        duration: appAnimationDuration(context, TpTokens.durationSlow),
         curve: appAnimationCurve(Curves.easeOutCubic),
         alignment: Alignment.topCenter,
         child: AnimatedSwitcher(
-          duration: appAnimationDuration(
-            context,
-            const Duration(milliseconds: 300),
-          ),
+          duration: appAnimationDuration(context, TpTokens.durationNormal),
           switchInCurve: appAnimationCurve(Curves.easeOutCubic),
           switchOutCurve: appAnimationCurve(
             Curves.easeInCubic,
             iosCurve: Curves.easeInOut,
           ),
-          transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
-          layoutBuilder: (currentChild, previousChildren) {
-            return Stack(
-              alignment: Alignment.topCenter,
-              children: [
-                ...previousChildren,
-                if (currentChild != null) currentChild,
-              ],
-            );
-          },
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
           child: content,
         ),
       ),
     );
   }
 
-  Widget _buildPendingItem(ThemeData theme, Assignment a, DateTime now) {
-    final scheme = theme.colorScheme;
-    final dueColor = _dueColor(a.due, now, scheme);
+  Widget _buildPendingItem(
+    TpColors colors,
+    Assignment a,
+    DateTime now, {
+    required bool showDivider,
+  }) {
+    final dueColor = _dueColor(a.due, now, colors);
     final dueLabel = _dueLabel(a.due, now);
-    final subtitle = switch (a) {
+    final progress = _urgencyProgress(a.due, now);
+    final detail = switch (a) {
       ExamAssignment(:final location) => location.trim(),
       CustomDeadline(:final course, :final location) => [
           if (course.isNotEmpty) course,
           if (location.isNotEmpty) location,
         ].join(' · '),
-      _ => a.course,
+      _ => [
+          if (a.platform.isNotEmpty) a.platform,
+          if (a.course.isNotEmpty) a.course,
+        ].join(' · '),
     };
 
-    return InkWell(
+    return TpProgressRow(
+      title: a.title,
+      subtitle: detail,
+      trailingLabel: dueLabel,
+      progress: progress,
+      color: dueColor,
+      showDivider: showDivider,
       onTap: () => unawaited(
         a is CustomDeadline
             ? CustomDeadlineEditorPage.open(context, deadline: a)
             : _openAssignmentUrl(a),
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    a.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  if (subtitle.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: dueColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                dueLabel,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: dueColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
-  String _dueLabel(DateTime due, DateTime now) {
+  static double _urgencyProgress(DateTime due, DateTime now) {
+    final hoursLeft = due.difference(now).inMinutes / 60.0;
+    if (hoursLeft <= 0) return 1.0;
+    // Maps a 7-day horizon (168h) onto [0.15, 0.95] so nearer deadlines fill
+    // further across the bar.
+    return (1.0 - hoursLeft / 168.0).clamp(0.15, 0.95);
+  }
+
+  static String _dueLabel(DateTime due, DateTime now) {
     final diff = due.difference(now);
     if (diff.inDays >= 3) {
-      return DateFormat('MM/dd HH:mm').format(due);
+      return '剩余 ${diff.inDays} 天';
     }
-    if (diff.inDays >= 1) return '${diff.inDays} 天内';
-    if (diff.inHours >= 1) return '${diff.inHours} 小时内';
+    if (diff.inDays >= 1) {
+      final remHours = diff.inHours % 24;
+      return remHours > 0
+          ? '剩余 ${diff.inDays} 天 $remHours 小时'
+          : '剩余 ${diff.inDays} 天';
+    }
+    if (diff.inHours >= 1) return '剩余 ${diff.inHours} 小时';
     final minutes = diff.inMinutes;
-    if (minutes >= 1) return '$minutes 分钟内';
+    if (minutes >= 1) return '剩余 $minutes 分钟';
     return '< 1 分钟';
   }
 
-  Color _dueColor(DateTime due, DateTime now, ColorScheme scheme) {
+  static Color _dueColor(DateTime due, DateTime now, TpColors colors) {
     final diff = due.difference(now);
-    if (diff.inHours < 24) return scheme.error;
-    if (diff.inDays < 3) return Colors.orange.shade700;
-    return scheme.onSurfaceVariant;
+    if (diff.inHours < 24) return colors.dangerRed;
+    if (diff.inDays < 3) return colors.warningAmber;
+    return colors.infoBlue;
   }
 
   Future<void> _openAssignmentUrl(Assignment a) async {
     final url = a.url;
     if (url == null || url.isEmpty) {
       final itemLabel = a.kind == DeadlineKind.exam ? '考试' : '作业';
-      if (isIos()) {
-        await showAdaptiveAlertDialog<void>(
-          context: context,
-          title: '无法打开$itemLabel',
-          message: '这个$itemLabel没有可打开的链接。',
-          actions: const [
-            AdaptiveAlertAction<void>(label: 'Done', isDefault: true),
-          ],
-        );
-      } else {
-        showAdaptiveFeedback(
-          context: context,
-          message: '该$itemLabel没有链接',
-          style: AdaptiveFeedbackStyle.info,
-        );
-      }
+      showAdaptiveFeedback(
+        context: context,
+        message: '该$itemLabel没有可打开的链接',
+        style: AdaptiveFeedbackStyle.info,
+      );
       return;
     }
     final uri = Uri.tryParse(url);
@@ -703,9 +755,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  Widget _buildEmptyContent({
+  Widget _buildCompactEmpty({
     required Key key,
-    required ThemeData theme,
+    required TpColors colors,
     required IconData icon,
     required String title,
     required String subtitle,
@@ -714,147 +766,74 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     VoidCallback? onTap,
     Widget? footer,
   }) {
-    final inner = SizedBox(
-      width: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 24),
-        child: Column(
-          children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                size: 32,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(title, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            if (onTap != null && actionLabel != null) ...[
-              const SizedBox(height: 16),
-              AdaptiveButton(
-                label: actionLabel,
-                icon: icon,
-                sfSymbol: actionSfSymbol ?? 'arrow.right',
-                role: AdaptiveButtonRole.prominent,
-                width: 180,
-                onPressed: onTap,
-                accessibilityLabel: actionLabel,
-              ),
-            ],
-            if (footer != null) ...[
-              const SizedBox(height: 12),
-              footer,
-            ],
-          ],
-        ),
-      ),
-    );
-
-    return Container(key: key, child: inner);
-  }
-
-  Widget _buildCourseContent({required Key key, required ThemeData theme}) {
-    final hasStagger = _staggerController != null && _itemSlides.length == _todayCourses.length;
-
-    return Column(
+    return Padding(
       key: key,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Row(
+      padding: const EdgeInsets.fromLTRB(
+        TpTokens.cardPaddingHorizontal,
+        TpTokens.space1,
+        TpTokens.cardPaddingHorizontal,
+        TpTokens.cardPaddingVertical,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
             children: [
-              Icon(
-                Icons.calendar_today,
-                size: 18,
-                color: theme.colorScheme.primary,
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: colors.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(TpTokens.radiusS),
+                ),
+                child: Icon(
+                  icon,
+                  size: TpTokens.iconM - 2,
+                  color: colors.textMuted,
+                ),
               ),
-              const SizedBox(width: 8),
-              Text('今日课程', style: theme.textTheme.titleSmall),
-              const Spacer(),
-              Text(
-                '${_todayCourses.length} 节课',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              const SizedBox(width: TpTokens.space3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TpTypography.itemTitle(colors),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TpTypography.itemMeta(colors),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-        ),
-        const Divider(height: 1),
-        for (int i = 0; i < _todayCourses.length; i++) ...[
-          if (hasStagger)
-            AnimatedBuilder(
-              animation: _staggerController!,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(0, _itemSlides[i].value),
-                  child: Opacity(opacity: _itemFades[i].value, child: child),
-                );
-              },
-              child: _buildCourseItem(theme, _todayCourses[i]),
-            )
-          else
-            _buildCourseItem(theme, _todayCourses[i]),
-          if (i < _todayCourses.length - 1) const Divider(height: 1),
+          if (onTap != null && actionLabel != null) ...[
+            const SizedBox(height: TpTokens.space3),
+            AdaptiveButton(
+              label: actionLabel,
+              icon: icon,
+              sfSymbol: actionSfSymbol ?? 'arrow.right',
+              role: AdaptiveButtonRole.prominent,
+              height: 44,
+              onPressed: onTap,
+              accessibilityLabel: actionLabel,
+            ),
+          ],
+          if (footer != null) ...[
+            const SizedBox(height: TpTokens.space3),
+            footer,
+          ],
         ],
-      ],
-    );
-  }
-
-  Widget _buildCourseItem(ThemeData theme, Course course) {
-    final status = _courseStatus(course);
-    final isActive = status == _CourseStatus.ongoing;
-    final isPast = status == _CourseStatus.past;
-
-    // Smooth title weight transition
-    final titleStyle = (theme.textTheme.bodyLarge ?? const TextStyle()).copyWith(
-      fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-      color: theme.colorScheme.onSurface,
-    );
-
-    return AnimatedOpacity(
-      duration: appAnimationDuration(
-        context,
-        const Duration(milliseconds: 300),
-      ),
-      curve: appAnimationCurve(Curves.easeOutCubic),
-      opacity: isPast ? 0.5 : 1.0,
-      child: ListTile(
-        title: AnimatedDefaultTextStyle(
-          duration: appAnimationDuration(
-            context,
-            const Duration(milliseconds: 300),
-          ),
-          curve: appAnimationCurve(Curves.easeOutCubic),
-          style: titleStyle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          child: Text(course.name),
-        ),
-        subtitle: Text(
-          '${_timeForCourse(course)}'
-          '${course.location.isNotEmpty ? '  ${course.location}' : ''}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        trailing: _CourseBadge(status: status, theme: theme),
       ),
     );
   }
@@ -863,140 +842,103 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   static const _dayLabels = ['一', '二', '三', '四', '五', '六', '日'];
 
-  Widget _buildDebugPanel(ThemeData theme) {
+  Widget _buildDebugPanel(TpColors colors) {
     final now = _now;
     final minutes = now.hour * 60.0 + now.minute;
     final isOverriding = _debugNow != null;
+    final timeFormatted =
+        '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
+        '${(minutes.toInt() % 60).toString().padLeft(2, '0')}';
 
-    return Card(
-      color: theme.colorScheme.errorContainer.withAlpha(40),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: theme.colorScheme.error.withAlpha(80)),
-      ),
-      clipBehavior: Clip.antiAlias,
+    return TpCard(
+      borderColor: colors.dangerRed.withValues(alpha: 0.35),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(
-            dense: true,
-            leading: Icon(
-              Icons.bug_report,
-              color: theme.colorScheme.error,
-              size: 20,
-            ),
-            title: Text(
-              'Debug: Time Override',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: theme.colorScheme.error,
-              ),
-            ),
+          TpListRow(
+            icon: TpIcons.bug,
+            iconColor: colors.dangerRed,
+            title: 'Debug: Time Override',
             subtitle: isOverriding
-                ? Text(
-                    '${_dayLabels[now.weekday - 1]}  '
-                    '${now.hour.toString().padLeft(2, '0')}:'
-                    '${now.minute.toString().padLeft(2, '0')}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontFamily: 'monospace',
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  )
-                : Text(
-                    'Real time',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                ? '周${_dayLabels[now.weekday - 1]} $timeFormatted'
+                : 'Real time',
             trailing: Icon(
-              _debugPanelExpanded ? Icons.expand_less : Icons.expand_more,
-              color: theme.colorScheme.onSurfaceVariant,
+              _debugPanelExpanded ? TpIcons.close : TpIcons.sliders,
+              size: TpTokens.iconS,
+              color: colors.textMuted,
             ),
             onTap: () => setState(() {
               _debugPanelExpanded = !_debugPanelExpanded;
             }),
           ),
           AnimatedCrossFade(
-            duration: appAnimationDuration(
-              context,
-              const Duration(milliseconds: 250),
-            ),
-            crossFadeState:
-                _debugPanelExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            duration: appAnimationDuration(context, TpTokens.durationNormal),
+            crossFadeState: _debugPanelExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
             firstChild: const SizedBox(width: double.infinity),
             secondChild: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              padding: const EdgeInsets.fromLTRB(
+                TpTokens.cardPaddingHorizontal,
+                0,
+                TpTokens.cardPaddingHorizontal,
+                TpTokens.cardPaddingHorizontal,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Divider(height: 1),
-                  const SizedBox(height: 12),
-
-                  // Time slider
-                  Text(
-                    'Time of day',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                  Divider(height: 1, thickness: 0.5, color: colors.divider),
+                  const SizedBox(height: TpTokens.space3),
+                  Text('Time of day', style: TpTypography.cardMeta(colors)),
                   Row(
                     children: [
                       Text(
-                        '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
-                        '${(minutes.toInt() % 60).toString().padLeft(2, '0')}',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontFamily: 'monospace',
+                        timeFormatted,
+                        style: TpTypography.itemTitle(colors).copyWith(
+                          fontFeatures: TpTypography.tabularFigures,
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: TpTokens.space2),
                       Expanded(
                         child: Slider(
                           value: minutes,
                           min: 0,
                           max: 1439,
                           divisions: 1439,
-                          onChanged: (v) => _debugSetTime(v),
+                          onChanged: _debugSetTime,
                         ),
                       ),
                     ],
                   ),
-
-                  const SizedBox(height: 8),
-
-                  // Day shift buttons
+                  const SizedBox(height: TpTokens.space2),
                   Text(
-                    'Day (周${_dayLabels[now.weekday - 1]}  '
-                    '${now.month}/${now.day})',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                    'Day (周${_dayLabels[now.weekday - 1]} ${DateFormat('MM/dd').format(now)})',
+                    style: TpTypography.cardMeta(colors),
                   ),
-                  const SizedBox(height: 8),
-                  Row(
+                  const SizedBox(height: TpTokens.space2),
+                  Wrap(
+                    spacing: TpTokens.space2,
+                    runSpacing: TpTokens.space2,
                     children: [
                       _DebugChip(
                         label: '- Day',
-                        icon: Icons.chevron_left,
+                        icon: TpIcons.chevronLeft,
                         onPressed: () => _debugShiftDay(-1),
                       ),
-                      const SizedBox(width: 8),
                       _DebugChip(
                         label: '+ Day',
-                        icon: Icons.chevron_right,
+                        icon: TpIcons.chevronRight,
                         onPressed: () => _debugShiftDay(1),
                       ),
-                      const SizedBox(width: 8),
                       _DebugChip(
                         label: 'Replay',
-                        icon: Icons.replay,
+                        icon: TpIcons.refresh,
                         onPressed: _debugReplayStagger,
                       ),
-                      const Spacer(),
-                      FilledButton.tonalIcon(
+                      _DebugChip(
+                        label: 'Reset',
+                        icon: TpIcons.close,
                         onPressed: _debugReset,
-                        icon: const Icon(Icons.restore, size: 18),
-                        label: const Text('Reset'),
-                        style: FilledButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                        ),
                       ),
                     ],
                   ),
@@ -1012,66 +954,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
 enum _CourseStatus { upcoming, soon, ongoing, past }
 
-/// Badge that smoothly transitions between states with slide + size animation.
-class _CourseBadge extends StatelessWidget {
-  final _CourseStatus status;
-  final ThemeData theme;
-
-  const _CourseBadge({required this.status, required this.theme});
-
-  @override
-  Widget build(BuildContext context) {
-    final hasBadge = status == _CourseStatus.soon || status == _CourseStatus.ongoing;
-
-    return AnimatedSwitcher(
-      duration: appAnimationDuration(
-        context,
-        const Duration(milliseconds: 350),
-      ),
-      switchInCurve: appAnimationCurve(Curves.easeOutCubic),
-      switchOutCurve: appAnimationCurve(
-        Curves.easeInCubic,
-        iosCurve: Curves.easeInOut,
-      ),
-      transitionBuilder: (child, animation) {
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.3, 0.0),
-              end: Offset.zero,
-            ).animate(animation),
-            child: child,
-          ),
-        );
-      },
-      child: hasBadge ? _buildBadgeContent() : const SizedBox.shrink(key: ValueKey('none')),
-    );
-  }
-
-  Widget _buildBadgeContent() {
-    final isSoon = status == _CourseStatus.soon;
-    final bgColor =
-        isSoon ? theme.colorScheme.tertiaryContainer : theme.colorScheme.primaryContainer;
-    final fgColor =
-        isSoon ? theme.colorScheme.onTertiaryContainer : theme.colorScheme.onPrimaryContainer;
-    final label = isSoon ? '即将开始' : '正在进行';
-
-    return Container(
-      key: ValueKey(status),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(color: fgColor),
-      ),
-    );
-  }
-}
-
 class _DebugChip extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -1086,7 +968,7 @@ class _DebugChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ActionChip(
-      avatar: Icon(icon, size: 16),
+      avatar: Icon(icon, size: TpTokens.iconS),
       label: Text(label),
       onPressed: onPressed,
       visualDensity: VisualDensity.compact,

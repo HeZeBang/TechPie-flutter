@@ -29,6 +29,8 @@ IconData cupertinoIconForSfSymbol(
     'magnifyingglass' => CupertinoIcons.search,
     'message.badge' => CupertinoIcons.chat_bubble,
     'paperplane.fill' => CupertinoIcons.paperplane_fill,
+    'person' => CupertinoIcons.person,
+    'person.fill' => CupertinoIcons.person_fill,
     'person.crop.circle.badge.plus' => CupertinoIcons.person_add,
     'rectangle.portrait.and.arrow.right' => CupertinoIcons.square_arrow_right,
     'square.and.arrow.down' => CupertinoIcons.square_arrow_down,

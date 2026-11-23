@@ -7,7 +7,9 @@ import 'package:techpie/theme/tp_icons.dart';
 ///
 /// Each migration PR appends newly migrated pages here until PR 8 enables
 /// repository-wide enforcement with explicit exemptions.
-const List<String> migratedDesignSystemPages = <String>[];
+const List<String> migratedDesignSystemPages = <String>[
+  'lib/pages/home_page.dart',
+];
 
 final _rawHexColorPattern = RegExp(r'\bColor\s*\(\s*0x[0-9A-Fa-f]+');
 final _legacyMaterialCardPattern = RegExp(r'\bCard\.(outlined|filled)\b');

@@ -41,6 +41,8 @@ const _glyphs = <String, IconData>{
   'link.badge.minus': CupertinoIcons.link,
   'magnifyingglass': CupertinoIcons.search,
   'paperplane.fill': CupertinoIcons.paperplane_fill,
+  'person': CupertinoIcons.person,
+  'person.fill': CupertinoIcons.person_fill,
   'person.crop.circle.badge.checkmark': CupertinoIcons.person_crop_circle_badge_checkmark,
   'person.crop.circle.badge.plus': CupertinoIcons.person_crop_circle_badge_plus,
   'plus.rectangle.on.rectangle': CupertinoIcons.plus_rectangle_on_rectangle,
