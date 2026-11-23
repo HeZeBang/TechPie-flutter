@@ -159,6 +159,25 @@ void main() {
     expect(fixture.finance.requests.where((r) => r.uri.path == Finance.queryPath), hasLength(1));
   });
 
+  testWidgets('clips folding borders and highlights to rounded allowance cards', (tester) async {
+    final fixture = await _Fixture.create();
+    await tester.pumpWidget(fixture.app(const StudentAllowancePage()));
+    await tester.tap(find.text('查询津贴'));
+    await tester.pumpAndSettle();
+
+    final tiles = find.byType(ExpansionTile);
+    expect(tiles, findsNWidgets(3));
+    final cards = tester.widgetList<Card>(
+      find.ancestor(of: tiles, matching: find.byType(Card)),
+    );
+    expect(cards, hasLength(3));
+    expect(cards.map((card) => card.clipBehavior), everyElement(Clip.antiAlias));
+
+    await tester.tap(find.text('查询区间合计'));
+    await tester.pumpAndSettle();
+    expect(find.text('合成助研津贴'), findsOneWidget);
+  });
+
   testWidgets('keeps failures separate from no records and supports retry', (tester) async {
     final fixture = await _Fixture.create();
     await tester.pumpWidget(fixture.app(const StudentAllowancePage()));

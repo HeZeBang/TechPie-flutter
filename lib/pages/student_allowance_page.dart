@@ -272,6 +272,7 @@ class _AllowanceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     return Card.outlined(
+      clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         title: Text(title),
         subtitle: Text('实发 ${_amountText(entry.netFen)}'),
