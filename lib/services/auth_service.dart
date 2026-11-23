@@ -11,8 +11,8 @@ import 'storage_service.dart';
 import 'uni_auth_service.dart';
 
 /// AuthService owns ONLY the primary account: the GeekPie Uni-Auth (Casdoor)
-/// SSO identity session. It knows nothing about CASTGC, CpDaily, or any
-/// campus-system credential — those live in [ThirdPartyAuthService] (the eGate
+/// SSO identity session. It knows nothing about CASTGC, IDS, or any
+/// campus-system credential — those live in [ThirdPartyAuthService] (the IDS
 /// binding) and are the single source of truth for every CASTGC-dependent
 /// feature. Keeping that boundary means an SSO-only user is correctly "logged
 /// in" without implying they can reach eGate-gated services.

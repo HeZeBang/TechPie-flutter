@@ -102,7 +102,7 @@ class _OaGymPageState extends State<OaGymPage>
       body: ListenableBuilder(
         listenable: Listenable.merge([auth, tpAuth]),
         builder: (context, _) {
-          final ready = auth.isLoggedIn && tpAuth.hasCpdailyBinding;
+          final ready = auth.isLoggedIn && tpAuth.hasIdsBinding;
           return ready
               ? Column(
                   children: [
@@ -168,15 +168,15 @@ class _OaGymPageState extends State<OaGymPage>
                             const SizedBox(height: 16),
                             Text(
                               auth.isLoggedIn
-                                  ? '需要绑定 eGate 账号'
+                                  ? '需要绑定 IDS 账号'
                                   : '需要先登录 TechPie',
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
                             const SizedBox(height: 8),
                             Text(
                               auth.isLoggedIn
-                                  ? '场馆预约复用 eGate 绑定的校园网登录态，请在「第三方账号」中绑定 eGate 后再使用。'
-                                  : '场馆预约复用 eGate 绑定的校园网登录态，不需要单独保存 OA 密码。',
+                                  ? '场馆预约复用 IDS 绑定的校园网登录态，请在「第三方账号」中绑定 IDS 后再使用。'
+                                  : '场馆预约复用 IDS 绑定的校园网登录态，不需要单独保存 OA 密码。',
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                             const SizedBox(height: 16),
@@ -188,10 +188,10 @@ class _OaGymPageState extends State<OaGymPage>
                               sfSymbol: auth.isLoggedIn
                                   ? 'key.horizontal'
                                   : 'person.crop.circle.badge.plus',
-                              label: auth.isLoggedIn ? '去绑定 eGate' : '去登录',
+                              label: auth.isLoggedIn ? '去绑定 IDS' : '去登录',
                               role: AdaptiveButtonRole.prominent,
                               accessibilityLabel:
-                                  auth.isLoggedIn ? '前往绑定 eGate' : '登录 TechPie',
+                                  auth.isLoggedIn ? '前往绑定 IDS' : '登录 TechPie',
                             ),
                           ],
                         ),
@@ -1166,17 +1166,17 @@ class _ProfileTabState extends State<_ProfileTab> {
     final sp = ServiceProvider.of(context);
     final tpAuth = sp.thirdPartyAuthService;
     final service = sp.oaGymService;
-    final cpdaily = tpAuth.cpdailyBinding;
+    final ids = tpAuth.idsAccount;
 
-    // Identity card prefers cpdaily binding (real name + student id) over the
+    // Identity card prefers ids binding (real name + student id) over the
     // primary SSO account, whose userName/userId are Casdoor UUIDs with no
     // meaning in the OA booking context.
     final displayName = service.bookingProfile().name.isNotEmpty
         ? service.bookingProfile().name
-        : cpdaily?.name?.isNotEmpty == true
-            ? cpdaily!.name!
-            : (cpdaily?.account.isNotEmpty == true
-                ? cpdaily!.account
+        : ids?.name?.isNotEmpty == true
+            ? ids!.name!
+            : (ids?.account.isNotEmpty == true
+                ? ids!.account
                 : 'TechPie 用户');
     final studentId = service.bookingStudentId;
     final avatarText = displayName.characters.firstOrNull ?? 'U';
@@ -1222,7 +1222,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                 Text('预约提交信息', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Text(
-                  '绑定 eGate 后自动从 OA 同步，用于场馆预约。姓名和手机号必填，邮箱可选，也可手动修改。',
+                  '绑定 IDS 后自动从 OA 同步，用于场馆预约。姓名和手机号必填，邮箱可选，也可手动修改。',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),

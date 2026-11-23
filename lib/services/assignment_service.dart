@@ -114,7 +114,7 @@ class AssignmentService extends ChangeNotifier {
             : _assignments.where((a) {
                 final source =
                     (a.platform == 'blackboard' || a.platform == 'exam')
-                        ? 'cpdaily'
+                        ? ThirdPartyPlatform.ids.id
                         : a.platform;
                 return !changed.contains(source);
               }).toList();
@@ -144,10 +144,8 @@ class AssignmentService extends ChangeNotifier {
     unawaited(fetchAssignments());
   }
 
-  /// Who each binding is, not which session it holds: renewals rotate the
-  /// Hydro `sid` cookie and the egateApp probe rewrites the cpdaily `sid`, so
-  /// neither may count as an account change (nor may anything derived from it,
-  /// such as `cpdailyStudentId`).
+  /// Who each binding is, not which session it holds. Token rotations and
+  /// derived campus sessions must not count as an account change.
   Map<String, String> _currentSources() => {
         for (final account in _tpAuth.accounts)
           account.platform.id: jsonEncode([
@@ -283,7 +281,7 @@ class AssignmentService extends ChangeNotifier {
 
     final futures = <Future<void>>[];
 
-    if (_tpAuth.hasCpdailyBinding) {
+    if (_tpAuth.hasIdsBinding) {
       futures.add(
         _fetchBlackboard().then((items) {
           if (items != null) successfulResults['blackboard'] = items;
@@ -312,8 +310,8 @@ class AssignmentService extends ChangeNotifier {
             }),
           );
           break;
-        case ThirdPartyPlatform.cpdaily:
-          // cpdaily provides the CpDaily session, not deadline data — skip.
+        case ThirdPartyPlatform.ids:
+          // ids provides the IDS session, not deadline data — skip.
           break;
       }
     }
@@ -369,11 +367,11 @@ class AssignmentService extends ChangeNotifier {
     final successfulResults = <String, List<Assignment>>{};
     Future<void>? future;
 
-    if (platformId == 'blackboard' && _tpAuth.hasCpdailyBinding) {
+    if (platformId == 'blackboard' && _tpAuth.hasIdsBinding) {
       future = _fetchBlackboard().then((items) {
         if (items != null) successfulResults['blackboard'] = items;
       });
-    } else if (platformId == 'exam' && _tpAuth.hasCpdailyBinding) {
+    } else if (platformId == 'exam' && _tpAuth.hasIdsBinding) {
       future = _fetchExamTable().then((items) {
         if (items != null) successfulResults['exam'] = items;
       });
@@ -424,14 +422,14 @@ class AssignmentService extends ChangeNotifier {
   Future<List<Assignment>?> _fetchBlackboard() async {
     final node = _tpAuth.elearningNode;
     // withCookie handles initial minting if the downstream cookie isn't set.
-    if (!_tpAuth.hasCpdailyBinding) return null;
+    if (!_tpAuth.hasIdsBinding) return null;
 
     try {
       final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
         node,
         (cp) async {
           // cp.cookies is the elearning cookie string minted from the
-          // cpdaily CASTGC. The backend uses it directly to query
+          // ids CASTGC. The backend uses it directly to query
           // Blackboard (no SSO bounce needed).
           final r = await _http.post(
             Uri.parse('$_baseUrl/deadlines/blackboard'),
@@ -453,7 +451,7 @@ class AssignmentService extends ChangeNotifier {
   Future<List<Assignment>?> _fetchExamTable() async {
     final semesterId = _selectedSemesterId();
     final node = _tpAuth.eamsNode;
-    if (!_tpAuth.hasCpdailyBinding ||
+    if (!_tpAuth.hasIdsBinding ||
         semesterId == null ||
         semesterId.isEmpty) {
       return null;

@@ -11,6 +11,8 @@ import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 
+import 'support/fake_ids_client.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -24,14 +26,7 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
     await storage.saveThirdPartyAccount(
-      ThirdPartyAccount(
-        platform: ThirdPartyPlatform.cpdaily,
-        account: '20240001',
-        sid: '20240001',
-        token: 'session',
-        raw: const {'tgc': 'tgc-value'},
-        boundAt: DateTime.utc(2026),
-      ),
+      FakeIdsClient.account('20240001'),
     );
 
     final logger = DebugLogger();
@@ -40,7 +35,7 @@ void main() {
     final uniAuth = UniAuthService();
     final auth = AuthService(storage, http, uniAuth);
     await auth.loadSession();
-    final tpAuth = ThirdPartyAuthService(storage, http);
+    final tpAuth = ThirdPartyAuthService(storage, http, idsClient: FakeIdsClient());
     await tpAuth.initialize();
 
     final schedule = ScheduleService(storage, http, auth, tpAuth);
@@ -49,14 +44,14 @@ void main() {
 
     // What a renewal or a sync merge amounts to, from a listener's point of view.
     await tpAuth.updateRaw(
-      ThirdPartyPlatform.cpdaily,
+      ThirdPartyPlatform.ids,
       const {'tgc': 'tgc-value', 'cookies': 'CASTGC=renewed'},
     );
     // Past the window requestFetch coalesces over.
     await Future<void>.delayed(const Duration(milliseconds: 900));
 
     expect(
-      requests,
+      requests.where((url) => url.path.startsWith('/api/schedule/')),
       isNotEmpty,
       reason: 'the table was empty, so a renew has to lead to a fetch',
     );

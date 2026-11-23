@@ -13,10 +13,11 @@ import 'session_node.dart';
 /// Topology (built once at construction):
 /// ```
 /// SessionTree
-/// ├── cpdaily     (top-level, account+password/SMS bind, /auth/renew)
-/// │   ├── eams        (child, /auth/third-party/eams, parent tgc)
-/// │   ├── elearning   (child, /auth/third-party/elearning, parent tgc)
-/// │   └── egateApp    (child, /auth/third-party/egate-app, parent tgc)
+/// ├── ids         (local IDS software Passkey login)
+/// │   ├── eams        (child, local CAS login)
+/// │   ├── elearning   (child, local CAS login)
+/// │   ├── egateApp    (child, local CAS login)
+/// │   └── oa          (child, local CAS login)
 /// ├── gradescope  (top-level, account+password bind, bearer token)
 /// └── hydro       (top-level, account+password bind, sid cookie)
 /// ```
@@ -29,23 +30,26 @@ class SessionTree extends ChangeNotifier {
     required this.persist,
     required this.http,
     required this.baseUrl,
+    this.localAccountRenew,
+    this.localCanRenew,
+    this.localCookieMint,
     this.persistDerived,
     this.recordRenewStatus,
     this.persistProbe,
     this.persistRenewTimestamp,
   }) {
-    cpdaily = SessionNode(
-      id: 'cpdaily',
+    ids = SessionNode(
+      id: 'ids',
       persist: persist,
       http: http,
       baseUrl: baseUrl,
-      renewPath: '/auth/renew',
-      renewMode: RenewMode.cpdailySession,
-      apiPath: 'egate',
+      renewMode: RenewMode.idsPasskey,
+      localAccountRenew: localAccountRenew,
+      localCanRenew: localCanRenew,
       recordRenewStatus: recordRenewStatus,
       persistProbe: persistProbe,
       persistRenewTimestamp: persistRenewTimestamp,
-      renewSchedule: RenewSchedule.cpdailyDefault,
+      renewSchedule: RenewSchedule.idsDefault,
     );
     gradescope = SessionNode(
       id: 'gradescope',
@@ -80,8 +84,8 @@ class SessionTree extends ChangeNotifier {
       persist: persist,
       http: http,
       baseUrl: baseUrl,
-      parent: cpdaily,
-      renewPath: '/auth/third-party/eams',
+      parent: ids,
+      localCookieMint: localCookieMint,
       renewMode: RenewMode.parentCookie,
       persistDerived: persistDerived,
       recordRenewStatus: recordRenewStatus,
@@ -98,8 +102,8 @@ class SessionTree extends ChangeNotifier {
       persist: persist,
       http: http,
       baseUrl: baseUrl,
-      parent: cpdaily,
-      renewPath: '/auth/third-party/elearning',
+      parent: ids,
+      localCookieMint: localCookieMint,
       renewMode: RenewMode.parentCookie,
       persistProbe: persistProbe,
       persistRenewTimestamp: persistRenewTimestamp,
@@ -118,8 +122,8 @@ class SessionTree extends ChangeNotifier {
       persist: persist,
       http: http,
       baseUrl: baseUrl,
-      parent: cpdaily,
-      renewPath: '/auth/third-party/egate-app',
+      parent: ids,
+      localCookieMint: localCookieMint,
       persistProbe: persistProbe,
       renewSchedule: RenewSchedule.derivedCookie,
       persistRenewTimestamp: persistRenewTimestamp,
@@ -142,13 +146,21 @@ class SessionTree extends ChangeNotifier {
           final data = jsonDecode(r.body);
           final rows = ((data['datas'] as Map?)?['hqdlxsjpcxx']
               as Map?)?['rows'] as List?;
-          return (rows?.firstOrNull as Map?)?['XSBH'] as String? ?? 'egateApp';
+          return (rows?.firstOrNull as Map?)?['XSBH'] as String? ?? '';
         },
       ),
     );
-    cpdaily.attachChild(eams);
-    cpdaily.attachChild(elearning);
-    cpdaily.attachChild(egateApp);
+    oa = SessionNode(
+      id: 'oa', persist: persist, http: http, baseUrl: baseUrl,
+      parent: ids, renewMode: RenewMode.parentCookie,
+      localCookieMint: localCookieMint, persistDerived: persistDerived,
+      recordRenewStatus: recordRenewStatus, persistRenewTimestamp: persistRenewTimestamp,
+      renewSchedule: RenewSchedule.derivedCookie,
+    );
+    ids.attachChild(oa);
+    ids.attachChild(eams);
+    ids.attachChild(elearning);
+    ids.attachChild(egateApp);
 
     // Only top-level node notifications propagate up to the tree (facade →
     // UI / sync / auto-refetch). Child nodes (eams/elearning) mint cookies
@@ -156,10 +168,13 @@ class SessionTree extends ChangeNotifier {
     // trigger _onDepsChanged → fetchAssignments → re-mint, a feedback loop.
     // Child notifications still fire for direct listeners on the node itself
     // (e.g. withCookie's epoch checks read node state directly, not via tree).
-    for (final n in [cpdaily, gradescope, hydro]) {
+    for (final n in [ids, gradescope, hydro]) {
       n.addListener(notifyListeners);
     }
   }
+  final Future<ThirdPartyAccount> Function(ThirdPartyAccount current)? localAccountRenew;
+  final bool Function()? localCanRenew;
+  final Future<String> Function(String nodeId, Map<String, dynamic> root)? localCookieMint;
   final PersistAccount persist;
   final PersistDerivedCookie? persistDerived;
   final PersistProbe? persistProbe;
@@ -168,20 +183,21 @@ class SessionTree extends ChangeNotifier {
   final LoggingHttpClient http;
   final BaseUrlGetter baseUrl;
 
-  late final SessionNode cpdaily;
+  late final SessionNode ids;
   late final SessionNode gradescope;
   late final SessionNode hydro;
   late final SessionNode eams;
   late final SessionNode elearning;
   late final SessionNode egateApp;
+  late final SessionNode oa;
 
   /// All top-level nodes in a stable order.
-  List<SessionNode> get roots => [cpdaily, gradescope, hydro];
+  List<SessionNode> get roots => [ids, gradescope, hydro];
 
   /// Lookup a top-level node by [ThirdPartyPlatform]. Child nodes (eams/
   /// elearning) are accessed directly via [eams]/[elearning].
   SessionNode nodeFor(ThirdPartyPlatform p) => switch (p) {
-        ThirdPartyPlatform.cpdaily => cpdaily,
+        ThirdPartyPlatform.ids => ids,
         ThirdPartyPlatform.gradescope => gradescope,
         ThirdPartyPlatform.hydro => hydro,
       };
@@ -201,6 +217,7 @@ class SessionTree extends ChangeNotifier {
       'eams' => eams,
       'elearning' => elearning,
       'egateApp' => egateApp,
+      'oa' => oa,
       _ => null,
     };
     node?.setDerivedCookie(cookie);
@@ -219,7 +236,7 @@ class SessionTree extends ChangeNotifier {
   /// a credential error (HTTP 401 = parent tgc stale). Server errors (5xx)
   /// and network failures do NOT escalate — re-minting the parent tgc won't
   /// fix a broken backend, so the escalation is skipped to avoid wasteful
-  /// /auth/renew calls.
+  /// parent authentication attempts.
   ///
   /// Retry budget: at most 1 child renew (first level) + 1 parent renew +
   /// 1 child re-mint (second level) per withCookie call. The single-flight
@@ -244,7 +261,7 @@ class SessionTree extends ChangeNotifier {
     // credential error (HTTP 401 = parent tgc stale). A 500 from the
     // downstream endpoint is a server error — re-minting the parent tgc
     // won't fix it, so we skip the escalation and return null immediately.
-    // This prevents wasteful /auth/renew calls on transient backend errors.
+    // Transient service errors do not need a new IDS login.
     if (node.parent == null) return null;
     if (!node.lastRenewWasCredentialError) return null;
     final parentOk = await node.parent!.renewIfNeeded(node.parent!.epoch);
@@ -301,7 +318,7 @@ class SessionTree extends ChangeNotifier {
   Future<bool> _ensureUsable(SessionNode node) async {
     if (node.parent != null &&
         node.parent!.canRenew &&
-        node.parent!.isRenewDue) {
+        (!node.parent!.isAvailable || node.parent!.isRenewDue)) {
       final parentOk = await node.parent!.renewIfDue();
       if (!parentOk) return false;
     }
@@ -312,10 +329,10 @@ class SessionTree extends ChangeNotifier {
 
   @override
   void dispose() {
-    for (final n in [cpdaily, gradescope, hydro]) {
+    for (final n in [ids, gradescope, hydro]) {
       n.removeListener(notifyListeners);
     }
-    for (final n in [cpdaily, gradescope, hydro, eams, elearning, egateApp]) {
+    for (final n in [ids, gradescope, hydro, eams, elearning, egateApp, oa]) {
       n.dispose();
     }
     super.dispose();

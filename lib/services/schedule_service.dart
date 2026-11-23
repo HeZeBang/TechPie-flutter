@@ -74,7 +74,7 @@ class ScheduleService extends ChangeNotifier {
   Timer? _pendingFetch;
 
   String? _campusAccount() {
-    final account = _tpAuth.cpdailyNode.account;
+    final account = _tpAuth.idsNode.account;
     if (account == null) return null;
     return '${account.sid}|${account.account}';
   }
@@ -147,12 +147,12 @@ class ScheduleService extends ChangeNotifier {
   /// time. The epoch captured alongside is what makes the renew-retry
   /// storm-safe (see [_postWithRetry]).
   Map<String, dynamic> _authBody(CookieProvider cp) => {
-        // eams downstream cookie; studentId comes from the cpdaily binding.
-        'studentId': _tpAuth.cpdailyNode.account?.sid ?? '',
+        // eams downstream cookie; studentId comes from the ids binding.
+        'studentId': _tpAuth.idsNode.account?.sid ?? '',
         'cookies': cp.cookies,
       };
 
-  bool get _hasCpdailyBinding => _tpAuth.cpdailyNode.isAvailable;
+  bool get _hasIdsBinding => _tpAuth.hasIdsBinding;
 
   // ── Sessions the user entered by hand ──
   // Read straight from storage, so no second copy can go stale on a semester
@@ -219,7 +219,7 @@ class ScheduleService extends ChangeNotifier {
 
   Future<void> fetchAll() async {
     if (_loading) return; // 避免启动时并发重复调用
-    if (!_hasCpdailyBinding) return;
+    if (!_hasIdsBinding) return;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -348,7 +348,7 @@ class ScheduleService extends ChangeNotifier {
     _suppressAssignmentRefetch = true;
     notifyListeners();
 
-    if (!_hasCpdailyBinding) {
+    if (!_hasIdsBinding) {
       _suppressAssignmentRefetch = false;
       return;
     }
@@ -375,11 +375,11 @@ class ScheduleService extends ChangeNotifier {
     }
   }
 
-  /// POST [url] with CpDaily auth + [extra] body fields. On 401 the eams
+  /// POST [url] with IDS auth + [extra] body fields. On 401 the eams
   /// node is renewed exactly once (single-flighted across all concurrent
   /// callers) and the request retried with the fresh cookie. For a stale
   /// parent tgc, [SessionTree.withCookie] falls back to renewing the
-  /// cpdaily parent then re-minting the eams cookie. Throws on any non-200
+  /// ids parent then re-minting the eams cookie. Throws on any non-200
   /// after the retry budget is exhausted.
   Future<http.Response> _postWithRetry(
     String url,
@@ -404,7 +404,7 @@ class ScheduleService extends ChangeNotifier {
       },
     );
     if (resp == null) {
-      throw Exception('cpdaily session unavailable');
+      throw Exception('ids session unavailable');
     }
     if (resp.statusCode != 200) {
       throw Exception('Request failed with status ${resp.statusCode}');
