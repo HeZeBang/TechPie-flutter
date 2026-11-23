@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/assignment.dart';
+import 'package:techpie/models/campus_identity.dart';
 import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/services/assignment_service.dart';
@@ -420,6 +421,7 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
+    await storage.setScheduleSource('20240001|20240001', CampusScheduleSource.undergraduate);
 
     final oldBlackboard = _assignmentJson(
       id: 'blackboard-old',
@@ -512,6 +514,7 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
+    await storage.setScheduleSource('20240001|20240001', CampusScheduleSource.undergraduate);
     await storage.setSelectedSemester('263');
     await storage.saveSession(
       UserSession(
@@ -669,6 +672,11 @@ Future<
   SharedPreferences.setMockInitialValues({});
   FlutterSecureStorage.setMockInitialValues({});
   final storage = StorageService(await SharedPreferences.getInstance());
+  if (account?.platform == ThirdPartyPlatform.ids) {
+    await storage.setScheduleSource(
+      '${account!.sid}|${account.account}', CampusScheduleSource.undergraduate,
+    );
+  }
   await storage.saveSession(
     UserSession(
       userId: 'synthetic-user',

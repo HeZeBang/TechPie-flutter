@@ -10,6 +10,8 @@ import 'package:http/http.dart' as http;
 import '../features/campus_card/core/async_mutex.dart';
 import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
+import '../models/campus_identity.dart';
+import '../models/graduate_schedule.dart';
 import '../models/third_party_account.dart';
 import 'api_base_url.dart';
 import 'auth_service.dart';
@@ -18,6 +20,17 @@ import 'schedule_service.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
+
+typedef _ExamSelection = ({
+  CampusScheduleSource source,
+  String? semesterId,
+  bool unsupported,
+});
+typedef _ExamResult = ({
+  _ExamSelection selection,
+  String? idsSession,
+  List<Assignment> items,
+});
 
 class AssignmentService extends ChangeNotifier {
   final StorageService _storage;
@@ -198,18 +211,13 @@ class AssignmentService extends ChangeNotifier {
   }
 
   bool _autoRefetchEnabled = false;
-  // Track the last semester we refetched for, so schedule notifies that
-  // don't change the semester (loading flips, course_table updates, errors)
-  // do NOT trigger a redundant assignment refetch.
-  String? _lastRefetchedSemesterId;
+  _ExamSelection? _lastRefetchedExamSelection;
 
   /// Allow auto-refetch on auth/binding changes. Call after the first
   /// explicit fetch from app boot has been kicked off.
   void enableAutoRefetch() {
     _autoRefetchEnabled = true;
-    // Seed so the first schedule notify (which doesn't change the semester)
-    // doesn't trigger a redundant refetch of the same semester.
-    _lastRefetchedSemesterId = _schedule.selectedSemesterId;
+    _lastRefetchedExamSelection = _examSelection;
   }
 
   /// Queue a refetch during an active sync only when the identity changes.
@@ -253,12 +261,12 @@ class AssignmentService extends ChangeNotifier {
     }
     if (!_autoRefetchEnabled) return;
     if (_signedOut) return;
-    _lastRefetchedSemesterId = _schedule.selectedSemesterId;
     if (_loading) {
       // Renewal status notifications must not retry the active sync.
       if (primaryChanged || changed.isNotEmpty) _refetchPending = true;
       return;
     }
+    if (!_schedule.suppressAssignmentRefetch) _lastRefetchedExamSelection = _examSelection;
     unawaited(fetchAssignments());
   }
 
@@ -273,19 +281,18 @@ class AssignmentService extends ChangeNotifier {
           ]),
       };
 
-  /// Schedule changed — only refetch if the selected semester actually
-  /// changed, not on every loading/error/course_table flip. This prevents
-  /// a cascade of redundant blackboard+exam fetches during a semester switch.
-  /// Also defers the refetch while selectSemester is mid-fetch (its
-  /// course_table request primes the EAMS session; firing exam_table
-  /// concurrently would race on EAMS's stateful session and fail with
-  /// "Failed to extract numeric ids").
+  /// Wait for the timetable switch to finish priming EAMS before fetching
+  /// exams for the new selection.
   void _onScheduleChanged() {
     if (!_autoRefetchEnabled) return;
     if (_schedule.suppressAssignmentRefetch) return;
-    final currentSemester = _schedule.selectedSemesterId;
-    if (currentSemester == _lastRefetchedSemesterId) return;
-    _lastRefetchedSemesterId = currentSemester;
+    final selection = _examSelection;
+    if (selection == _lastRefetchedExamSelection) return;
+    _lastRefetchedExamSelection = selection;
+    if (_loading) {
+      _refetchPending = true;
+      return;
+    }
     unawaited(fetchAssignments());
   }
 
@@ -712,6 +719,7 @@ class AssignmentService extends ChangeNotifier {
     notifyListeners();
 
     final successfulResults = <String, List<Assignment>>{};
+    _ExamResult? exams;
 
     final futures = <Future<void>>[];
 
@@ -722,8 +730,8 @@ class AssignmentService extends ChangeNotifier {
         }),
       );
       futures.add(
-        _fetchExamTable().then((items) {
-          if (items != null) successfulResults['exam'] = items;
+        _fetchExamTable().then((result) {
+          exams = result;
         }),
       );
     }
@@ -755,6 +763,7 @@ class AssignmentService extends ChangeNotifier {
       if (_disposed || epoch != _identityEpoch) return;
       final merged = _mergeAssignments(
         successfulResults: successfulResults,
+        exams: exams,
       );
 
       _remoteAssignments = merged;
@@ -778,7 +787,17 @@ class AssignmentService extends ChangeNotifier {
 
   List<Assignment> _mergeAssignments({
     required Map<String, List<Assignment>> successfulResults,
+    required _ExamResult? exams,
   }) {
+    final selection = _examSelection;
+    if (selection.unsupported) {
+      _platformErrors.remove('exam');
+      if (_assignments.any((assignment) => assignment.platform == 'exam')) {
+        successfulResults['exam'] = const [];
+      }
+    } else if (exams != null && exams.selection == selection && exams.idsSession == _idsSession) {
+      successfulResults['exam'] = exams.items;
+    }
     final successfulPlatforms =
         successfulResults.keys.map((p) => p.toLowerCase()).toSet();
 
@@ -798,6 +817,7 @@ class AssignmentService extends ChangeNotifier {
     notifyListeners();
 
     final successfulResults = <String, List<Assignment>>{};
+    _ExamResult? exams;
     Future<void>? future;
 
     if (platformId == 'blackboard' && _tpAuth.hasIdsBinding) {
@@ -805,8 +825,8 @@ class AssignmentService extends ChangeNotifier {
         if (items != null) successfulResults['blackboard'] = items;
       });
     } else if (platformId == 'exam' && _tpAuth.hasIdsBinding) {
-      future = _fetchExamTable().then((items) {
-        if (items != null) successfulResults['exam'] = items;
+      future = _fetchExamTable().then((result) {
+        exams = result;
       });
     } else {
       for (final acc in _tpAuth.accounts) {
@@ -831,6 +851,7 @@ class AssignmentService extends ChangeNotifier {
         if (_disposed || epoch != _identityEpoch) return;
         final merged = _mergeAssignments(
           successfulResults: successfulResults,
+          exams: exams,
         );
 
         _remoteAssignments = merged;
@@ -882,19 +903,43 @@ class AssignmentService extends ChangeNotifier {
     }
   }
 
-  Future<List<Assignment>?> _fetchExamTable() async {
+  _ExamSelection get _examSelection {
     final semesterId = _selectedSemesterId();
-    final node = _tpAuth.eamsNode;
-    if (!_tpAuth.hasIdsBinding ||
-        semesterId == null ||
-        semesterId.isEmpty) {
-      return null;
-    }
+    final unsupported = _schedule.hasGraduateIdentity ||
+        _schedule.isGraduate ||
+        semesterId?.startsWith(graduateSemesterPrefix) == true;
+    return (
+      source: _schedule.scheduleSource,
+      semesterId: unsupported ? null : semesterId,
+      unsupported: unsupported,
+    );
+  }
+
+  String? get _idsSession => _tpAuth.idsNode.cookieProvider?.cookies;
+
+  Future<_ExamResult?> _fetchExamTable() async {
+    if (_examSelection.unsupported || !await _schedule.canFetchUndergraduateExams()) return null;
+    var selection = _examSelection;
+    if (selection.unsupported || selection.semesterId?.isNotEmpty != true) return null;
+    var idsSession = _idsSession;
+
+    bool requestIsCurrent() => selection == _examSelection && idsSession == _idsSession;
 
     try {
       final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
-        node,
+        _tpAuth.eamsNode,
         (cp) async {
+          // Minting EAMS cookies can renew IDS after the initial identity check.
+          idsSession = _idsSession;
+          if (!await _schedule.canFetchUndergraduateExams() || idsSession != _idsSession) {
+            throw const FormatException('学校身份尚未确认');
+          }
+          final current = _examSelection;
+          final semesterId = current.semesterId;
+          if (current.unsupported || semesterId == null || semesterId.isEmpty) {
+            throw const FormatException('本科课表学期尚未确认');
+          }
+          selection = current;
           final r = await _http.post(
             Uri.parse('$_baseUrl/schedule/exam_table'),
             headers: _jsonHeaders(),
@@ -904,13 +949,16 @@ class AssignmentService extends ChangeNotifier {
             }),
             tag: 'schedule:exam_table',
           );
-          return CookieAction(r, expired: r.statusCode == 401);
+          return CookieAction(r, expired: r.statusCode == 401 && requestIsCurrent());
         },
       );
-      if (resp == null) return null;
-      return _parseExamTableResponse(resp);
-    } catch (e) {
-      _platformErrors['exam'] = '同步失败，请检查网络或稍后重试';
+      if (resp == null || !requestIsCurrent()) return null;
+      final items = _parseExamTableResponse(resp, selection.semesterId!);
+      return items == null ? null : (selection: selection, idsSession: idsSession, items: items);
+    } catch (_) {
+      if (requestIsCurrent() && !_examSelection.unsupported) {
+        _platformErrors['exam'] = '同步失败，请检查网络或稍后重试';
+      }
       return null;
     }
   }
@@ -1022,7 +1070,7 @@ class AssignmentService extends ChangeNotifier {
         .toList();
   }
 
-  List<Assignment>? _parseExamTableResponse(http.Response resp) {
+  List<Assignment>? _parseExamTableResponse(http.Response resp, String requestedSemester) {
     Map<String, dynamic> data;
     try {
       data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -1042,8 +1090,11 @@ class AssignmentService extends ChangeNotifier {
         : const <String, dynamic>{};
     final batchId = payload['examBatchId']?.toString() ?? '';
     final batchName = payload['examBatchName']?.toString() ?? '考试';
-    final semesterId =
-        payload['semesterId']?.toString() ?? _selectedSemesterId() ?? '';
+    final semesterId = payload['semesterId']?.toString() ?? requestedSemester;
+    if (semesterId != requestedSemester) {
+      _platformErrors['exam'] = '考试学期与当前课表不一致，请刷新后重试';
+      return null;
+    }
     final raw = payload['exams'] as List<dynamic>? ?? const [];
 
     return raw

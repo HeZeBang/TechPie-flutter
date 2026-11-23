@@ -25,6 +25,7 @@ import 'package:techpie/services/oa_gym_service.dart';
 import 'package:techpie/services/schedule_service.dart';
 import 'package:techpie/services/service_provider.dart';
 import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/services/student_allowance_service.dart';
 import 'package:techpie/services/sync_service.dart';
 import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
@@ -72,6 +73,8 @@ void main() {
         AssignmentService(storage, http, hostAuth, tpAuth, schedule);
     final oaGym = OaGymService(hostAuth, storage, tpAuth);
     final egateApp = EgateAppService(hostAuth, storage, tpAuth);
+    final studentAllowance = StudentAllowanceService(hostAuth, tpAuth);
+    addTearDown(studentAllowance.dispose);
 
     secureStore = InMemorySecureCredentialStore();
     sessionStore = SecureSessionCredentialStore(secureStore);
@@ -133,6 +136,7 @@ void main() {
       thirdPartyAuthService: tpAuth,
       oaGymService: oaGym,
       egateAppService: egateApp,
+      studentAllowanceService: studentAllowance,
       uniAuthService: uniAuth,
       syncService: sync,
       updateService: UpdateService(),

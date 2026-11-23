@@ -7,6 +7,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/assignment.dart';
+import '../models/campus_identity.dart';
 import '../models/course.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
@@ -188,12 +189,12 @@ class _SchedulePageState extends State<SchedulePage> {
   void _rebuildCourses() {
     if (!mounted) return;
     setState(() {
-      final preserveWeek = isDesktop() &&
-          _hasBuiltCourses &&
-          _displayedSemesterId == _schedule.selectedSemesterId;
-      _currentWeek = (preserveWeek ? _currentWeek : _schedule.currentWeek())
-          .clamp(1, _schedule.totalWeeks)
-          .toInt();
+      final preserveWeek =
+          isDesktop() && _hasBuiltCourses && _displayedSemesterId == _schedule.selectedSemesterId;
+      final initialWeek =
+          _schedule.isGraduate && !_schedule.isTodayInTerm ? 1 : _schedule.currentWeek();
+      _currentWeek =
+          (preserveWeek ? _currentWeek : initialWeek).clamp(1, _schedule.totalWeeks).toInt();
       _hasBuiltCourses = true;
       _displayedSemesterId = _schedule.selectedSemesterId;
       final table = _schedule.courseTable;
@@ -270,16 +271,10 @@ class _SchedulePageState extends State<SchedulePage> {
     _courses = _coursesForWeek(_currentWeek);
   }
 
-  DateTime _weekStartForWeek(int week) {
+  DateTime? _weekStartForWeek(int week) {
     final termBegin = _schedule.termBegin;
-    if (termBegin != null) {
-      final weekStartDate = termBegin.add(
-        Duration(days: (week.clamp(1, _schedule.totalWeeks).toInt() - 1) * 7),
-      );
-      return weekStartDate.subtract(Duration(days: weekStartDate.weekday - 1));
-    }
-    final now = DateTime.now();
-    return now.subtract(Duration(days: now.weekday - 1));
+    if (termBegin == null) return null;
+    return termBegin.add(Duration(days: (week - 1) * 7 - (termBegin.weekday - 1)));
   }
 
   void _showSemesterPicker() {
@@ -416,33 +411,44 @@ class _SchedulePageState extends State<SchedulePage> {
     unawaited(_exportCalendar());
   }
 
-  Future<SavedIcsFile> _saveCalendarFile(
-    IcsSaveLocation location, {
-    required String calendarName,
-  }) {
-    final table = _schedule.courseTable!;
-    final termBegin = _schedule.termBegin!;
-    return _icsExport.saveCalendar(
-      table: table,
-      termBegin: termBegin,
-      fileName: _icsFileName,
-      location: location,
-      calendarName: calendarName,
-      // The user's own sessions are part of the week the calendar describes.
-      customCourses: _schedule.customCourses,
-      exams: _semesterExams,
-    );
-  }
-
   Future<void> _exportCalendar() async {
-    final table = _schedule.courseTable;
+    final table = _schedule.fullCourseTable;
     final termBegin = _schedule.termBegin;
-    if (table == null || termBegin == null || _exportingCalendar) return;
+    if (table == null || _exportingCalendar) return;
+    final customCourses = _schedule.customCourses;
+    final exams = _semesterExams;
+    if (termBegin == null &&
+        !table.courses.any((course) => course.dates?.isNotEmpty == true) &&
+        !customCourses.any((course) => course.isOneOff) &&
+        exams.isEmpty) {
+      showAdaptiveFeedback(
+        context: context,
+        message: '缺少学期日历和上课日期，无法导出课表',
+        style: AdaptiveFeedbackStyle.info,
+      );
+      return;
+    }
 
+    final fileName = _icsFileName;
     final calendarName = (isIos() || isAndroid())
         ? await _promptCalendarName(initialValue: _defaultCalendarName)
         : _defaultCalendarName;
-    if (calendarName == null || calendarName.trim().isEmpty) return;
+    if (!mounted || calendarName == null || calendarName.trim().isEmpty) return;
+
+    Future<SavedIcsFile> saveCalendarFile(IcsSaveLocation location) => _icsExport.saveCalendar(
+          table: table,
+          termBegin: termBegin,
+          fileName: fileName,
+          location: location,
+          calendarName: calendarName,
+          customCourses: customCourses,
+          exams: exams,
+        );
+
+    final missingDates = termBegin == null &&
+        (table.courses.any((course) => course.dates == null) ||
+            customCourses.any((course) => !course.isOneOff));
+    final exportNote = missingDates ? '（仅含日期已知的课程）' : '';
 
     setState(() {
       _exportingCalendar = true;
@@ -455,8 +461,8 @@ class _SchedulePageState extends State<SchedulePage> {
           final events = await _icsExport.buildCalendarEventPayloads(
             table: table,
             termBegin: termBegin,
-            customCourses: _schedule.customCourses,
-            exams: _semesterExams,
+            customCourses: customCourses,
+            exams: exams,
           );
           final imported = await CalendarImporter.importCalendarEvents(
             events,
@@ -465,31 +471,25 @@ class _SchedulePageState extends State<SchedulePage> {
           if (!mounted) return;
           showAdaptiveFeedback(
             context: context,
-            message: imported > 0 ? '已导入 $imported 个日程到“$calendarName”' : '没有可导入的日程',
+            message: imported > 0 ? '已导入 $imported 个日程到“$calendarName”$exportNote' : '没有可导入的日程',
             style: imported > 0 ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.info,
           );
           return;
         } catch (_) {
-          final fallbackFile = await _saveCalendarFile(
-            IcsSaveLocation.downloads,
-            calendarName: calendarName,
-          );
+          final fallbackFile = await saveCalendarFile(IcsSaveLocation.downloads);
           if (!mounted) return;
           showAdaptiveFeedback(
             context: context,
             message: fallbackFile.filePath != null
-                ? '导入失败，已导出到下载目录: ${fallbackFile.filePath}'
-                : '导入失败，ICS 文件已创建。',
+                ? '导入失败，已导出到下载目录$exportNote\n${fallbackFile.filePath}'
+                : '导入失败，ICS 文件已创建$exportNote',
             style: AdaptiveFeedbackStyle.info,
           );
           return;
         }
       }
 
-      final saved = await _saveCalendarFile(
-        IcsSaveLocation.temporary,
-        calendarName: calendarName,
-      );
+      final saved = await saveCalendarFile(IcsSaveLocation.temporary);
 
       bool launched = false;
       if (saved.filePath != null) {
@@ -518,10 +518,7 @@ class _SchedulePageState extends State<SchedulePage> {
       if (!launched && mounted) {
         SavedIcsFile fallbackFile = saved;
         try {
-          fallbackFile = await _saveCalendarFile(
-            IcsSaveLocation.downloads,
-            calendarName: calendarName,
-          );
+          fallbackFile = await saveCalendarFile(IcsSaveLocation.downloads);
         } catch (_) {
           fallbackFile = saved;
         }
@@ -529,8 +526,9 @@ class _SchedulePageState extends State<SchedulePage> {
 
         showAdaptiveFeedback(
           context: context,
-          message:
-              fallbackFile.filePath != null ? '已导出到下载目录: ${fallbackFile.filePath}' : 'ICS 文件已创建。',
+          message: fallbackFile.filePath != null
+              ? '已导出到下载目录$exportNote\n${fallbackFile.filePath}'
+              : 'ICS 文件已创建$exportNote',
           style: AdaptiveFeedbackStyle.info,
         );
         return;
@@ -539,7 +537,7 @@ class _SchedulePageState extends State<SchedulePage> {
       if (!mounted) return;
       showAdaptiveFeedback(
         context: context,
-        message: '课表导出操作成功',
+        message: '课表导出操作成功$exportNote',
         style: AdaptiveFeedbackStyle.success,
       );
     } catch (_) {
@@ -600,6 +598,10 @@ class _SchedulePageState extends State<SchedulePage> {
                       value: 'semester',
                       title: '切换学期',
                       sfSymbol: 'calendar',
+                    ),
+                    const IosNativeNavigationBarMenuItem(
+                      value: 'source',
+                      title: '课表来源',
                     ),
                     IosNativeNavigationBarMenuItem(
                       value: 'saturday',
@@ -733,6 +735,7 @@ class _SchedulePageState extends State<SchedulePage> {
                         value: 'semester',
                         child: Text('切换学期'),
                       ),
+                      const PopupMenuItem(value: 'source', child: Text('课表来源')),
                       CheckedPopupMenuItem(
                         value: 'saturday',
                         checked: _showSaturday,
@@ -853,8 +856,8 @@ class _SchedulePageState extends State<SchedulePage> {
     return ListView(
       key: ValueKey<String>('empty-$week'),
       children: [
-        SizedBox(
-          height: 300,
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 300),
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -881,6 +884,35 @@ class _SchedulePageState extends State<SchedulePage> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (state == EmptyWeekState.failed) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      child: SelectableText(
+                        (_schedule.error ?? '').replaceFirst(RegExp(r'^FormatException:\s*'), ''),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _schedule.loading ? null : _refresh,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('重试'),
+                      ),
+                      TextButton.icon(
+                        onPressed: _schedule.loading ? null : _showScheduleSource,
+                        icon: const Icon(Icons.school_outlined),
+                        label: const Text('课表来源'),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -915,6 +947,13 @@ class _SchedulePageState extends State<SchedulePage> {
 
     return Column(
       children: [
+        if (_schedule.isGraduate) _buildGraduateControls(theme),
+        if (_schedule.error != null && visibleCourses.isNotEmpty)
+          TextButton.icon(
+            icon: const Icon(Icons.info_outline, size: 18),
+            label: const Text('刷新失败，正在显示上次课表 · 查看原因'),
+            onPressed: _showScheduleError,
+          ),
         _DayHeader(
           weekStart: _weekStartForWeek(week),
           today: today,
@@ -938,12 +977,152 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
+  Widget _buildGraduateControls(ThemeData theme) {
+    final schemes = _schedule.graduateSchemes;
+    final extraCount = _schedule.graduateUnarranged.length + _schedule.graduateCancelled.length;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Wrap(
+        spacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('研究生课表', style: theme.textTheme.labelLarge),
+          if (_schedule.identityWarning != null) Text(_schedule.identityWarning!),
+          if (schemes.length > 1)
+            DropdownButton<String>(
+              value: _schedule.graduateScheme,
+              items: schemes.entries
+                  .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                  .toList(),
+              onChanged: (value) async {
+                if (value == null) return;
+                try {
+                  await _schedule.selectGraduateScheme(value);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+                  }
+                }
+              },
+            ),
+          if (extraCount > 0)
+            TextButton(
+              onPressed: _showGraduateExtraCourses,
+              child: Text(
+                '未排课 ${_schedule.graduateUnarranged.length} · 停开 ${_schedule.graduateCancelled.length}',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showScheduleSource() async {
+    final source = await showDialog<CampusScheduleSource>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('课表来源'),
+        children: [
+          for (final option in [
+            (CampusScheduleSource.automatic, '自动识别（IDS 身份）'),
+            (CampusScheduleSource.undergraduate, '本科教务课表'),
+            (CampusScheduleSource.graduate, '研究生课表'),
+          ])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, option.$1),
+              child: Row(
+                children: [
+                  Icon(
+                    _schedule.scheduleSource == option.$1
+                        ? Icons.check_circle_outline
+                        : Icons.circle_outlined,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(child: Text(option.$2)),
+                ],
+              ),
+            ),
+          if (_schedule.identityLabel != null)
+            Padding(padding: const EdgeInsets.all(24), child: Text(_schedule.identityLabel!)),
+          if (_schedule.identityWarning != null)
+            Padding(padding: const EdgeInsets.all(24), child: Text(_schedule.identityWarning!)),
+        ],
+      ),
+    );
+    if (source == null || !mounted) return;
+    try {
+      await _schedule.selectScheduleSource(source);
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+    }
+  }
+
+  Future<void> _showScheduleError() => showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('课表刷新失败'),
+          content: SelectableText(
+            (_schedule.error ?? '').replaceFirst(RegExp(r'^FormatException:\s*'), ''),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
+        ),
+      );
+
+  Future<void> _showGraduateExtraCourses() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('研究生课程信息'),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final section in [
+                  ('已选但未排课', _schedule.graduateUnarranged),
+                  ('已停开', _schedule.graduateCancelled),
+                ]) ...[
+                  Text(section.$1, style: Theme.of(context).textTheme.titleSmall),
+                  for (final course in section.$2)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${course['KCMC'] ?? ''}'),
+                      subtitle: Text(
+                        [
+                          course['BJMC'],
+                          course['RKJS'] ?? course['JSXM'],
+                          course['PKSJDDMS'] ?? course['PKSJDD'],
+                        ]
+                            .whereType<Object>()
+                            .map((v) => '$v'.replaceAll(RegExp(r'<[^>]*>'), ''))
+                            .where((v) => v.isNotEmpty)
+                            .join(' · '),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭')),
+        ],
+      ),
+    );
+  }
+
   void _onMenuSelected(String value) {
     switch (value) {
       case 'currentWeek':
         _goToCurrentWeek();
       case 'semester':
         _showSemesterPicker();
+      case 'source':
+        unawaited(_showScheduleSource());
       case 'saturday':
         setState(() => _showSaturday = !_showSaturday);
       case 'sunday':
@@ -1079,6 +1258,14 @@ class _SchedulePageState extends State<SchedulePage> {
                     onTap: () {
                       close();
                       _showDesktopSemesterWheelPopover();
+                    },
+                  ),
+                  DesktopMenuRow(
+                    leading: const Icon(Icons.school_outlined, size: 20),
+                    title: Text('课表来源', style: theme.textTheme.bodyMedium),
+                    onTap: () {
+                      close();
+                      unawaited(_showScheduleSource());
                     },
                   ),
                   const Divider(height: 1),
@@ -1274,7 +1461,7 @@ class _WeekTitleContent extends StatelessWidget {
 }
 
 class _DayHeader extends StatelessWidget {
-  final DateTime weekStart;
+  final DateTime? weekStart;
   final DateTime today;
   final List<int> visibleDays;
 
@@ -1289,6 +1476,7 @@ class _DayHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final monday = weekStart;
 
     return SizedBox(
       height: 68,
@@ -1302,15 +1490,17 @@ class _DayHeader extends StatelessWidget {
                   context,
                   const Duration(milliseconds: 250),
                 ),
-                child: Text(
-                  '${weekStart.month}\n月',
-                  key: ValueKey<String>('${weekStart.year}-${weekStart.month}'),
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.3,
-                  ),
-                ),
+                child: monday == null
+                    ? null
+                    : Text(
+                        '${monday.month}\n月',
+                        key: ValueKey<String>('${monday.year}-${monday.month}'),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          height: 1.3,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -1319,36 +1509,32 @@ class _DayHeader extends StatelessWidget {
             Expanded(
               child: _DayHeaderCell(
                 dayLabel: _dayLabels[day - 1],
-                date: weekStart.add(Duration(days: day - 1)),
-                isToday: _isSameDay(
-                  weekStart.add(Duration(days: day - 1)),
-                  today,
-                ),
+                date: monday?.add(Duration(days: day - 1)),
+                today: today,
               ),
             ),
         ],
       ),
     );
   }
-
-  bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
 class _DayHeaderCell extends StatelessWidget {
   final String dayLabel;
-  final DateTime date;
-  final bool isToday;
+  final DateTime? date;
+  final DateTime today;
 
   const _DayHeaderCell({
     required this.dayLabel,
     required this.date,
-    required this.isToday,
+    required this.today,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final date = this.date;
+    final isToday = DateUtils.isSameDay(date, today);
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -1359,31 +1545,33 @@ class _DayHeaderCell extends StatelessWidget {
             color: isToday ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 2),
-        AnimatedSwitcher(
-          duration: appAnimationDuration(
-            context,
-            const Duration(milliseconds: 250),
-          ),
-          child: Container(
-            key: ValueKey<String>('${date.year}-${date.month}-${date.day}'),
-            width: 28,
-            height: 28,
-            decoration: isToday
-                ? BoxDecoration(
-                    color: theme.colorScheme.primary,
-                    shape: BoxShape.circle,
-                  )
-                : null,
-            alignment: Alignment.center,
-            child: Text(
-              '${date.day}',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: isToday ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+        if (date != null) ...[
+          const SizedBox(height: 2),
+          AnimatedSwitcher(
+            duration: appAnimationDuration(
+              context,
+              const Duration(milliseconds: 250),
+            ),
+            child: Container(
+              key: ValueKey<String>('${date.year}-${date.month}-${date.day}'),
+              width: 28,
+              height: 28,
+              decoration: isToday
+                  ? BoxDecoration(
+                      color: theme.colorScheme.primary,
+                      shape: BoxShape.circle,
+                    )
+                  : null,
+              alignment: Alignment.center,
+              child: Text(
+                '${date.day}',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: isToday ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -1392,7 +1580,7 @@ class _DayHeaderCell extends StatelessWidget {
 class _TimetableGrid extends StatelessWidget {
   final List<Course> courses;
   final List<Period> periods;
-  final DateTime weekStart;
+  final DateTime? weekStart;
   final DateTime today;
   final List<int> visibleDays;
   final ValueChanged<Course> onEditCustomCourse;
@@ -1434,8 +1622,8 @@ class _TimetableGrid extends StatelessWidget {
                   dayOfWeek: visibleDays[i],
                   courses: courses.where((c) => c.dayOfWeek == visibleDays[i]).toList(),
                   periods: periods,
-                  isToday: _isSameDay(
-                    weekStart.add(Duration(days: visibleDays[i] - 1)),
+                  isToday: DateUtils.isSameDay(
+                    weekStart?.add(Duration(days: visibleDays[i] - 1)),
                     today,
                   ),
                   isLastColumn: i == visibleDays.length - 1,
@@ -1449,8 +1637,6 @@ class _TimetableGrid extends StatelessWidget {
     );
   }
 
-  bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
 class _PeriodLabel extends StatelessWidget {
