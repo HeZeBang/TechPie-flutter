@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../theme/theme.dart';
 import '../app_destination.dart';
 import 'desktop_sidebar_tokens.dart';
 
@@ -19,11 +20,10 @@ class DesktopSidebarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final foreground = selected
-        ? colorScheme.onSecondaryContainer
-        : colorScheme.onSurfaceVariant;
+    final colors = context.tpColors;
+    final foreground = selected ? colors.brand : colors.textSecondary;
+    final iconColor = selected ? colors.brand : colors.textMuted;
+    final radius = BorderRadius.circular(TpTokens.radiusS);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -34,16 +34,14 @@ class DesktopSidebarItem extends StatelessWidget {
                     DesktopSidebarTokens.minLabelWidth;
 
         return Material(
-          color: selected ? colorScheme.secondaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(
-            DesktopSidebarTokens.navItemRadius,
-          ),
+          color: selected ? colors.brandSoft : Colors.transparent,
+          borderRadius: radius,
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(
-              DesktopSidebarTokens.navItemRadius,
-            ),
+            borderRadius: radius,
+            hoverColor: selected ? colors.brandSoft : colors.surfaceSubtle,
+            splashColor: colors.brandSoft,
             child: SizedBox(
               height: DesktopSidebarTokens.navItemHeight,
               child: Row(
@@ -54,8 +52,8 @@ class DesktopSidebarItem extends StatelessWidget {
                     child: Center(
                       child: Icon(
                         selected ? destination.selectedIcon : destination.icon,
-                        size: DesktopSidebarTokens.navItemIconSize,
-                        color: foreground,
+                        size: TpTokens.iconM,
+                        color: iconColor,
                       ),
                     ),
                   ),
@@ -68,10 +66,11 @@ class DesktopSidebarItem extends StatelessWidget {
                         destination.label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelLarge?.copyWith(
+                        style: TpTypography.itemTitle(colors).copyWith(
+                          fontSize: 14,
                           color: foreground,
                           fontWeight:
-                              selected ? FontWeight.w700 : FontWeight.w500,
+                              selected ? FontWeight.w600 : FontWeight.w500,
                         ),
                       ),
                     ),

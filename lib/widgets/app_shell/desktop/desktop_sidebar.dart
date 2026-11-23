@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../theme/theme.dart';
 import '../app_destination.dart';
 import 'desktop_sidebar_item.dart';
 import 'desktop_sidebar_tokens.dart';
@@ -24,14 +25,14 @@ class DesktopSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final colors = context.tpColors;
     final horizontalPadding = collapsed
         ? DesktopSidebarTokens.collapsedHorizontalPadding
         : DesktopSidebarTokens.expandedHorizontalPadding;
     final itemSpacing = DesktopSidebarTokens.navItemSpacing;
 
     return ColoredBox(
-      color: colorScheme.surfaceContainerLow,
+      color: colors.surface,
       child: SafeArea(
         right: false,
         bottom: false,
@@ -53,7 +54,7 @@ class DesktopSidebar extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (int index = 0;
+                    for (var index = 0;
                         index < destinations.length;
                         index++) ...[
                       DesktopSidebarItem(
@@ -118,10 +119,7 @@ class _SidebarBrand extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    final foreground = colorScheme.primary;
+    final colors = context.tpColors;
 
     return SizedBox(
       height: DesktopSidebarTokens.brandHeight,
@@ -139,10 +137,18 @@ class _SidebarBrand extends StatelessWidget {
               SizedBox(
                 width: DesktopSidebarTokens.iconColumnWidth,
                 child: Center(
-                  child: Icon(
-                    Icons.school_rounded,
-                    size: DesktopSidebarTokens.brandIconSize,
-                    color: foreground,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: colors.brandSoft,
+                      borderRadius: BorderRadius.circular(TpTokens.radiusS),
+                    ),
+                    child: Icon(
+                      TpIcons.graduation,
+                      size: TpTokens.iconM - 2,
+                      color: colors.brand,
+                    ),
                   ),
                 ),
               ),
@@ -153,9 +159,9 @@ class _SidebarBrand extends StatelessWidget {
                     'TechPie',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.w700,
+                    style: TpTypography.cardTitle(colors).copyWith(
+                      fontSize: 16,
+                      letterSpacing: -0.2,
                     ),
                   ),
                 ),
@@ -179,18 +185,19 @@ class _SidebarToggleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final colors = context.tpColors;
 
     return IconButton(
-      tooltip: collapsed ? 'Expand sidebar' : 'Collapse sidebar',
+      key: const ValueKey('desktop.sidebar-toggle'),
+      tooltip: collapsed ? '展开侧边栏' : '收起侧边栏',
       onPressed: onPressed,
-      icon: const SizedBox(
+      icon: SizedBox(
         width: DesktopSidebarTokens.iconColumnWidth,
         height: DesktopSidebarTokens.navItemHeight,
         child: Center(
           child: Icon(
-            Icons.menu_rounded,
-            size: DesktopSidebarTokens.toggleIconSize,
+            collapsed ? TpIcons.sidebarExpand : TpIcons.sidebarCollapse,
+            size: TpTokens.iconM,
           ),
         ),
       ),
@@ -204,14 +211,12 @@ class _SidebarToggleButton extends StatelessWidget {
           DesktopSidebarTokens.navItemHeight,
         ),
         padding: EdgeInsets.zero,
-        foregroundColor: colorScheme.onSurfaceVariant,
+        foregroundColor: colors.textMuted,
         backgroundColor: Colors.transparent,
-        hoverColor: colorScheme.surfaceContainerHighest,
-        highlightColor: colorScheme.surfaceContainerHigh,
+        hoverColor: colors.surfaceSubtle,
+        highlightColor: colors.surfacePressed,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(
-            DesktopSidebarTokens.navItemRadius,
-          ),
+          borderRadius: BorderRadius.circular(TpTokens.radiusS),
         ),
       ),
     );
