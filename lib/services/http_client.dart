@@ -4,6 +4,46 @@ import 'package:http/http.dart' as http;
 
 import 'campus_user_agent.dart';
 import 'debug_logger.dart';
+import 'http_proxy_stub.dart'
+    if (dart.library.io) 'http_proxy_io.dart' as proxy_impl;
+
+final _appProxyPattern = RegExp(r'^(?:\[[0-9a-fA-F:]+\]|[^\s:/;@]+):(\d{1,5})$');
+
+/// Normalizes user input such as `http://127.0.0.1:7890/` into `127.0.0.1:7890`.
+String normalizeAppProxy(String value) {
+  var normalized = value.trim();
+  if (normalized.isEmpty) return '';
+  if (normalized.toLowerCase().startsWith('http://')) {
+    normalized = normalized.substring(7);
+  }
+  while (normalized.endsWith('/')) {
+    normalized = normalized.substring(0, normalized.length - 1);
+  }
+  return normalized.trim();
+}
+
+/// Returns true when [value] is a valid `host:port` (port 1..65535) HTTP proxy.
+bool isValidAppProxy(String value) {
+  final normalized = normalizeAppProxy(value);
+  final match = _appProxyPattern.firstMatch(normalized);
+  if (match == null) return false;
+  final port = int.tryParse(match.group(1)!);
+  return port != null && port >= 1 && port <= 65535;
+}
+
+/// Resolves the active proxy directive for [uri] (`PROXY host:port` or
+/// environment fallback when app proxy is disabled).
+String resolveAppProxy(Uri uri, {Map<String, String>? environment}) =>
+    proxy_impl.resolveAppProxyImpl(uri, environment: environment);
+
+/// Configures the app-wide HTTP proxy for native platforms. Empty or invalid
+/// values disable the override and fall back to environment defaults.
+void configureAppProxy(String value) {
+  final normalized = normalizeAppProxy(value);
+  proxy_impl.configureAppProxyImpl(
+    isValidAppProxy(normalized) ? normalized : '',
+  );
+}
 
 class LoggingHttpClient {
   final http.Client _inner;

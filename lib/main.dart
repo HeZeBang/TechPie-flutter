@@ -73,11 +73,23 @@ void main(List<String> args) async {
 
 Future<void> _realMain(SharedPreferences prefs) async {
   final storageService = StorageService(prefs);
+  final configuredProxy = storageService.appProxyEnabled
+      ? normalizeAppProxy(storageService.appProxyUrl)
+      : '';
+  final activeProxy = isValidAppProxy(configuredProxy) ? configuredProxy : '';
+  configureAppProxy(activeProxy);
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;
   final httpClient = LoggingHttpClient(debugLogger);
-  final uniAuthService = UniAuthService(logger: debugLogger);
-  final authService = AuthService(storageService, httpClient, uniAuthService,
-      logger: debugLogger,);
+  final uniAuthService = UniAuthService(
+    logger: debugLogger,
+    proxyUrl: activeProxy,
+  );
+  final authService = AuthService(
+    storageService,
+    httpClient,
+    uniAuthService,
+    logger: debugLogger,
+  );
   final themeService = ThemeService(storageService);
   final campusCardService =
       CampusCardService(debugLogger: debugLogger, storage: storageService);
