@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="spending_channel_name">消费提醒</string>
+    <string name="spending_channel_desc">报告应用刚从账单里读到的校园卡消费</string>
+</resources>

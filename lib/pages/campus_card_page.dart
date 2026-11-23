@@ -47,6 +47,7 @@ class CampusCardPage extends StatelessWidget {
           ),
           campusCardEntryProvider.overrideWithValue(entry),
           homeWidgetPortProvider.overrideWithValue(services?.ecardWidgetService),
+          spendingAlertPortProvider.overrideWithValue(services?.spendingAlertService),
         ],
         child: const CampusCardFeature(),
       ),

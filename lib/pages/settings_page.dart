@@ -201,6 +201,7 @@ class _SettingsPageState extends State<SettingsPage> {
           tpAuth,
           campusCard,
           sp.syncService,
+          if (sp.spendingAlertService != null) sp.spendingAlertService!,
         ]),
         builder: (context, _) {
           final session = auth.session;
@@ -435,6 +436,16 @@ class _SettingsPageState extends State<SettingsPage> {
 
             // General section
             _sectionHeader(theme, 'General'),
+            if (sp.spendingAlertService case final spending? when spending.supported)
+              _AdaptiveSwitchTile(
+                key: const ValueKey('settings.spending-alerts'),
+                usesIosLiquidGlass: useIosChrome,
+                secondary: const Icon(Icons.notifications_active_outlined),
+                title: '校园卡消费提醒',
+                subtitle: '刷新发现新消费时通知；后台检查受系统调度限制',
+                value: spending.enabled,
+                onChanged: (value) => unawaited(spending.setEnabled(value)),
+              ),
             _AdaptiveSwitchTile(
               key: const ValueKey('settings.mask-personal-info'),
               usesIosLiquidGlass: useIosChrome,

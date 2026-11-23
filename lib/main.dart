@@ -25,6 +25,7 @@ import 'services/ids/ids_client.dart';
 import 'services/oa_gym_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
+import 'services/spending_alert_service.dart';
 import 'services/storage_service.dart';
 import 'services/student_allowance_service.dart';
 import 'services/sync_service.dart';
@@ -32,10 +33,14 @@ import 'services/theme_service.dart';
 import 'services/third_party_auth_service.dart';
 import 'services/uni_auth_service.dart';
 import 'services/update_service.dart';
+import 'spending_background_refresh.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
 import 'widgets/privacy_consent.dart';
 import 'widgets/update_dialogs.dart';
+
+@pragma('vm:entry-point')
+Future<void> spendingBackgroundRefresh() => runSpendingBackgroundRefresh();
 
 void main(List<String> args) async {
   // If this Flutter engine is a desktop_webview_window title bar (secondary
@@ -76,6 +81,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final themeService = ThemeService(storageService);
   final campusCardService =
       CampusCardService(debugLogger: debugLogger, storage: storageService);
+  final spendingAlertService = SpendingAlertService(storageService);
   final ecardBindService = EcardBindService();
   final ecardWidgetService = EcardWidgetService();
   final thirdPartyAuthService = ThirdPartyAuthService(
@@ -193,9 +199,11 @@ Future<void> _realMain(SharedPreferences prefs) async {
       ecardWidgetService: ecardWidgetService,
       deadlineWidgetService: deadlineWidgetService,
       deadlineReminderService: deadlineReminderService,
+      spendingAlertService: spendingAlertService,
     ),
   );
 
+  spendingAlertService.start(authService, campusCardService);
   bootMark('cached data ready');
   if (isApple) deadlineWidgetService.initialize();
 
@@ -324,6 +332,7 @@ class TechPieApp extends StatefulWidget {
   final EcardWidgetService? ecardWidgetService;
   final DeadlineWidgetService? deadlineWidgetService;
   final DeadlineReminderService? deadlineReminderService;
+  final SpendingAlertService? spendingAlertService;
 
   const TechPieApp({
     super.key,
@@ -344,6 +353,7 @@ class TechPieApp extends StatefulWidget {
     this.ecardWidgetService,
     this.deadlineWidgetService,
     this.deadlineReminderService,
+    this.spendingAlertService,
   });
 
   @override
@@ -408,6 +418,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.ecardWidgetService?.clearOpenPayHandler();
     widget.deadlineWidgetService?.dispose();
     widget.deadlineReminderService?.dispose();
+    widget.spendingAlertService?.dispose();
     _studentAllowanceService.dispose();
     widget.campusCardService.dispose();
     super.dispose();
@@ -419,6 +430,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       // Coming back is a cheap moment to top the SSO token up, and it is
       // guarded: a token with time left is left alone.
       unawaited(widget.authService.tryRenewSession());
+      unawaited(widget.spendingAlertService?.synchronize());
       unawaited(_checkForUpdatesQuietly());
     }
   }
@@ -507,6 +519,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
         deadlineReminderService: widget.deadlineReminderService,
+        spendingAlertService: widget.spendingAlertService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,

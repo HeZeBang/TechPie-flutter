@@ -10,6 +10,7 @@ import 'ecard_widget_service.dart';
 import 'egate_app_service.dart';
 import 'oa_gym_service.dart';
 import 'schedule_service.dart';
+import 'spending_alert_service.dart';
 import 'storage_service.dart';
 import 'student_allowance_service.dart';
 import 'sync_service.dart';
@@ -36,6 +37,7 @@ class ServiceProvider extends InheritedWidget {
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
   final DeadlineReminderService? deadlineReminderService;
+  final SpendingAlertService? spendingAlertService;
 
   const ServiceProvider({
     super.key,
@@ -56,6 +58,7 @@ class ServiceProvider extends InheritedWidget {
     required this.ecardBindService,
     this.ecardWidgetService,
     this.deadlineReminderService,
+    this.spendingAlertService,
     required super.child,
   });
 
@@ -84,5 +87,6 @@ class ServiceProvider extends InheritedWidget {
       campusCardService != oldWidget.campusCardService ||
       ecardBindService != oldWidget.ecardBindService ||
       ecardWidgetService != oldWidget.ecardWidgetService ||
-      deadlineReminderService != oldWidget.deadlineReminderService;
+      deadlineReminderService != oldWidget.deadlineReminderService ||
+      spendingAlertService != oldWidget.spendingAlertService;
 }

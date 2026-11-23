@@ -214,6 +214,11 @@ class StorageService {
     return raw == null ? null : DateTime.tryParse(raw);
   }
 
+  /// Notifications are opt-in and never change the upstream release defaults.
+  bool get spendingAlertsEnabled => _prefs.getBool('spending_alerts_enabled') ?? false;
+  Future<void> setSpendingAlertsEnabled(bool value) => _prefs.setBool('spending_alerts_enabled', value);
+  Future<void> reloadNotificationPreferences() => _prefs.reload();
+
   // SharedPreferences for non-sensitive data
   bool get debugMode =>
       !kReleaseMode && (_prefs.getBool(_debugModeKey) ?? false);
