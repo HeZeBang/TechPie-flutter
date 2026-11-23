@@ -130,18 +130,5 @@ class TechPieWearDataSource implements WearDataSource {
     );
   }
 
-  Future<Map<String, Object?>?> offlineCredential() async {
-    final before = await account();
-    final card = await campusCard.runtime.cards.currentCard();
-    if (card == null ||
-        !card.status.permitsPayment ||
-        card.ownerName.trim() != before.name.trim()) {
-      return null;
-    }
-    final credential = await campusCard.runtime.offlinePayments.exportForWatch(card.id);
-    if ((await account()).scope != before.scope) throw const WearFailure('SESSION_MISMATCH');
-    return credential?.toMessage();
-  }
-
   String _truncate(String value, int count) => String.fromCharCodes(value.runes.take(count));
 }

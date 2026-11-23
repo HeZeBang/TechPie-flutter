@@ -50,7 +50,7 @@ their supported resources. Each resource has its own revision and receipt.
 
 The phone's DDL reminder switch sends an opt-in in `ddl.snapshot`. The watch checks cached `remindAtMs` against the phone-calibrated clock and vibrates locally using `@system.vibrator` / `ohos.permission.VIBRATE` while the app is in the foreground. Communication loss preserves the snapshot. Lite apps provide no background process after exit. Wear Engine `NOTIFY` and remote app launch remain unapproved.
 
-Version 0.4.2 treats P2P as a synchronization channel. First authorize and select the watch in Android Settings → HUAWEI WATCH. Later launches restore the saved pairing and synchronize automatically while both applications can run. Account, timetable and deadlines remain available from private watch files after disconnect and restart. The offline-campus-code switch transfers an existing unlimited-use grant only after the watch vault passes its native self-test. See [interaction design](DESIGN.md) for storage, signing and lifecycle details.
+The app uses P2P as a synchronization channel. First authorize and select the watch in Android Settings → HUAWEI WATCH. Later launches restore the saved pairing and synchronize automatically while both applications can run. Account, timetable and deadlines remain available from private watch files after disconnect and restart. The watch requests online campus codes from the Android companion. See [interaction design](DESIGN.md) for the receiver lifecycle.
 
 Device acceptance uses matching signed companions. Check Crown switching and right-swipe navigation, the default campus-code screen, cached content after both app exit and full disconnection, automatic sync in both launch orders, logout/account isolation, and local-code latency. Validate optical scanning separately. Keep signing material and credential payloads out of logs and artifacts.
 
@@ -65,8 +65,8 @@ The local-vibration permission declares its reason and `MainAbility` in-use
 scene in `module.reqPermissions`. Keep permission declarations there; the
 source Lite schema does not accept `abilities.permissions`.
 
-The application store owns Wear Engine and cache lifecycle; the page observes that store. Keep each generated `app.js` and page JS at or below 48 KiB. The packaging hook minifies ES5 output with Terser before BIN generation. Signing-subset and binary-QR licenses are retained in `entry/src/main/js/MainAbility/common/vendor`.
+The application store owns Wear Engine and cache lifecycle; the page observes that store. Keep each generated `app.js` and page JS at or below 48 KiB. The packaging hook minifies ES5 output with Terser before BIN generation.
 
 The 0.3.1/0.3.2 acceptance established the explicit-dimension startup fix and circular icons. The 0.4.1 application and page bundles evaluated to booleans, and the GT 6 Pro showed a black screen. The 0.4.2 build preserves the final expression and checks that each entry returns its ViewModel. The device accepted the package.
 
-On GT 6 Pro with 0.4.3, Android reported a ready session and the watch acknowledged the account and deadline snapshots. The schedule snapshot failed with `SERVICE_UNAVAILABLE` while the phone timetable source reported an error. The connection subsequently dropped. Recovery after sleep, navigation and offline code generation still need device verification. The receiver test covers an undeliverable startup announcement when the phone opens second.
+On GT 6 Pro with 0.4.3, Android reported a ready session and the watch acknowledged the account and deadline snapshots. The schedule snapshot failed with `SERVICE_UNAVAILABLE` while the phone timetable source reported an error. The connection subsequently dropped. The receiver test covers an undeliverable startup announcement when the phone opens second.

@@ -5,14 +5,14 @@ const vm = require('node:vm');
 const source = fs.readFileSync(__dirname + '/../entry/src/main/js/MainAbility/app.js', 'utf8')
   .replace(/^import .*;\n/gm, '').replace('export default', 'var application =');
 
-test('cached content and transport remain usable while the optional vault is unavailable', () => {
-  let changed, storeOptions, restored = false, started = 0;
+test('startup restores the business cache and opens the transport', () => {
+  let changed, restored = false, started = 0;
   const context = {
     console: {info() {}}, setInterval: () => 1, clearInterval() {},
     readJson(name, done) { done(null, {owner: 'owner'}); }, writeJson(name, data, done) { done(); },
-    require() { throw new Error('Optional crypto module unavailable'); },
-    WearLink: function(publish, options) {
-      changed = publish; storeOptions = options;
+    removeLegacyGrants() {},
+    WearLink: function(publish) {
+      changed = publish;
       this.connection = {cacheBinding: 'owner', restore() { restored = true; return true; },
         publish() { changed({name: 'cached-user', connected: false}); }, tick() {}, reset() {},
         phoneNow: () => 1000};
@@ -24,13 +24,12 @@ test('cached content and transport remain usable while the optional vault is una
   assert.ok(app.data); // Lite getApp() requires the exported data object.
   app.onCreate(); const api = app.data.api; api.watchResume();
   assert.equal(restored, true); assert.equal(started, 1);
-  assert.equal(storeOptions.offlineEnabled(), false);
   let state; api.watchObserve(value => { state = value; });
   changed({name: 'cached-user', connected: false});
   assert.equal(state.name, 'cached-user'); api.watchPause();
 });
 
-test('cold starts read existing UTF-8 snapshots and encrypted grants larger than 4 KiB', () => {
+test('cold starts read existing UTF-8 snapshots larger than 4 KiB', () => {
   const json = JSON.stringify({course: '课程 % 😀'.repeat(900)});
   const bytes = Buffer.from(json);
   assert.ok(bytes.length > 4096);
@@ -47,13 +46,23 @@ test('cold starts read existing UTF-8 snapshots and encrypted grants larger than
   assert.equal(JSON.stringify(result), json);
 });
 
-test('app destruction during a cold cache read cannot open Wear Engine or initialize the vault', () => {
-  let loaded, started = 0, cryptoLoads = 0;
+test('app destruction during a cold cache read cannot open Wear Engine', () => {
+  let loaded, started = 0;
   const context = {setInterval: () => 1, clearInterval() {}, readJson(name, done) { loaded = done; },
-    require() { cryptoLoads++; }, WearLink: function() { this.start = () => { started++; }; }};
+    removeLegacyGrants() {}, WearLink: function() { this.start = () => { started++; }; }};
   vm.createContext(context); vm.runInContext(source, context);
   const app = context.application;
   app.onCreate(); app.data.api.watchResume(); app.onDestroy();
   loaded(null, null);
-  assert.equal(started, 0); assert.equal(cryptoLoads, 0);
+  assert.equal(started, 0);
+});
+
+test('upgrade removes both legacy credential files without touching business snapshots', () => {
+  const removed = [];
+  const file = {delete({uri}) { removed.push(uri); }};
+  const code = fs.readFileSync(__dirname + '/../entry/src/main/js/MainAbility/common/watch-files.js', 'utf8');
+  const context = {require: () => ({default: file})};
+  vm.createContext(context); vm.runInContext(code.replace(/export function /g, 'function '), context);
+  context.removeLegacyGrants();
+  assert.deepEqual(removed, ['internal://app/offline-grant-v1.json', 'internal://app/offline-grant-v1.json.tmp']);
 });

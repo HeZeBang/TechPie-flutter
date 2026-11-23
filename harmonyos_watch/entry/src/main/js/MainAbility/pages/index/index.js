@@ -1,5 +1,4 @@
 import app from '@system.app';
-import {startOfflineCode} from '../../common/offline-code.js';
 
 var application, focusTimer, paintTimer;
 function time(value) {
@@ -44,11 +43,9 @@ export default {
     if (!this._visible) return;
     this._visible = false;
     application.watchPause();
-    this.cancelCode();
     clearTimeout(focusTimer); clearTimeout(paintTimer);
     focusTimer = null; paintTimer = null;
-    this._prepared = null; this._localCode = null; this._failedGrant = null;
-    this._codeId = null; this._codeStarted = null;
+    this._codeId = null;
     // Do not change the swiper or canvas while the native view is being hidden.
   },
   onBackPress() { if (this.view !== 'deck') { this.goBack(); return true; } return false; },
@@ -63,7 +60,7 @@ export default {
     this._needCode = true;
     this.pageIndex = event.index;
     if (event.index === 0) this.applyState(application.watchState());
-    else { this.cancelCode(); application.watchHideCode(); }
+    else application.watchHideCode();
   },
   focusCrown() {
     var page = this, visit = this._visit;
@@ -81,7 +78,7 @@ export default {
   },
   showSchedule() { this.view = 'schedule'; this.dayOffset = 0; this.applyState(application.watchState()); this.focusCrown(); },
   showDdl() { this.view = 'ddl'; this.applyState(application.watchState()); this.focusCrown(); },
-  showAccount() { this.cancelCode(); this.view = 'account'; this.detailTitle = '我的信息'; this.focusCrown(); },
+  showAccount() { this.view = 'account'; application.watchHideCode(); this.detailTitle = '我的信息'; this.focusCrown(); },
   previousDay() { if (this.dayOffset > 0) { this.dayOffset--; this.applyState(application.watchState()); } },
   nextDay() { if (this.dayOffset < 6) { this.dayOffset++; this.applyState(application.watchState()); } },
   synchronize() { application.watchSync(); },
@@ -122,69 +119,24 @@ export default {
       this.detailTitle = '待办';
       this.rows = all.map(function(item) { return {title: item.title, caption: date(item.dueAtMs) + ' ' + time(item.dueAtMs), detail: item.courseName}; });
     }
-    var credential = application.watchCredential();
-    if (this._failedGrant !== credential) this._failedGrant = null;
-    if (!credential || (this._prepared && this._prepared.grant !== credential)) {
-      this._localCode = null; this._prepared = null;
-    }
-    if (this._localCode && this._localCode.until <= now) this._localCode = null;
-    var code = this._localCode || state.code;
+    var code = state.code && state.code.until > now ? state.code : null;
     var seconds = code ? Math.max(0, Math.ceil((code.until - now) / 1000)) : 0;
     this.codeVisible = !!code && this.pageIndex === 0 && this.view === 'deck';
-    this.codeMessage = code ? (this._localCode ? '离线码 · ' : '') + seconds + ' 秒' :
-      (this._failedGrant ? '离线码生成失败，轻触重试' : this._work || state.codeLoading ? '正在更新校园码' : (credential || state.connected ? '轻触此处刷新校园码' : '连接手机同步离线授权'));
+    this.codeMessage = code ? '在线码 · ' + seconds + ' 秒' :
+      (!state.connected ? '请打开手机 TechPie 连接手表' :
+        state.codeLoading ? '正在获取在线码' : state.error || '轻触获取在线码');
+    if (!state.connected) this._needCode = true;
     if (this.codeVisible && this._codeId !== code.id) this.drawCode(code);
-    if (this._needCode && this.pageIndex === 0 && this.view === 'deck' && (credential || state.connected)) {
+    if (this._needCode && this.pageIndex === 0 && this.view === 'deck' && state.connected) {
       this._needCode = false;
       if (!code) this.refreshCode();
     }
     if (!this.codeVisible) this._codeId = null;
   },
-  cancelCode() {
-    if (this._codeTimer) clearTimeout(this._codeTimer);
-    this._codeTimer = null; this._work = null;
-  },
   refreshCode() {
     if (!this._visible || this.pageIndex !== 0 || this.view !== 'deck') return;
     this._needCode = false;
-    var page = this, grant = application.watchCredential();
-    if (!grant) { application.watchCode(); return; }
-    if (this._work) return;
-    var work = {}, began = Date.now(), lastStep = began, signer, frame, matrixStep;
-    console.info('TechPie offline start');
-    this._work = work; this._failedGrant = null;
-    this.codeMessage = '正在生成离线码';
-    function run() {
-      if (page._work !== work) return;
-      if (!page._visible || page.view !== 'deck' || page.pageIndex !== 0 || Date.now() - lastStep > 2000 || application.watchCredential() !== grant) {
-        page.cancelCode(); return;
-      }
-      try {
-        if (!signer) signer = startOfflineCode(grant, page._prepared, application.watchRandom, application.watchNow);
-        if (!frame) {
-          var end = Date.now() + 8, steps = 0;
-          do { frame = signer.step(); steps++; } while (!frame && steps < 8 && Date.now() < end);
-          page._prepared = signer.prepared;
-          if (frame) console.info('TechPie offline signMs=' + (Date.now() - began));
-        } else {
-          if (!matrixStep) matrixStep = application.watchMatrix(frame.payload);
-          var matrix = matrixStep();
-          if (matrix) {
-            if (frame.until <= application.watchNow()) throw new Error('OFFLINE_CODE_EXPIRED');
-            matrix.id = 'local-' + frame.until; matrix.until = frame.until;
-            page._localCode = matrix; page._codeStarted = began;
-            page.applyState(application.watchState()); page.cancelCode(); return;
-          }
-        }
-        lastStep = Date.now();
-        page._codeTimer = setTimeout(run, 1);
-      } catch (error) {
-        page.cancelCode(); page._failedGrant = grant;
-        page.applyState(application.watchState());
-        console.error('TechPie offline generation failed: ' + error.message);
-      }
-    }
-    this._codeTimer = setTimeout(run, 1);
+    application.watchCode();
   },
   drawCode(code) {
     var page = this, visit = this._visit;
@@ -207,9 +159,6 @@ export default {
         }
       }
       page._codeId = code.id;
-      if (page._codeStarted && code.id.indexOf('local-') === 0) {
-        console.info('TechPie offline code totalMs=' + (Date.now() - page._codeStarted)); page._codeStarted = null;
-      }
     }, 50);
   }
 };

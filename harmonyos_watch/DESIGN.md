@@ -24,23 +24,17 @@ Account, timetable and deadlines are stored in the app's private files under a s
 
 Android remembers the explicitly selected watch and its signing identity. Foreground launch/resume, native reconnection and a watch `peer.ready` signal trigger a fresh authenticated handshake and snapshot sync without repeating an already granted permission prompt. Retries run only while the phone app is in the foreground. Huawei Health must have paired and connected the devices. Lite apps stop running after exit; synchronization resumes when both apps can run.
 
-Logout, account changes and explicit revocation clear the owner's cached data and offline credential. When disconnected, Android records a pending clear and drains it before a new account binding. A disconnected watch receives that revocation on the next sync.
+Logout, account changes and explicit revocation clear the owner's cached data. When disconnected, Android records a pending clear and drains it before a new account binding. A disconnected watch receives that revocation on the next sync.
 
-## Local campus codes
+## Online campus codes
 
-The phone switch explicitly authorizes copying an existing, unexpired, unlimited-use campus-code grant and its signing key to the selected watch. Enrollment does not activate or renew a grant. Limited-use grants remain on the phone because two independent devices cannot share an offline usage counter.
+Android fetches the online campus code using the signed-in campus card, encodes the original bytes as a QR matrix and sends it over the authenticated Wear Engine session. The watch paints the matrix until its 30-second validity ends. Tap the campus-code page to request another code. On upgrade, the watch deletes the previous encrypted offline grant and its temporary file.
 
-The watch vault uses a native HUKS AES-256-GCM key, fresh native random nonces and the account binding as authenticated data. A successful encrypt/decrypt self-test enables the offline capability. Credential files contain ciphertext; business-data snapshots and pairing metadata contain no signing keys.
-
-The watch constructs the existing five-byte time CRC, signs author-info plus CRC with SM2/SM3 and the protocol's default user ID, then builds the QR matrix locally. Native CSPRNG output supplies signature randomness. An expired grant stops local issuance. Online code snapshots remain a connected fallback and expire after 30 seconds.
-
-The page accesses the store through `getApp().data.api`. The Lite build separates transport, storage and QR encoding in `app.js` from signing and UI in the page bundle. Each generated JS file must fit 48 KiB. The runtime records elapsed milliseconds from local signing through canvas painting. The one-second target requires GT 6 Pro measurement.
+A paired watch can request a code while TechPie is in the background if Android can run the Flutter engine and the Wear Engine receiver is registered. Reopening the watch can initiate a new handshake through that receiver. After process death, force-stop or receiver loss, open TechPie on the phone to restore the connection.
 
 ## Acceptance
 
-Host checks cover cache retention across restart, account isolation and revocation, persistence receipts, automatic pairing recovery, permission handling, encrypted credential storage and binary QR compatibility. The existing Dart implementation independently verifies the JavaScript SM2 signature and rejects a modified payload.
-
-Device acceptance for 0.4.2 covers Crown page switching, right-swipe return, default campus code, cache after app exit and full disconnection, reconnection with either app opened first, and local-code latency. Optical campus-terminal scanning is a separate acceptance step. Earlier 0.3.1/0.3.2 device confirmations establish startup and icon fixes; they do not validate this redesign. Reminder testing was stopped at the user's request.
+Host tests cover background handshakes, online QR data, expiry, account isolation and cache persistence. GT 6 Pro background delivery, screen-off stability and optical scanning still require device verification for 0.4.8.
 
 ## References
 
@@ -51,4 +45,4 @@ Device acceptance for 0.4.2 covers Crown page switching, right-swipe return, def
 - [Huawei Lite Wearable guide](https://developer.huawei.com/consumer/en/doc/lite-wearable-guides/lite-wearable-bpta-guide/)
 - [Huawei Lite swiper](https://developer.huawei.com/consumer/en/doc/harmonyos-references/js-lite-components-container-swiper/)
 
-The device JerryScript profile disables regular expressions and ES2015 built-ins. Validation uses character checks; SM3 clears typed arrays with ES5 loops. The package hook rejects RegExp and BigInt syntax in the final generated AST. See the [OpenHarmony JerryScript profile](https://github.com/openharmony/third_party_jerryscript/blob/master/jerry-core/config.h).
+The device JerryScript profile disables regular expressions and ES2015 built-ins. Validation uses character checks. The package hook rejects RegExp and BigInt syntax in the final generated AST. See the [OpenHarmony JerryScript profile](https://github.com/openharmony/third_party_jerryscript/blob/master/jerry-core/config.h).

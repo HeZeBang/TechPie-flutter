@@ -118,7 +118,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       : null;
   final wearEngineService = wearSource == null ? null : WearEngineService(
     transport: AndroidWearTransport(), metadata: PreferencesWearMetadata(prefs),
-    source: wearSource, offlineCredential: wearSource.offlineCredential,
+    source: wearSource,
     adoptCurrentSchedule: wearSource.adoptCurrentSchedule,
   );
   final syncService = SyncService(

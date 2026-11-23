@@ -52,12 +52,6 @@ function unbase64(value) {
   return bytes;
 }
 function integer(value) { return typeof value === 'number' && isFinite(value) && Math.floor(value) === value; }
-function hexString(value) {
-  if (typeof value !== 'string' || !value.length || value.length % 2) return false;
-  var allowed = '0123456789abcdef';
-  for (var i = 0; i < value.length; i++) if (allowed.indexOf(value.charAt(i).toLowerCase()) < 0) return false;
-  return true;
-}
 function token(value) {
   if (typeof value !== 'string' || !value.length || value.length > 32) return false;
   var allowed = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
@@ -85,9 +79,6 @@ export function WatchConnection(send, changed, now, options) {
   this.now = now || function() { return Date.now(); };
   this.counter = 0;
   this.onCache = options && options.onCache;
-  this.onAuthorization = options && options.onAuthorization;
-  this.offlineEnabled = options && options.offlineEnabled;
-  this.offlineStatus = options && options.offlineStatus;
   this.reset();
   if (options && options.cache) this.restore(options.cache);
 }
@@ -294,10 +285,9 @@ WatchConnection.prototype.handle = function(m) {
     if (!token(b.nonce) || !Array.isArray(b.versions) || b.versions.indexOf(1) < 0) return;
     this.reset(false); this.nonce = b.nonce; this.helloAt = this.now();
     if (Array.isArray(b.capabilities) && b.capabilities.indexOf('schedule.display') >= 0) this.resources.push('schedule');
-    this.offeredOffline = this.offlineEnabled && this.offlineEnabled();
     this.reply(m, 'session.welcome', {nonce: b.nonce, version: 1,
-      watchInstanceId: 'techpie-lite', capabilities: ['account.display', 'ddl.display', 'schedule.display', 'reminder.watchLocal', 'campusCode.qrMatrix', 'connection.heartbeat'].concat(this.offeredOffline ? ['campusCode.offlineSm2'] : []),
-      offlineStatus: this.offlineStatus && this.offlineStatus(), maxQrPayloadBytes: 1024}, true);
+      watchInstanceId: 'techpie-lite', capabilities: ['account.display', 'ddl.display', 'schedule.display', 'reminder.watchLocal', 'campusCode.qrMatrix', 'connection.heartbeat'],
+      maxQrPayloadBytes: 1024}, true);
   } else if (m.type === 'session.open') {
     if (b.nonce !== this.nonce || this.now() - this.helloAt > 30000 ||
         !token(b.sessionId) || !token(b.bindingId) || !integer(b.phoneTimeMs) ||
@@ -324,23 +314,6 @@ WatchConnection.prototype.handle = function(m) {
     var link = this;
     var cleared = function(error) { link.reply(m, 'result', {status: error ? 'error' : 'ok', code: error ? 'STORAGE_FAILED' : 'OK'}); };
     if (this.onCache) this.onCache(this.exportCache(), cleared); else cleared();
-  } else if (m.type === 'campusCode.authorization') {
-    if (!this.onAuthorization || !this.offlineEnabled || !this.offlineEnabled()) { this.reject(m, 'UNSUPPORTED_OPERATION'); return; }
-    var grant = b.credential;
-    if (grant !== null && (!grant || typeof grant.cardID !== 'string' || !grant.cardID.length || grant.cardID.length > 128 ||
-        !hexString(grant.privateKey) || grant.privateKey.length !== 64 ||
-        !hexString(grant.publicKey) || grant.publicKey.length !== 66 || ['02', '03'].indexOf(grant.publicKey.substr(0, 2)) < 0 ||
-        !hexString(grant.authorInfo) || grant.authorInfo.length > 1024 ||
-        !integer(grant.deviceChecksum) || grant.deviceChecksum < 0 || grant.deviceChecksum > 255 ||
-        typeof grant.expiresAt !== 'number' || !isFinite(grant.expiresAt) || grant.expiresAt * 1000 <= this.phoneNow() ||
-        grant.totalUses != null)) { this.reject(m, 'INVALID_PAYLOAD'); return; }
-    var authorizing = this, authorizationSession = this.session;
-    this.onAuthorization(this.binding, grant, function(error) {
-      if (authorizing.session !== authorizationSession) return;
-      if (error) authorizing.reject(m, error);
-      else authorizing.reply(m, 'result', {status: 'ok', code: 'OK'});
-      authorizing.publish();
-    });
   } else if (m.type === 'account.snapshot') {
     var d = b.data;
     if (!integer(b.revision) || b.revision < 1 || !integer(b.validUntilMs) ||

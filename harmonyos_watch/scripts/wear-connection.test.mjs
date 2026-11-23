@@ -275,15 +275,9 @@ test('positive snapshot receipts wait for persistence; failed writes are reporte
   deletion.done(); assert.equal(f.last().body.status, 'ok');
 });
 
-test('offline credentials require a tested vault, unlimited authorization and durable save', () => {
-  let installed;
-  const f = fixture({offlineEnabled: () => true, onAuthorization(owner, grant, done) { installed = {owner, grant, done}; }});
+test('online-only watches reject a legacy grant message', () => {
+  const f = fixture();
   f.open();
-  const credential = {cardID: 'test', privateKey: '0'.repeat(63) + '1', publicKey: '02' + '0'.repeat(64), authorInfo: '5638', deviceChecksum: 255, expiresAt: 2000, totalUses: null};
-  f.send('campusCode.authorization', {credential: {...credential, totalUses: 1}});
-  assert.equal(f.last().body.code, 'INVALID_PAYLOAD'); assert.equal(installed, undefined);
-  f.send('campusCode.authorization', {credential});
-  assert.equal(installed.owner, 'binding'); installed.done(); assert.equal(f.last().body.status, 'ok');
-  assert.equal(JSON.stringify(f.link.exportCache()).includes(credential.privateKey), false);
-  f.send('campusCode.authorization', {credential: null}); installed.done(); assert.equal(f.last().body.status, 'ok');
+  f.send('campusCode.authorization', {credential: null});
+  assert.equal(f.last().body.code, 'UNSUPPORTED_OPERATION');
 });

@@ -42,3 +42,13 @@ function flush() {
     fail: function() { finish('CACHE_WRITE_FAILED'); }
   });
 }
+
+// Older releases wrote an encrypted signing grant and an atomic replacement file.
+export function removeLegacyGrants() {
+  var file = require('./watch-file-native.js').default;
+  ['offline-grant-v1.json', 'offline-grant-v1.json.tmp'].forEach(function(name) {
+    file.delete({uri: 'internal://app/' + name, fail: function(data, code) {
+      if (code !== 301) console.error('TechPie legacy grant removal failed: ' + code);
+    }});
+  });
+}
