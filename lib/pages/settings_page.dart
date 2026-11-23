@@ -808,9 +808,13 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   String _colorSubtitle(ThemeService themeService) {
-    if (themeService.colorScheme == AppColorScheme.system &&
-        !themeService.systemDynamicColorAvailable) {
-      return '${themeService.colorScheme.label} (unavailable, using TechRed)';
+    if (themeService.colorScheme == AppColorScheme.system) {
+      if (themeService.usesIosSystemAccent) {
+        return 'System Blue';
+      }
+      if (!themeService.systemDynamicColorAvailable) {
+        return '${themeService.colorScheme.label} (unavailable, using TechRed)';
+      }
     }
     return themeService.colorScheme.label;
   }
