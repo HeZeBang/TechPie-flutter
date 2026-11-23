@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
+import 'adaptive_alert_dialog.dart';
 import 'app_shell/tg_bottom_nav_bar.dart';
 
 final GlobalKey<ScaffoldMessengerState> rootMessengerKey =
@@ -50,6 +51,32 @@ void showAdaptiveFeedback({
     duration: duration,
     actionLabel: actionLabel,
     onAction: onAction,
+  );
+}
+
+/// Shows a modal alert on iOS or a transient feedback toast elsewhere.
+Future<void> showAdaptiveContextualNotice({
+  required BuildContext context,
+  required String iosTitle,
+  required String iosMessage,
+  required String feedbackMessage,
+  AdaptiveFeedbackStyle style = AdaptiveFeedbackStyle.info,
+}) async {
+  if (isIos()) {
+    await showAdaptiveAlertDialog<void>(
+      context: context,
+      title: iosTitle,
+      message: iosMessage,
+      actions: const [
+        AdaptiveAlertAction<void>(label: '好', isDefault: true),
+      ],
+    );
+    return;
+  }
+  showAdaptiveFeedback(
+    context: context,
+    message: feedbackMessage,
+    style: style,
   );
 }
 

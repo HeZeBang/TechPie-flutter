@@ -19,8 +19,10 @@ class TpCard extends StatelessWidget {
     this.padding,
     this.headerPadding,
     this.onTap,
+    this.onLongPress,
     this.color,
     this.borderColor,
+    this.borderWidth = 0.75,
     this.borderRadius = TpTokens.radiusM,
   });
 
@@ -31,8 +33,10 @@ class TpCard extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final EdgeInsetsGeometry? headerPadding;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final Color? color;
   final Color? borderColor;
+  final double borderWidth;
   final double borderRadius;
 
   @override
@@ -94,17 +98,20 @@ class TpCard extends StatelessWidget {
       borderRadius: radius,
       side: resolvedBorder == Colors.transparent
           ? BorderSide.none
-          : BorderSide(color: resolvedBorder, width: 0.75),
+          : BorderSide(color: resolvedBorder, width: borderWidth),
     );
+
+    final interactive = onTap != null || onLongPress != null;
 
     return Material(
       color: color ?? colors.surface,
       shape: shape,
       clipBehavior: Clip.antiAlias,
-      child: onTap == null
+      child: !interactive
           ? content
           : InkWell(
               onTap: onTap,
+              onLongPress: onLongPress,
               borderRadius: radius,
               splashColor: colors.brandSoft,
               highlightColor: colors.surfacePressed.withValues(alpha: 0.4),

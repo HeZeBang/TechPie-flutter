@@ -5,11 +5,12 @@ import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:techpie/services/auth_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/third_party_account.dart';
+import '../models/user_session.dart';
 import '../services/api_base_url.dart';
+import '../services/auth_service.dart';
 import '../services/deadline_widget_service.dart';
 import '../services/feedback_service.dart';
 import '../services/http_client.dart';
@@ -20,6 +21,7 @@ import '../services/sync_service.dart';
 import '../services/theme_service.dart';
 import '../services/uni_auth_service.dart';
 import '../services/update_service.dart';
+import '../theme/theme.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import '../utils/product_version.dart';
@@ -32,6 +34,7 @@ import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/desktop_popup.dart';
 import '../widgets/ids_rebind_banner.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
@@ -130,9 +133,6 @@ class _SettingsPageState extends State<SettingsPage> {
       final info = await PackageInfo.fromPlatform();
       if (!mounted) return;
       if (info.version.isEmpty) {
-        // The tile would read "Version Unknown" with no clue why: the plugin
-        // resolves but its source (an OHOS bundle, Linux's version.json) came
-        // back empty.
         debugPrint(
           'PackageInfo returned an empty version '
           '(appName="${info.appName}", packageName="${info.packageName}", '
@@ -145,17 +145,10 @@ class _SettingsPageState extends State<SettingsPage> {
             : info.version;
       });
     } catch (error) {
-      // Never let the tile's failure take the page down, but do say why.
       debugPrint('PackageInfo.fromPlatform failed: $error');
     }
   }
 
-  /// Checks GitHub for a release newer than the one running, and offers it.
-  ///
-  /// The answer comes from the releases page rather than our backend, so it
-  /// keeps working when the backend does not and needs no account. Cancelling
-  /// the offer changes nothing; accepting it opens the release page, where the
-  /// build for this platform lives.
   Future<void> _checkForUpdate() async {
     final updateService = ServiceProvider.of(context).updateService;
     final current = ProductVersion.tryParse(_appVersion);
@@ -181,8 +174,6 @@ class _SettingsPageState extends State<SettingsPage> {
       await showUpdateAvailableDialog(context, release);
     } on UpdateCheckException catch (error) {
       if (!mounted) return;
-      // The manual check is the one that reports everything, including the way
-      // out that does not depend on this app reaching GitHub at all.
       await showUpdateFailureDialog(context, message: error.message);
     } finally {
       if (mounted) setState(() => _checkingUpdate = false);
@@ -192,11 +183,6 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     if (usesSidebarLayout(context)) {
-      // A wide window gives the settings subpages their own stack, which is what
-      // makes them feel like pages rather than a full-screen push. The system back
-      // has to be told about that stack: without NavigatorPopHandler the gesture
-      // goes to the root navigator, which shows the shell and has nothing to pop,
-      // so it closes the app instead of leaving the subpage.
       return NavigatorPopHandler(
         onPopWithResult: (_) => _nestedNavigatorKey.currentState?.pop(),
         child: Navigator(
@@ -213,7 +199,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildSettingsScaffold(BuildContext context) {
-    final theme = Theme.of(context);
+    final colors = context.tpColors;
     final sp = ServiceProvider.of(context);
     final auth = sp.authService;
     final logger = sp.debugLogger;
@@ -221,308 +207,683 @@ class _SettingsPageState extends State<SettingsPage> {
     final themeService = sp.themeService;
     final tpAuth = sp.thirdPartyAuthService;
     final campusCard = sp.campusCardService;
-    final useIosChrome = isIos();
-    final useLegacyIosChrome = usesLegacyIosChrome();
-    final topInset = useIosChrome || useLegacyIosChrome
-        ? 0.0
-        : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
+      context,
+      extra: TpTokens.space3,
+    );
 
     return AdaptiveNavigationScaffold(
-      extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
-      appBar: useIosChrome
-          ? const IosNativeNavigationBar(
-              title: 'Settings',
-              largeTitleMode: true,
-            )
-          : const BlurredAppBar(title: Text('Settings')),
-      body: ListenableBuilder(
-        listenable: Listenable.merge([
-          auth,
-          logger,
-          themeService,
-          tpAuth,
-          campusCard,
-          sp.syncService,
-          if (sp.spendingAlertService != null) sp.spendingAlertService!,
-        ]),
-        builder: (context, _) {
-          final session = auth.session;
-          return ListView(
-            padding: EdgeInsets.only(
-              top: topInset,
-              bottom: AppShellMetrics.bottomContentPaddingOf(context),
-            ),
-            children: [
-              if (tpAuth.needsIdsRebind || storage.debugForceIdsRebindBanner)
-                IdsRebindBanner(onRebind: () => unawaited(pushAdaptivePage<void>(
-                  context, builder: (_) => const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
-                ),),),
-              // Account section
-              _sectionHeader(theme, 'Account'),
-              if (session != null) ...[
-                Semantics(
-                  button: true,
-                  label: (_isPersonalInfoBlurred ?? true)
-                      ? 'Personal info hidden, tap to show'
-                      : 'Personal info shown, tap to hide',
-                  child: ListTile(
-                    leading: const Icon(Icons.person),
-                    title: ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                      enabled: _isPersonalInfoBlurred ?? true,
-                      child: Text(
-                        session.userName.isNotEmpty
-                            ? session.userName
-                            : session.userId,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => const IosNativeNavigationBar(
+          title: '我的',
+          largeTitleMode: true,
+        ),
+        material: () => const BlurredAppBar(title: Text('我的')),
+      ),
+      body: ColoredBox(
+        color: colors.canvas,
+        child: ListenableBuilder(
+          listenable: Listenable.merge([
+            auth,
+            logger,
+            themeService,
+            tpAuth,
+            campusCard,
+            sp.syncService,
+            if (sp.spendingAlertService != null) sp.spendingAlertService!,
+          ]),
+          builder: (context, _) {
+            final session = auth.session;
+            final boundCount =
+                tpAuth.boundPlatforms.length + (campusCard.configured ? 1 : 0);
+            final island = sp.islandService;
+            final spending = sp.spendingAlertService;
+            final hasDeadlineWidgets = !kIsWeb &&
+                defaultTargetPlatform == TargetPlatform.linux &&
+                sp.deadlineWidgetService != null;
+            final hasIsland = island != null && island.supported;
+            final hasSpending = spending != null && spending.supported;
+            final hasNotificationsGroup =
+                hasDeadlineWidgets || hasIsland || hasSpending;
+
+            return ListView(
+              padding: EdgeInsets.fromLTRB(
+                TpTokens.pageHorizontalPadding,
+                topInset,
+                TpTokens.pageHorizontalPadding,
+                AppShellMetrics.bottomContentPaddingOf(context),
+              ),
+              children: [
+                TpPageBody(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (tpAuth.needsIdsRebind ||
+                          storage.debugForceIdsRebindBanner) ...[
+                        IdsRebindBanner(
+                          onRebind: () => unawaited(
+                            pushAdaptivePage<void>(
+                              context,
+                              builder: (_) => const ThirdPartyBindPage(
+                                platform: ThirdPartyPlatform.ids,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: TpTokens.sectionGap),
+                      ],
+
+                      // 1. 账号与隐私 hero card
+                      _buildAccountSection(
+                        context: context,
+                        colors: colors,
+                        auth: auth,
+                        session: session,
+                        syncService: sp.syncService,
+                        storage: storage,
+                        boundCount: boundCount,
                       ),
-                    ),
-                    subtitle: ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                      enabled: _isPersonalInfoBlurred ?? true,
-                      child: Text(
-                        [
-                          'GeekPie Uni-Auth',
-                          if (session.userId.isNotEmpty) session.userId,
-                        ].join(' · '),
+                      const SizedBox(height: TpTokens.sectionGap),
+
+                      // 2. 外观与体验
+                      _SettingsSectionCard(
+                        title: '外观与体验',
+                        children: [
+                          _buildThemeModeRow(context, colors, themeService),
+                          if (themeService.supportsColorSchemeSelection)
+                            Builder(
+                              builder: (tileContext) => TpListRow(
+                                icon: TpIcons.sparkles,
+                                iconColor: colors.brand,
+                                title: '主题色',
+                                value: _colorSubtitle(themeService),
+                                showChevron: true,
+                                showDivider: supportsAppleWatch(),
+                                onTap: () =>
+                                    _showColorPicker(tileContext, themeService),
+                              ),
+                            ),
+                          if (supportsAppleWatch())
+                            TpListRow(
+                              icon: TpIcons.watch,
+                              iconColor: colors.infoBlue,
+                              title: 'Apple Watch',
+                              showChevron: true,
+                              onTap: () => unawaited(
+                                pushAdaptivePage<void>(
+                                  context,
+                                  builder: (_) => const WatchSettingsPage(),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                    ),
-                    trailing: IconButton(
-                      icon: Icon(
-                        (_isPersonalInfoBlurred ?? true)
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
+
+                      // 3. 通知与组件
+                      if (hasNotificationsGroup) ...[
+                        const SizedBox(height: TpTokens.sectionGap),
+                        _SettingsSectionCard(
+                          title: '通知与组件',
+                          children: [
+                            if (hasDeadlineWidgets)
+                              TpListRow(
+                                key: const ValueKey(
+                                  'settings.deadline-widgets',
+                                ),
+                                icon: TpIcons.activities,
+                                iconColor: colors.infoBlue,
+                                title: '桌面小组件',
+                                subtitle:
+                                    '与桌面共享截止日期标题与时间；TechPie 关闭时展示本地缓存',
+                                showDivider: hasIsland || hasSpending,
+                                trailing: AdaptiveSwitch(
+                                  value: storage.deadlineWidgetsEnabled,
+                                  onChanged: (value) => unawaited(
+                                    _setDeadlineWidgetsEnabled(
+                                      storage,
+                                      sp.deadlineWidgetService!,
+                                      value,
+                                    ),
+                                  ),
+                                ),
+                                onTap: () => unawaited(
+                                  _setDeadlineWidgetsEnabled(
+                                    storage,
+                                    sp.deadlineWidgetService!,
+                                    !storage.deadlineWidgetsEnabled,
+                                  ),
+                                ),
+                              ),
+                            if (hasIsland)
+                              TpListRow(
+                                key: const ValueKey('settings.island'),
+                                icon: TpIcons.bellRing,
+                                iconColor: colors.brand,
+                                title: '课程与截止日期通知',
+                                subtitle: _islandSubtitle,
+                                showDivider: hasSpending,
+                                trailing: AdaptiveSwitch(
+                                  value: storage.islandEnabled,
+                                  onChanged: (value) =>
+                                      unawaited(_setIslandEnabled(island, value)),
+                                ),
+                                onTap: () => unawaited(
+                                  _setIslandEnabled(
+                                    island,
+                                    !storage.islandEnabled,
+                                  ),
+                                ),
+                              ),
+                            if (hasSpending)
+                              TpListRow(
+                                key: const ValueKey('settings.spending-alerts'),
+                                icon: TpIcons.bell,
+                                iconColor: colors.successGreen,
+                                title: '校园卡消费提醒',
+                                subtitle: '刷新发现新消费时通知；后台检查受系统调度限制',
+                                trailing: AdaptiveSwitch(
+                                  value: spending.enabled,
+                                  onChanged: (value) =>
+                                      unawaited(spending.setEnabled(value)),
+                                ),
+                                onTap: () => unawaited(
+                                  spending.setEnabled(!spending.enabled),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+
+                      const SizedBox(height: TpTokens.sectionGap),
+
+                      // 4. 网络与支持
+                      _SettingsSectionCard(
+                        title: '网络与支持',
+                        children: [
+                          if (!kIsWeb) ...[
+                            TpListRow(
+                              key: const ValueKey('settings.app-proxy-address'),
+                              icon: TpIcons.globe,
+                              iconColor: colors.infoBlue,
+                              title: '应用代理',
+                              subtitle: storage.appProxyEnabled &&
+                                      storage.appProxyUrl.isNotEmpty
+                                  ? storage.appProxyUrl
+                                  : (storage.appProxyUrl.isNotEmpty
+                                      ? '${storage.appProxyUrl}（未启用）'
+                                      : '跟随系统默认'),
+                              showChevron: true,
+                              showDivider: true,
+                              onTap: () => unawaited(
+                                _showProxySettings(storage, sp.uniAuthService),
+                              ),
+                            ),
+                            TpListRow(
+                              key: const ValueKey('settings.app-proxy-enabled'),
+                              icon: TpIcons.sliders,
+                              iconColor: colors.infoBlue,
+                              title: '启用应用代理',
+                              subtitle: '通过已配置的 HTTP 代理转发应用请求',
+                              showDivider: true,
+                              trailing: AdaptiveSwitch(
+                                value: storage.appProxyEnabled &&
+                                    storage.appProxyUrl.isNotEmpty,
+                                onChanged: (value) => unawaited(
+                                  _setProxyEnabled(
+                                    storage,
+                                    sp.uniAuthService,
+                                    value,
+                                  ),
+                                ),
+                              ),
+                              onTap: () => unawaited(
+                                _setProxyEnabled(
+                                  storage,
+                                  sp.uniAuthService,
+                                  !(storage.appProxyEnabled &&
+                                      storage.appProxyUrl.isNotEmpty),
+                                ),
+                              ),
+                            ),
+                          ],
+                          TpListRow(
+                            icon: TpIcons.feedback,
+                            iconColor: colors.brand,
+                            title: '问题反馈 / 功能建议',
+                            showChevron: true,
+                            showDivider: true,
+                            onTap: () => unawaited(() async {
+                              if (!auth.isLoggedIn) {
+                                await startUniAuthLogin(context);
+                              }
+                              if (!context.mounted || !auth.isLoggedIn) return;
+                              await pushAdaptivePage<void>(
+                                context,
+                                builder: (_) => FeedbackPage(
+                                  service: FeedbackService(
+                                    auth,
+                                    apiBaseUrl(sp.storageService),
+                                  ),
+                                ),
+                              );
+                            }()),
+                          ),
+                          TpListRow(
+                            icon: TpIcons.privacy,
+                            iconColor: colors.successGreen,
+                            title: '隐私政策与使用支持',
+                            showDivider: true,
+                            trailing: Icon(
+                              TpIcons.externalLink,
+                              size: TpTokens.iconS,
+                              color: colors.textMuted,
+                            ),
+                            onTap: () => unawaited(
+                              launchUrl(
+                                Uri.parse('https://techpie.geekpie.club/privacy'),
+                                mode: LaunchMode.externalApplication,
+                              ),
+                            ),
+                          ),
+                          TpListRow(
+                            icon: TpIcons.info,
+                            iconColor: colors.textMuted,
+                            title: '关于 TechPie',
+                            subtitle: _appVersion.isEmpty
+                                ? '版本未知'
+                                : '版本 $_appVersion · 点击检查更新',
+                            trailing: _checkingUpdate
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(
+                                    TpIcons.refresh,
+                                    size: TpTokens.iconS,
+                                    color: colors.textMuted,
+                                  ),
+                            onTap: _appVersion.isEmpty || _checkingUpdate
+                                ? null
+                                : () => unawaited(_checkForUpdate()),
+                          ),
+                        ],
                       ),
-                      tooltip: (_isPersonalInfoBlurred ?? true)
-                          ? 'Show personal info'
-                          : 'Hide personal info',
-                      onPressed: _togglePersonalInfoBlur,
-                    ),
-                    onTap: _togglePersonalInfoBlur,
+
+                      // 5. 账号管理 (signed-in only)
+                      if (auth.isLoggedIn) ...[
+                        const SizedBox(height: TpTokens.sectionGap),
+                        _SettingsSectionCard(
+                          title: '账号管理',
+                          children: [
+                            TpListRow(
+                              icon: TpIcons.delete,
+                              title: '注销账号',
+                              destructive: true,
+                              showChevron: true,
+                              showDivider: true,
+                              onTap: () => unawaited(
+                                pushAdaptivePage<void>(
+                                  context,
+                                  builder: (_) =>
+                                      AccountDeletionPage(auth: auth),
+                                ),
+                              ),
+                            ),
+                            AdaptiveNavigationScaffold.adaptiveChrome(
+                              ios: () => Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: TpTokens.cardPaddingHorizontal,
+                                  vertical: TpTokens.space2,
+                                ),
+                                child: AdaptiveConfirmationButton(
+                                  label: '退出登录',
+                                  icon: TpIcons.logout,
+                                  sfSymbol: 'rectangle.portrait.and.arrow.right',
+                                  confirmTitle: '退出登录？',
+                                  confirmLabel: '退出登录',
+                                  destructive: true,
+                                  width: double.infinity,
+                                  height: 44,
+                                  onConfirmed: () => unawaited(auth.logout()),
+                                ),
+                              ),
+                              material: () => TpListRow(
+                                icon: TpIcons.logout,
+                                title: '退出登录',
+                                destructive: true,
+                                onTap: () => unawaited(_confirmLogout(auth)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+
+                      // 6. 开发者选项 (non-release only)
+                      if (!kReleaseMode) ...[
+                        const SizedBox(height: TpTokens.sectionGap),
+                        _SettingsSectionCard(
+                          title: '开发者选项',
+                          children: [
+                            TpListRow(
+                              key: const ValueKey('settings.ids-rebind-preview'),
+                              icon: TpIcons.lock,
+                              iconColor: colors.warningAmber,
+                              title: '强制显示 IDS 重绑横幅',
+                              subtitle: '仅用于调试迁移提示',
+                              showDivider: true,
+                              trailing: AdaptiveSwitch(
+                                value: storage.debugForceIdsRebindBanner,
+                                onChanged: (value) {
+                                  unawaited(
+                                    storage.setDebugForceIdsRebindBanner(value),
+                                  );
+                                  setState(() {});
+                                },
+                              ),
+                              onTap: () {
+                                final next = !storage.debugForceIdsRebindBanner;
+                                unawaited(
+                                  storage.setDebugForceIdsRebindBanner(next),
+                                );
+                                setState(() {});
+                              },
+                            ),
+                            TpListRow(
+                              key: const ValueKey('settings.debug-mode'),
+                              icon: TpIcons.bug,
+                              iconColor: colors.warningAmber,
+                              title: '调试模式',
+                              subtitle: '记录所有 API 请求日志',
+                              showDivider: true,
+                              trailing: AdaptiveSwitch(
+                                value: logger.enabled,
+                                onChanged: (value) {
+                                  logger.enabled = value;
+                                  unawaited(storage.setDebugMode(value));
+                                },
+                              ),
+                              onTap: () {
+                                final next = !logger.enabled;
+                                logger.enabled = next;
+                                unawaited(storage.setDebugMode(next));
+                              },
+                            ),
+                            TpListRow(
+                              key: const ValueKey('settings.use-localhost'),
+                              icon: TpIcons.classroom,
+                              iconColor: colors.infoBlue,
+                              title: '本地测试服务器',
+                              subtitle: isAndroid()
+                                  ? '通过 10.0.2.2:3000 连接本地服务'
+                                  : '连接本地开发服务器',
+                              showDivider: true,
+                              trailing: AdaptiveSwitch(
+                                value: storage.useLocalhost,
+                                onChanged: (value) {
+                                  unawaited(storage.setUseLocalhost(value));
+                                  setState(() {});
+                                },
+                              ),
+                              onTap: () {
+                                final next = !storage.useLocalhost;
+                                unawaited(storage.setUseLocalhost(next));
+                                setState(() {});
+                              },
+                            ),
+                            TpListRow(
+                              icon: TpIcons.code,
+                              iconColor: colors.textSecondary,
+                              title: 'WebView 调试',
+                              subtitle: '桥接注入与自定义地址测试',
+                              showChevron: true,
+                              showDivider: true,
+                              onTap: () => unawaited(
+                                pushAdaptivePage<void>(
+                                  context,
+                                  builder: (_) => const DebugWebViewPage(
+                                    initialUrl:
+                                        'http://127.0.0.1:8000/bridge_test.html',
+                                  ),
+                                ),
+                              ),
+                            ),
+                            TpListRow(
+                              icon: TpIcons.activity,
+                              iconColor: colors.textSecondary,
+                              title: '震动与音效实验室',
+                              subtitle: '预览触觉波形与提示音效',
+                              showChevron: true,
+                              showDivider: logger.enabled,
+                              onTap: () => unawaited(
+                                pushAdaptivePage<void>(
+                                  context,
+                                  builder: (_) => const DeveloperLabPage(),
+                                ),
+                              ),
+                            ),
+                            if (logger.enabled)
+                              TpListRow(
+                                icon: TpIcons.document,
+                                iconColor: colors.brand,
+                                title: '查看日志',
+                                subtitle: '共 ${logger.entries.length} 条记录',
+                                showChevron: true,
+                                onTap: () => unawaited(
+                                  pushAdaptivePage<void>(
+                                    context,
+                                    builder: (_) => const DebugLogPage(),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
-            if (auth.isLoggedIn) ...[
-              ListTile(
-                leading: const Icon(Icons.cloud_sync_outlined),
-                title: const Text('Cloud sync'),
-                subtitle: Text(_cloudSyncSubtitle(sp.syncService)),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => unawaited(
-                  pushAdaptivePage<void>(
-                    context,
-                    builder: (_) => const SyncSettingsPage(),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountSection({
+    required BuildContext context,
+    required TpColors colors,
+    required AuthService auth,
+    required UserSession? session,
+    required SyncService syncService,
+    required StorageService storage,
+    required int boundCount,
+  }) {
+    final blurred = _isPersonalInfoBlurred ?? true;
+
+    return TpCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (session != null)
+            Semantics(
+              button: true,
+              label: blurred ? '个人信息已模糊，点击显示' : '个人信息已显示，点击隐藏',
+              child: InkWell(
+                onTap: _togglePersonalInfoBlur,
+                splashColor: colors.brandSoft,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    TpTokens.cardPaddingHorizontal,
+                    TpTokens.space4,
+                    TpTokens.cardPaddingHorizontal,
+                    TpTokens.space3,
+                  ),
+                  child: Row(
+                    children: [
+                      TpAvatarBadge(
+                        text: _avatarInitials(session, blurred),
+                        size: 46,
+                      ),
+                      const SizedBox(width: TpTokens.space3),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: ImageFiltered(
+                                    imageFilter: ImageFilter.blur(
+                                      sigmaX: 8,
+                                      sigmaY: 8,
+                                    ),
+                                    enabled: blurred,
+                                    child: Text(
+                                      session.userName.isNotEmpty
+                                          ? session.userName
+                                          : session.userId,
+                                      style: TpTypography.cardTitle(colors)
+                                          .copyWith(fontSize: 17),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: TpTokens.space2),
+                                const TpBadge(
+                                  label: '在线',
+                                  tone: TpBadgeTone.success,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            ImageFiltered(
+                              imageFilter:
+                                  ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                              enabled: blurred,
+                              child: Text(
+                                [
+                                  'GeekPie Uni-Auth',
+                                  if (session.userId.isNotEmpty) session.userId,
+                                ].join(' · '),
+                                style: TpTypography.itemMeta(colors),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          blurred ? TpIcons.eyeOff : TpIcons.eye,
+                          size: TpTokens.iconM,
+                          color: colors.textMuted,
+                        ),
+                        tooltip: blurred ? '显示个人信息' : '隐藏个人信息',
+                        onPressed: _togglePersonalInfoBlur,
+                      ),
+                    ],
                   ),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.person_remove_outlined),
-                title: const Text('注销账号'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => unawaited(
-                  pushAdaptivePage<void>(
-                    context,
-                    builder: (_) => AccountDeletionPage(auth: auth),
-                  ),
-                ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                TpTokens.cardPaddingHorizontal,
+                TpTokens.space4,
+                TpTokens.cardPaddingHorizontal,
+                TpTokens.space3,
               ),
-              if (useIosChrome)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: AdaptiveConfirmationButton(
-                    label: 'Logout',
-                    icon: Icons.logout,
-                    sfSymbol: 'rectangle.portrait.and.arrow.right',
-                    confirmTitle: '退出登录？',
-                    confirmLabel: '退出登录',
-                    destructive: true,
-                    width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const TpAvatarBadge(text: 'GP', size: 46),
+                      const SizedBox(width: TpTokens.space3),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '登录 TechPie',
+                              style: TpTypography.cardTitle(colors)
+                                  .copyWith(fontSize: 17),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '通过 GeekPie Uni-Auth 同步课表与校园服务',
+                              style: TpTypography.itemMeta(colors),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: TpTokens.space3),
+                  AdaptiveButton(
+                    icon: TpIcons.login,
+                    sfSymbol: 'person.crop.circle.badge.plus',
+                    label: '通过 GeekPie Uni-Auth 登录',
+                    role: AdaptiveButtonRole.prominent,
                     height: 44,
-                    onConfirmed: () => unawaited(auth.logout()),
+                    accessibilityLabel: '登录 TechPie',
+                    onPressed: () => unawaited(startUniAuthLogin(context)),
                   ),
-                )
-              else
-                ListTile(
-                  leading: const Icon(Icons.logout),
-                  title: const Text('Logout'),
-                  onTap: () => unawaited(_confirmLogout(auth)),
-                ),
-            ] else if (useIosChrome)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: AdaptiveButton(
-                  icon: Icons.login,
-                  sfSymbol: 'person.crop.circle.badge.plus',
-                  label: '通过 GeekPie Uni-Auth 登录',
-                  role: AdaptiveButtonRole.prominent,
-                  accessibilityLabel: '登录 TechPie',
-                  onPressed: () => unawaited(startUniAuthLogin(context)),
-                ),
-              )
-            else
-              ListTile(
-                leading: const Icon(Icons.login),
-                title: const Text('Login'),
-                subtitle: const Text('通过 GeekPie Uni-Auth 登录'),
-                onTap: () => unawaited(startUniAuthLogin(context)),
+                ],
               ),
-            // Bindings are configured independently of the primary account, so
-            // this row sits outside the signed-in block (it replaces the old
-            // OPENID row, which was reachable the same way).
-            ListTile(
-              leading: const Icon(Icons.account_tree_outlined),
-              title: const Text('Linked accounts'),
-              subtitle: Text(
-                '${tpAuth.boundPlatforms.length + (campusCard.configured ? 1 : 0)} bound · eCard / eGate / Gradescope / Hydro',
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: TpTokens.cardPaddingHorizontal,
+            ),
+            child: Divider(height: 1, thickness: 0.5, color: colors.divider),
+          ),
+          TpListRow(
+            icon: TpIcons.linkedAccounts,
+            iconColor: colors.brand,
+            title: '第三方账号',
+            subtitle:
+                '已绑定 $boundCount 项 · 校园卡 / eGate / Gradescope / Hydro',
+            showChevron: true,
+            showDivider: true,
+            onTap: () => unawaited(
+              pushAdaptivePage<void>(
+                context,
+                builder: (_) => const ThirdPartyAccountsPage(),
               ),
-              trailing: const Icon(Icons.chevron_right),
+            ),
+          ),
+          if (auth.isLoggedIn)
+            TpListRow(
+              icon: TpIcons.sync,
+              iconColor: colors.infoBlue,
+              title: '云同步',
+              subtitle: _cloudSyncSubtitle(syncService),
+              showChevron: true,
+              showDivider: true,
               onTap: () => unawaited(
                 pushAdaptivePage<void>(
                   context,
-                  builder: (_) => const ThirdPartyAccountsPage(),
+                  builder: (_) => const SyncSettingsPage(),
                 ),
               ),
             ),
-            const Divider(),
-
-            ListTile(
-              leading: const Icon(Icons.feedback_outlined),
-              title: const Text('问题反馈 / 功能建议'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async {
-                if (!auth.isLoggedIn) await startUniAuthLogin(context);
-                if (!context.mounted || !auth.isLoggedIn) return;
-                await pushAdaptivePage<void>(
-                  context,
-                  builder: (_) => FeedbackPage(
-                    service: FeedbackService(auth, apiBaseUrl(sp.storageService)),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.privacy_tip_outlined),
-              title: const Text('隐私政策与使用支持'),
-              trailing: const Icon(Icons.open_in_new),
-              onTap: () => unawaited(
-                launchUrl(
-                  Uri.parse('https://techpie.geekpie.club/privacy'),
-                  mode: LaunchMode.externalApplication,
-                ),
-              ),
-            ),
-            const Divider(),
-            if (isIos())
-              ListTile(
-                leading: const Icon(Icons.watch_outlined),
-                title: const Text('Apple Watch'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => unawaited(
-                  pushAdaptivePage<void>(context,
-                      builder: (_) => const WatchSettingsPage(),),
-                ),
-              ),
-
-            // Appearance section
-            _sectionHeader(theme, 'Appearance'),
-            if (useIosChrome)
-              ListTile(
-                leading: Icon(themeService.mode.icon),
-                title: const Text('Theme'),
-                // The menu button shows the value; a subtitle would repeat it.
-                trailing: AdaptiveSelect(
-                  value: themeService.mode.name,
-                  placeholder: 'Choose theme',
-                  accessibilityLabel: 'Theme',
-                  shrinkWrap: true,
-                  options: [
-                    for (final mode in AppThemeMode.values)
-                      AdaptiveSelectOption(
-                        value: mode.name,
-                        label: mode.label,
-                        sfSymbol: switch (mode) {
-                          AppThemeMode.system => 'circle.lefthalf.filled',
-                          AppThemeMode.light => 'sun.max',
-                          AppThemeMode.dark => 'moon',
-                          AppThemeMode.amoled => 'moon.fill',
-                        },
-                      ),
-                  ],
-                  onChanged: (value) {
-                    final mode = AppThemeMode.values.firstWhere(
-                      (item) => item.name == value,
-                      orElse: () => AppThemeMode.system,
-                    );
-                    unawaited(themeService.setMode(mode));
-                  },
-                ),
-              )
-            else
-              Builder(
-                builder: (tileContext) => ListTile(
-                  leading: Icon(themeService.mode.icon),
-                  title: const Text('Theme'),
-                  subtitle: Text(themeService.mode.label),
-                  onTap: () => _showThemePicker(tileContext, themeService),
-                ),
-              ),
-            if (themeService.supportsColorSchemeSelection)
-              Builder(
-                builder: (tileContext) => ListTile(
-                  leading: Icon(themeService.colorScheme.icon),
-                  title: const Text('Color'),
-                  subtitle: Text(_colorSubtitle(themeService)),
-                  onTap: () => _showColorPicker(tileContext, themeService),
-                ),
-              ),
-            const Divider(),
-
-            // General section
-            _sectionHeader(theme, 'General'),
-            if (!kIsWeb &&
-                defaultTargetPlatform == TargetPlatform.linux &&
-                sp.deadlineWidgetService != null)
-              _AdaptiveSwitchTile(
-                key: const ValueKey('settings.deadline-widgets'),
-                usesIosLiquidGlass: useIosChrome,
-                secondary: const Icon(Icons.widgets_outlined),
-                title: 'Deadline widgets',
-                subtitle: 'Share task titles and dates with your desktop. '
-                    'Widgets use cached data while TechPie is closed.',
-                value: storage.deadlineWidgetsEnabled,
-                onChanged: (value) => unawaited(
-                  _setDeadlineWidgetsEnabled(
-                    storage,
-                    sp.deadlineWidgetService!,
-                    value,
-                  ),
-                ),
-              ),
-            if (sp.islandService case final island? when island.supported)
-              _AdaptiveSwitchTile(
-                key: const ValueKey('settings.island'),
-                usesIosLiquidGlass: useIosChrome,
-                secondary: const Icon(Icons.notifications_active_outlined),
-                title: '课程与截止日期通知',
-                subtitle: _islandSubtitle,
-                value: storage.islandEnabled,
-                onChanged: (value) => unawaited(_setIslandEnabled(island, value)),
-              ),
-            if (sp.spendingAlertService case final spending? when spending.supported)
-              _AdaptiveSwitchTile(
-                key: const ValueKey('settings.spending-alerts'),
-                usesIosLiquidGlass: useIosChrome,
-                secondary: const Icon(Icons.notifications_active_outlined),
-                title: '校园卡消费提醒',
-                subtitle: '刷新发现新消费时通知；后台检查受系统调度限制',
-                value: spending.enabled,
-                onChanged: (value) => unawaited(spending.setEnabled(value)),
-              ),
-            _AdaptiveSwitchTile(
-              key: const ValueKey('settings.mask-personal-info'),
-              usesIosLiquidGlass: useIosChrome,
-              secondary: const Icon(Icons.visibility_off_outlined),
-              title: 'Mask personal info',
-              subtitle: 'Blur sensitive profile details by default',
+          TpListRow(
+            key: const ValueKey('settings.mask-personal-info'),
+            icon: TpIcons.eyeOff,
+            iconColor: colors.textSecondary,
+            title: '默认模糊个人信息',
+            subtitle: '保护姓名与学号等隐私信息，点击可临时查看',
+            trailing: AdaptiveSwitch(
               value: storage.maskPersonalInfo,
               onChanged: (value) {
                 unawaited(storage.setMaskPersonalInfo(value));
@@ -531,142 +892,89 @@ class _SettingsPageState extends State<SettingsPage> {
                 });
               },
             ),
-            if (!kIsWeb) ...[
-              ListTile(
-                key: const ValueKey('settings.app-proxy-address'),
-                leading: const Icon(Icons.lan_outlined),
-                title: const Text('Application proxy'),
-                subtitle: Text(
-                  storage.appProxyEnabled && storage.appProxyUrl.isNotEmpty
-                      ? storage.appProxyUrl
-                      : (storage.appProxyUrl.isNotEmpty
-                          ? '${storage.appProxyUrl} (Disabled)'
-                          : 'System default'),
-                ),
-                onTap: () =>
-                    unawaited(_showProxySettings(storage, sp.uniAuthService)),
-              ),
-              _AdaptiveSwitchTile(
-                key: const ValueKey('settings.app-proxy-enabled'),
-                usesIosLiquidGlass: useIosChrome,
-                secondary: const Icon(Icons.power_settings_new),
-                title: 'Enable application proxy',
-                subtitle: 'Route requests through the configured HTTP proxy',
-                value: storage.appProxyEnabled && storage.appProxyUrl.isNotEmpty,
-                onChanged: (value) => unawaited(
-                  _setProxyEnabled(storage, sp.uniAuthService, value),
-                ),
-              ),
-            ],
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('About'),
-              subtitle: Text(
-                _appVersion.isEmpty
-                    ? 'Version Unknown'
-                    : 'Version $_appVersion',
-              ),
-              // Tapping the version is the whole affordance: it is where a user
-              // looks when they wonder whether they are up to date.
-              trailing: _checkingUpdate
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh),
-              onTap: _appVersion.isEmpty || _checkingUpdate
-                  ? null
-                  : () => unawaited(_checkForUpdate()),
-            ),
-            if (!kReleaseMode) const Divider(),
+            onTap: () {
+              final next = !storage.maskPersonalInfo;
+              unawaited(storage.setMaskPersonalInfo(next));
+              setState(() {
+                _isPersonalInfoBlurred = next;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
-            // Developer section
-            if (!kReleaseMode) _sectionHeader(theme, 'Developer'),
-            if (!kReleaseMode)
-              _AdaptiveSwitchTile(
-                key: const ValueKey('settings.ids-rebind-preview'),
-                usesIosLiquidGlass: useIosChrome,
-                secondary: const Icon(Icons.key_outlined),
-                title: '强制显示 IDS 重绑横幅',
-                subtitle: '仅用于调试迁移提示',
-                value: storage.debugForceIdsRebindBanner,
-                onChanged: (value) {
-                  unawaited(storage.setDebugForceIdsRebindBanner(value));
-                  setState(() {});
+  Widget _buildThemeModeRow(
+    BuildContext context,
+    TpColors colors,
+    ThemeService themeService,
+  ) {
+    final hasNext =
+        themeService.supportsColorSchemeSelection || supportsAppleWatch();
+    return AdaptiveNavigationScaffold.adaptiveChrome(
+      ios: () => TpListRow(
+        icon: _themeModeIcon(themeService.mode),
+        iconColor: colors.brand,
+        title: '主题模式',
+        showDivider: hasNext,
+        trailing: AdaptiveSelect(
+          value: themeService.mode.name,
+          placeholder: '选择主题',
+          accessibilityLabel: '主题模式',
+          shrinkWrap: true,
+          options: [
+            for (final mode in AppThemeMode.values)
+              AdaptiveSelectOption(
+                value: mode.name,
+                label: mode.label,
+                sfSymbol: switch (mode) {
+                  AppThemeMode.system => 'circle.lefthalf.filled',
+                  AppThemeMode.light => 'sun.max',
+                  AppThemeMode.dark => 'moon',
+                  AppThemeMode.amoled => 'moon.fill',
                 },
-              ),
-            if (!kReleaseMode)
-              _AdaptiveSwitchTile(
-                key: const ValueKey('settings.debug-mode'),
-                usesIosLiquidGlass: useIosChrome,
-                secondary: const Icon(Icons.bug_report_outlined),
-                title: 'Debug mode',
-                subtitle: 'Log all API requests',
-                value: logger.enabled,
-                onChanged: (value) {
-                  logger.enabled = value;
-                  unawaited(storage.setDebugMode(value));
-                },
-              ),
-            if (!kReleaseMode)
-              _AdaptiveSwitchTile(
-                key: const ValueKey('settings.use-localhost'),
-                usesIosLiquidGlass: useIosChrome,
-                secondary: const Icon(Icons.dns_outlined),
-                title: 'Use localhost',
-                subtitle: isAndroid()
-                    ? 'Connect to local server via 10.0.2.2:3000'
-                    : 'Connect to local development server',
-                value: storage.useLocalhost,
-                onChanged: (value) {
-                  unawaited(storage.setUseLocalhost(value));
-                  setState(() {});
-                },
-              ),
-            if (!kReleaseMode)
-              ListTile(
-                leading: const Icon(Icons.science_outlined),
-                title: const Text('WebView Test'),
-                subtitle: const Text('Bridge injection and custom URL testing'),
-                onTap: () => unawaited(
-                  pushAdaptivePage<void>(
-                    context,
-                    builder: (_) => const DebugWebViewPage(
-                      initialUrl: 'http://127.0.0.1:8000/bridge_test.html',
-                    ),
-                  ),
-                ),
-              ),
-            if (!kReleaseMode)
-              ListTile(
-                leading: const Icon(Icons.vibration),
-                title: const Text('Developer Lab'),
-                subtitle: const Text('Play every waveform and sound'),
-                onTap: () => unawaited(
-                  pushAdaptivePage<void>(
-                    context,
-                    builder: (_) => const DeveloperLabPage(),
-                  ),
-                ),
-              ),
-            if (!kReleaseMode && logger.enabled)
-              ListTile(
-                leading: const Icon(Icons.list_alt),
-                title: const Text('View Logs'),
-                subtitle: Text('${logger.entries.length} entries'),
-                onTap: () => unawaited(
-                  pushAdaptivePage<void>(
-                    context,
-                    builder: (_) => const DebugLogPage(),
-                  ),
-                ),
               ),
           ],
-        );
-      },
-    ),
-  );
+          onChanged: (value) {
+            final mode = AppThemeMode.values.firstWhere(
+              (item) => item.name == value,
+              orElse: () => AppThemeMode.system,
+            );
+            unawaited(themeService.setMode(mode));
+          },
+        ),
+      ),
+      material: () => Builder(
+        builder: (tileContext) => TpListRow(
+          icon: _themeModeIcon(themeService.mode),
+          iconColor: colors.brand,
+          title: '主题模式',
+          value: themeService.mode.label,
+          showChevron: true,
+          showDivider: hasNext,
+          onTap: () => _showThemePicker(tileContext, themeService),
+        ),
+      ),
+    );
+  }
+
+  IconData _themeModeIcon(AppThemeMode mode) => switch (mode) {
+        AppThemeMode.system => TpIcons.smartphone,
+        AppThemeMode.light => TpIcons.sun,
+        AppThemeMode.dark => TpIcons.moon,
+        AppThemeMode.amoled => TpIcons.amoled,
+      };
+
+  String _avatarInitials(UserSession session, bool blurred) {
+    if (blurred) return 'GP';
+    final name = session.userName.trim();
+    if (name.isEmpty) return 'GP';
+    final runes = name.runes.toList();
+    if (runes.first > 127) {
+      return String.fromCharCode(runes.first);
+    }
+    return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
   }
 
   Future<void> _confirmLogout(AuthService auth) async {
@@ -725,9 +1033,9 @@ class _SettingsPageState extends State<SettingsPage> {
     if (proxy.isNotEmpty && !isValidAppProxy(proxy)) {
       await showAdaptiveAlertDialog<void>(
         context: context,
-        title: 'Invalid proxy',
-        message: 'Use host:port, for example 127.0.0.1:7890.',
-        actions: const [AdaptiveAlertAction<void>(label: 'OK')],
+        title: '代理地址无效',
+        message: '请使用 host:port 格式，例如 127.0.0.1:7890。',
+        actions: const [AdaptiveAlertAction<void>(label: '好')],
       );
       return;
     }
@@ -755,10 +1063,7 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                  child: Text(
-                    'Choose theme',
-                    style: theme.textTheme.titleSmall,
-                  ),
+                  child: Text('选择主题模式', style: theme.textTheme.titleSmall),
                 ),
                 const Divider(height: 1),
                 _ThemeModeOptions(
@@ -788,7 +1093,7 @@ class _SettingsPageState extends State<SettingsPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Text(
-                  'Choose theme',
+                  '选择主题模式',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
@@ -799,7 +1104,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   Navigator.pop(context);
                 },
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: TpTokens.space2),
             ],
           ),
         ),
@@ -810,10 +1115,10 @@ class _SettingsPageState extends State<SettingsPage> {
   String _colorSubtitle(ThemeService themeService) {
     if (themeService.colorScheme == AppColorScheme.system) {
       if (themeService.usesIosSystemAccent) {
-        return 'System Blue';
+        return '系统蓝';
       }
       if (!themeService.systemDynamicColorAvailable) {
-        return '${themeService.colorScheme.label} (unavailable, using TechRed)';
+        return '${themeService.colorScheme.label}（不可用，已回退 TechRed）';
       }
     }
     return themeService.colorScheme.label;
@@ -828,6 +1133,7 @@ class _SettingsPageState extends State<SettingsPage> {
         offset: const Offset(0, 8),
         builder: (context, close) {
           final theme = Theme.of(context);
+          final colors = context.tpColors;
           return DesktopPopoverSurface(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -835,10 +1141,7 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                  child: Text(
-                    'Choose color',
-                    style: theme.textTheme.titleSmall,
-                  ),
+                  child: Text('选择主题色', style: theme.textTheme.titleSmall),
                 ),
                 const Divider(height: 1),
                 for (final scheme in AppColorScheme.values)
@@ -854,9 +1157,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                         if (themeService.colorScheme == scheme)
                           Icon(
-                            Icons.check,
-                            size: 20,
-                            color: theme.colorScheme.primary,
+                            TpIcons.check,
+                            size: TpTokens.iconS,
+                            color: colors.brand,
                           ),
                       ],
                     ),
@@ -877,48 +1180,43 @@ class _SettingsPageState extends State<SettingsPage> {
       CNBottomSheet.show<void>(
         context: context,
         useRootNavigator: true,
-        builder: (context) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Text(
-                  'Choose color',
-                  style: Theme.of(context).textTheme.titleMedium,
+        builder: (context) {
+          final colors = context.tpColors;
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    '选择主题色',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
-              for (final scheme in AppColorScheme.values)
-                ListTile(
-                  leading: Icon(scheme.icon),
-                  title: Text(scheme.label),
-                  trailing: themeService.colorScheme == scheme
-                      ? Icon(
-                          Icons.check,
-                          color: Theme.of(context).colorScheme.primary,
-                        )
-                      : null,
-                  onTap: () {
-                    unawaited(themeService.setColorScheme(scheme));
-                    Navigator.pop(context);
-                  },
-                ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _sectionHeader(ThemeData theme, String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        title,
-        style: theme.textTheme.labelLarge?.copyWith(
-          color: theme.colorScheme.primary,
-        ),
+                for (final scheme in AppColorScheme.values)
+                  TpListRow(
+                    icon: scheme.icon,
+                    iconColor: themeService.colorScheme == scheme
+                        ? colors.brand
+                        : colors.textMuted,
+                    title: scheme.label,
+                    trailing: themeService.colorScheme == scheme
+                        ? Icon(
+                            TpIcons.check,
+                            size: TpTokens.iconS,
+                            color: colors.brand,
+                          )
+                        : null,
+                    onTap: () {
+                      unawaited(themeService.setColorScheme(scheme));
+                      Navigator.pop(context);
+                    },
+                  ),
+                const SizedBox(height: TpTokens.space2),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -936,6 +1234,46 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
+class _SettingsSectionCard extends StatelessWidget {
+  const _SettingsSectionCard({
+    required this.title,
+    required this.children,
+  });
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            TpTokens.space2,
+            0,
+            TpTokens.space2,
+            TpTokens.space2,
+          ),
+          child: Text(
+            title,
+            style: TpTypography.cardMeta(colors).copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        TpCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ThemeModeOptions extends StatelessWidget {
   const _ThemeModeOptions({
     required this.themeService,
@@ -950,6 +1288,7 @@ class _ThemeModeOptions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = context.tpColors;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -961,74 +1300,35 @@ class _ThemeModeOptions extends StatelessWidget {
               title: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      mode.label,
-                      style: theme.textTheme.bodyMedium,
-                    ),
+                    child: Text(mode.label, style: theme.textTheme.bodyMedium),
                   ),
                   if (themeService.mode == mode)
                     Icon(
-                      Icons.check,
-                      size: 20,
-                      color: theme.colorScheme.primary,
+                      TpIcons.check,
+                      size: TpTokens.iconS,
+                      color: colors.brand,
                     ),
                 ],
               ),
               onTap: () => onSelected(mode),
             )
           else
-            ListTile(
-              leading: Icon(mode.icon),
-              title: Text(mode.label),
+            TpListRow(
+              icon: mode.icon,
+              iconColor: themeService.mode == mode
+                  ? colors.brand
+                  : colors.textMuted,
+              title: mode.label,
               trailing: themeService.mode == mode
                   ? Icon(
-                      Icons.check,
-                      color: theme.colorScheme.primary,
+                      TpIcons.check,
+                      size: TpTokens.iconS,
+                      color: colors.brand,
                     )
                   : null,
               onTap: () => onSelected(mode),
             ),
       ],
-    );
-  }
-}
-
-class _AdaptiveSwitchTile extends StatelessWidget {
-  const _AdaptiveSwitchTile({
-    super.key,
-    required this.usesIosLiquidGlass,
-    required this.secondary,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final bool usesIosLiquidGlass;
-  final Widget secondary;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!usesIosLiquidGlass) {
-      return SwitchListTile(
-        secondary: secondary,
-        title: Text(title),
-        subtitle: Text(subtitle),
-        value: value,
-        onChanged: onChanged,
-      );
-    }
-
-    return ListTile(
-      leading: secondary,
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: AdaptiveSwitch(value: value, onChanged: onChanged),
-      onTap: () => onChanged(!value),
     );
   }
 }
@@ -1060,7 +1360,7 @@ class _ProxySettingsDialogState extends State<_ProxySettingsDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Application proxy'),
+      title: const Text('应用代理'),
       content: TextField(
         controller: _controller,
         autofocus: true,
@@ -1071,11 +1371,11 @@ class _ProxySettingsDialogState extends State<_ProxySettingsDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const Text('取消'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, _controller.text.trim()),
-          child: const Text('Save'),
+          child: const Text('保存'),
         ),
       ],
     );
