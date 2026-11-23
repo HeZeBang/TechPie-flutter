@@ -91,7 +91,11 @@ void main() {
     );
     for (final entity in presentation.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      if (entity.path.endsWith('/icons/platform_icons.dart')) continue;
+      if (entity.path
+          .replaceAll('\\', '/')
+          .endsWith('/icons/platform_icons.dart')) {
+        continue;
+      }
       expect(
         entity.readAsStringSync(),
         isNot(contains('CupertinoIcons.')),
