@@ -84,7 +84,7 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     });
     final cards = runtime.cards;
     if (cards is CardSnapshotSource) {
-      _cardSubscription = cards.snapshots.listen((card) {
+      _cardSubscription = (cards as CardSnapshotSource).snapshots.listen((card) {
         _applyCachedBalance(card?.balance);
       });
     }
