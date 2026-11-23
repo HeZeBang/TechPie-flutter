@@ -130,7 +130,12 @@ Future<void> _realMain(SharedPreferences prefs) async {
     syncReminders: isApple,
   );
   final islandService = IslandService(storageService, scheduleService, assignmentService);
-  final deadlineWidgetService = DeadlineWidgetService(assignmentService);
+  final deadlineWidgetService = DeadlineWidgetService(
+    assignmentService,
+    enabled: kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.linux ||
+        storageService.deadlineWidgetsEnabled,
+  );
   final deadlineReminderService =
       isApple ? DeadlineReminderService(assignmentService) : null;
   final syncService = SyncService(
@@ -220,7 +225,9 @@ Future<void> _realMain(SharedPreferences prefs) async {
 
   spendingAlertService.start(authService, campusCardService);
   bootMark('cached data ready');
-  if (isApple) deadlineWidgetService.initialize();
+  if (isApple || (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux)) {
+    deadlineWidgetService.initialize();
+  }
 
   islandService.start();
   oaGymService.startProfileSync();
@@ -538,6 +545,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        deadlineWidgetService: widget.deadlineWidgetService,
         deadlineReminderService: widget.deadlineReminderService,
         spendingAlertService: widget.spendingAlertService,
         islandService: widget.islandService,
