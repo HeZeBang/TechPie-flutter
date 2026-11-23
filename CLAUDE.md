@@ -52,7 +52,15 @@ Key services:
 - **ThirdPartyAuthService** — bind/unbind/auto-renew for Gradescope, Hydro, **and eGate**. The eGate binding (`ThirdPartyPlatform.egate`) is the SINGLE source of CASTGC / CpDaily session in the app: `hasEgateBinding`, `egateBinding`, `egateCookies()` (always appends `CASTGC=<tgc>`), `egateStudentId`, `renewEgateBinding()` (renews via `/api/auth/renew` and persists back). Every campus-system feature (schedule, blackboard, exam, oa-gym, ecourse/student-leave webviews) reads its CpDaily session through these accessors, never from `AuthService.session`.
 - **StorageService** — wraps `FlutterSecureStorage` (credentials) + `SharedPreferences` (caches, settings). **Important:** imports `flutter_secure_storage_ohos` (a hard fork), NOT the upstream `flutter_secure_storage` facade
 - **UpdateService** — the settings page's version tile calls GitHub's `releases/latest` and offers a newer release with its changelog; the update action opens the release page. `utils/product_version.dart` owns the comparison (a candidate ranks below the release it leads to, and `+B` is not part of a version). Deliberately independent of our backend, so it still answers when the API does not, and it needs no account
-- **ThemeService** — Material dynamic color, theme mode persistence
+- **ThemeService** — unified `TpColors` (`ThemeExtension`) + `TpTokens` across all platforms, theme mode persistence (Light / Dark / AMOLED), default TechRed accent with optional System accent (Android dynamic / iOS System Blue)
+
+### Design System & Visual Rules (`docs/DESIGN_SYSTEM.md`)
+
+All UI work must follow `docs/DESIGN_SYSTEM.md`:
+- **Unified content layer, platform-native shell**: page content uses `lib/theme/` (`TpTokens`, `TpColors` via `context.tpColors`, `TpTypography`, `TpIcons`) and `lib/widgets/design_system/` identically across iOS, Android, OHOS, and Desktop. Platform-native chrome (iOS 26 Liquid Glass bars, SF Symbols, haptics, `DesktopShell`, `Adaptive*` controls) stays strictly at the shell/control boundary.
+- **No style drift in migrated pages**: never introduce raw `Color(0x...)`, `Card.outlined`, `Card.filled`, direct `isIos()` / `usesIosLiquidGlass()` visual branches, or non-token `BorderRadius.circular(...)` values in pages guarded by `test/architecture/design_system_guard_test.dart`.
+- **Icons**: use `TpIcons` (`flutter_lucide`, pure Dart font asset with `@staticIconProvider`) for in-page icons; keep SF Symbols only on iOS native shell bars.
+- **Campus card bridge**: `GpColors.fromTheme` inherits directly from `TpColors`; keep `campus_card` QR/card-mat safety tokens intact.
 
 ### Auth model boundary (important)
 

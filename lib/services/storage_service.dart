@@ -243,7 +243,7 @@ class StorageService {
   String get themeMode => _prefs.getString(_themeModeKey) ?? 'system';
   Future<void> setThemeMode(String mode) => _prefs.setString(_themeModeKey, mode);
 
-  String get colorScheme => _prefs.getString(_colorSchemeKey) ?? 'system';
+  String get colorScheme => _prefs.getString(_colorSchemeKey) ?? 'techRed';
   Future<void> setColorScheme(String scheme) => _prefs.setString(_colorSchemeKey, scheme);
 
   bool get maskPersonalInfo => _prefs.getBool(_maskPersonalInfoKey) ?? true;
