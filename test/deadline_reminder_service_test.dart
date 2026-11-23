@@ -655,10 +655,15 @@ void main() {
       final firstRow = find.byType(Dismissible).first;
       await tester.drag(firstRow, Offset(-tester.getSize(firstRow).width * 0.7, 0));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
       expect(tester.takeException(), isNull);
+      expect(find.byType(Dismissible), findsOneWidget);
+      await tester.pumpAndSettle();
 
-      final secondRow = find.byType(Dismissible).first;
+      final secondRow = find.byType(Dismissible);
       await tester.drag(secondRow, Offset(-tester.getSize(secondRow).width * 0.7, 0));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
