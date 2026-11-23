@@ -120,35 +120,43 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _doRebuild() {
-    final table = _schedule.courseTable;
+    final table = _schedule.fullCourseTable;
     if (table != null && table.periods.isNotEmpty) {
       _periods = table.periods.map((p) => p.toPeriod()).toList();
     }
-    final week = _schedule.currentWeek();
-    final today = _now.weekday;
+    final termBegin = _schedule.termBegin;
+    final now = _now;
+    final week =
+        _schedule.isGraduate ? teachingWeekOf(now, termBegin) ?? 0 : _schedule.currentWeek();
     final timetableCourses = table?.courses ?? const <EamsCourse>[];
     final withCustom = withCustomCourses(
       eamsToDisplayCourses(
         timetableCourses,
         week,
         timetablePeriods: _periods,
+        onDate: now,
       ),
       _schedule.customCourses,
       week,
-      _schedule.termBegin,
+      termBegin,
       periods: _periods,
+      onDate: now,
     );
     final all = withExamCourses(
       withCustom,
       examsForSemester(_assignments.assignments, _schedule.selectedSemesterId),
       week,
-      _schedule.termBegin,
+      termBegin,
       periods: _periods,
     );
     final newCourses = all
-        .where((course) => course.dayOfWeek == today && course.occursOn(_now))
+        .where((course) => course.dayOfWeek == now.weekday && course.occursOn(now))
         .toList()
-      ..sort((a, b) => a.gridStart.compareTo(b.gridStart));
+      ..sort((a, b) {
+        final startA = parseClockMinutes(a.startTime) ?? 0;
+        final startB = parseClockMinutes(b.startTime) ?? 0;
+        return startA.compareTo(startB);
+      });
 
     final previousCount = _todayCourses.length;
     setState(() {

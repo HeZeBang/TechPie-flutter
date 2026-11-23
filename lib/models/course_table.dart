@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart' show DateUtils;
+
 import 'course.dart';
 
 class CoursePeriod {
@@ -36,6 +38,8 @@ class EamsCourse {
   final String teachers;
   final String weeks; // binary string: "01111111111111111000..." (index 1 = week 1)
   final Map<int, List<int>> times; // { weekday(1-7): [period_numbers(1-based)] }
+  final List<DateTime>? dates;
+  final ClockCourseTime? clockTime;
 
   const EamsCourse({
     required this.name,
@@ -43,6 +47,8 @@ class EamsCourse {
     required this.teachers,
     required this.weeks,
     required this.times,
+    this.dates,
+    this.clockTime,
   });
 
   bool isActiveInWeek(int week) {
@@ -52,7 +58,7 @@ class EamsCourse {
   }
 
   /// Returns sorted list of active week numbers (1-based).
-  List<int> _activeWeeks() {
+  List<int> get activeWeeks {
     final result = <int>[];
     // Start from index 1 (week 1)
     for (int i = 1; i < weeks.length; i++) {
@@ -62,7 +68,7 @@ class EamsCourse {
   }
 
   String get weeksText {
-    final weekNums = _activeWeeks();
+    final weekNums = activeWeeks;
     if (weekNums.isEmpty) return '';
     return formatWeekRanges(weekNums);
   }
@@ -73,6 +79,11 @@ class EamsCourse {
         'teachers': teachers,
         'weeks': weeks,
         'times': times.map((k, v) => MapEntry(k.toString(), v.join(','))),
+        if (dates case final meetings?) 'dates': meetings.map((d) => d.toIso8601String()).toList(),
+        if (clockTime case final clock?) ...{
+          'startTime': clock.startTime,
+          'endTime': clock.endTime,
+        },
       };
 
   factory EamsCourse.fromJson(Map<String, dynamic> json) {
@@ -89,12 +100,18 @@ class EamsCourse {
           .toList();
       times[day] = periods;
     }
+    final startTime = json['startTime'] as String?;
+    final endTime = json['endTime'] as String?;
     return EamsCourse(
       name: json['name'] as String? ?? '',
       classroom: json['classroom'] as String? ?? '',
       teachers: json['teachers'] as String? ?? '',
       weeks: json['weeks'] as String? ?? '',
       times: times,
+      dates: (json['dates'] as List?)?.cast<String>().map(DateTime.parse).toList(),
+      clockTime: startTime == null || endTime == null
+          ? null
+          : ClockCourseTime(startTime: startTime, endTime: endTime),
     );
   }
 }
@@ -273,14 +290,20 @@ List<Course> eamsToDisplayCourses(
   int? weekFilter, {
   bool includeGhosts = false,
   List<Period> timetablePeriods = defaultPeriods,
+  DateTime? onDate,
 }) {
   final result = <Course>[];
   for (int i = 0; i < eamsCourses.length; i++) {
     final eams = eamsCourses[i];
-    final active = weekFilter == null || eams.isActiveInWeek(weekFilter);
+    final dates = eams.dates;
+    if (onDate == null && weekFilter != null && dates != null && eams.weeks.isEmpty) continue;
+    final active = onDate != null && dates != null
+        ? dates.any((date) => DateUtils.isSameDay(date, onDate))
+        : weekFilter == null || eams.isActiveInWeek(weekFilter);
     if (!active && !includeGhosts) continue;
 
     final color = CourseColor.values[i % CourseColor.values.length];
+    final clock = onDate == null ? null : eams.clockTime;
     for (final entry in eams.times.entries) {
       final day = entry.key;
       final periods = [...entry.value]..sort();
@@ -294,10 +317,8 @@ List<Course> eamsToDisplayCourses(
         if (periods[j] == end + 1) {
           end = periods[j];
         } else {
-          final placement = PeriodCourseTime(
-            startPeriod: start,
-            endPeriod: end,
-          ).resolve(timetablePeriods);
+          final placement = (clock ?? PeriodCourseTime(startPeriod: start, endPeriod: end))
+              .resolve(timetablePeriods);
           if (placement != null) {
             result.add(
               Course(
@@ -316,10 +337,8 @@ List<Course> eamsToDisplayCourses(
           end = periods[j];
         }
       }
-      final placement = PeriodCourseTime(
-        startPeriod: start,
-        endPeriod: end,
-      ).resolve(timetablePeriods);
+      final placement =
+          (clock ?? PeriodCourseTime(startPeriod: start, endPeriod: end)).resolve(timetablePeriods);
       if (placement != null) {
         result.add(
           Course(
