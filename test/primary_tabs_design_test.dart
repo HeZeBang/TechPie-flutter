@@ -20,6 +20,7 @@ import 'package:techpie/services/oa_gym_service.dart';
 import 'package:techpie/services/schedule_service.dart';
 import 'package:techpie/services/service_provider.dart';
 import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/services/student_allowance_service.dart';
 import 'package:techpie/services/sync_service.dart';
 import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
@@ -89,14 +90,15 @@ Future<Widget> _buildTestHost({
     thirdPartyAuthService: tpAuth,
     oaGymService: OaGymService(auth, storage, tpAuth),
     egateAppService: EgateAppService(auth, storage, tpAuth),
+    studentAllowanceService: StudentAllowanceService(auth, tpAuth),
     uniAuthService: uniAuth,
     syncService: SyncService(auth, tpAuth, storage),
     updateService: UpdateService(),
     campusCardService: CampusCardService(),
     ecardBindService: EcardBindService(),
     child: MaterialApp(
-      theme: themeService.lightTheme(),
-      darkTheme: themeService.darkTheme(),
+      theme: themeService.lightTheme,
+      darkTheme: themeService.darkTheme,
       builder: (_, inner) => AdaptiveFeedbackHost(
         key: adaptiveFeedbackHostKey,
         child: inner!,
@@ -127,12 +129,12 @@ void main() {
         eveClasses: 4,
       );
 
-      final table = CourseTable(
-        periods: const [
+      const table = CourseTable(
+        periods: [
           CoursePeriod(index: 1, timeRange: '08:15-09:00'),
           CoursePeriod(index: 2, timeRange: '09:10-09:55'),
         ],
-        courses: const [
+        courses: [
           EamsCourse(
             name: '计算机系统导论',
             classroom: '信息学院 1B-201',
