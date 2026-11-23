@@ -1,37 +1,48 @@
-.screen { width: 100%; height: 100%; background-color: #000000; }
-.content { width: 100%; height: 100%; flex-direction: column; }
-.edge-space { height: 56px; width: 100%; }
-.section { width: 100%; flex-direction: column; align-items: center; }
-.header { margin-bottom: 20px; }
-.title { width: 300px; font-size: 38px; color: #ffffff; text-align: center; }
-.status { width: 300px; font-size: 24px; color: #b5b5bd; text-align: center; margin-top: 4px; }
-.card { width: 336px; padding: 20px; margin-bottom: 12px; flex-direction: column; background-color: #1c1c1e; border-radius: 28px; }
-.caption { width: 296px; font-size: 24px; color: #b5b5bd; margin-bottom: 8px; }
-.accent { color: #64b5ff; }
-.urgent { color: #ffd080; }
-.headline { width: 296px; font-size: 32px; color: #ffffff; }
-.support { width: 296px; font-size: 26px; color: #c7c7cc; margin-top: 8px; margin-bottom: 8px; }
-.due { width: 296px; font-size: 30px; color: #ffffff; margin-top: 12px; }
-.primary { width: 336px; height: 88px; border-radius: 44px; background-color: #0a64cc; color: #ffffff; font-size: 45px; margin-bottom: 12px; }
-.secondary { width: 336px; height: 88px; border-radius: 44px; background-color: #2c2c2e; color: #ffffff; font-size: 42px; margin-bottom: 12px; }
-.day-title { width: 300px; font-size: 32px; color: #ffffff; text-align: center; margin-bottom: 16px; }
-.day-actions { width: 336px; justify-content: center; margin-bottom: 12px; }
-.day-button { width: 160px; height: 88px; border-radius: 44px; background-color: #2c2c2e; color: #ffffff; font-size: 39px; margin-left: 4px; margin-right: 4px; }
-.centered { text-align: center; }
-.empty { width: 296px; font-size: 32px; color: #c7c7cc; text-align: center; margin-top: 28px; margin-bottom: 28px; }
-.identity-label { margin-top: 24px; }
-.error { width: 296px; color: #ffb4ab; font-size: 26px; margin-top: 12px; margin-bottom: 16px; }
-.code-page { width: 100%; height: 100%; flex-direction: column; background-color: #ffffff; }
-.code-title { width: 220px; height: 52px; text-align: center; font-size: 28px; color: #000000; }
+.screen { left: 0px; top: 0px; width: 466px; height: 466px; flex-direction: column; align-items: center; background-color: #000000; }
+.deck { left: 0px; top: 0px; width: 466px; height: 466px; }
+.panel { width: 466px; height: 466px; flex-direction: column; align-items: center; background-color: #000000; }
+.panel-header { width: 466px; height: 116px; padding-top: 36px; flex-direction: column; align-items: center; }
+.page-title { width: 220px; height: 44px; color: #ffffff; font-size: 32px; text-align: center; }
+.page-status { width: 280px; height: 30px; color: #8e8e93; font-size: 21px; text-align: center; }
+.code-area { width: 466px; height: 270px; align-items: center; justify-content: center; }
 .qr { width: 264px; height: 264px; background-color: #ffffff; }
-.code-empty { width: 264px; height: 216px; text-align: center; font-size: 30px; color: #242426; }
-.code-countdown { width: 264px; height: 48px; font-size: 24px; text-align: center; color: #48484a; }
-.code-action { width: 264px; height: 88px; border-radius: 44px; background-color: #0a64cc; color: #ffffff; font-size: 37px; margin-top: 4px; }
-.code-back { width: 220px; background-color: #e5e5ea; color: #000000; }
-.startup-error { width: 300px; height: 260px; margin-left: 83px; margin-top: 100px; color: #ffb4ab; font-size: 28px; }
-
-.primary:active { background-color: #084c9e; }
-.secondary:active { background-color: #48484a; }
-.day-button:active { background-color: #48484a; }
-.code-action:active { background-color: #084c9e; }
-.code-back:active { background-color: #c7c7cc; }
+.code-placeholder { width: 300px; height: 220px; flex-direction: column; align-items: center; justify-content: center; border-radius: 28px; background-color: #171719; }
+.placeholder-title { width: 264px; height: 56px; color: #ffffff; font-size: 36px; text-align: center; }
+.placeholder-detail { width: 250px; height: 92px; color: #a1a1a6; font-size: 26px; text-align: center; }
+.code-caption { width: 280px; height: 46px; color: #a1a1a6; font-size: 24px; text-align: center; }
+.code-bottom { width: 466px; height: 34px; }
+.glance-time { width: 300px; height: 50px; color: #8bd8c3; font-size: 32px; text-align: center; }
+.glance-title { width: 320px; height: 100px; color: #ffffff; font-size: 36px; text-align: center; }
+.glance-detail { width: 280px; height: 89px; color: #a1a1a6; font-size: 24px; text-align: center; }
+.glance-action { width: 290px; height: 76px; border-radius: 38px; background-color: #252527; color: #ffffff; font-size: 28px; }
+.glance-action:active { background-color: #3a3a3c; }
+.glance-bottom { width: 466px; height: 35px; }
+.due-color { color: #f4c37b; }
+.details { width: 466px; height: 466px; }
+.detail-header { width: 466px; height: 132px; }
+.detail-heading { width: 466px; height: 132px; padding-top: 44px; flex-direction: column; align-items: center; }
+.detail-title { width: 280px; height: 48px; color: #ffffff; font-size: 36px; text-align: center; }
+.detail-subtitle { width: 280px; height: 32px; color: #8e8e93; font-size: 24px; text-align: center; }
+.detail-row { width: 466px; height: 208px; }
+.detail-card { width: 320px; height: 196px; margin-left: 73px; padding: 18px; border-radius: 24px; flex-direction: column; background-color: #1c1c1e; }
+.row-caption { width: 284px; height: 34px; color: #8bd8c3; font-size: 24px; }
+.row-title { width: 284px; height: 84px; color: #ffffff; font-size: 32px; }
+.row-detail { width: 284px; height: 42px; color: #a1a1a6; font-size: 24px; }
+.day-controls { width: 466px; height: 96px; }
+.control-pair { width: 466px; height: 96px; justify-content: center; }
+.day-button { width: 145px; height: 80px; border-radius: 40px; margin-left: 5px; margin-right: 5px; background-color: #252527; color: #ffffff; font-size: 26px; }
+.empty-row { width: 466px; height: 160px; }
+.empty-box { width: 466px; height: 160px; align-items: center; justify-content: center; }
+.empty-text { width: 300px; height: 80px; color: #a1a1a6; font-size: 32px; text-align: center; }
+.account-row { width: 466px; height: 270px; }
+.account-box { width: 466px; height: 270px; flex-direction: column; align-items: center; }
+.account-name { width: 300px; height: 64px; color: #ffffff; font-size: 40px; text-align: center; }
+.account-id { width: 300px; height: 56px; color: #ffffff; font-size: 32px; text-align: center; }
+.account-sync { width: 300px; height: 54px; color: #8e8e93; font-size: 24px; text-align: center; }
+.account-hint { width: 300px; height: 90px; color: #8e8e93; font-size: 24px; text-align: center; }
+.sync-row { width: 466px; height: 170px; }
+.sync-box { width: 466px; height: 170px; flex-direction: column; align-items: center; }
+.sync-button { width: 290px; height: 80px; border-radius: 40px; background-color: #252527; color: #ffffff; font-size: 28px; }
+.sync-note { width: 290px; height: 78px; color: #8e8e93; font-size: 22px; text-align: center; }
+.end-row { width: 466px; height: 64px; }
+.end-space { width: 466px; height: 64px; }

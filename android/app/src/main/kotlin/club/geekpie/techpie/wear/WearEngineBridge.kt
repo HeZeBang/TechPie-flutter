@@ -133,7 +133,7 @@ class WearEngineBridge(private val activity: Activity, messenger: BinaryMessenge
                             handler.post { result.error("DEVICE_DISCONNECTED", "Selected device is not connected", null) }
                             return@addOnSuccessListener
                         }
-                        p2p.setPeerPkgName("com.geekpie.techpie.watch").setPeerFingerPrint(fingerprint)
+                        p2p.setPeerPkgName("club.geekpie.techpie.wear").setPeerFingerPrint(fingerprint)
                         val listener = Receiver { message ->
                             if (epoch == generation && message.type == Message.MESSAGE_TYPE_DATA) {
                                 message.data?.let { event("frame", it) }

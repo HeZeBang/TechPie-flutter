@@ -30,8 +30,7 @@ class HuaweiWatchContent extends StatefulWidget {
   State<HuaweiWatchContent> createState() => _HuaweiWatchContentState();
 }
 
-class _HuaweiWatchContentState extends State<HuaweiWatchContent>
-    with WidgetsBindingObserver {
+class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBindingObserver {
   bool _busy = false;
   String _busyLabel = '正在连接';
   String? _error;
@@ -42,7 +41,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
     text: const String.fromEnvironment(
       'HUAWEI_WATCH_FINGERPRINT',
       defaultValue:
-          'com.geekpie.techpie.watch_BFjBt5qvHo/1DXUCrRMIVMWeFuJfD6GS2ugQUhvqU5jnzucWokWlHWfpowxvojMSEXfV3n792x8buDocrZ7J6Uw=',
+          'club.geekpie.techpie.wear_BNG6fOHV8gNhi/ONhV+JNBhEqhJ5tpMKaI78sTBxE+oCO4dicZWVdMaoztRQl7dx0CARaD2sL7NJ1pvmFammp6E=',
     ),
   );
 
@@ -111,6 +110,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
         15 => '请允许运动健康自启动和后台运行，启动后重试。',
         16 => '请在运动健康中重新连接手表。',
         19 => '连接超时，请打开运动健康后重试。',
+        206 => '与手表上的 TechPie 通信失败。请确认运动健康已连接手表，打开手表上的 TechPie 后重试。',
         _ => '连接未完成，请检查运动健康和应用授权。',
       };
       return '$message（SDK 错误码：${error.nativeCode}）';
@@ -121,6 +121,8 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
       'ACCOUNT_NOT_READY' => '请先登录 TechPie',
       'DEVICE_DISCONNECTED' => '手表未连接，请先在运动健康中完成配对。',
       'SYNC_TIMEOUT' || 'PEER_NOT_READY' => '手表未响应，请保持手表上的 TechPie 打开后重试。',
+      'OFFLINE_GRANT_REQUIRED' => '请先在校园卡页面开通有效的不限次离线授权，再同步到手表。',
+      'STORAGE_FAILED' => '手表保存失败，请重试同步。',
       'INVALID_PAYLOAD' => '连接配置不匹配，请联系开发者。',
       'UNSUPPORTED_OPERATION' => '手表端 TechPie 需要更新，请前往运动健康完成更新。',
       _ => '操作未完成，请检查两端连接后重试。',
@@ -201,17 +203,14 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: connected
-                              ? colors.primaryContainer
-                              : colors.surfaceContainerHighest,
+                          color:
+                              connected ? colors.primaryContainer : colors.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Icon(
                           Icons.watch_outlined,
                           size: 30,
-                          color: connected
-                              ? colors.onPrimaryContainer
-                              : colors.onSurfaceVariant,
+                          color: connected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -220,9 +219,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              connected
-                                  ? (_deviceName ?? 'HUAWEI WATCH')
-                                  : '连接你的手表',
+                              connected ? (_deviceName ?? 'HUAWEI WATCH') : '连接你的手表',
                               style: theme.textTheme.titleLarge,
                             ),
                             const SizedBox(height: 4),
@@ -232,11 +229,12 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                                 _busy
                                     ? _busyLabel
                                     : connected
-                                        ? '已连接'
-                                        : '未连接',
+                                        ? '正在同步'
+                                        : service?.autoSyncEnabled == true
+                                            ? '等待自动恢复同步'
+                                            : '等待首次配对',
                                 key: const Key('huawei-watch-connection'),
-                                style: theme.textTheme.bodyMedium
-                                    ?.copyWith(color: colors.primary),
+                                style: theme.textTheme.bodyMedium?.copyWith(color: colors.primary),
                               ),
                             ),
                           ],
@@ -247,18 +245,15 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                   const SizedBox(height: 16),
                   Text(
                     connected
-                        ? '在手表上查看待办、校园码与账号信息。'
-                        : '先在运动健康中配对，再保持手表上的 TechPie 打开。',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: colors.onSurfaceVariant),
+                        ? '连接用于同步。课表和待办保存在手表上，断连后仍可查看。'
+                        : '首次使用先在运动健康中配对，并打开两端 TechPie。之后打开应用会自动恢复同步。',
+                    style: theme.textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
                   ),
                   const SizedBox(height: 20),
                   if (service != null)
                     AdaptiveButton(
                       label: connected ? '同步到手表' : '授权并查找手表',
-                      sfSymbol: connected
-                          ? 'arrow.triangle.2.circlepath'
-                          : 'magnifyingglass',
+                      sfSymbol: connected ? 'arrow.triangle.2.circlepath' : 'magnifyingglass',
                       icon: connected ? Icons.sync : Icons.search,
                       role: AdaptiveButtonRole.prominent,
                       loading: _busy,
@@ -271,8 +266,8 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                                         () => service.refresh(
                                           resources: [
                                             'account',
-                                            if (service.supports('ddl.display'))
-                                              'ddl',
+                                            if (service.supports('ddl.display')) 'ddl',
+                                            if (service.supports('schedule.display')) 'schedule',
                                           ],
                                         ),
                                         label: '正在同步',
@@ -330,14 +325,11 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                   subtitle: Text(
                     device['connected'] == true ? '点击连接 TechPie' : '请先在运动健康中连接',
                   ),
-                  trailing: device['connected'] == true
-                      ? const Icon(Icons.chevron_right)
-                      : null,
+                  trailing: device['connected'] == true ? const Icon(Icons.chevron_right) : null,
                   enabled: !_busy && device['connected'] == true,
                   onTap: () => unawaited(
                     _run(() async {
-                      _deviceName =
-                          '${device['name'] ?? device['model'] ?? 'HUAWEI WATCH'}';
+                      _deviceName = '${device['name'] ?? device['model'] ?? 'HUAWEI WATCH'}';
                       await service!.open(
                         device['id'] as String,
                         watchFingerprint: _fingerprint.text.trim(),
@@ -371,9 +363,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                 leading: const Icon(Icons.event_note_outlined),
                 title: const Text('待办 DDL'),
                 subtitle: Text(
-                  service!.supports('ddl.display')
-                      ? _syncLabel(service, 'ddl')
-                      : '请更新手表应用以使用此功能',
+                  service!.supports('ddl.display') ? _syncLabel(service, 'ddl') : '请更新手表应用以使用此功能',
                 ),
               ),
               ListTile(
@@ -409,19 +399,31 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                 leading: const Icon(Icons.qr_code_rounded),
                 title: const Text('校园码'),
                 subtitle: Text(
-                  service.supports('campusCode.qrMatrix') ||
-                          service.supports('campusCode.qrBytes')
-                      ? '在手表上打开校园码，即时获取，过期自动隐藏。'
+                  service.supports('campusCode.qrMatrix') || service.supports('campusCode.qrBytes')
+                      ? '打开手表应用默认显示校园码。同步离线授权后，手表可独立生成。'
                       : '请更新手表应用以使用此功能',
                 ),
               ),
+              if (service.supports('campusCode.offlineSm2'))
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('同步离线校园码授权'),
+                  subtitle: Text(
+                    service.offlineCampusCodeApplied
+                        ? '授权已保存到手表，可在完全断连时生成校园码。'
+                        : '将现有不限次离线授权和签名密钥保存到这块手表。',
+                  ),
+                  value: service.offlineCampusCodeEnabled,
+                  onChanged: _busy
+                      ? null
+                      : (value) => unawaited(_run(() => service.setOfflineCampusCodeEnabled(value),
+                          label: '正在同步离线授权',),),
+                ),
               const SizedBox(height: 12),
               TextButton.icon(
                 icon: const Icon(Icons.link_off),
-                label: const Text('断开连接'),
-                onPressed: _busy
-                    ? null
-                    : () => unawaited(_run(service.close, label: '正在断开')),
+                label: const Text('暂停自动同步'),
+                onPressed: _busy ? null : () => unawaited(_run(service.close, label: '正在断开')),
               ),
             ],
             const SizedBox(height: 16),
@@ -438,7 +440,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                 _GuideStep(
                   number: '2',
                   title: '打开手表上的 TechPie',
-                  detail: '连接与查看校园码时保持应用打开。',
+                  detail: '打开应用后自动同步，断连时使用已保存的数据。',
                 ),
                 _GuideStep(
                   number: '3',
@@ -447,7 +449,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent>
                 ),
                 Padding(
                   padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: Text('DDL 提醒在手表应用打开且连接时生效。连接满 24 小时后，请重新连接并开启提醒。'),
+                  child: Text('手表应用退出后不会在后台运行；DDL 提醒在手表应用前台生效。离线校园码按授权有效期使用。'),
                 ),
               ],
             ),

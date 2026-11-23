@@ -52,6 +52,12 @@ function unbase64(value) {
   return bytes;
 }
 function integer(value) { return typeof value === 'number' && isFinite(value) && Math.floor(value) === value; }
+function hexString(value) {
+  if (typeof value !== 'string' || !value.length || value.length % 2) return false;
+  var allowed = '0123456789abcdef';
+  for (var i = 0; i < value.length; i++) if (allowed.indexOf(value.charAt(i).toLowerCase()) < 0) return false;
+  return true;
+}
 function token(value) {
   if (typeof value !== 'string' || !value.length || value.length > 32) return false;
   var allowed = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
@@ -73,25 +79,83 @@ function characters(value) {
   return count;
 }
 
-export function WatchConnection(send, changed, now) {
+export function WatchConnection(send, changed, now, options) {
   this.send = send;
   this.changed = changed;
   this.now = now || function() { return Date.now(); };
   this.counter = 0;
+  this.onCache = options && options.onCache;
+  this.onAuthorization = options && options.onAuthorization;
+  this.offlineEnabled = options && options.offlineEnabled;
   this.reset();
+  if (options && options.cache) this.restore(options.cache);
 }
-WatchConnection.prototype.reset = function() {
+// Transport shutdown preserves the owner's last synchronized data.
+WatchConnection.prototype.reset = function(clearCache) {
+  var current = this.lastTick ? this.phoneNow() : this.now();
   this.session = null; this.binding = null; this.nonce = null;
-  this.assembly = null; this.replies = []; this.account = null;
-  this.revision = 0; this.accountContent = null; this.ready = false;
-  this.remaining = 0; this.silence = 0; this.lastTick = this.now();
-  this.ddl = []; this.ddlRevision = 0; this.ddlContent = null;
-  this.schedule = []; this.scheduleRevision = 0; this.scheduleContent = null; this.scheduleUntil = 0;
-  this.scheduleTruncated = false; this.resources = ['account', 'ddl'];
-  this.remindersEnabled = false; this.reminderCursor = 0; this.alert = null;
-  this.ddlUntil = 0; this.accountUntil = 0; this.code = null;
-  this.pending = {}; this.error = ''; this.truncated = false;
-  this.updatedAt = 0; this.phoneTime = 0; this.phoneElapsed = 0; this.publish();
+  this.assembly = null; this.replies = []; this.ready = false;
+  this.remaining = 0; this.silence = 0;
+  this.pending = {}; this.error = ''; this.code = null; this.alert = null;
+  this.phoneTime = current; this.phoneElapsed = 0; this.lastTick = this.now();
+  this.reminderCursor = current; this.resources = ['account', 'ddl'];
+  if (clearCache !== false) {
+    this.cacheBinding = null; this.account = null;
+    this.revision = 0; this.accountContent = null; this.accountUntil = 0;
+    this.ddl = []; this.ddlRevision = 0; this.ddlContent = null; this.ddlUntil = 0;
+    this.schedule = []; this.scheduleRevision = 0; this.scheduleContent = null; this.scheduleUntil = 0;
+    this.scheduleTruncated = false; this.truncated = false;
+    this.remindersEnabled = false; this.updatedAt = 0;
+  }
+  this.publish();
+};
+WatchConnection.prototype.exportCache = function() {
+  return {version: 1, owner: this.cacheBinding, account: this.account,
+    ddl: this.ddl, schedule: this.schedule, revision: this.revision,
+    ddlRevision: this.ddlRevision, scheduleRevision: this.scheduleRevision,
+    remindersEnabled: this.remindersEnabled, updatedAt: this.updatedAt,
+    truncated: this.truncated, scheduleTruncated: this.scheduleTruncated,
+    clockOffset: this.phoneNow() - this.now()};
+};
+WatchConnection.prototype.restore = function(cache) {
+  if (!cache || cache.version !== 1 || !token(cache.owner) ||
+      !Array.isArray(cache.ddl) || cache.ddl.length > 50 ||
+      !Array.isArray(cache.schedule) || cache.schedule.length > 50 ||
+      !integer(cache.revision) || !integer(cache.ddlRevision) || !integer(cache.scheduleRevision) ||
+      !integer(cache.updatedAt) || typeof cache.clockOffset !== 'number' || !isFinite(cache.clockOffset)) return false;
+  var account = cache.account;
+  if (account && (typeof account.name !== 'string' || typeof account.studentId !== 'string' ||
+      characters(account.name) > 64 || characters(account.studentId) > 64)) return false;
+  if (!cache.ddl.every(function(item) {
+    return item && typeof item.id === 'string' && typeof item.title === 'string' &&
+      typeof item.courseName === 'string' && characters(item.title) <= 80 &&
+      characters(item.courseName) <= 40 && integer(item.dueAtMs) &&
+      ['open', 'completed'].indexOf(item.status) >= 0 && Array.isArray(item.remindAtMs || []);
+  }) || !cache.schedule.every(function(item) {
+    return item && typeof item.name === 'string' && typeof item.location === 'string' &&
+      characters(item.name) <= 80 && characters(item.location) <= 40 &&
+      integer(item.startAtMs) && integer(item.endAtMs) && item.endAtMs > item.startAtMs;
+  })) return false;
+  this.cacheBinding = cache.owner; this.account = account;
+  this.revision = cache.revision; this.accountContent = account ? JSON.stringify(account) : null;
+  this.ddl = cache.ddl; this.ddlRevision = cache.ddlRevision;
+  this.remindersEnabled = cache.remindersEnabled === true;
+  this.ddlContent = JSON.stringify({items: this.ddl, remindersEnabled: this.remindersEnabled});
+  this.schedule = cache.schedule; this.scheduleRevision = cache.scheduleRevision;
+  this.scheduleContent = JSON.stringify(this.schedule);
+  this.updatedAt = cache.updatedAt; this.truncated = cache.truncated === true;
+  this.scheduleTruncated = cache.scheduleTruncated === true;
+  this.phoneTime = this.now() + cache.clockOffset; this.phoneElapsed = 0; this.lastTick = this.now();
+  this.reminderCursor = this.phoneNow(); this.publish(); return true;
+};
+WatchConnection.prototype.commit = function(request, resource, revision) {
+  var link = this, session = this.session;
+  var finish = function(error) {
+    if (session !== link.session) return;
+    if (error) { link.error = '本地保存失败，请重新同步'; link.reject(request, 'STORAGE_FAILED'); link.publish(); }
+    else link.reply(request, 'result', {status: 'ok', code: 'OK', resource: resource, revision: revision});
+  };
+  if (this.onCache) this.onCache(this.exportCache(), finish); else finish();
 };
 WatchConnection.prototype.phoneNow = function() {
   return this.phoneTime + this.phoneElapsed + Math.max(0, this.now() - this.lastTick);
@@ -100,9 +164,9 @@ WatchConnection.prototype.publish = function() {
   if (this.code && this.code.until <= this.phoneNow()) this.code = null;
   this.changed({connected: this.ready, name: this.account ? this.account.name : '',
     studentId: this.account ? this.account.studentId : '', ddl: this.ddl,
-    ddlReady: this.ddlUntil > this.phoneNow(), truncated: this.truncated,
-    updatedAt: this.updatedAt, code: this.code,
-    schedule: this.schedule, scheduleReady: this.scheduleUntil > this.phoneNow(),
+    ddlReady: this.ddlRevision > 0, truncated: this.truncated,
+    updatedAt: this.updatedAt, cacheBinding: this.cacheBinding, code: this.code,
+    schedule: this.schedule, scheduleReady: this.scheduleRevision > 0,
     scheduleTruncated: this.scheduleTruncated, alert: this.alert, remindersEnabled: this.remindersEnabled,
     codeSeconds: this.code ? Math.max(0, Math.ceil((this.code.until - this.phoneNow()) / 1000)) : 0,
     syncing: !!this.pending.sync, codeLoading: !!this.pending.code, error: this.error});
@@ -111,14 +175,12 @@ WatchConnection.prototype.tick = function() {
   var delta = Math.max(0, this.now() - this.lastTick);
   this.lastTick = this.now();
   if (this.assembly && this.now() - this.assembly.at >= 30000) this.assembly = null;
-  if (!this.ready) return;
-  this.remaining -= delta; this.silence += delta;
   this.phoneElapsed += delta;
-  if (this.remaining <= 0 || this.silence >= 30000) { this.reset(); return; }
+  if (this.ready) {
+    this.remaining -= delta; this.silence += delta;
+    if (this.remaining <= 0 || this.silence >= 30000) this.reset(false);
+  }
   if (this.code && this.code.until <= this.phoneNow()) this.code = null;
-  if (this.accountUntil <= this.phoneNow()) this.account = null;
-  if (this.ddlUntil <= this.phoneNow()) { this.ddl = []; this.alert = null; }
-  if (this.scheduleUntil <= this.phoneNow()) this.schedule = [];
   if (this.remindersEnabled) {
     var current = this.phoneNow(), due = [];
     for (var i = 0; i < this.ddl.length; i++) {
@@ -139,14 +201,18 @@ WatchConnection.prototype.tick = function() {
   }
   this.publish();
 };
-WatchConnection.prototype.write = function(response) {
+WatchConnection.prototype.write = function(response, optional) {
   var bytes = utf8(JSON.stringify(response)), count = Math.ceil(bytes.length / 512), frames = [];
   for (var i = 0; i < count; i++) {
     frames.push(JSON.stringify({v: 1, mid: response.id, i: i, n: count,
       data: base64(bytes.slice(i * 512, (i + 1) * 512))}));
   }
-  for (var j = 0; j < frames.length; j++) this.send(frames[j]);
+  for (var j = 0; j < frames.length; j++) this.send(frames[j], optional);
   return frames;
+};
+WatchConnection.prototype.notifyReady = function() {
+  this.write({v: 1, id: 'w' + (++this.counter), replyTo: null,
+    sessionId: null, bindingId: null, type: 'peer.ready', sentAtMs: this.now(), body: {}}, true);
 };
 WatchConnection.prototype.request = function(kind) {
   if (!this.ready) { this.error = '请先连接手机 TechPie'; this.publish(); return false; }
@@ -224,27 +290,54 @@ WatchConnection.prototype.handle = function(m) {
   }
   if (m.type === 'session.hello') {
     if (!token(b.nonce) || !Array.isArray(b.versions) || b.versions.indexOf(1) < 0) return;
-    this.reset(); this.nonce = b.nonce; this.helloAt = this.now();
+    this.reset(false); this.nonce = b.nonce; this.helloAt = this.now();
     if (Array.isArray(b.capabilities) && b.capabilities.indexOf('schedule.display') >= 0) this.resources.push('schedule');
     this.reply(m, 'session.welcome', {nonce: b.nonce, version: 1,
-      watchInstanceId: 'techpie-lite', capabilities: ['account.display', 'ddl.display', 'schedule.display', 'reminder.watchLocal', 'campusCode.qrMatrix', 'connection.heartbeat'],
+      watchInstanceId: 'techpie-lite', capabilities: ['account.display', 'ddl.display', 'schedule.display', 'reminder.watchLocal', 'campusCode.qrMatrix', 'connection.heartbeat'].concat(this.offlineEnabled && this.offlineEnabled() ? ['campusCode.offlineSm2'] : []),
       maxQrPayloadBytes: 1024}, true);
   } else if (m.type === 'session.open') {
     if (b.nonce !== this.nonce || this.now() - this.helloAt > 5000 ||
         !token(b.sessionId) || !token(b.bindingId) || !integer(b.phoneTimeMs) ||
         !integer(b.leaseUntilMs) || b.leaseUntilMs <= b.phoneTimeMs) return;
-    this.session = b.sessionId; this.binding = b.bindingId;
+    if (this.cacheBinding && this.cacheBinding !== b.bindingId) this.reset(true);
+    this.session = b.sessionId; this.binding = b.bindingId; this.cacheBinding = b.bindingId;
     this.phoneTime = b.phoneTimeMs; this.phoneElapsed = 0;
     this.remaining = Math.min(86400000, b.leaseUntilMs - b.phoneTimeMs);
     this.ready = true; this.silence = 0; this.lastTick = this.now();
-    this.reply(m, 'session.opened', {sessionId: this.session}, true);
-    this.publish();
+    var opened = this, openingSession = this.session;
+    var finishOpen = function(error) {
+      if (opened.session !== openingSession) return;
+      if (error) { opened.reject(m, 'STORAGE_FAILED'); opened.reset(false); return; }
+      opened.reply(m, 'session.opened', {sessionId: opened.session}, true); opened.publish();
+    };
+    if (this.onCache) this.onCache(this.exportCache(), finishOpen); else finishOpen();
   } else if (m.type === 'session.ping') {
     this.silence = 0;
     this.reply(m, 'result', {status: 'ok', code: 'OK'});
-  } else if (m.type === 'session.close' || m.type === 'session.clear') {
-    this.reply(m, 'result', {status: 'ok', code: 'OK'});
-    this.reset();
+  } else if (m.type === 'session.close') {
+    this.reply(m, 'result', {status: 'ok', code: 'OK'}); this.reset(false);
+  } else if (m.type === 'session.clear') {
+    this.reset(true);
+    var link = this;
+    var cleared = function(error) { link.reply(m, 'result', {status: error ? 'error' : 'ok', code: error ? 'STORAGE_FAILED' : 'OK'}); };
+    if (this.onCache) this.onCache(this.exportCache(), cleared); else cleared();
+  } else if (m.type === 'campusCode.authorization') {
+    if (!this.onAuthorization || !this.offlineEnabled || !this.offlineEnabled()) { this.reject(m, 'UNSUPPORTED_OPERATION'); return; }
+    var grant = b.credential;
+    if (grant !== null && (!grant || typeof grant.cardID !== 'string' || !grant.cardID.length || grant.cardID.length > 128 ||
+        !hexString(grant.privateKey) || grant.privateKey.length !== 64 ||
+        !hexString(grant.publicKey) || grant.publicKey.length !== 66 || ['02', '03'].indexOf(grant.publicKey.substr(0, 2)) < 0 ||
+        !hexString(grant.authorInfo) || grant.authorInfo.length > 1024 ||
+        !integer(grant.deviceChecksum) || grant.deviceChecksum < 0 || grant.deviceChecksum > 255 ||
+        typeof grant.expiresAt !== 'number' || !isFinite(grant.expiresAt) || grant.expiresAt * 1000 <= this.phoneNow() ||
+        grant.totalUses != null)) { this.reject(m, 'INVALID_PAYLOAD'); return; }
+    var authorizing = this, authorizationSession = this.session;
+    this.onAuthorization(this.binding, grant, function(error) {
+      if (authorizing.session !== authorizationSession) return;
+      if (error) authorizing.reject(m, error);
+      else authorizing.reply(m, 'result', {status: 'ok', code: 'OK'});
+      authorizing.publish();
+    });
   } else if (m.type === 'account.snapshot') {
     var d = b.data;
     if (!integer(b.revision) || b.revision < 1 || !integer(b.validUntilMs) ||
@@ -259,8 +352,9 @@ WatchConnection.prototype.handle = function(m) {
     }
     this.revision = b.revision; this.accountContent = content;
     this.account = {name: d.name, studentId: d.studentId}; this.silence = 0;
-    this.accountUntil = b.validUntilMs; this.applied('account'); this.publish();
-    this.reply(m, 'result', {status: 'ok', code: 'OK', resource: 'account', revision: b.revision});
+    this.accountUntil = b.validUntilMs; this.applied('account');
+    this.updatedAt = integer(b.generatedAtMs) ? b.generatedAtMs : this.phoneNow(); this.publish();
+    this.commit(m, 'account', b.revision);
   } else if (m.type === 'ddl.snapshot') {
     if (!integer(b.revision) || b.revision < 1 || !integer(b.validUntilMs) ||
         b.validUntilMs <= this.phoneNow() || !Array.isArray(b.items) || b.items.length > 50) {
@@ -294,7 +388,7 @@ WatchConnection.prototype.handle = function(m) {
     }, this))) this.alert = null;
     this.updatedAt = integer(b.generatedAtMs) ? b.generatedAtMs : this.phoneNow();
     this.applied('ddl'); this.error = ''; this.silence = 0; this.publish();
-    this.reply(m, 'result', {status: 'ok', code: 'OK', resource: 'ddl', revision: b.revision});
+    this.commit(m, 'ddl', b.revision);
   } else if (m.type === 'schedule.snapshot') {
     if (!integer(b.revision) || b.revision < 1 || !integer(b.validUntilMs) ||
         b.validUntilMs <= this.phoneNow() || !Array.isArray(b.items) || b.items.length > 50) {
@@ -314,7 +408,8 @@ WatchConnection.prototype.handle = function(m) {
     this.scheduleRevision = b.revision; this.scheduleContent = content;
     this.scheduleUntil = b.validUntilMs; this.scheduleTruncated = b.truncated === true;
     this.silence = 0; this.applied('schedule'); this.error = ''; this.publish();
-    this.reply(m, 'result', {status: 'ok', code: 'OK', resource: 'schedule', revision: b.revision});
+    this.updatedAt = integer(b.generatedAtMs) ? b.generatedAtMs : this.phoneNow();
+    this.commit(m, 'schedule', b.revision);
   } else if (m.type === 'campusCode.snapshot') {
     var pending = this.pending.code;
     if (!pending || pending.id !== m.replyTo || !token(b.codeId) || b.purpose !== 'campus' || b.format !== 'qrBytes' ||

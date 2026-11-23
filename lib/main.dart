@@ -108,20 +108,18 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService,
     scheduleService,
   );
-  final wearEngineService = isAndroid()
-      ? WearEngineService(
-          transport: AndroidWearTransport(),
-          metadata: PreferencesWearMetadata(prefs),
-          source: TechPieWearDataSource(
-            auth: authService,
-            accounts: thirdPartyAuthService,
-            assignments: assignmentService,
-            campusCard: campusCardService,
-            timetable: scheduleService,
-          ),
+  final deadlineWidgetService = DeadlineWidgetService(assignmentService);
+  final wearSource = isAndroid()
+      ? TechPieWearDataSource(
+          auth: authService, accounts: thirdPartyAuthService,
+          assignments: assignmentService, campusCard: campusCardService,
+          timetable: scheduleService,
         )
       : null;
-  final deadlineWidgetService = DeadlineWidgetService(assignmentService);
+  final wearEngineService = wearSource == null ? null : WearEngineService(
+    transport: AndroidWearTransport(), metadata: PreferencesWearMetadata(prefs),
+    source: wearSource, offlineCredential: wearSource.offlineCredential,
+  );
   final syncService = SyncService(
     authService,
     thirdPartyAuthService,
@@ -135,6 +133,13 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final updateService = UpdateService();
 
   authService.onLogout = () async {
+    if (wearEngineService != null) {
+      unawaited(
+        wearEngineService.clear(reason: 'logout').catchError((Object error) {
+          if (error is! WearFailure) throw error;
+        }),
+      );
+    }
     // Third-party bindings persist across logouts — they will be used by the
     // sync system. Only clear ephemeral state.
     await assignmentService.clearCache();
@@ -424,6 +429,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.wearEngineService?.resumeSync();
     unawaited(_checkForUpdatesQuietly());
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
     widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
@@ -456,8 +462,11 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // Coming back is a cheap moment to top the SSO token up, and it is
       // guarded: a token with time left is left alone.
+      widget.wearEngineService?.resumeSync();
       unawaited(widget.authService.tryRenewSession());
       unawaited(_checkForUpdatesQuietly());
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      widget.wearEngineService?.suspendSync();
     }
   }
 

@@ -11,10 +11,10 @@ function frames(message) {
     data: bytes.subarray(i * 512, (i + 1) * 512).toString('base64')
   }));
 }
-function fixture() {
+function fixture(options) {
   let now = 1000000, state;
   const outgoing = [];
-  const link = new WatchConnection(frame => outgoing.push(JSON.parse(frame)), s => {state = s;}, () => now);
+  const link = new WatchConnection(frame => outgoing.push(JSON.parse(frame)), s => {state = s;}, () => now, options);
   function send(type, body = {}, extra = {}) {
     const m = {v: 1, id: 'p' + (++send.count), type, body, sentAtMs: now,
       sessionId: type.startsWith('session.h') || type === 'session.open' ? null : 'session',
@@ -84,7 +84,7 @@ test('malformed/oversized/conflicting fragments and account payloads are rejecte
   assert.equal(f.link.assembly, null);
 });
 
-test('DDL snapshots replace atomically, sort, reject stale revisions and expire', () => {
+test('DDL snapshots replace atomically, sort, and retain cached data past the transport TTL', () => {
   const f = fixture(); f.open();
   const items = [
     {id: 'later', title: '实验报告', courseName: '物理', dueAtMs: 1500000, status: 'open'},
@@ -100,8 +100,8 @@ test('DDL snapshots replace atomically, sort, reject stale revisions and expire'
   assert.equal(f.state().ddl.length, 2);
   f.advance(20000);
   assert.equal(f.state().connected, true);
-  assert.equal(f.state().ddlReady, false);
-  assert.equal(f.state().ddl.length, 0);
+  assert.equal(f.state().ddlReady, true);
+  assert.equal(f.state().ddl.length, 2);
 });
 
 test('QR only accepts a requested matrix and hides expired or dismissed codes', () => {
@@ -129,12 +129,12 @@ test('requests surface phone errors and timeouts without corrupting cached accou
   const f = fixture(); f.open();
   f.link.request('code'); const id = f.last().id;
   f.send('result', {status: 'error', code: 'ACCOUNT_NOT_READY'}, {replyTo: id});
-  assert.match(f.state().error, /绑定校园卡/);
+  assert.match(f.state().error, /账号绑定/);
   assert.equal(f.state().codeLoading, false);
   f.link.request('sync');
   f.advance(20000); f.send('session.ping'); f.advance(10000);
   assert.equal(f.state().syncing, false);
-  assert.match(f.state().error, /没有响应/);
+  assert.match(f.state().error, /未响应/);
   f.send('session.close');
   assert.deepEqual(f.state().ddl, []);
   assert.equal(f.state().code, null);
@@ -200,7 +200,7 @@ test('snapshot resynchronizes a delayed opening clock without moving it backward
 });
 
 
-test('timetable is atomic, revisioned, expires and clears with the session', () => {
+test('timetable outlives the session TTL and clears only on explicit revocation', () => {
   const f = fixture(); f.open();
   const item = {name: '物理😀', location: '教学楼 201', startAtMs: 1050000, endAtMs: 1100000};
   f.send('schedule.snapshot', {revision: 2, validUntilMs: 1020000, items: [item]});
@@ -211,7 +211,7 @@ test('timetable is atomic, revisioned, expires and clears with the session', () 
   f.send('schedule.snapshot', {revision: 3, validUntilMs: 1020000, items: [{...item, endAtMs: 0}]});
   assert.equal(f.last().body.code, 'INVALID_PAYLOAD');
   assert.equal(f.state().schedule.length, 1);
-  f.advance(20000); assert.equal(f.state().schedule.length, 0);
+  f.advance(20000); assert.equal(f.state().schedule.length, 1);
   f.send('schedule.snapshot', {revision: 3, validUntilMs: 1050000, items: [item]});
   f.send('session.clear'); assert.equal(f.state().schedule.length, 0);
 });
@@ -239,4 +239,51 @@ test('malformed reminder times reject the entire snapshot', () => {
   f.send('ddl.snapshot', {revision: 1, validUntilMs: 1200000, items: [
     {id: 'a', title: '作业', courseName: '', dueAtMs: 1100000, status: 'open', remindAtMs: ['invalid']} ]});
   assert.equal(f.last().body.code, 'INVALID_PAYLOAD'); assert.equal(f.state().ddlReady, false);
+});
+
+
+test('cached account and resources survive heartbeat loss, stop and a new process', () => {
+  const f = fixture(); f.open();
+  f.send('account.snapshot', {revision: 1, validUntilMs: 1020000, data: {name: '张三', studentId: '00123'}});
+  f.send('ddl.snapshot', {revision: 1, validUntilMs: 1020000, items: [{id: 'a', title: '作业', courseName: '数学', dueAtMs: 9000000, status: 'open'}]});
+  f.send('schedule.snapshot', {revision: 1, validUntilMs: 1020000, items: [{name: '物理', location: '201', startAtMs: 8000000, endAtMs: 9000000}]});
+  const saved = JSON.parse(JSON.stringify(f.link.exportCache()));
+  f.advance(7200000); f.link.reset(false);
+  assert.equal(f.state().connected, false); assert.equal(f.state().name, '张三');
+  assert.equal(f.state().ddl.length, 1); assert.equal(f.state().schedule.length, 1);
+  const restarted = fixture({cache: saved});
+  assert.equal(restarted.state().name, '张三'); assert.equal(restarted.state().ddl.length, 1);
+  assert.equal(restarted.state().connected, false); assert.equal(restarted.state().code, null);
+  assert.equal('session' in saved, false); assert.equal('code' in saved, false);
+  restarted.open(); assert.equal(restarted.state().name, '张三');
+  restarted.send('session.hello', {nonce: 'next', versions: [1]});
+  restarted.send('session.open', {nonce: 'next', sessionId: 'other', bindingId: 'other-owner', phoneTimeMs: 1000000, leaseUntilMs: 2000000});
+  assert.equal(restarted.state().name, ''); assert.equal(restarted.state().ddl.length, 0);
+});
+
+test('positive snapshot receipts wait for persistence; failed writes are reported', () => {
+  const writes = [];
+  const f = fixture({onCache(cache, done) { writes.push({cache, done}); }});
+  f.open(); writes.shift().done();
+  f.send('account.snapshot', {revision: 1, validUntilMs: 2000000, data: {name: '张三', studentId: '00123'}});
+  assert.equal(f.last().type, 'session.opened');
+  writes.shift().done('DISK_FULL'); assert.equal(f.last().body.code, 'STORAGE_FAILED');
+  f.send('account.snapshot', {revision: 1, validUntilMs: 2000000, data: {name: '张三', studentId: '00123'}});
+  writes.shift().done(); assert.equal(f.last().body.status, 'ok');
+  f.send('session.clear'); const deletion = writes.shift();
+  assert.equal(deletion.cache.owner, null); assert.equal(deletion.cache.account, null);
+  deletion.done(); assert.equal(f.last().body.status, 'ok');
+});
+
+test('offline credentials require a tested vault, unlimited authorization and durable save', () => {
+  let installed;
+  const f = fixture({offlineEnabled: () => true, onAuthorization(owner, grant, done) { installed = {owner, grant, done}; }});
+  f.open();
+  const credential = {cardID: 'test', privateKey: '0'.repeat(63) + '1', publicKey: '02' + '0'.repeat(64), authorInfo: '5638', deviceChecksum: 255, expiresAt: 2000, totalUses: null};
+  f.send('campusCode.authorization', {credential: {...credential, totalUses: 1}});
+  assert.equal(f.last().body.code, 'INVALID_PAYLOAD'); assert.equal(installed, undefined);
+  f.send('campusCode.authorization', {credential});
+  assert.equal(installed.owner, 'binding'); installed.done(); assert.equal(f.last().body.status, 'ok');
+  assert.equal(JSON.stringify(f.link.exportCache()).includes(credential.privateKey), false);
+  f.send('campusCode.authorization', {credential: null}); installed.done(); assert.equal(f.last().body.status, 'ok');
 });

@@ -5,7 +5,7 @@ const { normalize } = require('./lite-profile.cjs');
 function generatedProfile() {
   return {
     app: {
-      bundleName: 'com.geekpie.techpie.watch', vendor: 'geekpie',
+      bundleName: 'club.geekpie.techpie.wear', vendor: 'geekpie',
       version: { code: 1, name: '0.1.0' }, appEnvironments: [],
       apiVersion: { compatible: 50100018, target: 50100018, compileSdkVersion: '26.0.0' }
     },

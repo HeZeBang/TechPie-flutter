@@ -36,14 +36,13 @@ class TechPieWearDataSource implements WearDataSource {
   Future<WearAccount> account() async {
     final session = auth.session;
     if (session == null) throw const WearFailure('ACCOUNT_NOT_READY');
-    final campus = accounts.cpdailyNode.account;
+    final campus = accounts.idsAccount;
     // Use a single identity source for both fields, never combine unrelated accounts.
     final name = campus == null ? session.userName : campus.name ?? '';
-    final studentId = campus == null ? session.studentId : campus.sid ?? '';
+    final studentId = campus == null ? session.studentId : campus.idsStudentId;
     final ecardId = await campusCard.readOpenId();
     return WearAccount(
-      scope:
-          jsonEncode([session.userId, campus?.account, campus?.sid, ecardId]),
+      scope: jsonEncode([session.userId, campus?.account, campus?.idsStudentId, ecardId]),
       name: name,
       studentId: studentId,
     )..toJson();
@@ -58,9 +57,7 @@ class TechPieWearDataSource implements WearDataSource {
       throw const WearFailure('SERVICE_UNAVAILABLE', retryable: true);
     }
     return assignments.visibleAssignments.map((assignment) {
-      final id = sha256
-          .convert(utf8.encode(AssignmentOverrides.keyFor(assignment)))
-          .toString();
+      final id = sha256.convert(utf8.encode(AssignmentOverrides.keyFor(assignment))).toString();
       final complete = assignments.isCompleted(assignment);
       return WearDdl(
         id: id,
@@ -133,6 +130,18 @@ class TechPieWearDataSource implements WearDataSource {
     );
   }
 
-  String _truncate(String value, int count) =>
-      String.fromCharCodes(value.runes.take(count));
+  Future<Map<String, Object?>?> offlineCredential() async {
+    final before = await account();
+    final card = await campusCard.runtime.cards.currentCard();
+    if (card == null ||
+        !card.status.permitsPayment ||
+        card.ownerName.trim() != before.name.trim()) {
+      return null;
+    }
+    final credential = await campusCard.runtime.offlinePayments.exportForWatch(card.id);
+    if ((await account()).scope != before.scope) throw const WearFailure('SESSION_MISMATCH');
+    return credential?.toMessage();
+  }
+
+  String _truncate(String value, int count) => String.fromCharCodes(value.runes.take(count));
 }

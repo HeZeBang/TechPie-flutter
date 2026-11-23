@@ -48,22 +48,11 @@ phone's selected semester. A snapshot contains at most 50 complete course
 blocks; the watch shows a truncation message when needed. Old peers negotiate
 their supported resources. Each resource has its own revision and receipt.
 
-The phone's DDL reminder switch sends an opt-in in `ddl.snapshot`. The watch
-checks `remindAtMs` against the phone-calibrated clock and vibrates locally using
-`@system.vibrator` / `ohos.permission.VIBRATE`. Opt-in is off on each connection.
-Only future triggers fire, once, while the watch app is open and the P2P session
-is valid. Hiding/closing the app, disconnecting, logging out or the 24-hour lease
-expiring clears the session. There is no background delivery through this path.
-The existing native phone-notification integration is not exposed by this
-switch; Wear Engine `NOTIFY` and remote-app launch remain unapproved.
+The phone's DDL reminder switch sends an opt-in in `ddl.snapshot`. The watch checks cached `remindAtMs` against the phone-calibrated clock and vibrates locally using `@system.vibrator` / `ohos.permission.VIBRATE` while the app is in the foreground. Communication loss preserves the snapshot. Lite apps provide no background process after exit. Wear Engine `NOTIFY` and remote app launch remain unapproved.
 
-For device acceptance, install matching signed companions, open the watch app,
-and connect through Settings → HUAWEI WATCH on Android. Check name/student ID,
-DDL receipt, seven-day courses (including a custom session and exam), QR scan
-and expiry, and a future reminder while the watch app stays open. Then check
-app hide, disconnect, account switch and reconnect clear old data and reminder
-consent. Confirm the Android certificate matches the watch's configured phone
-fingerprint; a debug APK needs the explicit debug-fingerprint override above.
+Version 0.4.2 treats P2P as a synchronization channel. First authorize and select the watch in Android Settings → HUAWEI WATCH. Later launches restore the saved pairing and synchronize automatically while both applications can run. Account, timetable and deadlines remain available from private watch files after disconnect and restart. The offline-campus-code switch transfers an existing unlimited-use grant only after the watch vault passes its native self-test. See [interaction design](DESIGN.md) for storage, signing and lifecycle details.
+
+Device acceptance uses matching signed companions. Check Crown switching and right-swipe navigation, the default campus-code screen, cached content after both app exit and full disconnection, automatic sync in both launch orders, logout/account isolation, and local-code latency. Validate optical scanning separately. Keep signing material and credential payloads out of logs and artifacts.
 
 Vendor vibration API: https://developer.huawei.com/consumer/cn/doc/harmonyos-references/js-apis-system-vibrate/
 
@@ -76,11 +65,8 @@ The local-vibration permission declares its reason and `MainAbility` in-use
 scene in `module.reqPermissions`. Keep permission declarations there; the
 source Lite schema does not accept `abilities.permissions`.
 
-The page loads Wear Engine after first render (`onReady`) and the vibration
-module when a reminder fires. Each list item has one child flex container.
-Initialization errors appear on screen and in the lifecycle log. Startup after
-the reported black screen and the circular icons await GT 6 Pro acceptance.
+The application store owns Wear Engine and cache lifecycle; the page observes that store. Keep each generated `app.js` and page JS at or below 48 KiB. The packaging hook minifies ES5 output with Terser before BIN generation. Signing-subset and binary-QR licenses are retained in `entry/src/main/js/MainAbility/common/vendor`.
 
-Version 0.3.0 rebuilds the interface around glanceable content, capsule actions
-and vertical browsing. See [interaction design](DESIGN.md) for the HIG mapping,
-pixel values, platform features and pending device checks.
+The 0.3.1/0.3.2 acceptance established the explicit-dimension startup fix and circular icons. The 0.4.1 application and page bundles evaluated to booleans, and the GT 6 Pro showed a black screen. The 0.4.2 build preserves the final expression and checks that each entry returns its ViewModel. The device accepted the package.
+
+On GT 6 Pro with 0.4.3, Android reported a ready session and the watch acknowledged the account and deadline snapshots. The schedule snapshot failed with `SERVICE_UNAVAILABLE` while the phone timetable source reported an error. The connection subsequently dropped. Recovery after sleep, navigation and offline code generation still need device verification. The receiver test covers an undeliverable startup announcement when the phone opens second.

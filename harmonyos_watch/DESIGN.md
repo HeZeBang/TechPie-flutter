@@ -1,66 +1,54 @@
 # Watch interaction design
 
-TechPie Watch provides quick access to campus codes, the next class, deadlines and account identity on HUAWEI WATCH GT 6 Pro. Its interface follows Apple's watchOS Human Interface Guidelines for glanceable content, shallow navigation, readable text and direct actions. The implementation uses HarmonyOS Lite components and the device's system font.
+TechPie Watch opens on the campus code. Turning the Crown or swiping vertically moves through campus code, timetable and deadlines. A rightward swipe returns from a detail view; at the root it exits the app. The GT 6 Pro implementation follows watchOS principles for glanceable content and shallow navigation using HarmonyOS Lite controls and system fonts.
 
-## Information hierarchy
+## Round-screen layout
 
-The home screen presents the next class and the campus-code action first. Scrolling reveals the timetable entry, the next deadline, the deadline list, account details and connection help. Each destination returns directly home through a visible button or the system back action.
+The 466 px canvas is black. Each of the three pages presents one primary item, with neutral capsule actions and a restrained teal accent. Course and deadline lists open as details. The account view opens from the campus-code title. Titles, rows and containers have explicit Lite dimensions. The custom text-enlargement control remains removed.
 
-| View | Primary content | Actions |
-| --- | --- | --- |
-| Home | Next class, start time and location; next deadline | Open campus code, timetable, deadlines, account or help |
-| Timetable | One campus day, ordered course blocks | Previous/next day across the seven-day snapshot, sync, home |
-| Deadlines | Open tasks, due time, overdue/near-due label | Scroll, previous/next six-item group, sync, home |
-| Campus code | Black modules on a white canvas and remaining validity | Refresh, home |
-| Account | Name, student ID and connection state | Sync, text size, home |
-| Connection help | Pair in Huawei Health, then connect from TechPie | Retry, home |
-
-Read-only cards carry content. Capsule buttons carry actions. Text names every action; status and urgency also have explicit labels. The app uses native vertical lists for touch and Crown scrolling. Huawei's Lite Wearable guide identifies `list`, `slider` and `swiper` as Crown-enabled components. Crown behavior on the target firmware awaits GT 6 Pro acceptance. Crown presses remain system-owned.
-
-## Visual system
-
-The 466-logical-pixel round target uses a black canvas, neutral cards and one blue action accent. Amber marks due-state labels, accompanied by text. Device system fonts provide Chinese and Latin glyphs. Apple font binaries and SF Symbols are not embedded.
-
-| Role | Source size |
+| Element | Dimensions / size |
 | --- | --- |
-| Page title | 38 px |
-| Card headline | 32 px |
-| Primary action | 45 px |
-| Standard action | 42 px |
-| Supporting text | 26 px |
-| Caption / status | 24 px |
-| Primary and secondary action height | 88 px |
-| Card / primary action width | 336 px |
-| Round-edge leading/trailing space | 56 px |
+| Main title | 32 px, centered below the round edge |
+| Glance headline | 36 px, 320 px wide |
+| Supporting content | 24 px |
+| Status | 21 px |
+| Main action | 290 × 76 px |
+| Detail card | 320 × 196 px |
+| Campus-code canvas | 264 × 264 px |
 
-Apple's watchOS typography guidance specifies a 16-point default and 12-point minimum. Its accessibility guidance gives a 44-by-44-point default control size and a 28-by-28-point minimum. The pixel values above are implementation choices for GT 6 Pro; physical readability and touch comfort require device acceptance. The account view provides a 140-percent text option for the current app session.
-Content text scales by semantic role. Action labels use large fixed sizes; controls retain their touch area and content
-remains vertically scrollable. Source defaults are in `pages/index/index.css`;
-the scale values live in `pages/index/index.js`.
+The vertical native `swiper` owns Crown focus on the root. Native `list` owns it in details through `rotation({focus: true})`. Root pages contain stacks rather than nested lists. The QR encoder uses byte mode, error correction M, integer-sized modules and a quiet zone of at least four modules. Circular launcher icons preserve the original red P pixels.
 
-Standard actions fill the available content width. Day navigation places two text buttons in one row. Content rows scroll vertically, with one flex child per Lite `list-item`. Each view keeps contextual actions close to its content. The QR view also scrolls so refresh and back retain full-height touch targets.
+## Data and connection lifecycle
 
-The QR canvas is 264 by 264 pixels. Integer-sized black modules retain a quiet zone of at least four modules. The code's expiry and refresh behavior continue to use the phone-calibrated session clock. The launcher icons retain the original red P pixels inside an exact circular alpha mask.
+Account, timetable and deadlines are stored in the app's private files under a stable account binding. Transport closure, heartbeat loss, sleep and app exit end the session while preserving cached data. The next launch reads that data before synchronization. Last-sync labels distinguish cached content from a current sync. The seven-day timetable and deadline window advance only when the phone provides a new snapshot.
 
-## Lifecycle and permissions
+Android remembers the explicitly selected watch and its signing identity. Foreground launch/resume, native reconnection and a watch `peer.ready` signal trigger a fresh authenticated handshake and snapshot sync without repeating an already granted permission prompt. Retries run only while the phone app is in the foreground. Huawei Health must have paired and connected the devices. Lite apps stop running after exit; synchronization resumes when both apps can run.
 
-First paint precedes native Wear Engine initialization. Startup failures appear on screen and in the lifecycle log. Vibration loads when a reminder fires. Account, timetable, deadline and code data continue over the approved device-manager P2P channel. Local reminders require phone opt-in, a valid connection and a foreground watch app. Hiding the app clears the session and code.
+Logout, account changes and explicit revocation clear the owner's cached data and offline credential. When disconnected, Android records a pending clear and drains it before a new account binding. A disconnected watch receives that revocation on the next sync.
 
-Apple-specific system integrations such as SwiftUI controls, Dynamic Type, complications, Always On and watchOS notifications require an Apple Watch target. The GT 6 Pro build uses its available platform features. Its approved Wear Engine scope covers basic device information and P2P; notification delivery and remote app launch remain unapproved.
+## Local campus codes
 
-## Acceptance status
+The phone switch explicitly authorizes copying an existing, unexpired, unlimited-use campus-code grant and its signing key to the selected watch. Enrollment does not activate or renew a grant. Limited-use grants remain on the phone because two independent devices cannot share an offline usage counter.
 
-The Huawei SDK compiled the redesigned page, and its minified output fits the 48 KiB project page limit. Device testing is deferred at the user's request. Pending checks cover first paint after the reported black screen, round-screen clipping, long names, empty/loading/error states, touch and Crown navigation, code scanning/expiry, all synchronized resources and reminder/session cleanup. A successful build records source compatibility; device results determine runtime acceptance.
+The watch vault uses a native HUKS AES-256-GCM key, fresh native random nonces and the account binding as authenticated data. A successful encrypt/decrypt self-test enables the offline capability. Credential files contain ciphertext; business-data snapshots and pairing metadata contain no signing keys.
 
-## Design references
+The watch constructs the existing five-byte time CRC, signs author-info plus CRC with SM2/SM3 and the protocol's default user ID, then builds the QR matrix locally. Native CSPRNG output supplies signature randomness. An expired grant stops local issuance. Online code snapshots remain a connected fallback and expire after 30 seconds.
+
+The page accesses the store through `getApp().data.api`. The Lite build separates transport, storage and QR encoding in `app.js` from signing and UI in the page bundle. Each generated JS file must fit 48 KiB. The runtime records elapsed milliseconds from local signing through canvas painting. The one-second target requires GT 6 Pro measurement.
+
+## Acceptance
+
+Host checks cover cache retention across restart, account isolation and revocation, persistence receipts, automatic pairing recovery, permission handling, encrypted credential storage and binary QR compatibility. The existing Dart implementation independently verifies the JavaScript SM2 signature and rejects a modified payload.
+
+Device acceptance for 0.4.2 covers Crown page switching, right-swipe return, default campus code, cache after app exit and full disconnection, reconnection with either app opened first, and local-code latency. Optical campus-terminal scanning is a separate acceptance step. Earlier 0.3.1/0.3.2 device confirmations establish startup and icon fixes; they do not validate this redesign. Reminder testing was stopped at the user's request.
+
+## References
 
 - [Designing for watchOS](https://developer.apple.com/design/human-interface-guidelines/designing-for-watchos)
-- [Layout](https://developer.apple.com/design/human-interface-guidelines/layout)
-- [Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons)
-- [Typography](https://developer.apple.com/design/human-interface-guidelines/typography)
-- [Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)
-- [Digital Crown](https://developer.apple.com/design/human-interface-guidelines/digital-crown)
-- [Scroll views](https://developer.apple.com/design/human-interface-guidelines/scroll-views)
-- [Apple Design Resources](https://developer.apple.com/design/resources/#watchos-apps)
+- [Apple layout](https://developer.apple.com/design/human-interface-guidelines/layout)
+- [Apple typography](https://developer.apple.com/design/human-interface-guidelines/typography)
+- [Apple accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)
+- [Huawei Lite Wearable guide](https://developer.huawei.com/consumer/en/doc/lite-wearable-guides/lite-wearable-bpta-guide/)
+- [Huawei Lite swiper](https://developer.huawei.com/consumer/en/doc/harmonyos-references/js-lite-components-container-swiper/)
 
-- [Huawei Lite Wearable guide](https://developer.huawei.com/consumer/cn/doc/lite-wearable-guides/lite-wearable-bpta-guide/)
+The device JerryScript profile disables regular expressions and ES2015 built-ins. Validation uses character checks; SM3 clears typed arrays with ES5 loops. The package hook rejects RegExp and BigInt syntax in the final generated AST. See the [OpenHarmony JerryScript profile](https://github.com/openharmony/third_party_jerryscript/blob/master/jerry-core/config.h).

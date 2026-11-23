@@ -1,8 +1,8 @@
 {
   "app": {
-    "bundleName": "com.geekpie.techpie.watch",
+    "bundleName": "club.geekpie.techpie.wear",
     "vendor": "geekpie",
-    "version": { "code": 4, "name": "0.3.0" }
+    "version": { "code": 10, "name": "0.4.3" }
   },
   "deviceConfig": {},
   "module": {

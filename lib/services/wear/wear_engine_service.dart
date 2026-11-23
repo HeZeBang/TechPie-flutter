@@ -14,6 +14,7 @@ class WearEngineService extends ChangeNotifier {
     required this.transport,
     required this.source,
     required this.metadata,
+    this.offlineCredential,
     DateTime Function()? now,
     this.timeout = const Duration(seconds: 30),
     this.retryDelays = const [Duration(seconds: 2), Duration(seconds: 5)],
@@ -22,17 +23,28 @@ class WearEngineService extends ChangeNotifier {
     if (raw != null) {
       try {
         final stored = jsonDecode(raw) as Map<String, dynamic>;
-        _binding = stored['binding'] as String?;
-        _scopeHash = stored['scopeHash'] as String?;
-        _pendingClear = stored['pendingClear'] as String?;
+        final savedFingerprint = stored['pairedFingerprint'] as String?;
+        // The former test app has separate storage and a different signer.
+        if (savedFingerprint?.startsWith('com.geekpie.techpie.watch_') != true) {
+          _binding = stored['binding'] as String?;
+          _scopeHash = stored['scopeHash'] as String?;
+          _pendingClear = stored['pendingClear'] as String?;
+          _savedDevice = stored['pairedDevice'] as String?;
+          _savedFingerprint = savedFingerprint;
+          _autoSync = stored['autoSync'] == true;
+          _offlineConsent = stored['offlineConsent'] == true;
+        }
         for (final resource in ['account', 'ddl', 'schedule']) {
-          _revisions[resource] =
-              (stored['revisions'] as Map?)?[resource] as int? ?? 0;
+          _revisions[resource] = (stored['revisions'] as Map?)?[resource] as int? ?? 0;
         }
       } catch (_) {
         _binding = null;
         _scopeHash = null;
         _pendingClear = 'userRevoked';
+        _autoSync = false;
+        _offlineConsent = false;
+        _savedDevice = null;
+        _savedFingerprint = null;
       }
     }
     _subscriptions.add(
@@ -48,11 +60,11 @@ class WearEngineService extends ChangeNotifier {
     _subscriptions.add(
       transport.states.listen((state) {
         _native.addAll(state);
-        if (state['service'] == 'unavailable' ||
-            state['device'] == 'disconnected') {
+        if (state['service'] == 'unavailable' || state['device'] == 'disconnected') {
           _invalidate('DEVICE_DISCONNECTED');
         }
         _changed();
+        if (state['device'] == 'connected') unawaited(_tryAutoSync());
       }),
     );
   }
@@ -60,6 +72,10 @@ class WearEngineService extends ChangeNotifier {
   final WearTransport transport;
   final WearDataSource source;
   final WearMetadata metadata;
+  final Future<Map<String, Object?>?> Function()? offlineCredential;
+  bool _offlineConsent = false, _offlineApplied = false;
+  bool get offlineCampusCodeEnabled => _offlineConsent;
+  bool get offlineCampusCodeApplied => _offlineApplied;
   final DateTime Function() now;
   final Duration timeout;
   final List<Duration> retryDelays;
@@ -85,6 +101,10 @@ class WearEngineService extends ChangeNotifier {
   DateTime? _lastCodeRequest;
   Set<String> _capabilities = {};
   Map<String, dynamic>? _lastError;
+  String? _savedDevice, _savedFingerprint;
+  bool _autoSync = false, _foreground = true, _autoBusy = false, _peerRestartPending = false;
+  Timer? _autoTimer;
+  bool get autoSyncEnabled => _autoSync;
   Timer? _leaseTimer;
   Timer? _heartbeatTimer;
   bool _heartbeatBusy = false;
@@ -93,11 +113,9 @@ class WearEngineService extends ChangeNotifier {
   bool get remindersEnabled => ready && _remindersEnabled;
   bool _watchRemindersEnabled = false;
   bool get watchRemindersEnabled => ready && _watchRemindersEnabled;
-  bool supports(String capability) =>
-      ready && _capabilities.contains(capability);
-  Map<String, String>? get displayAccount => ready && _displayAccount != null
-      ? Map<String, String>.unmodifiable(_displayAccount!)
-      : null;
+  bool supports(String capability) => ready && _capabilities.contains(capability);
+  Map<String, String>? get displayAccount =>
+      ready && _displayAccount != null ? Map<String, String>.unmodifiable(_displayAccount!) : null;
   bool get ready => _ready && now().millisecondsSinceEpoch < _leaseUntil;
 
   String _id() {
@@ -122,6 +140,7 @@ class WearEngineService extends ChangeNotifier {
 
   void _invalidate(String reason) {
     _watchRemindersEnabled = false;
+    _offlineApplied = false;
     _epoch++;
     _ready = false;
     _session = null;
@@ -144,6 +163,10 @@ class WearEngineService extends ChangeNotifier {
           'scopeHash': _scopeHash,
           'pendingClear': _pendingClear,
           'revisions': _revisions,
+          'pairedDevice': _savedDevice,
+          'pairedFingerprint': _savedFingerprint,
+          'autoSync': _autoSync,
+          'offlineConsent': _offlineConsent,
         }),
       );
   Map<String, dynamic> getStatus() => {
@@ -152,6 +175,7 @@ class WearEngineService extends ChangeNotifier {
         'capabilities': _capabilities.toList(),
         'sync': Map<String, dynamic>.from(_sync),
         'pendingClear': _pendingClear != null,
+        'autoSync': _autoSync,
         'lastError': _lastError,
       };
   Future<Map<String, dynamic>> refreshStatus() async {
@@ -169,13 +193,11 @@ class WearEngineService extends ChangeNotifier {
     return getStatus();
   }
 
-  Future<List<Map<String, dynamic>>> devices() =>
-      transport.devices().timeout(timeout);
+  Future<List<Map<String, dynamic>>> devices() => transport.devices().timeout(timeout);
 
   /// Called by the device picker before querying devices; never called at boot.
   Future<Map<String, dynamic>> requestPermissions({bool notify = false}) async {
-    final permissions =
-        await transport.authorize(notify: notify).timeout(timeout);
+    final permissions = await transport.authorize(notify: notify).timeout(timeout);
     _native['permission'] = permissions;
     _changed();
     return permissions;
@@ -185,6 +207,7 @@ class WearEngineService extends ChangeNotifier {
     String deviceId, {
     required String watchFingerprint,
     bool notify = false,
+    bool automatic = false,
   }) async {
     if (_opening) throw const WearFailure('RATE_LIMITED');
     if (watchFingerprint.isEmpty ||
@@ -194,11 +217,14 @@ class WearEngineService extends ChangeNotifier {
     }
     _opening = true;
     try {
-      await close();
+      await close(pauseReconnect: false);
       var epoch = _epoch;
-      await requestPermissions(notify: notify);
-      _remindersEnabled =
-          notify && (_native['permission'] as Map)['notify'] == true;
+      if (automatic) {
+        _native.addAll(await transport.status().timeout(timeout));
+      } else {
+        await requestPermissions(notify: notify);
+      }
+      _remindersEnabled = notify && (_native['permission'] as Map)['notify'] == true;
       if ((_native['permission'] as Map)['p2p'] != true) {
         throw const WearFailure('PERMISSION_DENIED');
       }
@@ -225,11 +251,15 @@ class WearEngineService extends ChangeNotifier {
         _revisions.updateAll((_, __) => 0);
         _sync.clear();
       }
-      _pendingClear =
-          null; // Explicit open authorizes a new binding after revocation.
+      _pendingClear = null; // Explicit open authorizes a new binding after revocation.
       await _persist();
       _checkEpoch(epoch);
       await _handshake(epoch);
+      _savedDevice = deviceId;
+      _savedFingerprint = watchFingerprint;
+      _autoSync = true;
+      await _persist();
+      if (_foreground) resumeSync();
       // A business refresh failure must not tear down a working transport.
       try {
         await refresh(
@@ -245,14 +275,64 @@ class WearEngineService extends ChangeNotifier {
     } catch (error) {
       _invalidate('SESSION_MISMATCH');
       await transport.close();
-      final failure = error is WearFailure
-          ? error
-          : const WearFailure('SERVICE_UNAVAILABLE', retryable: true);
+      final failure =
+          error is WearFailure ? error : const WearFailure('SERVICE_UNAVAILABLE', retryable: true);
       _error(failure);
       throw failure;
     } finally {
       _opening = false;
+      if (_peerRestartPending && !_autoBusy) {
+        _peerRestartPending = false;
+        unawaited(_tryAutoSync(peerRestarted: true));
+      }
       _changed();
+    }
+  }
+
+  /// Resume a previously authorized pairing without showing an authorization prompt.
+  void resumeSync() {
+    _foreground = true;
+    if (!_autoSync || _disposed) return;
+    _autoTimer ??= Timer.periodic(const Duration(seconds: 8), (_) {
+      unawaited(_tryAutoSync());
+    });
+    unawaited(_tryAutoSync());
+  }
+
+  void suspendSync() {
+    _foreground = false;
+    _autoTimer?.cancel();
+    _autoTimer = null;
+    if (ready) _invalidate('PEER_NOT_READY');
+  }
+
+  Future<void> _tryAutoSync({bool peerRestarted = false}) async {
+    if (!_foreground ||
+        !_autoSync ||
+        _disposed ||
+        _autoBusy ||
+        _opening ||
+        _savedDevice == null ||
+        _savedFingerprint == null ||
+        (!peerRestarted && ready)) {
+      return;
+    }
+    _autoBusy = true;
+    try {
+      final status = await transport.status().timeout(timeout);
+      if ((status['permission'] as Map?)?['p2p'] != true) return;
+      if (peerRestarted) _invalidate('PEER_NOT_READY');
+      await open(_savedDevice!, watchFingerprint: _savedFingerprint!, automatic: true);
+    } on WearFailure catch (error) {
+      _error(error);
+    } on TimeoutException {
+      _error(const WearFailure('SERVICE_UNAVAILABLE', retryable: true));
+    } finally {
+      _autoBusy = false;
+      if (_peerRestartPending) {
+        _peerRestartPending = false;
+        unawaited(_tryAutoSync(peerRestarted: true));
+      }
     }
   }
 
@@ -284,16 +364,14 @@ class WearEngineService extends ChangeNotifier {
         body['capabilities'] is! List) {
       throw const WearFailure('UNSUPPORTED_VERSION');
     }
-    _capabilities = (body['capabilities'] as List)
-        .whereType<String>()
-        .toSet()
-        .intersection({
+    _capabilities = (body['capabilities'] as List).whereType<String>().toSet().intersection({
       'account.display',
       'ddl.display',
       'schedule.display',
       'reminder.watchLocal',
       'campusCode.qrBytes',
       'campusCode.qrMatrix',
+      'campusCode.offlineSm2',
       'connection.heartbeat',
     });
     if (_remindersEnabled && (_native['permission'] as Map)['notify'] == true) {
@@ -415,8 +493,7 @@ class WearEngineService extends ChangeNotifier {
     Duration? responseTimeout,
     String? replyTo,
   }) async {
-    final message =
-        _message(type, body, handshake: handshake, replyTo: replyTo);
+    final message = _message(type, body, handshake: handshake, replyTo: replyTo);
     final pending = _Pending(expected);
     final id = message['id'] as String;
     _pending[id] = pending;
@@ -429,9 +506,7 @@ class WearEngineService extends ChangeNotifier {
         try {
           return await answer.timeout(responseTimeout ?? timeout);
         } on TimeoutException {
-          if (!retry ||
-              attempt >= retryDelays.length ||
-              (!handshake && !ready)) {
+          if (!retry || attempt >= retryDelays.length || (!handshake && !ready)) {
             throw const WearFailure('SYNC_TIMEOUT', retryable: true);
           }
           await Future<void>.delayed(retryDelays[attempt]);
@@ -443,6 +518,14 @@ class WearEngineService extends ChangeNotifier {
   }
 
   Future<void> _receive(Map<String, dynamic> message) async {
+    if (message['type'] == 'peer.ready' && message['sessionId'] == null) {
+      if (_opening || _autoBusy) {
+        _peerRestartPending = true;
+        return;
+      }
+      unawaited(_tryAutoSync(peerRestarted: true));
+      return;
+    }
     try {
       final type = message['type'] as String;
       final pending = _pending[message['replyTo']];
@@ -450,14 +533,10 @@ class WearEngineService extends ChangeNotifier {
           type == 'session.opened' ||
           (type == 'result' && pending != null && pending.expected != 'result');
       if (handshake) {
-        if (!_opening ||
-            message['sessionId'] != null ||
-            message['bindingId'] != null) {
+        if (!_opening || message['sessionId'] != null || message['bindingId'] != null) {
           return;
         }
-      } else if (!ready ||
-          message['sessionId'] != _session ||
-          message['bindingId'] != _binding) {
+      } else if (!ready || message['sessionId'] != _session || message['bindingId'] != _binding) {
         return; // Old session/account must never cause side effects or finish a request.
       }
       if (pending != null && (type == pending.expected || type == 'result')) {
@@ -470,8 +549,7 @@ class WearEngineService extends ChangeNotifier {
                 retryable: body['retryable'] == true,
               ),
             );
-          } else if (type == pending.expected &&
-              (type != 'result' || body['status'] == 'ok')) {
+          } else if (type == pending.expected && (type != 'result' || body['status'] == 'ok')) {
             pending.done.complete(message);
           }
         }
@@ -531,12 +609,10 @@ class WearEngineService extends ChangeNotifier {
       final body = Map<String, dynamic>.from(message['body'] as Map);
       switch (message['type']) {
         case 'sync.request':
-          final resources =
-              (body['resources'] as List?)?.whereType<String>().toList();
+          final resources = (body['resources'] as List?)?.whereType<String>().toList();
           if (resources == null ||
               resources.isEmpty ||
-              resources
-                  .any((r) => !['account', 'ddl', 'schedule'].contains(r))) {
+              resources.any((r) => !['account', 'ddl', 'schedule'].contains(r))) {
             throw const WearFailure('INVALID_PAYLOAD');
           }
           await _reply(message, content, {'status': 'ok', 'code': 'OK'});
@@ -555,8 +631,7 @@ class WearEngineService extends ChangeNotifier {
       }
     } catch (error) {
       if (epoch != _epoch || !ready) return;
-      final failure =
-          error is WearFailure ? error : const WearFailure('INVALID_PAYLOAD');
+      final failure = error is WearFailure ? error : const WearFailure('INVALID_PAYLOAD');
       await _reply(message, content, {
         'status': 'error',
         'code': failure.code,
@@ -567,19 +642,15 @@ class WearEngineService extends ChangeNotifier {
 
   Future<void> refresh({List<String>? resources}) {
     final selected = resources ??
-        ['account', 'ddl', 'schedule']
-            .where((resource) => supports('$resource.display'))
-            .toList();
-    final operation =
-        _refreshTail.catchError((Object _) {}).then((_) => _refresh(selected));
+        ['account', 'ddl', 'schedule'].where((resource) => supports('$resource.display')).toList();
+    final operation = _refreshTail.catchError((Object _) {}).then((_) => _refresh(selected));
     _refreshTail = operation.catchError((Object _) {});
     return operation;
   }
 
   Future<void> _refresh(List<String> resources) async {
     _requireReady();
-    if (resources.isEmpty ||
-        resources.any((r) => !['account', 'ddl', 'schedule'].contains(r))) {
+    if (resources.isEmpty || resources.any((r) => !['account', 'ddl', 'schedule'].contains(r))) {
       throw const WearFailure('INVALID_PAYLOAD');
     }
     final epoch = _epoch;
@@ -646,6 +717,14 @@ class WearEngineService extends ChangeNotifier {
       }
       if (epoch != _epoch) break;
     }
+    if (_offlineConsent && supports('campusCode.offlineSm2') && epoch == _epoch) {
+      try {
+        await _syncOfflineCredential(epoch);
+      } on WearFailure catch (error) {
+        firstError ??= error;
+        _error(error);
+      }
+    }
     _changed();
     if (firstError != null) throw firstError;
   }
@@ -656,8 +735,7 @@ class WearEngineService extends ChangeNotifier {
     final selected = items
         .where(
           (item) =>
-              item.dueAt.millisecondsSinceEpoch >= from &&
-              item.dueAt.millisecondsSinceEpoch < to,
+              item.dueAt.millisecondsSinceEpoch >= from && item.dueAt.millisecondsSinceEpoch < to,
         )
         .toList()
       ..sort((a, b) {
@@ -708,8 +786,7 @@ class WearEngineService extends ChangeNotifier {
           'title': item.title,
           'dueAtMs': item.dueAt.millisecondsSinceEpoch,
           'scheduledAtMs': at.millisecondsSinceEpoch,
-          'expiresAtMs':
-              at.add(const Duration(minutes: 10)).millisecondsSinceEpoch,
+          'expiresAtMs': at.add(const Duration(minutes: 10)).millisecondsSinceEpoch,
           'ddlRevision': _revisions['ddl']! + 1,
         });
       }
@@ -723,8 +800,33 @@ class WearEngineService extends ChangeNotifier {
     });
   }
 
-  Future<String> sendReminder(String reminderId) =>
-      transport.sendReminder(reminderId);
+  Future<String> sendReminder(String reminderId) => transport.sendReminder(reminderId);
+
+  Future<void> setOfflineCampusCodeEnabled(bool enabled) async {
+    _requireReady();
+    if (!supports('campusCode.offlineSm2') || offlineCredential == null) {
+      throw const WearFailure('UNSUPPORTED_OPERATION');
+    }
+    final epoch = _epoch;
+    _offlineConsent = enabled;
+    await _persist();
+    _checkEpoch(epoch);
+    await _syncOfflineCredential(epoch);
+    _changed();
+  }
+
+  Future<void> _syncOfflineCredential(int epoch) async {
+    await _checkAccount(epoch);
+    final credential = _offlineConsent ? await offlineCredential!() : null;
+    _checkEpoch(epoch);
+    await _checkAccount(epoch);
+    await _request('campusCode.authorization', {'credential': credential});
+    _checkEpoch(epoch);
+    _offlineApplied = credential != null;
+    if (_offlineConsent && credential == null) {
+      throw const WearFailure('OFFLINE_GRANT_REQUIRED');
+    }
+  }
 
   Future<void> setWatchRemindersEnabled(bool enabled) async {
     _requireReady();
@@ -741,7 +843,9 @@ class WearEngineService extends ChangeNotifier {
       if (epoch == _epoch) {
         _watchRemindersEnabled = previous;
         // A lost receipt leaves the peer's setting unknown. End that session.
-        if (error is WearFailure && error.code == 'SYNC_TIMEOUT') await close();
+        if (error is WearFailure && error.code == 'SYNC_TIMEOUT') {
+          await close(pauseReconnect: false);
+        }
       }
       rethrow;
     } finally {
@@ -811,8 +915,7 @@ class WearEngineService extends ChangeNotifier {
         code.issuedAt.add(const Duration(seconds: 120)).millisecondsSinceEpoch,
         _leaseUntil,
       ].reduce(min);
-      if (expiry <=
-          now().add(const Duration(seconds: 5)).millisecondsSinceEpoch) {
+      if (expiry <= now().add(const Duration(seconds: 5)).millisecondsSinceEpoch) {
         throw const WearFailure('CODE_EXPIRED');
       }
       final remaining = const Duration(seconds: 30) - elapsed.elapsed;
@@ -830,8 +933,7 @@ class WearEngineService extends ChangeNotifier {
           'validUntilMs': expiry,
           'payloadEncoding': 'base64',
           'payload': base64Encode(code.bytes),
-          if (_capabilities.contains('campusCode.qrMatrix'))
-            ...wearQrMatrix(code.bytes),
+          if (_capabilities.contains('campusCode.qrMatrix')) ...wearQrMatrix(code.bytes),
         },
         replyTo: replyTo,
         retry: false,
@@ -847,6 +949,11 @@ class WearEngineService extends ChangeNotifier {
     if (!['logout', 'accountChanged', 'userRevoked'].contains(reason)) {
       throw const WearFailure('INVALID_PAYLOAD');
     }
+    _autoSync = false;
+    _autoTimer?.cancel();
+    _autoTimer = null;
+    _offlineConsent = false;
+    _offlineApplied = false;
     _pendingClear = reason;
     // Stop existing sends/requests synchronously before issuing the clear command.
     final oldSession = _session;
@@ -872,9 +979,7 @@ class WearEngineService extends ChangeNotifier {
         await clear(reason: 'accountChanged');
       }
     } on WearFailure catch (error) {
-      if (epoch == _epoch && error.code == 'ACCOUNT_NOT_READY') {
-        await clear(reason: 'logout');
-      }
+      if (epoch == _epoch) _error(error);
     }
   }
 
@@ -888,7 +993,13 @@ class WearEngineService extends ChangeNotifier {
     await _persist();
   }
 
-  Future<void> close() async {
+  Future<void> close({bool pauseReconnect = true}) async {
+    if (pauseReconnect) {
+      _autoSync = false;
+      _autoTimer?.cancel();
+      _autoTimer = null;
+      await _persist();
+    }
     if (ready && _capabilities.contains('connection.heartbeat')) {
       try {
         await _request(
@@ -913,6 +1024,7 @@ class WearEngineService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _autoTimer?.cancel();
     _invalidate('PEER_NOT_READY');
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
