@@ -101,3 +101,6 @@ bool usesHorizontalWeekPaging() => isIos();
 
 /// Whether selection mode replaces the bottom tab bar with a native action bar.
 bool usesIosSelectionToolbar() => isIos();
+
+/// Whether the eCard auto-bind helper temporarily occupies the iOS system VPN.
+bool showsIosVpnTunnelNotice() => isIos();

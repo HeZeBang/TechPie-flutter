@@ -6,14 +6,18 @@ import 'package:flutter/services.dart';
 import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
 import '../services/third_party_auth_service.dart';
-import '../utils/platform.dart';
+import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_switch.dart';
 import '../widgets/adaptive_text_area.dart';
 import '../widgets/adaptive_text_field_group.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'ids_bind_page.dart';
 
@@ -27,7 +31,6 @@ class ThirdPartyBindPage extends StatefulWidget {
 }
 
 class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
-  final _formKey = GlobalKey<FormState>();
   final _accountCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _hydroOriginCtrl = TextEditingController(
@@ -35,20 +38,18 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
   );
   final _hydroDomainsCtrl = TextEditingController();
   bool _busy = false;
-  bool _obscure = true;
   bool _autoRenew = false;
   String? _inlineError;
 
   bool get _isIds => widget.platform == ThirdPartyPlatform.ids;
-
   bool get _isHydro => widget.platform == ThirdPartyPlatform.hydro;
   bool get _isGradescope => widget.platform == ThirdPartyPlatform.gradescope;
 
   Future<void> _dismissKeyboard() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    if (isIos()) {
+    try {
       await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
-    }
+    } catch (_) {}
   }
 
   @override
@@ -66,8 +67,6 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
       return;
     }
 
-    // Optimistically set to true so the native switch and Flutter state stay
-    // in sync. If the user cancels the native presenter, we'll revert to false.
     setState(() => _autoRenew = true);
 
     final ok = await showAdaptiveAlertDialog<bool>(
@@ -88,10 +87,26 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     );
 
     if (!mounted) return;
-
-    // If user didn't accept, revert to false so native presenter and switch
-    // UI are consistent.
     setState(() => _autoRenew = ok == true);
+  }
+
+  bool _validateForSubmit() {
+    String? message;
+    if (_accountCtrl.text.trim().isEmpty) {
+      message = '请填写${_isGradescope ? '邮箱' : '用户名'}';
+    } else if (_passwordCtrl.text.isEmpty) {
+      message = '请填写密码';
+    } else if (_isHydro && _hydroOriginCtrl.text.trim().isEmpty) {
+      message = '请填写 Hydro 站点 origin';
+    } else if (_isHydro) {
+      final domains = _hydroDomainsCtrl.text
+          .split(RegExp(r'[\s,]+'))
+          .where((value) => value.trim().isNotEmpty);
+      if (domains.isEmpty) message = '至少填写一个课程 domain';
+    }
+
+    setState(() => _inlineError = message);
+    return message == null;
   }
 
   Future<void> _submit() async {
@@ -124,328 +139,195 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
       setState(() => _inlineError = null);
       await _dismissKeyboard();
       if (!mounted) return;
-      if (!isIos()) {
-        showAdaptiveFeedback(
-          context: context,
-          message: '${widget.platform.label} 绑定成功',
-          style: AdaptiveFeedbackStyle.success,
-        );
-      }
+      showAdaptiveFeedback(
+        context: context,
+        message: '${widget.platform.label} 绑定成功',
+        style: AdaptiveFeedbackStyle.success,
+      );
       await maybePopAdaptivePage<void>(context);
     } on ThirdPartyBindException catch (e) {
       if (!mounted) return;
-      if (isIos()) {
-        setState(() => _inlineError = e.message);
-      } else {
-        showAdaptiveFeedback(
-          context: context,
-          message: e.message,
-          style: AdaptiveFeedbackStyle.error,
-        );
-      }
+      setState(() => _inlineError = e.message);
     } catch (e) {
       if (!mounted) return;
-      if (isIos()) {
-        setState(() => _inlineError = e.toString());
-      } else {
-        showAdaptiveFeedback(
-          context: context,
-          message: e.toString(),
-          style: AdaptiveFeedbackStyle.error,
-        );
-      }
+      setState(() => _inlineError = e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  bool _validateForSubmit() {
-    if (!isIos()) {
-      return _formKey.currentState?.validate() ?? true;
-    }
-
-    String? message;
-    if (_accountCtrl.text.trim().isEmpty) {
-      message = '请填写${_isGradescope ? '邮箱' : '用户名'}';
-    } else if (_passwordCtrl.text.isEmpty) {
-      message = '请填写密码';
-    } else if (_isHydro && _hydroOriginCtrl.text.trim().isEmpty) {
-      message = '请填写 Hydro 站点 origin';
-    } else if (_isHydro) {
-      final domains = _hydroDomainsCtrl.text
-          .split(RegExp(r'[\s,]+'))
-          .where((value) => value.trim().isNotEmpty);
-      if (domains.isEmpty) message = '至少填写一个课程 domain';
-    }
-
-    setState(() => _inlineError = message);
-    return message == null;
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isIds) {
       return IdsBindPage(
-        legacyAccount: ServiceProvider.of(context).thirdPartyAuthService.idsAccount,
+        legacyAccount:
+            ServiceProvider.of(context).thirdPartyAuthService.idsAccount,
       );
     }
-    if (isIos()) {
-      return _buildIosBindPage(context);
-    }
 
-    final useLegacyIosChrome = usesLegacyIosChrome();
-    final topInset = useLegacyIosChrome
-        ? 16.0
-        : 16 + adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
-
-    return Scaffold(
-      extendBodyBehindAppBar: !useLegacyIosChrome,
-      appBar: BlurredAppBar(title: Text('Bind ${widget.platform.label}')),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            topInset,
-            16,
-            16,
-          ),
-          children: [
-            if (_inlineError != null) ...[
-              _InlineBindFeedback(message: _inlineError!),
-              const SizedBox(height: 12),
-            ],
-            TextFormField(
-              controller: _accountCtrl,
-              autofillHints: const [AutofillHints.username],
-              keyboardType: _isGradescope
-                  ? TextInputType.emailAddress
-                  : TextInputType.text,
-              decoration: InputDecoration(
-                labelText: _isGradescope ? '邮箱' : '用户名',
-                border: const OutlineInputBorder(),
-              ),
-              validator: (v) => (v == null || v.trim().isEmpty) ? '必填' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _passwordCtrl,
-              autofillHints: const [AutofillHints.password],
-              obscureText: _obscure,
-              decoration: InputDecoration(
-                labelText: '密码',
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscure ? Icons.visibility_off : Icons.visibility,
-                  ),
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                ),
-              ),
-              validator: (v) => (v == null || v.isEmpty) ? '必填' : null,
-            ),
-            if (_isHydro) ...[
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _hydroOriginCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Hydro 站点 origin',
-                  helperText: '默认 https://acm.shanghaitech.edu.cn',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? '必填' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _hydroDomainsCtrl,
-                minLines: 2,
-                maxLines: 6,
-                decoration: const InputDecoration(
-                  labelText: '课程 domain (每行一个,或用逗号分隔)',
-                  helperText: '例: SI100B_2025_Autumn',
-                  border: OutlineInputBorder(),
-                  alignLabelWithHint: true,
-                ),
-                validator: (v) {
-                  final list = (v ?? '')
-                      .split(RegExp(r'[\s,]+'))
-                      .where((e) => e.trim().isNotEmpty);
-                  return list.isEmpty ? '至少填一个 domain' : null;
-                },
-              ),
-            ],
-            const SizedBox(height: 8),
-            if (isIos())
-              MergeSemantics(
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('自动更新 Token'),
-                  subtitle: const Text('过期前 48 小时内自动重登,免去手动重绑'),
-                  trailing: AdaptiveSwitch(
-                    value: _autoRenew,
-                    onChanged: (v) => unawaited(_onAutoRenewChanged(v)),
-                  ),
-                  onTap: () => unawaited(_onAutoRenewChanged(!_autoRenew)),
-                ),
-              )
-            else
-              CheckboxListTile(
-                value: _autoRenew,
-                onChanged: (v) => unawaited(_onAutoRenewChanged(v ?? false)),
-                title: const Text('自动更新 Token'),
-                subtitle: const Text('过期前 48 小时内自动重登,免去手动重绑'),
-                controlAffinity: ListTileControlAffinity.leading,
-                contentPadding: EdgeInsets.zero,
-              ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _busy ? null : () => unawaited(_submit()),
-              child: _busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('绑定'),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '凭据将通过 HTTPS 发送到 techpie 后端,后端代为登录上游平台并返回 token。'
-              'token 与原始 payload 在本设备加密保存;开启云同步后会以端到端加密形式备份至 Casdoor。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
-      ),
+    final colors = context.tpColors;
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
+      context,
+      extra: TpTokens.space4,
     );
-  }
-
-  Widget _buildIosBindPage(BuildContext context) {
-    final theme = Theme.of(context);
-    final secondaryLabel = theme.colorScheme.onSurfaceVariant;
+    final title = '绑定 ${widget.platform.label}';
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: IosNativeNavigationBar(
-        title: 'Bind ${widget.platform.label}',
-        leadingItems: [
-          if (Navigator.canPop(context))
-            const IosNativeNavigationBarItem(
-              id: 'back',
-              title: '返回',
-              sfSymbol: 'chevron.left',
-              accessibilityLabel: '返回',
-            ),
-        ],
-        onItemPressed: (id) {
-          if (id == 'back') {
-            unawaited(maybePopAdaptivePage<void>(context));
-          }
-        },
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: title,
+          leadingItems: [
+            if (Navigator.canPop(context))
+              const IosNativeNavigationBarItem(
+                id: 'back',
+                title: '返回',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+              ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') unawaited(maybePopAdaptivePage<void>(context));
+          },
+        ),
+        material: () => BlurredAppBar(title: Text(title)),
       ),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-          children: [
-            if (_inlineError != null) ...[
-              _InlineBindFeedback(message: _inlineError!),
-              const SizedBox(height: 16),
-            ],
-            AdaptiveTextFieldGroup(
-              items: [
-                AdaptiveTextFieldGroupItem(
-                  placeholder: _isGradescope ? '邮箱' : '用户名',
-                  controller: _accountCtrl,
-                  keyboardType: _isGradescope
-                      ? TextInputType.emailAddress
-                      : TextInputType.text,
-                  textInputAction: TextInputAction.next,
+      body: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: EdgeInsets.fromLTRB(
+          TpTokens.pageHorizontalPadding,
+          topInset,
+          TpTokens.pageHorizontalPadding,
+          AppShellMetrics.bottomContentPaddingOf(context) + TpTokens.space4,
+        ),
+        children: [
+          TpPageBody(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_inlineError != null) ...[
+                  _InlineBindFeedback(message: _inlineError!),
+                  const SizedBox(height: TpTokens.sectionGap),
+                ],
+                TpCard(
+                  leadingIcon:
+                      _isGradescope ? TpIcons.graduation : TpIcons.code,
+                  title: '${widget.platform.label} 账号凭据',
+                  padding: const EdgeInsets.fromLTRB(
+                    TpTokens.cardPaddingHorizontal,
+                    TpTokens.space1,
+                    TpTokens.cardPaddingHorizontal,
+                    TpTokens.space4,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AdaptiveTextFieldGroup(
+                        items: [
+                          AdaptiveTextFieldGroupItem(
+                            placeholder: _isGradescope ? '邮箱' : '用户名',
+                            controller: _accountCtrl,
+                            keyboardType: _isGradescope
+                                ? TextInputType.emailAddress
+                                : TextInputType.text,
+                            textInputAction: TextInputAction.next,
+                            enabled: !_busy,
+                          ),
+                          AdaptiveTextFieldGroupItem(
+                            placeholder: '密码',
+                            controller: _passwordCtrl,
+                            obscureText: true,
+                            textInputAction: _isHydro
+                                ? TextInputAction.next
+                                : TextInputAction.done,
+                            enabled: !_busy,
+                            onSubmitted: (_) {
+                              if (!_isHydro) unawaited(_submit());
+                            },
+                          ),
+                        ],
+                      ),
+                      if (_isHydro) ...[
+                        const SizedBox(height: TpTokens.space3),
+                        AdaptiveTextFieldGroup(
+                          items: [
+                            AdaptiveTextFieldGroupItem(
+                              placeholder: 'Hydro 站点 Origin',
+                              controller: _hydroOriginCtrl,
+                              keyboardType: TextInputType.url,
+                              textInputAction: TextInputAction.next,
+                              enabled: !_busy,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '默认 https://acm.shanghaitech.edu.cn',
+                          style: TpTypography.itemMeta(colors),
+                        ),
+                        const SizedBox(height: TpTokens.space3),
+                        AdaptiveTextArea(
+                          placeholder: '课程 Domain（每行一个，或用逗号分隔）',
+                          controller: _hydroDomainsCtrl,
+                          minLines: 2,
+                          maxLines: 6,
+                          enabled: !_busy,
+                          textInputAction: TextInputAction.done,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '例：SI100B_2025_Autumn',
+                          style: TpTypography.itemMeta(colors),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-                AdaptiveTextFieldGroupItem(
-                  placeholder: '密码',
-                  controller: _passwordCtrl,
-                  obscureText: _obscure,
-                  textInputAction:
-                      _isHydro ? TextInputAction.next : TextInputAction.done,
-                  onSubmitted: (_) {
-                    if (!_isHydro) unawaited(_submit());
-                  },
+                const SizedBox(height: TpTokens.sectionGap),
+                TpCard(
+                  child: TpListRow(
+                    icon: TpIcons.refresh,
+                    iconColor: colors.infoBlue,
+                    title: '自动更新 Token',
+                    subtitle: '过期前 48 小时内自动重登，免去手动重绑',
+                    trailing: AdaptiveSwitch(
+                      value: _autoRenew,
+                      enabled: !_busy,
+                      onChanged: (value) =>
+                          unawaited(_onAutoRenewChanged(value)),
+                    ),
+                    onTap: _busy
+                        ? null
+                        : () => unawaited(_onAutoRenewChanged(!_autoRenew)),
+                  ),
+                ),
+                const SizedBox(height: TpTokens.space4),
+                AdaptiveButton(
+                  label: '绑定',
+                  icon: TpIcons.check,
+                  sfSymbol: 'checkmark',
+                  role: AdaptiveButtonRole.prominent,
+                  loading: _busy,
+                  height: 46,
+                  onPressed: _busy ? null : () => unawaited(_submit()),
+                ),
+                const SizedBox(height: TpTokens.space3),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: TpTokens.space2,
+                  ),
+                  child: Text(
+                    '凭据将通过 HTTPS 发送到 TechPie 后端，由后端代为登录上游平台并返回 Token。'
+                    'Token 与原始信息在本设备安全存储；开启云同步后会以端到端加密形式备份至 Casdoor。',
+                    style: TpTypography.itemMeta(colors).copyWith(height: 1.45),
+                  ),
                 ),
               ],
             ),
-            if (_isHydro) ...[
-              const SizedBox(height: 16),
-              AdaptiveTextFieldGroup(
-                items: [
-                  AdaptiveTextFieldGroupItem(
-                    placeholder: 'Origin',
-                    controller: _hydroOriginCtrl,
-                    keyboardType: TextInputType.url,
-                    textInputAction: TextInputAction.next,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '默认 https://acm.shanghaitech.edu.cn',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: secondaryLabel,
-                ),
-              ),
-              const SizedBox(height: 10),
-              AdaptiveTextArea(
-                placeholder: 'Domain',
-                controller: _hydroDomainsCtrl,
-                minLines: 2,
-                maxLines: 6,
-                textInputAction: TextInputAction.done,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '每行一个,或用逗号分隔\n例: SI100B_2025_Autumn',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: secondaryLabel,
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            MergeSemantics(
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('自动更新 Token'),
-                subtitle: Text(
-                  '过期前 48 小时内自动重登,免去手动重绑',
-                  style: TextStyle(color: secondaryLabel),
-                ),
-                trailing: AdaptiveSwitch(
-                  value: _autoRenew,
-                  onChanged: (value) => unawaited(_onAutoRenewChanged(value)),
-                ),
-                onTap: () => unawaited(_onAutoRenewChanged(!_autoRenew)),
-              ),
-            ),
-            const SizedBox(height: 18),
-            FilledButton(
-              onPressed: _busy ? null : () => unawaited(_submit()),
-              child: _busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('绑定'),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '凭据将通过 HTTPS 发送到 techpie 后端,后端代为登录上游平台并返回 token。'
-              'token 与原始 payload 仅在本设备加密保存。',
-              style: theme.textTheme.bodySmall?.copyWith(color: secondaryLabel),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -458,29 +340,30 @@ class _InlineBindFeedback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: scheme.errorContainer.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(14),
+    final colors = context.tpColors;
+    return TpCard(
+      color: colors.dangerRed.withValues(alpha: colors.isDark ? 0.16 : 0.08),
+      borderColor: colors.dangerRed.withValues(alpha: 0.25),
+      borderRadius: TpTokens.radiusS,
+      padding: const EdgeInsets.symmetric(
+        horizontal: TpTokens.space3,
+        vertical: TpTokens.space3,
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.info_outline, size: 18, color: scheme.onErrorContainer),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                message,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: scheme.onErrorContainer,
-                    ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(TpIcons.info, size: TpTokens.iconS, color: colors.dangerRed),
+          const SizedBox(width: TpTokens.space2),
+          Expanded(
+            child: Text(
+              message,
+              style: TpTypography.itemMeta(colors).copyWith(
+                color: colors.dangerRed,
+                fontWeight: FontWeight.w500,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
