@@ -106,6 +106,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    // Drain CNTabBar's 500ms PlatformViewGuard timer created on iOS mount.
+    await tester.pump(const Duration(milliseconds: 500));
   }
 
   testWidgets(

@@ -43,6 +43,7 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
       expect(find.text('今日课程'), findsOneWidget);
       expect(find.text('2 节'), findsOneWidget);
       expect(find.text('计算机体系结构 I'), findsOneWidget);

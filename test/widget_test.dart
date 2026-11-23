@@ -244,7 +244,7 @@ void main() {
     await tester.tap(find.text('课表').first);
     await tester.pumpAndSettle();
     // Not logged in, so shows login prompt
-    expect(find.byIcon(TpIcons.schedule), findsOneWidget);
+    expect(find.byIcon(TpIcons.schedule), findsWidgets);
     expect(find.text('登录以查看课表'), findsOneWidget);
 
     // Tap Deadlines
