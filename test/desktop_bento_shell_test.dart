@@ -20,6 +20,7 @@ import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/theme/theme.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
+import 'package:techpie/widgets/app_shell/app_destination.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_shell.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_item.dart';
@@ -28,11 +29,18 @@ import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
 import 'package:techpie/widgets/design_system/tp_brand_mark.dart';
 
 void main() {
-  Future<void> pumpApp(WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues({'privacy_accepted_v1': true});
+  Future<void> pumpApp(
+    WidgetTester tester, {
+    Map<String, Object> extraPrefs = const {},
+  }) async {
+    SharedPreferences.setMockInitialValues({
+      'privacy_accepted_v1': true,
+      ...extraPrefs,
+    });
     final storage = StorageService(await SharedPreferences.getInstance());
     final logger = DebugLogger();
     final http = LoggingHttpClient(logger);
+    addTearDown(http.close);
     final uniAuth = UniAuthService();
     final auth = AuthService(storage, http, uniAuth);
     final tpAuth = ThirdPartyAuthService(storage, http);
@@ -218,16 +226,138 @@ void main() {
     await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
 
-    final maskRow = find.byKey(const ValueKey('settings.mask-personal-info'));
-    expect(maskRow, findsOneWidget);
+    final debugRow = find.byKey(const ValueKey('settings.debug-mode'));
+    await tester.scrollUntilVisible(
+      debugRow,
+      240,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+    expect(debugRow, findsOneWidget);
     final switchFinder = find.descendant(
-      of: maskRow,
+      of: debugRow,
       matching: find.byType(Switch),
     );
     final before = tester.widget<Switch>(switchFinder).value;
-    await tester.tap(maskRow);
+    await tester.tap(debugRow);
     await tester.pumpAndSettle();
     final after = tester.widget<Switch>(switchFinder).value;
     expect(after, isNot(before));
+  });
+
+  testWidgets('DesktopShell restores persisted sidebar collapsed state',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpApp(tester, extraPrefs: {'desktop_sidebar_collapsed': true});
+    expect(
+      tester.getSize(find.byType(DesktopSidebar)).width,
+      closeTo(DesktopSidebarTokens.collapsedWidth, 0.5),
+    );
+  });
+
+  testWidgets(
+      'DesktopSidebar renders expanded urgent/calm/99+ badges and collapsed dot with tooltip',
+      (tester) async {
+    const destinations = [
+      AppDestination(
+        label: '首页',
+        icon: TpIcons.home,
+        selectedIcon: TpIcons.home,
+        sfSymbol: 'house',
+        selectedSfSymbol: 'house.fill',
+        page: SizedBox(),
+      ),
+      AppDestination(
+        label: 'Deadlines',
+        icon: TpIcons.deadlines,
+        selectedIcon: TpIcons.deadlines,
+        sfSymbol: 'checkmark.circle',
+        selectedSfSymbol: 'checkmark.circle.fill',
+        page: SizedBox(),
+      ),
+    ];
+    final tp = TpColors.light();
+    Widget wrapSidebar({
+      required bool collapsed,
+      required SidebarBadgeData badge,
+    }) =>
+        MaterialApp(
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: tp.toColorScheme(),
+            extensions: [tp],
+          ),
+          home: Scaffold(
+            body: Row(
+              children: [
+                SizedBox(
+                  width: collapsed
+                      ? DesktopSidebarTokens.collapsedWidth
+                      : DesktopSidebarTokens.maxExpandedWidth,
+                  child: DesktopSidebar(
+                    destinations: destinations,
+                    selectedIndex: 0,
+                    collapsed: collapsed,
+                    badges: {1: badge},
+                    onSelected: (_) {},
+                    onToggleCollapsed: () {},
+                  ),
+                ),
+                const Expanded(child: SizedBox()),
+              ],
+            ),
+          ),
+        );
+
+    final badgeFinder = find.byKey(const ValueKey('sidebar-badge-Deadlines'));
+
+    // Urgent badge caps >99 at 99+ with dangerRed background.
+    await tester.pumpWidget(
+      wrapSidebar(
+        collapsed: false,
+        badge: const SidebarBadgeData(count: 120, urgent: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('99+'), findsOneWidget);
+    expect(
+      (tester.widget<Container>(badgeFinder).decoration! as BoxDecoration)
+          .color,
+      tp.dangerRed,
+    );
+
+    // Calm badge uses surfaceSubtle.
+    await tester.pumpWidget(
+      wrapSidebar(
+        collapsed: false,
+        badge: const SidebarBadgeData(count: 4, urgent: false),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('4'), findsOneWidget);
+    expect(
+      (tester.widget<Container>(badgeFinder).decoration! as BoxDecoration)
+          .color,
+      tp.surfaceSubtle,
+    );
+
+    // Collapsed mode swaps pill for dot + count in Tooltip.
+    await tester.pumpWidget(
+      wrapSidebar(
+        collapsed: true,
+        badge: const SidebarBadgeData(count: 5, urgent: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(badgeFinder, findsNothing);
+    expect(
+      find.byKey(const ValueKey('sidebar-badge-dot-Deadlines')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Deadlines (5)'), findsOneWidget);
   });
 }

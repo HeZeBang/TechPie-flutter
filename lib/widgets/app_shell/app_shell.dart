@@ -78,6 +78,7 @@ class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
   int _previousSelectedIndex = 0;
   bool _sidebarCollapsed = false;
+  bool _sidebarPrefLoaded = false;
 
   /// Per-tab navigation stacks, hero controllers, and primary scroll
   /// controllers. Used on iOS (like UITabBarController) and in DesktopShell so
@@ -233,8 +234,29 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_sidebarPrefLoaded) {
+      _sidebarPrefLoaded = true;
+      final storage = context
+          .dependOnInheritedWidgetOfExactType<ServiceProvider>()
+          ?.storageService;
+      if (storage != null) {
+        _sidebarCollapsed = storage.desktopSidebarCollapsed;
+      }
+    }
+  }
+
   void _onSidebarToggleCollapsed() {
-    setState(() => _sidebarCollapsed = !_sidebarCollapsed);
+    final next = !_sidebarCollapsed;
+    setState(() => _sidebarCollapsed = next);
+    final storage = context
+        .dependOnInheritedWidgetOfExactType<ServiceProvider>()
+        ?.storageService;
+    if (storage != null) {
+      unawaited(storage.setDesktopSidebarCollapsed(next));
+    }
   }
 
   Widget _buildPageView(

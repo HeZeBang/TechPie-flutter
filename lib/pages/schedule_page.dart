@@ -22,6 +22,7 @@ import '../services/ics/ics_export_service.dart';
 import '../services/ics/ics_file_saver.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
+import '../services/storage_service.dart';
 import '../services/third_party_auth_service.dart';
 import '../theme/theme.dart';
 import '../utils/adaptive_layout.dart';
@@ -89,6 +90,7 @@ class _SchedulePageState extends State<SchedulePage> {
   late AssignmentService _assignments;
   late AuthService _auth;
   late ThirdPartyAuthService _tpAuth;
+  late StorageService _storage;
   List<Course> _courses = [];
   List<Period> _periods = defaultPeriods.toList();
   int _currentWeek = 1;
@@ -98,10 +100,36 @@ class _SchedulePageState extends State<SchedulePage> {
   String? _displayedSemesterId;
   _ScheduleViewMode _viewMode = _ScheduleViewMode.week;
 
-  // Settings
-  bool _showSaturday = true;
-  bool _showSunday = true;
+  // Settings (persisted via StorageService; null weekend override uses
+  // smart auto-visibility based on whether the active semester has classes
+  // or exams on that day).
+  bool? _showSaturdayOverride;
+  bool? _showSundayOverride;
   bool _showGhostCourses = false;
+
+  bool get _showSaturday =>
+      _showSaturdayOverride ?? _semesterHasCoursesOnDay(6);
+  bool get _showSunday => _showSundayOverride ?? _semesterHasCoursesOnDay(7);
+
+  bool _semesterHasCoursesOnDay(int dayOfWeek) {
+    final table = _schedule.courseTable;
+    if (table != null) {
+      for (final course in table.courses) {
+        if (course.times.containsKey(dayOfWeek)) return true;
+        final dates = course.dates;
+        if (dates != null && dates.any((d) => d.weekday == dayOfWeek)) {
+          return true;
+        }
+      }
+    }
+    for (final custom in _schedule.customCourses) {
+      if (custom.effectiveWeekdays.contains(dayOfWeek)) return true;
+    }
+    for (final exam in _semesterExams) {
+      if (exam.due.weekday == dayOfWeek) return true;
+    }
+    return false;
+  }
 
   // Animation: track slide direction for week transitions
   // 1 = forward (next week), -1 = backward (previous week), 0 = no slide
@@ -127,6 +155,13 @@ class _SchedulePageState extends State<SchedulePage> {
       _assignments = services.assignmentService;
       _auth = services.authService;
       _tpAuth = services.thirdPartyAuthService;
+      _storage = services.storageService;
+      _viewMode = _storage.scheduleViewMode == 'agenda'
+          ? _ScheduleViewMode.agenda
+          : _ScheduleViewMode.week;
+      _showSaturdayOverride = _storage.scheduleShowSaturday;
+      _showSundayOverride = _storage.scheduleShowSunday;
+      _showGhostCourses = _storage.scheduleShowGhostCourses;
       _schedule.addListener(_onScheduleChanged);
       _assignments.addListener(_onAssignmentsChanged);
       _auth.addListener(_onAuthChanged);
@@ -893,6 +928,7 @@ class _SchedulePageState extends State<SchedulePage> {
                       onChanged: (mode) {
                         if (_viewMode == mode) return;
                         setState(() => _viewMode = mode);
+                        unawaited(_storage.setScheduleViewMode(mode.name));
                         if (mode == _ScheduleViewMode.week) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             if (!mounted || !_weekPageController.hasClients) {
@@ -1589,14 +1625,20 @@ class _SchedulePageState extends State<SchedulePage> {
       case 'source':
         unawaited(_showScheduleSource());
       case 'saturday':
-        setState(() => _showSaturday = !_showSaturday);
+        final nextSat = !_showSaturday;
+        setState(() => _showSaturdayOverride = nextSat);
+        unawaited(_storage.setScheduleShowSaturday(nextSat));
       case 'sunday':
-        setState(() => _showSunday = !_showSunday);
+        final nextSun = !_showSunday;
+        setState(() => _showSundayOverride = nextSun);
+        unawaited(_storage.setScheduleShowSunday(nextSun));
       case 'ghost':
+        final nextGhost = !_showGhostCourses;
         setState(() {
-          _showGhostCourses = !_showGhostCourses;
+          _showGhostCourses = nextGhost;
           _filterCoursesForWeek();
         });
+        unawaited(_storage.setScheduleShowGhostCourses(nextGhost));
       case 'addCustom':
         if (_canAddCustomCourses) _addCustomCourse();
       case 'exportCalendar':

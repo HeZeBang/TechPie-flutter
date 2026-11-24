@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
@@ -93,7 +92,6 @@ class _SettingsBody extends StatefulWidget {
 class _SettingsBodyState extends State<_SettingsBody> {
   String _appVersion = '';
   bool _checkingUpdate = false;
-  bool? _isPersonalInfoBlurred;
   bool _wasVisible = false;
   IslandCapability? _islandCapability;
 
@@ -108,10 +106,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
     super.didChangeDependencies();
     // ignore: deprecated_member_use
     final isVisible = TickerMode.of(context);
-    if (isVisible && !_wasVisible) {
-      _isPersonalInfoBlurred =
-          ServiceProvider.of(context).storageService.maskPersonalInfo;
-    }
     if (isVisible && !_wasVisible) unawaited(_loadIslandCapability());
     _wasVisible = isVisible;
   }
@@ -149,12 +143,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
       'live_update' => '通过 Android 实时通知显示',
       _ => '通过普通常驻通知显示',
     };
-  }
-
-  void _togglePersonalInfoBlur() {
-    setState(() {
-      _isPersonalInfoBlurred = !(_isPersonalInfoBlurred ?? true);
-    });
   }
 
   Future<void> _loadAppVersion() async {
@@ -430,52 +418,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
                       _SettingsSectionCard(
                         title: '网络与支持',
                         children: [
-                          if (!kIsWeb) ...[
-                            TpListRow(
-                              key: const ValueKey('settings.app-proxy-address'),
-                              icon: TpIcons.globe,
-                              iconColor: colors.brandInk,
-                              title: '应用代理',
-                              subtitle: storage.appProxyEnabled &&
-                                      storage.appProxyUrl.isNotEmpty
-                                  ? storage.appProxyUrl
-                                  : (storage.appProxyUrl.isNotEmpty
-                                      ? '${storage.appProxyUrl}（未启用）'
-                                      : '跟随系统默认'),
-                              showChevron: true,
-                              showDivider: true,
-                              onTap: () => unawaited(
-                                _showProxySettings(storage, sp.uniAuthService),
-                              ),
-                            ),
-                            TpListRow(
-                              key: const ValueKey('settings.app-proxy-enabled'),
-                              icon: TpIcons.sliders,
-                              iconColor: colors.brandInk,
-                              title: '启用应用代理',
-                              subtitle: '通过已配置的 HTTP 代理转发应用请求',
-                              showDivider: true,
-                              trailing: AdaptiveSwitch(
-                                value: storage.appProxyEnabled &&
-                                    storage.appProxyUrl.isNotEmpty,
-                                onChanged: (value) => unawaited(
-                                  _setProxyEnabled(
-                                    storage,
-                                    sp.uniAuthService,
-                                    value,
-                                  ),
-                                ),
-                              ),
-                              onTap: () => unawaited(
-                                _setProxyEnabled(
-                                  storage,
-                                  sp.uniAuthService,
-                                  !(storage.appProxyEnabled &&
-                                      storage.appProxyUrl.isNotEmpty),
-                                ),
-                              ),
-                            ),
-                          ],
                           TpListRow(
                             icon: TpIcons.feedback,
                             iconColor: colors.brandInk,
@@ -521,6 +463,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                             subtitle: _appVersion.isEmpty
                                 ? '版本未知'
                                 : '版本 $_appVersion · 点击检查更新',
+                            showDivider: !kIsWeb,
                             trailing: _checkingUpdate
                                 ? const SizedBox(
                                     width: 18,
@@ -538,6 +481,51 @@ class _SettingsBodyState extends State<_SettingsBody> {
                                 ? null
                                 : () => unawaited(_checkForUpdate()),
                           ),
+                          if (!kIsWeb) ...[
+                            TpListRow(
+                              key: const ValueKey('settings.app-proxy-address'),
+                              icon: TpIcons.globe,
+                              iconColor: colors.brandInk,
+                              title: '应用代理',
+                              subtitle: storage.appProxyEnabled &&
+                                      storage.appProxyUrl.isNotEmpty
+                                  ? storage.appProxyUrl
+                                  : (storage.appProxyUrl.isNotEmpty
+                                      ? '${storage.appProxyUrl}（未启用）'
+                                      : '跟随系统默认'),
+                              showChevron: true,
+                              showDivider: true,
+                              onTap: () => unawaited(
+                                _showProxySettings(storage, sp.uniAuthService),
+                              ),
+                            ),
+                            TpListRow(
+                              key: const ValueKey('settings.app-proxy-enabled'),
+                              icon: TpIcons.sliders,
+                              iconColor: colors.brandInk,
+                              title: '启用应用代理',
+                              subtitle: '通过已配置的 HTTP 代理转发应用请求',
+                              trailing: AdaptiveSwitch(
+                                value: storage.appProxyEnabled &&
+                                    storage.appProxyUrl.isNotEmpty,
+                                onChanged: (value) => unawaited(
+                                  _setProxyEnabled(
+                                    storage,
+                                    sp.uniAuthService,
+                                    value,
+                                  ),
+                                ),
+                              ),
+                              onTap: () => unawaited(
+                                _setProxyEnabled(
+                                  storage,
+                                  sp.uniAuthService,
+                                  !(storage.appProxyEnabled &&
+                                      storage.appProxyUrl.isNotEmpty),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
 
@@ -732,98 +720,61 @@ class _SettingsBodyState extends State<_SettingsBody> {
     required StorageService storage,
     required int boundCount,
   }) {
-    final blurred = _isPersonalInfoBlurred ?? true;
-
     return TpCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (session != null)
-            Semantics(
-              button: true,
-              label: blurred ? '个人信息已模糊，点击显示' : '个人信息已显示，点击隐藏',
-              child: InkWell(
-                onTap: _togglePersonalInfoBlur,
-                hoverColor: colors.textPrimary.withValues(
-                  alpha: colors.isDark ? 0.06 : 0.04,
-                ),
-                splashColor: colors.brandSoft,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    TpTokens.cardPaddingHorizontal,
-                    TpTokens.space4,
-                    TpTokens.cardPaddingHorizontal,
-                    TpTokens.space3,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                TpTokens.cardPaddingHorizontal,
+                TpTokens.space4,
+                TpTokens.cardPaddingHorizontal,
+                TpTokens.space3,
+              ),
+              child: Row(
+                children: [
+                  TpAvatarBadge(
+                    text: _avatarInitials(session),
+                    size: 46,
                   ),
-                  child: Row(
-                    children: [
-                      TpAvatarBadge(
-                        text: _avatarInitials(session, blurred),
-                        size: 46,
-                      ),
-                      const SizedBox(width: TpTokens.space3),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                  const SizedBox(width: TpTokens.space3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
                           children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: ImageFiltered(
-                                    imageFilter: ImageFilter.blur(
-                                      sigmaX: 8,
-                                      sigmaY: 8,
-                                    ),
-                                    enabled: blurred,
-                                    child: Text(
-                                      session.userName.isNotEmpty
-                                          ? session.userName
-                                          : session.userId,
-                                      style: TpTypography.cardTitle(colors)
-                                          .copyWith(fontSize: 17),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: TpTokens.space2),
-                                const TpBadge(
-                                  label: '在线',
-                                  tone: TpBadgeTone.success,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 3),
-                            ImageFiltered(
-                              imageFilter:
-                                  ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                              enabled: blurred,
+                            Flexible(
                               child: Text(
-                                [
-                                  'GeekPie Uni-Auth',
-                                  if (session.userId.isNotEmpty) session.userId,
-                                ].join(' · '),
-                                style: TpTypography.itemMeta(colors),
+                                session.userName.isNotEmpty
+                                    ? session.userName
+                                    : session.userId,
+                                style: TpTypography.cardTitle(colors)
+                                    .copyWith(fontSize: 17),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            const SizedBox(width: TpTokens.space2),
+                            const TpBadge(
+                              label: '在线',
+                              tone: TpBadgeTone.success,
+                            ),
                           ],
                         ),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          blurred ? TpIcons.eyeOff : TpIcons.eye,
-                          size: TpTokens.iconM,
-                          color: colors.textMuted,
+                        const SizedBox(height: 3),
+                        Text(
+                          'GeekPie Uni-Auth',
+                          style: TpTypography.itemMeta(colors),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        tooltip: blurred ? '显示个人信息' : '隐藏个人信息',
-                        onPressed: _togglePersonalInfoBlur,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
             )
           else
@@ -883,10 +834,9 @@ class _SettingsBodyState extends State<_SettingsBody> {
             icon: TpIcons.linkedAccounts,
             iconColor: colors.brandInk,
             title: '第三方账号',
-            subtitle:
-                '已绑定 $boundCount 项 · 校园卡 / eGate / Gradescope / Hydro',
+            subtitle: '已绑定 $boundCount / 4 项 · IDS / eCard / Gradescope / Hydro',
             showChevron: true,
-            showDivider: true,
+            showDivider: auth.isLoggedIn,
             onTap: () => unawaited(
               pushAdaptivePage<void>(
                 context,
@@ -901,7 +851,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
               title: '云同步',
               subtitle: _cloudSyncSubtitle(syncService),
               showChevron: true,
-              showDivider: true,
               onTap: () => unawaited(
                 pushAdaptivePage<void>(
                   context,
@@ -909,35 +858,12 @@ class _SettingsBodyState extends State<_SettingsBody> {
                 ),
               ),
             ),
-          TpListRow(
-            key: const ValueKey('settings.mask-personal-info'),
-            icon: TpIcons.eyeOff,
-            iconColor: colors.textSecondary,
-            title: '默认模糊个人信息',
-            subtitle: '保护姓名与学号等隐私信息，点击可临时查看',
-            trailing: AdaptiveSwitch(
-              value: storage.maskPersonalInfo,
-              onChanged: (value) {
-                unawaited(storage.setMaskPersonalInfo(value));
-                setState(() {
-                  _isPersonalInfoBlurred = value;
-                });
-              },
-            ),
-            onTap: () {
-              final next = !storage.maskPersonalInfo;
-              unawaited(storage.setMaskPersonalInfo(next));
-              setState(() {
-                _isPersonalInfoBlurred = next;
-              });
-            },
-          ),
         ],
       ),
     );
   }
 
-  bool get _showsHuaweiWatch => kIsWeb || defaultTargetPlatform != TargetPlatform.linux;
+  bool get _showsHuaweiWatch => isAndroid();
 
   Widget _buildThemeModeRow(
     BuildContext context,
@@ -1000,8 +926,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
         AppThemeMode.amoled => TpIcons.amoled,
       };
 
-  String _avatarInitials(UserSession session, bool blurred) {
-    if (blurred) return 'GP';
+  String _avatarInitials(UserSession session) {
     final name = session.userName.trim();
     if (name.isEmpty) return 'GP';
     final runes = name.runes.toList();

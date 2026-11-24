@@ -51,6 +51,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   bool _savingReminders = false;
   bool _showAssignments = true;
   bool _showExams = true;
+  bool _filterPrefsLoaded = false;
   final Set<String> _selected = {};
   final Set<String> _initialReminderKeys = {};
   Timer? _countdownTimer;
@@ -96,7 +97,13 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final service = ServiceProvider.of(context).assignmentService;
+    final sp = ServiceProvider.of(context);
+    if (!_filterPrefsLoaded) {
+      _filterPrefsLoaded = true;
+      _showAssignments = sp.storageService.deadlinesShowAssignments;
+      _showExams = sp.storageService.deadlinesShowExams;
+    }
+    final service = sp.assignmentService;
     if (!identical(_assignmentService, service)) {
       _assignmentService?.removeListener(_onAssignmentServiceChanged);
       _assignmentService = service..addListener(_onAssignmentServiceChanged);
@@ -639,17 +646,27 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   }
 
   void _toggleAssignmentsVisibility() {
+    final next = !_showAssignments;
     setState(() {
-      _showAssignments = !_showAssignments;
+      _showAssignments = next;
       _clearSelection();
     });
+    unawaited(
+      ServiceProvider.of(context).storageService.setDeadlinesShowAssignments(
+            next,
+          ),
+    );
   }
 
   void _toggleExamsVisibility() {
+    final next = !_showExams;
     setState(() {
-      _showExams = !_showExams;
+      _showExams = next;
       _clearSelection();
     });
+    unawaited(
+      ServiceProvider.of(context).storageService.setDeadlinesShowExams(next),
+    );
   }
 
   PreferredSizeWidget _buildSelectionAppBar(
