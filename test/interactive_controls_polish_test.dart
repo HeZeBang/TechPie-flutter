@@ -34,8 +34,10 @@ import 'package:techpie/theme/theme.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 import 'package:techpie/widgets/adaptive_text_input_dialog.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_item.dart';
+import 'package:techpie/widgets/design_system/design_system.dart';
 import 'package:techpie/widgets/desktop_popup.dart';
 import 'package:techpie/widgets/desktop_select_popover.dart';
+import 'package:techpie/widgets/swipeable_card.dart';
 
 class _SignedInAuth extends AuthService {
   _SignedInAuth(super.storage, super.http, super.uniAuth);
@@ -414,15 +416,24 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final due = DateTime.now().add(const Duration(hours: 12));
+      final dueSoon = DateTime.now().add(const Duration(hours: 12));
+      final dueLater = DateTime.now().add(const Duration(days: 15, hours: 7));
       final cachedJson = jsonEncode([
         Assignment(
           id: 'hw-1',
           title: 'CS100 Homework 1',
           course: 'CS100',
           platform: 'gradescope',
-          due: due,
+          due: dueSoon,
           status: 'No Submission',
+        ).toJson(),
+        Assignment(
+          id: 'hw-5',
+          title: 'hw5',
+          course: '编译原理 2026秋',
+          platform: 'blackboard',
+          due: dueLater,
+          status: 'Open',
         ).toJson(),
       ]);
 
@@ -476,9 +487,33 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // Website-style grouped card: both upcoming items live in ONE TpCard.
+      expect(find.byType(TpCard), findsOneWidget);
+      expect(find.text('即将截止'), findsOneWidget);
+      expect(find.text('2 项'), findsOneWidget);
+      // Clean metadata casing & no redundant Open/No Submission noise.
+      expect(find.text('编译原理 2026秋 · Blackboard'), findsOneWidget);
+      expect(find.text('剩余 15 天'), findsOneWidget);
+      expect(find.text('Open'), findsNothing);
+      expect(find.text('No Submission'), findsNothing);
+
+      // Geometry guard: slim row height (<96dp) and trailing controls pinned
+      // flush to the card's right edge (never floating in the middle).
+      final cardRect = tester.getRect(find.byType(TpCard));
+      final firstRowSwipe = find
+          .ancestor(
+            of: find.text('CS100 Homework 1'),
+            matching: find.byType(SwipeableCard),
+          )
+          .first;
+      expect(tester.getSize(firstRowSwipe).height, lessThan(96));
+
+      final quickHideRect = tester.getRect(find.byTooltip('忽略').first);
+      expect(cardRect.right - quickHideRect.right, lessThanOrEqualTo(24));
+
       // Desktop quick actions are visible and functional.
-      expect(find.byTooltip('标记完成'), findsOneWidget);
-      expect(find.byTooltip('忽略'), findsOneWidget);
+      expect(find.byTooltip('标记完成'), findsNWidgets(2));
+      expect(find.byTooltip('忽略'), findsNWidgets(2));
 
       // Long-press enters multi-select, Escape exits cleanly.
       await tester.longPress(find.text('CS100 Homework 1'));
@@ -489,7 +524,7 @@ void main() {
       expect(find.text('Deadlines'), findsOneWidget);
 
       // Quick-complete marks the item completed and collapses into 已完成.
-      await tester.tap(find.byTooltip('标记完成'));
+      await tester.tap(find.byTooltip('标记完成').first);
       await tester.pumpAndSettle();
       expect(find.text('已完成 (1)'), findsOneWidget);
     },
