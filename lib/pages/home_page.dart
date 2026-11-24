@@ -19,6 +19,7 @@ import '../services/service_provider.dart';
 import '../services/storage_service.dart';
 import '../theme/theme.dart';
 import '../utils/adaptive_motion.dart';
+import '../utils/haptics.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -452,14 +453,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           configured: campusCard.configured,
           balanceText: balanceText,
           maskPersonalInfo: storage.maskPersonalInfo,
-          onOpenPayCode: () => unawaited(
-            pushAdaptivePage<void>(
-              context,
-              builder: (_) => const CampusCardPage(
-                entry: CampusCardEntry.paymentCode,
+          onOpenPayCode: () {
+            unawaited(AppHaptics.play(AppHaptics.lightImpact));
+            unawaited(
+              pushAdaptivePage<void>(
+                context,
+                builder: (_) => const CampusCardPage(
+                  entry: CampusCardEntry.paymentCode,
+                ),
               ),
-            ),
-          ),
+            );
+          },
           onOpenCard: () => unawaited(
             pushAdaptivePage<void>(
               context,
@@ -489,6 +493,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _handleFeatureTap(Feature feature) {
+    unawaited(AppHaptics.play(AppHaptics.selection));
     if (!ServiceProvider.of(context).authService.isLoggedIn) {
       unawaited(startUniAuthLogin(context));
       return;

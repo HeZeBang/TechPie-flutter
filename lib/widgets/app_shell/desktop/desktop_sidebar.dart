@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 import '../../../theme/theme.dart';
+import '../../../utils/haptics.dart';
+import '../../../utils/motion.dart';
 import '../../design_system/tp_brand_mark.dart';
 import '../app_destination.dart';
 import 'desktop_sidebar_item.dart';
@@ -57,22 +62,15 @@ class DesktopSidebar extends StatelessWidget {
                   children: [
                     Expanded(
                       child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            for (var index = 0;
-                                index < destinations.length;
-                                index++) ...[
-                              DesktopSidebarItem(
-                                destination: destinations[index],
-                                selected: index == selectedIndex,
-                                collapsed: collapsed,
-                                onTap: () => onSelected(index),
-                              ),
-                              if (index < destinations.length - 1)
-                                SizedBox(height: itemSpacing),
-                            ],
-                          ],
+                        child: _SlidingSidebarNavList(
+                          destinations: destinations,
+                          selectedIndex: selectedIndex,
+                          collapsed: collapsed,
+                          itemSpacing: itemSpacing,
+                          onSelected: (index) {
+                            unawaited(AppHaptics.play(AppHaptics.tabSelect));
+                            onSelected(index);
+                          },
                         ),
                       ),
                     ),
@@ -93,6 +91,140 @@ class DesktopSidebar extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SlidingSidebarNavList extends StatefulWidget {
+  const _SlidingSidebarNavList({
+    required this.destinations,
+    required this.selectedIndex,
+    required this.collapsed,
+    required this.itemSpacing,
+    required this.onSelected,
+  });
+
+  final List<AppDestination> destinations;
+  final int selectedIndex;
+  final bool collapsed;
+  final double itemSpacing;
+  final ValueChanged<int> onSelected;
+
+  @override
+  State<_SlidingSidebarNavList> createState() => _SlidingSidebarNavListState();
+}
+
+class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _indicatorIndex = AnimationController.unbounded(
+    vsync: this,
+    value: widget.selectedIndex.toDouble(),
+  );
+
+  @override
+  void didUpdateWidget(covariant _SlidingSidebarNavList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedIndex != widget.selectedIndex) {
+      final target = widget.selectedIndex.toDouble();
+      final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+      if (reduceMotion) {
+        _indicatorIndex.value = target;
+      } else {
+        unawaited(
+          _indicatorIndex.animateWith(
+            SpringSimulation(
+              TgMotion.snappySpring,
+              _indicatorIndex.value,
+              target,
+              0,
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _indicatorIndex.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.destinations.isEmpty) return const SizedBox.shrink();
+    final colors = context.tpColors;
+    final radius = BorderRadius.circular(TpTokens.radiusS);
+    final selectedBorder = colors.brand.withValues(
+      alpha: colors.isDark ? 0.30 : 0.22,
+    );
+    final stride = DesktopSidebarTokens.navItemHeight + widget.itemSpacing;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        AnimatedBuilder(
+          animation: _indicatorIndex,
+          builder: (context, child) {
+            final top = (_indicatorIndex.value * stride).clamp(
+              0.0,
+              (widget.destinations.length - 1) * stride,
+            );
+            return Positioned(
+              left: 0,
+              right: 0,
+              top: top,
+              height: DesktopSidebarTokens.navItemHeight,
+              child: IgnorePointer(child: child),
+            );
+          },
+          child: Material(
+            key: const ValueKey('desktop.sidebar-active-indicator'),
+            color: colors.opaqueBrandContainer,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              side: BorderSide(color: selectedBorder),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Container(
+                  width: TpTokens.accentBarWidth,
+                  decoration: const BoxDecoration(
+                    borderRadius: BorderRadius.horizontal(
+                      right: Radius.circular(TpTokens.radiusBar),
+                    ),
+                  ),
+                  foregroundDecoration: BoxDecoration(
+                    color: colors.brand,
+                    borderRadius: const BorderRadius.horizontal(
+                      right: Radius.circular(TpTokens.radiusBar),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var index = 0; index < widget.destinations.length; index++) ...[
+              DesktopSidebarItem(
+                destination: widget.destinations[index],
+                selected: index == widget.selectedIndex,
+                collapsed: widget.collapsed,
+                usesSlidingIndicator: true,
+                onTap: () => widget.onSelected(index),
+              ),
+              if (index < widget.destinations.length - 1)
+                SizedBox(height: widget.itemSpacing),
+            ],
+          ],
+        ),
+      ],
     );
   }
 }

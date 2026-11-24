@@ -151,8 +151,8 @@ void main() {
     );
     expect(selectedItemFinder, findsOneWidget);
 
-    final material = tester.widget<Material>(
-      find.descendant(of: selectedItemFinder, matching: find.byType(Material)),
+    final activeIndicator = tester.widget<Material>(
+      find.byKey(const ValueKey('desktop.sidebar-active-indicator')),
     );
     final inkWell = tester.widget<InkWell>(
       find.descendant(of: selectedItemFinder, matching: find.byType(InkWell)),
@@ -162,11 +162,16 @@ void main() {
     );
 
     final tp = TpColors.light();
-    expect(material.color, tp.opaqueBrandContainer);
+    expect(activeIndicator.color, tp.opaqueBrandContainer);
     expect(inkWell.hoverColor, isNotNull);
     expect(inkWell.hoverColor, isNot(Colors.transparent));
     expect(inkWell.hoverColor!.a, lessThan(0.15));
     expect(label.style?.color, tp.textPrimary);
+
+    // Gliding active indicator lands smoothly on the newly tapped destination.
+    final indicatorBefore = tester.getTopLeft(
+      find.byKey(const ValueKey('desktop.sidebar-active-indicator')),
+    );
 
     // Hovering an unselected item, clicking it, and keeping the pointer on it
     // must keep a constant subtle hover alpha (avoiding InkHighlight turning
@@ -182,6 +187,17 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(scheduleItem);
     await tester.pumpAndSettle();
+
+    final indicatorAfter = tester.getTopLeft(
+      find.byKey(const ValueKey('desktop.sidebar-active-indicator')),
+    );
+    expect(
+      indicatorAfter.dy - indicatorBefore.dy,
+      closeTo(
+        DesktopSidebarTokens.navItemHeight + DesktopSidebarTokens.navItemSpacing,
+        0.5,
+      ),
+    );
 
     final scheduleInkWell = tester.widget<InkWell>(
       find.descendant(of: scheduleItem, matching: find.byType(InkWell)),

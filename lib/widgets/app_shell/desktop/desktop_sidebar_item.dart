@@ -8,6 +8,7 @@ class DesktopSidebarItem extends StatelessWidget {
   final AppDestination destination;
   final bool selected;
   final bool collapsed;
+  final bool usesSlidingIndicator;
   final VoidCallback onTap;
 
   const DesktopSidebarItem({
@@ -15,6 +16,7 @@ class DesktopSidebarItem extends StatelessWidget {
     required this.destination,
     required this.selected,
     required this.collapsed,
+    this.usesSlidingIndicator = false,
     required this.onTap,
   });
 
@@ -27,6 +29,7 @@ class DesktopSidebarItem extends StatelessWidget {
     final selectedBorder = colors.brand.withValues(
       alpha: colors.isDark ? 0.30 : 0.22,
     );
+    final showOwnSelectionSurface = selected && !usesSlidingIndicator;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -44,11 +47,19 @@ class DesktopSidebarItem extends StatelessWidget {
           button: true,
           label: destination.label,
           child: Material(
-            color: selected ? colors.opaqueBrandContainer : colors.surface,
+            type: usesSlidingIndicator
+                ? MaterialType.transparency
+                : MaterialType.canvas,
+            color: usesSlidingIndicator
+                ? null
+                : (showOwnSelectionSurface
+                    ? colors.opaqueBrandContainer
+                    : colors.surface),
             shape: RoundedRectangleBorder(
               borderRadius: radius,
-              side:
-                  selected ? BorderSide(color: selectedBorder) : BorderSide.none,
+              side: showOwnSelectionSurface
+                  ? BorderSide(color: selectedBorder)
+                  : BorderSide.none,
             ),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
@@ -63,7 +74,7 @@ class DesktopSidebarItem extends StatelessWidget {
                 child: Stack(
                   alignment: Alignment.centerLeft,
                   children: [
-                    if (selected)
+                    if (showOwnSelectionSurface)
                       Positioned(
                         left: 0,
                         top: 10,

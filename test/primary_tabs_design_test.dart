@@ -178,8 +178,15 @@ void main() {
       expect(find.text('周课表'), findsOneWidget);
       expect(find.text('日程'), findsOneWidget);
 
+      final thumbBefore = tester.getTopLeft(
+        find.byKey(const ValueKey('schedule.view-mode-thumb')),
+      );
       await tester.tap(find.text('日程'));
       await tester.pumpAndSettle();
+      final thumbAfter = tester.getTopLeft(
+        find.byKey(const ValueKey('schedule.view-mode-thumb')),
+      );
+      expect(thumbAfter.dx, greaterThan(thumbBefore.dx + 40));
 
       expect(find.byType(TpAccentRow), findsWidgets);
       expect(find.text('计算机系统导论'), findsOneWidget);

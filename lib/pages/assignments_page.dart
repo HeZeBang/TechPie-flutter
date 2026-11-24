@@ -13,6 +13,8 @@ import '../services/deadline_reminder_service.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
 import '../utils/adaptive_motion.dart';
+import '../utils/haptics.dart';
+import '../utils/motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
@@ -976,23 +978,40 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                         leadingColor: colors.dangerRed,
                         actionColor: colors.dangerRed,
                         label: '已逾期 (${overdue.length})',
-                        onTap: () =>
-                            setState(() => _pastCollapsed = !_pastCollapsed),
+                        onTap: () {
+                          unawaited(AppHaptics.play(AppHaptics.selection));
+                          setState(() => _pastCollapsed = !_pastCollapsed);
+                        },
                       ),
-                      if (!_pastCollapsed) ...[
-                        Divider(
-                          height: 1,
-                          thickness: 0.5,
-                          color: colors.divider,
+                      AnimatedSize(
+                        duration: appAnimationDuration(
+                          context,
+                          TgMotion.medium,
                         ),
-                        for (var i = 0; i < overdue.length; i++)
-                          _buildItem(
-                            context,
-                            service,
-                            overdue[i],
-                            isLast: i == overdue.length - 1,
-                          ),
-                      ],
+                        curve: TgMotion.easeOutQuint,
+                        alignment: Alignment.topCenter,
+                        clipBehavior: Clip.hardEdge,
+                        child: _pastCollapsed
+                            ? const SizedBox.shrink()
+                            : Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Divider(
+                                    height: 1,
+                                    thickness: 0.5,
+                                    color: colors.divider,
+                                  ),
+                                  for (var i = 0; i < overdue.length; i++)
+                                    _buildItem(
+                                      context,
+                                      service,
+                                      overdue[i],
+                                      isLast: i == overdue.length - 1,
+                                    ),
+                                ],
+                              ),
+                      ),
                     ],
                   ),
                 ),
@@ -1009,24 +1028,42 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                         leadingIcon: TpIcons.checkCircle,
                         leadingColor: colors.successGreen,
                         label: '已完成 (${completed.length})',
-                        onTap: () => setState(
-                          () => _completedCollapsed = !_completedCollapsed,
-                        ),
+                        onTap: () {
+                          unawaited(AppHaptics.play(AppHaptics.selection));
+                          setState(
+                            () => _completedCollapsed = !_completedCollapsed,
+                          );
+                        },
                       ),
-                      if (!_completedCollapsed) ...[
-                        Divider(
-                          height: 1,
-                          thickness: 0.5,
-                          color: colors.divider,
+                      AnimatedSize(
+                        duration: appAnimationDuration(
+                          context,
+                          TgMotion.medium,
                         ),
-                        for (var i = 0; i < completed.length; i++)
-                          _buildItem(
-                            context,
-                            service,
-                            completed[i],
-                            isLast: i == completed.length - 1,
-                          ),
-                      ],
+                        curve: TgMotion.easeOutQuint,
+                        alignment: Alignment.topCenter,
+                        clipBehavior: Clip.hardEdge,
+                        child: _completedCollapsed
+                            ? const SizedBox.shrink()
+                            : Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Divider(
+                                    height: 1,
+                                    thickness: 0.5,
+                                    color: colors.divider,
+                                  ),
+                                  for (var i = 0; i < completed.length; i++)
+                                    _buildItem(
+                                      context,
+                                      service,
+                                      completed[i],
+                                      isLast: i == completed.length - 1,
+                                    ),
+                                ],
+                              ),
+                      ),
                     ],
                   ),
                 ),
@@ -1247,10 +1284,15 @@ class _SectionToggleRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 2),
-            Icon(
-              collapsed ? Icons.chevron_right : Icons.expand_more,
-              size: TpTokens.iconS + 2,
-              color: trailingColor,
+            AnimatedRotation(
+              turns: collapsed ? 0.0 : 0.25,
+              duration: appAnimationDuration(context, TgMotion.short),
+              curve: TgMotion.easeOutQuint,
+              child: Icon(
+                Icons.chevron_right,
+                size: TpTokens.iconS + 2,
+                color: trailingColor,
+              ),
             ),
           ],
         ),

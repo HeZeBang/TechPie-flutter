@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/tp_colors.dart';
 import '../../theme/tp_tokens.dart';
 import '../../theme/tp_typography.dart';
+import 'tp_press_scale.dart';
 
 class TpFeatureGridItem {
   const TpFeatureGridItem({
@@ -87,47 +88,50 @@ class _FeatureTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final radius = BorderRadius.circular(TpTokens.radiusS);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        key: item.key,
-        borderRadius: radius,
-        hoverColor: colors.textPrimary.withValues(
-          alpha: colors.isDark ? 0.06 : 0.04,
-        ),
-        splashColor: colors.brandSoft,
-        highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
-        onTap: item.onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            vertical: TpTokens.space1 + 2,
-            horizontal: 2,
+    return TpPressScale(
+      pressedScale: 0.95,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: item.key,
+          borderRadius: radius,
+          hoverColor: colors.textPrimary.withValues(
+            alpha: colors.isDark ? 0.06 : 0.04,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Ink(
-                width: TpTokens.featureTileSize,
-                height: TpTokens.featureTileSize,
-                decoration: BoxDecoration(
-                  color: colors.surfaceSubtle,
-                  borderRadius: radius,
+          splashColor: colors.brandSoft,
+          highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
+          onTap: item.onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              vertical: TpTokens.space1 + 2,
+              horizontal: 2,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Ink(
+                  width: TpTokens.featureTileSize,
+                  height: TpTokens.featureTileSize,
+                  decoration: BoxDecoration(
+                    color: colors.surfaceSubtle,
+                    borderRadius: radius,
+                  ),
+                  child: Icon(
+                    item.icon,
+                    size: TpTokens.iconM,
+                    color: colors.brandInk,
+                  ),
                 ),
-                child: Icon(
-                  item.icon,
-                  size: TpTokens.iconM,
-                  color: colors.brandInk,
+                const SizedBox(height: 6),
+                Text(
+                  item.label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TpTypography.featureLabel(colors),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                item.label,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TpTypography.featureLabel(colors),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

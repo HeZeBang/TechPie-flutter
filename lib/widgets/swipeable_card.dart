@@ -1,8 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/semantics.dart';
 
+import '../utils/haptics.dart';
+import '../utils/motion.dart';
 import '../utils/platform.dart';
 
 class SwipeAction {
@@ -66,8 +69,6 @@ class SwipeableCard extends StatefulWidget {
 
 class _SwipeableCardState extends State<SwipeableCard>
     with TickerProviderStateMixin {
-  // MD3 motion curves.
-  static const _emphasized = Cubic(0.2, 0, 0, 1);
   static const _emphasizedAccelerate = Cubic(0.3, 0, 0.8, 0.15);
 
   late final AnimationController _move = AnimationController.unbounded(
@@ -77,14 +78,23 @@ class _SwipeableCardState extends State<SwipeableCard>
 
   late final AnimationController _collapse = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 320),
+    duration: TgMotion.medium,
   );
 
+  late final AnimationController _revealBounce = AnimationController.unbounded(
+    vsync: this,
+    value: 1,
+  )..addListener(_onMove);
+
   double _width = 1;
+  bool _crossedThreshold = false;
 
   @override
   void dispose() {
     _move
+      ..removeListener(_onMove)
+      ..dispose();
+    _revealBounce
       ..removeListener(_onMove)
       ..dispose();
     _collapse.dispose();
@@ -99,15 +109,38 @@ class _SwipeableCardState extends State<SwipeableCard>
 
   void _onStart(DragStartDetails _) {
     _move.stop();
+    _crossedThreshold = false;
   }
 
   void _onUpdate(DragUpdateDetails details) {
     if (!widget.enabled) return;
     final dx = details.primaryDelta ?? 0;
     final next = _move.value + dx / _width;
-    // Mild rubber-band beyond ±1.
-    final clamped = next.clamp(-1.15, 1.15);
-    _move.value = clamped;
+    // 1:1 tracking through the commit zone, with smooth asymptotic rubber-band
+    // resistance beyond 0.85 so overscrolling feels elastic like Telegram iOS.
+    final absNext = next.abs();
+    final damped = absNext <= 0.85
+        ? next
+        : next.sign * (0.85 + TgMotion.rubberBand(absNext - 0.85));
+    _move.value = damped;
+
+    final hasAction = (damped > 0 && widget.startAction != null) ||
+        (damped < 0 && widget.endAction != null);
+    final crossed = hasAction && damped.abs() >= widget.threshold;
+    if (crossed != _crossedThreshold) {
+      _crossedThreshold = crossed;
+      if (crossed) {
+        unawaited(AppHaptics.play(AppHaptics.selection));
+        if (!_reduceMotion) {
+          _revealBounce.value = 1.18;
+          unawaited(
+            _revealBounce.animateWith(
+              SpringSimulation(TgMotion.tactileSpring, 1.18, 1.0, 0),
+            ),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _onEnd(DragEndDetails details) async {
@@ -116,24 +149,27 @@ class _SwipeableCardState extends State<SwipeableCard>
     final magnitude = value.abs();
     final fast = velocity.abs() > 1.6 && magnitude > widget.threshold * 0.4;
     final shouldCommit = magnitude >= widget.threshold || fast;
+    _crossedThreshold = false;
 
     if (!shouldCommit) {
-      await _springBack();
+      await _springBack(velocity: velocity);
       return;
     }
     if (value > 0) {
-      // Right swipe: fire-and-spring-back.
+      // Right swipe: tactile confirm + velocity-coupled spring-back.
+      unawaited(AppHaptics.play(AppHaptics.success));
       widget.onStartSwipe?.call();
-      await _springBack();
+      await _springBack(velocity: velocity * 0.25);
       return;
     }
     // Left swipe: animate out immediately. Caller may provide undo via
     // a SnackBar after [onDismissed] fires (commonly by un-doing the
     // underlying state mutation).
     if (widget.onDismissed == null) {
-      await _springBack();
+      await _springBack(velocity: velocity);
       return;
     }
+    unawaited(AppHaptics.play(AppHaptics.lightImpact));
     await _dismissToEnd();
   }
 
@@ -145,15 +181,18 @@ class _SwipeableCardState extends State<SwipeableCard>
     widget.onDismissed!.call();
   }
 
-  Future<void> _springBack() {
+  Future<void> _springBack({double velocity = 0}) {
     if (_reduceMotion) {
       _move.value = 0;
       return Future<void>.value();
     }
-    return _move.animateTo(
-      0,
-      duration: Duration(milliseconds: isIos() ? 250 : 280),
-      curve: isIos() ? Curves.easeOut : _emphasized,
+    return _move.animateWith(
+      SpringSimulation(
+        TgMotion.snappySpring,
+        _move.value,
+        0,
+        velocity.clamp(-4.0, 4.0),
+      ),
     );
   }
 
@@ -188,8 +227,7 @@ class _SwipeableCardState extends State<SwipeableCard>
       animation: _collapse,
       builder: (context, child) {
         final t = _collapse.value;
-        // Use Curves.easeInOutCubicEmphasized via direct curve evaluation.
-        final eased = (isIos() ? Curves.easeInOut : _emphasized).transform(t);
+        final eased = TgMotion.easeOutQuint.transform(t);
         return ClipRect(
           child: Align(
             heightFactor: (1 - eased).clamp(0.0, 1.0),
@@ -223,6 +261,7 @@ class _SwipeableCardState extends State<SwipeableCard>
                     child: _SwipeReveal(
                       action: action,
                       progress: progress,
+                      iconPulse: _revealBounce.value,
                       alignToEnd: showEnd,
                       borderRadius: widget.borderRadius,
                     ),
@@ -358,12 +397,14 @@ class _SwipeReveal extends StatelessWidget {
   const _SwipeReveal({
     required this.action,
     required this.progress,
+    required this.iconPulse,
     required this.alignToEnd,
     required this.borderRadius,
   });
 
   final SwipeAction action;
   final double progress;
+  final double iconPulse;
   final bool alignToEnd;
   final BorderRadius borderRadius;
 
@@ -373,7 +414,7 @@ class _SwipeReveal extends StatelessWidget {
   Widget build(BuildContext context) {
     final eased = _emphasizedDecelerate.transform(progress.clamp(0.0, 1.0));
     final opacity = (eased * 1.2).clamp(0.0, 1.0);
-    final iconScale = 0.7 + eased * 0.5;
+    final iconScale = (0.7 + eased * 0.4) * iconPulse;
 
     return DecoratedBox(
       decoration: BoxDecoration(
