@@ -42,6 +42,7 @@ import 'spending_background_refresh.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
 import 'widgets/privacy_consent.dart';
+import 'widgets/startup_page.dart';
 import 'widgets/update_dialogs.dart';
 
 @pragma('vm:entry-point')
@@ -631,7 +632,9 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
           theme: widget.themeService.lightTheme,
           darkTheme: widget.themeService.darkTheme,
           themeMode: widget.themeService.themeMode,
-          home: const PrivacyGate(child: AppShell()),
+          home: const StartupPage(
+            child: PrivacyGate(child: AppShell()),
+          ),
         ),
       ),
     );
