@@ -39,6 +39,8 @@ jobs:
           shellcheck scripts/build-appimage.sh scripts/check-linux-packaging.sh packaging/linux/AppRun
           desktop-file-validate packaging/linux/techpie.desktop
       - name: Build and exercise both package formats
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           useradd --create-home builder
           chown -R builder:builder "$GITHUB_WORKSPACE"

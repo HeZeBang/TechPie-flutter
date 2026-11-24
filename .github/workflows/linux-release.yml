@@ -154,6 +154,8 @@ jobs:
           sha256sum dist/*.tar.gz
 
       - name: Package AppImage from the same bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/build-appimage.sh build/linux/x64/release/bundle "$RELEASE_NAME" dist
 
       - name: Package Flatpak from the same bundle

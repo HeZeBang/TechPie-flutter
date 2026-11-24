@@ -20,13 +20,22 @@ tools="${PACKAGING_TOOLS_DIR:-$root/build/packaging-tools}"
 mkdir -p "$tools"
 tool="$tools/appimagetool"
 runtime="$tools/runtime-x86_64"
+download_asset() {
+  local asset="$1" path="$2"
+  local headers=(-H 'Accept: application/octet-stream')
+  if [[ -n "${GH_TOKEN:-}" ]]; then
+    headers+=(-H "Authorization: Bearer $GH_TOKEN")
+  fi
+  echo "Downloading ${path##*/} from GitHub release asset $asset"
+  curl -fsSL --retry 3 "${headers[@]}" "https://api.github.com/repos/AppImage/$asset" -o "$path.tmp"
+  mv "$path.tmp" "$path"
+}
+
 if [[ ! -f "$tool" ]]; then
-  curl -fsSL https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage -o "$tool"
+  download_asset appimagetool/releases/assets/324406736 "$tool"
 fi
 if [[ ! -f "$runtime" ]]; then
-  # The asset ID identifies this exact build, unlike the moving continuous tag.
-  curl -fsSL -H 'Accept: application/octet-stream' \
-    https://api.github.com/repos/AppImage/type2-runtime/releases/assets/657374641 -o "$runtime"
+  download_asset type2-runtime/releases/assets/657374641 "$runtime"
 fi
 printf '%s  %s\n' \
   ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0 "$tool" \
