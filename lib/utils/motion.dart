@@ -2,11 +2,12 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/animation.dart';
 
-/// Motion constants distilled from the Telegram Android source
+/// Motion constants distilled from the Telegram Android & iOS clients
 /// (see ~/repos/Telegram/UI-STUDY for the full study).
 ///
 /// Telegram's signature feel comes from a *small* shared dictionary of
-/// curves and durations reused everywhere, not from per-widget tuning.
+/// curves, durations, and spring physics reused everywhere, not from
+/// per-widget tuning.
 abstract final class TgMotion {
   /// Telegram's `CubicBezierInterpolator.DEFAULT` — CSS `ease`.
   static const Curve ease = Cubic(0.25, 0.1, 0.25, 1);
@@ -15,6 +16,23 @@ abstract final class TgMotion {
   /// distance in the first ~20% of the time, long soft tail. Flutter's
   /// built-in constant has identical control points.
   static const Curve easeOutQuint = Curves.easeOutQuint;
+
+  /// Snappy low-overshoot spring for popovers, gliding selection pills, and
+  /// swipe return (mirrors Telegram iOS stiffness ~1000-1100, ratio ~0.82).
+  static final SpringDescription snappySpring =
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 1100, ratio: 0.82);
+
+  /// Tactile elastic spring for press-scale rebound and swipe threshold pops.
+  static final SpringDescription tactileSpring =
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 900, ratio: 0.72);
+
+  /// Smooth asymptotic rubber-band resistance past a drag boundary:
+  /// maps `[0, +inf)` smoothly onto `[0, limit)` so overscroll feels elastic
+  /// instead of hitting a hard clamp wall.
+  static double rubberBand(double overscroll, {double limit = 0.26}) {
+    if (overscroll <= 0 || limit <= 0) return 0;
+    return (overscroll * limit) / (overscroll + limit);
+  }
 
   /// The "mother curve" shared by keyboard rise, chat-list shifts and the
   /// send-message transition (`ChatListItemAnimator.DEFAULT_INTERPOLATOR`).

@@ -11,6 +11,7 @@ import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
 import '../../theme/tp_icons.dart';
 import '../../utils/adaptive_layout.dart';
+import '../../utils/motion.dart';
 import '../../utils/platform.dart';
 import '../../widgets/adaptive_page_navigation.dart';
 import 'app_destination.dart';
@@ -349,18 +350,14 @@ class _AppDestinationSwitcherState extends State<AppDestinationSwitcher> {
     }
 
     return PageTransitionSwitcher(
-      duration: const Duration(milliseconds: 300),
+      duration: TgMotion.tabsPageSwitch,
       layoutBuilder: (entries) => Stack(
         fit: StackFit.expand,
         children: entries,
       ),
       transitionBuilder: (child, animation, secondaryAnimation) {
-        // Pure horizontal slide — no fade, no scale, no color fill.
-        // Controllers always run forward: the new entry's primary (0→1)
-        // drives its incoming slide; the old entry's secondary (0→1)
-        // drives its outgoing slide. Direction is encoded only in the
-        // tween sign, so backward navigation mirrors forward correctly
-        // and the easing curve stays consistent in both directions.
+        // Pure horizontal slide synced to TgBottomNavBar's 320ms easeOutQuint
+        // timeline so bar capsule and page motion read as one rigid body.
         final direction =
             widget.selectedIndex >= widget.previousSelectedIndex ? 1.0 : -1.0;
         final incoming = Tween<Offset>(
@@ -375,11 +372,10 @@ class _AppDestinationSwitcherState extends State<AppDestinationSwitcher> {
           animation: Listenable.merge([animation, secondaryAnimation]),
           builder: (context, built) {
             final incomingOffset = incoming.transform(
-              Curves.easeInOutCubicEmphasized.transform(animation.value),
+              TgMotion.easeOutQuint.transform(animation.value),
             );
             final outgoingOffset = outgoing.transform(
-              Curves.easeInOutCubicEmphasized
-                  .transform(secondaryAnimation.value),
+              TgMotion.easeOutQuint.transform(secondaryAnimation.value),
             );
             return FractionalTranslation(
               translation: incomingOffset + outgoingOffset,

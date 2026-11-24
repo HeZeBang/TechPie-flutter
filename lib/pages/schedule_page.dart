@@ -4,6 +4,7 @@ import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -25,6 +26,8 @@ import '../services/third_party_auth_service.dart';
 import '../theme/theme.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/adaptive_motion.dart';
+import '../utils/haptics.dart';
+import '../utils/motion.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
@@ -281,8 +284,12 @@ class _SchedulePageState extends State<SchedulePage> {
 
   void _setCurrentWeek(int week) {
     final old = _currentWeek;
+    final next = week.clamp(1, _schedule.totalWeeks).toInt();
+    if (next != old) {
+      unawaited(AppHaptics.play(AppHaptics.selection));
+    }
     setState(() {
-      _currentWeek = week.clamp(1, _schedule.totalWeeks).toInt();
+      _currentWeek = next;
       _slideDirection = _currentWeek > old ? 1 : (_currentWeek < old ? -1 : 0);
       _filterCoursesForWeek();
     });
@@ -1802,7 +1809,7 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 }
 
-class _ScheduleViewBar extends StatelessWidget {
+class _ScheduleViewBar extends StatefulWidget {
   const _ScheduleViewBar({
     required this.viewMode,
     required this.onChanged,
@@ -1812,9 +1819,60 @@ class _ScheduleViewBar extends StatelessWidget {
   final ValueChanged<_ScheduleViewMode> onChanged;
 
   @override
+  State<_ScheduleViewBar> createState() => _ScheduleViewBarState();
+}
+
+class _ScheduleViewBarState extends State<_ScheduleViewBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _thumbT = AnimationController.unbounded(
+    vsync: this,
+    value: widget.viewMode == _ScheduleViewMode.week ? 0.0 : 1.0,
+  );
+
+  @override
+  void didUpdateWidget(covariant _ScheduleViewBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.viewMode != widget.viewMode) {
+      final target = widget.viewMode == _ScheduleViewMode.week ? 0.0 : 1.0;
+      final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+      if (reduceMotion) {
+        _thumbT.value = target;
+      } else {
+        unawaited(
+          _thumbT.animateWith(
+            SpringSimulation(
+              TgMotion.snappySpring,
+              _thumbT.value,
+              target,
+              0,
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _thumbT.dispose();
+    super.dispose();
+  }
+
+  void _select(_ScheduleViewMode mode) {
+    if (mode == widget.viewMode) return;
+    unawaited(AppHaptics.play(AppHaptics.selection));
+    widget.onChanged(mode);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final trackColor = colors.isDark ? colors.canvas : colors.surfaceSubtle;
+    final selectedBg =
+        colors.isDark ? colors.opaqueBrandContainer : colors.surface;
+    final selectedBorder = colors.brand.withValues(
+      alpha: colors.isDark ? 0.35 : 0.18,
+    );
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.surface,
@@ -1837,19 +1895,60 @@ class _ScheduleViewBar extends StatelessWidget {
               borderRadius: BorderRadius.circular(TpTokens.radiusS),
               border: colors.isDark ? Border.all(color: colors.border) : null,
             ),
-            child: Row(
-              children: [
-                _SegmentPill(
-                  label: '周课表',
-                  selected: viewMode == _ScheduleViewMode.week,
-                  onTap: () => onChanged(_ScheduleViewMode.week),
-                ),
-                _SegmentPill(
-                  label: '日程',
-                  selected: viewMode == _ScheduleViewMode.agenda,
-                  onTap: () => onChanged(_ScheduleViewMode.agenda),
-                ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final segmentWidth = constraints.maxWidth / 2;
+                return Stack(
+                  children: [
+                    AnimatedBuilder(
+                      animation: _thumbT,
+                      builder: (context, child) {
+                        final clamped = _thumbT.value.clamp(0.0, 1.0);
+                        return Positioned(
+                          left: clamped * segmentWidth,
+                          top: 0,
+                          bottom: 0,
+                          width: segmentWidth,
+                          child: IgnorePointer(child: child),
+                        );
+                      },
+                      child: DecoratedBox(
+                        key: const ValueKey('schedule.view-mode-thumb'),
+                        decoration: BoxDecoration(
+                          color: selectedBg,
+                          borderRadius:
+                              BorderRadius.circular(TpTokens.radiusXs),
+                          border: Border.all(color: selectedBorder),
+                          boxShadow: colors.isDark
+                              ? null
+                              : [
+                                  BoxShadow(
+                                    color:
+                                        Colors.black.withValues(alpha: 0.06),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        _SegmentPill(
+                          label: '周课表',
+                          selected: widget.viewMode == _ScheduleViewMode.week,
+                          onTap: () => _select(_ScheduleViewMode.week),
+                        ),
+                        _SegmentPill(
+                          label: '日程',
+                          selected: widget.viewMode == _ScheduleViewMode.agenda,
+                          onTap: () => _select(_ScheduleViewMode.agenda),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -1872,18 +1971,11 @@ class _SegmentPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    final selectedBg =
-        colors.isDark ? colors.opaqueBrandContainer : colors.surface;
-    final trackColor = colors.isDark ? colors.canvas : colors.surfaceSubtle;
-    final selectedBorder = colors.brand.withValues(
-      alpha: colors.isDark ? 0.35 : 0.18,
-    );
     return Expanded(
       child: Material(
-        color: selected ? selectedBg : trackColor,
+        type: MaterialType.transparency,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(TpTokens.radiusXs),
-          side: selected ? BorderSide(color: selectedBorder) : BorderSide.none,
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -1894,15 +1986,16 @@ class _SegmentPill extends StatelessWidget {
           highlightColor: colors.textPrimary.withValues(alpha: 0.06),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
+            child: AnimatedDefaultTextStyle(
+              duration: appAnimationDuration(context, TgMotion.fast),
+              curve: TgMotion.easeOutQuint,
               style: TpTypography.badge(
                 selected ? colors.brandInk : colors.textMuted,
               ).copyWith(
                 fontSize: 13,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               ),
+              child: Text(label, textAlign: TextAlign.center),
             ),
           ),
         ),
@@ -2366,27 +2459,33 @@ class _CourseBlock extends StatelessWidget {
     final containerColor = course.color.containerColor(colorScheme);
     final textColor = course.color.onContainerColor(colorScheme);
 
-    return Opacity(
-      opacity: course.isGhost ? 0.3 : 1.0,
-      child: Material(
-        color: containerColor,
-        borderRadius: BorderRadius.circular(TpTokens.radiusS),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => _showCourseDetailSheet(
-            context,
-            course: course,
-            onEditCustomCourse: onEditCustomCourse,
-          ),
+    return TpPressScale(
+      pressedScale: 0.965,
+      child: Opacity(
+        opacity: course.isGhost ? 0.3 : 1.0,
+        child: Material(
+          color: containerColor,
           borderRadius: BorderRadius.circular(TpTokens.radiusS),
-          child: CourseBlockLabel(
-            name: course.name,
-            color: textColor,
-            time: course.usesCustomTime
-                ? '${course.startTime}–${course.endTime}'
-                : null,
-            teachers: course.teachers,
-            location: course.location,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () {
+              unawaited(AppHaptics.play(AppHaptics.lightImpact));
+              _showCourseDetailSheet(
+                context,
+                course: course,
+                onEditCustomCourse: onEditCustomCourse,
+              );
+            },
+            borderRadius: BorderRadius.circular(TpTokens.radiusS),
+            child: CourseBlockLabel(
+              name: course.name,
+              color: textColor,
+              time: course.usesCustomTime
+                  ? '${course.startTime}–${course.endTime}'
+                  : null,
+              teachers: course.teachers,
+              location: course.location,
+            ),
           ),
         ),
       ),
