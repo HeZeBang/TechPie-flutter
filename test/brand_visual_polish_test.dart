@@ -179,6 +179,66 @@ void main() {
   });
 
   testWidgets(
+      'TpCampusCardStrip expanded card maintains full-bleed aspect ratio across resizes and fills bounded height',
+      (tester) async {
+    for (final width in [304.0, 400.0, 496.0]) {
+      await tester.pumpWidget(
+        wrapTheme(
+          SizedBox(
+            width: width,
+            child: TpCampusCardStrip(
+              configured: true,
+              balanceText: '¥ 128.50',
+              maskPersonalInfo: false,
+              expandedCard: true,
+              onOpenPayCode: () {},
+              onOpenCard: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final cardSize = tester.getSize(
+        find.byKey(const ValueKey('home.campus-card-strip')),
+      );
+      final headerSize = tester.getSize(
+        find.byKey(const ValueKey('home.campus-card-header-band')),
+      );
+      expect(
+        cardSize.height,
+        closeTo(width / TpCampusCardStrip.cardAspectRatio, 2.0),
+      );
+      expect(headerSize.width, closeTo(width, 2.0));
+      expect(headerSize.height, greaterThanOrEqualTo(54.0));
+    }
+
+    // Bounded height fills 100% top-to-bottom without clipping or gaps.
+    await tester.pumpWidget(
+      wrapTheme(
+        SizedBox(
+          width: 420,
+          height: 310,
+          child: TpCampusCardStrip(
+            configured: true,
+            balanceText: '¥ 128.50',
+            maskPersonalInfo: false,
+            expandedCard: true,
+            onOpenPayCode: () {},
+            onOpenCard: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final stretchedSize = tester.getSize(
+      find.byKey(const ValueKey('home.campus-card-strip')),
+    );
+    expect(stretchedSize.height, closeTo(310.0, 2.0));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
       'DesktopSidebar renders expanded urgent/calm/99+ badges and collapsed dot with tooltip',
       (tester) async {
     const destinations = [

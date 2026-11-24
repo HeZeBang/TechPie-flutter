@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../theme/tp_colors.dart';
@@ -12,8 +14,10 @@ import 'tp_press_scale.dart';
 /// - Compact mode (`expandedCard: false`, mobile/narrow): slim single-row card
 ///   with a mini entity-card thumbnail, cached balance, and one-tap pay button.
 /// - Expanded mode (`expandedCard: true`, wide Bento column): authentic
-///   ShanghaiTech skyline entity card surface (`card-full.png`) mirroring the
-///   TechPie website showcase, with fixed high-contrast card-face inks.
+///   ShanghaiTech skyline entity card surface (`707:445` physical card ratio)
+///   composed from the crimson header band and `card-bottom.png` skyline canvas
+///   so resizing window width or height always fills cleanly top-to-bottom
+///   without cropping the crimson band or skyline artwork.
 class TpCampusCardStrip extends StatelessWidget {
   const TpCampusCardStrip({
     super.key,
@@ -26,8 +30,14 @@ class TpCampusCardStrip extends StatelessWidget {
   });
 
   static const String cardFaceAsset = 'assets/campus_card/images/card-full.png';
-  static const Color _cardHeaderFallback = Color(0xFF960B15);
-  static const Color _cardBodyFallback = Color(0xFFFAF3F4);
+  static const String cardBottomAsset =
+      'assets/campus_card/images/card-bottom.png';
+  static const double cardAspectRatio = 707 / 445;
+
+  static const Color _cardHeaderCrimson = Color(0xFF9D0A12);
+  static const Color _cardHeaderSeam = Color(0xFF84070E);
+  static const Color _cardBodyCanvas = Color(0xFFFEF9F9);
+  static const Color _cardBodyBlush = Color(0xFFFDEBEC);
   static const Color _cardBalanceInk = Color(0xFF7A1018);
   static const Color _cardMutedInk = Color(0xFF9E4B52);
   static const Color _cardPayButtonBg = Color(0xFFA30B19);
@@ -64,224 +74,266 @@ class TpCampusCardStrip extends StatelessWidget {
       primaryValue = '查看余额';
     }
 
-    return TpPressScale(
-      pressedScale: 0.985,
-      child: TpCard(
-        key: const ValueKey('home.campus-card-strip'),
-        borderColor: colors.isDark
-            ? Colors.white.withValues(alpha: 0.14)
-            : Colors.black.withValues(alpha: 0.06),
-        onTap: onOpenCard,
-        child: SizedBox(
-          height: 156,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Official ShanghaiTech crimson-top skyline card face.
-              Image.asset(
-                cardFaceAsset,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.medium,
-                excludeFromSemantics: true,
-                errorBuilder: (_, __, ___) => const Column(
-                  children: [
-                    Expanded(
-                      flex: 32,
-                      child: ColoredBox(color: _cardHeaderFallback),
-                    ),
-                    Expanded(
-                      flex: 68,
-                      child: ColoredBox(color: _cardBodyFallback),
-                    ),
-                  ],
+    Widget buildCardSurface(double width, double height) {
+      final scale = (width / 360).clamp(0.92, 1.22);
+      final horizontalPadding = (16 * scale).clamp(14.0, 20.0);
+      final headerHeight = math.max(54.0, height * 0.27);
+
+      return SizedBox(
+        width: width,
+        height: height,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Top ShanghaiTech crimson band: fills full width & stays
+            // proportionally locked to ~27% of card height so header text
+            // never spills onto the light card body at any window size.
+            Container(
+              key: const ValueKey('home.campus-card-header-band'),
+              height: headerHeight,
+              decoration: const BoxDecoration(
+                color: _cardHeaderCrimson,
+                border: Border(
+                  bottom: BorderSide(color: _cardHeaderSeam, width: 0.5),
                 ),
               ),
-              // Subtle gradient over bottom half for razor-sharp text contrast.
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: const [0.0, 0.38, 1.0],
-                    colors: [
-                      Colors.transparent,
-                      Colors.transparent,
-                      Colors.white.withValues(alpha: 0.55),
-                    ],
-                  ),
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+              alignment: Alignment.centerLeft,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Crimson header band
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      TpTokens.cardPaddingHorizontal,
-                      11,
-                      TpTokens.cardPaddingHorizontal,
-                      8,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '上海科技大学',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.2,
-                                  color: Colors.white,
-                                  fontFamilyFallback:
-                                      TpTypography.fontFamilyFallback,
-                                ),
-                              ),
-                              SizedBox(height: 1),
-                              Text(
-                                'SHANGHAITECH · CAMPUS CARD',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w500,
-                                  letterSpacing: 0.6,
-                                  height: 1.2,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
+                        Text(
+                          '上海科技大学',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13.5 * scale,
+                            fontWeight: FontWeight.w700,
+                            height: 1.2,
+                            color: Colors.white,
+                            fontFamilyFallback: TpTypography.fontFamilyFallback,
                           ),
                         ),
-                        const SizedBox(width: TpTokens.space2),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(
-                              TpTokens.radiusPill,
-                            ),
-                          ),
-                          child: const Text(
-                            '校园卡',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                              fontFamilyFallback:
-                                  TpTypography.fontFamilyFallback,
-                            ),
+                        const SizedBox(height: 1),
+                        Text(
+                          'SHANGHAITECH · CAMPUS CARD',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: (9.5 * scale).clamp(9.0, 11.0),
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0.6,
+                            height: 1.2,
+                            color: Colors.white70,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const Spacer(),
-                  // Bottom balance + quick pay CTA
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      TpTokens.cardPaddingHorizontal,
-                      TpTokens.space2,
-                      TpTokens.cardPaddingHorizontal,
-                      14,
+                  const SizedBox(width: TpTokens.space2),
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: (8 * scale).clamp(8.0, 10.0),
+                      vertical: 3,
                     ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                eyebrow,
-                                maxLines: 1,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: _cardMutedInk,
-                                  fontFamilyFallback:
-                                      TpTypography.fontFamilyFallback,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                primaryValue,
-                                key: const ValueKey(
-                                  'home.campus-card-entity-balance',
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 23,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.15,
-                                  letterSpacing: -0.4,
-                                  color: _cardBalanceInk,
-                                  fontFeatures: TpTypography.tabularFigures,
-                                  fontFamilyFallback:
-                                      TpTypography.fontFamilyFallback,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: TpTokens.space2),
-                        TpPressScale(
-                          pressedScale: 0.94,
-                          child: Material(
-                            color: _cardPayButtonBg,
-                            borderRadius: BorderRadius.circular(
-                              TpTokens.radiusPill,
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: InkWell(
-                              key: const ValueKey('home.campus-card-pay'),
-                              onTap: onOpenPayCode,
-                              hoverColor: Colors.white.withValues(alpha: 0.14),
-                              highlightColor:
-                                  Colors.white.withValues(alpha: 0.18),
-                              splashColor: Colors.white.withValues(alpha: 0.24),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      TpIcons.qrCode,
-                                      size: TpTokens.iconXs,
-                                      color: Colors.white,
-                                    ),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      configured ? '亮码' : '进入',
-                                      style: TpTypography.badge(Colors.white),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(TpTokens.radiusPill),
+                    ),
+                    child: Text(
+                      '校园卡',
+                      style: TextStyle(
+                        fontSize: (10.5 * scale).clamp(10.0, 12.0),
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        fontFamilyFallback: TpTypography.fontFamilyFallback,
+                      ),
                     ),
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+            // Bottom skyline body: seamlessly fills all remaining vertical
+            // space edge-to-edge with the exact card blush canvas.
+            Expanded(
+              child: DecoratedBox(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.0, 0.65, 1.0],
+                    colors: [_cardBodyCanvas, _cardBodyCanvas, _cardBodyBlush],
+                  ),
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned.fill(
+                      child: Image.asset(
+                        cardBottomAsset,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.bottomCenter,
+                        filterQuality: FilterQuality.high,
+                        excludeFromSemantics: true,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
+                    // Soft bottom legibility wash behind balance & pay CTA.
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: const [0.0, 0.48, 1.0],
+                            colors: [
+                              Colors.transparent,
+                              Colors.transparent,
+                              _cardBodyCanvas.withValues(alpha: 0.72),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          horizontalPadding,
+                          TpTokens.space2,
+                          horizontalPadding,
+                          (14 * scale).clamp(12.0, 18.0),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    eyebrow,
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: (11 * scale).clamp(11.0, 12.5),
+                                      fontWeight: FontWeight.w600,
+                                      color: _cardMutedInk,
+                                      fontFamilyFallback:
+                                          TpTypography.fontFamilyFallback,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    primaryValue,
+                                    key: const ValueKey(
+                                      'home.campus-card-entity-balance',
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: (23 * scale).clamp(21.0, 28.0),
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.15,
+                                      letterSpacing: -0.4,
+                                      color: _cardBalanceInk,
+                                      fontFeatures: TpTypography.tabularFigures,
+                                      fontFamilyFallback:
+                                          TpTypography.fontFamilyFallback,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: TpTokens.space2),
+                            TpPressScale(
+                              pressedScale: 0.94,
+                              child: Material(
+                                color: _cardPayButtonBg,
+                                borderRadius: BorderRadius.circular(
+                                  TpTokens.radiusPill,
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: InkWell(
+                                  key: const ValueKey('home.campus-card-pay'),
+                                  onTap: onOpenPayCode,
+                                  hoverColor:
+                                      Colors.white.withValues(alpha: 0.14),
+                                  highlightColor:
+                                      Colors.white.withValues(alpha: 0.18),
+                                  splashColor:
+                                      Colors.white.withValues(alpha: 0.24),
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal:
+                                          (14 * scale).clamp(13.0, 17.0),
+                                      vertical: (8 * scale).clamp(7.5, 9.5),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          TpIcons.qrCode,
+                                          size: (TpTokens.iconXs * scale)
+                                              .clamp(13.5, 16.0),
+                                          color: Colors.white,
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Text(
+                                          configured ? '亮码' : '进入',
+                                          style: TpTypography.badge(
+                                            Colors.white,
+                                          ).copyWith(
+                                            fontSize:
+                                                (11.5 * scale).clamp(11.0, 13.0),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return TpPressScale(
+      pressedScale: 0.985,
+      child: TpCard(
+        key: const ValueKey('home.campus-card-strip'),
+        color: _cardBodyCanvas,
+        borderColor: colors.isDark
+            ? Colors.white.withValues(alpha: 0.14)
+            : Colors.black.withValues(alpha: 0.06),
+        onTap: onOpenCard,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth.isFinite
+                ? constraints.maxWidth
+                : 360.0;
+            final naturalHeight = width / cardAspectRatio;
+            final height = constraints.hasTightHeight
+                ? constraints.maxHeight
+                : (constraints.hasBoundedHeight
+                    ? math.min(naturalHeight, constraints.maxHeight)
+                    : naturalHeight);
+            return buildCardSurface(width, height);
+          },
         ),
       ),
     );
@@ -312,12 +364,14 @@ class TpCampusCardStrip extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Mini entity campus-card thumbnail replacing generic icon tile.
+            // Mini entity campus-card thumbnail composed cleanly with zero
+            // white-corner bleed in dark mode.
             Container(
               key: const ValueKey('home.campus-card-mini-thumb'),
               width: 48,
               height: 32,
               decoration: BoxDecoration(
+                color: _cardBodyCanvas,
                 borderRadius: BorderRadius.circular(TpTokens.radiusXs),
                 border: Border.all(
                   color: colors.isDark ? colors.border : colors.divider,
@@ -325,19 +379,30 @@ class TpCampusCardStrip extends StatelessWidget {
                 ),
               ),
               clipBehavior: Clip.antiAlias,
-              child: Image.asset(
-                cardFaceAsset,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.medium,
-                excludeFromSemantics: true,
-                errorBuilder: (_, __, ___) => ColoredBox(
-                  color: colors.opaqueBrandContainer,
-                  child: Icon(
-                    TpIcons.campusCard,
-                    size: TpTokens.iconS,
-                    color: colors.brandInk,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Expanded(
+                    flex: 28,
+                    child: ColoredBox(color: _cardHeaderCrimson),
                   ),
-                ),
+                  Expanded(
+                    flex: 72,
+                    child: ColoredBox(
+                      color: _cardBodyCanvas,
+                      child: Image.asset(
+                        cardBottomAsset,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.bottomCenter,
+                        filterQuality: FilterQuality.medium,
+                        excludeFromSemantics: true,
+                        errorBuilder: (_, __, ___) => const ColoredBox(
+                          color: _cardBodyBlush,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: TpTokens.space3),
