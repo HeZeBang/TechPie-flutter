@@ -260,7 +260,9 @@ class _DesktopSelectMenuRow extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      hoverColor: selected ? Colors.transparent : colors.surfaceSubtle,
+      hoverColor: colors.textPrimary.withValues(
+        alpha: colors.isDark ? 0.06 : 0.04,
+      ),
       highlightColor: colors.textPrimary.withValues(alpha: 0.06),
       splashColor: colors.brand.withValues(alpha: 0.10),
       child: ColoredBox(

@@ -36,8 +36,11 @@ class DesktopSidebarItem extends StatelessWidget {
                     DesktopSidebarTokens.navItemTextGap +
                     DesktopSidebarTokens.minLabelWidth;
 
+        final hoverOverlay = colors.textPrimary.withValues(
+          alpha: colors.isDark ? 0.06 : 0.04,
+        );
         return Material(
-          color: selected ? colors.opaqueBrandContainer : Colors.transparent,
+          color: selected ? colors.opaqueBrandContainer : colors.surface,
           shape: RoundedRectangleBorder(
             borderRadius: radius,
             side: selected ? BorderSide(color: selectedBorder) : BorderSide.none,
@@ -46,7 +49,7 @@ class DesktopSidebarItem extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             borderRadius: radius,
-            hoverColor: selected ? Colors.transparent : colors.surfaceSubtle,
+            hoverColor: hoverOverlay,
             highlightColor: colors.textPrimary.withValues(alpha: 0.06),
             splashColor: colors.brand.withValues(alpha: 0.10),
             focusColor: colors.brand.withValues(alpha: 0.08),

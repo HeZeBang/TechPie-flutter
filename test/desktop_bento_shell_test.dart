@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -153,8 +154,31 @@ void main() {
 
     final tp = TpColors.light();
     expect(material.color, tp.opaqueBrandContainer);
-    expect(inkWell.hoverColor, Colors.transparent);
+    expect(inkWell.hoverColor, isNotNull);
+    expect(inkWell.hoverColor, isNot(Colors.transparent));
+    expect(inkWell.hoverColor!.a, lessThan(0.15));
     expect(label.style?.color, tp.textPrimary);
+
+    // Hovering an unselected item, clicking it, and keeping the pointer on it
+    // must keep a constant subtle hover alpha (avoiding InkHighlight turning
+    // Colors.transparent into opaque black via Color(0x00000000).withAlpha(255)).
+    final scheduleItem = find.ancestor(
+      of: find.text('课表'),
+      matching: find.byType(DesktopSidebarItem),
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(scheduleItem));
+    await tester.pumpAndSettle();
+    await tester.tap(scheduleItem);
+    await tester.pumpAndSettle();
+
+    final scheduleInkWell = tester.widget<InkWell>(
+      find.descendant(of: scheduleItem, matching: find.byType(InkWell)),
+    );
+    expect(scheduleInkWell.hoverColor, isNot(Colors.transparent));
+    expect(scheduleInkWell.hoverColor!.a, lessThan(0.15));
   });
 
   testWidgets('SettingsPage toggles update live on wide desktop window',

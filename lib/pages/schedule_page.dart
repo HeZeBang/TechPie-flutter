@@ -1786,12 +1786,13 @@ class _SegmentPill extends StatelessWidget {
     final colors = context.tpColors;
     final selectedBg =
         colors.isDark ? colors.opaqueBrandContainer : colors.surface;
+    final trackColor = colors.isDark ? colors.canvas : colors.surfaceSubtle;
     final selectedBorder = colors.brand.withValues(
       alpha: colors.isDark ? 0.35 : 0.18,
     );
     return Expanded(
       child: Material(
-        color: selected ? selectedBg : Colors.transparent,
+        color: selected ? selectedBg : trackColor,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(TpTokens.radiusXs),
           side: selected ? BorderSide(color: selectedBorder) : BorderSide.none,
@@ -1799,7 +1800,9 @@ class _SegmentPill extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
-          hoverColor: selected ? Colors.transparent : colors.surfaceSubtle,
+          hoverColor: colors.textPrimary.withValues(
+            alpha: colors.isDark ? 0.06 : 0.04,
+          ),
           highlightColor: colors.textPrimary.withValues(alpha: 0.06),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
