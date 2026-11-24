@@ -117,7 +117,7 @@ gh workflow run prepare-release.yml --ref master -f version=1.0.0
 
 发布说明写在 `CHANGELOG.md`，按**产品版本**分节（`## [1.0.0]`，同一条线的候选版和正式版共用一节）。没有说明的版本会被拒绝发布。
 
-Linux 同时提供 `tar.gz`、AppImage 和 Flatpak。正式版发布后生成 `techpie-bin` 的 AUR 文件与 Arch 软件包；AUR 自动推送需配置独立账号密钥。运行依赖和启用方法见 [Linux 打包说明](docs/linux-packaging.md)。
+Stable releases also build the `techpie-bin` Arch package. See [Linux packages](docs/linux-packaging.md) for runtime dependencies and AUR publishing settings.
 
 上传 Google Play / AppGallery / App Store Connect 仍是人工步骤，产物在 GitHub Release。完整的强制规则、发布编号规则与故障处理见 [`CLAUDE.md`](CLAUDE.md#releasing)。
 

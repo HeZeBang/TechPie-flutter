@@ -28,8 +28,8 @@ concurrency:
 jobs:
   build:
     name: Build Linux release
-    # Keep the native bundle compatible with the Ubuntu 22.04 library baseline.
-    runs-on: ubuntu-22.04
+    # The KDE widget requires Qt 6.4 or newer.
+    runs-on: ubuntu-24.04
     # A cold Linux desktop build configures CMake, compiles every plugin, then
     # links the runner and bundles the engine: the same order of magnitude as the
     # Android build. A release that dies here leaves its tag and draft behind, so

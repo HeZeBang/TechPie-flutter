@@ -1,6 +1,6 @@
 # Linux packages
 
-`linux-release.yml` compiles once on Ubuntu 22.04 and produces:
+`linux-release.yml` compiles once on Ubuntu 24.04 and produces:
 
 - `TechPie-<release name>-linux-x86-64.tar.gz`
 - `TechPie-<release name>-linux-x86-64.AppImage`
@@ -17,7 +17,7 @@ publishes it. Versions and tags continue to come from the existing release plan.
 
 The image contains Flutter, its plugins, application data and optional widgets.
 It uses the host GTK 3, WebKitGTK 4.1, libsecret, json-glib and OpenGL libraries.
-It targets the Ubuntu 22.04 library baseline and newer systems providing those
+It targets the Ubuntu 24.04 library baseline and newer systems providing those
 libraries; it is not a self-contained browser runtime. On Ubuntu:
 
 ```sh
