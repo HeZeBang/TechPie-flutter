@@ -299,31 +299,42 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     }
 
     setState(() => _saving = true);
-    await _schedule.saveCustomCourse(
-      semesterId!,
-      CustomCourse(
-        id: _id ?? CustomCourse.newId(),
-        semesterId: _originSemesterId ?? semesterId,
-        name: name,
-        location: _location.text.trim(),
-        teachers: _teachers.text.trim(),
-        // A one-off is placed by its own date; a stored column could only
-        // disagree with it later.
-        weekdays: _isOneOff ? const [] : (_weekdays.toList()..sort()),
-        time: _timeMode == 0
-            ? periodTime
-            : ClockCourseTime(
-                startTime: _formatTime(_startTime),
-                endTime: _formatTime(_endTime),
-              ),
-        weeks: _isOneOff ? const [] : (_weeks.toList()..sort()),
-        date: _isOneOff ? _date : null,
-        color: _color,
-      ),
-      periods: _periods,
-    );
-    if (!mounted) return;
-    Navigator.pop(context);
+    try {
+      await _schedule.saveCustomCourse(
+        semesterId!,
+        CustomCourse(
+          id: _id ?? CustomCourse.newId(),
+          semesterId: _originSemesterId ?? semesterId,
+          name: name,
+          location: _location.text.trim(),
+          teachers: _teachers.text.trim(),
+          // A one-off is placed by its own date; a stored column could only
+          // disagree with it later.
+          weekdays: _isOneOff ? const [] : (_weekdays.toList()..sort()),
+          time: _timeMode == 0
+              ? periodTime
+              : ClockCourseTime(
+                  startTime: _formatTime(_startTime),
+                  endTime: _formatTime(_endTime),
+                ),
+          weeks: _isOneOff ? const [] : (_weeks.toList()..sort()),
+          date: _isOneOff ? _date : null,
+          color: _color,
+        ),
+        periods: _periods,
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (error) {
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '保存失败：$error',
+        style: AdaptiveFeedbackStyle.error,
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _delete() async {
@@ -705,18 +716,47 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     final week =
         date == null ? null : teachingWeekOf(date, _schedule.termBegin);
 
-    return TpListRow(
-      icon: TpIcons.calendar,
-      title: '上课日期',
-      subtitle: date == null
-          ? '未选择'
-          : '${_formatDate(date)} ${_weekdayLabels[date.weekday - 1]}'
-              '${week == null ? '' : ' · 第 $week 周'}',
-      trailing: Text(
-        '选择',
-        style: TpTypography.badge(colors.brand),
-      ),
+    return InkWell(
       onTap: _pickDate,
+      borderRadius: BorderRadius.circular(TpTokens.radiusS),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              TpIcons.calendar,
+              size: TpTokens.iconM,
+              color: colors.brandInk,
+            ),
+            const SizedBox(width: TpTokens.space3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '上课日期',
+                    style: TpTypography.itemTitle(colors)
+                        .copyWith(fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    date == null
+                        ? '未选择'
+                        : '${_formatDate(date)} ${_weekdayLabels[date.weekday - 1]}'
+                            '${week == null ? '' : ' · 第 $week 周'}',
+                    style: TpTypography.itemMeta(colors),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: TpTokens.space2),
+            Text(
+              '选择',
+              style: TpTypography.badge(colors.brandInk),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

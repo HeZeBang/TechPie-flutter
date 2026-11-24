@@ -162,11 +162,15 @@ class WatchSettingsContent extends StatelessWidget {
           final colors = context.tpColors;
           final summary = _summary();
           final statusColor =
-              summary.warning ? colors.dangerRed : colors.brand;
+              summary.warning ? colors.dangerRed : colors.brandInk;
+          final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
+            context,
+            extra: TpTokens.space4,
+          );
           return ListView(
             padding: EdgeInsets.fromLTRB(
               TpTokens.pageHorizontalPadding,
-              TpTokens.space4,
+              topInset,
               TpTokens.pageHorizontalPadding,
               AppShellMetrics.bottomContentPaddingOf(context, margin: 32),
             ),
@@ -185,7 +189,7 @@ class WatchSettingsContent extends StatelessWidget {
                               Icon(
                                 TpIcons.watch,
                                 size: TpTokens.iconM,
-                                color: colors.brand,
+                                color: colors.brandInk,
                               ),
                               const SizedBox(width: TpTokens.space2),
                               Expanded(

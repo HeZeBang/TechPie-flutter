@@ -28,8 +28,8 @@ class TpPageBody extends StatelessWidget {
   }
 }
 
-/// Two-column Bento layout at `>= TpTokens.bentoBreakpoint (960dp)`, collapsing
-/// cleanly into a single stacked column on narrower viewports.
+/// Two-column Bento layout when available content width reaches [breakpoint],
+/// collapsing cleanly into a single stacked column on narrower viewports.
 class TpBentoGrid extends StatelessWidget {
   const TpBentoGrid({
     super.key,
@@ -39,7 +39,7 @@ class TpBentoGrid extends StatelessWidget {
     this.secondaryFlex = 45,
     this.columnGap = TpTokens.space4,
     this.verticalGap = TpTokens.sectionGap,
-    this.breakpoint = TpTokens.bentoBreakpoint,
+    this.breakpoint = TpTokens.singleColumnMaxWidth,
   });
 
   final List<Widget> primaryColumn;
@@ -52,34 +52,40 @@ class TpBentoGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    if (width < breakpoint) {
-      final combined = [...primaryColumn, ...secondaryColumn];
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: _intersperse(combined, verticalGap),
-      );
-    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        if (width < breakpoint) {
+          final combined = [...primaryColumn, ...secondaryColumn];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: _intersperse(combined, verticalGap),
+          );
+        }
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          flex: primaryFlex,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: _intersperse(primaryColumn, verticalGap),
-          ),
-        ),
-        SizedBox(width: columnGap),
-        Expanded(
-          flex: secondaryFlex,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: _intersperse(secondaryColumn, verticalGap),
-          ),
-        ),
-      ],
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: primaryFlex,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _intersperse(primaryColumn, verticalGap),
+              ),
+            ),
+            SizedBox(width: columnGap),
+            Expanded(
+              flex: secondaryFlex,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _intersperse(secondaryColumn, verticalGap),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

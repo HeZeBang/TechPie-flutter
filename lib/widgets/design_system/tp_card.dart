@@ -65,7 +65,7 @@ class TpCard extends StatelessWidget {
                   Icon(
                     leadingIcon,
                     size: TpTokens.iconS,
-                    color: colors.brand,
+                    color: colors.brandInk,
                   ),
                   const SizedBox(width: TpTokens.space2),
                 ],
@@ -113,6 +113,9 @@ class TpCard extends StatelessWidget {
               onTap: onTap,
               onLongPress: onLongPress,
               borderRadius: radius,
+              hoverColor: colors.textPrimary.withValues(
+                alpha: colors.isDark ? 0.06 : 0.04,
+              ),
               splashColor: colors.brandSoft,
               highlightColor: colors.surfacePressed.withValues(alpha: 0.4),
               child: content,

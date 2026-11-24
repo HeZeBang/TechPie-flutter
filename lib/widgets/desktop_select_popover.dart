@@ -2,7 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../theme/theme.dart';
 import 'desktop_popup.dart';
 
 typedef DesktopSelectAnchorBuilder = Widget Function(
@@ -53,6 +55,7 @@ class _DesktopSelectPopoverState<T> extends State<DesktopSelectPopover<T>> {
   final GlobalKey _anchorKey = GlobalKey();
   OverlayEntry? _entry;
   ScrollController? _scrollController;
+  KeyEventCallback? _keyHandler;
 
   bool get _isOpen => _entry != null;
 
@@ -162,11 +165,24 @@ class _DesktopSelectPopoverState<T> extends State<DesktopSelectPopover<T>> {
       },
     );
 
+    _keyHandler = (event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        _close();
+        return true;
+      }
+      return false;
+    };
+    HardwareKeyboard.instance.addHandler(_keyHandler!);
     overlay.insert(_entry!);
     setState(() {});
   }
 
   void _close({bool notify = true}) {
+    if (_keyHandler != null) {
+      HardwareKeyboard.instance.removeHandler(_keyHandler!);
+      _keyHandler = null;
+    }
     _entry?.remove();
     _entry = null;
     _scrollController?.dispose();
@@ -255,13 +271,17 @@ class _DesktopSelectMenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colors = context.tpColors;
 
-    return InkWell(
-      onTap: onTap,
-      child: ColoredBox(
-        color:
-            selected ? colorScheme.surfaceContainerHighest : Colors.transparent,
+    return Material(
+      color: selected ? colors.opaqueBrandContainer : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        hoverColor: colors.textPrimary.withValues(
+          alpha: colors.isDark ? 0.06 : 0.04,
+        ),
+        highlightColor: colors.textPrimary.withValues(alpha: 0.06),
+        splashColor: colors.brand.withValues(alpha: 0.10),
         child: Row(
           children: [
             SizedBox(
@@ -271,13 +291,21 @@ class _DesktopSelectMenuRow extends StatelessWidget {
                     (selected
                         ? Icon(
                             Icons.check_rounded,
-                            size: 24,
-                            color: colorScheme.primary,
+                            size: 20,
+                            color: colors.brandInk,
                           )
                         : const SizedBox.shrink()),
               ),
             ),
-            Expanded(child: Text(label, style: theme.textTheme.titleMedium)),
+            Expanded(
+              child: Text(
+                label,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: colors.textPrimary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
           ],
         ),
       ),

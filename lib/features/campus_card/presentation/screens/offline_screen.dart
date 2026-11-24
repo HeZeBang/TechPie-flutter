@@ -189,10 +189,16 @@ final class _AuthorizationBody extends ConsumerWidget {
         content: const Text('此操作只删除本机离线授权，不会在服务端吊销。'),
         actions: [
           TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: context.gpColors.textSecondary,
+            ),
             onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('取消'),
           ),
           TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: context.gpColors.danger,
+            ),
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('删除'),
           ),
@@ -247,8 +253,11 @@ final class _PlainAuthorizationError extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: context.gpColors.surface,
           borderRadius: BorderRadius.circular(20),
+          border: Theme.of(context).brightness == Brightness.dark
+              ? Border.all(color: context.gpColors.border)
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

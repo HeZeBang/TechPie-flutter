@@ -67,7 +67,9 @@ class ThemeService extends ChangeNotifier {
     if (_systemLight == light && _systemDark == dark) return;
     _systemLight = light;
     _systemDark = dark;
-    notifyListeners();
+    if (_colorScheme == AppColorScheme.system) {
+      notifyListeners();
+    }
   }
 
   bool get _usesIosTheme =>
@@ -140,27 +142,36 @@ class ThemeService extends ChangeNotifier {
     final cardBorder = tp.border == Colors.transparent
         ? BorderSide.none
         : BorderSide(color: tp.border);
+    final dialogShape = RoundedRectangleBorder(
+      borderRadius: const BorderRadius.all(Radius.circular(TpTokens.radiusL)),
+      side: cardBorder,
+    );
+    final inputBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(TpTokens.radiusS),
+      borderSide: BorderSide(
+        color: isDark ? tp.border : scheme.outline.withValues(alpha: 0.45),
+      ),
+    );
 
     return ThemeData(
       useMaterial3: true,
       platform: _usesIosTheme ? TargetPlatform.iOS : null,
       fontFamilyFallback: TpTypography.fontFamilyFallback,
       colorScheme: scheme,
-      switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.disabled) || states.contains(WidgetState.selected)) {
-            return null; // Use the Material defaults for these states.
-          }
-          return tp.textSecondary;
-        }),
-      ),
+      primaryColor: tp.brand,
+      primaryColorLight: scheme.primaryContainer,
+      primaryColorDark: tp.brand,
+      secondaryHeaderColor: scheme.primaryContainer,
       cupertinoOverrideTheme: CupertinoThemeData(
         brightness: brightness,
         primaryColor: tp.brand,
+        primaryContrastingColor: tp.onBrand,
+        barBackgroundColor: tp.canvas,
         scaffoldBackgroundColor: tp.canvas,
+        applyThemeToAll: true,
       ),
       scaffoldBackgroundColor: tp.canvas,
-      canvasColor: tp.canvas,
+      canvasColor: tp.surface,
       cardColor: tp.surface,
       dividerColor: tp.divider,
       dividerTheme: DividerThemeData(
@@ -199,23 +210,186 @@ class ThemeService extends ChangeNotifier {
       dialogTheme: DialogThemeData(
         backgroundColor: tp.surface,
         surfaceTintColor: Colors.transparent,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(TpTokens.radiusL)),
+        shape: dialogShape,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: tp.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius:
+              const BorderRadius.all(Radius.circular(TpTokens.radiusM)),
+          side: BorderSide(color: isDark ? tp.border : tp.divider),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: isDark ? tp.surfacePressed : null,
-        contentTextStyle: isDark ? TextStyle(color: tp.textPrimary) : null,
+        backgroundColor: isDark ? tp.surfacePressed : scheme.inverseSurface,
+        contentTextStyle: TextStyle(
+          color: isDark ? tp.textPrimary : scheme.onInverseSurface,
+        ),
+        actionTextColor: isDark ? tp.brandInk : scheme.inversePrimary,
         behavior: SnackBarBehavior.floating,
         shape: _snackBarShape,
         insetPadding: _snackBarInsets,
       ),
+      chipTheme: ChipThemeData(
+        backgroundColor: tp.surface,
+        selectedColor: scheme.primaryContainer,
+        secondarySelectedColor: scheme.primaryContainer,
+        disabledColor: tp.surfaceSubtle,
+        checkmarkColor: tp.brandInk,
+        deleteIconColor: tp.textMuted,
+        surfaceTintColor: Colors.transparent,
+        labelStyle: TextStyle(
+          color: tp.textPrimary,
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
+        secondaryLabelStyle: TextStyle(
+          color: tp.brandInk,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+        side: WidgetStateBorderSide.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return BorderSide(
+              color: tp.brand.withValues(alpha: isDark ? 0.52 : 0.35),
+            );
+          }
+          return BorderSide(
+            color: isDark ? tp.border : scheme.outline.withValues(alpha: 0.45),
+          );
+        }),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(TpTokens.radiusS),
+        ),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return scheme.primaryContainer;
+            }
+            return tp.surface;
+          }),
+          foregroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.disabled)) {
+              return tp.textMuted.withValues(alpha: 0.5);
+            }
+            if (states.contains(WidgetState.selected)) {
+              return tp.brandInk;
+            }
+            return tp.textPrimary;
+          }),
+          iconColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return tp.brandInk;
+            }
+            return tp.textMuted;
+          }),
+          side: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return BorderSide(
+                color: tp.brand.withValues(alpha: isDark ? 0.50 : 0.35),
+              );
+            }
+            return BorderSide(
+              color: isDark ? tp.border : scheme.outline.withValues(alpha: 0.45),
+            );
+          }),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return tp.textMuted.withValues(alpha: 0.45);
+          }
+          if (states.contains(WidgetState.selected)) {
+            return tp.onBrand;
+          }
+          return tp.textSecondary;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return tp.surfaceSubtle;
+          }
+          if (states.contains(WidgetState.selected)) {
+            return tp.brand;
+          }
+          return tp.surfaceSubtle;
+        }),
+        trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return Colors.transparent;
+          }
+          return scheme.outline;
+        }),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return tp.brand;
+          return Colors.transparent;
+        }),
+        checkColor: WidgetStatePropertyAll(tp.onBrand),
+        side: BorderSide(color: scheme.outline, width: 1.5),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return tp.brand;
+          return scheme.outline;
+        }),
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: tp.brand,
+        linearTrackColor: tp.surfacePressed,
+        circularTrackColor: tp.surfacePressed,
+      ),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: tp.brand,
+        inactiveTrackColor: tp.surfacePressed,
+        thumbColor: tp.brand,
+        overlayColor: tp.brandSoft,
+        valueIndicatorColor: tp.brand,
+        valueIndicatorTextStyle: TextStyle(color: tp.onBrand),
+      ),
+      tabBarTheme: TabBarThemeData(
+        indicatorColor: tp.brand,
+        labelColor: tp.brandInk,
+        unselectedLabelColor: tp.textMuted,
+        dividerColor: Colors.transparent,
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: tp.brand,
+        selectionColor: tp.brand.withValues(alpha: 0.22),
+        selectionHandleColor: tp.brand,
+      ),
+      datePickerTheme: DatePickerThemeData(
+        backgroundColor: tp.surface,
+        surfaceTintColor: Colors.transparent,
+        headerBackgroundColor: tp.brand,
+        headerForegroundColor: tp.onBrand,
+        rangeSelectionBackgroundColor: scheme.primaryContainer,
+        rangePickerBackgroundColor: tp.surface,
+        rangePickerHeaderBackgroundColor: tp.brand,
+        rangePickerHeaderForegroundColor: tp.onBrand,
+        shape: dialogShape,
+      ),
+      timePickerTheme: TimePickerThemeData(
+        backgroundColor: tp.surface,
+        dialBackgroundColor: tp.surfaceSubtle,
+        hourMinuteColor: scheme.primaryContainer,
+        hourMinuteTextColor: tp.brandInk,
+        dayPeriodColor: scheme.primaryContainer,
+        dayPeriodTextColor: tp.brandInk,
+        shape: dialogShape,
+      ),
       inputDecorationTheme: _usesIosTheme
           ? InputDecorationTheme(
               filled: true,
-              fillColor: tp.surface,
+              fillColor: tp.surfaceSubtle,
             )
-          : null,
+          : InputDecorationTheme(
+              border: inputBorder,
+            ),
       extensions: <ThemeExtension<dynamic>>[tp],
     );
   }

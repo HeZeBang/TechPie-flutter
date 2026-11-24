@@ -18,7 +18,8 @@ class GymBookingTab extends StatefulWidget {
   State<GymBookingTab> createState() => _GymBookingTabState();
 }
 
-class _GymBookingTabState extends State<GymBookingTab> {
+class _GymBookingTabState extends State<GymBookingTab>
+    with AutomaticKeepAliveClientMixin {
   final Set<OaSport> _sports = {OaSport.badminton};
   final Map<String, Set<int>> _selectedCourts = {};
   DateTime _date = DateTime.now();
@@ -72,6 +73,7 @@ class _GymBookingTabState extends State<GymBookingTab> {
     if (_sports.isEmpty) return;
     if (_selectedSlots.isEmpty) {
       setState(() {
+        _checking = false;
         _error = '请选择有效时间段，例如 18:00 到 19:00';
         _availability = [];
         _selectedCourts.clear();
@@ -219,7 +221,11 @@ class _GymBookingTabState extends State<GymBookingTab> {
       _selectedCourts.values.fold(0, (sum, set) => sum + set.length);
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     final colors = context.tpColors;
     final grouped = {
       for (final item in _availability) item.key: item,
@@ -271,13 +277,43 @@ class _GymBookingTabState extends State<GymBookingTab> {
                     ),
                     const SizedBox(height: TpTokens.space2),
                     Divider(height: 1, thickness: 0.5, color: colors.divider),
-                    TpListRow(
-                      icon: TpIcons.calendar,
-                      iconColor: colors.brand,
-                      title: '预约日期',
-                      value: _dateString,
-                      showChevron: true,
+                    InkWell(
                       onTap: _submitting ? null : _pickDate,
+                      borderRadius: BorderRadius.circular(TpTokens.radiusS),
+                      hoverColor: colors.textPrimary.withValues(
+                        alpha: colors.isDark ? 0.06 : 0.04,
+                      ),
+                      splashColor: colors.brandSoft,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Row(
+                          children: [
+                            Icon(
+                              TpIcons.calendar,
+                              size: TpTokens.iconM,
+                              color: colors.brandInk,
+                            ),
+                            const SizedBox(width: TpTokens.space3),
+                            Expanded(
+                              child: Text(
+                                '预约日期',
+                                style: TpTypography.itemTitle(colors)
+                                    .copyWith(fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                            Text(
+                              _dateString,
+                              style: TpTypography.itemMeta(colors),
+                            ),
+                            const SizedBox(width: TpTokens.space1),
+                            Icon(
+                              TpIcons.chevronRight,
+                              size: TpTokens.iconS,
+                              color: colors.textMuted,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     Divider(height: 1, thickness: 0.5, color: colors.divider),
                     const SizedBox(height: TpTokens.space3),
@@ -319,6 +355,7 @@ class _GymBookingTabState extends State<GymBookingTab> {
                           : (value) {
                               setState(() {
                                 _availabilityRequest++;
+                                _checking = false;
                                 _timeRange = value;
                                 _availability = [];
                                 _selectedCourts.clear();

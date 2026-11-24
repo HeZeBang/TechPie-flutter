@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/theme.dart';
 import '../utils/platform.dart';
 import 'secure_password_field.dart';
 
@@ -33,13 +34,18 @@ class AdaptiveTextFieldGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!isIos()) {
       return Column(
-        children: [for (final item in items) _buildMaterialField(item)],
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0) const SizedBox(height: TpTokens.space3),
+            _buildMaterialField(items[i]),
+          ],
+        ],
       );
     }
 
-    final background =
-        CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context);
-    final separator = CupertinoColors.separator.resolveFrom(context);
+    final colors = context.tpColors;
+    final background = colors.surfaceSubtle;
+    final separator = colors.divider;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(10),

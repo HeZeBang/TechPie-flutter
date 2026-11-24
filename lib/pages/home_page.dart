@@ -26,6 +26,7 @@ import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/page_refresh.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/uni_auth_login.dart';
 import 'campus_card_page.dart';
@@ -42,6 +43,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late ScheduleService _schedule;
   late AssignmentService _assignments;
+  late AuthService _auth;
   List<Course> _todayCourses = [];
   List<Period> _periods = defaultPeriods.toList();
   bool _initialized = false;
@@ -78,10 +80,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
     if (!_initialized) {
       _initialized = true;
-      _schedule = ServiceProvider.of(context).scheduleService;
-      _assignments = ServiceProvider.of(context).assignmentService;
+      final sp = ServiceProvider.of(context);
+      _schedule = sp.scheduleService;
+      _assignments = sp.assignmentService;
+      _auth = sp.authService;
       _schedule.addListener(_rebuild);
       _assignments.addListener(_onAssignmentsChanged);
+      _auth.addListener(_onAuthChanged);
       _doRebuild();
       _refreshTimer = Timer.periodic(
         const Duration(minutes: 1),
@@ -95,8 +100,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _refreshTimer?.cancel();
     _schedule.removeListener(_rebuild);
     _assignments.removeListener(_onAssignmentsChanged);
+    _auth.removeListener(_onAuthChanged);
     _staggerController?.dispose();
     super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onAssignmentsChanged() {
@@ -305,10 +315,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
+  Future<void> _refreshHome() async {
+    final sp = ServiceProvider.of(context);
+    final tasks = <Future<void>>[
+      sp.campusCardService.refreshAccount(),
+    ];
+    if (sp.thirdPartyAuthService.hasIdsBinding) {
+      tasks.add(sp.scheduleService.fetchAll());
+    }
+    if (sp.authService.isLoggedIn ||
+        sp.thirdPartyAuthService.boundPlatforms.isNotEmpty) {
+      tasks.add(sp.assignmentService.fetchAssignments());
+    }
+    await Future.wait(tasks);
+  }
+
   // ── Build ──
 
   @override
   Widget build(BuildContext context) {
+    // Subscribe to TickerMode so switching back to Home after toggling
+    // privacy blur or debug mode in Settings immediately refreshes the view.
+    // ignore: deprecated_member_use
+    TickerMode.of(context);
     final colors = context.tpColors;
     final sp = ServiceProvider.of(context);
     final auth = sp.authService;
@@ -354,52 +383,56 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       backgroundColor: colors.canvas,
       body: SafeArea(
         bottom: false,
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            horizontalPadding,
-            isBento ? TpTokens.space5 : TpTokens.space3,
-            horizontalPadding,
-            AppShellMetrics.bottomContentPaddingOf(context),
-          ),
-          children: [
-            TpPageBody(
-              maxWidth: isBento ? 1120 : TpTokens.singleColumnMaxWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  header,
-                  SizedBox(
-                    height: isBento ? TpTokens.space4 : TpTokens.sectionGap,
-                  ),
-                  if (isBento)
-                    TpBentoGrid(
-                      primaryColumn: [
-                        todayClasses,
-                        deadlines,
-                        if (debugPanel != null) debugPanel,
-                      ],
-                      secondaryColumn: [
-                        campusCardStrip,
-                        quickActions,
-                      ],
-                    )
-                  else ...[
-                    campusCardStrip,
-                    const SizedBox(height: TpTokens.sectionGap),
-                    todayClasses,
-                    const SizedBox(height: TpTokens.sectionGap),
-                    deadlines,
-                    const SizedBox(height: TpTokens.sectionGap),
-                    quickActions,
-                    if (debugPanel != null) ...[
+        child: PageRefreshIndicator(
+          onRefresh: _refreshHome,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              isBento ? TpTokens.space5 : TpTokens.space3,
+              horizontalPadding,
+              AppShellMetrics.bottomContentPaddingOf(context),
+            ),
+            children: [
+              TpPageBody(
+                maxWidth: isBento ? 1120 : TpTokens.singleColumnMaxWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    header,
+                    SizedBox(
+                      height: isBento ? TpTokens.space4 : TpTokens.sectionGap,
+                    ),
+                    if (isBento)
+                      TpBentoGrid(
+                        primaryColumn: [
+                          todayClasses,
+                          deadlines,
+                          if (debugPanel != null) debugPanel,
+                        ],
+                        secondaryColumn: [
+                          campusCardStrip,
+                          quickActions,
+                        ],
+                      )
+                    else ...[
+                      campusCardStrip,
                       const SizedBox(height: TpTokens.sectionGap),
-                      debugPanel,
+                      todayClasses,
+                      const SizedBox(height: TpTokens.sectionGap),
+                      deadlines,
+                      const SizedBox(height: TpTokens.sectionGap),
+                      quickActions,
+                      if (debugPanel != null) ...[
+                        const SizedBox(height: TpTokens.sectionGap),
+                        debugPanel,
+                      ],
                     ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -604,6 +637,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       boldTitle: isActive,
       opacity: isPast ? 0.45 : 1.0,
       showDivider: index < _todayCourses.length - 1,
+      onTap: () => appShellPendingTab.value = 1,
     );
   }
 
@@ -647,6 +681,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             if (overflow > 0)
               InkWell(
                 onTap: () => appShellPendingDeadlines.value = true,
+                hoverColor: colors.textPrimary.withValues(
+                  alpha: colors.isDark ? 0.06 : 0.04,
+                ),
+                splashColor: colors.brandSoft,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
                     TpTokens.cardPaddingHorizontal,
@@ -657,17 +695,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        '还有 $overflow 项 · 前往 Deadlines 查看全部',
-                        style: TpTypography.cardMeta(colors).copyWith(
-                          color: colors.brand,
+                      Flexible(
+                        child: Text(
+                          '还有 $overflow 项 · 前往 Deadlines 查看全部',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TpTypography.cardMeta(colors).copyWith(
+                            color: colors.brandInk,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 2),
                       Icon(
                         TpIcons.chevronRight,
                         size: TpTokens.iconXs,
-                        color: colors.brand,
+                        color: colors.brandInk,
                       ),
                     ],
                   ),

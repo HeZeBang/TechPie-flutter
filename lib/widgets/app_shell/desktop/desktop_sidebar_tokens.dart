@@ -9,11 +9,11 @@ abstract final class DesktopSidebarTokens {
   static const Duration widthAnimationDuration = Duration(milliseconds: 180);
   static const Curve widthAnimationCurve = Curves.easeOutCubic;
 
-  static const double headerHeight = 104;
+  static const double headerHeight = 80;
   static const double collapsedHorizontalPadding = 20;
   static const double mediumHorizontalPadding = 12;
   static const double expandedHorizontalPadding = 20;
-  static const double headerTopPadding = 40;
+  static const double headerTopPadding = 16;
   static const double headerBottomPadding = 16;
 
   static const double brandHeight = 48;

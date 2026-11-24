@@ -212,7 +212,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                             renewStatus: tpAuth.renewStatus('ids'),
                             showDivider: true,
                           ),
-                          Container(
+                          Material(
                             color: colors.surfaceSubtle.withValues(
                               alpha: colors.isDark ? 0.55 : 0.65,
                             ),

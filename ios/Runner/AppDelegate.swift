@@ -47,6 +47,11 @@ import WidgetKit
     }
 
     self.window = window
+    window.tintColor = UIColor { trait in
+      trait.userInterfaceStyle == .dark
+        ? UIColor(red: 0xE0 / 255.0, green: 0x31 / 255.0, blue: 0x40 / 255.0, alpha: 1.0)
+        : UIColor(red: 0xA3 / 255.0, green: 0x0B / 255.0, blue: 0x19 / 255.0, alpha: 1.0)
+    }
     GeneratedPluginRegistrant.register(with: flutterViewController)
 
     guard

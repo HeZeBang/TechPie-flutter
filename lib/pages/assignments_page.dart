@@ -61,7 +61,23 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
     _startCountdownTimer();
+  }
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape) {
+      return false;
+    }
+    if (!mounted ||
+        !_selectionMode ||
+        _remindersBusy ||
+        !(ModalRoute.isCurrentOf(context) ?? true)) {
+      return false;
+    }
+    _exitSelection();
+    return true;
   }
 
   void _startCountdownTimer() {
@@ -96,6 +112,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     _assignmentService?.removeListener(_onAssignmentServiceChanged);
     _countdownTimer?.cancel();
     super.dispose();
@@ -300,7 +317,6 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     final services = ServiceProvider.of(context);
     final assignmentService = services.assignmentService;
     final reminders = services.deadlineReminderService;
-    final colors = context.tpColors;
     final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(context);
 
     return ListenableBuilder(
@@ -319,20 +335,17 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                   reminders,
                   visible,
                 ),
-          body: ColoredBox(
-            color: colors.canvas,
-            child: PopScope(
-              canPop: !_selectionMode,
-              onPopInvokedWithResult: (didPop, _) {
-                if (!didPop && _selectionMode) _exitSelection();
-              },
-              child: _buildBody(
-                context,
-                assignmentService,
-                allVisible,
-                visible,
-                topInset,
-              ),
+          body: PopScope(
+            canPop: !_selectionMode,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop && _selectionMode) _exitSelection();
+            },
+            child: _buildBody(
+              context,
+              assignmentService,
+              allVisible,
+              visible,
+              topInset,
             ),
           ),
         );
@@ -686,8 +699,10 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                   AppShellMetrics.bottomContentPaddingOf(context),
                 ),
                 children: [
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.55,
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: MediaQuery.of(context).size.height * 0.55,
+                    ),
                     child: Center(
                       child: TpPageBody(
                         child: _emptyState(context, service),
@@ -744,7 +759,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             child: Icon(
               TpIcons.deadlines,
               size: TpTokens.iconL + 4,
-              color: colors.brand,
+              color: colors.brandInk,
             ),
           ),
           const SizedBox(height: TpTokens.space4),
@@ -784,6 +799,21 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               ),
               textAlign: TextAlign.center,
             ),
+            if (hasSources) ...[
+              const SizedBox(height: TpTokens.space4),
+              AdaptiveButton(
+                icon: TpIcons.refresh,
+                sfSymbol: 'arrow.clockwise',
+                label: '重新同步',
+                role: AdaptiveButtonRole.standard,
+                loading: service.loading,
+                width: 180,
+                height: 44,
+                onPressed: service.loading
+                    ? null
+                    : () => unawaited(_refresh(service)),
+              ),
+            ],
           ],
         ],
       ),
@@ -819,10 +849,17 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
         return targetA.compareTo(targetB);
       });
 
-    final todayLabel = DateFormat('yyyy-MM-dd EEE').format(now);
+    final todayShort = DateFormat('M/d').format(now);
     final itemLabel = sorted.any((item) => item is CustomDeadline)
         ? 'ddl'
         : _filteredItemLabel;
+    final upcomingTitle = (!_showAssignments && !_showExams)
+        ? '即将截止 · 已隐藏全部'
+        : (_showAssignments && !_showExams)
+            ? '即将截止 · 仅作业'
+            : (!_showAssignments && _showExams)
+                ? '即将截止 · 仅考试'
+                : '即将截止';
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -836,87 +873,163 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
           child: ListView(
             padding: EdgeInsets.fromLTRB(
               horizontalPadding,
-              TpTokens.space2,
+              TpTokens.space3,
               horizontalPadding,
               AppShellMetrics.bottomContentPaddingOf(context),
             ),
             children: [
-              if (overdue.isNotEmpty) ...[
-                _SectionToggleRow(
-                  collapsed: _pastCollapsed,
-                  leadingIcon: TpIcons.deadlines,
-                  leadingColor: colors.dangerRed,
-                  label: '已逾期 (${overdue.length})',
-                  onTap: () =>
-                      setState(() => _pastCollapsed = !_pastCollapsed),
-                ),
-                // One list child per card, not a Column of them: a single tall
-                // child skews the list's extent estimate until it is laid out.
-                if (!_pastCollapsed) ...[
-                  const SizedBox(height: TpTokens.space2),
-                  ...overdue.map((a) => _buildItem(context, service, a)),
-                ],
-                const SizedBox(height: TpTokens.space1),
-              ],
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: TpTokens.space2),
-                child: Row(
+              // Hero grouped card mirroring TechPie website Deadlines view.
+              TpCard(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: Divider(
-                        height: 1,
-                        thickness: 0.75,
-                        color: colors.brand.withValues(alpha: 0.35),
-                      ),
-                    ),
                     Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: TpTokens.space3,
+                      padding: const EdgeInsets.fromLTRB(
+                        TpTokens.cardPaddingHorizontal,
+                        TpTokens.cardPaddingVertical,
+                        TpTokens.cardPaddingHorizontal,
+                        TpTokens.space3,
                       ),
-                      child: TpBadge(
-                        label: '今天 · $todayLabel',
-                        tone: TpBadgeTone.brand,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    upcomingTitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TpTypography.cardTitle(colors),
+                                  ),
+                                ),
+                                const SizedBox(width: TpTokens.space2),
+                                TpBadge(
+                                  label: '${upcoming.length} 项',
+                                  tone: upcoming.isEmpty
+                                      ? TpBadgeTone.muted
+                                      : TpBadgeTone.brand,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: TpTokens.space2),
+                          Text(
+                            upcoming.isEmpty ? '今天 $todayShort' : '按紧迫度排序',
+                            maxLines: 1,
+                            style: TpTypography.cardMeta(colors),
+                          ),
+                        ],
                       ),
                     ),
-                    Expanded(
-                      child: Divider(
-                        height: 1,
-                        thickness: 0.75,
-                        color: colors.brand.withValues(alpha: 0.35),
-                      ),
-                    ),
+                    Divider(height: 1, thickness: 0.5, color: colors.divider),
+                    if (upcoming.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: TpTokens.cardPaddingHorizontal,
+                          vertical: TpTokens.space5,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '没有未完成的 $itemLabel',
+                              style: TpTypography.itemMeta(colors).copyWith(
+                                fontSize: 13.5,
+                              ),
+                            ),
+                            if (!_showAssignments && !_showExams) ...[
+                              const SizedBox(height: TpTokens.space2),
+                              TextButton(
+                                onPressed: () => setState(() {
+                                  _showAssignments = true;
+                                  _showExams = true;
+                                }),
+                                child: const Text('恢复显示全部'),
+                              ),
+                            ],
+                          ],
+                        ),
+                      )
+                    else
+                      for (var i = 0; i < upcoming.length; i++)
+                        _buildItem(
+                          context,
+                          service,
+                          upcoming[i],
+                          isLast: i == upcoming.length - 1,
+                        ),
                   ],
                 ),
               ),
-              if (upcoming.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: TpTokens.space5),
-                  child: Center(
-                    child: Text(
-                      '没有未完成的 $itemLabel',
-                      style: TpTypography.itemMeta(colors).copyWith(
-                        fontSize: 14,
+              if (overdue.isNotEmpty) ...[
+                const SizedBox(height: TpTokens.sectionGap),
+                TpCard(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _SectionToggleRow(
+                        collapsed: _pastCollapsed,
+                        leadingIcon: TpIcons.deadlines,
+                        leadingColor: colors.dangerRed,
+                        actionColor: colors.dangerRed,
+                        label: '已逾期 (${overdue.length})',
+                        onTap: () =>
+                            setState(() => _pastCollapsed = !_pastCollapsed),
                       ),
-                    ),
-                  ),
-                )
-              else
-                ...upcoming.map((a) => _buildItem(context, service, a)),
-              if (completed.isNotEmpty) ...[
-                const SizedBox(height: TpTokens.space3),
-                _SectionToggleRow(
-                  collapsed: _completedCollapsed,
-                  leadingIcon: TpIcons.checkCircle,
-                  leadingColor: colors.successGreen,
-                  label: '已完成 (${completed.length})',
-                  onTap: () => setState(
-                    () => _completedCollapsed = !_completedCollapsed,
+                      if (!_pastCollapsed) ...[
+                        Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          color: colors.divider,
+                        ),
+                        for (var i = 0; i < overdue.length; i++)
+                          _buildItem(
+                            context,
+                            service,
+                            overdue[i],
+                            isLast: i == overdue.length - 1,
+                          ),
+                      ],
+                    ],
                   ),
                 ),
-                if (!_completedCollapsed) ...[
-                  const SizedBox(height: TpTokens.space2),
-                  ...completed.map((a) => _buildItem(context, service, a)),
-                ],
+              ],
+              if (completed.isNotEmpty) ...[
+                const SizedBox(height: TpTokens.sectionGap),
+                TpCard(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _SectionToggleRow(
+                        collapsed: _completedCollapsed,
+                        leadingIcon: TpIcons.checkCircle,
+                        leadingColor: colors.successGreen,
+                        label: '已完成 (${completed.length})',
+                        onTap: () => setState(
+                          () => _completedCollapsed = !_completedCollapsed,
+                        ),
+                      ),
+                      if (!_completedCollapsed) ...[
+                        Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          color: colors.divider,
+                        ),
+                        for (var i = 0; i < completed.length; i++)
+                          _buildItem(
+                            context,
+                            service,
+                            completed[i],
+                            isLast: i == completed.length - 1,
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
               ],
             ],
           ),
@@ -928,8 +1041,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   Widget _buildItem(
     BuildContext context,
     AssignmentService service,
-    Assignment a,
-  ) {
+    Assignment a, {
+    required bool isLast,
+  }) {
     final key = AssignmentOverrides.keyFor(a);
     final epoch = service.identityEpoch;
     final selectionKey = _selectingReminders ? service.reminderKeyFor(a) : key;
@@ -937,26 +1051,30 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     final completed = service.isCompleted(a);
     final colors = context.tpColors;
 
-    final card = _AssignmentCard(
+    final row = _AssignmentRow(
       assignment: a,
       completed: completed,
       hasOverride: service.hasCompletionOverride(a),
       selected: selected,
       selectionMode: _selectionMode && !_loadingReminders,
+      showDivider: !isLast,
       onTap: () => unawaited(_onTapItem(context, service, a, selectionKey)),
       onLongPress: _selectionMode
           ? null
           : () => _enterSelectionWith(service, key, epoch),
+      onQuickToggleComplete: isDesktop() && !_selectionMode
+          ? () => unawaited(_toggleCompleted(context, service, a))
+          : null,
+      onQuickHide: isDesktop() && !_selectionMode
+          ? () => _onDismiss(context, service, a, key)
+          : null,
     );
 
     final inner = _selectionMode
-        ? Padding(
-            padding: const EdgeInsets.only(bottom: TpTokens.sectionGap),
-            child: card,
-          )
+        ? row
         : SwipeableCard(
-            borderRadius: BorderRadius.circular(TpTokens.radiusM),
-            bottomMargin: TpTokens.sectionGap,
+            borderRadius: BorderRadius.zero,
+            bottomMargin: 0,
             startAction: SwipeAction(
               icon: completed ? TpIcons.close : TpIcons.checkCircle,
               label: completed ? '取消完成' : '标记完成',
@@ -975,7 +1093,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             ),
             onStartSwipe: () => unawaited(_toggleCompleted(context, service, a)),
             onDismissed: () => _onDismiss(context, service, a, key),
-            child: card,
+            child: row,
           );
 
     // Stable key by override-key so swapping selection mode keeps the
@@ -1078,6 +1196,7 @@ class _SectionToggleRow extends StatelessWidget {
     required this.leadingColor,
     required this.label,
     required this.onTap,
+    this.actionColor,
   });
 
   final bool collapsed;
@@ -1085,43 +1204,53 @@ class _SectionToggleRow extends StatelessWidget {
   final Color leadingColor;
   final String label;
   final VoidCallback onTap;
+  final Color? actionColor;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
+    final trailingColor = actionColor ?? colors.textMuted;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(TpTokens.radiusS),
+      hoverColor: colors.textPrimary.withValues(
+        alpha: colors.isDark ? 0.06 : 0.04,
+      ),
+      splashColor: colors.brandSoft,
+      highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
       child: Padding(
         padding: const EdgeInsets.symmetric(
-          horizontal: TpTokens.space2,
-          vertical: TpTokens.space2,
+          horizontal: TpTokens.cardPaddingHorizontal,
+          vertical: TpTokens.space3,
         ),
         child: Row(
           children: [
-            Icon(
-              collapsed ? Icons.chevron_right : Icons.expand_more,
-              size: TpTokens.iconM,
-              color: colors.textMuted,
-            ),
-            const SizedBox(width: TpTokens.space1),
             Icon(
               leadingIcon,
               size: TpTokens.iconS,
               color: leadingColor,
             ),
             const SizedBox(width: TpTokens.space2),
-            Text(
-              label,
-              style: TpTypography.cardMeta(colors).copyWith(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TpTypography.cardTitle(colors).copyWith(fontSize: 14),
               ),
             ),
-            const Spacer(),
+            const SizedBox(width: TpTokens.space2),
             Text(
-              collapsed ? '展开' : '折叠',
-              style: TpTypography.badge(colors.brand),
+              collapsed ? '展开' : '收起',
+              style: TpTypography.cardMeta(colors).copyWith(
+                color: trailingColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              collapsed ? Icons.chevron_right : Icons.expand_more,
+              size: TpTokens.iconS + 2,
+              color: trailingColor,
             ),
           ],
         ),
@@ -1130,13 +1259,34 @@ class _SectionToggleRow extends StatelessWidget {
   }
 }
 
-class _PlatformErrorsBanner extends StatelessWidget {
+class _PlatformErrorsBanner extends StatefulWidget {
   final AssignmentService service;
   const _PlatformErrorsBanner({required this.service});
 
   @override
+  State<_PlatformErrorsBanner> createState() => _PlatformErrorsBannerState();
+}
+
+class _PlatformErrorsBannerState extends State<_PlatformErrorsBanner> {
+  final Set<String> _retrying = <String>{};
+
+  Future<void> _retryPlatform(String platform) async {
+    if (!_retrying.add(platform)) return;
+    setState(() {});
+    try {
+      await widget.service.fetchPlatform(platform);
+    } finally {
+      if (mounted) {
+        setState(() => _retrying.remove(platform));
+      } else {
+        _retrying.remove(platform);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final errors = service.platformErrors;
+    final errors = widget.service.platformErrors;
     if (errors.isEmpty) return const SizedBox.shrink();
     final colors = context.tpColors;
 
@@ -1155,9 +1305,8 @@ class _PlatformErrorsBanner extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: TpTokens.space2),
                 child: TpCard(
-                  color: colors.dangerRed
-                      .withValues(alpha: colors.isDark ? 0.16 : 0.08),
-                  borderColor: colors.dangerRed.withValues(alpha: 0.25),
+                  color: colors.opaqueDangerContainer,
+                  borderColor: colors.dangerRed.withValues(alpha: 0.30),
                   borderRadius: TpTokens.radiusS,
                   padding: const EdgeInsets.symmetric(
                     horizontal: TpTokens.space3,
@@ -1181,14 +1330,24 @@ class _PlatformErrorsBanner extends StatelessWidget {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(TpIcons.refresh, size: TpTokens.iconS),
-                        onPressed: () =>
-                            unawaited(service.fetchPlatform(entry.key)),
+                        icon: _retrying.contains(entry.key)
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: colors.dangerRed,
+                                ),
+                              )
+                            : const Icon(TpIcons.refresh, size: TpTokens.iconS),
+                        onPressed: _retrying.contains(entry.key)
+                            ? null
+                            : () => unawaited(_retryPlatform(entry.key)),
                         color: colors.dangerRed,
                         tooltip: '重试 ${entry.key}',
                         constraints: const BoxConstraints.tightFor(
-                          width: 32,
-                          height: 32,
+                          width: 36,
+                          height: 36,
                         ),
                         padding: EdgeInsets.zero,
                       ),
@@ -1203,23 +1362,51 @@ class _PlatformErrorsBanner extends StatelessWidget {
   }
 }
 
-String _formatRemainingTime(
+String _formatPlatformLabel(String platform) {
+  return switch (platform.trim().toLowerCase()) {
+    'blackboard' => 'Blackboard',
+    'gradescope' => 'Gradescope',
+    'hydro' => 'Hydro',
+    'elearning' => 'eLearning',
+    'egate' => 'eGate',
+    'exam' || 'custom' || '' => '',
+    final other => other[0].toUpperCase() + other.substring(1),
+  };
+}
+
+String _formatRemainingLabel(
   DateTime due,
   DateTime now, {
-  String prefix = 'Remain',
+  bool late = false,
 }) {
   final diff = due.difference(now);
+  final prefix = late ? '迟交剩余 ' : '剩余 ';
   if (diff.isNegative || diff.inSeconds <= 0) {
-    return 'Overdue';
+    return '已逾期';
   }
   final days = diff.inDays;
-  final hours = (diff.inHours % 24).toString().padLeft(2, '0');
+  final remHours = diff.inHours % 24;
+  if (days >= 3) {
+    return '$prefix$days 天';
+  }
+  if (days >= 1) {
+    return remHours > 0 ? '$prefix$days 天 $remHours 小时' : '$prefix$days 天';
+  }
+  final hours = diff.inHours.toString().padLeft(2, '0');
   final minutes = (diff.inMinutes % 60).toString().padLeft(2, '0');
   final seconds = (diff.inSeconds % 60).toString().padLeft(2, '0');
-  if (days > 0) {
-    return '$prefix: ${days}d $hours:$minutes:$seconds';
+  return '$prefix$hours:$minutes:$seconds';
+}
+
+String _formatOverdueLabel(DateTime due, DateTime now) {
+  final diff = now.difference(due);
+  if (diff.inDays >= 1) {
+    return '已逾期 ${diff.inDays} 天';
   }
-  return '$prefix: $hours:$minutes:$seconds';
+  if (diff.inHours >= 1) {
+    return '已逾期 ${diff.inHours} 小时';
+  }
+  return '已逾期';
 }
 
 double _urgencyProgress({
@@ -1241,27 +1428,43 @@ double _urgencyProgress({
   return 0.15;
 }
 
-class _AssignmentCard extends StatelessWidget {
+class _AssignmentRow extends StatefulWidget {
   final Assignment assignment;
   final bool completed;
   final bool hasOverride;
   final bool selected;
   final bool selectionMode;
+  final bool showDivider;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onQuickToggleComplete;
+  final VoidCallback? onQuickHide;
 
-  const _AssignmentCard({
+  const _AssignmentRow({
     required this.assignment,
     required this.completed,
     required this.hasOverride,
     required this.selected,
     required this.selectionMode,
+    required this.showDivider,
     required this.onTap,
     required this.onLongPress,
+    this.onQuickToggleComplete,
+    this.onQuickHide,
   });
 
   @override
+  State<_AssignmentRow> createState() => _AssignmentRowState();
+}
+
+class _AssignmentRowState extends State<_AssignmentRow> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final assignment = widget.assignment;
+    final completed = widget.completed;
+    final selected = widget.selected;
     final colors = context.tpColors;
     final now = DateTime.now();
     final lateDue = assignment.effectiveLateDue;
@@ -1272,31 +1475,32 @@ class _AssignmentCard extends StatelessWidget {
         assignment.due.isBefore(now) &&
         !isPast;
 
-    final formatter = DateFormat('MM/dd HH:mm');
     final displayDue = isLateWindow ? lateDue : assignment.due;
-    final dueLabel = isLateWindow ? 'Late Due: ' : 'Due: ';
-    final dueString = formatter.format(displayDue);
+    final hoursLeft = displayDue.difference(now).inHours;
+    final isCalm = !completed && !isPast && !isLateWindow && hoursLeft >= 72;
+    final dueShort = DateFormat('MM/dd HH:mm').format(displayDue);
+
     final subtitle = switch (assignment) {
       ExamAssignment(:final location) => location.trim(),
       CustomDeadline(:final course, :final location) => [
           if (course.isNotEmpty) course,
           if (location.isNotEmpty) location,
         ].join(' · '),
-      _ => assignment.course,
+      _ => assignment.course.trim(),
     };
     final notes = switch (assignment) {
-      CustomDeadline(:final notes) => notes,
+      CustomDeadline(:final notes) => notes.trim(),
       _ => '',
     };
 
     final Color urgencyColor = () {
       if (completed) return colors.successGreen;
       if (isPast || isLateWindow) return colors.dangerRed;
-      final hoursLeft = displayDue.difference(now).inHours;
-      if (hoursLeft < 24) return colors.warningAmber;
-      if (hoursLeft < 72) return colors.brand;
+      if (hoursLeft < 24) return colors.dangerRed;
+      if (hoursLeft < 72) return colors.warningAmber;
       return colors.infoBlue;
     }();
+    final Color countdownColor = isCalm ? colors.textMuted : urgencyColor;
 
     final progress = _urgencyProgress(
       due: displayDue,
@@ -1306,216 +1510,390 @@ class _AssignmentCard extends StatelessWidget {
       isLateWindow: isLateWindow,
     );
 
-    final statusLabel = assignment is CustomDeadline
-        ? null
-        : completed
-            ? (assignment.status == 'Graded' ? 'Graded' : 'Submitted')
-            : assignment.status;
+    final completedStatusLabel = (completed && assignment is! CustomDeadline)
+        ? (assignment.status == 'Graded' ? 'Graded' : 'Submitted')
+        : null;
 
-    final kindTone = switch (assignment.kind) {
-      DeadlineKind.exam => TpBadgeTone.danger,
-      DeadlineKind.custom => TpBadgeTone.info,
-      DeadlineKind.assignment => TpBadgeTone.brand,
+    final platformLabel = _formatPlatformLabel(assignment.platform);
+    final metaLeft = switch (assignment) {
+      CustomDeadline() => subtitle,
+      ExamAssignment() => [
+          if (subtitle.isNotEmpty) subtitle,
+          if (assignment.course.isNotEmpty &&
+              assignment.course.trim() != assignment.title.trim())
+            assignment.course.trim(),
+        ].join(' · '),
+      _ => [
+          if (subtitle.isNotEmpty) subtitle,
+          if (platformLabel.isNotEmpty) platformLabel,
+          if (lateDue != null && !isLateWindow && !completed) '支持迟交',
+        ].join(' · '),
     };
 
-    return TpCard(
-      borderRadius: TpTokens.radiusM,
-      color: selected ? colors.brandSoft : colors.surface,
-      borderColor: selected ? colors.brand : null,
-      borderWidth: selected ? 1.5 : 0.75,
-      onTap: onTap,
-      onLongPress: onLongPress,
-      padding: const EdgeInsets.all(TpTokens.space4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+    final dueText = isLateWindow
+        ? '迟交截止 $dueShort'
+        : (isPast && !completed
+            ? '原截止 $dueShort'
+            : (assignment is ExamAssignment ? dueShort : '$dueShort 截止'));
+
+    final showQuickActions =
+        widget.onQuickToggleComplete != null || widget.onQuickHide != null;
+
+    final Widget countdownWidget = completed
+        ? Row(
+            key: const ValueKey('completed'),
+            mainAxisSize: MainAxisSize.min,
             children: [
-              if (selectionMode) ...[
-                Icon(
-                  selected
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
-                  size: TpTokens.iconM,
-                  color: selected ? colors.brand : colors.textMuted,
-                ),
-                const SizedBox(width: TpTokens.space2),
-              ],
-              TpBadge(label: assignment.kind.label, tone: kindTone),
-              if (assignment is! CustomDeadline) ...[
-                const SizedBox(width: 6),
-                TpBadge(
-                  label: assignment.platform.toUpperCase(),
-                  tone: TpBadgeTone.muted,
-                ),
-              ],
-              if (hasOverride) ...[
-                const SizedBox(width: 6),
-                Tooltip(
-                  message: '本地标记',
-                  child: Icon(
-                    TpIcons.edit,
-                    size: TpTokens.iconXs,
-                    color: colors.brand,
-                  ),
-                ),
-              ],
-              const Spacer(),
-              AnimatedSwitcher(
-                duration: appAnimationDuration(
-                  context,
-                  const Duration(milliseconds: 280),
-                ),
-                switchInCurve: appAnimationCurve(
-                  Curves.easeInOutCubicEmphasized,
-                  iosCurve: Curves.easeInOut,
-                ),
-                switchOutCurve: appAnimationCurve(
-                  Curves.easeInOutCubicEmphasized,
-                  iosCurve: Curves.easeInOut,
-                ),
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(scale: animation, child: child),
-                ),
-                child: statusLabel == null
-                    ? const SizedBox.shrink()
-                    : Text(
-                        statusLabel,
-                        key: ValueKey(statusLabel),
-                        style: TpTypography.badge(urgencyColor),
-                      ),
+              Icon(
+                TpIcons.checkCircle,
+                size: 13,
+                color: colors.successGreen,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '已完成',
+                style: TpTypography.badge(colors.successGreen),
               ),
             ],
+          )
+        : (isPast
+            ? Text(
+                _formatOverdueLabel(finalDue, now),
+                key: const ValueKey('overdue'),
+                maxLines: 1,
+                style: TpTypography.badge(colors.dangerRed),
+              )
+            : (isLateWindow
+                ? Text(
+                    _formatRemainingLabel(lateDue, now, late: true),
+                    key: const ValueKey('late_remain'),
+                    maxLines: 1,
+                    style: TpTypography.badge(colors.dangerRed),
+                  )
+                : Text(
+                    _formatRemainingLabel(assignment.due, now),
+                    key: const ValueKey('remain'),
+                    maxLines: 1,
+                    style: TpTypography.badge(countdownColor).copyWith(
+                      fontSize: 12,
+                      fontWeight: isCalm ? FontWeight.w500 : FontWeight.w600,
+                    ),
+                  )));
+
+    return MouseRegion(
+      onEnter: (_) {
+        if (!_hovered) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (_hovered) setState(() => _hovered = false);
+      },
+      child: Material(
+        color: selected ? colors.opaqueBrandContainer : colors.surface,
+        child: InkWell(
+          onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
+          hoverColor: colors.textPrimary.withValues(
+            alpha: colors.isDark ? 0.06 : 0.04,
           ),
-          const SizedBox(height: TpTokens.space3),
-          Text(
-            assignment.title,
-            style: TpTypography.itemTitle(colors).copyWith(
-              fontSize: 15.5,
-              color: completed ? colors.textSecondary : colors.textPrimary,
-            ),
-          ),
-          if (subtitle.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(
-              subtitle,
-              style: TpTypography.itemMeta(colors),
-            ),
-          ],
-          if (notes.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              notes,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TpTypography.itemMeta(colors),
-            ),
-          ],
-          const SizedBox(height: TpTokens.space3),
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: TpTokens.space2,
-            runSpacing: 6,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    TpIcons.deadlines,
-                    size: TpTokens.iconXs,
-                    color: completed
-                        ? colors.textMuted
-                        : (isPast || isLateWindow
-                            ? colors.dangerRed
-                            : colors.textMuted),
+          splashColor: colors.brandSoft,
+          highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
+          child: DecoratedBox(
+            decoration: selected
+                ? BoxDecoration(
+                    border: Border(
+                      left: BorderSide(color: colors.brand, width: 3),
+                    ),
+                  )
+                : const BoxDecoration(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: TpTokens.cardPaddingHorizontal,
+                    vertical: 11,
                   ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      '$dueLabel$dueString',
-                      style: TpTypography.itemMeta(colors).copyWith(
-                        color: completed
-                            ? colors.textMuted
-                            : (isPast || isLateWindow
-                                ? colors.dangerRed
-                                : colors.textMuted),
-                        fontWeight: (isPast || isLateWindow) && !completed
-                            ? FontWeight.w600
-                            : FontWeight.w400,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Row 1: Title + Urgency Countdown + subtle desktop quick actions.
+                      // Exactly ONE flex child (Expanded on the left) guarantees
+                      // countdown & actions are always pinned flush to the right edge.
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          if (widget.selectionMode) ...[
+                            Icon(
+                              selected
+                                  ? Icons.check_circle
+                                  : Icons.radio_button_unchecked,
+                              size: TpTokens.iconM - 1,
+                              color:
+                                  selected ? colors.brandInk : colors.textMuted,
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          Expanded(
+                            child: Row(
+                              children: [
+                                if (assignment.kind == DeadlineKind.exam) ...[
+                                  const _CompactKindTag(
+                                    label: '考试',
+                                    tone: TpBadgeTone.danger,
+                                  ),
+                                  const SizedBox(width: 6),
+                                ] else if (assignment.kind ==
+                                    DeadlineKind.custom) ...[
+                                  const _CompactKindTag(
+                                    label: '自定义',
+                                    tone: TpBadgeTone.info,
+                                  ),
+                                  const SizedBox(width: 6),
+                                ],
+                                Flexible(
+                                  child: Text(
+                                    assignment.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        TpTypography.itemTitle(colors).copyWith(
+                                      fontSize: 14.5,
+                                      height: 1.3,
+                                      color: completed
+                                          ? colors.textSecondary
+                                          : colors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                                if (widget.hasOverride) ...[
+                                  const SizedBox(width: 5),
+                                  Tooltip(
+                                    message: '本地标记',
+                                    child: Icon(
+                                      TpIcons.edit,
+                                      size: 12,
+                                      color: colors.brandInk,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: TpTokens.space3),
+                          AnimatedSwitcher(
+                            duration: appAnimationDuration(
+                              context,
+                              const Duration(milliseconds: 240),
+                            ),
+                            switchInCurve: appAnimationCurve(
+                              Curves.easeOutCubic,
+                              iosCurve: Curves.easeOut,
+                            ),
+                            switchOutCurve: appAnimationCurve(
+                              Curves.easeInCubic,
+                              iosCurve: Curves.easeIn,
+                            ),
+                            transitionBuilder: (child, animation) =>
+                                FadeTransition(
+                              opacity: animation,
+                              child: child,
+                            ),
+                            child: countdownWidget,
+                          ),
+                          if (showQuickActions) ...[
+                            const SizedBox(width: 6),
+                            AnimatedOpacity(
+                              opacity: _hovered ? 1.0 : 0.42,
+                              duration: appAnimationDuration(
+                                context,
+                                const Duration(milliseconds: 140),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (widget.onQuickToggleComplete != null)
+                                    IconButton(
+                                      icon: Icon(
+                                        completed
+                                            ? TpIcons.close
+                                            : TpIcons.checkCircle,
+                                        size: 15,
+                                      ),
+                                      color: completed
+                                          ? colors.textMuted
+                                          : colors.successGreen,
+                                      tooltip: completed ? '取消完成' : '标记完成',
+                                      visualDensity: VisualDensity.compact,
+                                      style: IconButton.styleFrom(
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                      constraints: const BoxConstraints.tightFor(
+                                        width: 24,
+                                        height: 24,
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      onPressed: widget.onQuickToggleComplete,
+                                    ),
+                                  if (widget.onQuickHide != null)
+                                    IconButton(
+                                      icon: const Icon(
+                                        TpIcons.delete,
+                                        size: 15,
+                                      ),
+                                      color: colors.textMuted,
+                                      hoverColor: colors.dangerRed
+                                          .withValues(alpha: 0.10),
+                                      tooltip: '忽略',
+                                      visualDensity: VisualDensity.compact,
+                                      style: IconButton.styleFrom(
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                      constraints: const BoxConstraints.tightFor(
+                                        width: 24,
+                                        height: 24,
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      onPressed: widget.onQuickHide,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
+                      const SizedBox(height: 3),
+                      // Row 2: Single subtle metadata line (course · platform | due time).
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              metaLeft.isNotEmpty
+                                  ? metaLeft
+                                  : (assignment is CustomDeadline
+                                      ? '自定义截止事项'
+                                      : '截止事项'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TpTypography.itemMeta(colors).copyWith(
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: TpTokens.space2),
+                          if (completedStatusLabel != null) ...[
+                            Text(
+                              completedStatusLabel,
+                              maxLines: 1,
+                              style: TpTypography.itemMeta(colors).copyWith(
+                                fontSize: 11.5,
+                                color: colors.successGreen,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            Text(
+                              ' · $dueShort',
+                              maxLines: 1,
+                              style: TpTypography.itemMeta(colors).copyWith(
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ] else
+                            Text(
+                              dueText,
+                              maxLines: 1,
+                              style: TpTypography.itemMeta(colors).copyWith(
+                                fontSize: 11.5,
+                                color: !completed && (isPast || isLateWindow)
+                                    ? colors.dangerRed
+                                    : colors.textMuted,
+                                fontWeight:
+                                    !completed && (isPast || isLateWindow)
+                                        ? FontWeight.w500
+                                        : FontWeight.w400,
+                              ),
+                            ),
+                        ],
+                      ),
+                      if (notes.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          notes,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TpTypography.itemMeta(colors).copyWith(
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: TpTokens.space2),
+                      // Row 3: Thin rounded urgency progress bar.
+                      TpProgressBar(
+                        progress: progress,
+                        color: completed
+                            ? urgencyColor.withValues(alpha: 0.45)
+                            : urgencyColor,
+                      ),
+                    ],
+                  ),
+                ),
+                if (widget.showDivider)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: TpTokens.cardPaddingHorizontal,
+                    ),
+                    child: Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      color: colors.divider,
                     ),
                   ),
-                ],
-              ),
-              AnimatedSwitcher(
-                duration: appAnimationDuration(
-                  context,
-                  const Duration(milliseconds: 320),
-                ),
-                switchInCurve: appAnimationCurve(
-                  Curves.easeOutBack,
-                  iosCurve: Curves.easeOut,
-                ),
-                switchOutCurve: appAnimationCurve(
-                  Curves.easeInCubic,
-                  iosCurve: Curves.easeIn,
-                ),
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(scale: animation, child: child),
-                ),
-                child: completed
-                    ? Row(
-                        key: const ValueKey('completed'),
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            TpIcons.checkCircle,
-                            size: TpTokens.iconXs,
-                            color: colors.successGreen,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '已完成',
-                            style: TpTypography.badge(colors.successGreen),
-                          ),
-                        ],
-                      )
-                    : (isPast
-                        ? Text(
-                            'Overdue',
-                            key: const ValueKey('overdue'),
-                            style: TpTypography.badge(colors.dangerRed),
-                          )
-                        : (isLateWindow
-                            ? Text(
-                                _formatRemainingTime(
-                                  lateDue,
-                                  now,
-                                  prefix: 'Late',
-                                ),
-                                key: const ValueKey('late_remain'),
-                                style: TpTypography.badge(colors.dangerRed),
-                              )
-                            : Text(
-                                _formatRemainingTime(assignment.due, now),
-                                key: const ValueKey('remain'),
-                                style: TpTypography.itemMeta(colors).copyWith(
-                                  color: urgencyColor,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ))),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: TpTokens.space2),
-          TpProgressBar(
-            progress: progress,
-            color: urgencyColor,
-          ),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactKindTag extends StatelessWidget {
+  const _CompactKindTag({
+    required this.label,
+    required this.tone,
+  });
+
+  final String label;
+  final TpBadgeTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final alpha = colors.isDark ? 0.18 : 0.11;
+    final (fg, bg) = switch (tone) {
+      TpBadgeTone.danger => (
+          colors.dangerRed,
+          colors.dangerRed.withValues(alpha: alpha),
+        ),
+      TpBadgeTone.info => (
+          colors.infoBlue,
+          colors.infoBlue.withValues(alpha: alpha),
+        ),
+      _ => (colors.brandInk, colors.brandSoft),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(TpTokens.radiusXs),
+      ),
+      child: Text(
+        label,
+        style: TpTypography.badge(fg).copyWith(fontSize: 10.5),
       ),
     );
   }

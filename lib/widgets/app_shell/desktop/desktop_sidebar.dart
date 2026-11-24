@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/theme.dart';
+import '../../design_system/tp_brand_mark.dart';
 import '../app_destination.dart';
 import 'desktop_sidebar_item.dart';
 import 'desktop_sidebar_tokens.dart';
@@ -54,20 +55,29 @@ class DesktopSidebar extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (var index = 0;
-                        index < destinations.length;
-                        index++) ...[
-                      DesktopSidebarItem(
-                        destination: destinations[index],
-                        selected: index == selectedIndex,
-                        collapsed: collapsed,
-                        onTap: () => onSelected(index),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (var index = 0;
+                                index < destinations.length;
+                                index++) ...[
+                              DesktopSidebarItem(
+                                destination: destinations[index],
+                                selected: index == selectedIndex,
+                                collapsed: collapsed,
+                                onTap: () => onSelected(index),
+                              ),
+                              if (index < destinations.length - 1)
+                                SizedBox(height: itemSpacing),
+                            ],
+                          ],
+                        ),
                       ),
-                      if (index < destinations.length - 1)
-                        SizedBox(height: itemSpacing),
-                    ],
-                    const Spacer(),
-                    if (showToggleButton)
+                    ),
+                    if (showToggleButton) ...[
+                      const SizedBox(height: TpTokens.space2),
                       Align(
                         alignment: Alignment.bottomLeft,
                         child: _SidebarToggleButton(
@@ -75,6 +85,7 @@ class DesktopSidebar extends StatelessWidget {
                           onPressed: onToggleCollapsed,
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),
@@ -131,27 +142,23 @@ class _SidebarBrand extends StatelessWidget {
                       DesktopSidebarTokens.brandTextGap +
                       DesktopSidebarTokens.minLabelWidth;
 
+          final logo = SizedBox(
+            width: DesktopSidebarTokens.iconColumnWidth,
+            child: Center(
+              child: TpBrandMark(
+                size: 40,
+                semanticLabel: canShowLabel ? null : 'TechPie',
+              ),
+            ),
+          );
+
           return Row(
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
-              SizedBox(
-                width: DesktopSidebarTokens.iconColumnWidth,
-                child: Center(
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: colors.brandSoft,
-                      borderRadius: BorderRadius.circular(TpTokens.radiusS),
-                    ),
-                    child: Icon(
-                      TpIcons.graduation,
-                      size: TpTokens.iconM - 2,
-                      color: colors.brand,
-                    ),
-                  ),
-                ),
-              ),
+              if (!canShowLabel)
+                Tooltip(message: 'TechPie', child: logo)
+              else
+                logo,
               if (canShowLabel) ...[
                 const SizedBox(width: DesktopSidebarTokens.brandTextGap),
                 Expanded(
@@ -160,8 +167,9 @@ class _SidebarBrand extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TpTypography.cardTitle(colors).copyWith(
-                      fontSize: 16,
-                      letterSpacing: -0.2,
+                      fontSize: 17.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
                     ),
                   ),
                 ),
@@ -213,8 +221,10 @@ class _SidebarToggleButton extends StatelessWidget {
         padding: EdgeInsets.zero,
         foregroundColor: colors.textMuted,
         backgroundColor: Colors.transparent,
-        hoverColor: colors.surfaceSubtle,
-        highlightColor: colors.surfacePressed,
+        hoverColor: colors.textPrimary.withValues(
+          alpha: colors.isDark ? 0.06 : 0.04,
+        ),
+        highlightColor: colors.textPrimary.withValues(alpha: 0.08),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(TpTokens.radiusS),
         ),

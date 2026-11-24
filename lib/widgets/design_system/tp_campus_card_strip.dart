@@ -52,13 +52,13 @@ class TpCampusCardStrip extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: colors.brandSoft,
+              color: colors.opaqueBrandContainer,
               borderRadius: BorderRadius.circular(TpTokens.radiusS),
             ),
             child: Icon(
               TpIcons.campusCard,
               size: TpTokens.iconM,
-              color: colors.brand,
+              color: colors.brandInk,
             ),
           ),
           const SizedBox(width: TpTokens.space3),
@@ -85,12 +85,23 @@ class TpCampusCardStrip extends StatelessWidget {
           ),
           const SizedBox(width: TpTokens.space2),
           Material(
-            color: configured ? colors.brand : colors.brandSoft,
+            color: configured ? colors.brand : colors.opaqueBrandContainer,
             borderRadius: BorderRadius.circular(TpTokens.radiusPill),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               key: const ValueKey('home.campus-card-pay'),
               onTap: onOpenPayCode,
+              hoverColor: configured
+                  ? colors.onBrand.withValues(alpha: 0.12)
+                  : colors.textPrimary.withValues(
+                      alpha: colors.isDark ? 0.06 : 0.04,
+                    ),
+              highlightColor: configured
+                  ? colors.onBrand.withValues(alpha: 0.16)
+                  : colors.textPrimary.withValues(alpha: 0.08),
+              splashColor: configured
+                  ? colors.onBrand.withValues(alpha: 0.22)
+                  : colors.brandSoft,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: TpTokens.space3,
@@ -102,13 +113,13 @@ class TpCampusCardStrip extends StatelessWidget {
                     Icon(
                       TpIcons.qrCode,
                       size: TpTokens.iconXs,
-                      color: configured ? colors.onBrand : colors.brand,
+                      color: configured ? colors.onBrand : colors.brandInk,
                     ),
                     const SizedBox(width: 5),
                     Text(
                       configured ? '亮码' : '进入',
                       style: TpTypography.badge(
-                        configured ? colors.onBrand : colors.brand,
+                        configured ? colors.onBrand : colors.brandInk,
                       ),
                     ),
                   ],

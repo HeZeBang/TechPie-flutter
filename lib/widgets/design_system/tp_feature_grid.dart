@@ -92,6 +92,9 @@ class _FeatureTile extends StatelessWidget {
       child: InkWell(
         key: item.key,
         borderRadius: radius,
+        hoverColor: colors.textPrimary.withValues(
+          alpha: colors.isDark ? 0.06 : 0.04,
+        ),
         splashColor: colors.brandSoft,
         highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
         onTap: item.onTap,
@@ -103,7 +106,7 @@ class _FeatureTile extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
+              Ink(
                 width: TpTokens.featureTileSize,
                 height: TpTokens.featureTileSize,
                 decoration: BoxDecoration(
@@ -113,7 +116,7 @@ class _FeatureTile extends StatelessWidget {
                 child: Icon(
                   item.icon,
                   size: TpTokens.iconM,
-                  color: colors.brand,
+                  color: colors.brandInk,
                 ),
               ),
               const SizedBox(height: 6),

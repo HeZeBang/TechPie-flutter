@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../theme/theme.dart';
 import 'app_shell/app_shell_metrics.dart';
 
 enum DesktopPopoverPlacement { rightTop, belowEnd }
@@ -90,10 +92,27 @@ void showDesktopPopover({
   Size? measuredSize;
 
   OverlayEntry? entry;
+  KeyEventCallback? keyHandler;
   void close() {
+    if (keyHandler != null) {
+      HardwareKeyboard.instance.removeHandler(keyHandler!);
+      keyHandler = null;
+    }
     entry?.remove();
     entry = null;
   }
+
+  bool handleKey(KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape) {
+      close();
+      return true;
+    }
+    return false;
+  }
+
+  keyHandler = handleKey;
+  HardwareKeyboard.instance.addHandler(handleKey);
 
   entry = OverlayEntry(
     builder: (context) {
@@ -167,13 +186,16 @@ class DesktopPopoverSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final colors = context.tpColors;
 
     return Material(
-      color: colorScheme.surfaceContainerHigh,
+      color: colors.surface,
       elevation: 6,
       shadowColor: Colors.black.withAlpha(45),
-      borderRadius: BorderRadius.circular(12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(TpTokens.radiusM),
+        side: BorderSide(color: colors.isDark ? colors.border : colors.divider),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Padding(padding: padding, child: child),
     );
@@ -184,28 +206,58 @@ class DesktopMenuRow extends StatelessWidget {
   final Widget leading;
   final Widget title;
   final VoidCallback? onTap;
+  final bool selected;
 
   const DesktopMenuRow({
     super.key,
     required this.leading,
     required this.title,
     this.onTap,
+    this.selected = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        height: 48,
-        child: Row(
-          children: [
-            SizedBox(width: 40, child: Center(child: leading)),
-            Expanded(child: title),
-          ],
+    final colors = context.tpColors;
+    final radius = BorderRadius.circular(TpTokens.radiusS);
+    final enabled = onTap != null;
+
+    final row = Material(
+      color: selected ? colors.opaqueBrandContainer : Colors.transparent,
+      borderRadius: radius,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: radius,
+        hoverColor: colors.textPrimary.withValues(
+          alpha: colors.isDark ? 0.06 : 0.04,
+        ),
+        highlightColor: colors.textPrimary.withValues(alpha: 0.06),
+        splashColor: colors.brand.withValues(alpha: 0.10),
+        child: SizedBox(
+          height: 44,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 40,
+                child: Center(
+                  child: IconTheme.merge(
+                    data: IconThemeData(
+                      color: selected ? colors.brandInk : colors.textMuted,
+                    ),
+                    child: leading,
+                  ),
+                ),
+              ),
+              Expanded(child: title),
+              const SizedBox(width: TpTokens.space3),
+            ],
+          ),
         ),
       ),
     );
+
+    if (enabled) return row;
+    return Opacity(opacity: 0.42, child: row);
   }
 }

@@ -94,7 +94,7 @@ class StudentAllowancePage extends StatelessWidget {
                             child: Icon(
                               TpIcons.allowance,
                               size: TpTokens.iconM,
-                              color: colors.brand,
+                              color: colors.brandInk,
                             ),
                           ),
                           const SizedBox(width: TpTokens.space3),
@@ -293,9 +293,8 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
               const SizedBox(height: TpTokens.sectionGap),
               if (_error case final error?)
                 TpCard(
-                  color: colors.dangerRed
-                      .withValues(alpha: colors.isDark ? 0.16 : 0.08),
-                  borderColor: colors.dangerRed.withValues(alpha: 0.25),
+                  color: colors.opaqueDangerContainer,
+                  borderColor: colors.dangerRed.withValues(alpha: 0.30),
                   padding: const EdgeInsets.all(TpTokens.space4),
                   child: Text(
                     error,
@@ -371,7 +370,7 @@ class _AllowanceTile extends StatelessWidget {
           subtitle: Text(
             '实发 ${_amountText(entry.netFen)}',
             style: TpTypography.itemMeta(colors).copyWith(
-              color: isTotal ? colors.brand : colors.textSecondary,
+              color: isTotal ? colors.brandInk : colors.textSecondary,
               fontWeight: FontWeight.w600,
             ),
           ),

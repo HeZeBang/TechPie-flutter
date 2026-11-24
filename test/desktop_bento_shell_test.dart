@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,11 +18,14 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
+import 'package:techpie/theme/theme.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_shell.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar.dart';
+import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_item.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_tokens.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
+import 'package:techpie/widgets/design_system/tp_brand_mark.dart';
 
 void main() {
   Future<void> pumpApp(WidgetTester tester) async {
@@ -67,7 +71,15 @@ void main() {
     expect(find.byType(DesktopShell), findsOneWidget);
     expect(find.byType(DesktopSidebar), findsOneWidget);
     expect(find.byType(TgBottomNavBar), findsNothing);
+    expect(find.byType(TpBrandMark), findsOneWidget);
     expect(find.text('TechPie'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(DesktopSidebar),
+        matching: find.byIcon(TpIcons.graduation),
+      ),
+      findsNothing,
+    );
 
     // Bento Home places Campus Card & Quick Actions to the right of Today Courses.
     final coursesPos = tester.getTopLeft(
@@ -122,5 +134,84 @@ void main() {
     expect(mobileBottom, greaterThan(desktopBottom + 40));
     adaptiveFeedbackHostKey.currentState?.dismiss();
     await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+      'selected DesktopSidebarItem maintains high contrast and avoids double-stacked hover tint',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpApp(tester);
+
+    final selectedItemFinder = find.byWidgetPredicate(
+      (widget) => widget is DesktopSidebarItem && widget.selected,
+    );
+    expect(selectedItemFinder, findsOneWidget);
+
+    final material = tester.widget<Material>(
+      find.descendant(of: selectedItemFinder, matching: find.byType(Material)),
+    );
+    final inkWell = tester.widget<InkWell>(
+      find.descendant(of: selectedItemFinder, matching: find.byType(InkWell)),
+    );
+    final label = tester.widget<Text>(
+      find.descendant(of: selectedItemFinder, matching: find.byType(Text)),
+    );
+
+    final tp = TpColors.light();
+    expect(material.color, tp.opaqueBrandContainer);
+    expect(inkWell.hoverColor, isNotNull);
+    expect(inkWell.hoverColor, isNot(Colors.transparent));
+    expect(inkWell.hoverColor!.a, lessThan(0.15));
+    expect(label.style?.color, tp.textPrimary);
+
+    // Hovering an unselected item, clicking it, and keeping the pointer on it
+    // must keep a constant subtle hover alpha (avoiding InkHighlight turning
+    // Colors.transparent into opaque black via Color(0x00000000).withAlpha(255)).
+    final scheduleItem = find.ancestor(
+      of: find.text('课表'),
+      matching: find.byType(DesktopSidebarItem),
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(scheduleItem));
+    await tester.pumpAndSettle();
+    await tester.tap(scheduleItem);
+    await tester.pumpAndSettle();
+
+    final scheduleInkWell = tester.widget<InkWell>(
+      find.descendant(of: scheduleItem, matching: find.byType(InkWell)),
+    );
+    expect(scheduleInkWell.hoverColor, isNot(Colors.transparent));
+    expect(scheduleInkWell.hoverColor!.a, lessThan(0.15));
+  });
+
+  testWidgets('SettingsPage toggles update live on wide desktop window',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpApp(tester);
+
+    await tester.tap(find.text('我的').first);
+    await tester.pumpAndSettle();
+
+    final maskRow = find.byKey(const ValueKey('settings.mask-personal-info'));
+    expect(maskRow, findsOneWidget);
+    final switchFinder = find.descendant(
+      of: maskRow,
+      matching: find.byType(Switch),
+    );
+    final before = tester.widget<Switch>(switchFinder).value;
+    await tester.tap(maskRow);
+    await tester.pumpAndSettle();
+    final after = tester.widget<Switch>(switchFinder).value;
+    expect(after, isNot(before));
   });
 }
