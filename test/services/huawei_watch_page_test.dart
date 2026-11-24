@@ -14,6 +14,15 @@ class DevicePeer extends Peer {
       ];
 }
 
+class PingFailurePeer extends DevicePeer {
+  PingFailurePeer(this.code);
+  final int code;
+
+  @override
+  Future<void> open(String deviceId, String fingerprint) async =>
+      throw WearFailure('PEER_NOT_READY', nativeCode: code);
+}
+
 class ScopeFailurePeer extends DevicePeer {
   @override
   Future<Map<String, dynamic>> authorize({required bool notify}) async =>
@@ -41,6 +50,28 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     service.dispose();
   });
+  for (final entry in {200: '未找到匹配的手表应用', 201: '请在手表上打开 TechPie'}.entries) {
+    testWidgets('watch ping ${entry.key} shows the matching recovery action', (tester) async {
+      final service = WearEngineService(
+        transport: PingFailurePeer(entry.key),
+        source: Source(),
+        metadata: MemoryMetadata(),
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: HuaweiWatchContent(service: service))),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('授权并查找手表'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('GT 6 Pro'));
+      await tester.tap(find.text('GT 6 Pro'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining(entry.value), findsOneWidget);
+      expect(find.textContaining('SDK 错误码：${entry.key}'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      service.dispose();
+    });
+  }
   testWidgets('connection-only watch capability and heartbeat loss are reflected accurately',
       (tester) async {
     final peer = DevicePeer()..capabilities = ['account.display', 'connection.heartbeat'];
