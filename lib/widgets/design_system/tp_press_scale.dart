@@ -128,9 +128,9 @@ class _TpPressScaleState extends State<TpPressScale>
         animation: _scale,
         builder: (context, child) {
           final value = _scale.value;
-          if ((value - 1.0).abs() < 1e-4) return child!;
+          final scale = (value - 1.0).abs() < 1e-4 ? 1.0 : value;
           return Transform.scale(
-            scale: value,
+            scale: scale,
             alignment: Alignment.center,
             child: child,
           );

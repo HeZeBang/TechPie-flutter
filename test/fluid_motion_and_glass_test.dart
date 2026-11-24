@@ -23,18 +23,24 @@ void main() {
   });
 
   testWidgets(
-      'TpPressScale shrinks on press, springs back on release, cancels on drag, and respects disableAnimations',
+      'TpPressScale shrinks on press, preserves inner InkWell onTap across human-speed holds, cancels on drag, and respects disableAnimations',
       (tester) async {
+    var tapCount = 0;
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
         home: Scaffold(
           body: Center(
             child: TpPressScale(
               pressedScale: 0.94,
-              child: SizedBox(
-                key: ValueKey('press-target'),
-                width: 120,
-                height: 48,
+              child: Material(
+                child: InkWell(
+                  key: const ValueKey('press-target'),
+                  onTap: () => tapCount++,
+                  child: const SizedBox(
+                    width: 120,
+                    height: 48,
+                  ),
+                ),
               ),
             ),
           ),
@@ -65,8 +71,10 @@ void main() {
     expect(currentScale(), closeTo(1.0, 0.01));
     await gesture.up();
     await tester.pumpAndSettle();
+    expect(tapCount, 0);
 
-    // Normal press and release springs cleanly back to 1.0.
+    // Human-speed press (held 90ms while scale animates) MUST keep inner
+    // InkWell mounted and fire onTap cleanly on release!
     final tap = await tester.startGesture(center);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 90));
@@ -74,6 +82,7 @@ void main() {
     await tap.up();
     await tester.pumpAndSettle();
     expect(currentScale(), closeTo(1.0, 0.01));
+    expect(tapCount, 1);
 
     // Reduced-motion mode bypasses Transform entirely.
     await tester.pumpWidget(

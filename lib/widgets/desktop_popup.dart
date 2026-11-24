@@ -127,20 +127,17 @@ class _DesktopPopoverMotionState extends State<DesktopPopoverMotion>
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.visible) {
-      return IgnorePointer(
-        child: Opacity(opacity: 0, child: widget.child),
-      );
-    }
     return IgnorePointer(
-      ignoring: _closing,
+      ignoring: !widget.visible || _closing,
       child: AnimatedBuilder(
         animation: _t,
         builder: (context, child) {
-          final value = _t.value;
-          if ((value - 1.0).abs() < 1e-4) return child!;
-          final opacity = value.clamp(0.0, 1.0);
-          final scale = 0.92 + 0.08 * value;
+          final value = widget.visible ? _t.value : 0.0;
+          final settled = widget.visible && (value - 1.0).abs() < 1e-4;
+          final opacity = !widget.visible
+              ? 0.0
+              : (settled ? 1.0 : value.clamp(0.0, 1.0));
+          final scale = !widget.visible || settled ? 1.0 : 0.92 + 0.08 * value;
           return Opacity(
             opacity: opacity,
             child: Transform.scale(
