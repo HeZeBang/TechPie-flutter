@@ -6,7 +6,11 @@ export function startQr(bytes) {
   var qr = qrcode(0, 'M'); qr.addData(text, 'Byte'); var step = qr.start();
   return function() {
     if (!step()) return null;
-    return pack(qr);
+    var at = Date.now(), matrix = pack(qr);
+    var t = qr.times;
+    console.info('TechPie QR size=' + matrix.size + ' select=' + t.select + ' data=' + t.data +
+      ' layout=' + t.layout + ' score=' + t.score + ' pack=' + (Date.now() - at));
+    return matrix;
   };
 }
 function pack(qr) {

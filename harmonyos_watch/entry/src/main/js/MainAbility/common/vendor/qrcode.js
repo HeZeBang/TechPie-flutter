@@ -26,6 +26,87 @@ var qrcode = function() {
    * @param typeNumber 1 to 40
    * @param errorCorrectionLevel 'L','M','Q','H'
    */
+  // One bit per column. The surrounding zero words provide lookahead across
+  // 32-column boundaries without treating padding as part of the symbol.
+  function popcount(v) {
+    v -= (v >>> 1) & 0x55555555;
+    v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);
+    v = (v + (v >>> 4)) & 0x0f0f0f0f;
+    return (v * 0x01010101) >>> 24;
+  }
+
+  function ahead(word, next, shift) {
+    return (word >>> shift) | (next << (32 - shift));
+  }
+
+  // Full adders count equal neighbors in 32 neighborhoods at once. The
+  // original scorer assigns 4, 5, or 6 points to 6, 7, or 8 equal neighbors.
+  function neighborPenalty(a, b, c, d, e, f, g, h, interior) {
+    var ab = a ^ b, de = d ^ e;
+    var p = ab ^ c, q = de ^ f, pq = p ^ q;
+    var c1 = (a & b) | (ab & c), c2 = (d & e) | (de & f);
+    var c3 = (p & q) | (pq & g), c4 = (pq ^ g) & h;
+    var six = ((c1 & c2 & (c3 | c4)) | (c3 & c4 & (c1 | c2))) & interior;
+    return 4 * popcount(six) + popcount(six & (pq ^ g ^ h)) +
+      2 * popcount(interior & c1 & c2 & c3 & c4);
+  }
+
+  function maskScore(rows, size, words) {
+    var stride = words + 2, score = 0, dark = 0;
+    for (var y = 0; y < size; y++) {
+      for (var w = 0; w < words; w++) {
+        var i = y * stride + w + 1;
+        var v = rows[i], next = rows[i + 1], below = rows[i + stride];
+        var right = ahead(v, next, 1);
+        var end = Math.min(32, size - 32 * w);
+        var pairs = w === words - 1 ? (1 << (end - 1)) - 1 : -1;
+        if (y > 0 && y < size - 1) {
+          var above = rows[i - stride], inv = ~v;
+          var inside = w === 0 ? pairs & ~1 : pairs;
+          score += neighborPenalty(
+            inv ^ ((above << 1) | (rows[i - stride - 1] >>> 31)),
+            inv ^ above, inv ^ ahead(above, rows[i - stride + 1], 1),
+            inv ^ ((v << 1) | (rows[i - 1] >>> 31)), inv ^ right,
+            inv ^ ((below << 1) | (rows[i + stride - 1] >>> 31)),
+            inv ^ below, inv ^ ahead(below, rows[i + stride + 1], 1), inside);
+        }
+        if (y + 1 < size) {
+          score += 3 * popcount(pairs & ~(v ^ right) & ~(v ^ below) &
+            ~(below ^ ahead(below, rows[i + stride + 1], 1)));
+        }
+        var horizontal = v & ~right & ahead(v, next, 2) & ahead(v, next, 3) &
+          ahead(v, next, 4) & ~ahead(v, next, 5) & ahead(v, next, 6);
+        score += 40 * popcount(horizontal);
+        if (y + 6 < size) {
+          score += 40 * popcount(v & ~below & rows[i + 2*stride] & rows[i + 3*stride] &
+            rows[i + 4*stride] & ~rows[i + 5*stride] & rows[i + 6*stride]);
+        }
+        dark += popcount(v);
+      }
+    }
+    return score + Math.abs(100 * dark / size / size - 50) / 5 * 10;
+  }
+
+  // All eight predicates repeat within 12 rows and six columns. A 32-bit
+  // word advances the six-column phase by two, giving three possible words.
+  var patterns = [];
+  function patternWords(mask) {
+    if (patterns[mask]) return patterns[mask];
+    var predicate = QRUtil.getMaskFunction(mask), table = [];
+    for (var y = 0; y < 12; y++) {
+      var bits = 0;
+      for (var x = 0; x < 6; x++) if (predicate(y, x)) bits |= 1 << x;
+      for (var phase = 0; phase < 3; phase++) {
+        var full = bits | (bits << 6);
+        full |= full << 12;
+        table.push(full | (full << 24));
+        bits = (bits >>> 2) | ((bits & 3) << 4);
+      }
+    }
+    patterns[mask] = table;
+    return table;
+  }
+
   var qrcode = function(typeNumber, errorCorrectionLevel) {
 
     var PAD0 = 0xEC;
@@ -39,6 +120,10 @@ var qrcode = function() {
     var _dataList = [];
 
     var _this = {};
+    var times = {select: 0, data: 0, layout: 0, score: 0};
+    _this.times = times;
+
+    var words, stride, raw, writable, candidate;
 
     var makeImpl = function(test, maskPattern) {
 
@@ -66,10 +151,25 @@ var qrcode = function() {
       }
 
       if (_dataCache == null) {
+        var startData = Date.now();
         _dataCache = createData(_typeNumber, _errorCorrectionLevel, _dataList);
+        times.data += Date.now() - startData;
       }
 
-      mapData(_dataCache, maskPattern);
+      if (test) {
+        words = Math.ceil(_moduleCount / 32);
+        stride = words + 2;
+        raw = []; writable = []; candidate = [];
+        for (var i = 0; i < stride * _moduleCount; i++) {
+          raw[i] = 0; writable[i] = 0; candidate[i] = 0;
+        }
+        for (var y = 0; y < _moduleCount; y++) {
+          for (var x = 0; x < _moduleCount; x++) {
+            if (_modules[y][x]) raw[y * stride + (x >>> 5) + 1] |= 1 << (x & 31);
+          }
+        }
+      }
+      mapData(_dataCache, maskPattern, test);
     };
 
     var setupPositionProbePattern = function(row, col) {
@@ -193,7 +293,7 @@ var qrcode = function() {
       _modules[_moduleCount - 8][8] = (!test);
     };
 
-    var mapData = function(data, maskPattern) {
+    var mapData = function(data, maskPattern, preparing) {
 
       var inc = -1;
       var row = _moduleCount - 1;
@@ -217,13 +317,14 @@ var qrcode = function() {
                 dark = ( ( (data[byteIndex] >>> bitIndex) & 1) == 1);
               }
 
-              var mask = maskFunc(row, col - c);
-
-              if (mask) {
-                dark = !dark;
+              var x = col - c;
+              if (preparing) {
+                var slot = row * stride + (x >>> 5) + 1, bit = 1 << (x & 31);
+                writable[slot] |= bit;
+                if (dark) raw[slot] |= bit;
+              } else {
+                _modules[row][x] = maskFunc(row, x) ? !dark : dark;
               }
-
-              _modules[row][col - c] = dark;
               bitIndex -= 1;
 
               if (bitIndex == -1) {
@@ -269,15 +370,7 @@ var qrcode = function() {
         }
         offset += dcCount;
 
-        var rsPoly = QRUtil.getErrorCorrectPolynomial(ecCount);
-        var rawPoly = qrPolynomial(dcdata[r], rsPoly.getLength() - 1);
-
-        var modPoly = rawPoly.mod(rsPoly);
-        ecdata[r] = new Array(rsPoly.getLength() - 1);
-        for (var i = 0; i < ecdata[r].length; i += 1) {
-          var modIndex = i + modPoly.getLength() - ecdata[r].length;
-          ecdata[r][i] = (modIndex >= 0)? modPoly.getAt(modIndex) : 0;
-        }
+        ecdata[r] = remainder(dcdata[r], ecCount);
       }
 
       var totalCodeCount = 0;
@@ -388,18 +481,16 @@ var qrcode = function() {
     };
 
     _this.start = function() {
+      var startSelect = Date.now();
       if (_typeNumber < 1) {
         var typeNumber = 1;
 
         for (; typeNumber < 40; typeNumber++) {
           var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, _errorCorrectionLevel);
-          var buffer = qrBitBuffer();
-
+          var bitLength = 0;
           for (var i = 0; i < _dataList.length; i++) {
             var data = _dataList[i];
-            buffer.put(data.getMode(), 4);
-            buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
-            data.write(buffer);
+            bitLength += 4 + QRUtil.getLengthInBits(data.getMode(), typeNumber) + 8 * data.getLength();
           }
 
           var totalDataCount = 0;
@@ -407,7 +498,7 @@ var qrcode = function() {
             totalDataCount += rsBlocks[i].dataCount;
           }
 
-          if (buffer.getLengthInBits() <= totalDataCount * 8) {
+          if (bitLength <= totalDataCount * 8) {
             break;
           }
         }
@@ -415,11 +506,24 @@ var qrcode = function() {
         _typeNumber = typeNumber;
       }
 
+      times.select = Date.now() - startSelect;
       var mask = 0, bestMask = 0, bestScore = Infinity;
       return function step() {
-        if (mask === 8) { makeImpl(false, bestMask); return true; }
-        makeImpl(true, mask);
-        var score = QRUtil.getLostPoint(_modules, bestScore);
+        var begin = Date.now(), priorData = times.data;
+        if (mask === 8) { makeImpl(false, bestMask); times.layout += Date.now() - begin; return true; }
+        if (mask === 0) makeImpl(true, mask);
+        var table = patternWords(mask);
+        for (var y = 0; y < _moduleCount; y++) {
+          var phase = (y % 12) * 3;
+          for (var w = 0; w < words; w++) {
+            var slot = y * stride + w + 1;
+            candidate[slot] = raw[slot] ^ (writable[slot] & table[phase + w % 3]);
+          }
+        }
+        var scoredAt = Date.now();
+        times.layout += scoredAt - begin - (times.data - priorData);
+        var score = maskScore(candidate, _moduleCount, words);
+        times.score += Date.now() - scoredAt;
         if (score < bestScore) { bestMask = mask; bestScore = score; }
         mask++;
         return false;
@@ -686,14 +790,6 @@ var qrcode = function() {
       }
     };
 
-    _this.getErrorCorrectPolynomial = function(errorCorrectLength) {
-      var a = qrPolynomial([1], 0);
-      for (var i = 0; i < errorCorrectLength; i += 1) {
-        a = a.multiply(qrPolynomial([1, QRMath.gexp(i)], 0) );
-      }
-      return a;
-    };
-
     _this.getLengthInBits = function(mode, type) {
 
       if (1 <= type && type < 10) {
@@ -740,115 +836,6 @@ var qrcode = function() {
       }
     };
 
-    _this.getLostPoint = function(modules, best) {
-
-      var moduleCount = modules.length;
-
-      var lostPoint = 0;
-
-      if (lostPoint >= best) return lostPoint;
-      // LEVEL1
-
-      for (var row = 0; row < moduleCount; row += 1) {
-        for (var col = 0; col < moduleCount; col += 1) {
-
-          var sameCount = 0;
-          var dark = modules[row][col];
-
-          for (var r = -1; r <= 1; r += 1) {
-
-            if (row + r < 0 || moduleCount <= row + r) {
-              continue;
-            }
-
-            for (var c = -1; c <= 1; c += 1) {
-
-              if (col + c < 0 || moduleCount <= col + c) {
-                continue;
-              }
-
-              if (r == 0 && c == 0) {
-                continue;
-              }
-
-              if (dark == modules[row + r][col + c] ) {
-                sameCount += 1;
-              }
-            }
-          }
-
-          if (sameCount > 5) {
-            lostPoint += (3 + sameCount - 5);
-          }
-        }
-      };
-
-      if (lostPoint >= best) return lostPoint;
-      // LEVEL2
-
-      for (var row = 0; row < moduleCount - 1; row += 1) {
-        for (var col = 0; col < moduleCount - 1; col += 1) {
-          var count = 0;
-          if (modules[row][col] ) count += 1;
-          if (modules[row + 1][col] ) count += 1;
-          if (modules[row][col + 1] ) count += 1;
-          if (modules[row + 1][col + 1] ) count += 1;
-          if (count == 0 || count == 4) {
-            lostPoint += 3;
-          }
-        }
-      }
-
-      if (lostPoint >= best) return lostPoint;
-      // LEVEL3
-
-      for (var row = 0; row < moduleCount; row += 1) {
-        for (var col = 0; col < moduleCount - 6; col += 1) {
-          if (modules[row][col]
-              && !modules[row][col + 1]
-              &&  modules[row][col + 2]
-              &&  modules[row][col + 3]
-              &&  modules[row][col + 4]
-              && !modules[row][col + 5]
-              &&  modules[row][col + 6] ) {
-            lostPoint += 40;
-          }
-        }
-      }
-
-      for (var col = 0; col < moduleCount; col += 1) {
-        for (var row = 0; row < moduleCount - 6; row += 1) {
-          if (modules[row][col]
-              && !modules[row + 1][col]
-              &&  modules[row + 2][col]
-              &&  modules[row + 3][col]
-              &&  modules[row + 4][col]
-              && !modules[row + 5][col]
-              &&  modules[row + 6][col] ) {
-            lostPoint += 40;
-          }
-        }
-      }
-
-      if (lostPoint >= best) return lostPoint;
-      // LEVEL4
-
-      var darkCount = 0;
-
-      for (var col = 0; col < moduleCount; col += 1) {
-        for (var row = 0; row < moduleCount; row += 1) {
-          if (modules[row][col] ) {
-            darkCount += 1;
-          }
-        }
-      }
-
-      var ratio = Math.abs(100 * darkCount / moduleCount / moduleCount - 50) / 5;
-      lostPoint += ratio * 10;
-
-      return lostPoint;
-    };
-
     return _this;
   }();
 
@@ -856,124 +843,39 @@ var qrcode = function() {
   // QRMath
   //---------------------------------------------------------------------
 
-  var QRMath = function() {
+  var exp = [1], log = [], generators = {};
+  for (var degree = 1; degree < 512; degree++) {
+    var doubled = exp[degree - 1] << 1;
+    exp[degree] = doubled & 256 ? doubled ^ 0x11d : doubled;
+  }
+  for (var exponent = 0; exponent < 255; exponent++) log[exp[exponent]] = exponent;
 
-    var EXP_TABLE = new Array(256);
-    var LOG_TABLE = new Array(256);
-
-    // initialize tables
-    for (var i = 0; i < 8; i += 1) {
-      EXP_TABLE[i] = 1 << i;
+  function generatorLogs(count) {
+    if (generators[count]) return generators[count];
+    var poly = [1];
+    for (var i = 0; i < count; i++) {
+      poly.push(0);
+      for (var j = i + 1; j > 0; j--) {
+        if (poly[j - 1]) poly[j] ^= exp[log[poly[j - 1]] + i];
+      }
     }
-    for (var i = 8; i < 256; i += 1) {
-      EXP_TABLE[i] = EXP_TABLE[i - 4]
-        ^ EXP_TABLE[i - 5]
-        ^ EXP_TABLE[i - 6]
-        ^ EXP_TABLE[i - 8];
+    // All generator coefficients for the QR block sizes are nonzero.
+    var logs = [];
+    for (var j = 1; j <= count; j++) logs.push(log[poly[j]]);
+    generators[count] = logs;
+    return logs;
+  }
+
+  function remainder(data, count) {
+    var taps = generatorLogs(count), scratch = data.slice();
+    for (var j = 0; j < count; j++) scratch.push(0);
+    for (var i = 0; i < data.length; i++) {
+      if (!scratch[i]) continue;
+      var lead = log[scratch[i]];
+      for (var j = 0; j < count; j++) scratch[i + j + 1] ^= exp[lead + taps[j]];
     }
-    for (var i = 0; i < 255; i += 1) {
-      LOG_TABLE[EXP_TABLE[i] ] = i;
-    }
-
-    var _this = {};
-
-    _this.glog = function(n) {
-
-      if (n < 1) {
-        throw 'glog(' + n + ')';
-      }
-
-      return LOG_TABLE[n];
-    };
-
-    _this.gexp = function(n) {
-
-      while (n < 0) {
-        n += 255;
-      }
-
-      while (n >= 256) {
-        n -= 255;
-      }
-
-      return EXP_TABLE[n];
-    };
-
-    return _this;
-  }();
-
-  //---------------------------------------------------------------------
-  // qrPolynomial
-  //---------------------------------------------------------------------
-
-  function qrPolynomial(num, shift) {
-
-    if (typeof num.length == 'undefined') {
-      throw num.length + '/' + shift;
-    }
-
-    var _num = function() {
-      var offset = 0;
-      while (offset < num.length && num[offset] == 0) {
-        offset += 1;
-      }
-      var _num = new Array(num.length - offset + shift);
-      for (var i = 0; i < num.length - offset; i += 1) {
-        _num[i] = num[i + offset];
-      }
-      return _num;
-    }();
-
-    var _this = {};
-
-    _this.getAt = function(index) {
-      return _num[index];
-    };
-
-    _this.getLength = function() {
-      return _num.length;
-    };
-
-    _this.multiply = function(e) {
-
-      var num = new Array(_this.getLength() + e.getLength() - 1);
-
-      for (var i = 0; i < _this.getLength(); i += 1) {
-        for (var j = 0; j < e.getLength(); j += 1) {
-          num[i + j] ^= QRMath.gexp(QRMath.glog(_this.getAt(i) ) + QRMath.glog(e.getAt(j) ) );
-        }
-      }
-
-      return qrPolynomial(num, 0);
-    };
-
-    _this.mod = function(e) {
-
-      if (_this.getLength() - e.getLength() < 0) {
-        return _this;
-      }
-
-      var ratio = QRMath.glog(_this.getAt(0) ) - QRMath.glog(e.getAt(0) );
-
-      var num = new Array(_this.getLength() );
-      for (var i = 0; i < _this.getLength(); i += 1) {
-        num[i] = _this.getAt(i);
-      }
-
-      for (var i = 0; i < e.getLength(); i += 1) {
-        num[i] ^= QRMath.gexp(QRMath.glog(e.getAt(i) ) + ratio);
-      }
-
-      // recursive call
-      return qrPolynomial(num, 0).mod(e);
-    };
-
-    return _this;
-  };
-
-  //---------------------------------------------------------------------
-  // QRRSBlock
-  //---------------------------------------------------------------------
+    return scratch.slice(data.length);
+  }
 
   var QRRSBlock = function() {
 

@@ -38,6 +38,10 @@ A paired watch can request a code while TechPie is in the background if Android 
 
 On a GT 6 Pro running 0.4.16, the watch acknowledged the offline grant and timetable. With the Android app force-stopped, reopening the watch app and tapping the campus-code prompt displayed a QR code and expiry countdown. The user estimated 13 seconds. The device recorded 17,707 ms from tap to draw, including 8,476 ms for key preparation and signing, 8,984 ms for QR encoding and 127 ms for painting. Reader acceptance remains unverified.
 
+The GT 6 Pro recorded 8,996 ms for the original QR encoder in 0.4.17. Scoring eight masks took 4,802 ms. The screen went black during that run and the user could return to the watch face. Version 0.4.18 reuses one layout and scores 32 columns at a time. Across 87 synthetic inputs, the resulting matrices and all 696 mask scores matched the previous encoder.
+
+With Android TechPie force-stopped, the user opened 0.4.18 on the watch and confirmed that the offline QR code and countdown appeared. The watch recorded 10,428 ms from tap to draw, including 8,509 ms for key preparation and signing, 1,676 ms for encoding and 124 ms for painting. Within the encoder, scoring took 681 ms, layout 358 ms, data and error correction 169 ms, packing 141 ms and version selection 4 ms.
+
 Host tests cover background handshakes, online QR data, expiry, account isolation and cache persistence. GT 6 Pro background delivery, screen-off stability and optical scanning still require device verification for 0.4.8.
 
 ## References

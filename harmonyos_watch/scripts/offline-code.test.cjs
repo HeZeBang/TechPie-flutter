@@ -60,4 +60,23 @@ test('incremental QR mask selection preserves the shared byte matrix', () => {
   assert.equal(encoded.size, fixture.matrixSize);
   assert.equal(Buffer.from(encoded.bytes).toString('base64'), fixture.matrixBase64);
 });
+test('packed mask scoring preserves legacy matrices across QR versions and word boundaries', () => {
+  const {createHash} = require('node:crypto');
+  const c = core();
+  const fixtures = [
+    [42, 29, 'ce27fec95dd3ee0f55dcce2b8312dd0ffbc2956ee5e2379588f75fb0e2e878aa'],
+    [43, 33, '0a96dae236061861a75b678476edb173397270d4fea4b746641c8b69759f3ce6'],
+    [122, 45, 'a841fa59a91d09ddae81457cf208ceb2e448ffa049885e50947af4c20cb1b43e'],
+    [123, 49, '7e87c349d0629f1ac1580cfecdf2ca9944da46e02b55352ca297031efc62d38a'],
+    [213, 57, '74a32b0473eeb49fac4925dc877f14fb6dc311d66c381c3185f112090e3e59eb'],
+    [214, 61, '601b2f2f47020e511f8c4c3bd812b986854307a4ba58235ba88efc2f3e9d6e17'],
+    [581, 93, '57ffba7e4e336e28b602a9cc0238504152971ba37299cc5d8a6f6932081e4ff7'],
+  ];
+  for (const [length, size, digest] of fixtures) {
+    const bytes = Array.from({length}, (_, i) => (i * 37 + length) & 255);
+    const encoded = finish(c.startQr(bytes));
+    assert.equal(encoded.size, size);
+    assert.equal(createHash('sha256').update(Buffer.from(encoded.bytes)).digest('hex'), digest);
+  }
+});
 module.exports = {core, grant, now};

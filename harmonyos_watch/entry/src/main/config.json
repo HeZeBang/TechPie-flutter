@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "club.geekpie.techpie.wear",
     "vendor": "geekpie",
-    "version": { "code": 23, "name": "0.4.16" }
+    "version": { "code": 25, "name": "0.4.18" }
   },
   "deviceConfig": {},
   "module": {
