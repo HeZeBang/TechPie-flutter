@@ -5,9 +5,11 @@
         <text class="page-title" onclick="showAccount">校园码 ›</text>
         <text class="page-status">{{ crownError || status }}</text>
       </div>
-      <div class="code-area">
-        <canvas class="qr" ref="qr" if="{{ codeVisible }}"></canvas>
-        <div class="code-placeholder" if="{{ !codeVisible }}" onclick="refreshCode">
+      <div class="code-area" show="{{ codeVisible }}">
+        <canvas class="qr" id="campusQr" ref="qr"></canvas>
+      </div>
+      <div class="code-area" show="{{ !codeVisible }}">
+        <div class="code-placeholder" onclick="refreshCode">
           <text class="placeholder-title">校园码</text>
           <text class="placeholder-detail">{{ codeMessage }}</text>
         </div>

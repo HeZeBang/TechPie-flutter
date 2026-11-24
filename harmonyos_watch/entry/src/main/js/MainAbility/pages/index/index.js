@@ -28,12 +28,16 @@ function offlineSlice(run) {
     if (!run.signer) run.signer = startOfflineCode(run.grant, page._prepared, application.watchRandom, application.watchNow, run.points);
     if (!run.frame) {
       run.frame = run.signer.step();
-      if (run.frame) page._prepared = run.signer.prepared;
+      if (run.frame) {
+        page._prepared = run.signer.prepared; run.signedAt = Date.now();
+        console.info('TechPie offline prepareAndSignMs=' + (run.signedAt - run.start));
+      }
     } else {
       if (!run.matrixStep) run.matrixStep = application.watchMatrix(run.frame.payload);
       var matrix = run.matrixStep();
       if (matrix) {
         if (run.frame.until <= application.watchNow()) throw Error('OFFLINE_CODE_EXPIRED');
+        console.info('TechPie offline encodeMs=' + (Date.now() - run.signedAt));
         matrix.id = 'local-' + run.start; matrix.until = run.frame.until;
         page._localCode = matrix; page._codeStarted = run.start;
         page.cancelCode(); page.applyState(application.watchState()); return;
@@ -161,7 +165,9 @@ export default {
       this._localCode = null; this._prepared = null;
     }
     if (this._localCode && this._localCode.until <= now) this._localCode = null;
-    var code = this._localCode || state.code;
+    var code = this._localCode || (state.code && state.code.until > now ? state.code : null);
+    if (code && code.id === this._unpaintable) code = null;
+    if (!state.connected) this._needCode = true;
     var seconds = code ? Math.max(0, Math.ceil((code.until - now) / 1000)) : 0;
     this.codeVisible = !!code && this.pageIndex === 0 && this.view === 'deck';
     this.codeMessage = code ? (this._localCode ? '离线码 · ' : '在线码 · ') + seconds + ' 秒' :
@@ -179,7 +185,7 @@ export default {
   },
   refreshCode() {
     if (!this._visible || this.pageIndex !== 0 || this.view !== 'deck') return;
-    this._needCode = false;
+    this._needCode = false; this._unpaintable = null;
     var page = this, grant = application.watchCredential();
     if (!grant) { application.watchCode(); return; }
     if (this._work) return;
@@ -196,7 +202,14 @@ export default {
     if (paintTimer) clearTimeout(paintTimer);
     paintTimer = setTimeout(function() {
       if (!page._visible || page._visit !== visit || !page.codeVisible || code.until <= application.watchNow()) return;
-      var ctx = page.$refs.qr.getContext('2d'), size = code.size;
+      var canvas = page.$refs.qr || (page.$element && page.$element('campusQr'));
+      if (!canvas) {
+        page._unpaintable = code.id; page.codeVisible = false;
+        page._failedGrant = application.watchCredential();
+        page._failureText = '画布未就绪，轻触重试'; page.codeMessage = page._failureText;
+        console.error('TechPie canvas unavailable'); return;
+      }
+      var paintStart = Date.now(), ctx = canvas.getContext('2d'), size = code.size;
       var cell = Math.floor(264 / (size + 8)), offset = Math.floor((264 - size * cell) / 2);
       ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 264, 264); ctx.fillStyle = '#000000';
       for (var row = 0; row < size; row++) {
@@ -212,6 +225,7 @@ export default {
         }
       }
       page._codeId = code.id;
+      console.info('TechPie campus paintMs=' + (Date.now() - paintStart));
       if (page._codeStarted && code.id.indexOf('local-') === 0) {
         console.info('TechPie offline code totalMs=' + (Date.now() - page._codeStarted)); page._codeStarted = null;
       }

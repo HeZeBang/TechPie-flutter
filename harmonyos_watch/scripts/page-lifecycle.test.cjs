@@ -78,3 +78,19 @@ test('a connected watch without a grant requests online and expires the displaye
   f.page.refreshCode(); assert.equal(f.counts.requests, 2);
   assert.equal(f.counts.signed, 0);
 });
+
+test('losing the canvas ref while rendering never loops or leaves an expired picture visible', () => {
+  const f = fixture(false);
+  f.page.$refs.qr = undefined;
+  f.state.code = {id: 'online', until: 1800000030000, bytes: [128], size: 1};
+  f.observe()(f.state); f.run();
+  assert.equal(f.page.codeVisible, false);
+  f.observe()(f.state); f.run();
+  assert.equal(f.counts.drawn, 0);
+  const current = {getContext() { f.counts.drawn++; return {fillRect() {}}; }};
+  f.page.$element = id => id === 'campusQr' ? current : null;
+  f.state.code.id = 'replaced'; f.observe()(f.state); f.run();
+  assert.equal(f.counts.drawn, 1);
+  f.advance(31000); f.observe()(f.state);
+  assert.equal(f.page.codeVisible, false);
+});
