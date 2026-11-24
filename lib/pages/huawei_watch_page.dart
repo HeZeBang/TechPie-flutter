@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../services/service_provider.dart';
 import '../services/wear/wear_engine_service.dart';
 import '../services/wear/wear_protocol.dart';
+import '../theme/tp_tokens.dart';
 import '../widgets/adaptive_button.dart';
 
 class HuaweiWatchPage extends StatelessWidget {
@@ -163,7 +164,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBin
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(TpTokens.radiusL),
         ),
         child: child,
       );
@@ -204,7 +205,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBin
                         decoration: BoxDecoration(
                           color:
                               connected ? colors.primaryContainer : colors.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(TpTokens.radiusM),
                         ),
                         child: Icon(
                           Icons.watch_outlined,
@@ -281,7 +282,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBin
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: colors.errorContainer,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(TpTokens.radiusM),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,7 +376,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBin
                   secondary: const Icon(Icons.notifications_none),
                   title: const Text('DDL 提醒'),
                   subtitle: const Text(
-                    '截止前 1 小时振动 · 手表应用打开且连接时生效',
+                    '截止前 1 小时振动 · 手表应用在前台时生效',
                   ),
                   value: service.watchRemindersEnabled,
                   onChanged: _busy
@@ -427,7 +428,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBin
                 ),
                 Padding(
                   padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: Text('手表应用退出后不会在后台运行；DDL 提醒在手表应用前台生效。离线校园码按授权有效期使用。'),
+                  child: Text('课表和待办可离线查看。校园码由已连接的手机联网获取。'),
                 ),
               ],
             ),
