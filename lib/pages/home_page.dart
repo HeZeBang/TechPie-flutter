@@ -332,10 +332,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildAppCard(
-    List<Feature> features, {
-    int rows = 2,
-  }) {
+  Widget _buildAppCard(List<Feature> features) {
     final theme = Theme.of(context);
 
     return Card.outlined(
@@ -348,7 +345,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         curve: appAnimationCurve(Curves.easeOutCubic),
         alignment: Alignment.topCenter,
         child: Column(
-          key: ValueKey('apps-${features.length}-$rows'),
+          key: ValueKey('apps-${features.length}'),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
@@ -370,7 +367,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: AppCard(
                 features: features,
-                rows: rows,
                 onFeatureTap: _handleFeatureTap,
               ),
             ),

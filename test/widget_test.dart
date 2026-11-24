@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/main.dart';
+import 'package:techpie/models/feature.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -18,6 +19,7 @@ import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/widgets/adaptive_select.dart';
+import 'package:techpie/widgets/app_card.dart';
 import 'package:techpie/widgets/app_shell/app_shell.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
 
@@ -113,6 +115,30 @@ void main() {
     expect(find.text('Schedule'), findsWidgets);
     expect(find.text('Deadlines'), findsWidgets);
     expect(find.text('Settings'), findsWidgets);
+  });
+
+  testWidgets('Narrow home grid keeps the library and existing apps reachable',
+      (WidgetTester tester) async {
+    Feature? tapped;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 300,
+            child: AppCard(
+              features: featureEntries,
+              onFeatureTap: (feature) => tapped = feature,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('学生活动').hitTestable(), findsOneWidget);
+    final library = find.text('图书馆预约').hitTestable();
+    expect(library, findsOneWidget);
+    await tester.tap(library);
+    expect(tapped?.id, 'library_reservation');
   });
 
   testWidgets('Navigation switches pages', (WidgetTester tester) async {

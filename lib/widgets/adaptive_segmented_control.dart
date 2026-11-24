@@ -13,7 +13,7 @@ class AdaptiveSegmentedControl extends StatelessWidget {
 
   final int value;
   final List<String> segments;
-  final ValueChanged<int> onChanged;
+  final ValueChanged<int>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -24,9 +24,11 @@ class AdaptiveSegmentedControl extends StatelessWidget {
             ButtonSegment<int>(value: index, label: Text(segments[index])),
         ],
         selected: {value},
-        onSelectionChanged: (selection) {
-          if (selection.isNotEmpty) onChanged(selection.first);
-        },
+        onSelectionChanged: onChanged == null
+            ? null
+            : (selection) {
+                if (selection.isNotEmpty) onChanged?.call(selection.first);
+              },
       );
     }
 
@@ -38,6 +40,9 @@ class AdaptiveSegmentedControl extends StatelessWidget {
           width: double.infinity,
           child: CupertinoSlidingSegmentedControl<int>(
             groupValue: value,
+            disabledChildren: onChanged == null
+                ? {for (var index = 0; index < segments.length; index++) index}
+                : const {},
             children: {
               for (var index = 0; index < segments.length; index++)
                 index: Padding(
@@ -50,7 +55,7 @@ class AdaptiveSegmentedControl extends StatelessWidget {
                 ),
             },
             onValueChanged: (selection) {
-              if (selection != null) onChanged(selection);
+              if (selection != null) onChanged?.call(selection);
             },
           ),
         ),
