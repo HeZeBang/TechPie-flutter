@@ -14,6 +14,7 @@ import 'api_base_url.dart';
 import 'auth_service.dart';
 import 'graduate_schedule_client.dart';
 import 'http_client.dart';
+import 'school_calendar_client.dart';
 import 'session/cookie_provider.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
@@ -737,18 +738,45 @@ class ScheduleService extends ChangeNotifier {
     String semester,
     String cacheKey,
   ) async {
-    final extra = <String, dynamic>{'year': year, 'semester': semester};
+    final revision = _accountRevision;
+    final automatic = scheduleSource == CampusScheduleSource.automatic;
+    const changedSession = FormatException('IDS 会话不可用或已变更，请刷新课表');
 
-    await _postWithRetry(
-      '$_baseUrl/schedule/term_begin',
-      extra,
-      'fetchTermBegin',
-      (data) async {
-        _termCalendar = TermCalendar.fromJson(data);
-        await _storage.saveTermCalendar(cacheKey, _termCalendar!);
-        notifyListeners();
+    void checkIdentity() {
+      if (revision != _accountRevision) throw StateError('学校账号已切换');
+      if (automatic && (!_identityIsCurrent || _graduateIdentity || _idsSession == null)) {
+        throw changedSession;
+      }
+    }
+
+    checkIdentity();
+    String? requestSession;
+    final calendar = await _tpAuth.sessionTree.withCookie<TermCalendar?>(
+      _tpAuth.idsNode,
+      (cp) async {
+        checkIdentity();
+        final session = requestSession = _idsSession;
+        final tgc = RegExp(r'(?:^|;)\s*CASTGC=([^;]*)').firstMatch(cp.cookies)?.group(1) ??
+            _tpAuth.idsNode.rawFields['tgc'] as String? ??
+            '';
+        final result = await SchoolCalendarClient(_http, tgc).fetchTermCalendar(
+          year: year,
+          semester: semester,
+        );
+        checkIdentity();
+        if (session != _idsSession) throw changedSession;
+        return CookieAction(result.calendar, expired: result.sessionExpired);
       },
     );
+    checkIdentity();
+    if (requestSession != _idsSession) throw changedSession;
+    if (calendar == null) {
+      throw const FormatException('校历登录会话已失效，请刷新 IDS 绑定后重试');
+    }
+    if (_selectedSemesterId != null && cacheKey != _selectedSemesterId) return;
+    _termCalendar = calendar;
+    await _storage.saveTermCalendar(cacheKey, _termCalendar!);
+    notifyListeners();
   }
 
   Future<void> selectSemester(String semesterId) async {
@@ -859,7 +887,23 @@ class ScheduleService extends ChangeNotifier {
     }
     if (requestSession != _idsSession) throw changedSession;
     if (resp.statusCode != 200) {
-      throw Exception('Request failed with status ${resp.statusCode}');
+      if (resp.statusCode == 401) {
+        throw const FormatException('教务系统登录态已失效（HTTP 401），请刷新 IDS 绑定后重试');
+      }
+      String? backendError;
+      try {
+        final decoded = jsonDecode(resp.body);
+        if (decoded is Map && decoded['error'] is String) {
+          backendError = (decoded['error'] as String).trim();
+        }
+      } on FormatException {
+        // Non-JSON error body; fall back to HTTP status.
+      }
+      throw FormatException(
+        backendError != null && backendError.isNotEmpty
+            ? '课表服务请求失败（HTTP ${resp.statusCode}）：$backendError'
+            : '课表服务请求失败（HTTP ${resp.statusCode}）',
+      );
     }
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     if (data['success'] != true) {

@@ -1564,7 +1564,7 @@ class _SchedulePageState extends State<SchedulePage> {
         builder: (context) => AlertDialog(
           title: const Text('课表刷新失败'),
           content: SelectableText(
-            (_schedule.error ?? '').replaceFirst(RegExp(r'^FormatException:\s*'), ''),
+            (_schedule.error ?? '').replaceFirst(RegExp(r'^(?:FormatException|Exception):\s*'), ''),
           ),
           actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
         ),
