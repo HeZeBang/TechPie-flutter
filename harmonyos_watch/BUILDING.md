@@ -70,3 +70,17 @@ The application store owns Wear Engine and cache lifecycle; the page observes th
 The 0.3.1/0.3.2 acceptance established the explicit-dimension startup fix and circular icons. The 0.4.1 application and page bundles evaluated to booleans, and the GT 6 Pro showed a black screen. The 0.4.2 build preserves the final expression and checks that each entry returns its ViewModel. The device accepted the package.
 
 On GT 6 Pro with 0.4.3, Android reported a ready session and the watch acknowledged the account and deadline snapshots. The schedule snapshot failed with `SERVICE_UNAVAILABLE` while the phone timetable source reported an error. The connection subsequently dropped. The receiver test covers an undeliverable startup announcement when the phone opens second.
+
+## SM2 device benchmark
+
+Generate a separate Lite project from the repository root. Choose a new output directory.
+
+```sh
+node harmonyos_watch/benchmark/prepare.cjs ../gt6-bench
+```
+
+Configure signing in the generated project's `harmonyos_watch` directory and run
+`build.ps1` there. On the GT 6 Pro, tap **测试签名** once. Record the total and
+the **执行 / 等待** times from the same run. **测试绘制** measures QR drawing
+separately. Both tests use public fixtures. The regular build opens the online
+campus code and omits the benchmark.
