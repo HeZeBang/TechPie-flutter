@@ -1,0 +1,40 @@
+name: Flatpak Packaging Checks
+
+on:
+  pull_request:
+    paths:
+      - 'packaging/flatpak/**'
+      - 'packaging/linux/techpie.desktop'
+      - 'scripts/*flatpak*'
+      - '.github/workflows/flatpak-packaging-check.yml'
+      - '.github/workflows/linux-release.yml'
+  push:
+    paths:
+      - 'packaging/flatpak/**'
+      - 'packaging/linux/techpie.desktop'
+      - 'scripts/*flatpak*'
+      - '.github/workflows/flatpak-packaging-check.yml'
+      - '.github/workflows/linux-release.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Flatpak and its runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak desktop-file-utils imagemagick gcc shellcheck
+          sudo flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          runtime="$(sed -n 's/^runtime=//p' packaging/flatpak/metadata)"
+          sudo flatpak install --system --noninteractive --no-related flathub "$runtime"
+      - name: Validate scripts
+        run: shellcheck scripts/build-flatpak.sh scripts/check-flatpak-packaging.sh packaging/flatpak/techpie
+      - name: Build, install and run the Flatpak fixture
+        run: dbus-run-session -- scripts/check-flatpak-packaging.sh
