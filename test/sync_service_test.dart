@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -560,6 +561,62 @@ void main() {
     );
     expect(written['v'], SyncSchema.current);
   });
+
+  group('SyncService 401 forced renewal classification', () {
+    test('reports network failure rather than expired when refresh hits SocketException', () async {
+      final server = _FakeCasdoor()..rejectUpdateUserWith401 = true;
+      final fx = await _Fixture.withSession(
+        server: server,
+        refreshToken: 'rt-1',
+        uniAuth: UniAuthService(
+          refreshRequest: (_) async => throw const SocketException('offline'),
+        ),
+      );
+      final res = await fx.sync.setupWithMasterPassword('pw');
+      expect(res.ok, isFalse);
+      expect(res.message, contains('网络异常'));
+      expect(res.message, isNot(contains('登录已过期')));
+    });
+
+    test('reports login expired when refresh gets 400 invalid_grant', () async {
+      final server = _FakeCasdoor()..rejectUpdateUserWith401 = true;
+      final fx = await _Fixture.withSession(
+        server: server,
+        refreshToken: 'rt-1',
+        uniAuth: UniAuthService(
+          refreshRequest: (_) async => http.Response(
+            jsonEncode({'error': 'invalid_grant', 'error_description': 'revoked'}),
+            400,
+          ),
+        ),
+      );
+      final res = await fx.sync.setupWithMasterPassword('pw');
+      expect(res.ok, isFalse);
+      expect(res.message, contains('登录已过期，请重新登录'));
+    });
+
+    test('retries update-user with renewed access token when refresh succeeds', () async {
+      final server = _FakeCasdoor()..requiredUpdateToken = 'fresh-at';
+      final fx = await _Fixture.withSession(
+        server: server,
+        refreshToken: 'rt-1',
+        uniAuth: UniAuthService(
+          refreshRequest: (_) async => http.Response(
+            jsonEncode({
+              'access_token': 'fresh-at',
+              'refresh_token': 'rt-2',
+              'expires_in': 3600,
+            }),
+            200,
+          ),
+        ),
+      );
+      final res = await fx.sync.setupWithMasterPassword('pw');
+      expect(res.ok, isTrue);
+      expect(fx.auth.session?.geekpieToken, 'fresh-at');
+      expect(fx.auth.session?.geekpieRefreshToken, 'rt-2');
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -577,6 +634,8 @@ void main() {
 class _FakeCasdoor {
   final Map<String, String> properties = {};
   bool enforceAuthz = true;
+  bool rejectUpdateUserWith401 = false;
+  String? requiredUpdateToken;
   Completer<void>? nextWriteStarted;
   Completer<void>? releaseNextWrite;
   void pauseNextWrite() {
@@ -600,6 +659,11 @@ class _FakeCasdoor {
       }
       if (request.method == 'POST' &&
           request.url.path == '/api/update-user') {
+        if (rejectUpdateUserWith401 ||
+            (requiredUpdateToken != null &&
+                request.headers['Authorization'] != 'Bearer $requiredUpdateToken')) {
+          return http.Response('Unauthorized', 401);
+        }
         final decoded = jsonDecode(request.body) as Map<String, dynamic>;
         // Casbin self-update authz: id query must match body owner/name.
         if (enforceAuthz) {
@@ -654,7 +718,12 @@ class _Fixture {
 
   _Fixture(this.storage, this.auth, this.tpAuth, this.sync, this.server);
 
-  static Future<_Fixture> withSession({_FakeCasdoor? server, EcardSyncStore? ecard}) async {
+  static Future<_Fixture> withSession({
+    _FakeCasdoor? server,
+    EcardSyncStore? ecard,
+    UniAuthService? uniAuth,
+    String? refreshToken,
+  }) async {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
@@ -666,13 +735,13 @@ class _Fixture {
         schoolName: '上海科技大学',
         createdAt: DateTime.utc(2026),
         geekpieToken: 'fake-geekpie-jwt',
+        geekpieRefreshToken: refreshToken,
       ),
     );
     final srv = server ?? _FakeCasdoor();
     final logger = DebugLogger();
     final httpClient = LoggingHttpClient(logger);
-    final uniAuth = UniAuthService();
-    final auth = AuthService(storage, httpClient, uniAuth);
+    final auth = AuthService(storage, httpClient, uniAuth ?? UniAuthService());
     final tpAuth = ThirdPartyAuthService(storage, httpClient, idsClient: FakeIdsClient());
     final sync = SyncService(auth, tpAuth, storage, client: srv.toHttpClient(), ecard: ecard);
     // Mirror main.dart wiring so tombstones are recorded + pushes fire.

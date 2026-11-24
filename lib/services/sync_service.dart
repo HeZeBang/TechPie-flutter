@@ -259,7 +259,8 @@ class SyncService extends ChangeNotifier {
     if (resp.statusCode == 401) {
       // The 401 is proof the token is refused, so this renewal does not
       // second-guess it against the stored expiry.
-      if (await _auth.tryRenewSession(force: true)) {
+      final renewResult = await _auth.tryRenewSession(force: true);
+      if (renewResult.isUsable) {
         final t2 = _token();
         if (t2 == null || t2.isEmpty) {
           return const SyncCasdoorResult(false, httpStatus: 401, msg: '登录已过期，请重新登录');
@@ -273,6 +274,8 @@ class SyncService extends ChangeNotifier {
         } catch (e) {
           return SyncCasdoorResult(false, msg: '网络错误: $e');
         }
+      } else if (renewResult == SessionRenewalResult.transientError) {
+        return const SyncCasdoorResult(false, httpStatus: 401, msg: '网络异常，续期失败，请稍后重试');
       } else {
         return const SyncCasdoorResult(false, httpStatus: 401, msg: '登录已过期，请重新登录');
       }

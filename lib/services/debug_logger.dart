@@ -90,6 +90,9 @@ class DebugLogger extends ChangeNotifier {
   static const _sensitiveKeys = {
     'password',
     'token',
+    'access_token',
+    'refresh_token',
+    'id_token',
     'tgc',
     'sessiontoken',
     'api_token',
