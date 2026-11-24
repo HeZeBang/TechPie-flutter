@@ -31,6 +31,7 @@ test('incremental signing preserves the shared signature and can reuse the prepa
   const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/offline-sm2.json')));
   assert.equal(Buffer.from(frame.payload).toString('hex'), fixture.payloadHex);
   assert.equal(frame.until, now + 30000);
+  assert.deepEqual(Object.keys(job.prepared).sort(), ['grant', 'point']);
   const next = c.startOfflineCode(grant, job.prepared, deterministic, () => now, c.points);
   assert.equal(Buffer.from(finish(next.step).payload).toString('hex'), fixture.payloadHex);
   const pending = c.startOfflineCode(grant, null, deterministic, () => grant.expiresAt * 1000, c.points);

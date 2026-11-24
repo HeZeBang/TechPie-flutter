@@ -553,7 +553,7 @@ function makeEc(field) {
   // For T = (k + 2^256 - 1)/2 mod n, the 256 signed bits
   // (2*bit(T,i)-1) sum to k when weighted by 2^i.
   function makeMulG(t, table) {
-    let row = 15
+    let row = 15, secondAdd = false
     const acc = {X: S[16], Y: S[17], Z: S[18]}
     const next = {X: S[19], Y: S[20], Z: S[21]}
     const negative = {x: null, y: zeros()}
@@ -569,17 +569,19 @@ function makeEc(field) {
     }
     return {
       step() {
-        const first = point(0)
         if (row === 15) {
+          const first = point(0)
           copyTo(next.X, first.x); copyTo(next.Y, first.y); copyTo(next.Z, ONE)
-        } else {
+          maddInto(acc, next, point(1))
+        } else if (!secondAdd) {
           dblInto(next, acc)
-          maddInto(acc, next, first)
-        }
-        if (row === 15) maddInto(acc, next, point(1))
-        else {
+          maddInto(acc, next, point(0))
+          secondAdd = true
+          return false
+        } else {
           maddInto(next, acc, point(1))
           copyTo(acc.X, next.X); copyTo(acc.Y, next.Y); copyTo(acc.Z, next.Z)
+          secondAdd = false
         }
         return --row < 0
       },

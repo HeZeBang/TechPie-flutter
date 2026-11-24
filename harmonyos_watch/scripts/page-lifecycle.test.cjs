@@ -121,3 +121,38 @@ test('a pending online request takes priority and falls back to the restored gra
   f.state.codeLoading = false; f.observe()(f.state); f.run(); f.run(); f.run();
   assert.equal(f.counts.signed, 1); assert.equal(f.counts.drawn, 1);
 });
+
+test('returning to a valid QR reuses the mounted canvas and expiry does not sign on every swipe', () => {
+  const f = fixture();
+  f.run(); f.run(); f.run();
+  for (let i = 0; i < 2; i++) {
+    f.page.onPageChange({index: 1}); f.observe()(f.state);
+    f.page.onPageChange({index: 0}); f.run();
+    assert.ok(f.page.codeVisible);
+  }
+  assert.equal(f.counts.drawn, 1);
+  f.advance(31000); f.observe()(f.state);
+  f.page.onPageChange({index: 1}); f.page.onPageChange({index: 0}); f.run();
+  assert.equal(f.counts.signed, 1); assert.equal(f.page.codeVisible, false);
+  f.page.refreshCode(); f.run(); f.run(); f.run();
+  assert.equal(f.counts.drawn, 2);
+});
+
+test('heartbeats reuse list rows until data, the selected day or a time boundary changes', () => {
+  const f = fixture(false), now = f.api.watchNow();
+  f.state.schedule = [{name: 'A', location: '101', startAtMs: now - 60000, endAtMs: now + 90000}];
+  f.state.ddl = [{title: 'D', status: 'open', courseName: 'C', dueAtMs: now + 86460000}];
+  f.page.showSchedule();
+  const courses = f.page.coursePreview, tasks = f.page.ddlPreview, rows = f.page.rows;
+  assert.equal(tasks[0].urgent, false);
+  for (let i = 0; i < 59; i++) {
+    f.advance(1000); f.observe()(f.state);
+    assert.equal(f.page.coursePreview, courses); assert.equal(f.page.ddlPreview, tasks);
+    assert.equal(f.page.rows, rows);
+  }
+  f.advance(1000); f.observe()(f.state); assert.equal(f.page.ddlPreview[0].urgent, true);
+  f.advance(30000); f.observe()(f.state); assert.equal(f.page.coursePreview.length, 0);
+  f.page.nextDay(); assert.equal(f.page.rows.length, 0);
+  f.page.previousDay(); assert.equal(f.page.rows[0].title, 'A');
+  f.state.schedule = []; f.observe()(f.state); assert.equal(f.page.rows.length, 0);
+});

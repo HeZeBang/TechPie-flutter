@@ -8,21 +8,22 @@ function hexBytes(hex) {
 
 export function startOfflineCode(grant, prepared, random, now, table) {
   var key = grant.privateKey;
+  var signer = makeSigner(table), publicJob;
   if (!prepared || prepared.grant !== grant) {
     if (typeof key !== 'string' || key.length !== 64) throw Error('INVALID_OFFLINE_KEY');
-    var signer = makeSigner(table);
-    prepared = {grant: grant, signer: signer, publicJob: signer.makePublicJob(key)};
+    prepared = {grant: grant, point: null};
+    publicJob = signer.makePublicJob(key);
   }
   var sign, message, until;
   return {prepared: prepared, step: function() {
     var at = now();
     if (at >= grant.expiresAt * 1000) throw Error('OFFLINE_GRANT_EXPIRED');
-    if (prepared.publicJob) {
-      if (!prepared.publicJob.step()) return null;
-      var point = prepared.publicJob.result();
+    if (publicJob) {
+      if (!publicJob.step()) return null;
+      var point = publicJob.result();
       var compressed = (parseInt(point.y.slice(-1), 16) % 2 ? '03' : '02') + point.x;
       if (compressed.toLowerCase() !== grant.publicKey.toLowerCase()) throw Error('OFFLINE_KEY_MISMATCH');
-      prepared.point = point; prepared.publicJob = null;
+      prepared.point = point; publicJob = null;
       return null;
     }
     if (!sign) {
@@ -42,7 +43,7 @@ export function startOfflineCode(grant, prepared, random, now, table) {
       }
       if (hex === '0000000000000000000000000000000000000000000000000000000000000000' ||
           hex >= 'fffffffeffffffffffffffffffffffff7203df6b21c6052b53bbf40939d54123') return null;
-      sign = prepared.signer.makeSignJob({privateKeyHex: key, publicKeyXHex: prepared.point.x,
+      sign = signer.makeSignJob({privateKeyHex: key, publicKeyXHex: prepared.point.x,
         publicKeyYHex: prepared.point.y, message: message, kLimbs: limbs});
     }
     if (!sign.step()) return null;

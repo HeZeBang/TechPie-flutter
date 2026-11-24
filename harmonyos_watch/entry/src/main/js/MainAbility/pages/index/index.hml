@@ -7,7 +7,6 @@
         <text class="placeholder-title">{{ codeMessage }}</text>
       </div></div>
       <text class="code-caption" onclick="refreshCode">{{ crownError || (codeVisible ? codeMessage : codeHint) }}</text>
-      <div class="pager"><div class="dot active-dot"></div><div class="dot"></div><div class="dot"></div></div>
     </div>
     <div class="panel">
       <div class="panel-header"><text class="page-title">课表</text></div>
@@ -18,7 +17,6 @@
         <text class="preview-empty" if="{{ coursePreview.length === 0 }}">{{ emptyCourse }}</text>
       </div>
       <input class="glance-action" type="button" value="今日课程 · {{ courseCount }} 节" onclick="showSchedule" />
-      <div class="pager"><div class="dot"></div><div class="dot active-dot"></div><div class="dot"></div></div>
     </div>
     <div class="panel">
       <div class="panel-header"><text class="page-title">{{ alertTitle || '待办' }}</text></div>
@@ -30,7 +28,6 @@
         <text class="preview-empty" if="{{ ddlPreview.length === 0 }}">暂无待办</text>
       </div>
       <input class="glance-action" type="button" value="全部待办 · {{ ddlCount }} 项" onclick="showDdl" />
-      <div class="pager"><div class="dot"></div><div class="dot"></div><div class="dot active-dot"></div></div>
     </div>
   </swiper>
   <list class="details" ref="details" onswipe="onSwipe" if="{{ view !== 'deck' }}">

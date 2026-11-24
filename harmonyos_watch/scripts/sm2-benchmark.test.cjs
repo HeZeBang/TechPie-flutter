@@ -61,8 +61,8 @@ test('signed comb and sparse-prime reduction match OpenSSL points for edge and v
       publicKeyXHex:pub.subarray(0,32).toString('hex'), publicKeyYHex:pub.subarray(32).toString('hex'),
       message:[...message], kLimbs});
     let rounds = 1;
-    while (!job.step()) assert.ok(++rounds <= 16);
-    assert.equal(rounds,16);
+    while (!job.step()) assert.ok(++rounds <= 31);
+    assert.equal(rounds,31);
     const sig = job.result();
     const r = BigInt('0x'+sig.slice(0,64)), s = BigInt('0x'+sig.slice(64));
     assert.equal(r,(x+e)%n);
