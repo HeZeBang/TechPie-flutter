@@ -218,14 +218,20 @@ void main() {
     await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
 
-    final maskRow = find.byKey(const ValueKey('settings.mask-personal-info'));
-    expect(maskRow, findsOneWidget);
+    final debugRow = find.byKey(const ValueKey('settings.debug-mode'));
+    await tester.scrollUntilVisible(
+      debugRow,
+      240,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+    expect(debugRow, findsOneWidget);
     final switchFinder = find.descendant(
-      of: maskRow,
+      of: debugRow,
       matching: find.byType(Switch),
     );
     final before = tester.widget<Switch>(switchFinder).value;
-    await tester.tap(maskRow);
+    await tester.tap(debugRow);
     await tester.pumpAndSettle();
     final after = tester.widget<Switch>(switchFinder).value;
     expect(after, isNot(before));

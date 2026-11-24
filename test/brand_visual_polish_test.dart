@@ -81,10 +81,11 @@ void main() {
   }
 
   testWidgets(
-      'TpCampusCardStrip expanded entity card renders artwork, blur, and pay action',
+      'TpCampusCardStrip expanded entity card renders artwork, balance toggle, and pay action',
       (tester) async {
     var payTaps = 0;
     var cardTaps = 0;
+    var toggleTaps = 0;
 
     await tester.pumpWidget(
       wrapTheme(
@@ -93,7 +94,8 @@ void main() {
           child: TpCampusCardStrip(
             configured: true,
             balanceText: '¥ 128.50',
-            maskPersonalInfo: true,
+            hideBalance: true,
+            onToggleHideBalance: () => toggleTaps++,
             expandedCard: true,
             onOpenPayCode: () => payTaps++,
             onOpenCard: () => cardTaps++,
@@ -108,6 +110,13 @@ void main() {
     expect(find.text('¥ 128.50'), findsNothing);
     expect(find.text('亮码'), findsOneWidget);
 
+    await tester.tap(
+      find.byKey(const ValueKey('home.campus-card-balance-toggle')),
+    );
+    await tester.pumpAndSettle();
+    expect(toggleTaps, 1);
+    expect(cardTaps, 0);
+
     await tester.tap(find.byKey(const ValueKey('home.campus-card-pay')));
     await tester.pumpAndSettle();
     expect(payTaps, 1);
@@ -119,7 +128,8 @@ void main() {
           child: TpCampusCardStrip(
             configured: true,
             balanceText: '¥ 128.50',
-            maskPersonalInfo: false,
+            hideBalance: false,
+            onToggleHideBalance: () => toggleTaps++,
             expandedCard: true,
             onOpenPayCode: () => payTaps++,
             onOpenCard: () => cardTaps++,
@@ -134,7 +144,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(cardTaps, 1);
 
-    // Unconfigured expanded card preserves setup CTA.
+    // Unconfigured expanded card preserves setup CTA without eye toggle.
     await tester.pumpWidget(
       wrapTheme(
         SizedBox(
@@ -142,7 +152,7 @@ void main() {
           child: TpCampusCardStrip(
             configured: false,
             balanceText: null,
-            maskPersonalInfo: true,
+            hideBalance: true,
             expandedCard: true,
             onOpenPayCode: () => payTaps++,
             onOpenCard: () => cardTaps++,
@@ -154,6 +164,10 @@ void main() {
     expect(find.text('校园一卡通'), findsOneWidget);
     expect(find.text('点击绑定'), findsOneWidget);
     expect(find.text('进入'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home.campus-card-balance-toggle')),
+      findsNothing,
+    );
 
     // Compact strip renders mini entity thumbnail.
     await tester.pumpWidget(
@@ -163,7 +177,7 @@ void main() {
           child: TpCampusCardStrip(
             configured: true,
             balanceText: '¥ 128.50',
-            maskPersonalInfo: false,
+            hideBalance: false,
             expandedCard: false,
             onOpenPayCode: () => payTaps++,
             onOpenCard: () => cardTaps++,
@@ -189,7 +203,7 @@ void main() {
             child: TpCampusCardStrip(
               configured: true,
               balanceText: '¥ 128.50',
-              maskPersonalInfo: false,
+              hideBalance: false,
               expandedCard: true,
               onOpenPayCode: () {},
               onOpenCard: () {},
@@ -222,7 +236,7 @@ void main() {
           child: TpCampusCardStrip(
             configured: true,
             balanceText: '¥ 128.50',
-            maskPersonalInfo: false,
+            hideBalance: false,
             expandedCard: true,
             onOpenPayCode: () {},
             onOpenCard: () {},

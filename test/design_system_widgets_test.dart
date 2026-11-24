@@ -113,18 +113,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('TpCampusCardStrip respects privacy blur and configured state',
+  testWidgets('TpCampusCardStrip respects balance eye toggle and configured state',
       (tester) async {
     var payTaps = 0;
     var cardTaps = 0;
+    var toggleTaps = 0;
 
-    // Configured + blurred
+    // Configured + hidden balance
     await tester.pumpWidget(
       wrap(
         TpCampusCardStrip(
           configured: true,
           balanceText: '¥ 128.50',
-          maskPersonalInfo: true,
+          hideBalance: true,
+          onToggleHideBalance: () => toggleTaps++,
           onOpenPayCode: () => payTaps++,
           onOpenCard: () => cardTaps++,
         ),
@@ -133,16 +135,19 @@ void main() {
     expect(find.text('余额 ••••'), findsOneWidget);
     expect(find.text('余额 ¥ 128.50'), findsNothing);
     expect(find.text('亮码'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('home.campus-card-balance-toggle')));
+    expect(toggleTaps, 1);
+    expect(cardTaps, 0);
     await tester.tap(find.byKey(const ValueKey('home.campus-card-pay')));
     expect(payTaps, 1);
 
-    // Configured + unblurred
+    // Configured + visible balance (default)
     await tester.pumpWidget(
       wrap(
         TpCampusCardStrip(
           configured: true,
           balanceText: '¥ 128.50',
-          maskPersonalInfo: false,
+          onToggleHideBalance: () => toggleTaps++,
           onOpenPayCode: () => payTaps++,
           onOpenCard: () => cardTaps++,
         ),
@@ -158,7 +163,7 @@ void main() {
         TpCampusCardStrip(
           configured: false,
           balanceText: null,
-          maskPersonalInfo: true,
+          hideBalance: true,
           onOpenPayCode: () => payTaps++,
           onOpenCard: () => cardTaps++,
         ),
@@ -166,6 +171,10 @@ void main() {
     );
     expect(find.text('进入'), findsOneWidget);
     expect(find.text('绑定后可一键亮码与查看余额'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home.campus-card-balance-toggle')),
+      findsNothing,
+    );
   });
 
   testWidgets('TpFeatureGrid fits 4 columns cleanly at 320px narrow width',

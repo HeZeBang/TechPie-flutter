@@ -265,8 +265,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return '晚上好';
   }
 
-  static String _avatarLabel(AuthService auth, StorageService storage) {
-    if (!auth.isLoggedIn || storage.maskPersonalInfo) return 'GP';
+  static String _greetingTitle(DateTime now, AuthService auth) {
+    final base = _greeting(now);
+    final session = auth.session;
+    if (!auth.isLoggedIn || session == null) return base;
+    final name = session.userName.trim().isNotEmpty
+        ? session.userName.trim()
+        : session.userId.trim();
+    if (name.isEmpty) return base;
+    return '$base，$name';
+  }
+
+  static String _avatarLabel(AuthService auth) {
+    if (!auth.isLoggedIn) return 'GP';
     final name = auth.session?.userName.trim() ?? '';
     if (name.isEmpty) return 'GP';
     final runes = name.runes.toList();
@@ -360,10 +371,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final header = TpPageHeader(
       key: const ValueKey('home.greeting-header'),
       subtitle: dateSubtitle,
-      title: _greeting(now),
+      title: _greetingTitle(now, auth),
       trailing: TpAvatarBadge(
         key: const ValueKey('home.avatar'),
-        text: _avatarLabel(auth, storage),
+        text: _avatarLabel(auth),
         tooltip: auth.isLoggedIn ? '我的' : '登录',
         onTap: () {
           if (auth.isLoggedIn) {
@@ -457,7 +468,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         return TpCampusCardStrip(
           configured: campusCard.configured,
           balanceText: balanceText,
-          maskPersonalInfo: storage.maskPersonalInfo,
+          hideBalance: storage.hideCampusCardBalance,
+          onToggleHideBalance: () {
+            unawaited(AppHaptics.play(AppHaptics.selection));
+            unawaited(
+              storage.setHideCampusCardBalance(!storage.hideCampusCardBalance),
+            );
+            setState(() {});
+          },
           expandedCard: expandedCard,
           onOpenPayCode: () {
             unawaited(AppHaptics.play(AppHaptics.lightImpact));
@@ -486,13 +504,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Widget _buildQuickActions() {
+    // Campus Card already has its own dedicated hero card directly above.
+    final quickFeatures = featureEntries
+        .where((feature) => feature.id != 'campus_card')
+        .toList(growable: false);
     return TpCard(
       key: const ValueKey('home.quick-actions'),
       title: '快捷功能',
       child: AppCard(
-        features: featureEntries,
+        features: quickFeatures,
         rows: 2,
-        columns: 4,
+        columns: 3,
         onFeatureTap: _handleFeatureTap,
       ),
     );
@@ -654,10 +676,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildPendingAssignments(TpColors colors) {
     final now = _now;
+    DateTime activeDueOf(Assignment a) =>
+        (a.effectiveLateDue != null && a.due.isBefore(now))
+            ? a.effectiveLateDue!
+            : a.due;
     final pending = _assignments.visibleAssignments
-        .where((a) => !_assignments.isCompleted(a) && a.due.isAfter(now))
+        .where(
+          (a) => !_assignments.isCompleted(a) && !a.effectiveDue.isBefore(now),
+        )
         .toList()
-      ..sort((a, b) => a.due.compareTo(b.due));
+      ..sort((a, b) => activeDueOf(a).compareTo(activeDueOf(b)));
 
     final showCount = pending.length.clamp(0, 4);
     final overflow = pending.length - showCount;
@@ -760,9 +788,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     DateTime now, {
     required bool showDivider,
   }) {
-    final dueColor = _dueColor(a.due, now, colors);
-    final dueLabel = _dueLabel(a.due, now);
-    final progress = _urgencyProgress(a.due, now);
+    final inLateWindow = a.effectiveLateDue != null && a.due.isBefore(now);
+    final activeDue = inLateWindow ? a.effectiveLateDue! : a.due;
+    final dueColor =
+        inLateWindow ? colors.dangerRed : _dueColor(activeDue, now, colors);
+    final dueLabel = inLateWindow
+        ? '迟交${_dueLabel(activeDue, now)}'
+        : _dueLabel(activeDue, now);
+    final progress = inLateWindow ? 1.0 : _urgencyProgress(activeDue, now);
     final detail = switch (a) {
       ExamAssignment(:final location) => location.trim(),
       CustomDeadline(:final course, :final location) => [

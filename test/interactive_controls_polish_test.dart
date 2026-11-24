@@ -137,7 +137,7 @@ Future<({TechPieApp app, ThemeService theme, StorageService storage})>
 
 void main() {
   testWidgets(
-    'DesktopShell renders exact 960dp Bento, preserves per-tab stacks, shows collapsed tooltips, and syncs Home blur',
+    'DesktopShell renders exact 960dp Bento, preserves per-tab stacks, shows collapsed tooltips, and persists collapse state',
     (tester) async {
       tester.view.physicalSize = const Size(960, 1200);
       tester.view.devicePixelRatio = 1;
@@ -147,7 +147,6 @@ void main() {
       final built = await _createFullApp(
         signedIn: true,
         debugEnabled: true,
-        extraPrefs: {'mask_personal_info': false},
       );
       await tester.pumpWidget(built.app);
       await tester.pumpAndSettle();
@@ -161,7 +160,7 @@ void main() {
       );
       expect(cardPos.dx, greaterThan(coursesPos.dx));
 
-      // Avatar initially shows real initial because maskPersonalInfo == false.
+      // Avatar always displays real initial for signed-in user without privacy blur.
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('home.avatar')),
@@ -170,9 +169,10 @@ void main() {
         findsOneWidget,
       );
 
-      // 2. Collapsing sidebar exposes Tooltips for every collapsed destination icon.
+      // 2. Collapsing sidebar exposes Tooltips and persists collapse preference.
       await tester.tap(find.byKey(const ValueKey('desktop.sidebar-toggle')));
       await tester.pumpAndSettle();
+      expect(built.storage.desktopSidebarCollapsed, isTrue);
       for (final label in ['首页', '课表', 'Deadlines', '我的']) {
         expect(
           find.descendant(
@@ -186,8 +186,9 @@ void main() {
       }
       await tester.tap(find.byKey(const ValueKey('desktop.sidebar-toggle')));
       await tester.pumpAndSettle();
+      expect(built.storage.desktopSidebarCollapsed, isFalse);
 
-      // 3. Toggle privacy blur in Settings and verify Home refreshes immediately upon switching back.
+      // 3. Account header shows plain username + GeekPie Uni-Auth (no blur switch).
       await tester.tap(
         find.descendant(
           of: find.byType(DesktopSidebarItem),
@@ -195,12 +196,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('settings.mask-personal-info')));
-      await tester.pumpAndSettle();
-      expect(built.storage.maskPersonalInfo, isTrue);
+      expect(find.text('张同学'), findsOneWidget);
+      expect(find.text('GeekPie Uni-Auth'), findsOneWidget);
+      expect(find.byKey(const ValueKey('settings.mask-personal-info')), findsNothing);
 
-      // Push DebugLogPage onto Settings tab stack, switch to Home, verify Home updated,
-      // then switch back to Settings and confirm DebugLogPage was preserved.
+      // Push DebugLogPage onto Settings tab stack, switch to Home, then switch
+      // back to Settings and confirm DebugLogPage was preserved.
       await tester.ensureVisible(find.text('查看日志'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看日志'));
@@ -214,13 +215,6 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('home.avatar')),
-          matching: find.text('GP'),
-        ),
-        findsOneWidget,
-      );
 
       await tester.tap(
         find.descendant(

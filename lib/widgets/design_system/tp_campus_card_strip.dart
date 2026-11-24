@@ -12,7 +12,8 @@ import 'tp_press_scale.dart';
 /// Responsive campus-card entry on Home.
 ///
 /// - Compact mode (`expandedCard: false`, mobile/narrow): slim single-row card
-///   with a mini entity-card thumbnail, cached balance, and one-tap pay button.
+///   with a mini entity-card thumbnail, cached balance (with optional eye
+///   visibility toggle), and one-tap pay button.
 /// - Expanded mode (`expandedCard: true`, wide Bento column): authentic
 ///   ShanghaiTech skyline entity card surface (`707:445` physical card ratio)
 ///   composed from the crimson header band and `card-bottom.png` skyline canvas
@@ -23,7 +24,8 @@ class TpCampusCardStrip extends StatelessWidget {
     super.key,
     required this.configured,
     required this.balanceText,
-    required this.maskPersonalInfo,
+    this.hideBalance = false,
+    this.onToggleHideBalance,
     required this.onOpenPayCode,
     required this.onOpenCard,
     this.expandedCard = false,
@@ -44,7 +46,8 @@ class TpCampusCardStrip extends StatelessWidget {
 
   final bool configured;
   final String? balanceText;
-  final bool maskPersonalInfo;
+  final bool hideBalance;
+  final VoidCallback? onToggleHideBalance;
   final VoidCallback onOpenPayCode;
   final VoidCallback onOpenCard;
   final bool expandedCard;
@@ -58,12 +61,13 @@ class TpCampusCardStrip extends StatelessWidget {
 
   Widget _buildExpandedEntityCard(BuildContext context) {
     final colors = context.tpColors;
+    final canToggleBalance = configured && onToggleHideBalance != null;
     final String primaryValue;
     final String eyebrow;
     if (!configured) {
       eyebrow = '校园一卡通';
       primaryValue = '点击绑定';
-    } else if (maskPersonalInfo) {
+    } else if (hideBalance) {
       eyebrow = '余额';
       primaryValue = '••••';
     } else if (balanceText != null && balanceText!.isNotEmpty) {
@@ -217,16 +221,32 @@ class TpCampusCardStrip extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text(
-                                    eyebrow,
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      fontSize: (11 * scale).clamp(11.0, 12.5),
-                                      fontWeight: FontWeight.w600,
-                                      color: _cardMutedInk,
-                                      fontFamilyFallback:
-                                          TpTypography.fontFamilyFallback,
-                                    ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        eyebrow,
+                                        maxLines: 1,
+                                        style: TextStyle(
+                                          fontSize:
+                                              (11 * scale).clamp(11.0, 12.5),
+                                          fontWeight: FontWeight.w600,
+                                          color: _cardMutedInk,
+                                          fontFamilyFallback:
+                                              TpTypography.fontFamilyFallback,
+                                        ),
+                                      ),
+                                      if (canToggleBalance) ...[
+                                        const SizedBox(width: 4),
+                                        _BalanceEyeButton(
+                                          hidden: hideBalance,
+                                          color: _cardMutedInk,
+                                          iconSize:
+                                              (14 * scale).clamp(13.5, 16.0),
+                                          onTap: onToggleHideBalance!,
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
@@ -341,11 +361,12 @@ class TpCampusCardStrip extends StatelessWidget {
 
   Widget _buildCompactStrip(BuildContext context) {
     final colors = context.tpColors;
+    final canToggleBalance = configured && onToggleHideBalance != null;
 
     final String subtitle;
     if (!configured) {
       subtitle = '绑定后可一键亮码与查看余额';
-    } else if (maskPersonalInfo) {
+    } else if (hideBalance) {
       subtitle = '余额 ••••';
     } else if (balanceText != null && balanceText!.isNotEmpty) {
       subtitle = '余额 $balanceText';
@@ -418,18 +439,34 @@ class TpCampusCardStrip extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TpTypography.itemMeta(colors).copyWith(
-                      color: configured && !maskPersonalInfo
-                          ? colors.textSecondary
-                          : colors.textMuted,
-                      fontWeight: configured && !maskPersonalInfo
-                          ? FontWeight.w500
-                          : FontWeight.w400,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          subtitle,
+                          style: TpTypography.itemMeta(colors).copyWith(
+                            color: configured && !hideBalance
+                                ? colors.textSecondary
+                                : colors.textMuted,
+                            fontWeight: configured && !hideBalance
+                                ? FontWeight.w500
+                                : FontWeight.w400,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (canToggleBalance) ...[
+                        const SizedBox(width: 4),
+                        _BalanceEyeButton(
+                          hidden: hideBalance,
+                          color: colors.textMuted,
+                          iconSize: 14,
+                          onTap: onToggleHideBalance!,
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -482,6 +519,52 @@ class TpCampusCardStrip extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BalanceEyeButton extends StatelessWidget {
+  const _BalanceEyeButton({
+    required this.hidden,
+    required this.color,
+    required this.iconSize,
+    required this.onTap,
+  });
+
+  final bool hidden;
+  final Color color;
+  final double iconSize;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = hidden ? '显示余额' : '隐藏余额';
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        label: label,
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: const ValueKey('home.campus-card-balance-toggle'),
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            hoverColor: color.withValues(alpha: 0.10),
+            splashColor: color.withValues(alpha: 0.16),
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Icon(
+                hidden ? TpIcons.eyeOff : TpIcons.eye,
+                size: iconSize,
+                color: color,
+              ),
+            ),
+          ),
         ),
       ),
     );
