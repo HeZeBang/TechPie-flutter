@@ -309,24 +309,20 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // depend on those tokens. The whole block is unawaited so the splash
   // never blocks. --
   unawaited(() async {
-    // Primary SSO renewal uses Casdoor's refresh-token grant. With no
-    // refresh token (legacy session) this is a no-op and returns false —
-    // that is NOT a "login expired" condition, only an actual renewal
-    // failure is.
+    // Primary SSO renewal uses Casdoor's refresh-token grant. Only an explicit
+    // grant rejection (`invalid_grant` / `invalid_token`) means the user's
+    // login expired; legacy sessions without a refresh token and transient
+    // offline/timeout/5xx errors must not trigger a re-login prompt.
     final renewMain = authService.isLoggedIn
         ? authService.tryRenewSession()
-        : Future.value(true);
+        : Future.value(SessionRenewalResult.skipped);
     final renewThirdParty = thirdPartyAuthService.autoRenewIfNeeded();
 
     final results = await Future.wait([renewMain, renewThirdParty]);
-    final mainOk = results[0] as bool;
+    final mainResult = results[0] as SessionRenewalResult;
     final failedTp = results[1] as List<ThirdPartyPlatform>;
 
-    // Only surface a renewal failure when we actually had a refresh token
-    // to try (a no-op returning false is not an expiry).
-    if (!mainOk &&
-        authService.session?.geekpieRefreshToken != null &&
-        !isIos()) {
+    if (mainResult.isExpired && !isIos()) {
       showAdaptiveFeedback(
         message: '登录已过期，请重新登录',
         style: AdaptiveFeedbackStyle.error,

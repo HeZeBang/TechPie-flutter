@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:casdoor_flutter_sdk/casdoor_flutter_sdk.dart';
@@ -43,6 +44,50 @@ class SsoTokens {
   bool get isEmpty => accessToken.isEmpty;
 }
 
+/// Classification of an SSO refresh-token failure so callers can separate a
+/// definitively expired/revoked grant from transient network/server hiccups.
+enum SsoRefreshErrorKind {
+  /// The OAuth server explicitly rejected the refresh token (`invalid_grant`
+  /// or `invalid_token`) — the user genuinely needs to sign in again.
+  invalidGrant,
+
+  /// Offline/DNS/TLS/timeout/proxy error, 5xx outage, non-JSON response, or
+  /// other non-grant failure where the stored refresh token may still work.
+  transient,
+}
+
+/// Structured error thrown by [UniAuthService.refresh].
+class SsoRefreshException implements Exception {
+  final SsoRefreshErrorKind kind;
+  final String message;
+  final int? statusCode;
+  final String? oauthError;
+  final String? oauthErrorDescription;
+  final Object? cause;
+
+  const SsoRefreshException({
+    required this.kind,
+    required this.message,
+    this.statusCode,
+    this.oauthError,
+    this.oauthErrorDescription,
+    this.cause,
+  });
+
+  bool get isInvalidGrant => kind == SsoRefreshErrorKind.invalidGrant;
+
+  @override
+  String toString() {
+    final meta = <String>[
+      kind.name,
+      if (statusCode != null) 'status=$statusCode',
+      if (oauthError != null && oauthError!.isNotEmpty) 'error=$oauthError',
+      if (cause != null) 'cause=${cause.runtimeType}',
+    ];
+    return 'SsoRefreshException(${meta.join(', ')}): $message';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -65,14 +110,23 @@ class UniAuthService extends ChangeNotifier {
     return data['expires_at'] as String?;
   }
 
+  static const Duration _defaultRefreshTimeout = Duration(seconds: 15);
+
   Casdoor? _casdoor;
   bool _loading = false;
 
   bool get loading => _loading;
 
-  UniAuthService({DebugLogger? logger, String proxyUrl = ''})
-      : _logger = logger,
-        _proxyUrl = _sanitizeProxy(proxyUrl);
+  UniAuthService({
+    DebugLogger? logger,
+    String proxyUrl = '',
+    @visibleForTesting
+    Future<http.Response> Function(String refreshToken)? refreshRequest,
+    @visibleForTesting Duration refreshTimeout = _defaultRefreshTimeout,
+  })  : _logger = logger,
+        _proxyUrl = _sanitizeProxy(proxyUrl),
+        _refreshRequest = refreshRequest,
+        _refreshTimeout = refreshTimeout;
 
   String _proxyUrl;
   String get proxyUrl => _proxyUrl;
@@ -84,6 +138,8 @@ class UniAuthService extends ChangeNotifier {
   }
 
   final DebugLogger? _logger;
+  final Future<http.Response> Function(String refreshToken)? _refreshRequest;
+  final Duration _refreshTimeout;
 
   Future<void> deleteAccount(String token, String userId) async {
     final headers = {
@@ -137,7 +193,7 @@ class UniAuthService extends ChangeNotifier {
           if (body['error_description'] != null)
             'description=${body['error_description']}',
           if (body['expires_in'] != null) 'expires_in=${body['expires_in']}',
-          'rotated=${body['refresh_token'] != null}',
+          'rotated=${body['refresh_token'] is String && (body['refresh_token'] as String).isNotEmpty}',
         ];
         summary = parts.join(' ');
       } else {
@@ -151,9 +207,42 @@ class UniAuthService extends ChangeNotifier {
     _logger?.log(
       method: 'SSO',
       url: _uniAuthServerUrl,
+      statusCode: response.statusCode,
       tag: 'SSO',
       responseBody: DebugLogger.redactSensitive(line),
     );
+  }
+
+  void _traceTokenError(String operation, Object error, {String? secret}) {
+    final detail = sanitizeErrorDetail(error, secrets: [secret]);
+    final line = 'token $operation: error=${error.runtimeType}'
+        '${detail.isEmpty ? '' : ' $detail'}';
+    if (kDebugMode) debugPrint('[sso] $line');
+    _logger?.log(
+      method: 'SSO',
+      url: _uniAuthServerUrl,
+      tag: 'SSO',
+      error: line,
+    );
+  }
+
+  /// Build a single-line, length-capped diagnostic summary for an exception
+  /// without ever echoing token values.
+  static String sanitizeErrorDetail(
+    Object error, {
+    Iterable<String?> secrets = const [],
+  }) {
+    var text = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    for (final secret in secrets) {
+      if (secret != null && secret.isNotEmpty) {
+        text = text.replaceAll(secret, '***');
+      }
+    }
+    text = DebugLogger.redactSensitive(text) ?? text;
+    if (text.length > 240) {
+      text = '${text.substring(0, 240)}...';
+    }
+    return text;
   }
 
   /// Lazily initialize the Casdoor SDK instance.
@@ -260,29 +349,89 @@ class UniAuthService extends ChangeNotifier {
     return uri.queryParameters['code'] ?? '';
   }
 
+  /// Parse a Casdoor `/api/login/oauth/refresh_token` response into [SsoTokens],
+  /// or throw [SsoRefreshException] classifying `invalid_grant`/`invalid_token`
+  /// separately from transient server/proxy/format failures.
+  static SsoTokens parseRefreshResponse(
+    http.Response resp, {
+    required String fallbackRefreshToken,
+    DateTime? now,
+  }) {
+    Map<String, dynamic>? data;
+    try {
+      final decoded = jsonDecode(resp.body);
+      if (decoded is Map<String, dynamic>) {
+        data = decoded;
+      } else if (decoded is Map) {
+        data = decoded.cast<String, dynamic>();
+      }
+    } catch (_) {
+      // Non-JSON body (e.g. nginx 502/503 HTML or captive portal page).
+    }
+
+    if (resp.statusCode == 200 && data != null) {
+      final accessToken = data['access_token'] as String?;
+      if (accessToken != null && accessToken.isNotEmpty) {
+        final rotated = data['refresh_token'] as String?;
+        return SsoTokens(
+          accessToken: accessToken,
+          // Casdoor may rotate the refresh token; keep the new one if present
+          // and non-empty, otherwise reuse the one we just redeemed.
+          refreshToken:
+              (rotated != null && rotated.isNotEmpty) ? rotated : fallbackRefreshToken,
+          expiresAt: expiryFromTokenResponse(data, now ?? DateTime.now()),
+        );
+      }
+    }
+
+    final oauthError = data?['error']?.toString().trim();
+    final oauthDescription = data?['error_description']?.toString().trim();
+    final normalizedError = oauthError?.toLowerCase();
+    final isInvalidGrant = resp.statusCode < 500 &&
+        (normalizedError == 'invalid_grant' ||
+            normalizedError == 'invalid_token');
+
+    final message = (oauthDescription != null && oauthDescription.isNotEmpty)
+        ? oauthDescription
+        : (oauthError != null && oauthError.isNotEmpty)
+            ? oauthError
+            : 'Token refresh failed (${resp.statusCode})';
+
+    throw SsoRefreshException(
+      kind: isInvalidGrant
+          ? SsoRefreshErrorKind.invalidGrant
+          : SsoRefreshErrorKind.transient,
+      message: message,
+      statusCode: resp.statusCode,
+      oauthError: oauthError,
+      oauthErrorDescription: oauthDescription,
+    );
+  }
+
   /// Refresh an existing access token using [refreshToken]. Returns the new
-  /// token bundle (the refresh token may be rotated by Casdoor). Throws on
-  /// failure so the caller can fall back to prompting for re-login.
+  /// token bundle (the refresh token may be rotated by Casdoor). Throws
+  /// [SsoRefreshException] on failure so callers can distinguish an expired or
+  /// revoked grant from transient network/server errors.
   Future<SsoTokens> refresh(String refreshToken) async {
-    final casdoor = _getCasdoor();
-    final resp = await casdoor.refreshToken(refreshToken, null);
+    final http.Response resp;
+    try {
+      final future = _refreshRequest != null
+          ? _refreshRequest(refreshToken)
+          : _getCasdoor().refreshToken(refreshToken, null);
+      resp = await future.timeout(_refreshTimeout);
+    } catch (error) {
+      _traceTokenError('refresh', error, secret: refreshToken);
+      throw SsoRefreshException(
+        kind: SsoRefreshErrorKind.transient,
+        message: 'Token refresh request failed (${error.runtimeType})',
+        cause: error,
+      );
+    }
+
     _traceTokenResponse('refresh', resp);
-    if (resp.statusCode != 200) {
-      throw Exception('Token refresh failed (${resp.statusCode})');
-    }
-
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    final accessToken = data['access_token'] as String?;
-    if (accessToken == null || accessToken.isEmpty) {
-      throw Exception(data['error_description'] ?? 'Token refresh failed');
-    }
-
-    return SsoTokens(
-      accessToken: accessToken,
-      // Casdoor may rotate the refresh token; keep the new one if present,
-      // otherwise reuse the one we just redeemed.
-      refreshToken: (data['refresh_token'] as String?) ?? refreshToken,
-      expiresAt: expiryFromTokenResponse(data, DateTime.now()),
+    return parseRefreshResponse(
+      resp,
+      fallbackRefreshToken: refreshToken,
     );
   }
 }
