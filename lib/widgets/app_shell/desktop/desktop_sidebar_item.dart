@@ -9,6 +9,7 @@ class DesktopSidebarItem extends StatelessWidget {
   final bool selected;
   final bool collapsed;
   final bool usesSlidingIndicator;
+  final SidebarBadgeData? badge;
   final VoidCallback onTap;
 
   const DesktopSidebarItem({
@@ -17,6 +18,7 @@ class DesktopSidebarItem extends StatelessWidget {
     required this.selected,
     required this.collapsed,
     this.usesSlidingIndicator = false,
+    this.badge,
     required this.onTap,
   });
 
@@ -39,13 +41,23 @@ class DesktopSidebarItem extends StatelessWidget {
                     DesktopSidebarTokens.navItemTextGap +
                     DesktopSidebarTokens.minLabelWidth;
 
+        final activeBadge = badge != null && badge!.count > 0 ? badge : null;
+        final semanticLabel = activeBadge != null
+            ? '${destination.label} (${activeBadge.formatted})'
+            : destination.label;
+
         final hoverOverlay = colors.textPrimary.withValues(
           alpha: colors.isDark ? 0.06 : 0.04,
+        );
+        final iconWidget = Icon(
+          selected ? destination.selectedIcon : destination.icon,
+          size: TpTokens.iconM,
+          color: iconColor,
         );
         final item = Semantics(
           selected: selected,
           button: true,
-          label: destination.label,
+          label: semanticLabel,
           child: Material(
             type: usesSlidingIndicator
                 ? MaterialType.transparency
@@ -95,13 +107,35 @@ class DesktopSidebarItem extends StatelessWidget {
                         SizedBox(
                           width: DesktopSidebarTokens.iconColumnWidth,
                           child: Center(
-                            child: Icon(
-                              selected
-                                  ? destination.selectedIcon
-                                  : destination.icon,
-                              size: TpTokens.iconM,
-                              color: iconColor,
-                            ),
+                            child: !canShowLabel && activeBadge != null
+                                ? Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      iconWidget,
+                                      Positioned(
+                                        right: -3,
+                                        top: -3,
+                                        child: Container(
+                                          key: ValueKey<String>(
+                                            'sidebar-badge-dot-${destination.label}',
+                                          ),
+                                          width: 8.5,
+                                          height: 8.5,
+                                          decoration: BoxDecoration(
+                                            color: activeBadge.urgent
+                                                ? colors.dangerRed
+                                                : colors.textMuted,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: colors.surface,
+                                              width: 1.5,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : iconWidget,
                           ),
                         ),
                         if (canShowLabel) ...[
@@ -121,6 +155,40 @@ class DesktopSidebarItem extends StatelessWidget {
                               ),
                             ),
                           ),
+                          if (activeBadge != null) ...[
+                            const SizedBox(width: TpTokens.space2),
+                            Container(
+                              key: ValueKey<String>(
+                                'sidebar-badge-${destination.label}',
+                              ),
+                              constraints: const BoxConstraints(minWidth: 20),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: activeBadge.urgent
+                                    ? colors.dangerRed
+                                    : colors.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(
+                                  TpTokens.radiusPill,
+                                ),
+                              ),
+                              child: Text(
+                                activeBadge.formatted,
+                                textAlign: TextAlign.center,
+                                style: TpTypography.badge(
+                                  activeBadge.urgent
+                                      ? Colors.white
+                                      : colors.textSecondary,
+                                ).copyWith(
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(width: TpTokens.space3),
                         ],
                       ],
@@ -133,7 +201,7 @@ class DesktopSidebarItem extends StatelessWidget {
         );
 
         if (canShowLabel) return item;
-        return Tooltip(message: destination.label, child: item);
+        return Tooltip(message: semanticLabel, child: item);
       },
     );
   }

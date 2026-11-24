@@ -75,6 +75,11 @@ abstract final class TpIcons {
   static const IconData calendarCheck = LucideIcons.calendar_check;
   static const IconData sparkles = LucideIcons.sparkles;
   static const IconData activity = LucideIcons.activity;
+  static const IconData clock = LucideIcons.clock;
+  static const IconData copy = LucideIcons.copy;
+  static const IconData repeat = LucideIcons.repeat;
+  static const IconData help = LucideIcons.info;
+  static const IconData unlink = LucideIcons.unlink;
 
   // Desktop sidebar chrome.
   static const IconData sidebar = LucideIcons.panel_left;

@@ -374,7 +374,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         },
       ),
     );
-    final campusCardStrip = _buildCampusCardStrip(campusCard, storage);
+    final campusCardStrip = _buildCampusCardStrip(
+      campusCard,
+      storage,
+      expandedCard: isBento,
+    );
     final todayClasses = _buildTodayClasses(colors, auth.isLoggedIn);
     final deadlines = _buildPendingAssignments(colors);
     final quickActions = _buildQuickActions();
@@ -441,8 +445,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildCampusCardStrip(
     CampusCardService campusCard,
-    StorageService storage,
-  ) {
+    StorageService storage, {
+    required bool expandedCard,
+  }) {
     return ListenableBuilder(
       listenable: campusCard,
       builder: (context, _) {
@@ -453,6 +458,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           configured: campusCard.configured,
           balanceText: balanceText,
           maskPersonalInfo: storage.maskPersonalInfo,
+          expandedCard: expandedCard,
           onOpenPayCode: () {
             unawaited(AppHaptics.play(AppHaptics.lightImpact));
             unawaited(

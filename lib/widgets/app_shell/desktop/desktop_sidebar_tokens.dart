@@ -1,5 +1,20 @@
 import 'package:flutter/material.dart';
 
+/// Live badge metadata shown on a desktop sidebar destination (e.g. pending
+/// Deadlines count + whether any item is due within 24h or in late window).
+@immutable
+class SidebarBadgeData {
+  const SidebarBadgeData({
+    required this.count,
+    this.urgent = false,
+  });
+
+  final int count;
+  final bool urgent;
+
+  String get formatted => count > 99 ? '99+' : '$count';
+}
+
 abstract final class DesktopSidebarTokens {
   static const double collapsedWidth = 88;
   static const double mediumExpandedWidth = 120;

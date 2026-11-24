@@ -12,6 +12,7 @@ class DesktopShell extends StatelessWidget {
   final int selectedIndex;
   final bool sidebarCollapsed;
   final bool showToggleButton;
+  final Map<int, SidebarBadgeData> badges;
   final ValueChanged<int> onDestinationSelected;
   final VoidCallback onToggleSidebarCollapsed;
   final Widget child;
@@ -22,6 +23,7 @@ class DesktopShell extends StatelessWidget {
     required this.selectedIndex,
     required this.sidebarCollapsed,
     this.showToggleButton = true,
+    this.badges = const <int, SidebarBadgeData>{},
     required this.onDestinationSelected,
     required this.onToggleSidebarCollapsed,
     required this.child,
@@ -52,6 +54,7 @@ class DesktopShell extends StatelessWidget {
                   selectedIndex: selectedIndex,
                   collapsed: sidebarCollapsed,
                   showToggleButton: showToggleButton,
+                  badges: badges,
                   onSelected: onDestinationSelected,
                   onToggleCollapsed: onToggleSidebarCollapsed,
                 ),

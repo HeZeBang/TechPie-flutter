@@ -16,6 +16,7 @@ class DesktopSidebar extends StatelessWidget {
   final int selectedIndex;
   final bool collapsed;
   final bool showToggleButton;
+  final Map<int, SidebarBadgeData> badges;
   final ValueChanged<int> onSelected;
   final VoidCallback onToggleCollapsed;
 
@@ -25,6 +26,7 @@ class DesktopSidebar extends StatelessWidget {
     required this.selectedIndex,
     required this.collapsed,
     this.showToggleButton = true,
+    this.badges = const <int, SidebarBadgeData>{},
     required this.onSelected,
     required this.onToggleCollapsed,
   });
@@ -67,6 +69,7 @@ class DesktopSidebar extends StatelessWidget {
                           selectedIndex: selectedIndex,
                           collapsed: collapsed,
                           itemSpacing: itemSpacing,
+                          badges: badges,
                           onSelected: (index) {
                             unawaited(AppHaptics.play(AppHaptics.tabSelect));
                             onSelected(index);
@@ -101,6 +104,7 @@ class _SlidingSidebarNavList extends StatefulWidget {
     required this.selectedIndex,
     required this.collapsed,
     required this.itemSpacing,
+    required this.badges,
     required this.onSelected,
   });
 
@@ -108,6 +112,7 @@ class _SlidingSidebarNavList extends StatefulWidget {
   final int selectedIndex;
   final bool collapsed;
   final double itemSpacing;
+  final Map<int, SidebarBadgeData> badges;
   final ValueChanged<int> onSelected;
 
   @override
@@ -217,6 +222,7 @@ class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
                 selected: index == widget.selectedIndex,
                 collapsed: widget.collapsed,
                 usesSlidingIndicator: true,
+                badge: widget.badges[index],
                 onTap: () => widget.onSelected(index),
               ),
               if (index < widget.destinations.length - 1)

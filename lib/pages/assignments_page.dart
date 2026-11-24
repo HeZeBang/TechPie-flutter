@@ -12,6 +12,7 @@ import '../services/assignment_service.dart';
 import '../services/deadline_reminder_service.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
+import '../utils/adaptive_layout.dart';
 import '../utils/adaptive_motion.dart';
 import '../utils/haptics.dart';
 import '../utils/motion.dart';
@@ -23,6 +24,7 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/desktop_popup.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import '../widgets/swipeable_card.dart';
@@ -437,78 +439,186 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               onRefresh: () => _refresh(service),
               refreshing: service.loading,
             ),
-          PopupMenuButton<String>(
-            icon: const Icon(TpIcons.more),
-            tooltip: '更多操作',
-            onSelected: (v) {
-              switch (v) {
-                case 'toggleAssignments':
+          if (usesSidebarLayout(context))
+            Builder(
+              builder: (anchorContext) => IconButton(
+                icon: const Icon(TpIcons.more),
+                tooltip: '更多操作',
+                onPressed: () => _showDesktopMoreMenu(
+                  anchorContext,
+                  service,
+                  reminders,
+                  visible,
+                  canManageReminders: canManageReminders,
+                ),
+              ),
+            )
+          else
+            PopupMenuButton<String>(
+              icon: const Icon(TpIcons.more),
+              tooltip: '更多操作',
+              onSelected: (v) {
+                switch (v) {
+                  case 'toggleAssignments':
+                    _toggleAssignmentsVisibility();
+                  case 'toggleExams':
+                    _toggleExamsVisibility();
+                  case 'addDeadline':
+                    unawaited(CustomDeadlineEditorPage.open(context));
+                  case 'manageReminders':
+                    unawaited(
+                      _enterReminderSelection(service, reminders, visible),
+                    );
+                  case 'hidden':
+                    unawaited(
+                      pushAdaptivePage<void>(
+                        context,
+                        builder: (_) => const HiddenAssignmentsPage(),
+                      ),
+                    );
+                }
+              },
+              itemBuilder: (_) => [
+                CheckedPopupMenuItem(
+                  value: 'toggleAssignments',
+                  checked: _showAssignments,
+                  child: const Text('显示作业'),
+                ),
+                CheckedPopupMenuItem(
+                  value: 'toggleExams',
+                  checked: _showExams,
+                  child: const Text('显示考试'),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'addDeadline',
+                  child: Row(
+                    children: [
+                      Icon(TpIcons.add, size: TpTokens.iconM),
+                      SizedBox(width: TpTokens.space3),
+                      Text('添加 Deadline'),
+                    ],
+                  ),
+                ),
+                if (reminders != null)
+                  PopupMenuItem(
+                    value: 'manageReminders',
+                    enabled: canManageReminders,
+                    child: const Row(
+                      children: [
+                        Icon(TpIcons.checkCircle, size: TpTokens.iconM),
+                        SizedBox(width: TpTokens.space3),
+                        Text('添加到提醒事项'),
+                      ],
+                    ),
+                  ),
+                PopupMenuItem(
+                  value: 'hidden',
+                  child: Row(
+                    children: [
+                      const Icon(TpIcons.eyeOff, size: TpTokens.iconM),
+                      const SizedBox(width: TpTokens.space3),
+                      Text('查看已忽略 (${service.overrides.hidden.length})'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showDesktopMoreMenu(
+    BuildContext anchorContext,
+    AssignmentService service,
+    DeadlineReminderService? reminders,
+    List<Assignment> visible, {
+    required bool canManageReminders,
+  }) {
+    showDesktopPopover(
+      anchorContext: anchorContext,
+      width: 232,
+      placement: DesktopPopoverPlacement.belowEnd,
+      offset: const Offset(0, 6),
+      builder: (menuContext, close) {
+        final colors = menuContext.tpColors;
+        return DesktopPopoverSurface(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DesktopMenuRow(
+                leading: _showAssignments
+                    ? const Icon(TpIcons.check, size: TpTokens.iconS)
+                    : const SizedBox(width: TpTokens.iconS),
+                title: Text('显示作业', style: TpTypography.itemTitle(colors)),
+                selected: _showAssignments,
+                onTap: () {
+                  close();
                   _toggleAssignmentsVisibility();
-                case 'toggleExams':
+                },
+              ),
+              DesktopMenuRow(
+                leading: _showExams
+                    ? const Icon(TpIcons.check, size: TpTokens.iconS)
+                    : const SizedBox(width: TpTokens.iconS),
+                title: Text('显示考试', style: TpTypography.itemTitle(colors)),
+                selected: _showExams,
+                onTap: () {
+                  close();
                   _toggleExamsVisibility();
-                case 'addDeadline':
+                },
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: TpTokens.space2,
+                  vertical: 4,
+                ),
+                child: Divider(height: 1, thickness: 0.5, color: colors.divider),
+              ),
+              DesktopMenuRow(
+                leading: const Icon(TpIcons.add, size: TpTokens.iconM),
+                title: Text('添加 Deadline', style: TpTypography.itemTitle(colors)),
+                onTap: () {
+                  close();
                   unawaited(CustomDeadlineEditorPage.open(context));
-                case 'manageReminders':
-                  unawaited(
-                    _enterReminderSelection(service, reminders, visible),
-                  );
-                case 'hidden':
+                },
+              ),
+              if (reminders != null)
+                DesktopMenuRow(
+                  leading:
+                      const Icon(TpIcons.checkCircle, size: TpTokens.iconM),
+                  title: Text('添加到提醒事项', style: TpTypography.itemTitle(colors)),
+                  onTap: canManageReminders
+                      ? () {
+                          close();
+                          unawaited(
+                            _enterReminderSelection(service, reminders, visible),
+                          );
+                        }
+                      : null,
+                ),
+              DesktopMenuRow(
+                leading: const Icon(TpIcons.eyeOff, size: TpTokens.iconM),
+                title: Text(
+                  '查看已忽略 (${service.overrides.hidden.length})',
+                  style: TpTypography.itemTitle(colors),
+                ),
+                onTap: () {
+                  close();
                   unawaited(
                     pushAdaptivePage<void>(
                       context,
                       builder: (_) => const HiddenAssignmentsPage(),
                     ),
                   );
-              }
-            },
-            itemBuilder: (_) => [
-              CheckedPopupMenuItem(
-                value: 'toggleAssignments',
-                checked: _showAssignments,
-                child: const Text('显示作业'),
-              ),
-              CheckedPopupMenuItem(
-                value: 'toggleExams',
-                checked: _showExams,
-                child: const Text('显示考试'),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'addDeadline',
-                child: Row(
-                  children: [
-                    Icon(TpIcons.add, size: TpTokens.iconM),
-                    SizedBox(width: TpTokens.space3),
-                    Text('添加 Deadline'),
-                  ],
-                ),
-              ),
-              if (reminders != null)
-                PopupMenuItem(
-                  value: 'manageReminders',
-                  enabled: canManageReminders,
-                  child: const Row(
-                    children: [
-                      Icon(TpIcons.checkCircle, size: TpTokens.iconM),
-                      SizedBox(width: TpTokens.space3),
-                      Text('添加到提醒事项'),
-                    ],
-                  ),
-                ),
-              PopupMenuItem(
-                value: 'hidden',
-                child: Row(
-                  children: [
-                    const Icon(TpIcons.eyeOff, size: TpTokens.iconM),
-                    const SizedBox(width: TpTokens.space3),
-                    Text('查看已忽略 (${service.overrides.hidden.length})'),
-                  ],
-                ),
+                },
               ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
