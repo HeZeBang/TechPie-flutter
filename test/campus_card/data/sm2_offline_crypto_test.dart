@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,27 @@ import 'package:techpie/features/campus_card/data/crypto/sm2_offline_crypto.dart
 
 void main() {
   group('Sm2OfflineCrypto', () {
+    test('verifies the Huawei Lite JavaScript signature and rejects a modified payload', () {
+      final fixture =
+          jsonDecode(File('harmonyos_watch/scripts/fixtures/offline-sm2.json').readAsStringSync())
+              as Map;
+      final value = fixture['payloadHex'] as String;
+      final messageHex = value.substring(0, value.length - 128);
+      final message = [
+        for (var i = 0; i < messageHex.length; i += 2)
+          int.parse(messageHex.substring(i, i + 2), radix: 16),
+      ];
+      final crypto = Sm2OfflineCrypto();
+      bool verify(List<int> bytes) => crypto.verify(
+            publicKeyXHex: Sm2OfflineCrypto.gx.toRadixString(16),
+            publicKeyYHex: Sm2OfflineCrypto.gy.toRadixString(16),
+            message: bytes,
+            signatureHex: value.substring(value.length - 128),
+          );
+      expect(verify(message), true);
+      expect(verify([...message, 0]), false);
+    });
+
     test('builds the independently checked five-byte time CRC', () {
       expect(
         Sm2OfflineCrypto.buildTimeCrc(

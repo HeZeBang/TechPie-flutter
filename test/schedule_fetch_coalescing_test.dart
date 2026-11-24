@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:techpie/models/course_table.dart';
 import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/debug_logger.dart';
@@ -17,6 +18,31 @@ import 'support/fake_ids_client.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('manual watch sync adopts an unowned legacy table for one account across restarts', () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    final http = LoggingHttpClient(DebugLogger());
+    final auth = AuthService(storage, http, UniAuthService());
+    final accounts = ThirdPartyAuthService(storage, http);
+    await storage.setSelectedSemester('old');
+    await storage.saveCourseTable('old', const CourseTable(periods: [], courses: []));
+    final schedule = ScheduleService(storage, http, auth, accounts);
+    await schedule.loadCachedData();
+    expect(schedule.courseTableForWatch('wear:alice'), isNull);
+    await schedule.adoptLegacyCourseTable('wear:alice');
+    final reopened = ScheduleService(storage, http, auth, accounts);
+    await reopened.loadCachedData();
+    await reopened.adoptLegacyCourseTable('wear:bob');
+    expect(reopened.courseTableForWatch('wear:alice'), isNotNull);
+    expect(reopened.courseTableForWatch('wear:bob'), isNull);
+    expect(reopened.courseTable, isNotNull);
+
+    // Grants written by the older watch branch used the owner field.
+    await storage.saveCourseTable('old', const CourseTable(periods: [], courses: []), owner: 'wear:alice');
+    expect(reopened.courseTableForWatch('wear:alice'), isNotNull);
+    expect(reopened.courseTableForWatch('wear:bob'), isNull);
+  });
 
   // Around a login the triggers all fire inside the same second — the binding
   // lands, the session is renewed, a child cookie is minted — and each of them

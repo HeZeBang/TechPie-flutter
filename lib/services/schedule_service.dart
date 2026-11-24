@@ -249,6 +249,19 @@ class ScheduleService extends ChangeNotifier {
 
   List<CustomCourse> get customCourses => customCoursesFor(_selectedSemesterId);
 
+  CourseTable? courseTableForWatch(String watchOwner) {
+    final id = _selectedSemesterId;
+    if (id == null) return null;
+    return _storage.loadCourseTable(id, owner: _campusAccount(), watchOwner: watchOwner);
+  }
+
+  Future<void> adoptLegacyCourseTable(String watchOwner) async {
+    final id = _selectedSemesterId;
+    if (id != null && _courseTable != null && !_loading) {
+      await _storage.adoptLegacyCourseTable(id, _campusAccount(), watchOwner);
+    }
+  }
+
   CourseTable? courseTableFor(String? semesterId) {
     if (semesterId == null) return null;
     return semesterId == _selectedSemesterId
@@ -686,6 +699,7 @@ class ScheduleService extends ChangeNotifier {
       extra,
       'fetchCourseTable',
       (data) async {
+        if (semesterId != _selectedSemesterId) return;
         _courseTable = CourseTable.fromApiResponse(data);
         await _storage.saveCourseTable(semesterId, _courseTable!, owner: owner);
         notifyListeners();

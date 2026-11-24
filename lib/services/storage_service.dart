@@ -410,14 +410,34 @@ class StorageService {
         jsonEncode({...table.toJson(), if (owner != null) 'owner': owner}),
       );
 
-  CourseTable? loadCourseTable(String semesterId, {String? owner}) {
+  Future<void> adoptLegacyCourseTable(String semesterId, String? owner, String watchOwner) async {
+    final key = '$_courseTablePrefix$semesterId';
+    final raw = _prefs.getString(key);
+    if (raw == null || semesterId.startsWith(graduateSemesterPrefix)) return;
+    final row = jsonDecode(raw) as Map<String, dynamic>;
+    if (row['owner'] != null || row['watchOwner'] != null) return;
+    if (owner == null) {
+      row['watchOwner'] = watchOwner;
+    } else {
+      row['owner'] = owner;
+    }
+    await _prefs.setString(key, jsonEncode(row));
+  }
+
+  CourseTable? loadCourseTable(String semesterId, {String? owner, String? watchOwner}) {
     final raw = _prefs.getString('$_courseTablePrefix$semesterId');
     if (raw == null) return null;
     final json = jsonDecode(raw) as Map<String, dynamic>;
     if (semesterId.startsWith(graduateSemesterPrefix) && (owner == null || json['owner'] != owner)) {
       return null;
     }
-    if (json['owner'] != null && json['owner'] != owner) return null;
+    if (watchOwner != null) {
+      // Older watch builds stored a manual adoption in the owner field.
+      final savedOwner = json['owner'] ?? json['watchOwner'];
+      if (savedOwner != (owner ?? watchOwner)) return null;
+    } else if (json['owner'] != null && json['owner'] != owner) {
+      return null;
+    }
     return CourseTable.fromJson(json);
   }
 

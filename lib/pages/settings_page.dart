@@ -45,6 +45,7 @@ import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
 import 'feedback_page.dart';
+import 'huawei_watch_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'third_party_bind_page.dart';
@@ -300,9 +301,23 @@ class _SettingsPageState extends State<SettingsPage> {
                                 title: '主题色',
                                 value: _colorSubtitle(themeService),
                                 showChevron: true,
-                                showDivider: supportsAppleWatch(),
+                                showDivider: _showsHuaweiWatch || supportsAppleWatch(),
                                 onTap: () =>
                                     _showColorPicker(tileContext, themeService),
+                              ),
+                            ),
+                          if (_showsHuaweiWatch)
+                            TpListRow(
+                              icon: TpIcons.watch,
+                              iconColor: colors.infoBlue,
+                              title: 'Huawei Watch',
+                              showChevron: true,
+                              showDivider: supportsAppleWatch(),
+                              onTap: () => unawaited(
+                                pushAdaptivePage<void>(
+                                  context,
+                                  builder: (_) => const HuaweiWatchPage(),
+                                ),
                               ),
                             ),
                           if (supportsAppleWatch())
@@ -905,13 +920,15 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  bool get _showsHuaweiWatch => kIsWeb || defaultTargetPlatform != TargetPlatform.linux;
+
   Widget _buildThemeModeRow(
     BuildContext context,
     TpColors colors,
     ThemeService themeService,
   ) {
     final hasNext =
-        themeService.supportsColorSchemeSelection || supportsAppleWatch();
+        themeService.supportsColorSchemeSelection || _showsHuaweiWatch || supportsAppleWatch();
     return AdaptiveNavigationScaffold.adaptiveChrome(
       ios: () => TpListRow(
         icon: _themeModeIcon(themeService.mode),

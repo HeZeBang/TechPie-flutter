@@ -95,7 +95,10 @@ void main() {
 
     // Only the debug section is reachable without an account; the window above is
     // tall enough for it to be on screen.
-    await tester.tap(find.text('查看日志'));
+    final logsTile = find.text('查看日志');
+    await tester.ensureVisible(logsTile);
+    await tester.pumpAndSettle();
+    await tester.tap(logsTile);
     await tester.pumpAndSettle();
     expect(find.byType(DebugLogPage), findsOneWidget);
 
