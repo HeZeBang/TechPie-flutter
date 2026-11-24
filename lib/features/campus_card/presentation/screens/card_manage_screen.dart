@@ -590,7 +590,10 @@ final class _AndroidDateRangePickerShell extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(48),
                   foregroundColor: actionColor,
-                  backgroundColor: actionColor.withValues(alpha: 0.08),
+                  backgroundColor: Color.alphaBlend(
+                    actionColor.withValues(alpha: 0.08),
+                    context.gpColors.surface,
+                  ),
                   side: BorderSide(color: actionColor.withValues(alpha: 0.28)),
                   shape: const StadiumBorder(),
                 ),

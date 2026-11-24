@@ -868,9 +868,12 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
                 ),
                 child: TextField(
                   controller: _searchCtrl,
+                  textAlignVertical: TextAlignVertical.center,
                   onChanged: (value) => setState(() => _searchQuery = value),
                   decoration: InputDecoration(
                     hintText: '搜索课程名称或编号',
+                    filled: false,
+                    isDense: true,
                     border: InputBorder.none,
                     prefixIcon: Icon(
                       TpIcons.search,
@@ -980,7 +983,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
               ),
             ],
             trailingItems: [
-              if (!_webVisible && !_starting)
+              if (_supported && !_webVisible && !_starting)
                 IosNativeNavigationBarItem(
                   id: 'refresh',
                   sfSymbol: 'arrow.clockwise',
@@ -1013,9 +1016,13 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
                     icon: const Icon(TpIcons.chevronLeft),
                     tooltip: '返回课程列表',
                   ),
-            title: Text(title),
+            title: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             actions: [
-              if (!_webVisible && !_starting)
+              if (_supported && !_webVisible && !_starting)
                 IconButton(
                   tooltip: '刷新',
                   onPressed: _busy
@@ -1030,6 +1037,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
         ),
         body: SafeArea(
           top: false,
+          bottom: false,
           child: Stack(
             children: [
               Positioned.fill(child: _content(colors)),

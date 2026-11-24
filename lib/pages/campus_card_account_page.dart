@@ -283,30 +283,33 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
                                     .copyWith(fontSize: 14.5),
                               ),
                             ),
-                            SizedBox(
-                              width: 200,
-                              child: IgnorePointer(
-                                ignoring: isBusy(),
-                                child: AdaptiveSelect(
-                                  value: _channel.method,
-                                  width: 200,
-                                  accessibilityLabel: 'OPENID 渠道',
-                                  options: [
-                                    for (final channel
-                                        in EcardOpenIdChannel.values)
-                                      AdaptiveSelectOption(
-                                        value: channel.method,
-                                        label: channel.label,
-                                      ),
-                                  ],
-                                  onChanged: (value) {
-                                    if (isBusy()) return;
-                                    setState(() {
-                                      _channel =
-                                          EcardOpenIdChannel.parse(value);
-                                      _inlineMessage = null;
-                                    });
-                                  },
+                            const SizedBox(width: TpTokens.space3),
+                            Flexible(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 180),
+                                child: IgnorePointer(
+                                  ignoring: isBusy(),
+                                  child: AdaptiveSelect(
+                                    value: _channel.method,
+                                    width: 180,
+                                    accessibilityLabel: 'OPENID 渠道',
+                                    options: [
+                                      for (final channel
+                                          in EcardOpenIdChannel.values)
+                                        AdaptiveSelectOption(
+                                          value: channel.method,
+                                          label: channel.label,
+                                        ),
+                                    ],
+                                    onChanged: (value) {
+                                      if (isBusy()) return;
+                                      setState(() {
+                                        _channel =
+                                            EcardOpenIdChannel.parse(value);
+                                        _inlineMessage = null;
+                                      });
+                                    },
+                                  ),
                                 ),
                               ),
                             ),

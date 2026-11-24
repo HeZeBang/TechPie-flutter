@@ -19,6 +19,7 @@ class TpListRow extends StatelessWidget {
     this.showChevron = false,
     this.showDivider = false,
     this.destructive = false,
+    this.subtitleMaxLines = 2,
   });
 
   final String title;
@@ -31,6 +32,7 @@ class TpListRow extends StatelessWidget {
   final bool showChevron;
   final bool showDivider;
   final bool destructive;
+  final int subtitleMaxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +40,7 @@ class TpListRow extends StatelessWidget {
     final effectiveTitleColor =
         destructive ? colors.dangerRed : colors.textPrimary;
     final effectiveIconColor =
-        iconColor ?? (destructive ? colors.dangerRed : colors.brand);
+        iconColor ?? (destructive ? colors.dangerRed : colors.brandInk);
 
     final row = Padding(
       padding: const EdgeInsets.symmetric(
@@ -74,7 +76,7 @@ class TpListRow extends StatelessWidget {
                   Text(
                     subtitle!,
                     style: TpTypography.itemMeta(colors),
-                    maxLines: 2,
+                    maxLines: subtitleMaxLines,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],

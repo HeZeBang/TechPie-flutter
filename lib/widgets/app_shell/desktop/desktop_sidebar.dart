@@ -54,20 +54,29 @@ class DesktopSidebar extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (var index = 0;
-                        index < destinations.length;
-                        index++) ...[
-                      DesktopSidebarItem(
-                        destination: destinations[index],
-                        selected: index == selectedIndex,
-                        collapsed: collapsed,
-                        onTap: () => onSelected(index),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (var index = 0;
+                                index < destinations.length;
+                                index++) ...[
+                              DesktopSidebarItem(
+                                destination: destinations[index],
+                                selected: index == selectedIndex,
+                                collapsed: collapsed,
+                                onTap: () => onSelected(index),
+                              ),
+                              if (index < destinations.length - 1)
+                                SizedBox(height: itemSpacing),
+                            ],
+                          ],
+                        ),
                       ),
-                      if (index < destinations.length - 1)
-                        SizedBox(height: itemSpacing),
-                    ],
-                    const Spacer(),
-                    if (showToggleButton)
+                    ),
+                    if (showToggleButton) ...[
+                      const SizedBox(height: TpTokens.space2),
                       Align(
                         alignment: Alignment.bottomLeft,
                         child: _SidebarToggleButton(
@@ -75,6 +84,7 @@ class DesktopSidebar extends StatelessWidget {
                           onPressed: onToggleCollapsed,
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),
@@ -141,13 +151,13 @@ class _SidebarBrand extends StatelessWidget {
                     width: 32,
                     height: 32,
                     decoration: BoxDecoration(
-                      color: colors.brandSoft,
+                      color: colors.opaqueBrandContainer,
                       borderRadius: BorderRadius.circular(TpTokens.radiusS),
                     ),
                     child: Icon(
                       TpIcons.graduation,
                       size: TpTokens.iconM - 2,
-                      color: colors.brand,
+                      color: colors.brandInk,
                     ),
                   ),
                 ),

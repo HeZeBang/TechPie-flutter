@@ -21,9 +21,12 @@ class DesktopSidebarItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    final foreground = selected ? colors.brand : colors.textSecondary;
-    final iconColor = selected ? colors.brand : colors.textMuted;
+    final foreground = selected ? colors.textPrimary : colors.textSecondary;
+    final iconColor = selected ? colors.brandInk : colors.textMuted;
     final radius = BorderRadius.circular(TpTokens.radiusS);
+    final selectedBorder = colors.brand.withValues(
+      alpha: colors.isDark ? 0.30 : 0.22,
+    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -34,47 +37,75 @@ class DesktopSidebarItem extends StatelessWidget {
                     DesktopSidebarTokens.minLabelWidth;
 
         return Material(
-          color: selected ? colors.brandSoft : Colors.transparent,
-          borderRadius: radius,
+          color: selected ? colors.opaqueBrandContainer : Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: selected ? BorderSide(color: selectedBorder) : BorderSide.none,
+          ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
             borderRadius: radius,
-            hoverColor: selected ? colors.brandSoft : colors.surfaceSubtle,
-            splashColor: colors.brandSoft,
+            hoverColor: selected ? Colors.transparent : colors.surfaceSubtle,
+            highlightColor: colors.textPrimary.withValues(alpha: 0.06),
+            splashColor: colors.brand.withValues(alpha: 0.10),
+            focusColor: colors.brand.withValues(alpha: 0.08),
             child: SizedBox(
               height: DesktopSidebarTokens.navItemHeight,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
+              child: Stack(
+                alignment: Alignment.centerLeft,
                 children: [
-                  SizedBox(
-                    width: DesktopSidebarTokens.iconColumnWidth,
-                    child: Center(
-                      child: Icon(
-                        selected ? destination.selectedIcon : destination.icon,
-                        size: TpTokens.iconM,
-                        color: iconColor,
-                      ),
-                    ),
-                  ),
-                  if (canShowLabel) ...[
-                    const SizedBox(
-                      width: DesktopSidebarTokens.navItemTextGap,
-                    ),
-                    Expanded(
-                      child: Text(
-                        destination.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TpTypography.itemTitle(colors).copyWith(
-                          fontSize: 14,
-                          color: foreground,
-                          fontWeight:
-                              selected ? FontWeight.w600 : FontWeight.w500,
+                  if (selected)
+                    Positioned(
+                      left: 0,
+                      top: 10,
+                      bottom: 10,
+                      child: Container(
+                        width: TpTokens.accentBarWidth,
+                        decoration: BoxDecoration(
+                          color: colors.brand,
+                          borderRadius: const BorderRadius.horizontal(
+                            right: Radius.circular(TpTokens.radiusBar),
+                          ),
                         ),
                       ),
                     ),
-                  ],
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: DesktopSidebarTokens.iconColumnWidth,
+                        child: Center(
+                          child: Icon(
+                            selected
+                                ? destination.selectedIcon
+                                : destination.icon,
+                            size: TpTokens.iconM,
+                            color: iconColor,
+                          ),
+                        ),
+                      ),
+                      if (canShowLabel) ...[
+                        const SizedBox(
+                          width: DesktopSidebarTokens.navItemTextGap,
+                        ),
+                        Expanded(
+                          child: Text(
+                            destination.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TpTypography.itemTitle(colors).copyWith(
+                              fontSize: 14,
+                              color: foreground,
+                              fontWeight:
+                                  selected ? FontWeight.w600 : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: TpTokens.space3),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             ),

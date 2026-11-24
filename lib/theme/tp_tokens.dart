@@ -7,10 +7,13 @@ abstract final class TpTokens {
   // Brand & semantic base palette.
   static const techRedLight = Color(0xFFA30B19);
   static const techRedDark = Color(0xFFE03140);
+  static const techRedDarkInk = Color(0xFFFF6470);
   static const iosBlueLight = Color(0xFF007AFF);
   static const iosBlueDark = Color(0xFF0A84FF);
-  static const successGreen = Color(0xFF30D158);
-  static const warningAmberLight = Color(0xFFD97706);
+  static const successGreenLight = Color(0xFF15803D);
+  static const successGreenDark = Color(0xFF30D158);
+  static const successGreen = successGreenDark;
+  static const warningAmberLight = Color(0xFFB45309);
   static const warningAmberDark = Color(0xFFF59E0B);
   static const dangerDark = Color(0xFFFF453A);
 
@@ -20,14 +23,17 @@ abstract final class TpTokens {
   static const lightSurfaceSubtle = Color(0xFFF2F2F7);
   static const lightSurfacePressed = Color(0xFFE5E5EA);
   static const lightDivider = Color(0x14000000);
+  static const lightOutline = Color(0xFFAEAEB2);
   static const lightTextPrimary = Color(0xFF171717);
   static const lightTextSecondary = Color(0xFF3A3A3C);
+  static const lightTextMuted = Color(0xFF636366);
 
   static const darkCanvas = Color(0xFF0A0A0A);
   static const darkSurface = Color(0xFF1C1C1E);
   static const darkSurfaceSubtle = Color(0xFF2C2C2E);
   static const darkSurfacePressed = Color(0xFF3A3A3C);
   static const darkBorder = Color(0x14FFFFFF);
+  static const darkOutline = Color(0xFF636366);
 
   static const amoledCanvas = Color(0xFF000000);
   static const amoledSurface = Color(0xFF141414);
@@ -38,6 +44,7 @@ abstract final class TpTokens {
   static const darkTextPrimary = Color(0xFFFAFAFA);
   static const amoledTextPrimary = Color(0xFFFFFFFF);
   static const darkTextSecondary = Color(0xFFD1D1D6);
+  static const darkTextMuted = Color(0xFF98989D);
   static const mutedText = Color(0xFF8E8E93);
 
   // Spacing (4 dp grid).

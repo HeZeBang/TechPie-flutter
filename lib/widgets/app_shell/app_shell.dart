@@ -190,6 +190,11 @@ class _AppShellState extends State<AppShell> {
   /// A tap on the selected tab first unwinds that tab's stack, and on its root
   /// scrolls back to the top — the system tab bar's behaviour.
   void _returnToTabRoot(int index) {
+    final contentNav = _contentNavigatorKeys[index]?.currentState;
+    if (contentNav != null && contentNav.canPop()) {
+      contentNav.popUntil((route) => route.isFirst);
+      return;
+    }
     final navigator = _tabNavigatorKeys[index]?.currentState;
     if (navigator == null) return;
     if (navigator.canPop()) {
@@ -297,7 +302,7 @@ class _AppShellState extends State<AppShell> {
         sidebarCollapsed: _sidebarCollapsed,
         onDestinationSelected: _onDestinationSelected,
         onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
-        child: _buildDesktopContentNavigator(pageView),
+        child: isIos() ? pageView : _buildDesktopContentNavigator(pageView),
       );
     }
 

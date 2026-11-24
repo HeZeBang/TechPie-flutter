@@ -1,12 +1,19 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../services/egate_app_service.dart';
 import '../services/service_provider.dart';
+import '../theme/theme.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import '../widgets/scanner/scan_page.dart';
@@ -31,14 +38,14 @@ class _EgateAppPageState extends State<EgateAppPage> {
   List<EgateAppSignRecord> _history = const [];
   bool _loadedOnce = false;
 
-  Future<void> _handleLogin() async {
+  Future<void> _handlePrerequisite() async {
     final sp = ServiceProvider.of(context);
-    final alreadyLoggedIn = sp.authService.isLoggedIn;
+    if (sp.authService.isLoggedIn) {
+      await _openThirdPartyAccounts();
+      return;
+    }
     await startUniAuthLogin(context);
     if (!mounted) return;
-    if (alreadyLoggedIn && sp.authService.isLoggedIn) {
-      unawaited(_openThirdPartyAccounts());
-    }
     setState(() {});
   }
 
@@ -76,14 +83,18 @@ class _EgateAppPageState extends State<EgateAppPage> {
     try {
       final result = await service.submitCheckin(wid);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message)),
+      showAdaptiveFeedback(
+        context: context,
+        message: result.message,
+        style: AdaptiveFeedbackStyle.success,
       );
       unawaited(_refresh(service));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e')),
+      showAdaptiveFeedback(
+        context: context,
+        message: '$e',
+        style: AdaptiveFeedbackStyle.error,
       );
     }
   }
@@ -106,118 +117,155 @@ class _EgateAppPageState extends State<EgateAppPage> {
     final controller = TextEditingController();
     final wid = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('手动输入签到内容'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: '粘贴或输入二维码内容 (WID)',
+      builder: (dialogContext) {
+        final colors = dialogContext.tpColors;
+        return AlertDialog(
+          title: const Text('手动输入签到内容'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              hintText: '粘贴或输入二维码内容 (WID)',
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('提交'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: colors.textSecondary,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('提交'),
+            ),
+          ],
+        );
+      },
     );
+    controller.dispose();
     if (wid == null || wid.isEmpty || !mounted) return;
     unawaited(_submitCheckin(service, wid));
   }
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tpColors;
     final sp = ServiceProvider.of(context);
     final auth = sp.authService;
     final tpAuth = sp.thirdPartyAuthService;
     final service = sp.egateAppService;
-    final useIosChrome = isIos();
-    final useLegacyIosChrome = usesLegacyIosChrome();
-    final topInset = useIosChrome || useLegacyIosChrome
-        ? 0.0
-        : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
-    // Mobile camera scanning runs on the platforms whose mobile_scanner build
-    // has a camera implementation; the desktop platforms keep the manual entry.
-    final canScanWithCamera = isAndroid() || isIos() || isOhos();
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
+      context,
+      extra: TpTokens.space4,
+    );
+    // Mobile camera scanning runs on Android / iOS / OHOS; desktop keeps manual.
+    final canScanWithCamera = !kIsWeb && !isDesktop();
 
     return Scaffold(
-      extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
-      appBar: useIosChrome
-          ? IosNativeNavigationBar(
-              title: '校园签到',
-              leadingItems: const [
-                IosNativeNavigationBarItem(
-                  id: 'back',
-                  title: 'Home',
-                  sfSymbol: 'chevron.left',
-                  accessibilityLabel: '返回 Home',
-                  placementGroup: 'leading-main',
-                ),
-              ],
-              onItemPressed: (id) {
-                switch (id) {
-                  case 'back':
-                    unawaited(Navigator.maybePop(context));
-                }
-              },
-            )
-          : BlurredAppBar(
-              title: const Text('校园签到'),
-              actions: [
-                if (isDesktop())
-                  ListenableBuilder(
-                    listenable: Listenable.merge([auth, tpAuth]),
-                    builder: (context, _) => PageRefreshButton(
-                      onRefresh: () => _refresh(service),
-                      enabled: auth.isLoggedIn && tpAuth.hasIdsBinding,
-                      refreshing: _loading,
-                    ),
-                  ),
-              ],
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '校园签到',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '首页',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回首页',
+              placementGroup: 'leading-main',
             ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') {
+              unawaited(maybePopAdaptivePage<void>(context));
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: const Text('校园签到'),
+          actions: [
+            if (isDesktop())
+              ListenableBuilder(
+                listenable: Listenable.merge([auth, tpAuth]),
+                builder: (context, _) => PageRefreshButton(
+                  onRefresh: () => _refresh(service),
+                  enabled: auth.isLoggedIn && tpAuth.hasIdsBinding,
+                  refreshing: _loading,
+                ),
+              ),
+          ],
+        ),
+      ),
       body: ListenableBuilder(
         listenable: Listenable.merge([auth, tpAuth]),
         builder: (context, _) {
           final ready = auth.isLoggedIn && tpAuth.hasIdsBinding;
           if (!ready) {
             return ListView(
-              padding: EdgeInsets.fromLTRB(16, topInset + 16, 16, 120),
+              padding: EdgeInsets.fromLTRB(
+                TpTokens.pageHorizontalPadding,
+                topInset,
+                TpTokens.pageHorizontalPadding,
+                AppShellMetrics.bottomContentPaddingOf(context),
+              ),
               children: [
-                Card.filled(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
+                TpPageBody(
+                  child: TpCard(
+                    padding: const EdgeInsets.all(TpTokens.space5),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.login_rounded,
-                          size: 40,
-                          color: Theme.of(context).colorScheme.primary,
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: colors.opaqueBrandContainer,
+                            borderRadius:
+                                BorderRadius.circular(TpTokens.radiusM),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            TpIcons.calendarCheck,
+                            size: TpTokens.iconL,
+                            color: colors.brandInk,
+                          ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: TpTokens.space4),
                         Text(
                           auth.isLoggedIn ? '需要绑定 IDS 账号' : '需要先登录 TechPie',
-                          style: Theme.of(context).textTheme.titleLarge,
+                          style: TpTypography.cardTitle(colors)
+                              .copyWith(fontSize: 18),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: TpTokens.space2),
                         Text(
                           auth.isLoggedIn
                               ? '校园签到复用 IDS 绑定的校园网登录态，请在「第三方账号」中绑定 IDS 后再使用。'
                               : '校园签到复用 IDS 绑定的校园网登录态，不需要单独保存密码。',
-                          style: Theme.of(context).textTheme.bodyMedium,
+                          style: TpTypography.itemMeta(colors).copyWith(
+                            fontSize: 13.5,
+                            height: 1.45,
+                          ),
                         ),
-                        const SizedBox(height: 16),
-                        FilledButton.icon(
-                          onPressed: _handleLogin,
-                          icon: const Icon(Icons.login),
-                          label: Text(auth.isLoggedIn ? '去绑定 IDS' : '去登录'),
+                        const SizedBox(height: TpTokens.space4),
+                        AdaptiveButton(
+                          onPressed: _handlePrerequisite,
+                          icon: auth.isLoggedIn
+                              ? TpIcons.linkedAccounts
+                              : TpIcons.login,
+                          sfSymbol: auth.isLoggedIn
+                              ? 'key.horizontal'
+                              : 'person.crop.circle.badge.plus',
+                          label: auth.isLoggedIn ? '去绑定 IDS' : '去登录',
+                          role: AdaptiveButtonRole.prominent,
+                          height: 46,
+                          accessibilityLabel:
+                              auth.isLoggedIn ? '前往绑定 IDS' : '登录 TechPie',
                         ),
                       ],
                     ),
@@ -229,11 +277,6 @@ class _EgateAppPageState extends State<EgateAppPage> {
 
           if (!_loadedOnce) {
             _loadedOnce = true;
-            // Defer past this build: _refresh() calls setState() before its
-            // first await, and this branch runs synchronously inside
-            // EgateAppPage's own build() (via ListenableBuilder), so calling
-            // it directly here would re-enter the build that's still in
-            // progress.
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) unawaited(_refresh(service));
             });
@@ -242,80 +285,149 @@ class _EgateAppPageState extends State<EgateAppPage> {
           return PageRefreshIndicator(
             onRefresh: () async => _refresh(service),
             child: ListView(
-              padding: EdgeInsets.fromLTRB(16, topInset + 16, 16, 120),
+              padding: EdgeInsets.fromLTRB(
+                TpTokens.pageHorizontalPadding,
+                topInset,
+                TpTokens.pageHorizontalPadding,
+                AppShellMetrics.bottomContentPaddingOf(context),
+              ),
               children: [
-                if (_error != null)
-                  Card(
-                    color: Theme.of(context).colorScheme.errorContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(_error!),
-                    ),
-                  ),
-                Card.outlined(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '当前公告',
-                          style: Theme.of(context).textTheme.titleMedium,
+                TpPageBody(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_error != null) ...[
+                        TpCard(
+                          color: colors.opaqueDangerContainer,
+                          borderColor:
+                              colors.dangerRed.withValues(alpha: 0.35),
+                          padding: const EdgeInsets.all(TpTokens.space4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                TpIcons.info,
+                                size: TpTokens.iconM,
+                                color: colors.dangerRed,
+                              ),
+                              const SizedBox(width: TpTokens.space3),
+                              Expanded(
+                                child: Text(
+                                  _error!,
+                                  style: TpTypography.itemMeta(colors)
+                                      .copyWith(color: colors.textPrimary),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
+                        const SizedBox(height: TpTokens.sectionGap),
+                      ],
+                      TpCard(
+                        leadingIcon: TpIcons.bell,
+                        title: '当前公告',
+                        padding: const EdgeInsets.fromLTRB(
+                          TpTokens.cardPaddingHorizontal,
+                          TpTokens.space1,
+                          TpTokens.cardPaddingHorizontal,
+                          TpTokens.space4,
+                        ),
+                        child: Text(
                           _loading
                               ? '加载中…'
                               : (_message?.isNotEmpty == true
                                   ? _message!
                                   : '暂无签到公告'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    if (canScanWithCamera)
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () => unawaited(_scanQrCode(service)),
-                          icon: const Icon(Icons.qr_code_scanner),
-                          label: const Text('扫码签到'),
+                          style: TpTypography.itemMeta(colors).copyWith(
+                            fontSize: 13.5,
+                            color: colors.textSecondary,
+                            height: 1.45,
+                          ),
                         ),
                       ),
-                    if (canScanWithCamera) const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => unawaited(_enterWidManually(service)),
-                        icon: const Icon(Icons.keyboard),
-                        label: const Text('手动输入'),
+                      const SizedBox(height: TpTokens.sectionGap),
+                      Row(
+                        children: [
+                          if (canScanWithCamera) ...[
+                            Expanded(
+                              child: AdaptiveButton(
+                                onPressed: () =>
+                                    unawaited(_scanQrCode(service)),
+                                icon: TpIcons.qrCode,
+                                sfSymbol: 'qrcode.viewfinder',
+                                label: '扫码签到',
+                                role: AdaptiveButtonRole.prominent,
+                                height: 46,
+                              ),
+                            ),
+                            const SizedBox(width: TpTokens.space3),
+                          ],
+                          Expanded(
+                            child: AdaptiveButton(
+                              onPressed: () =>
+                                  unawaited(_enterWidManually(service)),
+                              icon: TpIcons.edit,
+                              sfSymbol: 'keyboard',
+                              label: '手动输入',
+                              role: canScanWithCamera
+                                  ? AdaptiveButtonRole.standard
+                                  : AdaptiveButtonRole.prominent,
+                              height: 46,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: TpTokens.sectionGap),
+                      TpCard(
+                        leadingIcon: TpIcons.calendarCheck,
+                        title: '签到历史',
+                        trailing: _history.isEmpty
+                            ? null
+                            : TpBadge(
+                                label: '${_history.length} 条',
+                                tone: TpBadgeTone.muted,
+                              ),
+                        child: _history.isEmpty && !_loading
+                            ? Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  TpTokens.cardPaddingHorizontal,
+                                  TpTokens.space2,
+                                  TpTokens.cardPaddingHorizontal,
+                                  TpTokens.space5,
+                                ),
+                                child: Text(
+                                  '暂无签到记录',
+                                  style: TpTypography.itemMeta(colors),
+                                  textAlign: TextAlign.center,
+                                ),
+                              )
+                            : Column(
+                                children: [
+                                  for (var i = 0; i < _history.length; i++)
+                                    TpListRow(
+                                      icon: TpIcons.checkCircle,
+                                      title: _history[i].activityName,
+                                      subtitle: [
+                                        _history[i].typeDisplay,
+                                        if (_history[i].date != null)
+                                          _history[i].date!,
+                                      ].where((s) => s.isNotEmpty).join(' · '),
+                                      trailing: _history[i]
+                                              .statusDisplay
+                                              .isEmpty
+                                          ? null
+                                          : TpBadge(
+                                              label: _history[i].statusDisplay,
+                                              tone: TpBadgeTone.success,
+                                            ),
+                                      showDivider: i < _history.length - 1,
+                                    ),
+                                ],
+                              ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                Text('签到历史', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                if (_history.isEmpty && !_loading)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Center(child: Text('暂无签到记录')),
-                  ),
-                for (final record in _history)
-                  Card(
-                    child: ListTile(
-                      title: Text(record.activityName),
-                      subtitle: Text(
-                        [
-                          record.typeDisplay,
-                          if (record.date != null) record.date!,
-                        ].where((s) => s.isNotEmpty).join(' · '),
-                      ),
-                      trailing: Text(record.statusDisplay),
-                    ),
-                  ),
               ],
             ),
           );

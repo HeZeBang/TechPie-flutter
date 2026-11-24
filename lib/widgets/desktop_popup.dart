@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../theme/theme.dart';
 import 'app_shell/app_shell_metrics.dart';
 
 enum DesktopPopoverPlacement { rightTop, belowEnd }
@@ -167,13 +168,16 @@ class DesktopPopoverSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final colors = context.tpColors;
 
     return Material(
-      color: colorScheme.surfaceContainerHigh,
+      color: colors.surface,
       elevation: 6,
       shadowColor: Colors.black.withAlpha(45),
-      borderRadius: BorderRadius.circular(12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(TpTokens.radiusM),
+        side: BorderSide(color: colors.isDark ? colors.border : colors.divider),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Padding(padding: padding, child: child),
     );

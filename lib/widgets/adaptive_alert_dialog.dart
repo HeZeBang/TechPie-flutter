@@ -2,6 +2,8 @@ import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/theme.dart';
+
 class AdaptiveAlertAction<T> {
   const AdaptiveAlertAction({
     required this.label,
@@ -92,31 +94,32 @@ Future<T?> _showFlutterAlertDialog<T>({
 }) {
   return showDialog<T>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
-      // A release changelog can be longer than a dialog is tall; without this
-      // the content is clipped rather than scrolled.
-      scrollable: true,
-      title: Text(title),
-      content: Text(message),
-      actions: [
-        for (final action in actions)
-          action.isDefault && !action.isDestructive
-              ? FilledButton(
-                  onPressed: () => Navigator.pop(dialogContext, action.value),
-                  child: Text(action.label),
-                )
-              : TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, action.value),
-                  child: Text(
-                    action.label,
-                    style: action.isDestructive
-                        ? TextStyle(
-                            color: Theme.of(dialogContext).colorScheme.error,
-                          )
-                        : null,
+    builder: (dialogContext) {
+      final colors = dialogContext.tpColors;
+      return AlertDialog(
+        // A release changelog can be longer than a dialog is tall; without this
+        // the content is clipped rather than scrolled.
+        scrollable: true,
+        title: Text(title),
+        content: message.trim().isEmpty ? null : Text(message),
+        actions: [
+          for (final action in actions)
+            action.isDefault && !action.isDestructive
+                ? FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, action.value),
+                    child: Text(action.label),
+                  )
+                : TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: action.isDestructive
+                          ? colors.dangerRed
+                          : colors.textSecondary,
+                    ),
+                    onPressed: () => Navigator.pop(dialogContext, action.value),
+                    child: Text(action.label),
                   ),
-                ),
-      ],
-    ),
+        ],
+      );
+    },
   );
 }

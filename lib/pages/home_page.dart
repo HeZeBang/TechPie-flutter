@@ -42,6 +42,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late ScheduleService _schedule;
   late AssignmentService _assignments;
+  late AuthService _auth;
   List<Course> _todayCourses = [];
   List<Period> _periods = defaultPeriods.toList();
   bool _initialized = false;
@@ -78,10 +79,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
     if (!_initialized) {
       _initialized = true;
-      _schedule = ServiceProvider.of(context).scheduleService;
-      _assignments = ServiceProvider.of(context).assignmentService;
+      final sp = ServiceProvider.of(context);
+      _schedule = sp.scheduleService;
+      _assignments = sp.assignmentService;
+      _auth = sp.authService;
       _schedule.addListener(_rebuild);
       _assignments.addListener(_onAssignmentsChanged);
+      _auth.addListener(_onAuthChanged);
       _doRebuild();
       _refreshTimer = Timer.periodic(
         const Duration(minutes: 1),
@@ -95,8 +99,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _refreshTimer?.cancel();
     _schedule.removeListener(_rebuild);
     _assignments.removeListener(_onAssignmentsChanged);
+    _auth.removeListener(_onAuthChanged);
     _staggerController?.dispose();
     super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onAssignmentsChanged() {
@@ -657,17 +666,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        '还有 $overflow 项 · 前往 Deadlines 查看全部',
-                        style: TpTypography.cardMeta(colors).copyWith(
-                          color: colors.brand,
+                      Flexible(
+                        child: Text(
+                          '还有 $overflow 项 · 前往 Deadlines 查看全部',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TpTypography.cardMeta(colors).copyWith(
+                            color: colors.brandInk,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 2),
                       Icon(
                         TpIcons.chevronRight,
                         size: TpTokens.iconXs,
-                        color: colors.brand,
+                        color: colors.brandInk,
                       ),
                     ],
                   ),

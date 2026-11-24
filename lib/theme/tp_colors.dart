@@ -19,6 +19,7 @@ final class TpColors extends ThemeExtension<TpColors> {
     required this.border,
     required this.divider,
     required this.brand,
+    required this.brandInk,
     required this.brandSoft,
     required this.onBrand,
     required this.textPrimary,
@@ -43,13 +44,14 @@ final class TpColors extends ThemeExtension<TpColors> {
       border: Colors.transparent,
       divider: TpTokens.lightDivider,
       brand: brand,
+      brandInk: _lightInkFor(brand),
       brandSoft: brand.withValues(alpha: 0.09),
       onBrand: resolvedOnBrand,
       textPrimary: TpTokens.lightTextPrimary,
       textSecondary: TpTokens.lightTextSecondary,
-      textMuted: TpTokens.mutedText,
+      textMuted: TpTokens.lightTextMuted,
       infoBlue: TpTokens.iosBlueLight,
-      successGreen: TpTokens.successGreen,
+      successGreen: TpTokens.successGreenLight,
       warningAmber: TpTokens.warningAmberLight,
       dangerRed: TpTokens.techRedLight,
     );
@@ -62,6 +64,8 @@ final class TpColors extends ThemeExtension<TpColors> {
   }) {
     final brand = accent ?? TpTokens.techRedDark;
     final resolvedOnBrand = onAccent ?? _contrastForeground(brand);
+    final brandInk =
+        accent == null ? TpTokens.techRedDarkInk : _darkInkFor(accent);
     return TpColors(
       brightness: Brightness.dark,
       isAmoled: amoled,
@@ -74,14 +78,15 @@ final class TpColors extends ThemeExtension<TpColors> {
       border: amoled ? TpTokens.amoledBorder : TpTokens.darkBorder,
       divider: amoled ? TpTokens.amoledBorder : TpTokens.darkBorder,
       brand: brand,
+      brandInk: brandInk,
       brandSoft: brand.withValues(alpha: 0.14),
       onBrand: resolvedOnBrand,
       textPrimary:
           amoled ? TpTokens.amoledTextPrimary : TpTokens.darkTextPrimary,
       textSecondary: TpTokens.darkTextSecondary,
-      textMuted: TpTokens.mutedText,
+      textMuted: TpTokens.darkTextMuted,
       infoBlue: TpTokens.iosBlueDark,
-      successGreen: TpTokens.successGreen,
+      successGreen: TpTokens.successGreenDark,
       warningAmber: TpTokens.warningAmberDark,
       dangerRed: TpTokens.dangerDark,
     );
@@ -91,6 +96,20 @@ final class TpColors extends ThemeExtension<TpColors> {
       ThemeData.estimateBrightnessForColor(background) == Brightness.dark
           ? Colors.white
           : TpTokens.lightTextPrimary;
+
+  /// Ensures foreground brand text/icons stay WCAG-AA legible on light cards.
+  static Color _lightInkFor(Color color) {
+    if (color.computeLuminance() <= 0.17) return color;
+    final hsl = HSLColor.fromColor(color);
+    return hsl.withLightness(hsl.lightness.clamp(0.0, 0.38)).toColor();
+  }
+
+  /// Ensures foreground brand text/icons stay WCAG-AA legible on dark surfaces.
+  static Color _darkInkFor(Color color) {
+    if (color.computeLuminance() >= 0.28) return color;
+    final hsl = HSLColor.fromColor(color);
+    return hsl.withLightness(hsl.lightness.clamp(0.66, 0.78)).toColor();
+  }
 
   static TpColors of(BuildContext context) {
     final theme = Theme.of(context);
@@ -114,6 +133,11 @@ final class TpColors extends ThemeExtension<TpColors> {
   final Color border;
   final Color divider;
   final Color brand;
+
+  /// High-contrast foreground brand color for text and icons placed on
+  /// [surface], [surfaceSubtle], or [brandSoft] (e.g. `#A30B19` in light mode
+  /// and `#FF6470` in dark/AMOLED mode).
+  final Color brandInk;
   final Color brandSoft;
   final Color onBrand;
   final Color textPrimary;
@@ -126,40 +150,104 @@ final class TpColors extends ThemeExtension<TpColors> {
 
   bool get isDark => brightness == Brightness.dark;
 
+  /// Opaque tinted brand container composited onto [surface], safe for elevated
+  /// Material 3 controls (chips, segmented buttons, tonal buttons, pickers).
+  Color get opaqueBrandContainer => Color.alphaBlend(
+        brand.withValues(alpha: isDark ? 0.22 : 0.11),
+        surface,
+      );
+
+  /// Opaque tinted error container composited onto [surface].
+  Color get opaqueDangerContainer => Color.alphaBlend(
+        dangerRed.withValues(alpha: isDark ? 0.22 : 0.12),
+        surface,
+      );
+
+  /// Opaque tinted success container composited onto [surface].
+  Color get opaqueSuccessContainer => Color.alphaBlend(
+        successGreen.withValues(alpha: isDark ? 0.22 : 0.12),
+        surface,
+      );
+
   /// Builds a Material 3 [ColorScheme] aligned with this neutral surface palette
-  /// so standard widgets inherit crisp contrast without seed-tinted grays.
+  /// without inheriting Material 2 purple/teal defaults from `ColorScheme.light`
+  /// or `ColorScheme.dark`.
   ColorScheme toColorScheme() {
-    final base = isDark ? const ColorScheme.dark() : const ColorScheme.light();
-    return base.copyWith(
+    final brandContainer = opaqueBrandContainer;
+    final secondaryContainerColor = Color.alphaBlend(
+      brand.withValues(alpha: isDark ? 0.20 : 0.10),
+      surface,
+    );
+    final successContainer = opaqueSuccessContainer;
+    final errorContainerColor = opaqueDangerContainer;
+    final inverseSurfaceColor =
+        isDark ? TpTokens.lightCanvas : TpTokens.darkSurface;
+    final onInverseSurfaceColor =
+        isDark ? TpTokens.lightTextPrimary : TpTokens.darkTextPrimary;
+    final inversePrimaryColor = isDark
+        ? (brand == TpTokens.techRedDark
+            ? TpTokens.techRedLight
+            : _lightInkFor(brand))
+        : (brand == TpTokens.techRedLight
+            ? TpTokens.techRedDarkInk
+            : _darkInkFor(brand));
+
+    return ColorScheme(
       brightness: brightness,
       primary: brand,
       onPrimary: onBrand,
-      primaryContainer: brandSoft,
-      onPrimaryContainer: brand,
+      primaryContainer: brandContainer,
+      onPrimaryContainer: brandInk,
+      primaryFixed: brandContainer,
+      primaryFixedDim: Color.alphaBlend(
+        brand.withValues(alpha: isDark ? 0.30 : 0.16),
+        surface,
+      ),
+      onPrimaryFixed: brandInk,
+      onPrimaryFixedVariant: brandInk,
       secondary: brand,
       onSecondary: onBrand,
-      secondaryContainer: surfaceSubtle,
-      onSecondaryContainer: textPrimary,
+      secondaryContainer: secondaryContainerColor,
+      onSecondaryContainer: brandInk,
+      secondaryFixed: secondaryContainerColor,
+      secondaryFixedDim: Color.alphaBlend(
+        brand.withValues(alpha: isDark ? 0.28 : 0.15),
+        surface,
+      ),
+      onSecondaryFixed: brandInk,
+      onSecondaryFixedVariant: brandInk,
       tertiary: successGreen,
       onTertiary: Colors.white,
-      tertiaryContainer: successGreen.withValues(alpha: isDark ? 0.18 : 0.12),
-      onTertiaryContainer: textPrimary,
+      tertiaryContainer: successContainer,
+      onTertiaryContainer: successGreen,
+      tertiaryFixed: successContainer,
+      tertiaryFixedDim: Color.alphaBlend(
+        successGreen.withValues(alpha: isDark ? 0.30 : 0.18),
+        surface,
+      ),
+      onTertiaryFixed: successGreen,
+      onTertiaryFixedVariant: successGreen,
       error: dangerRed,
       onError: Colors.white,
-      errorContainer: dangerRed.withValues(alpha: isDark ? 0.20 : 0.12),
+      errorContainer: errorContainerColor,
       onErrorContainer: dangerRed,
       surface: canvas,
       onSurface: textPrimary,
-      onSurfaceVariant: textMuted,
       surfaceDim: canvas,
       surfaceBright: surface,
-      surfaceContainerLowest: canvas,
+      surfaceContainerLowest: isDark ? canvas : surface,
       surfaceContainerLow: surface,
       surfaceContainer: surface,
       surfaceContainerHigh: surfaceSubtle,
       surfaceContainerHighest: surfacePressed,
-      outline: isDark ? const Color(0x33FFFFFF) : const Color(0x33000000),
+      onSurfaceVariant: textMuted,
+      outline: isDark ? TpTokens.darkOutline : TpTokens.lightOutline,
       outlineVariant: divider,
+      shadow: Colors.black,
+      scrim: Colors.black,
+      inverseSurface: inverseSurfaceColor,
+      onInverseSurface: onInverseSurfaceColor,
+      inversePrimary: inversePrimaryColor,
       surfaceTint: Colors.transparent,
     );
   }
@@ -175,6 +263,7 @@ final class TpColors extends ThemeExtension<TpColors> {
     Color? border,
     Color? divider,
     Color? brand,
+    Color? brandInk,
     Color? brandSoft,
     Color? onBrand,
     Color? textPrimary,
@@ -195,6 +284,7 @@ final class TpColors extends ThemeExtension<TpColors> {
       border: border ?? this.border,
       divider: divider ?? this.divider,
       brand: brand ?? this.brand,
+      brandInk: brandInk ?? this.brandInk,
       brandSoft: brandSoft ?? this.brandSoft,
       onBrand: onBrand ?? this.onBrand,
       textPrimary: textPrimary ?? this.textPrimary,
@@ -222,6 +312,7 @@ final class TpColors extends ThemeExtension<TpColors> {
       border: Color.lerp(border, other.border, t) ?? border,
       divider: Color.lerp(divider, other.divider, t) ?? divider,
       brand: Color.lerp(brand, other.brand, t) ?? brand,
+      brandInk: Color.lerp(brandInk, other.brandInk, t) ?? brandInk,
       brandSoft: Color.lerp(brandSoft, other.brandSoft, t) ?? brandSoft,
       onBrand: Color.lerp(onBrand, other.onBrand, t) ?? onBrand,
       textPrimary: Color.lerp(textPrimary, other.textPrimary, t) ?? textPrimary,
@@ -250,6 +341,7 @@ final class TpColors extends ThemeExtension<TpColors> {
         other.border == border &&
         other.divider == divider &&
         other.brand == brand &&
+        other.brandInk == brandInk &&
         other.brandSoft == brandSoft &&
         other.onBrand == onBrand &&
         other.textPrimary == textPrimary &&
@@ -272,6 +364,7 @@ final class TpColors extends ThemeExtension<TpColors> {
         border,
         divider,
         brand,
+        brandInk,
         brandSoft,
         onBrand,
         textPrimary,

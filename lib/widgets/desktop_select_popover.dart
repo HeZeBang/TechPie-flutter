@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/theme.dart';
 import 'desktop_popup.dart';
 
 typedef DesktopSelectAnchorBuilder = Widget Function(
@@ -255,13 +256,15 @@ class _DesktopSelectMenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colors = context.tpColors;
 
     return InkWell(
       onTap: onTap,
+      hoverColor: selected ? Colors.transparent : colors.surfaceSubtle,
+      highlightColor: colors.textPrimary.withValues(alpha: 0.06),
+      splashColor: colors.brand.withValues(alpha: 0.10),
       child: ColoredBox(
-        color:
-            selected ? colorScheme.surfaceContainerHighest : Colors.transparent,
+        color: selected ? colors.opaqueBrandContainer : Colors.transparent,
         child: Row(
           children: [
             SizedBox(
@@ -271,13 +274,21 @@ class _DesktopSelectMenuRow extends StatelessWidget {
                     (selected
                         ? Icon(
                             Icons.check_rounded,
-                            size: 24,
-                            color: colorScheme.primary,
+                            size: 20,
+                            color: colors.brandInk,
                           )
                         : const SizedBox.shrink()),
               ),
             ),
-            Expanded(child: Text(label, style: theme.textTheme.titleMedium)),
+            Expanded(
+              child: Text(
+                label,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: colors.textPrimary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
           ],
         ),
       ),

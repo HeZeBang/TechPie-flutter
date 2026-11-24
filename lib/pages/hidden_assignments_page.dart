@@ -443,7 +443,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
               return _buildIosRow(context, colors, key, title, subtitle, selected);
             }
             return TpCard(
-              color: selected ? colors.brandSoft : colors.surface,
+              color: selected ? colors.opaqueBrandContainer : colors.surface,
               borderColor: selected ? colors.brand : null,
               borderWidth: selected ? 1.5 : 0.75,
               onTap: _selectionMode ? () => _toggleSelection(key) : null,

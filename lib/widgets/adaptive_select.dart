@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:techpie/theme/theme.dart';
 import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/ios/ios_native_select.dart';
 
@@ -118,16 +119,26 @@ class AdaptiveSelect extends StatelessWidget {
   }
 
   Widget _buildMaterialSelect(BuildContext context) {
+    final colors = context.tpColors;
+    final radius = BorderRadius.circular(TpTokens.radiusS);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(14),
+        color: colors.surfaceSubtle,
+        borderRadius: radius,
+        border: Border.all(
+          color: colors.isDark
+              ? colors.border
+              : Theme.of(context).colorScheme.outline.withValues(alpha: 0.45),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             isExpanded: true,
+            dropdownColor: colors.surface,
+            focusColor: colors.brandSoft,
+            borderRadius: radius,
             value:
                 options.any((option) => option.value == value) ? value : null,
             hint: Text(placeholder),

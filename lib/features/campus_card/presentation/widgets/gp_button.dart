@@ -35,7 +35,8 @@ final class GpButton extends StatelessWidget {
     final c = context.gpColors;
     final enabled = _enabled;
     final fg = switch (variant) {
-      GpButtonVariant.primary || GpButtonVariant.destructive => c.onAction,
+      GpButtonVariant.primary => enabled ? c.onAction : c.textDisabled,
+      GpButtonVariant.destructive => enabled ? Colors.white : c.textDisabled,
       _ => enabled ? c.action : c.textDisabled,
     };
     final bg = switch (variant) {
@@ -59,10 +60,13 @@ final class GpButton extends StatelessWidget {
         widthFactor: fullWidth ? null : 1,
         heightFactor: 1,
         child: loading
-            ? const SizedBox(
+            ? SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: c.action,
+                ),
               )
             : Text(
                 label,

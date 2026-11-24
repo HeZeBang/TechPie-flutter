@@ -113,7 +113,7 @@ class _FeatureTile extends StatelessWidget {
                 child: Icon(
                   item.icon,
                   size: TpTokens.iconM,
-                  color: colors.brand,
+                  color: colors.brandInk,
                 ),
               ),
               const SizedBox(height: 6),

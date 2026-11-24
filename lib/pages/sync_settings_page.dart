@@ -226,6 +226,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       title: '版本对比',
       subtitle: '本地: $localLabel\n云端: $cloudLabel'
           '${compareLabel != null ? ' · $compareLabel' : ''}',
+      subtitleMaxLines: 4,
       trailing: IconButton(
         icon: const Icon(TpIcons.refresh, size: TpTokens.iconS),
         tooltip: '刷新云端版本',

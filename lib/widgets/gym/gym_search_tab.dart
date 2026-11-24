@@ -404,7 +404,7 @@ class _GymSearchTabState extends State<GymSearchTab> {
                                 ),
                                 for (var i = 0; i < timeGroup.items.length; i++)
                                   TpAccentRow(
-                                    accentColor: colors.infoBlue,
+                                    accentColor: colors.brand,
                                     title: timeGroup.items[i].venue,
                                     subtitle: [
                                       if (timeGroup.items[i].user.isNotEmpty)

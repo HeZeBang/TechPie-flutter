@@ -196,21 +196,42 @@ class _OaGymPageState extends State<OaGymPage>
                         controller: _tabController,
                         dividerColor: Colors.transparent,
                         indicatorSize: TabBarIndicatorSize.tab,
-                        labelColor: colors.brand,
+                        labelColor: colors.brandInk,
                         unselectedLabelColor: colors.textMuted,
                         indicatorColor: colors.brand,
                         tabs: const [
                           Tab(
-                            text: '预约',
-                            icon: Icon(TpIcons.calendarCheck, size: 18),
+                            height: 44,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(TpIcons.calendarCheck, size: 16),
+                                SizedBox(width: 6),
+                                Text('预约'),
+                              ],
+                            ),
                           ),
                           Tab(
-                            text: '查询',
-                            icon: Icon(TpIcons.search, size: 18),
+                            height: 44,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(TpIcons.search, size: 16),
+                                SizedBox(width: 6),
+                                Text('查询'),
+                              ],
+                            ),
                           ),
                           Tab(
-                            text: '个人信息',
-                            icon: Icon(TpIcons.profile, size: 18),
+                            height: 44,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(TpIcons.profile, size: 16),
+                                SizedBox(width: 6),
+                                Text('个人信息'),
+                              ],
+                            ),
                           ),
                         ],
                       ),

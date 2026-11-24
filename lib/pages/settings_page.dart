@@ -58,15 +58,43 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  /// The stack a settings subpage is pushed onto in the tablet (600–959dp)
+  /// band. On desktop (>= 960dp), DesktopShell already wraps this tab in a
+  /// content Navigator, so mounting a second one would be redundant.
+  final _nestedNavigatorKey = GlobalKey<NavigatorState>();
+
+  @override
+  Widget build(BuildContext context) {
+    if (usesSidebarLayout(context) && !usesDesktopSidebarShell(context)) {
+      return NavigatorPopHandler(
+        onPopWithResult: (_) => _nestedNavigatorKey.currentState?.pop(),
+        child: Navigator(
+          key: _nestedNavigatorKey,
+          onGenerateRoute: (settings) => adaptivePageRoute<void>(
+            settings: settings,
+            builder: (_) => const _SettingsBody(),
+          ),
+        ),
+      );
+    }
+
+    return const _SettingsBody();
+  }
+}
+
+class _SettingsBody extends StatefulWidget {
+  const _SettingsBody();
+
+  @override
+  State<_SettingsBody> createState() => _SettingsBodyState();
+}
+
+class _SettingsBodyState extends State<_SettingsBody> {
   String _appVersion = '';
   bool _checkingUpdate = false;
   bool? _isPersonalInfoBlurred;
   bool _wasVisible = false;
   IslandCapability? _islandCapability;
-
-  /// The stack a settings subpage is pushed onto in a wide window. A field, not
-  /// a local: a GlobalKey rebuilt every frame would drop the stack with it.
-  final _nestedNavigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
@@ -181,22 +209,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    if (usesSidebarLayout(context)) {
-      return NavigatorPopHandler(
-        onPopWithResult: (_) => _nestedNavigatorKey.currentState?.pop(),
-        child: Navigator(
-          key: _nestedNavigatorKey,
-          onGenerateRoute: (settings) => adaptivePageRoute<void>(
-            settings: settings,
-            builder: (context) => _buildSettingsScaffold(context),
-          ),
-        ),
-      );
-    }
-
-    return _buildSettingsScaffold(context);
-  }
+  Widget build(BuildContext context) => _buildSettingsScaffold(context);
 
   Widget _buildSettingsScaffold(BuildContext context) {
     final colors = context.tpColors;
@@ -296,7 +309,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             Builder(
                               builder: (tileContext) => TpListRow(
                                 icon: TpIcons.sparkles,
-                                iconColor: colors.brand,
+                                iconColor: colors.brandInk,
                                 title: '主题色',
                                 value: _colorSubtitle(themeService),
                                 showChevron: true,
@@ -308,7 +321,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           if (supportsAppleWatch())
                             TpListRow(
                               icon: TpIcons.watch,
-                              iconColor: colors.infoBlue,
+                              iconColor: colors.brandInk,
                               title: 'Apple Watch',
                               showChevron: true,
                               onTap: () => unawaited(
@@ -333,7 +346,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                   'settings.deadline-widgets',
                                 ),
                                 icon: TpIcons.activities,
-                                iconColor: colors.infoBlue,
+                                iconColor: colors.brandInk,
                                 title: '桌面小组件',
                                 subtitle:
                                     '与桌面共享截止日期标题与时间；TechPie 关闭时展示本地缓存',
@@ -360,7 +373,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               TpListRow(
                                 key: const ValueKey('settings.island'),
                                 icon: TpIcons.bellRing,
-                                iconColor: colors.brand,
+                                iconColor: colors.brandInk,
                                 title: '课程与截止日期通知',
                                 subtitle: _islandSubtitle,
                                 showDivider: hasSpending,
@@ -380,7 +393,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               TpListRow(
                                 key: const ValueKey('settings.spending-alerts'),
                                 icon: TpIcons.bell,
-                                iconColor: colors.successGreen,
+                                iconColor: colors.brandInk,
                                 title: '校园卡消费提醒',
                                 subtitle: '刷新发现新消费时通知；后台检查受系统调度限制',
                                 trailing: AdaptiveSwitch(
@@ -406,7 +419,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             TpListRow(
                               key: const ValueKey('settings.app-proxy-address'),
                               icon: TpIcons.globe,
-                              iconColor: colors.infoBlue,
+                              iconColor: colors.brandInk,
                               title: '应用代理',
                               subtitle: storage.appProxyEnabled &&
                                       storage.appProxyUrl.isNotEmpty
@@ -423,7 +436,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             TpListRow(
                               key: const ValueKey('settings.app-proxy-enabled'),
                               icon: TpIcons.sliders,
-                              iconColor: colors.infoBlue,
+                              iconColor: colors.brandInk,
                               title: '启用应用代理',
                               subtitle: '通过已配置的 HTTP 代理转发应用请求',
                               showDivider: true,
@@ -450,7 +463,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           ],
                           TpListRow(
                             icon: TpIcons.feedback,
-                            iconColor: colors.brand,
+                            iconColor: colors.brandInk,
                             title: '问题反馈 / 功能建议',
                             showChevron: true,
                             showDivider: true,
@@ -849,7 +862,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           TpListRow(
             icon: TpIcons.linkedAccounts,
-            iconColor: colors.brand,
+            iconColor: colors.brandInk,
             title: '第三方账号',
             subtitle:
                 '已绑定 $boundCount 项 · 校园卡 / eGate / Gradescope / Hydro',
@@ -865,7 +878,7 @@ class _SettingsPageState extends State<SettingsPage> {
           if (auth.isLoggedIn)
             TpListRow(
               icon: TpIcons.sync,
-              iconColor: colors.infoBlue,
+              iconColor: colors.brandInk,
               title: '云同步',
               subtitle: _cloudSyncSubtitle(syncService),
               showChevron: true,

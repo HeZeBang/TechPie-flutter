@@ -257,15 +257,35 @@ class _FeedbackPageState extends State<FeedbackPage> {
                                               bottom: 0,
                                               left: 0,
                                               right: 0,
-                                              child: FilledButton(
-                                                onPressed: _busy
-                                                    ? null
-                                                    : () => unawaited(
-                                                          _retryImage(
-                                                            _images[i],
+                                              child: Material(
+                                                color: colors.dangerRed
+                                                    .withValues(alpha: 0.90),
+                                                child: InkWell(
+                                                  onTap: _busy
+                                                      ? null
+                                                      : () => unawaited(
+                                                            _retryImage(
+                                                              _images[i],
+                                                            ),
                                                           ),
-                                                        ),
-                                                child: const Text('重试'),
+                                                  child: const Padding(
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                      vertical: 4,
+                                                    ),
+                                                    child: Text(
+                                                      '重试',
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
                                               ),
                                             )
                                           else if (_images[i].uploaded)
@@ -278,20 +298,33 @@ class _FeedbackPageState extends State<FeedbackPage> {
                                               ),
                                             ),
                                           Positioned(
-                                            top: 0,
-                                            right: 0,
-                                            child: IconButton.filledTonal(
-                                              tooltip: '移除第 ${i + 1} 张图片',
-                                              icon: const Icon(
-                                                TpIcons.close,
-                                                size: TpTokens.iconS,
+                                            top: 4,
+                                            right: 4,
+                                            child: Material(
+                                              color: Colors.black
+                                                  .withValues(alpha: 0.58),
+                                              shape: const CircleBorder(),
+                                              clipBehavior: Clip.antiAlias,
+                                              child: IconButton(
+                                                tooltip: '移除第 ${i + 1} 张图片',
+                                                constraints:
+                                                    const BoxConstraints.tightFor(
+                                                  width: 24,
+                                                  height: 24,
+                                                ),
+                                                padding: EdgeInsets.zero,
+                                                icon: const Icon(
+                                                  TpIcons.close,
+                                                  size: TpTokens.iconXs,
+                                                  color: Colors.white,
+                                                ),
+                                                onPressed: _busy || _picking
+                                                    ? null
+                                                    : () => setState(
+                                                          () => _images
+                                                              .removeAt(i),
+                                                        ),
                                               ),
-                                              onPressed: _busy || _picking
-                                                  ? null
-                                                  : () => setState(
-                                                        () =>
-                                                            _images.removeAt(i),
-                                                      ),
                                             ),
                                           ),
                                         ],

@@ -300,7 +300,6 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     final services = ServiceProvider.of(context);
     final assignmentService = services.assignmentService;
     final reminders = services.deadlineReminderService;
-    final colors = context.tpColors;
     final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(context);
 
     return ListenableBuilder(
@@ -319,20 +318,17 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                   reminders,
                   visible,
                 ),
-          body: ColoredBox(
-            color: colors.canvas,
-            child: PopScope(
-              canPop: !_selectionMode,
-              onPopInvokedWithResult: (didPop, _) {
-                if (!didPop && _selectionMode) _exitSelection();
-              },
-              child: _buildBody(
-                context,
-                assignmentService,
-                allVisible,
-                visible,
-                topInset,
-              ),
+          body: PopScope(
+            canPop: !_selectionMode,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop && _selectionMode) _exitSelection();
+            },
+            child: _buildBody(
+              context,
+              assignmentService,
+              allVisible,
+              visible,
+              topInset,
             ),
           ),
         );
@@ -686,8 +682,10 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                   AppShellMetrics.bottomContentPaddingOf(context),
                 ),
                 children: [
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.55,
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: MediaQuery.of(context).size.height * 0.55,
+                    ),
                     child: Center(
                       child: TpPageBody(
                         child: _emptyState(context, service),
@@ -1293,8 +1291,8 @@ class _AssignmentCard extends StatelessWidget {
       if (completed) return colors.successGreen;
       if (isPast || isLateWindow) return colors.dangerRed;
       final hoursLeft = displayDue.difference(now).inHours;
-      if (hoursLeft < 24) return colors.warningAmber;
-      if (hoursLeft < 72) return colors.brand;
+      if (hoursLeft < 24) return colors.dangerRed;
+      if (hoursLeft < 72) return colors.warningAmber;
       return colors.infoBlue;
     }();
 
@@ -1320,7 +1318,7 @@ class _AssignmentCard extends StatelessWidget {
 
     return TpCard(
       borderRadius: TpTokens.radiusM,
-      color: selected ? colors.brandSoft : colors.surface,
+      color: selected ? colors.opaqueBrandContainer : colors.surface,
       borderColor: selected ? colors.brand : null,
       borderWidth: selected ? 1.5 : 0.75,
       onTap: onTap,
@@ -1337,16 +1335,18 @@ class _AssignmentCard extends StatelessWidget {
                       ? Icons.check_circle
                       : Icons.radio_button_unchecked,
                   size: TpTokens.iconM,
-                  color: selected ? colors.brand : colors.textMuted,
+                  color: selected ? colors.brandInk : colors.textMuted,
                 ),
                 const SizedBox(width: TpTokens.space2),
               ],
               TpBadge(label: assignment.kind.label, tone: kindTone),
               if (assignment is! CustomDeadline) ...[
                 const SizedBox(width: 6),
-                TpBadge(
-                  label: assignment.platform.toUpperCase(),
-                  tone: TpBadgeTone.muted,
+                Flexible(
+                  child: TpBadge(
+                    label: assignment.platform.toUpperCase(),
+                    tone: TpBadgeTone.muted,
+                  ),
                 ),
               ],
               if (hasOverride) ...[
@@ -1356,35 +1356,39 @@ class _AssignmentCard extends StatelessWidget {
                   child: Icon(
                     TpIcons.edit,
                     size: TpTokens.iconXs,
-                    color: colors.brand,
+                    color: colors.brandInk,
                   ),
                 ),
               ],
               const Spacer(),
-              AnimatedSwitcher(
-                duration: appAnimationDuration(
-                  context,
-                  const Duration(milliseconds: 280),
+              Flexible(
+                child: AnimatedSwitcher(
+                  duration: appAnimationDuration(
+                    context,
+                    const Duration(milliseconds: 280),
+                  ),
+                  switchInCurve: appAnimationCurve(
+                    Curves.easeInOutCubicEmphasized,
+                    iosCurve: Curves.easeInOut,
+                  ),
+                  switchOutCurve: appAnimationCurve(
+                    Curves.easeInOutCubicEmphasized,
+                    iosCurve: Curves.easeInOut,
+                  ),
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(scale: animation, child: child),
+                  ),
+                  child: statusLabel == null
+                      ? const SizedBox.shrink()
+                      : Text(
+                          statusLabel,
+                          key: ValueKey(statusLabel),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TpTypography.badge(urgencyColor),
+                        ),
                 ),
-                switchInCurve: appAnimationCurve(
-                  Curves.easeInOutCubicEmphasized,
-                  iosCurve: Curves.easeInOut,
-                ),
-                switchOutCurve: appAnimationCurve(
-                  Curves.easeInOutCubicEmphasized,
-                  iosCurve: Curves.easeInOut,
-                ),
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(scale: animation, child: child),
-                ),
-                child: statusLabel == null
-                    ? const SizedBox.shrink()
-                    : Text(
-                        statusLabel,
-                        key: ValueKey(statusLabel),
-                        style: TpTypography.badge(urgencyColor),
-                      ),
               ),
             ],
           ),
