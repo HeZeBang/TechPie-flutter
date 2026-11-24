@@ -1,37 +1,36 @@
 <div class="screen">
   <swiper class="deck" vertical="true" loop="false" index="{{ pageIndex }}" ref="deck" onchange="onPageChange" onswipe="onSwipe" if="{{ view === 'deck' }}">
     <div class="panel">
-      <div class="panel-header">
-        <text class="page-title" onclick="showAccount">校园码 ›</text>
-        <text class="page-status">{{ crownError || status }}</text>
-      </div>
-      <div class="code-area" show="{{ codeVisible }}">
-        <canvas class="qr" id="campusQr" ref="qr"></canvas>
-      </div>
-      <div class="code-area" show="{{ !codeVisible }}">
-        <div class="code-placeholder" onclick="refreshCode">
-          <text class="placeholder-title">校园码</text>
-          <text class="placeholder-detail">{{ codeMessage }}</text>
+      <div class="panel-header"><text class="page-title" onclick="showAccount">校园码 ›</text></div>
+      <div class="code-area" show="{{ codeVisible }}"><canvas class="qr" id="campusQr" ref="qr"></canvas></div>
+      <div class="code-area" show="{{ !codeVisible }}"><div class="code-placeholder" onclick="refreshCode">
+        <text class="placeholder-title">{{ codeMessage }}</text>
+      </div></div>
+      <text class="code-caption" onclick="refreshCode">{{ crownError || (codeVisible ? codeMessage : codeHint) }}</text>
+      <div class="pager"><div class="dot active-dot"></div><div class="dot"></div><div class="dot"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><text class="page-title">课表</text></div>
+      <div class="preview-area">
+        <div class="preview-card" for="{{ coursePreview }}" onclick="showSchedule">
+          <text class="preview-title">{{ $item.title }}</text><text class="preview-caption">{{ $item.caption }}</text>
         </div>
+        <text class="preview-empty" if="{{ coursePreview.length === 0 }}">{{ emptyCourse }}</text>
       </div>
-      <text class="code-caption" onclick="refreshCode">{{ codeMessage }}</text>
-      <div class="code-bottom"></div>
-    </div>
-    <div class="panel">
-      <div class="panel-header"><text class="page-title">课表</text><text class="page-status">{{ dayLabel }}</text></div>
-      <text class="glance-time">{{ courseTime }}</text>
-      <text class="glance-title">{{ courseName }}</text>
-      <text class="glance-detail">{{ courseLocation }}</text>
       <input class="glance-action" type="button" value="今日课程 · {{ courseCount }} 节" onclick="showSchedule" />
-      <div class="glance-bottom"></div>
+      <div class="pager"><div class="dot"></div><div class="dot active-dot"></div><div class="dot"></div></div>
     </div>
     <div class="panel">
-      <div class="panel-header"><text class="page-title">待办</text><text class="page-status">{{ status }}</text></div>
-      <text class="glance-time due-color">{{ alertTitle ? '待办提醒' : ddlDue }}</text>
-      <text class="glance-title">{{ alertTitle || ddlTitle }}</text>
-      <text class="glance-detail">{{ ddlCourse }}</text>
+      <div class="panel-header"><text class="page-title">{{ alertTitle || '待办' }}</text></div>
+      <div class="preview-area">
+        <div class="preview-card" for="{{ ddlPreview }}" onclick="showDdl">
+          <text class="preview-title">{{ $item.title }}</text><text class="preview-caption urgent" if="{{ $item.urgent }}">{{ $item.caption }}</text>
+          <text class="preview-caption" if="{{ !$item.urgent }}">{{ $item.caption }}</text>
+        </div>
+        <text class="preview-empty" if="{{ ddlPreview.length === 0 }}">暂无待办</text>
+      </div>
       <input class="glance-action" type="button" value="全部待办 · {{ ddlCount }} 项" onclick="showDdl" />
-      <div class="glance-bottom"></div>
+      <div class="pager"><div class="dot"></div><div class="dot"></div><div class="dot active-dot"></div></div>
     </div>
   </swiper>
   <list class="details" ref="details" onswipe="onSwipe" if="{{ view !== 'deck' }}">
@@ -53,9 +52,8 @@
     </div></list-item>
     <list-item class="account-row" if="{{ view === 'account' }}"><div class="account-box">
       <text class="account-name">{{ name }}</text>
-      <text class="account-id">{{ studentId }}</text>
+      <text class="account-id">学号 {{ studentId }}</text>
       <text class="account-sync">上次同步 {{ lastSync }}</text>
-      <text class="account-hint">课表与待办在离线时仍可查看</text>
     </div></list-item>
     <list-item class="sync-row"><div class="sync-box">
       <input class="sync-button" type="button" value="同步数据" onclick="synchronize" />

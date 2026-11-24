@@ -12,7 +12,7 @@ function fixture(withGrant = true) {
   const api = {
     watchNow: () => now, watchCredential: () => withGrant ? grant : null, watchState: () => state,
     watchObserve(fn) { observe = fn; fn(state); },
-    watchCode() { counts.requests++; },
+    watchCode() { counts.requests++; }, watchHideCode() {},
     watchResume() { counts.resumed++; }, watchPause() { counts.paused++; },
     watchMatrix() { return () => ({size: 1, bytes: [128]}); }
   };
@@ -32,10 +32,10 @@ function fixture(withGrant = true) {
   function run() {
     for (const [key, fn] of [...timers]) { timers.delete(key); fn(); }
   }
-  return {page, state, counts, timers, run, observe: () => observe, advance(ms) { now += ms; }};
+  return {page, api, state, counts, timers, run, observe: () => observe, advance(ms) { now += ms; }};
 }
 test('hide cancels queued signing and focus; late callbacks cannot reach a reopened view', () => {
-  const f = fixture(); f.page.refreshCode();
+  const f = fixture();
   const previous = [...f.timers.values()], observe = f.observe();
   assert.equal(f.counts.resumed, 1);
   f.page.onHide(); f.page.onPageChange({index: 0}); f.page.onDestroy();
@@ -44,18 +44,17 @@ test('hide cancels queued signing and focus; late callbacks cannot reach a reope
   for (const fn of previous) fn();
   observe(f.state);
   assert.equal(f.counts.focused, 0); assert.equal(f.counts.signed, 0);
-  f.run(); assert.equal(f.counts.signed, 0); assert.equal(f.counts.focused, 1);
-  f.page.refreshCode(); f.run(); assert.equal(f.counts.signed, 1);
+  f.run(); assert.equal(f.counts.signed, 1); assert.equal(f.counts.focused, 1);
 });
 test('a canvas callback queued before hide cannot paint a newly shown page', () => {
-  const f = fixture(); f.page.refreshCode(); f.run(); f.run();
+  const f = fixture(); f.run(); f.run();
   const pending = [...f.timers.values()];
   assert.ok(f.page.codeVisible); assert.ok(pending.length);
   f.page.onHide(); f.page.onShow(); pending.forEach(fn => fn());
   assert.equal(f.counts.drawn, 0);
 });
 test('expired codes wait for a tap; suspended jobs discard an overdue timer without signing', () => {
-  const f = fixture(); f.page.refreshCode(); f.advance(3000); f.run();
+  const f = fixture(); f.advance(3000); f.run();
   assert.equal(f.counts.signed, 0);
   f.page.refreshCode(); f.run(); f.run(); f.run();
   assert.equal(f.counts.drawn, 1); assert.equal(f.counts.signed, 1);
@@ -93,4 +92,32 @@ test('losing the canvas ref while rendering never loops or leaves an expired pic
   assert.equal(f.counts.drawn, 1);
   f.advance(31000); f.observe()(f.state);
   assert.equal(f.page.codeVisible, false);
+});
+
+test('opening generates once when the encrypted grant finishes loading, and leaving cancels it', () => {
+  const f = fixture(false);
+  const grant = {};
+  f.page.onPageChange({index: 1});
+  // Use the API captured by the page to simulate async grant restoration.
+  f.api.watchCredential = () => grant;
+  f.observe()(f.state); f.run();
+  assert.equal(f.counts.signed, 0);
+  f.page.onPageChange({index: 0});
+  f.observe()(f.state);
+  f.page.showAccount(); f.run();
+  assert.equal(f.counts.signed, 0);
+  f.page.goBack(); f.run(); f.run(); f.run();
+  f.observe()(f.state); f.run();
+  assert.equal(f.counts.signed, 1); assert.equal(f.counts.drawn, 1);
+});
+
+test('a pending online request takes priority and falls back to the restored grant on timeout', () => {
+  const f = fixture(false);
+  f.state.connected = true; f.observe()(f.state);
+  const grant = {};
+  f.api.watchCredential = () => grant;
+  f.state.codeLoading = true; f.observe()(f.state); f.run();
+  assert.equal(f.counts.requests, 1); assert.equal(f.counts.signed, 0);
+  f.state.codeLoading = false; f.observe()(f.state); f.run(); f.run(); f.run();
+  assert.equal(f.counts.signed, 1); assert.equal(f.counts.drawn, 1);
 });

@@ -4,17 +4,15 @@ TechPie Watch opens on the campus code. Turning the Crown or swiping vertically 
 
 ## Round-screen layout
 
-The 466 px canvas is black. Each of the three pages presents one primary item, with neutral capsule actions and a restrained teal accent. Course and deadline lists open as details. The account view opens from the campus-code title. Titles, rows and containers have explicit Lite dimensions. The custom text-enlargement control remains removed.
+The 466 px round display centers the campus code on black. The timetable and deadline pages show up to three summaries with the title above the time and location or course. Deadlines within 24 hours and overdue items use amber text. A capsule opens the full list. Three dots near the lower edge mark the current page. Tap the campus-code title to open the account view.
 
-| Element | Dimensions / size |
+| Element | Dimensions |
 | --- | --- |
-| Main title | 32 px, centered below the round edge |
-| Glance headline | 36 px, 320 px wide |
-| Supporting content | 24 px |
-| Status | 21 px |
-| Main action | 290 × 76 px |
-| Detail card | 320 × 196 px |
-| Campus-code canvas | 264 × 264 px |
+| Main title | 30 px in a 210 × 48 px target |
+| Summary card | 338 × 80 px with 28 px primary and 22 px secondary text |
+| List action | 218 × 48 px |
+| Detail card | 338 × 196 px |
+| Campus-code canvas | 265 × 265 px. A 45-module code uses 5 px cells and a four-module quiet zone. |
 
 The vertical native `swiper` owns Crown focus on the root. Native `list` owns it in details through `rotation({focus: true})`. Root pages contain stacks rather than nested lists. The QR encoder uses byte mode, error correction M, integer-sized modules and a quiet zone of at least four modules. Circular launcher icons preserve the original red P pixels.
 
@@ -28,13 +26,15 @@ Logout, account changes and explicit revocation clear the owner's cached data. W
 
 ## Campus codes
 
-Android fetches the online campus code using the signed-in campus card, encodes the original bytes as a QR matrix and sends it over the authenticated Wear Engine session. The watch paints the matrix until its 30-second validity ends. After explicit Android opt-in, the watch saves an unlimited-use offline grant under the paired account using AES-GCM. A tap on the code page then generates a new code on the watch.
+Android fetches the online campus code using the signed-in campus card, encodes the original bytes as a QR matrix and sends it over the authenticated Wear Engine session. The watch paints the matrix until its 30-second validity ends. After explicit Android opt-in, the watch saves an unlimited-use offline grant under the paired account using AES-GCM. Opening the campus-code page displays a valid code or requests one from the connected phone. When disconnected or after a phone request times out, a restored offline grant starts generation automatically. Tap to refresh an expired code or retry a failed attempt.
 
 The first offline request during a page visit checks the public key against the signing key. Each presentation uses native randomness and signs the issuer bytes and timestamp with SM2/SM3. The page draws the binary payload until the earlier of grant expiry and 30 seconds from its timestamp. Changing pages or hiding the app cancels queued work.
 
 A paired watch can request a code while TechPie is in the background if Android can run the Flutter engine and the Wear Engine receiver is registered. Reopening the watch can initiate a new handshake through that receiver. After process death, force-stop or receiver loss, open TechPie on the phone to restore the connection.
 
 ## Acceptance
+
+On 0.4.19, with Android TechPie stopped, the GT 6 Pro displayed the offline QR code and countdown on launch without a tap. The user turned the Crown through the timetable and deadlines and confirmed that summaries and buttons fit the round screen.
 
 On a GT 6 Pro running 0.4.16, the watch acknowledged the offline grant and timetable. With the Android app force-stopped, reopening the watch app and tapping the campus-code prompt displayed a QR code and expiry countdown. The user estimated 13 seconds. The device recorded 17,707 ms from tap to draw, including 8,476 ms for key preparation and signing, 8,984 ms for QR encoding and 127 ms for painting. Reader acceptance remains unverified.
 
