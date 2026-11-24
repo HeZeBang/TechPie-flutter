@@ -23,6 +23,23 @@ when packaging the companion for Android release users. The build mode named
 `debug` is the SDK's Lite BIN packaging path; it does not select the phone's
 certificate. A fresh compilation is required when changing the override.
 
+The Android APK targets the store companion (`club.geekpie.techpie.wear`) by
+default. To pair an Android debug build with the GT 6 Pro test companion
+(`com.geekpie.techpie.watch`), save the installed watch app's complete Wear
+Engine peer identifier in a local JSON file and pass it to Flutter.
+
+```json
+{"HUAWEI_WATCH_FINGERPRINT": "<complete Wear Engine peer identifier>"}
+```
+
+```sh
+flutter build apk --debug --target-platform android-arm64 --dart-define-from-file=/path/to/watch-peer.local.json
+```
+
+A phone-side ping result of `200` means Wear Engine found no installed app
+matching the configured peer. Check the watch app package and fingerprint.
+For `201`, open the installed app on the watch and retry.
+
 Run the portable checks without the Huawei SDK:
 
 ```sh
