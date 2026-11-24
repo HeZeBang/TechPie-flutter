@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/theme.dart';
+import '../../design_system/tp_brand_mark.dart';
 import '../app_destination.dart';
 import 'desktop_sidebar_item.dart';
 import 'desktop_sidebar_tokens.dart';
@@ -141,27 +142,23 @@ class _SidebarBrand extends StatelessWidget {
                       DesktopSidebarTokens.brandTextGap +
                       DesktopSidebarTokens.minLabelWidth;
 
+          final logo = SizedBox(
+            width: DesktopSidebarTokens.iconColumnWidth,
+            child: Center(
+              child: TpBrandMark(
+                size: 40,
+                semanticLabel: canShowLabel ? null : 'TechPie',
+              ),
+            ),
+          );
+
           return Row(
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
-              SizedBox(
-                width: DesktopSidebarTokens.iconColumnWidth,
-                child: Center(
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: colors.opaqueBrandContainer,
-                      borderRadius: BorderRadius.circular(TpTokens.radiusS),
-                    ),
-                    child: Icon(
-                      TpIcons.graduation,
-                      size: TpTokens.iconM - 2,
-                      color: colors.brandInk,
-                    ),
-                  ),
-                ),
-              ),
+              if (!canShowLabel)
+                Tooltip(message: 'TechPie', child: logo)
+              else
+                logo,
               if (canShowLabel) ...[
                 const SizedBox(width: DesktopSidebarTokens.brandTextGap),
                 Expanded(
@@ -170,8 +167,9 @@ class _SidebarBrand extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TpTypography.cardTitle(colors).copyWith(
-                      fontSize: 16,
-                      letterSpacing: -0.2,
+                      fontSize: 17.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
                     ),
                   ),
                 ),

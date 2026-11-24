@@ -25,6 +25,7 @@ import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_item.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_tokens.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
+import 'package:techpie/widgets/design_system/tp_brand_mark.dart';
 
 void main() {
   Future<void> pumpApp(WidgetTester tester) async {
@@ -70,7 +71,15 @@ void main() {
     expect(find.byType(DesktopShell), findsOneWidget);
     expect(find.byType(DesktopSidebar), findsOneWidget);
     expect(find.byType(TgBottomNavBar), findsNothing);
+    expect(find.byType(TpBrandMark), findsOneWidget);
     expect(find.text('TechPie'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(DesktopSidebar),
+        matching: find.byIcon(TpIcons.graduation),
+      ),
+      findsNothing,
+    );
 
     // Bento Home places Campus Card & Quick Actions to the right of Today Courses.
     final coursesPos = tester.getTopLeft(
