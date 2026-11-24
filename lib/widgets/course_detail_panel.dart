@@ -35,8 +35,10 @@ class CourseDetailContent extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = context.tpColors;
     final ios = isIos();
-    final resolvedAccent =
-        accentColor ?? course.color.accentColor(theme.brightness);
+    final resolvedAccent = accentColor ??
+        (course.source is ExamCourseSource
+            ? colors.dangerRed
+            : course.color.accentColor(theme.brightness));
     final (kindLabel, kindTone) = switch (course.source) {
       ExamCourseSource() => ('考试', TpBadgeTone.danger),
       CustomCourseSource() => ('自定义', TpBadgeTone.info),

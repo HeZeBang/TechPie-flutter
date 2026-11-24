@@ -88,6 +88,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
       _weekdays.add(DateTime.now().weekday);
       _startPeriod = 1;
       _endPeriod = 1;
+      _color = _pickDefaultColor();
       return;
     }
 
@@ -432,6 +433,13 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                 ),
                 const SizedBox(height: TpTokens.sectionGap),
                 _section(
+                  '颜色',
+                  children: [
+                    _buildColorPicker(context, colors),
+                  ],
+                ),
+                const SizedBox(height: TpTokens.sectionGap),
+                _section(
                   '课程时间',
                   children: [
                     if (_isOneOff)
@@ -755,6 +763,85 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
               style: TpTypography.badge(colors.brandInk),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  CourseColor _pickDefaultColor() {
+    final used = <CourseColor>{
+      ...assignCourseColors(
+        _schedule.fullCourseTable?.courses ?? const <EamsCourse>[],
+      ).values,
+      for (final c in _schedule.customCoursesFor(_semesterId)) c.color,
+    };
+    return CourseColor.regularPalette.firstWhere(
+      (color) => !used.contains(color),
+      orElse: () => CourseColor.regularPalette[
+          used.length % CourseColor.regularPalette.length],
+    );
+  }
+
+  Widget _buildColorPicker(BuildContext context, TpColors colors) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final options = <CourseColor>[
+      ...CourseColor.regularPalette,
+      if (_color == CourseColor.error) CourseColor.error,
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: TpTokens.space1),
+      child: Wrap(
+        spacing: TpTokens.space2,
+        runSpacing: TpTokens.space2,
+        children: [
+          for (final option in options)
+            _buildColorSwatch(
+              option: option,
+              selected: option == _color,
+              colorScheme: colorScheme,
+              colors: colors,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildColorSwatch({
+    required CourseColor option,
+    required bool selected,
+    required ColorScheme colorScheme,
+    required TpColors colors,
+  }) {
+    final accent = option.accentColor(colors.brightness);
+    final fill = option.containerColor(colorScheme);
+    final checkColor = option.onContainerColor(colorScheme);
+    return Tooltip(
+      message: option.displayLabel,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: '课程颜色：${option.displayLabel}',
+        child: InkResponse(
+          key: ValueKey('custom-course.color.${option.name}'),
+          onTap: () => setState(() => _color = option),
+          radius: 18,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected ? fill : accent,
+              border: Border.all(
+                color: selected ? accent : option.borderColor(colors.brightness),
+                width: selected ? 2.5 : 1,
+              ),
+            ),
+            child: selected
+                ? Icon(TpIcons.check, size: TpTokens.iconS, color: checkColor)
+                : null,
+          ),
         ),
       ),
     );

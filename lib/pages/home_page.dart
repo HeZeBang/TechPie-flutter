@@ -642,14 +642,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final isSoon = status == _CourseStatus.soon;
     final isPast = status == _CourseStatus.past;
 
-    final Color barColor;
-    if (course.isCustom || course.source is ExamCourseSource) {
-      barColor = colors.successGreen;
-    } else if (isActive || index.isEven) {
-      barColor = colors.brand;
-    } else {
-      barColor = colors.infoBlue;
-    }
+    final isExam = course.source is ExamCourseSource;
+    final barColor = isExam
+        ? colors.dangerRed
+        : course.color.accentColor(colors.brightness);
 
     final subtitle = course.location.isNotEmpty
         ? '${course.timeLabel} · ${course.location}'
@@ -660,6 +656,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       trailing = const TpBadge(label: '进行中', tone: TpBadgeTone.brand);
     } else if (isSoon) {
       trailing = const TpBadge(label: '即将开始', tone: TpBadgeTone.success);
+    } else if (isExam) {
+      trailing = const TpBadge(label: '考试', tone: TpBadgeTone.danger);
     }
 
     return TpAccentRow(
