@@ -252,8 +252,13 @@ class SessionTree extends ChangeNotifier {
     SessionNode node,
     Future<CookieAction<T>> Function(CookieProvider provider) action,
   ) async {
+    int? parentEpochBeforeChildRenew;
     // First level: single-node renew-retry (handles initial minting + 401).
-    var result = await _renewRetry(node, action);
+    var result = await _renewRetry(
+      node,
+      action,
+      onBeforeRenew: () => parentEpochBeforeChildRenew = node.parent?.epoch,
+    );
     if (result != null) return result;
 
     // Second level: for child nodes whose first-level retry returned null.
@@ -264,7 +269,9 @@ class SessionTree extends ChangeNotifier {
     // Transient service errors do not need a new IDS login.
     if (node.parent == null) return null;
     if (!node.lastRenewWasCredentialError) return null;
-    final parentOk = await node.parent!.renewIfNeeded(node.parent!.epoch);
+    final parentOk = await node.parent!.renewIfNeeded(
+      parentEpochBeforeChildRenew ?? node.parent!.epoch,
+    );
     if (!parentOk) return null;
     final childOk = await node.renew();
     if (!childOk) return null;
@@ -280,9 +287,11 @@ class SessionTree extends ChangeNotifier {
   /// attempt two-level fallback for child nodes).
   Future<T?> _renewRetry<T>(
     SessionNode node,
-    Future<CookieAction<T>> Function(CookieProvider provider) action,
-  ) async {
-    if (!await _ensureUsable(node)) return null;
+    Future<CookieAction<T>> Function(CookieProvider provider) action, {
+    void Function()? onBeforeRenew,
+  }) async {
+    if (!await _ensureUsable(node, onBeforeChildRenew: onBeforeRenew)) return null;
+    final beforeEpoch = node.epoch;
     var cp = node.cookieProvider;
     if (cp == null) return null;
 
@@ -290,7 +299,7 @@ class SessionTree extends ChangeNotifier {
     if (!result.expired) return result.value;
 
     // 401: renew if the cookie hasn't already been refreshed since we read it.
-    final beforeEpoch = node.epoch;
+    onBeforeRenew?.call();
     final ok = await node.renewIfNeeded(beforeEpoch);
     if (!ok) return null;
 
@@ -315,15 +324,24 @@ class SessionTree extends ChangeNotifier {
   /// Renews [node] when its schedule says it is due, parent first, minting the
   /// downstream cookie when it is missing. Returns whether the node can be
   /// read afterwards.
-  Future<bool> _ensureUsable(SessionNode node) async {
+  Future<bool> _ensureUsable(
+    SessionNode node, {
+    void Function()? onBeforeChildRenew,
+  }) async {
     if (node.parent != null &&
         node.parent!.canRenew &&
         (!node.parent!.isAvailable || node.parent!.isRenewDue)) {
       final parentOk = await node.parent!.renewIfDue();
       if (!parentOk) return false;
     }
-    if (!node.isAvailable) return node.renew();
-    if (node.canRenew && node.isRenewDue) return node.renew();
+    if (!node.isAvailable) {
+      onBeforeChildRenew?.call();
+      return node.renew();
+    }
+    if (node.canRenew && node.isRenewDue) {
+      onBeforeChildRenew?.call();
+      return node.renew();
+    }
     return true;
   }
 

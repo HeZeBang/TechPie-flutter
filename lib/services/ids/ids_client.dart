@@ -411,7 +411,9 @@ class IdsClient {
     };
     final response = await client.request(Uri.parse(entry));
     final html = CampusHttp.text(response);
-    if (parse(html).querySelector('[name="execution"]') != null) {
+    if (response.requestOptions.uri.host == 'ids.shanghaitech.edu.cn' ||
+        parse(html).querySelector('[name="execution"]') != null ||
+        html.contains('统一身份认证')) {
       throw const IdsException('IDS 登录态已失效', credentialRejected: true);
     }
     if (nodeId == 'elearning') {

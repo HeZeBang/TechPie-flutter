@@ -254,17 +254,25 @@ class TermCalendar {
   });
 
   factory TermCalendar.fromJson(Map<String, dynamic> json) {
+    int parseInt(Object? value, [int fallback = 0]) => switch (value) {
+          int v => v,
+          num v => v.toInt(),
+          String v => int.tryParse(v.trim()) ?? fallback,
+          _ => fallback,
+        };
+    final dateText = json['date']?.toString() ?? '';
+    final weekText = json['weekOfTerm']?.toString() ?? '';
     return TermCalendar(
-      code: json['code'] as int? ?? 200,
-      schoolYearTerm: json['schoolYearTerm'] as String? ?? '',
-      termBegin: DateTime.parse(json['termBegin'] as String),
-      snapshotDate: DateTime.tryParse(json['date'] as String? ?? ''),
-      snapshotWeekOfTerm: int.tryParse(json['weekOfTerm'] as String? ?? ''),
-      allTeachWeeks: json['allTeachWeeks'] as int? ?? 0,
-      allTermWeeks: json['allTermWeeks'] as int? ?? 0,
-      amClasses: json['amClasses'] as int? ?? 0,
-      pmClasses: json['pmClasses'] as int? ?? 0,
-      eveClasses: json['eveClasses'] as int? ?? 0,
+      code: parseInt(json['code'], 200),
+      schoolYearTerm: json['schoolYearTerm']?.toString() ?? '',
+      termBegin: DateTime.parse(json['termBegin'].toString()),
+      snapshotDate: DateTime.tryParse(dateText),
+      snapshotWeekOfTerm: int.tryParse(weekText.trim()),
+      allTeachWeeks: parseInt(json['allTeachWeeks']),
+      allTermWeeks: parseInt(json['allTermWeeks']),
+      amClasses: parseInt(json['amClasses']),
+      pmClasses: parseInt(json['pmClasses']),
+      eveClasses: parseInt(json['eveClasses']),
     );
   }
 
