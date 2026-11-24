@@ -526,7 +526,7 @@ class _RestoreBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     return TpCard(
-      color: colors.brandSoft,
+      color: colors.opaqueBrandContainer,
       borderColor: colors.brand.withValues(alpha: 0.25),
       padding: const EdgeInsets.all(TpTokens.space4),
       child: Column(
@@ -534,13 +534,17 @@ class _RestoreBanner extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(TpIcons.download, size: TpTokens.iconM, color: colors.brand),
+              Icon(
+                TpIcons.download,
+                size: TpTokens.iconM,
+                color: colors.brandInk,
+              ),
               const SizedBox(width: TpTokens.space2),
               Expanded(
                 child: Text(
                   '云端有可恢复的备份',
                   style: TpTypography.itemTitle(colors).copyWith(
-                    color: colors.brand,
+                    color: colors.brandInk,
                   ),
                 ),
               ),

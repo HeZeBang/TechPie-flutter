@@ -33,6 +33,7 @@ class EgateAppPage extends StatefulWidget {
 
 class _EgateAppPageState extends State<EgateAppPage> {
   bool _loading = false;
+  bool _submitting = false;
   String? _error;
   String? _message;
   List<EgateAppSignRecord> _history = const [];
@@ -80,6 +81,8 @@ class _EgateAppPageState extends State<EgateAppPage> {
   }
 
   Future<void> _submitCheckin(EgateAppService service, String wid) async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
     try {
       final result = await service.submitCheckin(wid);
       if (!mounted) return;
@@ -96,10 +99,13 @@ class _EgateAppPageState extends State<EgateAppPage> {
         message: '$e',
         style: AdaptiveFeedbackStyle.error,
       );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
   Future<void> _scanQrCode(EgateAppService service) async {
+    if (_submitting) return;
     final runtime = ServiceProvider.of(context).campusCardService.runtime;
     final wid = await showTechPieScanner(
       context,
@@ -114,35 +120,51 @@ class _EgateAppPageState extends State<EgateAppPage> {
   }
 
   Future<void> _enterWidManually(EgateAppService service) async {
+    if (_submitting) return;
     final controller = TextEditingController();
     final wid = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
         final colors = dialogContext.tpColors;
-        return AlertDialog(
-          title: const Text('手动输入签到内容'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: '粘贴或输入二维码内容 (WID)',
-            ),
-          ),
-          actions: [
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: colors.textSecondary,
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final canSubmit = controller.text.trim().isNotEmpty;
+            return AlertDialog(
+              title: const Text('手动输入签到内容'),
+              content: TextField(
+                controller: controller,
+                autofocus: true,
+                maxLines: 4,
+                minLines: 1,
+                textInputAction: TextInputAction.done,
+                onChanged: (_) => setDialogState(() {}),
+                onSubmitted: (value) {
+                  if (value.trim().isNotEmpty) {
+                    Navigator.of(dialogContext).pop(value.trim());
+                  }
+                },
+                decoration: const InputDecoration(
+                  hintText: '粘贴或输入二维码内容 (WID)',
+                ),
               ),
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(controller.text.trim()),
-              child: const Text('提交'),
-            ),
-          ],
+              actions: [
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: colors.textSecondary,
+                  ),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: canSubmit
+                      ? () =>
+                          Navigator.of(dialogContext).pop(controller.text.trim())
+                      : null,
+                  child: const Text('提交'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -318,6 +340,12 @@ class _EgateAppPageState extends State<EgateAppPage> {
                                       .copyWith(color: colors.textPrimary),
                                 ),
                               ),
+                              TextButton(
+                                onPressed: _loading
+                                    ? null
+                                    : () => unawaited(_refresh(service)),
+                                child: const Text('重试'),
+                              ),
                             ],
                           ),
                         ),
@@ -351,12 +379,14 @@ class _EgateAppPageState extends State<EgateAppPage> {
                           if (canScanWithCamera) ...[
                             Expanded(
                               child: AdaptiveButton(
-                                onPressed: () =>
-                                    unawaited(_scanQrCode(service)),
+                                onPressed: _submitting
+                                    ? null
+                                    : () => unawaited(_scanQrCode(service)),
                                 icon: TpIcons.qrCode,
                                 sfSymbol: 'qrcode.viewfinder',
                                 label: '扫码签到',
                                 role: AdaptiveButtonRole.prominent,
+                                loading: _submitting,
                                 height: 46,
                               ),
                             ),
@@ -364,14 +394,16 @@ class _EgateAppPageState extends State<EgateAppPage> {
                           ],
                           Expanded(
                             child: AdaptiveButton(
-                              onPressed: () =>
-                                  unawaited(_enterWidManually(service)),
+                              onPressed: _submitting
+                                  ? null
+                                  : () => unawaited(_enterWidManually(service)),
                               icon: TpIcons.edit,
                               sfSymbol: 'keyboard',
                               label: '手动输入',
                               role: canScanWithCamera
                                   ? AdaptiveButtonRole.standard
                                   : AdaptiveButtonRole.prominent,
+                              loading: _submitting && !canScanWithCamera,
                               height: 46,
                             ),
                           ),

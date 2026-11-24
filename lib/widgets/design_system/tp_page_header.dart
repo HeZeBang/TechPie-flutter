@@ -81,31 +81,37 @@ class TpAvatarBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
+    final content = SizedBox(
+      width: size,
+      height: size,
+      child: Center(
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: colors.onBrand,
+            letterSpacing: 0.2,
+            fontFamilyFallback: TpTypography.fontFamilyFallback,
+          ),
+          maxLines: 1,
+        ),
+      ),
+    );
     final badge = Material(
       color: colors.brand,
       shape: const CircleBorder(),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Center(
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: colors.onBrand,
-                letterSpacing: 0.2,
-                fontFamilyFallback: TpTypography.fontFamilyFallback,
-              ),
-              maxLines: 1,
+      child: onTap == null
+          ? content
+          : InkWell(
+              onTap: onTap,
+              customBorder: const CircleBorder(),
+              hoverColor: colors.onBrand.withValues(alpha: 0.12),
+              highlightColor: colors.onBrand.withValues(alpha: 0.16),
+              splashColor: colors.onBrand.withValues(alpha: 0.22),
+              child: content,
             ),
-          ),
-        ),
-      ),
     );
 
     if (tooltip == null) return badge;

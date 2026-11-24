@@ -39,7 +39,7 @@ class TpBentoGrid extends StatelessWidget {
     this.secondaryFlex = 45,
     this.columnGap = TpTokens.space4,
     this.verticalGap = TpTokens.sectionGap,
-    this.breakpoint = 740,
+    this.breakpoint = TpTokens.singleColumnMaxWidth,
   });
 
   final List<Widget> primaryColumn;

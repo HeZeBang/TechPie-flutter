@@ -259,46 +259,49 @@ class _FeedbackBanner extends StatelessWidget {
     final style = _FeedbackStyle.from(theme, entry.style);
     final radius = BorderRadius.circular(rounded ? 16 : 10);
 
-    return Material(
-      color: style.backgroundColor,
-      elevation: 6,
-      shadowColor: Colors.black.withValues(alpha: 0.25),
-      shape: RoundedRectangleBorder(
-        borderRadius: radius,
-        side: style.borderColor == null
-            ? BorderSide.none
-            : BorderSide(color: style.borderColor!),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: AnimatedContainer(
-        duration: repositionDuration,
-        curve: repositionCurve,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(style.icon, color: style.iconColor),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                entry.message,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: style.foregroundColor),
-              ),
-            ),
-            if (entry.actionLabel != null) ...[
-              const SizedBox(width: 8),
-              TextButton(
-                style: TextButton.styleFrom(
-                  foregroundColor: style.actionColor,
-                  textStyle: const TextStyle(fontWeight: FontWeight.w600),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: Material(
+        color: style.backgroundColor,
+        elevation: 6,
+        shadowColor: Colors.black.withValues(alpha: 0.25),
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: style.borderColor == null
+              ? BorderSide.none
+              : BorderSide(color: style.borderColor!),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: AnimatedContainer(
+          duration: repositionDuration,
+          curve: repositionCurve,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(style.icon, color: style.iconColor),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  entry.message,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: style.foregroundColor),
                 ),
-                onPressed: () =>
-                    adaptiveFeedbackHostKey.currentState?._runAction(entry),
-                child: Text(entry.actionLabel!),
               ),
+              if (entry.actionLabel != null) ...[
+                const SizedBox(width: 8),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: style.actionColor,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  onPressed: () =>
+                      adaptiveFeedbackHostKey.currentState?._runAction(entry),
+                  child: Text(entry.actionLabel!),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

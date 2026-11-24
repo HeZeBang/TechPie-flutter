@@ -197,6 +197,17 @@ class _FeedbackPageState extends State<FeedbackPage> {
                           style: TpTypography.itemMeta(colors),
                           textAlign: TextAlign.center,
                         ),
+                        const SizedBox(height: TpTokens.space5),
+                        AdaptiveButton(
+                          label: '返回',
+                          icon: TpIcons.chevronLeft,
+                          sfSymbol: 'chevron.left',
+                          role: AdaptiveButtonRole.standard,
+                          width: 160,
+                          height: 44,
+                          onPressed: () =>
+                              unawaited(maybePopAdaptivePage<void>(context)),
+                        ),
                       ],
                     ),
                   )
@@ -385,6 +396,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                               controller: _contact,
                               enabled: !_busy,
                               maxLength: 200,
+                              textInputAction: TextInputAction.done,
                               decoration: const InputDecoration(
                                 labelText: '补充联系方式（选填）',
                                 border: OutlineInputBorder(),
@@ -400,9 +412,8 @@ class _FeedbackPageState extends State<FeedbackPage> {
                       if (_error != null) ...[
                         const SizedBox(height: TpTokens.sectionGap),
                         TpCard(
-                          color: colors.dangerRed
-                              .withValues(alpha: colors.isDark ? 0.16 : 0.08),
-                          borderColor: colors.dangerRed.withValues(alpha: 0.25),
+                          color: colors.opaqueDangerContainer,
+                          borderColor: colors.dangerRed.withValues(alpha: 0.30),
                           padding: const EdgeInsets.all(TpTokens.space3),
                           child: Text(
                             _error!,

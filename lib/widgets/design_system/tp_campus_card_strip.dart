@@ -91,8 +91,17 @@ class TpCampusCardStrip extends StatelessWidget {
             child: InkWell(
               key: const ValueKey('home.campus-card-pay'),
               onTap: onOpenPayCode,
-              highlightColor: colors.textPrimary.withValues(alpha: 0.08),
-              splashColor: colors.brandSoft,
+              hoverColor: configured
+                  ? colors.onBrand.withValues(alpha: 0.12)
+                  : colors.textPrimary.withValues(
+                      alpha: colors.isDark ? 0.06 : 0.04,
+                    ),
+              highlightColor: configured
+                  ? colors.onBrand.withValues(alpha: 0.16)
+                  : colors.textPrimary.withValues(alpha: 0.08),
+              splashColor: configured
+                  ? colors.onBrand.withValues(alpha: 0.22)
+                  : colors.brandSoft,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: TpTokens.space3,

@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/theme.dart';
 import '../utils/platform.dart';
 
 Future<String?> showAdaptiveTextInputDialog({
@@ -91,10 +92,13 @@ class _AdaptiveTextInputDialog extends StatefulWidget {
 class _AdaptiveTextInputDialogState extends State<_AdaptiveTextInputDialog> {
   late final TextEditingController _controller;
   late final TextEditingController _confirmationController;
+  final FocusNode _confirmationFocusNode = FocusNode();
+  late bool _obscured;
 
   @override
   void initState() {
     super.initState();
+    _obscured = widget.obscureText;
     _controller = TextEditingController(text: widget.initialValue);
     _confirmationController = TextEditingController();
     _controller.selection = TextSelection(
@@ -107,6 +111,7 @@ class _AdaptiveTextInputDialogState extends State<_AdaptiveTextInputDialog> {
   void dispose() {
     _controller.dispose();
     _confirmationController.dispose();
+    _confirmationFocusNode.dispose();
     super.dispose();
   }
 
@@ -115,7 +120,11 @@ class _AdaptiveTextInputDialogState extends State<_AdaptiveTextInputDialog> {
   bool get _valuesMatch =>
       !_needsConfirmation || _controller.text == _confirmationController.text;
 
-  bool get _canSubmit => _controller.text.isNotEmpty && _valuesMatch;
+  bool get _hasContent => widget.trimResult
+      ? _controller.text.trim().isNotEmpty
+      : _controller.text.isNotEmpty;
+
+  bool get _canSubmit => _hasContent && _valuesMatch;
 
   String get _result =>
       widget.trimResult ? _controller.text.trim() : _controller.text;
@@ -157,13 +166,18 @@ class _AdaptiveTextInputDialogState extends State<_AdaptiveTextInputDialog> {
         label: widget.fieldLabel,
         hint: widget.hintText,
         autofocus: true,
-        onSubmitted: _needsConfirmation ? null : (_) => _submit(),
+        isNext: _needsConfirmation,
+        onSubmitted: _needsConfirmation
+            ? (_) => _confirmationFocusNode.requestFocus()
+            : (_) => _submit(),
       ),
       if (_needsConfirmation) ...[
         const SizedBox(height: 12),
         _buildTextField(
           controller: _confirmationController,
+          focusNode: _confirmationFocusNode,
           label: widget.confirmationFieldLabel!,
+          isNext: false,
           onSubmitted: (_) => _submit(),
         ),
       ],
@@ -191,18 +205,21 @@ class _AdaptiveTextInputDialogState extends State<_AdaptiveTextInputDialog> {
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
+    FocusNode? focusNode,
     String? hint,
     bool autofocus = false,
+    bool isNext = false,
     ValueChanged<String>? onSubmitted,
   }) {
+    final action = isNext ? TextInputAction.next : TextInputAction.done;
     if (widget.usesCupertinoStyle) {
       return CupertinoTextField(
         controller: controller,
-        obscureText: widget.obscureText,
+        focusNode: focusNode,
+        obscureText: _obscured,
         autofocus: autofocus,
         placeholder: hint == null ? label : '$label - $hint',
-        textInputAction:
-            onSubmitted == null ? TextInputAction.next : TextInputAction.done,
+        textInputAction: action,
         onChanged: _onChanged,
         onSubmitted: onSubmitted,
       );
@@ -210,15 +227,25 @@ class _AdaptiveTextInputDialogState extends State<_AdaptiveTextInputDialog> {
 
     return TextField(
       controller: controller,
-      obscureText: widget.obscureText,
+      focusNode: focusNode,
+      obscureText: _obscured,
       autofocus: autofocus,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
         border: const OutlineInputBorder(),
+        suffixIcon: widget.obscureText
+            ? IconButton(
+                tooltip: _obscured ? '显示密码' : '隐藏密码',
+                icon: Icon(
+                  _obscured ? TpIcons.eye : TpIcons.eyeOff,
+                  size: TpTokens.iconS,
+                ),
+                onPressed: () => setState(() => _obscured = !_obscured),
+              )
+            : null,
       ),
-      textInputAction:
-          onSubmitted == null ? TextInputAction.next : TextInputAction.done,
+      textInputAction: action,
       onChanged: _onChanged,
       onSubmitted: onSubmitted,
     );
@@ -247,11 +274,16 @@ class _AdaptiveTextInputDialogState extends State<_AdaptiveTextInputDialog> {
       );
     }
 
+    final colors = context.tpColors;
     return AlertDialog(
       title: Text(widget.title),
       content: SingleChildScrollView(child: _buildFields()),
       actions: [
-        TextButton(onPressed: _close, child: const Text('取消')),
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: colors.textSecondary),
+          onPressed: _close,
+          child: const Text('取消'),
+        ),
         FilledButton(
           onPressed: _canSubmit ? _submit : null,
           child: Text(widget.confirmLabel),

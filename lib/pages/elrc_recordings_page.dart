@@ -588,7 +588,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
                     child: Icon(
                       icon,
                       size: TpTokens.iconL + 4,
-                      color: colors.brand,
+                      color: colors.brandInk,
                     ),
                   ),
                 const SizedBox(height: TpTokens.space4),
@@ -618,8 +618,8 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   }
 
   Widget _errorCard(TpColors colors, VoidCallback retry) => TpCard(
-        color: colors.dangerRed.withValues(alpha: colors.isDark ? 0.16 : 0.08),
-        borderColor: colors.dangerRed.withValues(alpha: 0.25),
+        color: colors.opaqueDangerContainer,
+        borderColor: colors.dangerRed.withValues(alpha: 0.30),
         borderRadius: TpTokens.radiusS,
         padding: const EdgeInsets.fromLTRB(
           TpTokens.space4,
@@ -922,7 +922,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
                       for (var i = 0; i < filtered.length; i++)
                         TpListRow(
                           icon: TpIcons.recordings,
-                          iconColor: colors.brand,
+                          iconColor: colors.brandInk,
                           title: filtered[i].name,
                           subtitle: _courseSubtitle(filtered[i]).isEmpty
                               ? null

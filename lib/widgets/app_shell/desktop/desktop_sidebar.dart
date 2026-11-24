@@ -223,8 +223,10 @@ class _SidebarToggleButton extends StatelessWidget {
         padding: EdgeInsets.zero,
         foregroundColor: colors.textMuted,
         backgroundColor: Colors.transparent,
-        hoverColor: colors.surfaceSubtle,
-        highlightColor: colors.surfacePressed,
+        hoverColor: colors.textPrimary.withValues(
+          alpha: colors.isDark ? 0.06 : 0.04,
+        ),
+        highlightColor: colors.textPrimary.withValues(alpha: 0.08),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(TpTokens.radiusS),
         ),

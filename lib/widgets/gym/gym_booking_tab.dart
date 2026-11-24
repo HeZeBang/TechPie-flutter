@@ -18,7 +18,8 @@ class GymBookingTab extends StatefulWidget {
   State<GymBookingTab> createState() => _GymBookingTabState();
 }
 
-class _GymBookingTabState extends State<GymBookingTab> {
+class _GymBookingTabState extends State<GymBookingTab>
+    with AutomaticKeepAliveClientMixin {
   final Set<OaSport> _sports = {OaSport.badminton};
   final Map<String, Set<int>> _selectedCourts = {};
   DateTime _date = DateTime.now();
@@ -220,7 +221,11 @@ class _GymBookingTabState extends State<GymBookingTab> {
       _selectedCourts.values.fold(0, (sum, set) => sum + set.length);
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     final colors = context.tpColors;
     final grouped = {
       for (final item in _availability) item.key: item,
@@ -275,6 +280,10 @@ class _GymBookingTabState extends State<GymBookingTab> {
                     InkWell(
                       onTap: _submitting ? null : _pickDate,
                       borderRadius: BorderRadius.circular(TpTokens.radiusS),
+                      hoverColor: colors.textPrimary.withValues(
+                        alpha: colors.isDark ? 0.06 : 0.04,
+                      ),
+                      splashColor: colors.brandSoft,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Row(

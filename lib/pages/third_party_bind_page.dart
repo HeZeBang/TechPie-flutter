@@ -342,8 +342,8 @@ class _InlineBindFeedback extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     return TpCard(
-      color: colors.dangerRed.withValues(alpha: colors.isDark ? 0.16 : 0.08),
-      borderColor: colors.dangerRed.withValues(alpha: 0.25),
+      color: colors.opaqueDangerContainer,
+      borderColor: colors.dangerRed.withValues(alpha: 0.30),
       borderRadius: TpTokens.radiusS,
       padding: const EdgeInsets.symmetric(
         horizontal: TpTokens.space3,

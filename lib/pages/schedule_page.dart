@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
@@ -691,14 +692,23 @@ class _SchedulePageState extends State<SchedulePage> {
                         totalWeeks: _schedule.totalWeeks,
                         onWeekChanged: _setWeek,
                       )
-                    : GestureDetector(
-                        behavior: HitTestBehavior.opaque,
+                    : InkWell(
+                        borderRadius: BorderRadius.circular(TpTokens.radiusS),
+                        hoverColor: colors.textPrimary.withValues(
+                          alpha: colors.isDark ? 0.06 : 0.04,
+                        ),
                         onTap: _showWeekPicker,
-                        child: _WeekTitleContent(
-                          currentWeek: _currentWeek,
-                          semesterLabel: _semesterLabel,
-                          slideDirection: _slideDirection,
-                          trailingIcon: Icons.unfold_more,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: TpTokens.space1,
+                            vertical: TpTokens.space1,
+                          ),
+                          child: _WeekTitleContent(
+                            currentWeek: _currentWeek,
+                            semesterLabel: _semesterLabel,
+                            slideDirection: _slideDirection,
+                            trailingIcon: Icons.unfold_more,
+                          ),
                         ),
                       ),
               ),
@@ -724,12 +734,12 @@ class _SchedulePageState extends State<SchedulePage> {
             IconButton(
               icon: const Icon(TpIcons.chevronLeft),
               tooltip: '上一周',
-              onPressed: _previousWeek,
+              onPressed: _currentWeek > 1 ? _previousWeek : null,
             ),
             IconButton(
               icon: const Icon(TpIcons.chevronRight),
               tooltip: '下一周',
-              onPressed: _nextWeek,
+              onPressed: _currentWeek < _schedule.totalWeeks ? _nextWeek : null,
             ),
             IconButton(
               tooltip: _exportingCalendar ? '正在导出课表' : '导出课表',
@@ -818,7 +828,7 @@ class _SchedulePageState extends State<SchedulePage> {
                               child: Icon(
                                 TpIcons.schedule,
                                 size: TpTokens.iconL + 4,
-                                color: colors.brand,
+                                color: colors.brandInk,
                               ),
                             ),
                             const SizedBox(height: TpTokens.space4),
@@ -901,20 +911,30 @@ class _SchedulePageState extends State<SchedulePage> {
                                 isViewingCurrentWeek: isViewingCurrentWeek,
                               )
                             : usesHorizontalWeekPaging()
-                                ? PageView.builder(
-                                    controller: _weekPageController,
-                                    itemCount: _schedule.totalWeeks,
-                                    onPageChanged: _onWeekPageChanged,
-                                    itemBuilder: (context, index) {
-                                      final week = index + 1;
-                                      return _buildScheduleWeek(
-                                        context,
-                                        theme,
-                                        today,
-                                        week,
-                                        _coursesForWeek(week),
-                                      );
-                                    },
+                                ? ScrollConfiguration(
+                                    behavior: ScrollConfiguration.of(context)
+                                        .copyWith(
+                                      dragDevices: {
+                                        ...ScrollConfiguration.of(context)
+                                            .dragDevices,
+                                        PointerDeviceKind.mouse,
+                                      },
+                                    ),
+                                    child: PageView.builder(
+                                      controller: _weekPageController,
+                                      itemCount: _schedule.totalWeeks,
+                                      onPageChanged: _onWeekPageChanged,
+                                      itemBuilder: (context, index) {
+                                        final week = index + 1;
+                                        return _buildScheduleWeek(
+                                          context,
+                                          theme,
+                                          today,
+                                          week,
+                                          _coursesForWeek(week),
+                                        );
+                                      },
+                                    ),
                                   )
                                 : _buildScheduleWeek(
                                     context,
@@ -995,30 +1015,72 @@ class _SchedulePageState extends State<SchedulePage> {
                       visualDensity: VisualDensity.compact,
                     ),
                     Expanded(
-                      child: InkWell(
-                        onTap: usesSidebarLayout(context) ? null : _showWeekPicker,
-                        borderRadius: BorderRadius.circular(TpTokens.radiusS),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: TpTokens.space1,
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '第 $_currentWeek 周',
-                                style: TpTypography.cardTitle(colors),
+                      child: usesSidebarLayout(context)
+                          ? DesktopSelectPopover<int>(
+                              items: List<int>.generate(
+                                _schedule.totalWeeks,
+                                (index) => index + 1,
                               ),
-                              Text(
-                                totalVisibleCount > 0
-                                    ? '共 $totalVisibleCount 节课程安排'
-                                    : '本周暂无课程安排',
-                                style: TpTypography.cardMeta(colors),
+                              value: _currentWeek,
+                              onChanged: _setWeek,
+                              labelBuilder: (week) => '第 $week 周',
+                              width: 200,
+                              itemHeight: 48,
+                              visibleItemCount: 5,
+                              anchorBuilder: (context, _, toggle) => InkWell(
+                                onTap: toggle,
+                                borderRadius:
+                                    BorderRadius.circular(TpTokens.radiusS),
+                                hoverColor: colors.textPrimary.withValues(
+                                  alpha: colors.isDark ? 0.06 : 0.04,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: TpTokens.space1,
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '第 $_currentWeek 周',
+                                        style: TpTypography.cardTitle(colors),
+                                      ),
+                                      Text(
+                                        totalVisibleCount > 0
+                                            ? '共 $totalVisibleCount 节课程安排'
+                                            : '本周暂无课程安排',
+                                        style: TpTypography.cardMeta(colors),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
+                            )
+                          : InkWell(
+                              onTap: _showWeekPicker,
+                              borderRadius:
+                                  BorderRadius.circular(TpTokens.radiusS),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: TpTokens.space1,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '第 $_currentWeek 周',
+                                      style: TpTypography.cardTitle(colors),
+                                    ),
+                                    Text(
+                                      totalVisibleCount > 0
+                                          ? '共 $totalVisibleCount 节课程安排'
+                                          : '本周暂无课程安排',
+                                      style: TpTypography.cardMeta(colors),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                     ),
                     if (isInTerm && !isViewingCurrentWeek)
                       TextButton(
@@ -1380,7 +1442,11 @@ class _SchedulePageState extends State<SchedulePage> {
                   await _schedule.selectGraduateScheme(value);
                 } catch (e) {
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+                    showAdaptiveFeedback(
+                      context: context,
+                      message: '$e',
+                      style: AdaptiveFeedbackStyle.error,
+                    );
                   }
                 }
               },
@@ -1400,41 +1466,53 @@ class _SchedulePageState extends State<SchedulePage> {
   Future<void> _showScheduleSource() async {
     final source = await showDialog<CampusScheduleSource>(
       context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('课表来源'),
-        children: [
-          for (final option in [
-            (CampusScheduleSource.automatic, '自动识别（IDS 身份）'),
-            (CampusScheduleSource.undergraduate, '本科教务课表'),
-            (CampusScheduleSource.graduate, '研究生课表'),
-          ])
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, option.$1),
-              child: Row(
-                children: [
-                  Icon(
-                    _schedule.scheduleSource == option.$1
-                        ? Icons.check_circle_outline
-                        : Icons.circle_outlined,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Flexible(child: Text(option.$2)),
-                ],
+      builder: (context) {
+        final colors = context.tpColors;
+        return SimpleDialog(
+          title: const Text('课表来源'),
+          children: [
+            for (final option in [
+              (CampusScheduleSource.automatic, '自动识别（IDS 身份）'),
+              (CampusScheduleSource.undergraduate, '本科教务课表'),
+              (CampusScheduleSource.graduate, '研究生课表'),
+            ])
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, option.$1),
+                child: Row(
+                  children: [
+                    Icon(
+                      _schedule.scheduleSource == option.$1
+                          ? TpIcons.checkCircle
+                          : Icons.circle_outlined,
+                      size: 20,
+                      color: _schedule.scheduleSource == option.$1
+                          ? colors.brandInk
+                          : colors.textMuted,
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(child: Text(option.$2)),
+                  ],
+                ),
               ),
-            ),
-          if (_schedule.identityLabel != null)
-            Padding(padding: const EdgeInsets.all(24), child: Text(_schedule.identityLabel!)),
-          if (_schedule.identityWarning != null)
-            Padding(padding: const EdgeInsets.all(24), child: Text(_schedule.identityWarning!)),
-        ],
-      ),
+            if (_schedule.identityLabel != null)
+              Padding(padding: const EdgeInsets.all(24), child: Text(_schedule.identityLabel!)),
+            if (_schedule.identityWarning != null)
+              Padding(padding: const EdgeInsets.all(24), child: Text(_schedule.identityWarning!)),
+          ],
+        );
+      },
     );
     if (source == null || !mounted) return;
     try {
       await _schedule.selectScheduleSource(source);
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+      if (mounted) {
+        showAdaptiveFeedback(
+          context: context,
+          message: '$error',
+          style: AdaptiveFeedbackStyle.error,
+        );
+      }
     }
   }
 
@@ -1583,9 +1661,13 @@ class _SchedulePageState extends State<SchedulePage> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: context.tpColors.textSecondary,
+                    ),
                     onPressed: close,
                     child: const Text('取消'),
                   ),
+                  const SizedBox(width: TpTokens.space2),
                   FilledButton(
                     onPressed: () {
                       close();
@@ -1641,7 +1723,7 @@ class _SchedulePageState extends State<SchedulePage> {
                     },
                   ),
                   DesktopMenuRow(
-                    leading: const Icon(Icons.school_outlined, size: 20),
+                    leading: const Icon(TpIcons.graduation, size: 18),
                     title: Text('课表来源', style: theme.textTheme.bodyMedium),
                     onTap: () {
                       close();
@@ -1650,35 +1732,41 @@ class _SchedulePageState extends State<SchedulePage> {
                   ),
                   const Divider(height: 1),
                   DesktopMenuRow(
+                    selected: _showSaturday,
                     leading: Icon(
-                      _showSaturday ? Icons.check : Icons.check_box_outline_blank,
-                      size: 20,
+                      _showSaturday
+                          ? TpIcons.checkCircle
+                          : Icons.circle_outlined,
+                      size: 18,
                     ),
                     title: Text('显示周六', style: theme.textTheme.bodyMedium),
                     onTap: () => toggle('saturday'),
                   ),
                   DesktopMenuRow(
+                    selected: _showSunday,
                     leading: Icon(
-                      _showSunday ? Icons.check : Icons.check_box_outline_blank,
-                      size: 20,
+                      _showSunday
+                          ? TpIcons.checkCircle
+                          : Icons.circle_outlined,
+                      size: 18,
                     ),
                     title: Text('显示周日', style: theme.textTheme.bodyMedium),
                     onTap: () => toggle('sunday'),
                   ),
                   DesktopMenuRow(
+                    selected: _showGhostCourses,
                     leading: Icon(
-                      _showGhostCourses ? Icons.check : Icons.check_box_outline_blank,
-                      size: 20,
+                      _showGhostCourses
+                          ? TpIcons.checkCircle
+                          : Icons.circle_outlined,
+                      size: 18,
                     ),
                     title: Text('显示非本周课程', style: theme.textTheme.bodyMedium),
                     onTap: () => toggle('ghost'),
                   ),
                   const Divider(height: 1),
                   DesktopMenuRow(
-                    leading: const Icon(
-                      Icons.event_available_outlined,
-                      size: 20,
-                    ),
+                    leading: const Icon(TpIcons.add, size: 18),
                     title: Text('添加课程', style: theme.textTheme.bodyMedium),
                     onTap: _canAddCustomCourses
                         ? () {
@@ -1695,7 +1783,7 @@ class _SchedulePageState extends State<SchedulePage> {
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.ios_share_rounded, size: 20),
+                        : const Icon(TpIcons.download, size: 18),
                     title: Text('导出课表', style: theme.textTheme.bodyMedium),
                     onTap: _exportingCalendar
                         ? null
@@ -2042,7 +2130,7 @@ class _DayHeaderCell extends StatelessWidget {
           dayLabel,
           style: TpTypography.cardMeta(colors).copyWith(
             fontSize: 11,
-            color: isToday ? colors.brand : colors.textMuted,
+            color: isToday ? colors.brandInk : colors.textMuted,
             fontWeight: isToday ? FontWeight.w600 : FontWeight.w500,
           ),
         ),

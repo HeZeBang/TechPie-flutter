@@ -61,7 +61,23 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
     _startCountdownTimer();
+  }
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape) {
+      return false;
+    }
+    if (!mounted ||
+        !_selectionMode ||
+        _remindersBusy ||
+        !(ModalRoute.isCurrentOf(context) ?? true)) {
+      return false;
+    }
+    _exitSelection();
+    return true;
   }
 
   void _startCountdownTimer() {
@@ -96,6 +112,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     _assignmentService?.removeListener(_onAssignmentServiceChanged);
     _countdownTimer?.cancel();
     super.dispose();
@@ -742,7 +759,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             child: Icon(
               TpIcons.deadlines,
               size: TpTokens.iconL + 4,
-              color: colors.brand,
+              color: colors.brandInk,
             ),
           ),
           const SizedBox(height: TpTokens.space4),
@@ -782,6 +799,21 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               ),
               textAlign: TextAlign.center,
             ),
+            if (hasSources) ...[
+              const SizedBox(height: TpTokens.space4),
+              AdaptiveButton(
+                icon: TpIcons.refresh,
+                sfSymbol: 'arrow.clockwise',
+                label: '重新同步',
+                role: AdaptiveButtonRole.standard,
+                loading: service.loading,
+                width: 180,
+                height: 44,
+                onPressed: service.loading
+                    ? null
+                    : () => unawaited(_refresh(service)),
+              ),
+            ],
           ],
         ],
       ),
@@ -945,6 +977,12 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       onLongPress: _selectionMode
           ? null
           : () => _enterSelectionWith(service, key, epoch),
+      onQuickToggleComplete: isDesktop() && !_selectionMode
+          ? () => unawaited(_toggleCompleted(context, service, a))
+          : null,
+      onQuickHide: isDesktop() && !_selectionMode
+          ? () => _onDismiss(context, service, a, key)
+          : null,
     );
 
     final inner = _selectionMode
@@ -1090,6 +1128,10 @@ class _SectionToggleRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(TpTokens.radiusS),
+      hoverColor: colors.textPrimary.withValues(
+        alpha: colors.isDark ? 0.06 : 0.04,
+      ),
+      splashColor: colors.brandSoft,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: TpTokens.space2,
@@ -1119,7 +1161,7 @@ class _SectionToggleRow extends StatelessWidget {
             const Spacer(),
             Text(
               collapsed ? '展开' : '折叠',
-              style: TpTypography.badge(colors.brand),
+              style: TpTypography.badge(colors.brandInk),
             ),
           ],
         ),
@@ -1128,13 +1170,34 @@ class _SectionToggleRow extends StatelessWidget {
   }
 }
 
-class _PlatformErrorsBanner extends StatelessWidget {
+class _PlatformErrorsBanner extends StatefulWidget {
   final AssignmentService service;
   const _PlatformErrorsBanner({required this.service});
 
   @override
+  State<_PlatformErrorsBanner> createState() => _PlatformErrorsBannerState();
+}
+
+class _PlatformErrorsBannerState extends State<_PlatformErrorsBanner> {
+  final Set<String> _retrying = <String>{};
+
+  Future<void> _retryPlatform(String platform) async {
+    if (!_retrying.add(platform)) return;
+    setState(() {});
+    try {
+      await widget.service.fetchPlatform(platform);
+    } finally {
+      if (mounted) {
+        setState(() => _retrying.remove(platform));
+      } else {
+        _retrying.remove(platform);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final errors = service.platformErrors;
+    final errors = widget.service.platformErrors;
     if (errors.isEmpty) return const SizedBox.shrink();
     final colors = context.tpColors;
 
@@ -1153,9 +1216,8 @@ class _PlatformErrorsBanner extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: TpTokens.space2),
                 child: TpCard(
-                  color: colors.dangerRed
-                      .withValues(alpha: colors.isDark ? 0.16 : 0.08),
-                  borderColor: colors.dangerRed.withValues(alpha: 0.25),
+                  color: colors.opaqueDangerContainer,
+                  borderColor: colors.dangerRed.withValues(alpha: 0.30),
                   borderRadius: TpTokens.radiusS,
                   padding: const EdgeInsets.symmetric(
                     horizontal: TpTokens.space3,
@@ -1179,14 +1241,24 @@ class _PlatformErrorsBanner extends StatelessWidget {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(TpIcons.refresh, size: TpTokens.iconS),
-                        onPressed: () =>
-                            unawaited(service.fetchPlatform(entry.key)),
+                        icon: _retrying.contains(entry.key)
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: colors.dangerRed,
+                                ),
+                              )
+                            : const Icon(TpIcons.refresh, size: TpTokens.iconS),
+                        onPressed: _retrying.contains(entry.key)
+                            ? null
+                            : () => unawaited(_retryPlatform(entry.key)),
                         color: colors.dangerRed,
                         tooltip: '重试 ${entry.key}',
                         constraints: const BoxConstraints.tightFor(
-                          width: 32,
-                          height: 32,
+                          width: 36,
+                          height: 36,
                         ),
                         padding: EdgeInsets.zero,
                       ),
@@ -1247,6 +1319,8 @@ class _AssignmentCard extends StatelessWidget {
   final bool selectionMode;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onQuickToggleComplete;
+  final VoidCallback? onQuickHide;
 
   const _AssignmentCard({
     required this.assignment,
@@ -1256,6 +1330,8 @@ class _AssignmentCard extends StatelessWidget {
     required this.selectionMode,
     required this.onTap,
     required this.onLongPress,
+    this.onQuickToggleComplete,
+    this.onQuickHide,
   });
 
   @override
@@ -1390,6 +1466,39 @@ class _AssignmentCard extends StatelessWidget {
                         ),
                 ),
               ),
+              if (onQuickToggleComplete != null || onQuickHide != null) ...[
+                const SizedBox(width: TpTokens.space1),
+                if (onQuickToggleComplete != null)
+                  IconButton(
+                    icon: Icon(
+                      completed ? TpIcons.close : TpIcons.checkCircle,
+                      size: TpTokens.iconS,
+                    ),
+                    color: completed ? colors.textMuted : colors.successGreen,
+                    tooltip: completed ? '取消完成' : '标记完成',
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 28,
+                      height: 28,
+                    ),
+                    padding: EdgeInsets.zero,
+                    onPressed: onQuickToggleComplete,
+                  ),
+                if (onQuickHide != null)
+                  IconButton(
+                    icon: const Icon(TpIcons.delete, size: TpTokens.iconS),
+                    color: colors.textMuted,
+                    hoverColor: colors.dangerRed.withValues(alpha: 0.10),
+                    tooltip: '忽略',
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 28,
+                      height: 28,
+                    ),
+                    padding: EdgeInsets.zero,
+                    onPressed: onQuickHide,
+                  ),
+              ],
             ],
           ),
           const SizedBox(height: TpTokens.space3),

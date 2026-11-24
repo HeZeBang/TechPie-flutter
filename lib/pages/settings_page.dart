@@ -682,7 +682,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                             if (logger.enabled)
                               TpListRow(
                                 icon: TpIcons.document,
-                                iconColor: colors.brand,
+                                iconColor: colors.brandInk,
                                 title: '查看日志',
                                 subtitle: '共 ${logger.entries.length} 条记录',
                                 showChevron: true,
@@ -728,6 +728,9 @@ class _SettingsBodyState extends State<_SettingsBody> {
               label: blurred ? '个人信息已模糊，点击显示' : '个人信息已显示，点击隐藏',
               child: InkWell(
                 onTap: _togglePersonalInfoBlur,
+                hoverColor: colors.textPrimary.withValues(
+                  alpha: colors.isDark ? 0.06 : 0.04,
+                ),
                 splashColor: colors.brandSoft,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
@@ -928,7 +931,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
     return AdaptiveNavigationScaffold.adaptiveChrome(
       ios: () => TpListRow(
         icon: _themeModeIcon(themeService.mode),
-        iconColor: colors.brand,
+        iconColor: colors.brandInk,
         title: '主题模式',
         showDivider: hasNext,
         trailing: AdaptiveSelect(
@@ -961,7 +964,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
       material: () => Builder(
         builder: (tileContext) => TpListRow(
           icon: _themeModeIcon(themeService.mode),
-          iconColor: colors.brand,
+          iconColor: colors.brandInk,
           title: '主题模式',
           value: themeService.mode.label,
           showChevron: true,
@@ -1159,20 +1162,25 @@ class _SettingsBodyState extends State<_SettingsBody> {
                 const Divider(height: 1),
                 for (final scheme in AppColorScheme.values)
                   DesktopMenuRow(
-                    leading: Icon(scheme.icon, size: 20),
+                    selected: themeService.colorScheme == scheme,
+                    leading: Icon(_colorSchemeIcon(scheme), size: 18),
                     title: Row(
                       children: [
                         Expanded(
                           child: Text(
                             scheme.label,
-                            style: theme.textTheme.bodyMedium,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: themeService.colorScheme == scheme
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
                           ),
                         ),
                         if (themeService.colorScheme == scheme)
                           Icon(
                             TpIcons.check,
                             size: TpTokens.iconS,
-                            color: colors.brand,
+                            color: colors.brandInk,
                           ),
                       ],
                     ),
@@ -1208,16 +1216,16 @@ class _SettingsBodyState extends State<_SettingsBody> {
                 ),
                 for (final scheme in AppColorScheme.values)
                   TpListRow(
-                    icon: scheme.icon,
+                    icon: _colorSchemeIcon(scheme),
                     iconColor: themeService.colorScheme == scheme
-                        ? colors.brand
+                        ? colors.brandInk
                         : colors.textMuted,
                     title: scheme.label,
                     trailing: themeService.colorScheme == scheme
                         ? Icon(
                             TpIcons.check,
                             size: TpTokens.iconS,
-                            color: colors.brand,
+                            color: colors.brandInk,
                           )
                         : null,
                     onTap: () {
@@ -1233,6 +1241,11 @@ class _SettingsBodyState extends State<_SettingsBody> {
       ),
     );
   }
+
+  static IconData _colorSchemeIcon(AppColorScheme scheme) => switch (scheme) {
+        AppColorScheme.techRed => TpIcons.palette,
+        AppColorScheme.system => TpIcons.sparkles,
+      };
 
   String _cloudSyncSubtitle(SyncService sync) {
     if (!sync.enabled) return '未开启';
@@ -1298,6 +1311,13 @@ class _ThemeModeOptions extends StatelessWidget {
   final ValueChanged<AppThemeMode> onSelected;
   final bool desktop;
 
+  static IconData _iconForMode(AppThemeMode mode) => switch (mode) {
+        AppThemeMode.system => TpIcons.smartphone,
+        AppThemeMode.light => TpIcons.sun,
+        AppThemeMode.dark => TpIcons.moon,
+        AppThemeMode.amoled => TpIcons.amoled,
+      };
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1309,17 +1329,25 @@ class _ThemeModeOptions extends StatelessWidget {
         for (final mode in AppThemeMode.values)
           if (desktop)
             DesktopMenuRow(
-              leading: Icon(mode.icon, size: 20),
+              selected: themeService.mode == mode,
+              leading: Icon(_iconForMode(mode), size: 18),
               title: Row(
                 children: [
                   Expanded(
-                    child: Text(mode.label, style: theme.textTheme.bodyMedium),
+                    child: Text(
+                      mode.label,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: themeService.mode == mode
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                      ),
+                    ),
                   ),
                   if (themeService.mode == mode)
                     Icon(
                       TpIcons.check,
                       size: TpTokens.iconS,
-                      color: colors.brand,
+                      color: colors.brandInk,
                     ),
                 ],
               ),
@@ -1327,16 +1355,16 @@ class _ThemeModeOptions extends StatelessWidget {
             )
           else
             TpListRow(
-              icon: mode.icon,
+              icon: _iconForMode(mode),
               iconColor: themeService.mode == mode
-                  ? colors.brand
+                  ? colors.brandInk
                   : colors.textMuted,
               title: mode.label,
               trailing: themeService.mode == mode
                   ? Icon(
                       TpIcons.check,
                       size: TpTokens.iconS,
-                      color: colors.brand,
+                      color: colors.brandInk,
                     )
                   : null,
               onTap: () => onSelected(mode),
@@ -1372,6 +1400,7 @@ class _ProxySettingsDialogState extends State<_ProxySettingsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tpColors;
     return AlertDialog(
       title: const Text('应用代理'),
       content: TextField(
@@ -1379,10 +1408,12 @@ class _ProxySettingsDialogState extends State<_ProxySettingsDialog> {
         autofocus: true,
         decoration: const InputDecoration(hintText: '127.0.0.1:7890'),
         keyboardType: TextInputType.url,
+        textInputAction: TextInputAction.done,
         onSubmitted: (value) => Navigator.pop(context, value.trim()),
       ),
       actions: [
         TextButton(
+          style: TextButton.styleFrom(foregroundColor: colors.textSecondary),
           onPressed: () => Navigator.pop(context),
           child: const Text('取消'),
         ),

@@ -189,7 +189,7 @@ class WatchSettingsContent extends StatelessWidget {
                               Icon(
                                 TpIcons.watch,
                                 size: TpTokens.iconM,
-                                color: colors.brand,
+                                color: colors.brandInk,
                               ),
                               const SizedBox(width: TpTokens.space2),
                               Expanded(

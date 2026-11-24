@@ -48,16 +48,10 @@ class _AppShellState extends State<AppShell> {
   int _previousSelectedIndex = 0;
   bool _sidebarCollapsed = false;
 
-  /// One stack per destination, and a key for each: the content navigator is
-  /// rebuilt when the destination changes, and two live navigators must not
-  /// share one GlobalKey.
-  final _contentNavigatorKeys = <int, GlobalKey<NavigatorState>>{};
-
-  /// On iOS each tab owns its page stack, so the tab bar stays on screen as
-  /// the user drills in and switching tabs returns to where that tab was —
-  /// what UITabBarController does. Each stack needs its own hero controller,
-  /// and its root its own primary scroll controller, so a second tap on the
-  /// tab can scroll that tab, and only that tab, back to the top.
+  /// Per-tab navigation stacks, hero controllers, and primary scroll
+  /// controllers. Used on iOS (like UITabBarController) and in DesktopShell so
+  /// switching tabs preserves each tab's state, scroll offset, and subpage
+  /// stack, while tapping the active tab pops to root and scrolls to top.
   final _tabNavigatorKeys = <int, GlobalKey<NavigatorState>>{};
   final _tabHeroControllers = <int, HeroController>{};
   final _tabScrollControllers = <int, ScrollController>{};
@@ -141,7 +135,6 @@ class _AppShellState extends State<AppShell> {
   void _showDeadlines() {
     if (!mounted || !appShellPendingDeadlines.value) return;
     appShellPendingDeadlines.value = false;
-    _contentNavigatorKeys[2]?.currentState?.popUntil((route) => route.isFirst);
     _tabNavigatorKeys[2]?.currentState?.popUntil((route) => route.isFirst);
     _onDestinationSelected(2);
   }
@@ -164,10 +157,8 @@ class _AppShellState extends State<AppShell> {
       final navigator = _tabNavigatorKeys[_campusCardTab]?.currentState;
       navigator?.popUntil((route) => route.isFirst);
       nested = navigator?.context;
-    } else if (isIos()) {
-      nested = _tabNavigatorKeys[_selectedIndex]?.currentContext;
     } else {
-      nested = _contentNavigatorKeys[_selectedIndex]?.currentContext;
+      nested = _tabNavigatorKeys[_selectedIndex]?.currentContext;
     }
     unawaited(
       pushAdaptivePage<void>(
@@ -190,14 +181,8 @@ class _AppShellState extends State<AppShell> {
   /// A tap on the selected tab first unwinds that tab's stack, and on its root
   /// scrolls back to the top — the system tab bar's behaviour.
   void _returnToTabRoot(int index) {
-    final contentNav = _contentNavigatorKeys[index]?.currentState;
-    if (contentNav != null && contentNav.canPop()) {
-      contentNav.popUntil((route) => route.isFirst);
-      return;
-    }
     final navigator = _tabNavigatorKeys[index]?.currentState;
-    if (navigator == null) return;
-    if (navigator.canPop()) {
+    if (navigator != null && navigator.canPop()) {
       navigator.popUntil((route) => route.isFirst);
       return;
     }
@@ -221,15 +206,18 @@ class _AppShellState extends State<AppShell> {
     setState(() => _sidebarCollapsed = !_sidebarCollapsed);
   }
 
-  Widget _buildPageView(BuildContext context) {
+  Widget _buildPageView(
+    BuildContext context, {
+    required bool usePerTabNavigators,
+  }) {
     return AppDestinationSwitcher(
       selectedIndex: _selectedIndex,
       previousSelectedIndex: _previousSelectedIndex,
-      preserveVisitedPages: isIos(),
+      preserveVisitedPages: usePerTabNavigators,
       animationsEnabled: !MediaQuery.disableAnimationsOf(context),
       pages: [
         for (var index = 0; index < _destinations.length; index++)
-          isIos()
+          usePerTabNavigators
               ? _buildTabNavigator(index, _destinations[index].page)
               : _destinations[index].page,
       ],
@@ -270,39 +258,23 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  Widget _buildDesktopContentNavigator(Widget pageView) {
-    final navigatorKey = _contentNavigatorKeys.putIfAbsent(
-      _selectedIndex,
-      GlobalKey<NavigatorState>.new,
-    );
-
-    // The same reason the settings page needs it: this stack holds the pages a
-    // destination pushed, so the system back has to reach it rather than the
-    // root navigator, which only has the shell on it.
-    return NavigatorPopHandler(
-      onPopWithResult: (_) => navigatorKey.currentState?.pop(),
-      child: Navigator(
-        key: navigatorKey,
-        onGenerateRoute: (settings) => adaptivePageRoute<void>(
-          settings: settings,
-          builder: (context) => pageView,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final pageView = _buildPageView(context);
+    final desktopShell =
+        _desktopShellEnabled && usesDesktopSidebarShell(context);
+    final pageView = _buildPageView(
+      context,
+      usePerTabNavigators: isIos() || desktopShell,
+    );
 
-    if (_desktopShellEnabled && usesDesktopSidebarShell(context)) {
+    if (desktopShell) {
       return DesktopShell(
         destinations: _destinations,
         selectedIndex: _selectedIndex,
         sidebarCollapsed: _sidebarCollapsed,
         onDestinationSelected: _onDestinationSelected,
         onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
-        child: isIos() ? pageView : _buildDesktopContentNavigator(pageView),
+        child: pageView,
       );
     }
 

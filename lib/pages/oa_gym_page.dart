@@ -130,7 +130,7 @@ class _OaGymPageState extends State<OaGymPage>
                           child: Icon(
                             TpIcons.gym,
                             size: TpTokens.iconL,
-                            color: colors.brand,
+                            color: colors.brandInk,
                           ),
                         ),
                         const SizedBox(height: TpTokens.space4),
@@ -207,7 +207,12 @@ class _OaGymPageState extends State<OaGymPage>
                               children: [
                                 Icon(TpIcons.calendarCheck, size: 16),
                                 SizedBox(width: 6),
-                                Text('预约'),
+                                Flexible(
+                                  child: Text(
+                                    '预约',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -218,7 +223,12 @@ class _OaGymPageState extends State<OaGymPage>
                               children: [
                                 Icon(TpIcons.search, size: 16),
                                 SizedBox(width: 6),
-                                Text('查询'),
+                                Flexible(
+                                  child: Text(
+                                    '查询',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -229,7 +239,12 @@ class _OaGymPageState extends State<OaGymPage>
                               children: [
                                 Icon(TpIcons.profile, size: 16),
                                 SizedBox(width: 6),
-                                Text('个人信息'),
+                                Flexible(
+                                  child: Text(
+                                    '个人信息',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                               ],
                             ),
                           ),

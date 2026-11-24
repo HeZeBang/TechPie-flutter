@@ -83,6 +83,9 @@ class TpProgressRow extends StatelessWidget {
         else
           InkWell(
             onTap: onTap,
+            hoverColor: colors.textPrimary.withValues(
+              alpha: colors.isDark ? 0.06 : 0.04,
+            ),
             splashColor: colors.brandSoft,
             highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
             child: body,

@@ -46,56 +46,78 @@ final class GpButton extends StatelessWidget {
         enabled ? Colors.transparent : c.surfaceDisabled,
       GpButtonVariant.tertiary => Colors.transparent,
     };
-    final border = switch (variant) {
-      GpButtonVariant.secondary => Border.all(
+    final borderSide = switch (variant) {
+      GpButtonVariant.secondary => BorderSide(
           color: enabled ? c.action : c.borderStrong,
         ),
-      _ => null,
+      _ => BorderSide.none,
     };
+    final isSolid = enabled &&
+        (variant == GpButtonVariant.primary ||
+            variant == GpButtonVariant.destructive);
+    final overlayBase = isSolid ? Colors.white : c.textPrimary;
 
     final key = labelKey;
-    Widget content = ConstrainedBox(
+    final inner = ConstrainedBox(
       constraints: const BoxConstraints(minHeight: GpTokens.minTouchTarget),
-      child: Center(
-        widthFactor: fullWidth ? null : 1,
-        heightFactor: 1,
-        child: loading
-            ? SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: c.action,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: GpTokens.space4),
+        child: Center(
+          widthFactor: fullWidth ? null : 1,
+          heightFactor: 1,
+          child: loading
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: c.action,
+                  ),
+                )
+              : Text(
+                  label,
+                  key: key,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: fg,
+                      ),
                 ),
-              )
-            : Text(
-                label,
-                key: key,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: fg,
-                    ),
-              ),
+        ),
       ),
     );
-    content = Container(
+
+    final reduce = !appAnimationsEnabled(context);
+    final radius = BorderRadius.circular(GpTokens.radiusM);
+    Widget button = SizedBox(
       width: fullWidth ? double.infinity : null,
-      padding: const EdgeInsets.symmetric(
-        horizontal: GpTokens.space4,
-        vertical: 0,
+      child: AnimatedOpacity(
+        opacity: enabled ? 1 : 0.98,
+        duration: reduce ? Duration.zero : Durations.short1,
+        child: Material(
+          color: bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: borderSide,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            borderRadius: radius,
+            hoverColor: overlayBase.withValues(alpha: isSolid ? 0.12 : 0.05),
+            highlightColor: overlayBase.withValues(alpha: isSolid ? 0.16 : 0.08),
+            splashColor: isSolid
+                ? Colors.white.withValues(alpha: 0.22)
+                : c.actionAlt,
+            onTap: enabled ? onPressed : null,
+            child: inner,
+          ),
+        ),
       ),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(GpTokens.radiusM),
-        border: border,
-      ),
-      child: content,
     );
 
     if (reason != null && onPressed == null) {
-      content = Column(
+      button = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          content,
+          button,
           const SizedBox(height: GpTokens.space1),
           Text(
             reason!,
@@ -108,26 +130,11 @@ final class GpButton extends StatelessWidget {
       );
     }
 
-    final reduce = !appAnimationsEnabled(context);
     return Semantics(
       button: true,
       enabled: enabled,
       label: label,
-      child: ExcludeSemantics(
-        child: Material(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(GpTokens.radiusM),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(GpTokens.radiusM),
-            onTap: enabled ? onPressed : null,
-            child: AnimatedOpacity(
-              opacity: enabled ? 1 : 0.98,
-              duration: reduce ? Duration.zero : Durations.short1,
-              child: content,
-            ),
-          ),
-        ),
-      ),
+      child: ExcludeSemantics(child: button),
     );
   }
 }
