@@ -223,6 +223,7 @@ class _SchedulePageState extends State<SchedulePage> {
             week,
             includeGhosts: _showGhostCourses,
             timetablePeriods: _periods,
+            colorScope: _schedule.fullCourseTable?.courses,
           );
     final withCustom = withCustomCourses(
       fetched,
@@ -1288,7 +1289,9 @@ class _SchedulePageState extends State<SchedulePage> {
     }
 
     return TpAccentRow(
-      accentColor: course.color.accentColor(colors.brightness),
+      accentColor: course.source is ExamCourseSource
+          ? colors.dangerRed
+          : course.color.accentColor(colors.brightness),
       title: course.name,
       subtitle: subtitleParts.join(' · '),
       trailing: trailing,
@@ -2498,8 +2501,11 @@ class _CourseBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final brightness = colorScheme.brightness;
     final containerColor = course.color.containerColor(colorScheme);
     final textColor = course.color.onContainerColor(colorScheme);
+    final accentColor = course.color.accentColor(brightness);
+    final borderColor = course.color.borderColor(brightness);
 
     return TpPressScale(
       pressedScale: 0.965,
@@ -2507,7 +2513,10 @@ class _CourseBlock extends StatelessWidget {
         opacity: course.isGhost ? 0.3 : 1.0,
         child: Material(
           color: containerColor,
-          borderRadius: BorderRadius.circular(TpTokens.radiusS),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(TpTokens.radiusS),
+            side: BorderSide(color: borderColor, width: 0.75),
+          ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () {
@@ -2519,14 +2528,29 @@ class _CourseBlock extends StatelessWidget {
               );
             },
             borderRadius: BorderRadius.circular(TpTokens.radiusS),
-            child: CourseBlockLabel(
-              name: course.name,
-              color: textColor,
-              time: course.usesCustomTime
-                  ? '${course.startTime}–${course.endTime}'
-                  : null,
-              teachers: course.teachers,
-              location: course.location,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                PositionedDirectional(
+                  start: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: 2.5,
+                  child: ColoredBox(color: accentColor),
+                ),
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 2.5),
+                  child: CourseBlockLabel(
+                    name: course.name,
+                    color: textColor,
+                    time: course.usesCustomTime
+                        ? '${course.startTime}–${course.endTime}'
+                        : null,
+                    teachers: course.teachers,
+                    location: course.location,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
