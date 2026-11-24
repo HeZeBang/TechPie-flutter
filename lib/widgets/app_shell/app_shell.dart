@@ -9,6 +9,8 @@ import '../../pages/campus_card_page.dart';
 import '../../pages/home_page.dart';
 import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
+import '../../services/assignment_service.dart';
+import '../../services/service_provider.dart';
 import '../../theme/tp_icons.dart';
 import '../../utils/adaptive_layout.dart';
 import '../../utils/motion.dart';
@@ -16,7 +18,35 @@ import '../../utils/platform.dart';
 import '../../widgets/adaptive_page_navigation.dart';
 import 'app_destination.dart';
 import 'desktop/desktop_shell.dart';
+import 'desktop/desktop_sidebar_tokens.dart';
 import 'mobile_shell.dart';
+
+/// Computes the live desktop sidebar badge for the Deadlines tab.
+///
+/// Counts uncompleted upcoming items (including those currently inside their
+/// late-submission window). Marks the badge urgent when any item is inside its
+/// late window or due within 24 hours.
+SidebarBadgeData? computeDeadlineSidebarBadge(
+  AssignmentService service, {
+  DateTime? now,
+}) {
+  final current = now ?? DateTime.now();
+  var count = 0;
+  var urgent = false;
+  for (final item in service.visibleAssignments) {
+    if (service.isCompleted(item)) continue;
+    if (item.effectiveDue.isBefore(current)) continue;
+    count++;
+    final inLateWindow =
+        item.effectiveLateDue != null && item.due.isBefore(current);
+    final remaining = item.effectiveDue.difference(current);
+    if (inLateWindow || remaining < const Duration(hours: 24)) {
+      urgent = true;
+    }
+  }
+  if (count <= 0) return null;
+  return SidebarBadgeData(count: count, urgent: urgent);
+}
 
 /// A campus-card entry the host asked for — a home-screen widget tap, a
 /// shortcut, a `techpie://ecard/pay` link — that has not been shown yet.
@@ -269,12 +299,33 @@ class _AppShellState extends State<AppShell> {
     );
 
     if (desktopShell) {
-      return DesktopShell(
-        destinations: _destinations,
-        selectedIndex: _selectedIndex,
-        sidebarCollapsed: _sidebarCollapsed,
-        onDestinationSelected: _onDestinationSelected,
-        onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
+      final assignmentService = context
+          .dependOnInheritedWidgetOfExactType<ServiceProvider>()
+          ?.assignmentService;
+      if (assignmentService == null) {
+        return DesktopShell(
+          destinations: _destinations,
+          selectedIndex: _selectedIndex,
+          sidebarCollapsed: _sidebarCollapsed,
+          onDestinationSelected: _onDestinationSelected,
+          onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
+          child: pageView,
+        );
+      }
+      return ListenableBuilder(
+        listenable: assignmentService,
+        builder: (context, child) {
+          final deadlineBadge = computeDeadlineSidebarBadge(assignmentService);
+          return DesktopShell(
+            destinations: _destinations,
+            selectedIndex: _selectedIndex,
+            sidebarCollapsed: _sidebarCollapsed,
+            badges: deadlineBadge == null ? const {} : {2: deadlineBadge},
+            onDestinationSelected: _onDestinationSelected,
+            onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
+            child: child!,
+          );
+        },
         child: pageView,
       );
     }

@@ -516,8 +516,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                             ),
                           ),
                           TpListRow(
-                            icon: TpIcons.info,
-                            iconColor: colors.textMuted,
+                            leading: const TpBrandMark(size: 22),
                             title: '关于 TechPie',
                             subtitle: _appVersion.isEmpty
                                 ? '版本未知'
@@ -711,6 +710,8 @@ class _SettingsBodyState extends State<_SettingsBody> {
                           ],
                         ),
                       ],
+                      const SizedBox(height: TpTokens.space6),
+                      _SettingsBrandFooter(version: _appVersion),
                     ],
                   ),
                 ),
@@ -1439,6 +1440,44 @@ class _ProxySettingsDialogState extends State<_ProxySettingsDialog> {
           child: const Text('保存'),
         ),
       ],
+    );
+  }
+}
+
+class _SettingsBrandFooter extends StatelessWidget {
+  const _SettingsBrandFooter({required this.version});
+
+  final String version;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    return Padding(
+      key: const ValueKey('settings.brand-footer'),
+      padding: const EdgeInsets.only(bottom: TpTokens.space4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const TpBrandMark(size: 20),
+          const SizedBox(height: TpTokens.space2),
+          Text(
+            'TechPie · Built with Flutter by GeekPie_',
+            style: TpTypography.cardMeta(colors).copyWith(
+              color: colors.textMuted,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (version.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              'v$version',
+              style: TpTypography.badge(colors.textMuted).copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
