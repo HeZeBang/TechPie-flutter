@@ -4,11 +4,13 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const pageRoot = path.join(__dirname, '../benchmark/index');
+const common = path.join(__dirname, '../entry/src/main/js/MainAbility/common');
+const points = require(path.join(common, 'sm2-points.json'));
 const {opts, expected} = require(path.join(pageRoot, 'signature-fixture'));
 
 test('the Lite port produces the independently verified public fixture signature', () => {
-  const {makeSigner} = require(path.join(pageRoot, 'sm2'));
-  const job = makeSigner().makeSignJob(opts);
+  const {makeSigner} = require(path.join(common, 'sm2'));
+  const job = makeSigner(points).makeSignJob(opts);
   let steps = 1;
   while (!job.step()) assert.ok(++steps <= 32);
   assert.equal(job.result(), expected);
@@ -33,7 +35,7 @@ test('hiding the benchmark cancels queued work and returning requires a new tap'
 
 test('signed comb and sparse-prime reduction match OpenSSL points for edge and varied nonces', () => {
   const {createECDH, createHash} = require('node:crypto');
-  const {makeSigner} = require(path.join(pageRoot, 'sm2'));
+  const {makeSigner} = require(path.join(common, 'sm2'));
   const n = BigInt('0xfffffffeffffffffffffffffffffffff7203df6b21c6052b53bbf40939d54123');
   const p = BigInt('0xfffffffeffffffffffffffffffffffffffffffff00000000ffffffffffffffff');
   const hex = value => value.toString(16).padStart(64, '0');
@@ -55,7 +57,7 @@ test('signed comb and sparse-prime reduction match OpenSSL points for edge and v
     const e = BigInt('0x'+hash(Buffer.concat([za,message])).toString('hex'));
     const x = BigInt('0x'+point(k).subarray(0,32).toString('hex'));
     const kLimbs = Array.from({length:16},(_,j)=>Number((k>>BigInt(16*j))&65535n));
-    const job = makeSigner().makeSignJob({privateKeyHex:hex(d),
+    const job = makeSigner(points).makeSignJob({privateKeyHex:hex(d),
       publicKeyXHex:pub.subarray(0,32).toString('hex'), publicKeyYHex:pub.subarray(32).toString('hex'),
       message:[...message], kLimbs});
     let rounds = 1;
@@ -72,7 +74,7 @@ test('folding the SM2 prime matches exact products, including in-place squares',
   const native = require('node:crypto');
   const p = BigInt('0xfffffffeffffffffffffffffffffffffffffffff00000000ffffffffffffffff');
   const context = vm.createContext({module: {exports: {}}});
-  const code = fs.readFileSync(path.join(pageRoot, 'sm2.js'), 'utf8');
+  const code = fs.readFileSync(path.join(common, 'sm2.js'), 'utf8');
   vm.runInContext(code, context);
   const field = context.primeField(p.toString(16));
   const limbs = n => Array.from({length:16}, (_, i) => Number(n >> BigInt(i*16) & 65535n));

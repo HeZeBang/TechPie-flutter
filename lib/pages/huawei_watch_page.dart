@@ -122,6 +122,7 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBin
       'ACCOUNT_NOT_READY' => '请先登录 TechPie',
       'DEVICE_DISCONNECTED' => '手表未连接，请先在运动健康中完成配对。',
       'SYNC_TIMEOUT' || 'PEER_NOT_READY' => '手表未响应，请保持手表上的 TechPie 打开后重试。',
+      'OFFLINE_GRANT_REQUIRED' => '请先在校园卡页面开通有效的不限次离线授权，再同步到手表。',
       'STORAGE_FAILED' => '手表保存失败，请重试同步。',
       'INVALID_PAYLOAD' => '连接配置不匹配，请联系开发者。',
       'UNSUPPORTED_OPERATION' => '手表端 TechPie 需要更新，请前往运动健康完成更新。',
@@ -394,10 +395,27 @@ class _HuaweiWatchContentState extends State<HuaweiWatchContent> with WidgetsBin
                 title: const Text('校园码'),
                 subtitle: Text(
                   service.supports('campusCode.qrMatrix') || service.supports('campusCode.qrBytes')
-                      ? '手机联网获取校园码，通过已连接的手表显示。'
+                      ? (service.supports('campusCode.offlineSm2')
+                          ? '同步离线授权后，手表可独立生成校园码。'
+                          : '可从手机获取校园码。手表离线授权状态：${service.offlineStatus ?? '设备未报告'}。')
                       : '请更新手表应用以使用此功能',
                 ),
               ),
+              if (service.supports('campusCode.offlineSm2'))
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('同步离线校园码授权'),
+                  subtitle: Text(
+                    service.offlineCampusCodeApplied
+                        ? '授权已保存到手表，可在完全断连时生成校园码。'
+                        : '将现有不限次离线授权和签名密钥保存到这块手表。',
+                  ),
+                  value: service.offlineCampusCodeEnabled,
+                  onChanged: _busy
+                      ? null
+                      : (value) => unawaited(_run(() => service.setOfflineCampusCodeEnabled(value),
+                          label: '正在同步离线授权',),),
+                ),
               const SizedBox(height: 12),
               TextButton.icon(
                 icon: const Icon(Icons.link_off),

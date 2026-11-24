@@ -50,7 +50,7 @@ their supported resources. Each resource has its own revision and receipt.
 
 The phone's DDL reminder switch sends an opt-in in `ddl.snapshot`. The watch checks cached `remindAtMs` against the phone-calibrated clock and vibrates locally using `@system.vibrator` / `ohos.permission.VIBRATE` while the app is in the foreground. Communication loss preserves the snapshot. Lite apps provide no background process after exit. Wear Engine `NOTIFY` and remote app launch remain unapproved.
 
-The app uses P2P as a synchronization channel. First authorize and select the watch in Android Settings → HUAWEI WATCH. Later launches restore the saved pairing and synchronize automatically while both applications can run. Account, timetable and deadlines remain available from private watch files after disconnect and restart. The watch requests online campus codes from the Android companion. See [interaction design](DESIGN.md) for the receiver lifecycle.
+The app uses P2P as a synchronization channel. First authorize and select the watch in Android Settings → HUAWEI WATCH. Later launches restore the saved pairing and synchronize automatically while both applications can run. Account, timetable and deadlines remain available from private watch files after disconnect and restart. The watch requests online campus codes from Android. For offline testing, enable **同步离线校园码授权** on the phone and wait for the watch receipt. Stop the phone app, reopen TechPie on the watch and tap the campus-code prompt. See [interaction design](DESIGN.md) for the receiver lifecycle.
 
 Device acceptance uses matching signed companions. Check Crown switching and right-swipe navigation, the default campus-code screen, cached content after both app exit and full disconnection, automatic sync in both launch orders, logout/account isolation, and online-code expiry while the phone app is in the background. Validate optical scanning separately. Keep signing material and credential payloads out of logs and artifacts.
 
@@ -82,8 +82,7 @@ node harmonyos_watch/benchmark/prepare.cjs ../gt6-bench
 Configure signing in the generated project's `harmonyos_watch` directory and run
 `build.ps1` there. On the GT 6 Pro, tap **测试签名** once. Record the total and
 the **执行 / 等待** times from the same run. **测试绘制** measures QR drawing
-separately. Both tests use public fixtures. The regular build opens the online
-campus code and omits the benchmark.
+separately. Both tests use public fixtures. The regular build opens the campus-code page.
 
 On a GT 6 Pro, the 0.4.13 public-fixture run took 3,705 ms, including
 3,214 ms executing and 491 ms waiting between slices.

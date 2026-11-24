@@ -16,7 +16,7 @@ function signSlice(run) {
         console.info('TechPie bench sign start');
         var fixture = require('./signature-fixture.js');
         run.expected = fixture.expected;
-        run.job = require('./sm2.js').makeSigner().makeSignJob(fixture.opts);
+        run.job = require('../../common/sm2.js').makeSigner(require('../../common/sm2-points.json')).makeSignJob(fixture.opts);
         console.info('TechPie bench job ready');
       }
       stage = '计算';

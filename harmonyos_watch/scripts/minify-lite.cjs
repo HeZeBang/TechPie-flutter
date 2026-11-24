@@ -36,4 +36,21 @@ async function visit(directory) {
     }
   }
 }
+// $t reads packaged string resources on Lite, independently of file storage.
+const source = path.join(__dirname, '../entry/src/main/js/MainAbility/common');
+const points = require(path.join(source, 'sm2-points.json'));
+const sm2 = Object.fromEntries(points.map((row, index) => ['p' + index, row]));
+const locales = path.join(process.argv[2], 'i18n');
+fs.mkdirSync(locales, {recursive: true});
+for (const locale of ['zh-CN', 'en-US']) {
+  const file = path.join(locales, locale + '.json');
+  const resources = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  fs.writeFileSync(file, JSON.stringify({...resources, sm2}));
+}
+for (const name of ['LICENSE.techpie_wear', 'vendor/LICENSE.qrcode.txt']) {
+  const target = path.join(process.argv[2], 'common', name);
+  fs.mkdirSync(path.dirname(target), {recursive: true});
+  fs.copyFileSync(path.join(source, name), target);
+}
+
 visit(process.argv[2]).catch(error => { console.error(error.message); process.exitCode = 1; });

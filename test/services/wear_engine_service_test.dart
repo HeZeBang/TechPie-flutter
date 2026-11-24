@@ -211,6 +211,7 @@ class Peer implements WearTransport {
         if (!ignoreHeartbeat) {
           respond(message, 'result', {'status': 'ok', 'code': 'OK'});
         }
+      case 'campusCode.authorization':
       case 'campusCode.snapshot':
         respond(message, 'result', {'status': 'ok', 'code': 'OK'});
     }
@@ -314,6 +315,7 @@ void main() {
     });
     service = WearEngineService(transport: peer, source: source, metadata: metadata);
     expect(service.autoSyncEnabled, false);
+    expect(service.offlineCampusCodeEnabled, false);
   });
 
   test('foreground changes keep the live session and a disconnect still triggers repair', () async {
@@ -368,6 +370,33 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 10));
     expect(service.autoSyncEnabled, false);
     expect(service.ready, false);
+  });
+
+  test('offline authorization is opt-in, capability-gated and revoked with null', () async {
+    service.dispose();
+    peer = Peer()..capabilities.add('campusCode.offlineSm2');
+    var exports = 0;
+    service = WearEngineService(
+      transport: peer,
+      source: source,
+      metadata: metadata,
+      now: () => testNow,
+      offlineCredential: () async {
+        exports++;
+        return {'fixture': true};
+      },
+    );
+    await open();
+    expect(exports, 0);
+    await service.setOfflineCampusCodeEnabled(true);
+    expect(exports, 1);
+    expect(service.offlineCampusCodeApplied, true);
+    expect(metadata.value, isNot(contains('fixture')));
+    await service.setOfflineCampusCodeEnabled(false);
+    final body =
+        peer.received.lastWhere((m) => m['type'] == 'campusCode.authorization')['body'] as Map;
+    expect(body['credential'], null);
+    expect(service.offlineCampusCodeApplied, false);
   });
 
   test('approved P2P syncs timetable and enables local reminders without NOTIFY', () async {

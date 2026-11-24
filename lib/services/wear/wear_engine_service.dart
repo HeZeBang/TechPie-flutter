@@ -14,6 +14,7 @@ class WearEngineService extends ChangeNotifier {
     required this.transport,
     required this.source,
     required this.metadata,
+    this.offlineCredential,
     this.adoptCurrentSchedule,
     DateTime Function()? now,
     this.timeout = const Duration(seconds: 30),
@@ -34,6 +35,7 @@ class WearEngineService extends ChangeNotifier {
           _savedDevice = stored['pairedDevice'] as String?;
           _savedFingerprint = savedFingerprint;
           _autoSync = stored['autoSync'] == true;
+          _offlineConsent = stored['offlineConsent'] == true;
         }
         for (final resource in ['account', 'ddl', 'schedule']) {
           _revisions[resource] = (stored['revisions'] as Map?)?[resource] as int? ?? 0;
@@ -43,6 +45,7 @@ class WearEngineService extends ChangeNotifier {
         _scopeHash = null;
         _pendingClear = 'userRevoked';
         _autoSync = false;
+        _offlineConsent = false;
         _savedDevice = null;
         _savedFingerprint = null;
       }
@@ -72,7 +75,11 @@ class WearEngineService extends ChangeNotifier {
   final WearTransport transport;
   final WearDataSource source;
   final WearMetadata metadata;
+  final Future<Map<String, Object?>?> Function()? offlineCredential;
   final Future<void> Function()? adoptCurrentSchedule;
+  bool _offlineConsent = false, _offlineApplied = false;
+  bool get offlineCampusCodeEnabled => _offlineConsent;
+  bool get offlineCampusCodeApplied => _offlineApplied;
   final DateTime Function() now;
   final Duration timeout;
   final List<Duration> retryDelays;
@@ -106,6 +113,7 @@ class WearEngineService extends ChangeNotifier {
   Timer? _heartbeatTimer;
   bool _heartbeatBusy = false;
   int _missedHeartbeats = 0;
+  String? offlineStatus;
   Map<String, String>? _displayAccount;
   bool _remindersEnabled = false;
   bool get remindersEnabled => ready && _remindersEnabled;
@@ -138,6 +146,7 @@ class WearEngineService extends ChangeNotifier {
 
   void _invalidate(String reason) {
     _watchRemindersEnabled = false;
+    _offlineApplied = false;
     _epoch++;
     _ready = false;
     _session = null;
@@ -163,6 +172,7 @@ class WearEngineService extends ChangeNotifier {
           'pairedDevice': _savedDevice,
           'pairedFingerprint': _savedFingerprint,
           'autoSync': _autoSync,
+          'offlineConsent': _offlineConsent,
         }),
       );
   Map<String, dynamic> getStatus() => {
@@ -225,6 +235,9 @@ class WearEngineService extends ChangeNotifier {
         throw const WearFailure('PERMISSION_DENIED');
       }
       if (!automatic && _pendingClear == null) {
+        if (_savedDevice != deviceId || _savedFingerprint != watchFingerprint) {
+          _offlineConsent = false;
+        }
         _savedDevice = deviceId;
         _savedFingerprint = watchFingerprint;
         _autoSync = true;
@@ -358,6 +371,7 @@ class WearEngineService extends ChangeNotifier {
           'reminder.watchLocal',
           'campusCode.qrBytes',
           'campusCode.qrMatrix',
+          if (offlineCredential != null) 'campusCode.offlineSm2',
           'connection.heartbeat',
         ],
       },
@@ -379,6 +393,7 @@ class WearEngineService extends ChangeNotifier {
       'reminder.watchLocal',
       'campusCode.qrBytes',
       'campusCode.qrMatrix',
+      'campusCode.offlineSm2',
       'connection.heartbeat',
     });
     if (_remindersEnabled && (_native['permission'] as Map)['notify'] == true) {
@@ -404,6 +419,7 @@ class WearEngineService extends ChangeNotifier {
     _session = session;
     _ready = true;
     _missedHeartbeats = 0;
+    offlineStatus = body['offlineStatus'] is String ? body['offlineStatus'] as String : null;
     _lastError = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (_) {
@@ -745,6 +761,14 @@ class WearEngineService extends ChangeNotifier {
       }
       if (epoch != _epoch) break;
     }
+    if (_offlineConsent && supports('campusCode.offlineSm2') && epoch == _epoch) {
+      try {
+        await _syncOfflineCredential(epoch);
+      } on WearFailure catch (error) {
+        firstError ??= error;
+        _error(error);
+      }
+    }
     _changed();
     if (firstError != null) throw firstError;
   }
@@ -821,6 +845,32 @@ class WearEngineService extends ChangeNotifier {
   }
 
   Future<String> sendReminder(String reminderId) => transport.sendReminder(reminderId);
+
+  Future<void> setOfflineCampusCodeEnabled(bool enabled) async {
+    _requireReady();
+    if (!supports('campusCode.offlineSm2') || offlineCredential == null) {
+      throw const WearFailure('UNSUPPORTED_OPERATION');
+    }
+    final epoch = _epoch;
+    _offlineConsent = enabled;
+    await _persist();
+    _checkEpoch(epoch);
+    await _syncOfflineCredential(epoch);
+    _changed();
+  }
+
+  Future<void> _syncOfflineCredential(int epoch) async {
+    await _checkAccount(epoch);
+    final credential = _offlineConsent ? await offlineCredential!() : null;
+    _checkEpoch(epoch);
+    await _checkAccount(epoch);
+    await _request('campusCode.authorization', {'credential': credential});
+    _checkEpoch(epoch);
+    _offlineApplied = credential != null;
+    if (_offlineConsent && credential == null) {
+      throw const WearFailure('OFFLINE_GRANT_REQUIRED');
+    }
+  }
 
   Future<void> setWatchRemindersEnabled(bool enabled) async {
     _requireReady();
@@ -946,6 +996,8 @@ class WearEngineService extends ChangeNotifier {
     _autoSync = false;
     _autoTimer?.cancel();
     _autoTimer = null;
+    _offlineConsent = false;
+    _offlineApplied = false;
     _pendingClear = reason;
     // Stop existing sends/requests synchronously before issuing the clear command.
     final oldSession = _session;

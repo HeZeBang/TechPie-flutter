@@ -1,4 +1,5 @@
 import app from '@system.app';
+import {startOfflineCode} from '../../common/offline-code.js';
 
 var application, focusTimer, paintTimer;
 function time(value) {
@@ -8,6 +9,38 @@ function time(value) {
 function date(value) {
   var d = new Date(value + 28800000);
   return (d.getUTCMonth() + 1) + '/' + d.getUTCDate();
+}
+function failOffline(run, reason) {
+  var page = run.page;
+  page.cancelCode(); page._failedGrant = run.grant; page._prepared = null;
+  page._failureText = '离线码失败 · ' + reason;
+  console.error('TechPie offline error=' + reason);
+  page.applyState(application.watchState());
+}
+function offlineSlice(run) {
+  var page = run.page;
+  if (page._work !== run) return;
+  if (!page._visible || page.view !== 'deck' || page.pageIndex !== 0 ||
+      Date.now() - run.last > 2000 || application.watchCredential() !== run.grant) {
+    page.cancelCode(); return;
+  }
+  try {
+    if (!run.signer) run.signer = startOfflineCode(run.grant, page._prepared, application.watchRandom, application.watchNow, run.points);
+    if (!run.frame) {
+      run.frame = run.signer.step();
+      if (run.frame) page._prepared = run.signer.prepared;
+    } else {
+      if (!run.matrixStep) run.matrixStep = application.watchMatrix(run.frame.payload);
+      var matrix = run.matrixStep();
+      if (matrix) {
+        if (run.frame.until <= application.watchNow()) throw Error('OFFLINE_CODE_EXPIRED');
+        matrix.id = 'local-' + run.start; matrix.until = run.frame.until;
+        page._localCode = matrix; page._codeStarted = run.start;
+        page.cancelCode(); page.applyState(application.watchState()); return;
+      }
+    }
+    run.last = Date.now(); page._codeTimer = setTimeout(run.tick, 1);
+  } catch (error) { failOffline(run, error.message); }
 }
 export default {
   data: {
@@ -43,9 +76,11 @@ export default {
     if (!this._visible) return;
     this._visible = false;
     application.watchPause();
+    this.cancelCode();
     clearTimeout(focusTimer); clearTimeout(paintTimer);
     focusTimer = null; paintTimer = null;
-    this._codeId = null;
+    this._prepared = null; this._localCode = null; this._failedGrant = null;
+    this._codeId = null; this._codeStarted = null;
     // Do not change the swiper or canvas while the native view is being hidden.
   },
   onBackPress() { if (this.view !== 'deck') { this.goBack(); return true; } return false; },
@@ -53,14 +88,14 @@ export default {
   goBack() {
     if (this.view === 'deck') { app.terminate(); return; }
     this.view = 'deck'; this.focusCrown();
-    if (this.pageIndex === 0) this.refreshCode();
+    if (this.pageIndex === 0) this.applyState(application.watchState());
   },
   onPageChange(event) {
     if (!this._visible || event.index === this.pageIndex) return;
     this._needCode = true;
     this.pageIndex = event.index;
     if (event.index === 0) this.applyState(application.watchState());
-    else application.watchHideCode();
+    else { this.cancelCode(); application.watchHideCode(); }
   },
   focusCrown() {
     var page = this, visit = this._visit;
@@ -78,7 +113,7 @@ export default {
   },
   showSchedule() { this.view = 'schedule'; this.dayOffset = 0; this.applyState(application.watchState()); this.focusCrown(); },
   showDdl() { this.view = 'ddl'; this.applyState(application.watchState()); this.focusCrown(); },
-  showAccount() { this.view = 'account'; application.watchHideCode(); this.detailTitle = '我的信息'; this.focusCrown(); },
+  showAccount() { this.cancelCode(); this.view = 'account'; this.detailTitle = '我的信息'; this.focusCrown(); },
   previousDay() { if (this.dayOffset > 0) { this.dayOffset--; this.applyState(application.watchState()); } },
   nextDay() { if (this.dayOffset < 6) { this.dayOffset++; this.applyState(application.watchState()); } },
   synchronize() { application.watchSync(); },
@@ -119,24 +154,42 @@ export default {
       this.detailTitle = '待办';
       this.rows = all.map(function(item) { return {title: item.title, caption: date(item.dueAtMs) + ' ' + time(item.dueAtMs), detail: item.courseName}; });
     }
-    var code = state.code && state.code.until > now ? state.code : null;
+    var credential = application.watchCredential();
+    if (this._work && this._work.grant !== credential) this.cancelCode();
+    if (this._failedGrant !== credential) this._failedGrant = null;
+    if (!credential || (this._prepared && this._prepared.grant !== credential)) {
+      this._localCode = null; this._prepared = null;
+    }
+    if (this._localCode && this._localCode.until <= now) this._localCode = null;
+    var code = this._localCode || state.code;
     var seconds = code ? Math.max(0, Math.ceil((code.until - now) / 1000)) : 0;
     this.codeVisible = !!code && this.pageIndex === 0 && this.view === 'deck';
-    this.codeMessage = code ? '在线码 · ' + seconds + ' 秒' :
-      (!state.connected ? '请打开手机 TechPie 连接手表' :
-        state.codeLoading ? '正在获取在线码' : state.error || '轻触获取在线码');
-    if (!state.connected) this._needCode = true;
+    this.codeMessage = code ? (this._localCode ? '离线码 · ' : '在线码 · ') + seconds + ' 秒' :
+      (this._failedGrant ? this._failureText || '离线码生成失败，轻触重试' : this._work || state.codeLoading ? '正在更新校园码' : (credential ? '轻触生成离线码' : state.connected ? '轻触获取在线码' : '请打开手机 TechPie 连接手表'));
     if (this.codeVisible && this._codeId !== code.id) this.drawCode(code);
     if (this._needCode && this.pageIndex === 0 && this.view === 'deck' && state.connected) {
       this._needCode = false;
-      if (!code) this.refreshCode();
+      if (!code) application.watchCode();
     }
     if (!this.codeVisible) this._codeId = null;
+  },
+  cancelCode() {
+    if (this._codeTimer) clearTimeout(this._codeTimer);
+    this._codeTimer = null; this._work = null;
   },
   refreshCode() {
     if (!this._visible || this.pageIndex !== 0 || this.view !== 'deck') return;
     this._needCode = false;
-    application.watchCode();
+    var page = this, grant = application.watchCredential();
+    if (!grant) { application.watchCode(); return; }
+    if (this._work) return;
+    var run = {page: this, grant: grant, start: Date.now()};
+    this._work = run; this._failedGrant = null;
+    this.codeMessage = '正在生成离线码';
+    run.tick = offlineSlice.bind(null, run);
+    run.points = function(index) { return page.$t('sm2.p' + index); };
+    run.last = Date.now();
+    this._codeTimer = setTimeout(run.tick, 1);
   },
   drawCode(code) {
     var page = this, visit = this._visit;
@@ -159,6 +212,9 @@ export default {
         }
       }
       page._codeId = code.id;
+      if (page._codeStarted && code.id.indexOf('local-') === 0) {
+        console.info('TechPie offline code totalMs=' + (Date.now() - page._codeStarted)); page._codeStarted = null;
+      }
     }, 50);
   }
 };

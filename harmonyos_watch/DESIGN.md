@@ -26,9 +26,11 @@ Android remembers the explicitly selected watch and its signing identity. Foregr
 
 Logout, account changes and explicit revocation clear the owner's cached data. When disconnected, Android records a pending clear and drains it before a new account binding. A disconnected watch receives that revocation on the next sync.
 
-## Online campus codes
+## Campus codes
 
-Android fetches the online campus code using the signed-in campus card, encodes the original bytes as a QR matrix and sends it over the authenticated Wear Engine session. The watch paints the matrix until its 30-second validity ends. Tap the campus-code page to request another code. On upgrade, the watch deletes the previous encrypted offline grant and its temporary file.
+Android fetches the online campus code using the signed-in campus card, encodes the original bytes as a QR matrix and sends it over the authenticated Wear Engine session. The watch paints the matrix until its 30-second validity ends. After explicit Android opt-in, the watch saves an unlimited-use offline grant under the paired account using AES-GCM. A tap on the code page then generates a new code on the watch.
+
+The first offline request during a page visit checks the public key against the signing key. Each presentation uses native randomness and signs the issuer bytes and timestamp with SM2/SM3. The page draws the binary payload until the earlier of grant expiry and 30 seconds from its timestamp. Changing pages or hiding the app cancels queued work.
 
 A paired watch can request a code while TechPie is in the background if Android can run the Flutter engine and the Wear Engine receiver is registered. Reopening the watch can initiate a new handshake through that receiver. After process death, force-stop or receiver loss, open TechPie on the phone to restore the connection.
 
