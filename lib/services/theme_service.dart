@@ -146,6 +146,14 @@ class ThemeService extends ChangeNotifier {
       platform: _usesIosTheme ? TargetPlatform.iOS : null,
       fontFamilyFallback: TpTypography.fontFamilyFallback,
       colorScheme: scheme,
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled) || states.contains(WidgetState.selected)) {
+            return null; // Use the Material defaults for these states.
+          }
+          return tp.textSecondary;
+        }),
+      ),
       cupertinoOverrideTheme: CupertinoThemeData(
         brightness: brightness,
         primaryColor: tp.brand,
