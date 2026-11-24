@@ -2,6 +2,8 @@ import Cocoa
 import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
+  private let deadlineReminderBridge = DeadlineReminderBridge()
+
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
@@ -10,6 +12,7 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     (NSApp.delegate as? AppDelegate)?.deadlineWidgetBridge.configure(messenger: flutterViewController.engine.binaryMessenger)
+    deadlineReminderBridge.configure(messenger: flutterViewController.engine.binaryMessenger)
 
     super.awakeFromNib()
   }

@@ -29,13 +29,19 @@ void main() {
     await storage.saveCourseTable('old', const CourseTable(periods: [], courses: []));
     final schedule = ScheduleService(storage, http, auth, accounts);
     await schedule.loadCachedData();
-    expect(schedule.canShareCourseTable('wear:alice'), false);
+    expect(schedule.courseTableForWatch('wear:alice'), isNull);
     await schedule.adoptLegacyCourseTable('wear:alice');
     final reopened = ScheduleService(storage, http, auth, accounts);
     await reopened.loadCachedData();
     await reopened.adoptLegacyCourseTable('wear:bob');
-    expect(reopened.canShareCourseTable('wear:alice'), true);
-    expect(reopened.canShareCourseTable('wear:bob'), false);
+    expect(reopened.courseTableForWatch('wear:alice'), isNotNull);
+    expect(reopened.courseTableForWatch('wear:bob'), isNull);
+    expect(reopened.courseTable, isNotNull);
+
+    // Grants written by the older watch branch used the owner field.
+    await storage.saveCourseTable('old', const CourseTable(periods: [], courses: []), owner: 'wear:alice');
+    expect(reopened.courseTableForWatch('wear:alice'), isNotNull);
+    expect(reopened.courseTableForWatch('wear:bob'), isNull);
   });
 
   // Around a login the triggers all fire inside the same second — the binding
@@ -61,6 +67,7 @@ void main() {
     await tpAuth.initialize();
 
     final schedule = ScheduleService(storage, http, auth, tpAuth);
+    addTearDown(schedule.dispose);
     expect(schedule.semesterInfo, isNull, reason: 'nothing in hand yet');
 
     // The burst: every one of these notifies the schedule through the same
@@ -106,6 +113,7 @@ void main() {
     await tpAuth.initialize();
 
     final schedule = ScheduleService(storage, http, auth, tpAuth);
+    addTearDown(schedule.dispose);
     schedule.requestFetch(force: true);
     await Future<void>.delayed(const Duration(milliseconds: 900));
     expect(
@@ -141,6 +149,11 @@ class _AnsweringClient extends http.BaseClient {
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     requests.add(request.url);
     final body = switch (request.url.path) {
+      '/personalInfo/personCenter/index.html' => '<html>IDS</html>',
+      '/personalInfo/common/getUserConf' => jsonEncode({
+          'code': '0',
+          'datas': {'uid': '20240001', 'categoryName': '学生/本科生'},
+        }),
       '/api/schedule/semesters' => jsonEncode({
           'success': true,
           'data': {
@@ -187,6 +200,19 @@ class _RecordingClient extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     requests.add(request.url);
+    if (request.url.host == 'ids.shanghaitech.edu.cn') {
+      final body = request.url.path.endsWith('index.html')
+          ? '<html>IDS</html>'
+          : jsonEncode({
+              'code': '0',
+              'datas': {'uid': '20240001', 'categoryName': '学生/本科生'},
+            });
+      return http.StreamedResponse(
+        Stream.value(utf8.encode(body)),
+        200,
+        headers: const {'content-type': 'application/json; charset=utf-8'},
+      );
+    }
     throw const _Refused();
   }
 }

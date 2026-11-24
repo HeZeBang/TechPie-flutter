@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/feedback_service.dart';
-import '../utils/platform.dart';
+import '../theme/theme.dart';
 import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class FeedbackPage extends StatefulWidget {
@@ -85,7 +87,9 @@ class _FeedbackPageState extends State<FeedbackPage> {
       if (files.length > 9 - _images.length) throw Exception('最多添加 9 张图片');
       final selected = <FeedbackImage>[];
       for (final file in files) {
-        if (await file.length() > FeedbackService.imageLimit) throw Exception('每张图片请勿超过 4 MB');
+        if (await file.length() > FeedbackService.imageLimit) {
+          throw Exception('每张图片请勿超过 4 MB');
+        }
         final bytes = await file.readAsBytes();
         try {
           final decoded = await decodeImageFromList(bytes);
@@ -99,9 +103,10 @@ class _FeedbackPageState extends State<FeedbackPage> {
     } catch (error) {
       if (mounted) {
         setState(
-          () => _error = error is Exception && error.toString().startsWith('Exception: ')
-              ? error.toString().substring(11)
-              : '未能添加图片，请重试',
+          () => _error =
+              error is Exception && error.toString().startsWith('Exception: ')
+                  ? error.toString().substring(11)
+                  : '未能添加图片，请重试',
         );
       }
     } finally {
@@ -130,152 +135,266 @@ class _FeedbackPageState extends State<FeedbackPage> {
 
   @override
   Widget build(BuildContext context) {
-    final useIosChrome = isIos();
-    final topInset = useIosChrome || usesLegacyIosChrome()
-        ? 0.0
-        : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
+    final colors = context.tpColors;
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
+      context,
+      extra: TpTokens.space4,
+    );
+
     return Scaffold(
-      extendBodyBehindAppBar: !useIosChrome && !usesLegacyIosChrome(),
-      appBar: useIosChrome
-          ? IosNativeNavigationBar(
-              title: '问题反馈 / 功能建议',
-              leadingItems: const [
-                IosNativeNavigationBarItem(
-                  id: 'back',
-                  title: 'Settings',
-                  sfSymbol: 'chevron.left',
-                  accessibilityLabel: '返回 Settings',
-                  placementGroup: 'leading-main',
-                ),
-              ],
-              onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
-            )
-          : const BlurredAppBar(title: Text('问题反馈 / 功能建议')),
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '问题反馈 / 功能建议',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '我的',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回我的',
+              placementGroup: 'leading-main',
+            ),
+          ],
+          onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+        ),
+        material: () => const BlurredAppBar(title: Text('问题反馈 / 功能建议')),
+      ),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
-          20,
-          topInset + 20,
-          20,
-          AppShellMetrics.bottomContentPaddingOf(context) + 20,
+          TpTokens.pageHorizontalPadding,
+          topInset,
+          TpTokens.pageHorizontalPadding,
+          AppShellMetrics.bottomContentPaddingOf(context) + TpTokens.space4,
         ),
-        children: _sent
-            ? const [
-                SizedBox(height: 40),
-                Icon(Icons.check_circle_outline, size: 64),
-                SizedBox(height: 20),
-                Text('反馈已发送', textAlign: TextAlign.center),
-              ]
-            : [
-                TextField(
-                  controller: _message,
-                  enabled: !_busy,
-                  minLines: 6,
-                  maxLines: 12,
-                  maxLength: 2000,
-                  decoration: const InputDecoration(
-                    hintText: '描述问题或建议',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (_images.isNotEmpty)
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+        children: [
+          TpPageBody(
+            child: _sent
+                ? TpCard(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: TpTokens.space5,
+                      vertical: TpTokens.space6,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          TpIcons.checkCircle,
+                          size: 56,
+                          color: colors.successGreen,
+                        ),
+                        const SizedBox(height: TpTokens.space4),
+                        Text(
+                          '反馈已发送',
+                          style: TpTypography.cardTitle(colors)
+                              .copyWith(fontSize: 17),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: TpTokens.space2),
+                        Text(
+                          '感谢你的反馈，我们会尽快查看并跟进。',
+                          style: TpTypography.itemMeta(colors),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      for (var i = 0; i < _images.length; i++)
-                        Stack(
+                      TpCard(
+                        leadingIcon: TpIcons.feedback,
+                        title: '反馈内容',
+                        padding: const EdgeInsets.fromLTRB(
+                          TpTokens.cardPaddingHorizontal,
+                          TpTokens.space1,
+                          TpTokens.cardPaddingHorizontal,
+                          TpTokens.space4,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Image.memory(
-                              _images[i].bytes,
-                              width: 88,
-                              height: 88,
-                              fit: BoxFit.cover,
+                            TextField(
+                              controller: _message,
+                              enabled: !_busy,
+                              minLines: 6,
+                              maxLines: 12,
+                              maxLength: 2000,
+                              decoration: const InputDecoration(
+                                hintText: '描述问题或建议',
+                                border: OutlineInputBorder(),
+                              ),
                             ),
-                            if (_images[i].uploading)
-                              const Positioned.fill(
-                                child: Center(child: CircularProgressIndicator()),
+                            const SizedBox(height: TpTokens.space3),
+                            if (_images.isNotEmpty) ...[
+                              Wrap(
+                                spacing: TpTokens.space2,
+                                runSpacing: TpTokens.space2,
+                                children: [
+                                  for (var i = 0; i < _images.length; i++)
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(
+                                        TpTokens.radiusS,
+                                      ),
+                                      child: Stack(
+                                        children: [
+                                          Image.memory(
+                                            _images[i].bytes,
+                                            width: 88,
+                                            height: 88,
+                                            fit: BoxFit.cover,
+                                          ),
+                                          if (_images[i].uploading)
+                                            const Positioned.fill(
+                                              child: Center(
+                                                child:
+                                                    CircularProgressIndicator(),
+                                              ),
+                                            ),
+                                          if (_images[i].failed)
+                                            Positioned(
+                                              bottom: 0,
+                                              left: 0,
+                                              right: 0,
+                                              child: FilledButton(
+                                                onPressed: _busy
+                                                    ? null
+                                                    : () => unawaited(
+                                                          _retryImage(
+                                                            _images[i],
+                                                          ),
+                                                        ),
+                                                child: const Text('重试'),
+                                              ),
+                                            )
+                                          else if (_images[i].uploaded)
+                                            Positioned(
+                                              bottom: 4,
+                                              left: 4,
+                                              child: Icon(
+                                                TpIcons.checkCircle,
+                                                color: colors.successGreen,
+                                              ),
+                                            ),
+                                          Positioned(
+                                            top: 0,
+                                            right: 0,
+                                            child: IconButton.filledTonal(
+                                              tooltip: '移除第 ${i + 1} 张图片',
+                                              icon: const Icon(
+                                                TpIcons.close,
+                                                size: TpTokens.iconS,
+                                              ),
+                                              onPressed: _busy || _picking
+                                                  ? null
+                                                  : () => setState(
+                                                        () =>
+                                                            _images.removeAt(i),
+                                                      ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
                               ),
-                            if (_images[i].failed)
-                              Positioned(
-                                bottom: 0,
-                                left: 0,
-                                right: 0,
-                                child: FilledButton(
-                                  onPressed:
-                                      _busy ? null : () => unawaited(_retryImage(_images[i])),
-                                  child: const Text('重试'),
-                                ),
-                              )
-                            else if (_images[i].uploaded)
-                              const Positioned(
-                                bottom: 0,
-                                left: 0,
-                                child: Icon(Icons.check_circle, color: Colors.green),
-                              ),
-                            Positioned(
-                              top: 0,
-                              right: 0,
-                              child: IconButton.filledTonal(
-                                tooltip: '移除第 ${i + 1} 张图片',
-                                icon: const Icon(Icons.close, size: 18),
-                                onPressed: _busy || _picking
-                                    ? null
-                                    : () => setState(() => _images.removeAt(i)),
-                              ),
+                              const SizedBox(height: TpTokens.space3),
+                            ],
+                            AdaptiveButton(
+                              label: '添加图片（${_images.length}/9）',
+                              icon: Icons.add_photo_alternate_outlined,
+                              sfSymbol: 'photo.badge.plus',
+                              loading: _picking,
+                              height: 44,
+                              onPressed:
+                                  _busy || _picking || _images.length >= 9
+                                      ? null
+                                      : () => unawaited(_pickImages()),
                             ),
                           ],
                         ),
+                      ),
+                      const SizedBox(height: TpTokens.sectionGap),
+                      TpCard(
+                        title: '附带信息',
+                        padding: const EdgeInsets.fromLTRB(
+                          TpTokens.cardPaddingHorizontal,
+                          0,
+                          TpTokens.cardPaddingHorizontal,
+                          TpTokens.space4,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            CheckboxListTile(
+                              title: const Text('发送用户名'),
+                              value: _includeUsername,
+                              onChanged: _busy
+                                  ? null
+                                  : (value) =>
+                                      setState(() => _includeUsername = value!),
+                              controlAffinity: ListTileControlAffinity.leading,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            CheckboxListTile(
+                              title: const Text('发送邮箱'),
+                              value: _includeEmail,
+                              onChanged: _busy
+                                  ? null
+                                  : (value) =>
+                                      setState(() => _includeEmail = value!),
+                              controlAffinity: ListTileControlAffinity.leading,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            const SizedBox(height: TpTokens.space2),
+                            TextField(
+                              controller: _contact,
+                              enabled: !_busy,
+                              maxLength: 200,
+                              decoration: const InputDecoration(
+                                labelText: '补充联系方式（选填）',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            Text(
+                              '自动附带 App 版本和平台。',
+                              style: TpTypography.itemMeta(colors),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_error != null) ...[
+                        const SizedBox(height: TpTokens.sectionGap),
+                        TpCard(
+                          color: colors.dangerRed
+                              .withValues(alpha: colors.isDark ? 0.16 : 0.08),
+                          borderColor: colors.dangerRed.withValues(alpha: 0.25),
+                          padding: const EdgeInsets.all(TpTokens.space3),
+                          child: Text(
+                            _error!,
+                            style: TpTypography.itemMeta(colors).copyWith(
+                              color: colors.dangerRed,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: TpTokens.space4),
+                      AdaptiveButton(
+                        label: '提交反馈',
+                        icon: Icons.send_outlined,
+                        sfSymbol: 'paperplane',
+                        role: AdaptiveButtonRole.prominent,
+                        loading: _busy,
+                        height: 46,
+                        onPressed:
+                            _busy || _picking ? null : () => unawaited(_submit()),
+                      ),
                     ],
                   ),
-                AdaptiveButton(
-                  label: '添加图片（${_images.length}/9）',
-                  icon: Icons.add_photo_alternate_outlined,
-                  sfSymbol: 'photo.badge.plus',
-                  loading: _picking,
-                  onPressed: _busy || _picking || _images.length >= 9
-                      ? null
-                      : () => unawaited(_pickImages()),
-                ),
-                CheckboxListTile(
-                  title: const Text('发送用户名'),
-                  value: _includeUsername,
-                  onChanged: _busy ? null : (value) => setState(() => _includeUsername = value!),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                CheckboxListTile(
-                  title: const Text('发送邮箱'),
-                  value: _includeEmail,
-                  onChanged: _busy ? null : (value) => setState(() => _includeEmail = value!),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                TextField(
-                  controller: _contact,
-                  enabled: !_busy,
-                  maxLength: 200,
-                  decoration: const InputDecoration(
-                    labelText: '补充联系方式（选填）',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text('自动附带 App 版本和平台。'),
-                if (_error != null) ...[
-                  const SizedBox(height: 16),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                ],
-                const SizedBox(height: 20),
-                AdaptiveButton(
-                  label: '提交反馈',
-                  icon: Icons.send_outlined,
-                  sfSymbol: 'paperplane',
-                  role: AdaptiveButtonRole.prominent,
-                  loading: _busy,
-                  onPressed: _busy || _picking ? null : () => unawaited(_submit()),
-                ),
-              ],
+          ),
+        ],
       ),
     );
   }

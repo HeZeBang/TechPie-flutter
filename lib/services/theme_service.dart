@@ -1,6 +1,10 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/tp_colors.dart';
+import '../theme/tp_tokens.dart';
+import '../theme/tp_typography.dart';
 import 'storage_service.dart';
 
 enum AppThemeMode {
@@ -15,8 +19,8 @@ enum AppThemeMode {
 }
 
 enum AppColorScheme {
-  system('System', Icons.colorize_outlined),
-  techRed('TechRed', Icons.palette_outlined);
+  techRed('TechRed', Icons.palette_outlined),
+  system('System', Icons.colorize_outlined);
 
   const AppColorScheme(this.label, this.icon);
   final String label;
@@ -24,26 +28,6 @@ enum AppColorScheme {
 }
 
 class ThemeService extends ChangeNotifier {
-  static const _techRedSeed = Color(0xFFA30B19);
-  static const _iosLightAccent = Color(0xFF007AFF);
-  static const _iosDarkAccent = Color(0xFF0A84FF);
-  static const _iosLightBackground = Color(0xFFFFFFFF);
-  static const _iosLightSurface = Color(0xFFF2F2F7);
-  static const _iosLightSurfaceHigh = Color(0xFFE5E5EA);
-  static const _iosLightSurfaceHighest = Color(0xFFD1D1D6);
-  static const _iosLightPrimaryContainer = Color(0xFFDCEBFF);
-  static const _iosLightSecondaryContainer = Color(0xFFFFFFFF);
-  static const _iosLightTertiary = Color(0xFF34C759);
-  static const _iosLightTertiaryContainer = Color(0xFFD9F7E1);
-  static const _iosDarkBackground = Color(0xFF000000);
-  static const _iosDarkSurface = Color(0xFF1C1C1E);
-  static const _iosDarkSurfaceHigh = Color(0xFF2C2C2E);
-  static const _iosDarkSurfaceHighest = Color(0xFF3A3A3C);
-  static const _iosDarkPrimaryContainer = Color(0xFF0E2F57);
-  static const _iosDarkSecondaryContainer = Color(0xFF2C2C2E);
-  static const _iosDarkTertiary = Color(0xFF30D158);
-  static const _iosDarkTertiaryContainer = Color(0xFF163824);
-
   final StorageService _storage;
 
   ThemeService(this._storage)
@@ -53,7 +37,7 @@ class ThemeService extends ChangeNotifier {
         ),
         _colorScheme = AppColorScheme.values.firstWhere(
           (s) => s.name == _storage.colorScheme,
-          orElse: () => AppColorScheme.system,
+          orElse: () => AppColorScheme.techRed,
         );
 
   AppThemeMode _mode;
@@ -86,8 +70,16 @@ class ThemeService extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get _usesIosTheme =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// On iOS, `AppColorScheme.system` resolves to Apple System Blue.
+  bool get usesIosSystemAccent => _usesIosTheme;
+
   bool get systemDynamicColorAvailable =>
-      _systemLight != null || _systemDark != null;
+      _usesIosTheme || _systemLight != null || _systemDark != null;
+
+  bool get supportsColorSchemeSelection => true;
 
   ThemeMode get themeMode {
     switch (_mode) {
@@ -101,217 +93,122 @@ class ThemeService extends ChangeNotifier {
     }
   }
 
-  bool get _usesIosTheme =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+  ThemeData get lightTheme => _buildTheme(Brightness.light);
 
-  // Keep Flutter's platform default as the primary font. Missing glyphs fall
-  // back to installed CJK fonts; unavailable families are skipped by the engine.
-  static const _fontFamilyFallback = [
-    'PingFang SC',
-    'PingFang TC',
-    'Microsoft YaHei UI',
-    'Microsoft YaHei',
-    'Microsoft JhengHei UI',
-    'Microsoft JhengHei',
-    'Noto Sans CJK SC',
-    'Noto Sans CJK TC',
-    'Noto Sans SC',
-    'Noto Sans TC',
-    'WenQuanYi Micro Hei',
-    'Arial Unicode MS',
-  ];
-
-  bool get supportsColorSchemeSelection => !_usesIosTheme;
-
-  ColorScheme _resolveScheme(Brightness brightness) {
-    if (_colorScheme == AppColorScheme.system) {
-      final system =
-          brightness == Brightness.light ? _systemLight : _systemDark;
-      if (system != null) return system;
-    }
-    return ColorScheme.fromSeed(
-      seedColor: _techRedSeed,
-      brightness: brightness,
-    );
-  }
-
-  ThemeData get lightTheme {
-    final base = ThemeData(
-      useMaterial3: true,
-      fontFamilyFallback: _fontFamilyFallback,
-      colorScheme: _resolveScheme(Brightness.light),
-    );
-
-    if (!_usesIosTheme) {
-      return _buildDesktopTheme(base);
-    }
-
-    return _buildIosTheme(base, brightness: Brightness.light);
-  }
-
-  ThemeData get darkTheme {
-    final base = _resolveScheme(Brightness.dark);
-
-    if (_mode == AppThemeMode.amoled) {
-      if (_usesIosTheme) {
-        return _buildIosTheme(
-          ThemeData(
-            useMaterial3: true,
-            fontFamilyFallback: _fontFamilyFallback,
-            colorScheme: base,
-          ),
-          brightness: Brightness.dark,
-          amoled: true,
-        );
-      }
-
-      return ThemeData(
-        useMaterial3: true,
-        fontFamilyFallback: _fontFamilyFallback,
-        colorScheme: base.copyWith(
-          surface: Colors.black,
-          onSurface: Colors.white,
-          surfaceContainerLowest: Colors.black,
-          surfaceContainerLow: const Color(0xFF0A0A0A),
-          surfaceContainer: const Color(0xFF121212),
-          surfaceContainerHigh: const Color(0xFF1A1A1A),
-          surfaceContainerHighest: const Color(0xFF222222),
-        ),
-        scaffoldBackgroundColor: Colors.black,
-        appBarTheme: const AppBarTheme(
-          centerTitle: false,
-          elevation: 0.5,
-          scrolledUnderElevation: 0.5,
-          surfaceTintColor: Colors.transparent,
-        ),
-        snackBarTheme: const SnackBarThemeData(
-          behavior: SnackBarBehavior.floating,
-          shape: _snackBarShape,
-          insetPadding: _snackBarInsets,
-        ),
-      );
-    }
-
-    final theme = ThemeData(
-      useMaterial3: true,
-      fontFamilyFallback: _fontFamilyFallback,
-      colorScheme: base,
-    );
-
-    if (!_usesIosTheme) {
-      return _buildDesktopTheme(theme);
-    }
-
-    return _buildIosTheme(theme, brightness: Brightness.dark);
-  }
+  ThemeData get darkTheme =>
+      _buildTheme(Brightness.dark, amoled: _mode == AppThemeMode.amoled);
 
   /// Snackbars float as rounded cards above the glass bottom nav (which is a
   /// 56dp capsule with 8dp margins) instead of a full-width strip glued to it.
   static const _snackBarShape = RoundedRectangleBorder(
-    borderRadius: BorderRadius.all(Radius.circular(16)),
+    borderRadius: BorderRadius.all(Radius.circular(TpTokens.radiusM)),
   );
   static const _snackBarInsets = EdgeInsets.fromLTRB(12, 0, 12, 12);
 
-  ThemeData _buildDesktopTheme(ThemeData base) {
-    return base.copyWith(
-      appBarTheme: base.appBarTheme.copyWith(
-        centerTitle: false,
-        elevation: 0.5,
-        scrolledUnderElevation: 0.5,
-        surfaceTintColor: Colors.transparent,
-      ),
-      snackBarTheme: base.snackBarTheme.copyWith(
-        behavior: SnackBarBehavior.floating,
-        shape: _snackBarShape,
-        insetPadding: _snackBarInsets,
-      ),
-    );
+  ({Color? accent, Color? onAccent}) _resolveAccent(Brightness brightness) {
+    if (_colorScheme != AppColorScheme.system) {
+      return (accent: null, onAccent: null);
+    }
+    final isDark = brightness == Brightness.dark;
+    if (_usesIosTheme) {
+      return (
+        accent: isDark ? TpTokens.iosBlueDark : TpTokens.iosBlueLight,
+        onAccent: Colors.white,
+      );
+    }
+    final system = isDark ? _systemDark : _systemLight;
+    if (system != null) {
+      return (accent: system.primary, onAccent: system.onPrimary);
+    }
+    return (accent: null, onAccent: null);
   }
 
-  ThemeData _buildIosTheme(
-    ThemeData base, {
-    required Brightness brightness,
-    bool amoled = false,
-  }) {
+  ThemeData _buildTheme(Brightness brightness, {bool amoled = false}) {
     final isDark = brightness == Brightness.dark;
-    final background = isDark ? _iosDarkBackground : _iosLightBackground;
-    final surface = amoled
-        ? Colors.black
-        : isDark
-            ? _iosDarkSurface
-            : _iosLightSurface;
-    final surfaceHigh = amoled
-        ? const Color(0xFF101012)
-        : isDark
-            ? _iosDarkSurfaceHigh
-            : _iosLightSurfaceHigh;
-    final surfaceHighest = amoled
-        ? const Color(0xFF1C1C1E)
-        : isDark
-            ? _iosDarkSurfaceHighest
-            : _iosLightSurfaceHighest;
-    final scheme = base.colorScheme.copyWith(
-      primary: isDark ? _iosDarkAccent : _iosLightAccent,
-      onPrimary: Colors.white,
-      primaryContainer:
-          isDark ? _iosDarkPrimaryContainer : _iosLightPrimaryContainer,
-      onPrimaryContainer:
-          isDark ? const Color(0xFFD7E8FF) : const Color(0xFF001B3D),
-      secondary: isDark ? _iosDarkAccent : _iosLightAccent,
-      onSecondary: Colors.white,
-      secondaryContainer:
-          isDark ? _iosDarkSecondaryContainer : _iosLightSecondaryContainer,
-      onSecondaryContainer: isDark ? Colors.white : Colors.black,
-      tertiary: isDark ? _iosDarkTertiary : _iosLightTertiary,
-      onTertiary: Colors.white,
-      tertiaryContainer:
-          isDark ? _iosDarkTertiaryContainer : _iosLightTertiaryContainer,
-      onTertiaryContainer:
-          isDark ? const Color(0xFFD9F7E1) : const Color(0xFF11361D),
-      surface: background,
-      onSurface: isDark ? Colors.white : Colors.black,
-      surfaceDim: surface,
-      surfaceBright: background,
-      surfaceContainerLowest: background,
-      surfaceContainerLow: surface,
-      surfaceContainer: surface,
-      surfaceContainerHigh: surfaceHigh,
-      surfaceContainerHighest: surfaceHighest,
-      onSurfaceVariant:
-          isDark ? const Color(0xFFAEAEB2) : const Color(0xFF6C6C70),
-      outline: isDark ? const Color(0x3DEBEBF5) : const Color(0x4C3C3C43),
-      outlineVariant:
-          isDark ? const Color(0x24EBEBF5) : const Color(0x1F3C3C43),
-      surfaceTint: Colors.transparent,
-    );
+    final resolved = _resolveAccent(brightness);
+    final tp = isDark
+        ? TpColors.dark(
+            amoled: amoled,
+            accent: resolved.accent,
+            onAccent: resolved.onAccent,
+          )
+        : TpColors.light(
+            accent: resolved.accent,
+            onAccent: resolved.onAccent,
+          );
+    final scheme = tp.toColorScheme();
+    final cardBorder = tp.border == Colors.transparent
+        ? BorderSide.none
+        : BorderSide(color: tp.border);
 
-    return base.copyWith(
-      platform: TargetPlatform.iOS,
+    return ThemeData(
+      useMaterial3: true,
+      platform: _usesIosTheme ? TargetPlatform.iOS : null,
+      fontFamilyFallback: TpTypography.fontFamilyFallback,
       colorScheme: scheme,
-      scaffoldBackgroundColor: background,
-      canvasColor: background,
-      cardColor: surface,
-      dividerColor: scheme.outlineVariant,
-      appBarTheme: AppBarTheme(
-        backgroundColor: background,
-        foregroundColor: isDark ? Colors.white : Colors.black,
+      cupertinoOverrideTheme: CupertinoThemeData(
+        brightness: brightness,
+        primaryColor: tp.brand,
+        scaffoldBackgroundColor: tp.canvas,
+      ),
+      scaffoldBackgroundColor: tp.canvas,
+      canvasColor: tp.canvas,
+      cardColor: tp.surface,
+      dividerColor: tp.divider,
+      dividerTheme: DividerThemeData(
+        color: tp.divider,
+        thickness: 0.5,
+        space: 1,
+      ),
+      cardTheme: CardThemeData(
+        color: tp.surface,
         surfaceTintColor: Colors.transparent,
-        elevation: 0.5,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: const BorderRadius.all(
+            Radius.circular(TpTokens.radiusM),
+          ),
+          side: cardBorder,
+        ),
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: tp.canvas,
+        foregroundColor: tp.textPrimary,
+        centerTitle: false,
+        elevation: 0,
         scrolledUnderElevation: 0.5,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: tp.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(TpTokens.radiusL),
+          ),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: tp.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(TpTokens.radiusL)),
+        ),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: surfaceHighest,
-        contentTextStyle: TextStyle(
-          color: isDark ? Colors.white : Colors.black,
-        ),
+        backgroundColor: isDark ? tp.surfacePressed : null,
+        contentTextStyle: isDark ? TextStyle(color: tp.textPrimary) : null,
         behavior: SnackBarBehavior.floating,
         shape: _snackBarShape,
         insetPadding: _snackBarInsets,
       ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: surface,
-      ),
+      inputDecorationTheme: _usesIosTheme
+          ? InputDecorationTheme(
+              filled: true,
+              fillColor: tp.surface,
+            )
+          : null,
+      extensions: <ThemeExtension<dynamic>>[tp],
     );
   }
 }

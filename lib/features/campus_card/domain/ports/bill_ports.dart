@@ -18,3 +18,9 @@ abstract interface class DateRangeTransactionHistoryPort {
     int pageSize = 20,
   });
 }
+
+/// Optional host integration. A complete recent page establishes or advances
+/// the notification baseline; demos and filtered/history pages never call it.
+abstract interface class SpendingAlertPort {
+  Future<void> observeTransactions(List<TransactionRecord> records, {required String subjectId});
+}

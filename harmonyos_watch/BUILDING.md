@@ -84,3 +84,6 @@ Configure signing in the generated project's `harmonyos_watch` directory and run
 the **执行 / 等待** times from the same run. **测试绘制** measures QR drawing
 separately. Both tests use public fixtures. The regular build opens the online
 campus code and omits the benchmark.
+
+On a GT 6 Pro, the 0.4.13 public-fixture run took 3,705 ms, including
+3,214 ms executing and 491 ms waiting between slices.

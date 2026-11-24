@@ -5,6 +5,8 @@ import '../pages/campus_card_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
+import '../pages/student_allowance_page.dart';
+import '../theme/tp_icons.dart';
 import '../widgets/adaptive_page_navigation.dart';
 
 enum FeatureMode {
@@ -47,7 +49,7 @@ final featureEntries = <Feature>[
       context,
       builder: (_) => const ElrcRecordingsPage(),
     ),
-    icon: const Icon(Icons.video_library_outlined),
+    icon: const Icon(TpIcons.recordings),
   ),
   Feature(
     id: 'ecourse',
@@ -55,7 +57,7 @@ final featureEntries = <Feature>[
     mode: FeatureMode.webviewWithCookie,
     url: 'https://ecourse.shanghaitech.edu.cn:8080/',
     cookieType: CookieType.ecourse,
-    icon: const Icon(Icons.cast_for_education),
+    icon: const Icon(TpIcons.classroom),
   ),
   Feature(
     id: 'student_leave',
@@ -63,7 +65,7 @@ final featureEntries = <Feature>[
     mode: FeatureMode.webviewWithCookie,
     url: 'https://egate.shanghaitech.edu.cn/xsfw/sys/ydxsqjxs/index.html#/',
     cookieType: CookieType.egateApp,
-    icon: const Icon(Icons.door_front_door),
+    icon: const Icon(TpIcons.building),
   ),
   Feature(
     id: 'campus_card',
@@ -75,7 +77,7 @@ final featureEntries = <Feature>[
         entry: CampusCardEntry.paymentCode,
       ),
     ),
-    icon: const Icon(Icons.account_balance_wallet_outlined),
+    icon: const Icon(TpIcons.wallet),
   ),
   Feature(
     id: 'oa_gym',
@@ -85,7 +87,7 @@ final featureEntries = <Feature>[
       context,
       builder: (_) => const OaGymPage(),
     ),
-    icon: const Icon(Icons.sports_tennis),
+    icon: const Icon(TpIcons.gym),
   ),
   Feature(
     id: 'egate_xshd',
@@ -95,7 +97,17 @@ final featureEntries = <Feature>[
       context,
       builder: (_) => const EgateAppPage(),
     ),
-    icon: const Icon(Icons.qr_code_scanner),
+    icon: const Icon(TpIcons.scan),
+  ),
+  Feature(
+    id: 'student_allowance',
+    description: '学生津贴',
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const StudentAllowancePage(),
+    ),
+    icon: const Icon(TpIcons.allowance),
   ),
 ];
 
@@ -104,5 +116,5 @@ final moreFeature = Feature(
   description: '更多',
   mode: FeatureMode.native,
   nativeEntry: (context) {},
-  icon: const Icon(Icons.more_horiz),
+  icon: const Icon(TpIcons.more),
 );

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../application/campus_network_status.dart';
 import '../application/offline_payment_service.dart';
@@ -14,6 +17,7 @@ import '../data/repositories/ecard_payment_code_repository.dart';
 import '../data/repositories/ecard_scan_payment_repository.dart';
 import '../data/repositories/ecard_security_settings_repository.dart';
 import '../data/repositories/ecard_transaction_history_repository.dart';
+import '../data/repositories/merchant_alias_repository.dart';
 import '../data/storage/flutter_secure_credential_store.dart';
 import '../data/storage/secure_card_cache.dart';
 import '../data/storage/secure_offline_credential_repository.dart';
@@ -27,11 +31,18 @@ AppRuntime buildRealRuntime(
   SecureCredentialStore? secureCredentialStore,
   DecryptedHttpTraceInterceptor? httpTrace,
   EcardSessionIssuer? sessionIssuer,
+  Uri Function()? merchantAliasesEndpoint,
 }) {
   if (environment == AppEnvironment.demo) {
     throw ArgumentError('The real composition root cannot build demo');
   }
   final secureStore = secureCredentialStore ?? FlutterSecureCredentialStore();
+  final merchantAliases = MerchantAliasRepository(
+    endpoint: merchantAliasesEndpoint,
+    bundledConfigReader: () async =>
+        rootBundle.loadString(MerchantAliasRepository.bundledConfigAsset),
+  );
+  unawaited(merchantAliases.initialize());
   final sessionStore = SecureSessionCredentialStore(secureStore);
   Future<String?> readSubjectId() async {
     final openId = await sessionStore.readOpenId();
@@ -118,10 +129,14 @@ AppRuntime buildRealRuntime(
     capabilities: AppCapabilities.forEnvironment(environment),
     auth: auth,
     cards: cards,
-    paymentCodes: EcardPaymentCodeRepository(client, onBalance: cards.acceptCodeBalance,
-        networkStatus: networkStatus,),
+    paymentCodes: EcardPaymentCodeRepository(
+      client,
+      onBalance: cards.acceptCodeBalance,
+      networkStatus: networkStatus,
+    ),
     scanPayments: EcardScanPaymentRepository(client),
     transactions: transactions,
+    merchantAliases: merchantAliases,
     securitySettings: EcardSecuritySettingsRepository(client),
     offlinePayments: offline,
     brightness: brightness,
@@ -131,6 +146,7 @@ AppRuntime buildRealRuntime(
     networkStatus: networkStatus,
     scanner: scanner,
     disposeRuntime: () async {
+      await merchantAliases.dispose();
       await networkStatus.dispose();
       await scanner?.dispose();
       await lifecycle.dispose();

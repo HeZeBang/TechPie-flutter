@@ -1,23 +1,26 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../models/course.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
+import '../models/graduate_schedule.dart' show graduateSemesterPrefix;
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
-import '../utils/platform.dart';
+import '../theme/theme.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_confirmation_button.dart';
+import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_multi_select.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_text_field_group.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/schedule_picker_sheet.dart';
 import 'custom_course_period_picker.dart';
@@ -40,6 +43,8 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
   final _teachers = TextEditingController();
 
   late ScheduleService _schedule;
+  late int _campusAccountRevision;
+  late bool _openedForGraduate;
   List<Period> _periods = const [];
   late int _totalWeeks;
 
@@ -72,7 +77,9 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     _initialized = true;
 
     _schedule = ServiceProvider.of(context).scheduleService;
+    _campusAccountRevision = _schedule.campusAccountRevision;
     _semesterId = _schedule.selectedSemesterId;
+    _openedForGraduate = _semesterId?.startsWith(graduateSemesterPrefix) == true;
     _loadSemesterContext(_semesterId);
 
     final existing = widget.course;
@@ -220,51 +227,22 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
   }
 
   Future<void> _pickDate() async {
-    final initialDate = _date ?? DateTime.now();
-    DateTime? picked;
-    if (isIos()) {
-      var pending = initialDate;
-      picked = await showSchedulePickerSheet<DateTime>(
-        context: context,
-        title: '上课日期',
-        selection: () => pending,
-        builder: (_) => SizedBox(
-          height: 216,
-          child: CupertinoDatePicker(
-            mode: CupertinoDatePickerMode.date,
-            initialDateTime: initialDate,
-            onDateTimeChanged: (value) => pending = value,
-          ),
-        ),
-      );
-    } else {
-      // Material requires finite bounds; these are calendar bounds, not a term window.
-      picked = await showDatePicker(
-        context: context,
-        initialDate: initialDate,
-        firstDate: DateTime(1),
-        lastDate: DateTime(9999, 12, 31),
-      );
-    }
+    final picked = await showAdaptiveDatePicker(
+      context: context,
+      initialDate: _date ?? DateTime.now(),
+      firstDate: DateTime(1),
+      lastDate: DateTime(9999, 12, 31),
+      title: '上课日期',
+    );
     if (picked == null || !mounted) return;
     setState(() => _date = picked);
   }
 
   Future<void> _pickTime({required bool isStart}) async {
-    var pending = isStart ? _startTime : _endTime;
-    final picked = await showSchedulePickerSheet<TimeOfDay>(
+    final picked = await showScheduleTimePicker(
       context: context,
+      initialTime: isStart ? _startTime : _endTime,
       title: isStart ? '开始时间' : '结束时间',
-      selection: () => pending,
-      builder: (_) => SizedBox(
-        height: 216,
-        child: CupertinoDatePicker(
-          mode: CupertinoDatePickerMode.time,
-          use24hFormat: true,
-          initialDateTime: DateTime(2026, 1, 1, pending.hour, pending.minute),
-          onDateTimeChanged: (date) => pending = TimeOfDay.fromDateTime(date),
-        ),
-      ),
     );
     if (picked == null || !mounted) return;
     setState(() {
@@ -276,10 +254,25 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     });
   }
 
+  bool _checkGraduateAccount(String? semesterId) {
+    if ((_openedForGraduate || semesterId?.startsWith(graduateSemesterPrefix) == true) &&
+        _campusAccountRevision != _schedule.campusAccountRevision) {
+      showAdaptiveFeedback(
+        context: context,
+        message: '学校账号已切换，请重新打开课程编辑页',
+        style: AdaptiveFeedbackStyle.error,
+      );
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     final name = _name.text.trim();
     final semesterId = _semesterId;
+    if (!_checkGraduateAccount(semesterId)) return;
+    final periodTime = PeriodCourseTime(startPeriod: _startPeriod, endPeriod: _endPeriod);
 
     final problem = switch (true) {
       _ when name.isEmpty => '请填写课程名称',
@@ -288,6 +281,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
       _ when !_isOneOff && _weeks.isEmpty => '请至少选择一周',
       _ when _effectiveWeekdays.isEmpty => '请至少选择一个星期',
       _ when _timeMode == 0 && _periods.isEmpty => '该学期没有可用的节次信息',
+      _ when _timeMode == 0 && periodTime.clockRange(_periods) == null => '请选择有效的上课节次',
       _
           when _timeMode == 1 &&
               (_endTime.hour * 60 + _endTime.minute) <=
@@ -317,10 +311,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         // disagree with it later.
         weekdays: _isOneOff ? const [] : (_weekdays.toList()..sort()),
         time: _timeMode == 0
-            ? PeriodCourseTime(
-                startPeriod: _startPeriod,
-                endPeriod: _endPeriod,
-              )
+            ? periodTime
             : ClockCourseTime(
                 startTime: _formatTime(_startTime),
                 endTime: _formatTime(_endTime),
@@ -329,6 +320,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
         date: _isOneOff ? _date : null,
         color: _color,
       ),
+      periods: _periods,
     );
     if (!mounted) return;
     Navigator.pop(context);
@@ -338,6 +330,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     final semesterId = _originSemesterId ?? _semesterId;
     final id = _id;
     if (semesterId == null || id == null) return;
+    if (!_checkGraduateAccount(semesterId)) return;
 
     await _schedule.deleteCustomCourse(semesterId, id);
     if (!mounted) return;
@@ -346,204 +339,224 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tpColors;
     final title = widget.course == null ? '添加课程' : '编辑课程';
-    final cardMargin = (Theme.of(context).cardTheme.margin ?? const EdgeInsets.all(4))
-        .resolve(Directionality.of(context));
-    final actionPadding = EdgeInsets.only(left: cardMargin.left, right: cardMargin.right);
-    final useIosChrome = isIos();
-    final useLegacyIosChrome = usesLegacyIosChrome();
-    final topInset = useIosChrome || useLegacyIosChrome
-        ? 0.0
-        : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
+      context,
+      extra: TpTokens.space3,
+    );
 
     return Scaffold(
-      extendBodyBehindAppBar: !useIosChrome && !useLegacyIosChrome,
-      appBar: useIosChrome
-          ? IosNativeNavigationBar(
-              title: title,
-              leadingItems: const [
-                IosNativeNavigationBarItem(
-                  id: 'back',
-                  title: '返回',
-                  sfSymbol: 'chevron.left',
-                  accessibilityLabel: '返回',
-                  placementGroup: 'leading-main',
-                ),
-              ],
-              onItemPressed: (id) {
-                if (id == 'back') unawaited(maybePopAdaptivePage<void>(context));
-              },
-            )
-          : BlurredAppBar(title: Text(title)),
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: title,
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') unawaited(maybePopAdaptivePage<void>(context));
+          },
+        ),
+        material: () => BlurredAppBar(title: Text(title)),
+      ),
       body: ListView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: EdgeInsets.fromLTRB(
-          16,
-          topInset + 12,
-          16,
+          TpTokens.pageHorizontalPadding,
+          topInset,
+          TpTokens.pageHorizontalPadding,
           AppShellMetrics.bottomContentPaddingOf(context),
         ),
         children: [
-          _section(
-            '学期',
-            children: [
-              _select(
-                value: _semesterId,
-                options: _semesterOptions(),
-                placeholder: '选择学期',
-                onChanged: _setSemester,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _section(
-            '课程信息',
-            children: [
-              TapRegion(
-                onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-                child: AdaptiveTextFieldGroup(
-                  items: [
-                    AdaptiveTextFieldGroupItem(
-                      controller: _name,
-                      placeholder: '课程名称',
-                    ),
-                    AdaptiveTextFieldGroupItem(
-                      controller: _location,
-                      placeholder: '上课地点（可选）',
-                    ),
-                    AdaptiveTextFieldGroupItem(
-                      controller: _teachers,
-                      placeholder: '教师（可选）',
-                      textInputAction: TextInputAction.done,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _section(
-            '课程时间',
-            children: [
-              const SizedBox(height: 12),
-              if (_isOneOff)
-                _dateTile()
-              else ...[
-                AdaptiveMultiSelect(
-                  options: [
-                    for (final week in _allWeeks)
-                      AdaptiveSelectOption(
-                        value: '$week',
-                        label: '第 $week 周',
-                      ),
-                  ],
-                  values: _weeks.map((week) => '$week').toSet(),
-                  summary: _weeksSummary,
-                  placeholder: '选择周数',
-                  title: '选择周数',
-                  onChanged: (values) => _setWeeks(values.map(int.parse)),
-                ),
-                const SizedBox(height: 8),
-                Row(
+          TpPageBody(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _section(
+                  '学期',
                   children: [
-                    Expanded(
-                      child: Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          _shortcut(
-                            '全选',
-                            _weeks.length == _totalWeeks,
-                            () => _setWeeks(_allWeeks.toSet()),
+                    _select(
+                      value: _semesterId,
+                      options: _semesterOptions(),
+                      placeholder: '选择学期',
+                      onChanged: _setSemester,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: TpTokens.sectionGap),
+                _section(
+                  '课程信息',
+                  children: [
+                    TapRegion(
+                      onTapOutside: (_) =>
+                          FocusManager.instance.primaryFocus?.unfocus(),
+                      child: AdaptiveTextFieldGroup(
+                        items: [
+                          AdaptiveTextFieldGroupItem(
+                            controller: _name,
+                            placeholder: '课程名称',
                           ),
-                          _shortcut(
-                            '单周',
-                            _weeks.isNotEmpty &&
-                                _weeks.length == _allWeeks.where((week) => week.isOdd).length &&
-                                _weeks.containsAll(_allWeeks.where((week) => week.isOdd)),
-                            () => _setWeeks(
-                              _allWeeks.where((week) => week.isOdd).toSet(),
-                            ),
+                          AdaptiveTextFieldGroupItem(
+                            controller: _location,
+                            placeholder: '上课地点（可选）',
                           ),
-                          _shortcut(
-                            '双周',
-                            _weeks.isNotEmpty &&
-                                _weeks.length == _allWeeks.where((week) => week.isEven).length &&
-                                _weeks.containsAll(_allWeeks.where((week) => week.isEven)),
-                            () => _setWeeks(
-                              _allWeeks.where((week) => week.isEven).toSet(),
-                            ),
+                          AdaptiveTextFieldGroupItem(
+                            controller: _teachers,
+                            placeholder: '教师（可选）',
+                            textInputAction: TextInputAction.done,
                           ),
                         ],
                       ),
                     ),
-                    // An action, not a state — the chips beside it describe what
-                    // is selected, this one only clears.
-                    TextButton(
-                      onPressed: _weeks.isEmpty ? null : () => _setWeeks(const {}),
-                      child: const Text('清空'),
+                  ],
+                ),
+                const SizedBox(height: TpTokens.sectionGap),
+                _section(
+                  '课程时间',
+                  children: [
+                    if (_isOneOff)
+                      _dateTile()
+                    else ...[
+                      AdaptiveMultiSelect(
+                        options: [
+                          for (final week in _allWeeks)
+                            AdaptiveSelectOption(
+                              value: '$week',
+                              label: '第 $week 周',
+                            ),
+                        ],
+                        values: _weeks.map((week) => '$week').toSet(),
+                        summary: _weeksSummary,
+                        placeholder: '选择周数',
+                        title: '选择周数',
+                        onChanged: (values) => _setWeeks(values.map(int.parse)),
+                      ),
+                      const SizedBox(height: TpTokens.space2),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                _shortcut(
+                                  '全选',
+                                  _weeks.length == _totalWeeks,
+                                  () => _setWeeks(_allWeeks.toSet()),
+                                ),
+                                _shortcut(
+                                  '单周',
+                                  _weeks.isNotEmpty &&
+                                      _weeks.length ==
+                                          _allWeeks
+                                              .where((week) => week.isOdd)
+                                              .length &&
+                                      _weeks.containsAll(
+                                        _allWeeks.where((week) => week.isOdd),
+                                      ),
+                                  () => _setWeeks(
+                                    _allWeeks
+                                        .where((week) => week.isOdd)
+                                        .toSet(),
+                                  ),
+                                ),
+                                _shortcut(
+                                  '双周',
+                                  _weeks.isNotEmpty &&
+                                      _weeks.length ==
+                                          _allWeeks
+                                              .where((week) => week.isEven)
+                                              .length &&
+                                      _weeks.containsAll(
+                                        _allWeeks.where((week) => week.isEven),
+                                      ),
+                                  () => _setWeeks(
+                                    _allWeeks
+                                        .where((week) => week.isEven)
+                                        .toSet(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed:
+                                _weeks.isEmpty ? null : () => _setWeeks(const {}),
+                            child: const Text('清空'),
+                          ),
+                        ],
+                      ),
+                      if (!_isOneOff) ...[
+                        const SizedBox(height: TpTokens.space3),
+                        AdaptiveMultiSelect(
+                          options: [
+                            for (var day = 1; day <= 7; day++)
+                              AdaptiveSelectOption(
+                                value: '$day',
+                                label: _weekdayLabels[day - 1],
+                              ),
+                          ],
+                          values: _weekdays.map((day) => '$day').toSet(),
+                          summary: _weekdaySummary,
+                          placeholder: '选择星期',
+                          title: '选择星期',
+                          onChanged: (values) =>
+                              _setWeekdays(values.map(int.parse)),
+                        ),
+                      ],
+                    ],
+                    const SizedBox(height: TpTokens.space1),
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: TextButton.icon(
+                        onPressed: () =>
+                            setState(() => _scheduleMode = _isOneOff ? 0 : 1),
+                        icon: Icon(
+                          _isOneOff ? TpIcons.refresh : TpIcons.calendar,
+                          size: TpTokens.iconS,
+                        ),
+                        label: Text(_isOneOff ? '按周重复' : '自定义日期'),
+                      ),
                     ),
                   ],
                 ),
-                if (!_isOneOff) ...[
-                  const SizedBox(height: 12),
-                  AdaptiveMultiSelect(
-                    options: [
-                      for (var day = 1; day <= 7; day++)
-                        AdaptiveSelectOption(
-                          value: '$day',
-                          label: _weekdayLabels[day - 1],
-                        ),
-                    ],
-                    values: _weekdays.map((day) => '$day').toSet(),
-                    summary: _weekdaySummary,
-                    placeholder: '选择星期',
-                    title: '选择星期',
-                    onChanged: (values) => _setWeekdays(values.map(int.parse)),
+                const SizedBox(height: TpTokens.sectionGap),
+                _section('时间段', children: _timeFields()),
+                const SizedBox(height: TpTokens.space5),
+                AdaptiveButton(
+                  onPressed: _saving ? null : _save,
+                  icon: TpIcons.check,
+                  sfSymbol: 'checkmark',
+                  label: '保存',
+                  role: AdaptiveButtonRole.prominent,
+                  loading: _saving,
+                  height: 46,
+                  accessibilityLabel: '保存课程',
+                ),
+                if (widget.course != null) ...[
+                  const SizedBox(height: TpTokens.space2),
+                  AdaptiveConfirmationButton(
+                    label: '删除',
+                    confirmTitle: '删除这节课？',
+                    confirmLabel: '删除',
+                    icon: TpIcons.delete,
+                    sfSymbol: 'trash',
+                    destructive: true,
+                    onConfirmed: _delete,
                   ),
                 ],
               ],
-              const SizedBox(height: 4),
-              Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: TextButton.icon(
-                  onPressed: () => setState(() => _scheduleMode = _isOneOff ? 0 : 1),
-                  icon: Icon(_isOneOff ? Icons.repeat : Icons.event_outlined, size: 18),
-                  label: Text(_isOneOff ? '按周重复' : '自定义日期'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _section('时间段', children: _timeFields()),
-          const SizedBox(height: 20),
-          Padding(
-            padding: actionPadding,
-            child: AdaptiveButton(
-              onPressed: _saving ? null : _save,
-              icon: Icons.check_rounded,
-              sfSymbol: 'checkmark',
-              label: '保存',
-              role: AdaptiveButtonRole.prominent,
-              loading: _saving,
-              accessibilityLabel: '保存课程',
             ),
           ),
-          if (widget.course != null) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: actionPadding,
-              child: AdaptiveConfirmationButton(
-                label: '删除',
-                confirmTitle: '删除这节课？',
-                confirmLabel: '删除',
-                icon: Icons.delete_outline,
-                sfSymbol: 'trash',
-                destructive: true,
-                onConfirmed: _delete,
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -687,41 +700,38 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
       SchedulePickerField(onTap: onTap, child: child);
 
   Widget _dateTile() {
-    final theme = Theme.of(context);
+    final colors = context.tpColors;
     final date = _date;
-    final week = date == null ? null : teachingWeekOf(date, _schedule.termBegin);
+    final week =
+        date == null ? null : teachingWeekOf(date, _schedule.termBegin);
 
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.event_outlined),
-      title: const Text('上课日期'),
-      subtitle: Text(
-        date == null
-            ? '未选择'
-            : '${_formatDate(date)} ${_weekdayLabels[date.weekday - 1]}'
-                '${week == null ? '' : ' · 第 $week 周'}',
-      ),
+    return TpListRow(
+      icon: TpIcons.calendar,
+      title: '上课日期',
+      subtitle: date == null
+          ? '未选择'
+          : '${_formatDate(date)} ${_weekdayLabels[date.weekday - 1]}'
+              '${week == null ? '' : ' · 第 $week 周'}',
       trailing: Text(
         '选择',
-        style: TextStyle(color: theme.colorScheme.primary),
+        style: TpTypography.badge(colors.brand),
       ),
       onTap: _pickDate,
     );
   }
 
   Widget _section(String title, {required List<Widget> children}) {
-    final theme = Theme.of(context);
-    return Card.outlined(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 12),
-            ...children,
-          ],
-        ),
+    return TpCard(
+      title: title,
+      padding: const EdgeInsets.fromLTRB(
+        TpTokens.cardPaddingHorizontal,
+        TpTokens.space1,
+        TpTokens.cardPaddingHorizontal,
+        TpTokens.space4,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
       ),
     );
   }

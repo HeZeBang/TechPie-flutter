@@ -11,9 +11,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
+import '../models/campus_identity.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
+import '../models/graduate_schedule.dart';
 import '../models/ids_passkey.dart';
 import '../models/oa_gym.dart';
 import '../models/renew_status.dart';
@@ -35,6 +38,8 @@ class StorageService {
   static const _syncMasterKeyKey = 'sync_master_key'; // secure storage
   static const _deviceIdKey = 'device_id';
   static const _maskPersonalInfoKey = 'mask_personal_info';
+  static const _proxyUrlKey = 'app_proxy_url';
+  static const _proxyEnabledKey = 'app_proxy_enabled';
 
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
@@ -43,6 +48,9 @@ class StorageService {
 
   String? get campusWebOwner => _prefs.getString('campus_web_owner');
   Future<void> setCampusWebOwner(String owner) => _prefs.setString('campus_web_owner', owner);
+
+  bool get islandEnabled => _prefs.getBool('island_enabled') ?? false;
+  Future<void> setIslandEnabled(bool value) => _prefs.setBool('island_enabled', value);
 
   // Secure session storage
   Future<void> saveSession(UserSession session) async {
@@ -211,6 +219,11 @@ class StorageService {
     return raw == null ? null : DateTime.tryParse(raw);
   }
 
+  /// Notifications are opt-in and never change the upstream release defaults.
+  bool get spendingAlertsEnabled => _prefs.getBool('spending_alerts_enabled') ?? false;
+  Future<void> setSpendingAlertsEnabled(bool value) => _prefs.setBool('spending_alerts_enabled', value);
+  Future<void> reloadNotificationPreferences() => _prefs.reload();
+
   // SharedPreferences for non-sensitive data
   bool get debugMode =>
       !kReleaseMode && (_prefs.getBool(_debugModeKey) ?? false);
@@ -230,12 +243,17 @@ class StorageService {
   String get themeMode => _prefs.getString(_themeModeKey) ?? 'system';
   Future<void> setThemeMode(String mode) => _prefs.setString(_themeModeKey, mode);
 
-  String get colorScheme => _prefs.getString(_colorSchemeKey) ?? 'system';
+  String get colorScheme => _prefs.getString(_colorSchemeKey) ?? 'techRed';
   Future<void> setColorScheme(String scheme) => _prefs.setString(_colorSchemeKey, scheme);
 
   bool get maskPersonalInfo => _prefs.getBool(_maskPersonalInfoKey) ?? true;
   Future<void> setMaskPersonalInfo(bool value) =>
       _prefs.setBool(_maskPersonalInfoKey, value);
+
+  String get appProxyUrl => _prefs.getString(_proxyUrlKey) ?? '';
+  Future<void> setAppProxyUrl(String value) => _prefs.setString(_proxyUrlKey, value);
+  bool get appProxyEnabled => _prefs.getBool(_proxyEnabledKey) ?? false;
+  Future<void> setAppProxyEnabled(bool value) => _prefs.setBool(_proxyEnabledKey, value);
 
   // Whether this device has been shown the privacy policy and agreed to it. A
   // store requires the answer before the app does anything on the user's behalf,
@@ -285,28 +303,142 @@ class StorageService {
   static const _courseTablePrefix = 'schedule_course_table_';
   static const _termBeginPrefix = 'schedule_term_begin_';
   static const _selectedSemesterKey = 'schedule_selected_semester';
+  static const _scheduleSourceKey = 'schedule_source_preference';
 
-  Future<void> saveSemesters(SemesterInfo info) =>
-      _prefs.setString(_semestersKey, jsonEncode(info.toJson()));
+  CampusIdentity? loadCampusIdentity(String owner) {
+    final raw = _prefs.getString('schedule_campus_identity');
+    if (raw == null) return null;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      return data['owner'] == owner ? CampusIdentity.fromJson(data) : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
-  SemesterInfo? loadSemesters() {
+  Future<void> saveCampusIdentity(String owner, CampusIdentity identity) => _prefs.setString(
+        'schedule_campus_identity',
+        jsonEncode({'owner': owner, ...identity.toJson()}),
+      );
+
+  Future<void> clearCampusIdentity() => _prefs.remove('schedule_campus_identity');
+
+  CampusScheduleSource scheduleSourceFor(String? owner) {
+    if (owner == null) return CampusScheduleSource.automatic;
+    final sources = CampusScheduleSource.values.asNameMap();
+    final source = _prefs.getString('${_scheduleSourceKey}_$owner');
+    if (source != null) return sources[source] ?? CampusScheduleSource.automatic;
+
+    // Older installations saved one preference together with its owner.
+    final raw = _prefs.getString(_scheduleSourceKey);
+    if (raw == null) return CampusScheduleSource.automatic;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      if (data['owner'] == owner) {
+        return sources[data['source']] ?? CampusScheduleSource.automatic;
+      }
+    } catch (_) {
+      return CampusScheduleSource.automatic;
+    }
+    return CampusScheduleSource.automatic;
+  }
+
+  Future<void> setScheduleSource(String owner, CampusScheduleSource source) =>
+      _prefs.setString('${_scheduleSourceKey}_$owner', source.name);
+
+  String? get graduateScheduleOwner {
+    final current = _prefs.getString('graduate_schedule_v2');
+    final raw = current ?? _prefs.getString('graduate_schedule');
+    if (raw == null) return null;
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      return current == null ? _prefs.getString('graduate_schedule_owner') : data['owner'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? graduateSchemeFor(String semesterId) => _prefs.getString('graduate_scheme_$semesterId');
+
+  Future<void> setGraduateScheme(String semesterId, String scheme) =>
+      _prefs.setString('graduate_scheme_$semesterId', scheme);
+
+  GraduateSchedule? loadGraduateSchedule() {
+    final raw = _prefs.getString('graduate_schedule_v2') ?? _prefs.getString('graduate_schedule');
+    if (raw == null) return null;
+    try {
+      return GraduateSchedule.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveGraduateSchedule(String owner, GraduateSchedule schedule) =>
+      // Keep the owner and response in one preference write.
+      _prefs.setString('graduate_schedule_v2', jsonEncode({...schedule.toJson(), 'owner': owner}));
+
+  Future<void> clearGraduateScheduleCache() async {
+    final keys = _prefs.getKeys().where(
+      (key) =>
+        key == 'graduate_schedule' ||
+        key == 'graduate_schedule_v2' ||
+        key == 'graduate_schedule_owner' ||
+        key.startsWith('$_courseTablePrefix$graduateSemesterPrefix') ||
+        key.startsWith('$_termBeginPrefix$graduateSemesterPrefix') ||
+        key.startsWith('graduate_scheme_'),
+    ).toList();
+    if (loadSemesters()?.info.tableId == graduateTableId) keys.add(_semestersKey);
+    if (selectedSemester?.startsWith(graduateSemesterPrefix) == true) {
+      keys.add(_selectedSemesterKey);
+    }
+    await Future.wait(keys.map(_prefs.remove));
+  }
+
+  Future<void> saveSemesters(SemesterInfo info, {String? owner}) =>
+      _prefs.setString(_semestersKey, jsonEncode({...info.toJson(), 'owner': owner}));
+
+  ({SemesterInfo info, String? owner})? loadSemesters() {
     final raw = _prefs.getString(_semestersKey);
     if (raw == null) return null;
-    return SemesterInfo.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    final json = jsonDecode(raw) as Map<String, dynamic>;
+    return (info: SemesterInfo.fromJson(json), owner: json['owner'] as String?);
   }
 
   Future<void> saveCourseTable(String semesterId, CourseTable table, {String? owner}) =>
-      _prefs.setString('$_courseTablePrefix$semesterId', jsonEncode({...table.toJson(), 'owner': owner}));
+      _prefs.setString(
+        '$_courseTablePrefix$semesterId',
+        jsonEncode({...table.toJson(), if (owner != null) 'owner': owner}),
+      );
 
-  String? courseTableOwner(String semesterId) {
-    final raw = _prefs.getString('$_courseTablePrefix$semesterId');
-    return raw == null ? null : (jsonDecode(raw) as Map)['owner'] as String?;
+  Future<void> adoptLegacyCourseTable(String semesterId, String? owner, String watchOwner) async {
+    final key = '$_courseTablePrefix$semesterId';
+    final raw = _prefs.getString(key);
+    if (raw == null || semesterId.startsWith(graduateSemesterPrefix)) return;
+    final row = jsonDecode(raw) as Map<String, dynamic>;
+    if (row['owner'] != null || row['watchOwner'] != null) return;
+    if (owner == null) {
+      row['watchOwner'] = watchOwner;
+    } else {
+      row['owner'] = owner;
+    }
+    await _prefs.setString(key, jsonEncode(row));
   }
 
-  CourseTable? loadCourseTable(String semesterId) {
+  CourseTable? loadCourseTable(String semesterId, {String? owner, String? watchOwner}) {
     final raw = _prefs.getString('$_courseTablePrefix$semesterId');
     if (raw == null) return null;
-    return CourseTable.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    final json = jsonDecode(raw) as Map<String, dynamic>;
+    if (semesterId.startsWith(graduateSemesterPrefix) && (owner == null || json['owner'] != owner)) {
+      return null;
+    }
+    if (watchOwner != null) {
+      // Older watch builds stored a manual adoption in the owner field.
+      final savedOwner = json['owner'] ?? json['watchOwner'];
+      if (savedOwner != (owner ?? watchOwner)) return null;
+    } else if (json['owner'] != null && json['owner'] != owner) {
+      return null;
+    }
+    return CourseTable.fromJson(json);
   }
 
   Future<void> saveTermCalendar(String key, TermCalendar info) =>
@@ -325,21 +457,29 @@ class StorageService {
   String? get selectedSemester => _prefs.getString(_selectedSemesterKey);
   Future<void> setSelectedSemester(String id) => _prefs.setString(_selectedSemesterKey, id);
 
-  // Sessions the user added by hand, keyed by semester like the course table
-  // is — they belong to the timetable they were made on.
   static const _customCoursesPrefix = 'schedule_custom_courses_';
+
+  String? _customCoursesKey(String semesterId, String? owner) {
+    if (!semesterId.startsWith(graduateSemesterPrefix)) {
+      return '$_customCoursesPrefix$semesterId';
+    }
+    // Older graduate entries have no owner and cannot be assigned safely.
+    return owner == null ? null : '$_customCoursesPrefix${semesterId}_$owner';
+  }
 
   Future<void> saveCustomCourses(
     String semesterId,
-    List<CustomCourse> courses,
-  ) =>
-      _prefs.setString(
-        '$_customCoursesPrefix$semesterId',
-        jsonEncode(courses.map((course) => course.toJson()).toList()),
-      );
+    List<CustomCourse> courses, {
+    String? owner,
+  }) async {
+    final key = _customCoursesKey(semesterId, owner);
+    if (key == null) return;
+    await _prefs.setString(key, jsonEncode(courses.map((course) => course.toJson()).toList()));
+  }
 
-  List<CustomCourse> loadCustomCourses(String semesterId) {
-    final raw = _prefs.getString('$_customCoursesPrefix$semesterId');
+  List<CustomCourse> loadCustomCourses(String semesterId, {String? owner}) {
+    final key = _customCoursesKey(semesterId, owner);
+    final raw = key == null ? null : _prefs.getString(key);
     if (raw == null) return const [];
     try {
       final decoded = jsonDecode(raw);
@@ -365,6 +505,12 @@ class StorageService {
 
   bool get hasCachedAssignments => _prefs.containsKey(_assignmentsKey);
 
+  bool get deadlineWidgetsEnabled => _prefs.getBool('deadline_widgets_enabled') ?? false;
+
+  Future<void> setDeadlineWidgetsEnabled(bool enabled) async {
+    await _prefs.setBool('deadline_widgets_enabled', enabled);
+  }
+
   Future<void> saveCachedAssignments(List<Map<String, dynamic>> items) =>
       _prefs.setString(_assignmentsKey, jsonEncode(items));
 
@@ -381,11 +527,66 @@ class StorageService {
 
   Future<void> clearCachedAssignments() => _prefs.remove(_assignmentsKey);
 
+  static String _customDeadlinesKey(String? owner) => owner == null
+      ? 'custom_deadlines_guest'
+      : 'custom_deadlines_account_${Uri.encodeComponent(owner)}';
+
+  Future<void> saveCustomDeadlines(
+    String? owner,
+    Iterable<CustomDeadline> deadlines,
+    Map<String, DeadlineReminderChange> reminderChanges,
+  ) async {
+    final items = deadlines.map((deadline) => deadline.toJson()).toList();
+    final saved = await _prefs.setString(
+      _customDeadlinesKey(owner),
+      jsonEncode(
+        reminderChanges.isEmpty
+            ? items
+            : {
+                'deadlines': items,
+                'reminderChanges': reminderChanges.map((key, change) => MapEntry(key, change.name)),
+              },
+      ),
+    );
+    if (!saved) throw StateError('Could not save custom deadlines');
+  }
+
+  ({
+    Map<String, CustomDeadline> deadlines,
+    Map<String, DeadlineReminderChange> reminderChanges,
+  })? loadCustomDeadlines(String? owner) {
+    final raw = _prefs.getString(_customDeadlinesKey(owner));
+    if (raw == null) return null;
+    final deadlines = <String, CustomDeadline>{};
+    var reminderChanges = <String, DeadlineReminderChange>{};
+    try {
+      final decoded = jsonDecode(raw);
+      final items = (decoded is Map ? decoded['deadlines'] : decoded) as List<dynamic>;
+      if (decoded is Map) {
+        reminderChanges = DeadlineReminderChange.decode(decoded['reminderChanges']);
+      }
+      for (final item in items.whereType<Map<String, dynamic>>()) {
+        try {
+          final deadline = CustomDeadline.fromJson(item);
+          deadlines[deadline.id] = deadline;
+        } catch (_) {
+          debugPrint('Skipping invalid custom deadline');
+        }
+      }
+    } catch (_) {
+      debugPrint('Could not read custom deadlines');
+    }
+    return (deadlines: deadlines, reminderChanges: reminderChanges);
+  }
+
   // Local user overrides on assignments (completion flips + hidden ids).
   static const _assignmentOverridesKey = 'assignment_overrides';
 
-  Future<void> saveAssignmentOverrides(AssignmentOverrides ov) =>
-      _prefs.setString(_assignmentOverridesKey, jsonEncode(ov.toJson()));
+  Future<void> saveAssignmentOverrides(AssignmentOverrides ov) async {
+    if (!await _prefs.setString(_assignmentOverridesKey, jsonEncode(ov.toJson()))) {
+      throw StateError('Could not save assignment overrides');
+    }
+  }
 
   AssignmentOverrides loadAssignmentOverrides() {
     final raw = _prefs.getString(_assignmentOverridesKey);

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../theme/tp_colors.dart';
 import '../app_destination.dart';
 import 'desktop_sidebar.dart';
 import 'desktop_sidebar_tokens.dart';
@@ -28,7 +29,9 @@ class DesktopShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tpColors;
     return Scaffold(
+      backgroundColor: colors.canvas,
       body: LayoutBuilder(
         builder: (context, constraints) {
           final sidebarWidth = sidebarCollapsed
@@ -52,6 +55,11 @@ class DesktopShell extends StatelessWidget {
                   onSelected: onDestinationSelected,
                   onToggleCollapsed: onToggleSidebarCollapsed,
                 ),
+              ),
+              VerticalDivider(
+                width: 1,
+                thickness: 0.5,
+                color: colors.divider,
               ),
               Expanded(child: SizedBox.expand(child: child)),
             ],

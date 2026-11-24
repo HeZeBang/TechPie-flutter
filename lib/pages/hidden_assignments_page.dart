@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
@@ -8,13 +9,16 @@ import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
 import '../services/assignment_service.dart';
 import '../services/service_provider.dart';
+import '../theme/theme.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/app_shell/app_shell_tab_bar.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class HiddenAssignmentsPage extends StatefulWidget {
@@ -27,6 +31,7 @@ class HiddenAssignmentsPage extends StatefulWidget {
 class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
   bool _selectionMode = false;
   final Set<String> _selected = {};
+  final Set<String> _restoring = {};
 
   /// On iOS the selection toolbar takes the tab bar's place, as it does in
   /// Photos, Files and Mail, instead of stacking a second bar above it.
@@ -41,7 +46,6 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
       _service?.removeListener(_onServiceChanged);
       _service = service..addListener(_onServiceChanged);
     }
-    // Also reruns when a page is pushed over this one or popped off it.
     _syncTabBarHold();
   }
 
@@ -52,11 +56,10 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
     super.dispose();
   }
 
-  /// Holds the tab bar's place only while selecting *and* on screen: a page
-  /// pushed over this one (a deep link into the same tab) gets the bar back,
-  /// and selection resumes with it hidden again when the user returns.
   void _syncTabBarHold() {
-    final wants = isIos() && _selectionMode && (ModalRoute.isCurrentOf(context) ?? true);
+    final wants = usesIosSelectionToolbar() &&
+        _selectionMode &&
+        (ModalRoute.isCurrentOf(context) ?? true);
     if (wants) {
       _tabBarHold ??= AppShellTabBar.maybeOf(context)?.hide();
     } else {
@@ -65,14 +68,19 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
     }
   }
 
-  /// Everything was restored (here or elsewhere): nothing left to select.
   void _onServiceChanged() {
     final hidden = _service!.overrides.hidden;
     if (!_selectionMode) return;
-    if (hidden.isEmpty) {
+    if (hidden.every(_restoring.contains)) {
       _exitSelectionMode();
-    } else if (_selected.any((key) => !hidden.contains(key))) {
-      setState(() => _selected.removeWhere((key) => !hidden.contains(key)));
+    } else if (_selected.any(
+      (key) => !hidden.contains(key) || _restoring.contains(key),
+    )) {
+      setState(
+        () => _selected.removeWhere(
+          (key) => !hidden.contains(key) || _restoring.contains(key),
+        ),
+      );
     }
   }
 
@@ -110,148 +118,161 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
     });
   }
 
-  void _restoreSelected() {
+  Future<void> _restoreSelected() async {
     final service = ServiceProvider.of(context).assignmentService;
-    final count = _selected.length;
-    for (final key in _selected.toList()) {
-      unawaited(service.unhide(key));
-    }
+    final keys = _selected.where((key) => !_restoring.contains(key)).toList();
+    if (keys.isEmpty) return;
+    setState(() => _restoring.addAll(keys));
     _exitSelectionMode();
+    var restored = 0;
+    var failed = 0;
+    for (final key in keys) {
+      try {
+        await service.unhide(key);
+        restored++;
+      } catch (_) {
+        failed++;
+      } finally {
+        if (mounted) {
+          setState(() => _restoring.remove(key));
+        } else {
+          _restoring.remove(key);
+        }
+      }
+    }
+    if (!mounted) return;
     showAdaptiveFeedback(
       context: context,
-      message: '已恢复 $count 项',
-      style: AdaptiveFeedbackStyle.success,
+      message: failed == 0 ? '已恢复 $restored 项' : '恢复部分事项失败，请重试',
+      style: failed == 0
+          ? AdaptiveFeedbackStyle.success
+          : AdaptiveFeedbackStyle.error,
     );
   }
 
-  /// The selection title, in the words iOS uses: nothing chosen yet reads as
-  /// an instruction, not as "0 selected".
   String get _selectionTitle =>
       _selected.isEmpty ? '选择项目' : '已选择 ${_selected.length} 项';
 
   @override
   Widget build(BuildContext context) {
     final service = ServiceProvider.of(context).assignmentService;
-    final theme = Theme.of(context);
-    final useLegacyIosChrome = usesLegacyIosChrome();
-    final topPad = isIos() || useLegacyIosChrome
-        ? 0.0
-        : adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
+    final colors = context.tpColors;
+    final topPad = AdaptiveNavigationScaffold.contentTopInsetOf(context);
+    final iosToolbar = usesIosSelectionToolbar();
 
     return ListenableBuilder(
       listenable: service,
       builder: (context, _) {
-        final hiddenKeys = service.overrides.hidden.toList();
+        final hiddenKeys = service.overrides.hidden
+            .where((key) => !_restoring.contains(key))
+            .toList();
         final selectedAll =
             hiddenKeys.isNotEmpty && _selected.length == hiddenKeys.length;
 
         return Scaffold(
-          extendBodyBehindAppBar: !isIos() && !useLegacyIosChrome,
-          appBar: isIos()
-              ? IosNativeNavigationBar(
-                  title: _selectionMode ? _selectionTitle : '已忽略的事项',
-                  selectionMode: _selectionMode,
-                  leadingItems: [
-                    IosNativeNavigationBarItem(
-                      id: 'back',
-                      title: 'Deadlines',
-                      sfSymbol: 'chevron.left',
-                      hidden: _selectionMode,
-                      accessibilityLabel: '返回 Deadlines',
-                      placementGroup: 'leading-main',
-                    ),
-                    IosNativeNavigationBarItem(
-                      id: 'toggleSelectAll',
-                      title: selectedAll ? '取消全选' : '全选',
-                      enabled: hiddenKeys.isNotEmpty,
-                      hidden: !_selectionMode,
-                      accessibilityLabel: selectedAll ? '取消全选' : '全选',
-                      placementGroup: 'leading-main',
-                    ),
-                  ],
-                  // Two items rather than one that restyles: each keeps its
-                  // own native button, so switching modes only swaps which
-                  // one is shown.
-                  trailingItems: [
-                    IosNativeNavigationBarItem(
-                      id: 'select',
-                      title: '选择',
-                      enabled: hiddenKeys.isNotEmpty,
-                      hidden: _selectionMode,
-                      accessibilityLabel: '选择',
-                      placementGroup: 'selection-actions',
-                    ),
-                    IosNativeNavigationBarItem(
-                      id: 'done',
-                      title: '完成',
-                      role: IosNativeNavigationBarItemRole.done,
-                      hidden: !_selectionMode,
-                      accessibilityLabel: '完成',
-                      placementGroup: 'selection-actions',
-                    ),
-                  ],
-                  onItemPressed: (id) {
-                    switch (id) {
-                      case 'back':
-                        unawaited(maybePopAdaptivePage<void>(context));
-                      case 'toggleSelectAll':
-                        if (hiddenKeys.isNotEmpty) {
-                          _toggleSelectAll(hiddenKeys);
-                        }
-                      case 'select':
-                        _enterSelectionMode();
-                      case 'done':
-                        _exitSelectionMode();
-                    }
-                  },
-                )
-              : BlurredAppBar(
-                  centerTitle: false,
-                  title: Text(
-                    _selectionMode ? _selectionTitle : '已忽略的事项',
-                  ),
-                  actions: [
-                    if (_selectionMode)
-                      IconButton(
-                        tooltip: selectedAll ? '取消全选' : '全选',
-                        icon: Icon(
-                          selectedAll ? Icons.deselect : Icons.select_all,
-                        ),
-                        onPressed: hiddenKeys.isEmpty
-                            ? null
-                            : () => _toggleSelectAll(hiddenKeys),
-                      ),
-                    if (_selectionMode)
-                      IconButton(
-                        tooltip: '恢复',
-                        onPressed:
-                            _selected.isNotEmpty ? _restoreSelected : null,
-                        icon: const Icon(Icons.restore),
-                      ),
-                    if (hiddenKeys.isNotEmpty)
-                      IconButton(
-                        tooltip: _selectionMode ? '完成' : '选择',
-                        icon: Icon(
-                          _selectionMode
-                              ? Icons.check
-                              : Icons.checklist_outlined,
-                        ),
-                        onPressed: _selectionMode
-                            ? _exitSelectionMode
-                            : _enterSelectionMode,
-                      ),
-                  ],
+          backgroundColor: colors.canvas,
+          extendBodyBehindAppBar:
+              AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+          appBar: AdaptiveNavigationScaffold.adaptiveBar(
+            ios: () => IosNativeNavigationBar(
+              title: _selectionMode ? _selectionTitle : '已忽略的事项',
+              selectionMode: _selectionMode,
+              leadingItems: [
+                IosNativeNavigationBarItem(
+                  id: 'back',
+                  title: 'Deadlines',
+                  sfSymbol: 'chevron.left',
+                  hidden: _selectionMode,
+                  accessibilityLabel: '返回 Deadlines',
+                  placementGroup: 'leading-main',
                 ),
-          // The selection toolbar, where the tab bar was while selecting.
-          // Mounted for the page's life and offstage outside selection, so
-          // its native button is not created on the frame selection starts.
-          bottomNavigationBar: isIos()
+                IosNativeNavigationBarItem(
+                  id: 'toggleSelectAll',
+                  title: selectedAll ? '取消全选' : '全选',
+                  enabled: hiddenKeys.isNotEmpty,
+                  hidden: !_selectionMode,
+                  accessibilityLabel: selectedAll ? '取消全选' : '全选',
+                  placementGroup: 'leading-main',
+                ),
+              ],
+              trailingItems: [
+                IosNativeNavigationBarItem(
+                  id: 'select',
+                  title: '选择',
+                  enabled: hiddenKeys.isNotEmpty,
+                  hidden: _selectionMode,
+                  accessibilityLabel: '选择',
+                  placementGroup: 'selection-actions',
+                ),
+                IosNativeNavigationBarItem(
+                  id: 'done',
+                  title: '完成',
+                  role: IosNativeNavigationBarItemRole.done,
+                  hidden: !_selectionMode,
+                  accessibilityLabel: '完成',
+                  placementGroup: 'selection-actions',
+                ),
+              ],
+              onItemPressed: (id) {
+                switch (id) {
+                  case 'back':
+                    unawaited(maybePopAdaptivePage<void>(context));
+                  case 'toggleSelectAll':
+                    if (hiddenKeys.isNotEmpty) {
+                      _toggleSelectAll(hiddenKeys);
+                    }
+                  case 'select':
+                    _enterSelectionMode();
+                  case 'done':
+                    _exitSelectionMode();
+                }
+              },
+            ),
+            material: () => BlurredAppBar(
+              centerTitle: false,
+              title: Text(_selectionMode ? _selectionTitle : '已忽略的事项'),
+              actions: [
+                if (_selectionMode)
+                  IconButton(
+                    tooltip: selectedAll ? '取消全选' : '全选',
+                    icon: Icon(
+                      selectedAll ? Icons.deselect : Icons.select_all,
+                    ),
+                    onPressed: hiddenKeys.isEmpty
+                        ? null
+                        : () => _toggleSelectAll(hiddenKeys),
+                  ),
+                if (_selectionMode)
+                  IconButton(
+                    tooltip: '恢复',
+                    onPressed: _selected.isNotEmpty
+                        ? () => unawaited(_restoreSelected())
+                        : null,
+                    icon: const Icon(TpIcons.refresh),
+                  ),
+                if (hiddenKeys.isNotEmpty)
+                  IconButton(
+                    tooltip: _selectionMode ? '完成' : '选择',
+                    icon: Icon(
+                      _selectionMode ? TpIcons.check : TpIcons.checkCircle,
+                    ),
+                    onPressed: _selectionMode
+                        ? _exitSelectionMode
+                        : _enterSelectionMode,
+                  ),
+              ],
+            ),
+          ),
+          bottomNavigationBar: iosToolbar
               ? Offstage(
                   offstage: !_selectionMode,
                   child: SafeArea(
                     top: false,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: TpTokens.space4,
+                        vertical: TpTokens.space2,
+                      ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
@@ -259,8 +280,10 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                             label: '恢复',
                             semanticLabel: '恢复所选事项',
                             enabled: _selected.isNotEmpty,
-                            onPressed: _selected.isEmpty ? null : _restoreSelected,
-                            tint: theme.colorScheme.primary,
+                            onPressed: _selected.isEmpty
+                                ? null
+                                : () => unawaited(_restoreSelected()),
+                            tint: colors.brand,
                             config: const CNButtonConfig(
                               style: CNButtonStyle.glass,
                               minHeight: 44,
@@ -276,38 +299,57 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
           body: hiddenKeys.isEmpty
               ? Padding(
                   padding: EdgeInsets.only(top: topPad),
-                  child: _buildEmptyState(theme),
+                  child: _buildEmptyState(colors),
                 )
-              : _buildList(context, service, hiddenKeys, theme, topPad),
+              : _buildList(context, service, hiddenKeys, colors, topPad),
         );
       },
     );
   }
 
-  /// An empty list says what the page is for, the way ContentUnavailableView
-  /// does: a symbol, a title and one line of explanation.
-  Widget _buildEmptyState(ThemeData theme) {
-    final secondary = theme.colorScheme.onSurfaceVariant;
+  Widget _buildEmptyState(TpColors colors) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isIos() ? CupertinoIcons.eye_slash : Icons.visibility_off_outlined,
-              size: 48,
-              color: secondary,
+        padding: const EdgeInsets.symmetric(
+          horizontal: TpTokens.pageHorizontalPadding,
+        ),
+        child: TpPageBody(
+          child: TpCard(
+            padding: const EdgeInsets.symmetric(
+              horizontal: TpTokens.space5,
+              vertical: TpTokens.space6,
             ),
-            const SizedBox(height: 12),
-            Text('没有被忽略的事项', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(
-              '在 Deadlines 中忽略的事项会出现在这里，随时可以恢复。',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(color: secondary),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: colors.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(TpTokens.radiusM),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    TpIcons.eyeOff,
+                    size: TpTokens.iconL + 4,
+                    color: colors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: TpTokens.space4),
+                Text(
+                  '没有被忽略的事项',
+                  style: TpTypography.cardTitle(colors).copyWith(fontSize: 16),
+                ),
+                const SizedBox(height: TpTokens.space2),
+                Text(
+                  '在 Deadlines 中忽略的事项会出现在这里，随时可以恢复。',
+                  textAlign: TextAlign.center,
+                  style: TpTypography.itemMeta(colors),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -315,105 +357,171 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
 
   Future<void> _restoreOne(String key) async {
     final service = ServiceProvider.of(context).assignmentService;
-    await service.unhide(key);
-    if (!mounted) return;
-    showAdaptiveFeedback(
-      context: context,
-      message: '已恢复事项',
-      style: AdaptiveFeedbackStyle.success,
-    );
+    if (!_restoring.add(key)) return;
+    setState(() {});
+    try {
+      await service.unhide(key);
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '已恢复事项',
+        style: AdaptiveFeedbackStyle.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '恢复事项失败，请重试',
+        style: AdaptiveFeedbackStyle.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _restoring.remove(key));
+      } else {
+        _restoring.remove(key);
+      }
+    }
   }
 
   Widget _buildList(
     BuildContext context,
     AssignmentService service,
     List<String> hiddenKeys,
-    ThemeData theme,
+    TpColors colors,
     double topPad,
   ) {
+    final iosToolbar = usesIosSelectionToolbar();
     final lookup = <String, Assignment>{
       for (final a in service.assignments) AssignmentOverrides.keyFor(a): a,
     };
-    return ListView.separated(
-      padding: EdgeInsets.only(
-        top: topPad,
-        // The offstage selection toolbar makes Scaffold strip body padding
-        // even while the shell tab bar is visible.
-        bottom: isIos() && !_selectionMode
-            ? AppShellMetrics.bottomContentPaddingOf(context, margin: 0)
-            : 0,
-      ),
-      itemCount: hiddenKeys.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (context, i) {
-        final key = hiddenKeys[i];
-        final a = lookup[key];
-        final selected = _selected.contains(key);
-
-        final title = a?.title ?? key;
-        final subtitle = a == null
-            ? '(已无缓存数据)'
-            : '${a.kind.label} · ${a.platform.toUpperCase()} · ${a.course}';
-        if (isIos()) {
-          return _buildIosRow(context, theme, key, title, subtitle, selected);
-        }
-        return ListTile(
-          selected: selected,
-          selectedTileColor: theme.colorScheme.primaryContainer.withValues(
-            alpha: 0.22,
-          ),
-          leading: _selectionMode
-              ? Icon(
-                  selected ? Icons.check_circle : Icons.circle_outlined,
-                  color: selected
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final horizontal = math.max(
+          TpTokens.pageHorizontalPadding,
+          (constraints.maxWidth - TpTokens.singleColumnMaxWidth) / 2,
+        );
+        return ListView.separated(
+          padding: iosToolbar
+              ? EdgeInsets.only(
+                  top: topPad,
+                  // The offstage selection toolbar makes Scaffold strip body
+                  // padding even while the shell tab bar is visible.
+                  bottom: _selectionMode
+                      ? 0
+                      : AppShellMetrics.bottomContentPaddingOf(
+                          context,
+                          margin: 0,
+                        ),
                 )
-              : const Icon(Icons.visibility_off_outlined),
-          title: Text(a?.title ?? key),
-          subtitle: Text(
-            a == null
-                ? '(已无缓存数据)'
-                : '${a.kind.label} · ${a.platform.toUpperCase()} · ${a.course}',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          onTap: _selectionMode ? () => _toggleSelection(key) : null,
-          onLongPress: _selectionMode
-              ? null
-              : () {
-                  _enterSelectionMode();
-                  _toggleSelection(key);
-                },
-          trailing: _selectionMode
-              ? null
-              : AdaptiveButton(
-                  icon: Icons.restore,
-                  sfSymbol: 'arrow.uturn.backward',
-                  width: 44,
-                  height: 44,
-                  accessibilityLabel: '恢复 ${a?.title ?? key}',
-                  onPressed: () => unawaited(_restoreOne(key)),
+              : EdgeInsets.fromLTRB(
+                  horizontal,
+                  topPad + TpTokens.space3,
+                  horizontal,
+                  AppShellMetrics.bottomContentPaddingOf(context),
                 ),
+          itemCount: hiddenKeys.length,
+          separatorBuilder: (_, __) => iosToolbar
+              ? Divider(height: 1, thickness: 0.5, color: colors.divider)
+              : const SizedBox(height: TpTokens.space2),
+          itemBuilder: (context, i) {
+            final key = hiddenKeys[i];
+            final a = lookup[key];
+            final selected = _selected.contains(key);
+
+            final title = a?.title ?? key;
+            final subtitle = switch (a) {
+              null => '(已无缓存数据)',
+              CustomDeadline(:final kind, :final course, :final location) => [
+                  kind.label,
+                  if (course.isNotEmpty) course,
+                  if (location.isNotEmpty) location,
+                ].join(' · '),
+              final item =>
+                '${item.kind.label} · ${item.platform.toUpperCase()} · ${item.course}',
+            };
+            if (iosToolbar) {
+              return _buildIosRow(context, colors, key, title, subtitle, selected);
+            }
+            return TpCard(
+              color: selected ? colors.brandSoft : colors.surface,
+              borderColor: selected ? colors.brand : null,
+              borderWidth: selected ? 1.5 : 0.75,
+              onTap: _selectionMode ? () => _toggleSelection(key) : null,
+              onLongPress: _selectionMode
+                  ? null
+                  : () {
+                      _enterSelectionMode();
+                      _toggleSelection(key);
+                    },
+              padding: const EdgeInsets.symmetric(
+                horizontal: TpTokens.cardPaddingHorizontal,
+                vertical: TpTokens.space3,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _selectionMode
+                        ? (selected
+                            ? Icons.check_circle
+                            : Icons.circle_outlined)
+                        : TpIcons.eyeOff,
+                    size: TpTokens.iconM,
+                    color: _selectionMode && selected
+                        ? colors.brand
+                        : colors.textMuted,
+                  ),
+                  const SizedBox(width: TpTokens.space3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          title,
+                          style: TpTypography.itemTitle(colors),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TpTypography.itemMeta(colors),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!_selectionMode) ...[
+                    const SizedBox(width: TpTokens.space2),
+                    AdaptiveButton(
+                      icon: TpIcons.refresh,
+                      sfSymbol: 'arrow.uturn.backward',
+                      width: 44,
+                      height: 44,
+                      accessibilityLabel: '恢复 ${a?.title ?? key}',
+                      onPressed: () => unawaited(_restoreOne(key)),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  /// A row the way a UIKit list draws one: selection circles that come in with
-  /// selection mode, no tint on a selected row, and the row's own action behind
-  /// a swipe and a long-press menu rather than a permanent button.
   Widget _buildIosRow(
     BuildContext context,
-    ThemeData theme,
+    TpColors colors,
     String key,
     String title,
     String subtitle,
     bool selected,
   ) {
-    final secondary = CupertinoColors.secondaryLabel.resolveFrom(context);
     final tile = Material(
-      color: theme.scaffoldBackgroundColor,
+      color: colors.surface,
       child: ListTile(
         leading: AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
@@ -425,21 +533,22 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                   key: ValueKey(selected),
                   size: 24,
                   color: selected
-                      ? theme.colorScheme.primary
+                      ? colors.brand
                       : CupertinoColors.systemGrey3.resolveFrom(context),
                 )
               : Icon(
-                  CupertinoIcons.eye_slash,
+                  TpIcons.eyeOff,
                   key: const ValueKey('hidden'),
-                  color: secondary,
+                  size: TpTokens.iconM,
+                  color: colors.textMuted,
                 ),
         ),
-        title: Text(title),
+        title: Text(title, style: TpTypography.itemTitle(colors)),
         subtitle: Text(
           subtitle,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: secondary),
+          style: TpTypography.itemMeta(colors),
         ),
         onTap: _selectionMode ? () => _toggleSelection(key) : null,
       ),
@@ -451,7 +560,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
       key: ValueKey('restore:$key'),
       direction: DismissDirection.endToStart,
       background: ColoredBox(
-        color: theme.colorScheme.primary,
+        color: colors.brand,
         child: const Align(
           alignment: AlignmentDirectional.centerEnd,
           child: Padding(
@@ -461,14 +570,18 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
               children: [
                 Icon(CupertinoIcons.arrow_uturn_left, color: Colors.white),
                 SizedBox(width: 6),
-                Text('恢复', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                Text(
+                  '恢复',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
         ),
       ),
-      // Restoring removes the key from the hidden set synchronously, so the
-      // row has left the list by the time Dismissible checks for it.
       onDismissed: (_) => unawaited(_restoreOne(key)),
       child: CupertinoContextMenu(
         actions: [
@@ -481,8 +594,6 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
             child: const Text('恢复'),
           ),
         ],
-        // The menu's preview lays its child out unconstrained; the row spans
-        // the list, so give it that width explicitly.
         child: SizedBox(width: MediaQuery.sizeOf(context).width, child: tile),
       ),
     );

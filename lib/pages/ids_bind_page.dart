@@ -5,12 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/third_party_account.dart';
-import '../services/ids/ids_client.dart' show IdsCaptchaRefresh, IdsVerificationAnswer;
+import '../services/ids/ids_client.dart'
+    show IdsCaptchaRefresh, IdsVerificationAnswer;
 import '../services/service_provider.dart';
-import '../utils/platform.dart';
+import '../theme/theme.dart';
+import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_field_group.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/secure_password_field.dart';
 
@@ -23,29 +28,47 @@ const idsPasskeyNotice =
 class IdsBindPage extends StatelessWidget {
   const IdsBindPage({super.key, this.legacyAccount});
   final ThirdPartyAccount? legacyAccount;
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: isIos()
-            ? IosNativeNavigationBar(
-                title: '绑定 IDS Passkey',
-                leadingItems: [
-                  if (Navigator.canPop(context))
-                    const IosNativeNavigationBarItem(
-                      id: 'back',
-                      title: '返回',
-                      sfSymbol: 'chevron.left',
-                    ),
-                ],
-                onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
-              )
-            : const BlurredAppBar(title: Text('绑定 IDS Passkey')),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: IdsBindForm(legacyAccount: legacyAccount),
-          ),
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
+      context,
+      extra: TpTokens.space4,
+    );
+    return Scaffold(
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '绑定 IDS Passkey',
+          leadingItems: [
+            if (Navigator.canPop(context))
+              const IosNativeNavigationBarItem(
+                id: 'back',
+                title: '返回',
+                sfSymbol: 'chevron.left',
+              ),
+          ],
+          onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
         ),
-      );
+        material: () => const BlurredAppBar(title: Text('绑定 IDS Passkey')),
+      ),
+      body: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: EdgeInsets.fromLTRB(
+          TpTokens.pageHorizontalPadding,
+          topInset,
+          TpTokens.pageHorizontalPadding,
+          AppShellMetrics.bottomContentPaddingOf(context) + TpTokens.space4,
+        ),
+        children: [
+          TpPageBody(child: IdsBindForm(legacyAccount: legacyAccount)),
+        ],
+      ),
+    );
+  }
 }
 
 class IdsBindForm extends StatefulWidget {
@@ -78,7 +101,11 @@ class _IdsBindFormState extends State<IdsBindForm> {
     super.dispose();
   }
 
-  Future<void> _bind({String? account, String? password, bool upgrading = false}) async {
+  Future<void> _bind({
+    String? account,
+    String? password,
+    bool upgrading = false,
+  }) async {
     if (_busy) return;
     final loginAccount = (account ?? _account.text).trim();
     final loginPassword = password ?? _password.text;
@@ -126,81 +153,130 @@ class _IdsBindFormState extends State<IdsBindForm> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            _canUpgrade
-                ? '检测到已保存的旧版校园账号，是否升级为 Passkey？确认后将由本机使用已保存的账号和密码登录学校 IDS。'
-                : '首次绑定需要登录学校 IDS，并为 TechPie 创建一个 Passkey。之后由 TechPie 自动使用它登录。',
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TpCard(
+          leadingIcon: TpIcons.lock,
+          title: _canUpgrade ? '升级旧版校园账号' : '校园统一身份认证',
+          padding: const EdgeInsets.fromLTRB(
+            TpTokens.cardPaddingHorizontal,
+            TpTokens.space1,
+            TpTokens.cardPaddingHorizontal,
+            TpTokens.space4,
           ),
-          const SizedBox(height: 20),
-          if (_canUpgrade) ...[
-            FilledButton(
-              onPressed: _busy
-                  ? null
-                  : () => unawaited(
-                        _bind(
-                          account: widget.legacyAccount!.account,
-                          password: widget.legacyAccount!.password,
-                          upgrading: true,
-                        ),
-                      ),
-              child: Text(_busy ? '正在升级…' : '确认升级为 Passkey'),
-            ),
-            TextButton(
-              onPressed: _busy
-                  ? null
-                  : () => setState(() {
-                        _manual = true;
-                        _account.text = widget.legacyAccount!.account;
-                      }),
-              child: const Text('手动绑定'),
-            ),
-          ] else
-            AdaptiveTextFieldGroup(
-              items: [
-                AdaptiveTextFieldGroupItem(
-                  controller: _account,
-                  placeholder: 'IDS 账号（学号或手机号）',
-                  enabled: !_busy,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                _canUpgrade
+                    ? '检测到已保存的旧版校园账号，是否升级为 Passkey？确认后将由本机使用已保存的账号和密码登录学校 IDS。'
+                    : '首次绑定需要登录学校 IDS，并为 TechPie 创建一个 Passkey。之后由 TechPie 自动使用它登录。',
+                style: TpTypography.itemMeta(colors).copyWith(height: 1.45),
+              ),
+              const SizedBox(height: TpTokens.space4),
+              if (_canUpgrade) ...[
+                AdaptiveButton(
+                  onPressed: _busy
+                      ? null
+                      : () => unawaited(
+                            _bind(
+                              account: widget.legacyAccount!.account,
+                              password: widget.legacyAccount!.password,
+                              upgrading: true,
+                            ),
+                          ),
+                  icon: TpIcons.lock,
+                  sfSymbol: 'key.fill',
+                  label: _busy ? '正在升级…' : '确认升级为 Passkey',
+                  role: AdaptiveButtonRole.prominent,
+                  loading: _busy,
+                  height: 46,
                 ),
-                AdaptiveTextFieldGroupItem(
-                  controller: _password,
-                  placeholder: 'IDS 密码',
-                  obscureText: true,
-                  enabled: !_busy,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => unawaited(_bind()),
+                const SizedBox(height: TpTokens.space2),
+                TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                            _manual = true;
+                            _account.text = widget.legacyAccount!.account;
+                          }),
+                  child: const Text('手动绑定'),
+                ),
+              ] else ...[
+                AdaptiveTextFieldGroup(
+                  items: [
+                    AdaptiveTextFieldGroupItem(
+                      controller: _account,
+                      placeholder: 'IDS 账号（学号或手机号）',
+                      enabled: !_busy,
+                    ),
+                    AdaptiveTextFieldGroupItem(
+                      controller: _password,
+                      placeholder: 'IDS 密码',
+                      obscureText: true,
+                      enabled: !_busy,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => unawaited(_bind()),
+                    ),
+                  ],
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: TpTokens.space3),
+                  Text(
+                    _error!,
+                    style: TpTypography.itemMeta(colors).copyWith(
+                      color: colors.dangerRed,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: TpTokens.space4),
+                AdaptiveButton(
+                  onPressed: _busy ? null : () => unawaited(_bind()),
+                  icon: TpIcons.lock,
+                  sfSymbol: 'key.fill',
+                  label: '创建并绑定 Passkey',
+                  role: AdaptiveButtonRole.prominent,
+                  loading: _busy,
+                  height: 46,
                 ),
               ],
-            ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ),
-          const SizedBox(height: 20),
-          if (!_canUpgrade)
-            FilledButton(
-              onPressed: _busy ? null : () => unawaited(_bind()),
-              child: _busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('创建并绑定 Passkey'),
-            ),
-          const SizedBox(height: 16),
-          Text(
-            '账号、密码和验证码由本机直接提交给学校。密码不会保存；Passkey 保存在本机安全存储中，开启 Cloud Sync 后会端到端加密同步。',
-            style: Theme.of(context).textTheme.bodySmall,
+              if (_canUpgrade && _error != null) ...[
+                const SizedBox(height: TpTokens.space3),
+                Text(
+                  _error!,
+                  style: TpTypography.itemMeta(colors).copyWith(
+                    color: colors.dangerRed,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+              const SizedBox(height: TpTokens.space3),
+              Text(
+                '账号、密码和验证码由本机直接提交给学校。密码不会保存；Passkey 保存在本机安全存储中，开启 Cloud Sync 后会端到端加密同步。',
+                style: TpTypography.itemMeta(colors).copyWith(height: 1.45),
+              ),
+            ],
           ),
-          const SizedBox(height: 20),
-          const IdsPasskeyHelp(),
-        ],
-      );
+        ),
+        const SizedBox(height: TpTokens.sectionGap),
+        const TpCard(
+          leadingIcon: TpIcons.info,
+          title: 'Passkey 管理说明',
+          padding: EdgeInsets.fromLTRB(
+            TpTokens.cardPaddingHorizontal,
+            TpTokens.space1,
+            TpTokens.cardPaddingHorizontal,
+            TpTokens.space3,
+          ),
+          child: IdsPasskeyHelp(),
+        ),
+      ],
+    );
+  }
 }
 
 /// One modal stays mounted while IDS validates answers and returns retries.
@@ -299,7 +375,9 @@ class IdsDialogSession extends ChangeNotifier {
     _pending?.complete(null);
     _pending = null;
     final context = _dialogContext;
-    if (context != null && context.mounted && ModalRoute.of(context)?.isCurrent == true) {
+    if (context != null &&
+        context.mounted &&
+        ModalRoute.of(context)?.isCurrent == true) {
       Navigator.of(context).pop();
     }
     await _dialog;
@@ -351,71 +429,93 @@ class _IdsVerificationDialogState extends State<_IdsVerificationDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: Text(widget.withPassword ? 'IDS 解绑验证' : '输入验证码'),
-        scrollable: true,
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.withPassword) ...[
-                const Text('本地绑定已删除。完成验证可同时在 IDS 解绑此 Passkey；取消或验证失败不影响本地删除。'),
-                const SizedBox(height: 12),
-              ],
-              if (widget.error != null) ...[
-                Text(widget.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                const SizedBox(height: 12),
-              ],
-              if (widget.withPassword) ...[
-                SecurePasswordField(
-                  controller: _password,
-                  placeholder: 'IDS 密码',
-                  enabled: !widget.busy,
-                  decoration: const InputDecoration(labelText: 'IDS 密码'),
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-              ],
-              _IdsCaptchaInput(
-                image: widget.image,
-                controller: _captcha,
-                autofocus: !widget.withPassword,
-                onSubmitted: _submit,
-                enabled: !widget.busy,
-                onRefresh: widget.onRefresh,
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    return AlertDialog(
+      title: Text(widget.withPassword ? 'IDS 解绑验证' : '输入验证码'),
+      scrollable: true,
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.withPassword) ...[
+              const Text(
+                '本地绑定已删除。完成验证可同时在 IDS 解绑此 Passkey；取消或验证失败不影响本地删除。',
               ),
-              if (widget.busy)
-                const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
+              const SizedBox(height: TpTokens.space3),
             ],
-          ),
+            if (widget.error != null) ...[
+              Text(
+                widget.error!,
+                style: TpTypography.itemMeta(colors).copyWith(
+                  color: colors.dangerRed,
+                ),
+              ),
+              const SizedBox(height: TpTokens.space3),
+            ],
+            if (widget.withPassword) ...[
+              SecurePasswordField(
+                controller: _password,
+                placeholder: 'IDS 密码',
+                enabled: !widget.busy,
+                decoration: const InputDecoration(labelText: 'IDS 密码'),
+                textInputAction: TextInputAction.next,
+              ),
+              const SizedBox(height: TpTokens.space3),
+            ],
+            _IdsCaptchaInput(
+              image: widget.image,
+              controller: _captcha,
+              autofocus: !widget.withPassword,
+              onSubmitted: _submit,
+              enabled: !widget.busy,
+              onRefresh: widget.onRefresh,
+            ),
+            if (widget.busy)
+              const Padding(
+                padding: EdgeInsets.only(top: TpTokens.space3),
+                child: LinearProgressIndicator(),
+              ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: widget.busy ? null : () => Navigator.pop(context),
-            child: Text(widget.withPassword ? '仅删除本地' : '取消'),
-          ),
-          FilledButton(
-            onPressed: widget.busy ? null : _submit,
-            child: Text(widget.busy
+      ),
+      actions: [
+        TextButton(
+          onPressed: widget.busy ? null : () => Navigator.pop(context),
+          child: Text(widget.withPassword ? '仅删除本地' : '取消'),
+        ),
+        FilledButton(
+          onPressed: widget.busy ? null : _submit,
+          child: Text(
+            widget.busy
                 ? '正在验证…'
                 : widget.withPassword
                     ? '验证并解绑 IDS'
-                    : '继续',),
+                    : '继续',
           ),
-        ],
-      );
+        ),
+      ],
+    );
+  }
 }
 
 class IdsPasskeyHelp extends StatelessWidget {
   const IdsPasskeyHelp({super.key});
   @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(idsPasskeyNotice),
-          const SizedBox(height: 12),
-          AspectRatio(
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          idsPasskeyNotice,
+          style: TpTypography.itemMeta(colors).copyWith(height: 1.45),
+        ),
+        const SizedBox(height: TpTokens.space3),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(TpTokens.radiusS),
+          child: AspectRatio(
             aspectRatio: 2414 / 856,
             child: Image.asset(
               'assets/help/ids_passkey.png',
@@ -423,14 +523,21 @@ class IdsPasskeyHelp extends StatelessWidget {
               fit: BoxFit.contain,
             ),
           ),
-          TextButton.icon(
-            onPressed: () =>
-                unawaited(launchUrl(idsAccountSecurityUrl, mode: LaunchMode.externalApplication)),
-            icon: const Icon(Icons.open_in_new, size: 18),
-            label: const Text('打开 IDS 账号安全页面'),
+        ),
+        const SizedBox(height: TpTokens.space2),
+        TextButton.icon(
+          onPressed: () => unawaited(
+            launchUrl(
+              idsAccountSecurityUrl,
+              mode: LaunchMode.externalApplication,
+            ),
           ),
-        ],
-      );
+          icon: const Icon(TpIcons.externalLink, size: TpTokens.iconS),
+          label: const Text('打开 IDS 账号安全页面'),
+        ),
+      ],
+    );
+  }
 }
 
 class _IdsCaptchaInput extends StatelessWidget {
@@ -465,12 +572,18 @@ class _IdsCaptchaInput extends StatelessWidget {
               onSubmitted: (_) => onSubmitted(),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: TpTokens.space3),
           Tooltip(
             message: '更换验证码',
             child: InkWell(
               onTap: enabled ? onRefresh : null,
-              child: Image.memory(image, width: 112, height: 56, fit: BoxFit.contain),
+              borderRadius: BorderRadius.circular(TpTokens.radiusXs),
+              child: Image.memory(
+                image,
+                width: 112,
+                height: 56,
+                fit: BoxFit.contain,
+              ),
             ),
           ),
         ],

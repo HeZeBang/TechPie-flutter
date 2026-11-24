@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:techpie/theme/tp_colors.dart';
 
 import 'tokens.dart';
 
@@ -57,6 +58,34 @@ final class GpColors extends ThemeExtension<GpColors> {
   bool get isDark => brightness == Brightness.dark;
 
   factory GpColors.fromTheme(ThemeData theme) {
+    final tp = theme.extension<TpColors>();
+    if (tp != null) {
+      return GpColors(
+        brightness: tp.brightness,
+        bg: tp.canvas,
+        surface: tp.surface,
+        surfaceRaised: tp.surfaceSubtle,
+        textPrimary: tp.textPrimary,
+        textSecondary: tp.textMuted,
+        textDisabled: tp.textMuted.withValues(alpha: 0.55),
+        surfaceDisabled: tp.surfacePressed,
+        action: tp.brand,
+        actionAlt: tp.brandSoft,
+        onAction: tp.onBrand,
+        accent: tp.brand,
+        border: tp.divider,
+        borderStrong: theme.colorScheme.outline,
+        success: tp.successGreen,
+        warning: tp.warningAmber,
+        danger: tp.dangerRed,
+        statusNormal: tp.successGreen,
+        statusAbnormal: tp.dangerRed,
+        qrForeground: GpTokens.qrForeground,
+        qrBackground: GpTokens.qrBackground,
+        cardMat: GpTokens.cardMat,
+        textOnCard: GpTokens.textOnCard,
+      );
+    }
     final scheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
     // Android dynamic schemes may omit Material 3 container tones, causing

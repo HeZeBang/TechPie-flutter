@@ -22,3 +22,8 @@ AppWindowSizeClass appWindowSizeClassOf(BuildContext context) {
 bool usesSidebarLayout(BuildContext context) {
   return appWindowSizeClassOf(context) != AppWindowSizeClass.compact;
 }
+
+/// Whether [AppShell] displays the desktop sidebar instead of the bottom bar.
+bool usesDesktopSidebarShell(BuildContext context) {
+  return appWindowSizeClassOf(context) == AppWindowSizeClass.expanded;
+}

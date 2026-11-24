@@ -81,12 +81,13 @@ class TechPieWearDataSource implements WearDataSource {
 
   @override
   Future<List<WearCourse>> schedule(DateTime from) async {
+    final watchOwner = await _watchOwner();
     if (timetable.loading) {
       throw const WearFailure('PEER_NOT_READY', retryable: true);
     }
-    final table = timetable.courseTable;
+    final table = timetable.courseTableForWatch(watchOwner);
     final begin = timetable.termBegin;
-    if (table == null || begin == null || !timetable.canShareCourseTable(await _watchOwner())) {
+    if (table == null || begin == null) {
       throw const WearFailure('SERVICE_UNAVAILABLE', retryable: true);
     }
     return buildWearSchedule(
