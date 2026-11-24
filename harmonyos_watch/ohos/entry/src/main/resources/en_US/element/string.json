@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "TechPie"
+    },
+    {
+      "name": "camera_reason",
+      "value": "Use the camera to scan check-in codes and campus-card payment codes"
+    },
+    {
+      "name": "ecard_shortcut_label",
+      "value": "Pay Code"
+    }
+  ]
+}

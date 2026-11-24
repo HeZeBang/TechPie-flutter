@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/feedback_service.dart';
 import '../theme/theme.dart';
+import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
@@ -22,6 +25,7 @@ class FeedbackPage extends StatefulWidget {
 }
 
 class _FeedbackPageState extends State<FeedbackPage> {
+  static const _groupNumber = '1130168501';
   final _message = TextEditingController();
   final _contact = TextEditingController();
   final _images = <FeedbackImage>[];
@@ -46,6 +50,8 @@ class _FeedbackPageState extends State<FeedbackPage> {
       _busy = true;
       _error = null;
     });
+    String? errorMessage;
+    var timedOut = false;
     try {
       await widget.service.submit(
         _message.text,
@@ -55,19 +61,47 @@ class _FeedbackPageState extends State<FeedbackPage> {
         images: _images,
         onImageChanged: _refreshImages,
       );
-      if (mounted) setState(() => _sent = true);
     } catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = error is TimeoutException
-              ? '未能确认送达，内容已保留，请稍后再试'
-              : error is Exception && error.toString().startsWith('Exception: ')
-                  ? error.toString().substring(11)
-                  : '反馈未发送成功，内容已保留';
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      timedOut = error is TimeoutException;
+      errorMessage = timedOut
+          ? '未能确认送达，内容已保留，请稍后再试'
+          : error is Exception && error.toString().startsWith('Exception: ')
+              ? error.toString().substring(11)
+              : '反馈未发送成功，内容已保留';
+    }
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = errorMessage;
+      _sent = errorMessage == null;
+    });
+    if (ModalRoute.of(context)?.isCurrent != true) return;
+
+    final invitation = _sent
+        ? '欢迎加入 TechPie 用户群，了解最新进展、继续反馈问题或提出功能建议。'
+        : '反馈内容已保留。你可以返回重试，也可以加入 TechPie 用户群直接反馈。';
+    final copy = await showAdaptiveAlertDialog<bool>(
+      context: context,
+      title: _sent
+          ? '反馈已提交'
+          : timedOut
+              ? '未能确认送达'
+              : '提交失败',
+      message: '$invitation\n\nQQ群号：$_groupNumber',
+      actions: const [
+        AdaptiveAlertAction(label: '关闭'),
+        AdaptiveAlertAction(label: '复制群号', value: true, isDefault: true),
+      ],
+    );
+    if (copy != true) return;
+    try {
+      await Clipboard.setData(const ClipboardData(text: _groupNumber));
+      showAdaptiveFeedback(message: '群号已复制', style: AdaptiveFeedbackStyle.success);
+    } on PlatformException {
+      showAdaptiveFeedback(
+        message: '复制失败，请手动输入 $_groupNumber',
+        style: AdaptiveFeedbackStyle.error,
+      );
     }
   }
 

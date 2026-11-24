@@ -1,0 +1,44 @@
+.screen { left: 0px; top: 0px; width: 466px; height: 466px; flex-direction: column; align-items: center; background-color: #000000; }
+.deck { left: 0px; top: 0px; width: 466px; height: 466px; }
+.panel { width: 466px; height: 466px; flex-direction: column; align-items: center; background-color: #000000; }
+.panel-header { width: 300px; height: 100px; padding-top: 44px; flex-direction: column; align-items: center; }
+.page-title { width: 210px; height: 48px; color: #ffffff; font-size: 30px; text-align: center; text-overflow: ellipsis; }
+.code-area { width: 338px; height: 265px; align-items: center; justify-content: center; }
+.qr { width: 265px; height: 265px; background-color: #ffffff; }
+.code-placeholder { width: 265px; height: 265px; border-radius: 16px; background-color: #1c1c1e; align-items: center; justify-content: center; }
+.placeholder-title { width: 245px; height: 92px; color: #ffffff; font-size: 28px; text-align: center; }
+.code-caption { width: 250px; height: 48px; margin-top: 10px; color: #c5c5ca; font-size: 24px; text-align: center; }
+.preview-area { width: 338px; height: 265px; flex-direction: column; justify-content: center; align-items: center; }
+.preview-card { width: 338px; height: 80px; margin-bottom: 6px; padding-left: 18px; padding-right: 18px; border-radius: 16px; flex-direction: column; justify-content: center; background-color: #1c1c1e; }
+.preview-title { width: 302px; height: 37px; color: #ffffff; font-size: 28px; text-overflow: ellipsis; }
+.preview-caption { width: 302px; height: 31px; color: #b3b3b9; font-size: 22px; text-overflow: ellipsis; }
+.urgent { color: #ff9f0a; }
+.preview-empty { width: 310px; height: 60px; color: #ffffff; font-size: 30px; text-align: center; }
+.glance-action { width: 218px; height: 48px; margin-top: 10px; border-radius: 24px; background-color: #2c2c2e; color: #ffffff; font-size: 23px; }
+.details { width: 466px; height: 466px; }
+.detail-header { width: 466px; height: 132px; }
+.detail-heading { width: 466px; height: 132px; padding-top: 44px; flex-direction: column; align-items: center; }
+.detail-title { width: 280px; height: 48px; color: #ffffff; font-size: 36px; text-align: center; }
+.detail-subtitle { width: 280px; height: 32px; color: #8e8e93; font-size: 24px; text-align: center; }
+.detail-row { width: 466px; height: 208px; }
+.detail-card { width: 338px; height: 196px; margin-left: 64px; padding: 18px; border-radius: 16px; flex-direction: column; background-color: #1c1c1e; }
+.row-caption { width: 302px; height: 34px; color: #b3b3b9; font-size: 24px; }
+.row-title { width: 302px; height: 84px; color: #ffffff; font-size: 32px; }
+.row-detail { width: 302px; height: 42px; color: #a1a1a6; font-size: 24px; }
+.day-controls { width: 466px; height: 96px; }
+.control-pair { width: 466px; height: 96px; justify-content: center; }
+.day-button { width: 145px; height: 80px; border-radius: 40px; margin-left: 5px; margin-right: 5px; background-color: #252527; color: #ffffff; font-size: 26px; }
+.empty-row { width: 466px; height: 160px; }
+.empty-box { width: 466px; height: 160px; align-items: center; justify-content: center; }
+.empty-text { width: 300px; height: 80px; color: #a1a1a6; font-size: 32px; text-align: center; }
+.account-row { width: 466px; height: 194px; }
+.account-box { width: 466px; height: 194px; flex-direction: column; align-items: center; }
+.account-name { width: 300px; height: 64px; color: #ffffff; font-size: 40px; text-align: center; }
+.account-id { width: 338px; height: 50px; color: #c5c5ca; font-size: 26px; text-align: center; }
+.account-sync { width: 300px; height: 54px; color: #8e8e93; font-size: 24px; text-align: center; }
+.sync-row { width: 466px; height: 170px; }
+.sync-box { width: 466px; height: 170px; flex-direction: column; align-items: center; }
+.sync-button { width: 290px; height: 80px; border-radius: 40px; background-color: #252527; color: #ffffff; font-size: 28px; }
+.sync-note { width: 290px; height: 78px; color: #8e8e93; font-size: 22px; text-align: center; }
+.end-row { width: 466px; height: 64px; }
+.end-space { width: 466px; height: 64px; }

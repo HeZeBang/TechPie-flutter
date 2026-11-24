@@ -306,7 +306,7 @@ class ThemeService extends ChangeNotifier {
           if (states.contains(WidgetState.selected)) {
             return tp.onBrand;
           }
-          return scheme.outline;
+          return tp.textSecondary;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.disabled)) {

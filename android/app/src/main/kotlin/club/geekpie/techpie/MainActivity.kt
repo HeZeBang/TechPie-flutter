@@ -15,6 +15,7 @@ import android.provider.CalendarContract.Events
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import club.geekpie.techpie.ecardbind.EcardBindVpnService
+import club.geekpie.techpie.wear.WearEngineBridge
 import club.geekpie.techpie.island.FocusSequenceStore
 import club.geekpie.techpie.island.IslandBridge
 import club.geekpie.techpie.island.IslandCapabilityProbe
@@ -31,6 +32,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var ecardWidgets: EcardWidgetBridge? = null
     private var ecardFeedback: EcardFeedback? = null
+    private var wearEngine: WearEngineBridge? = null
     private var islandBridge: IslandBridge? = null
     private var spendingAlerts: SpendingNotificationBridge? = null
 
@@ -40,6 +42,7 @@ class MainActivity : FlutterActivity() {
             it.capture(intent, notifyFlutter = false)
         }
         ecardFeedback = EcardFeedback(this, flutterEngine.dartExecutor.binaryMessenger)
+        wearEngine = WearEngineBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         islandBridge = IslandBridge(
             this, flutterEngine.dartExecutor.binaryMessenger,
             IslandCapabilityProbe(this), IslandNotificationFactory(this, FocusSequenceStore(this)),
@@ -95,6 +98,8 @@ class MainActivity : FlutterActivity() {
         ecardWidgets = null
         ecardFeedback?.dispose()
         ecardFeedback = null
+        wearEngine?.dispose()
+        wearEngine = null
         islandBridge?.dispose()
         islandBridge = null
         spendingAlerts?.dispose()
