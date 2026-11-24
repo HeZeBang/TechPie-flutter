@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -393,6 +394,64 @@ void main() {
       expect(find.text('网络与支持'), findsOneWidget);
       expect(find.byType(TpCard), findsWidgets);
       expect(find.byType(TpListRow), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'iOS settings use inline theme menus and persist the system color',
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+    (tester) async {
+      tester.view.physicalSize = const Size(402, 874);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 62);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+
+      final host = await _buildTestHost(child: const SettingsPage());
+      await tester.pumpWidget(host.widget);
+      await tester.pumpAndSettle();
+
+      CNPopupMenuButton menuFor(String label) => tester.widget<CNPopupMenuButton>(
+            find.byWidgetPredicate(
+              (widget) => widget is CNPopupMenuButton && widget.semanticLabel == label,
+            ),
+          );
+
+      final modeMenu = menuFor('主题模式');
+      final colorMenu = menuFor('主题色');
+      expect(modeMenu.buttonLabel, 'System');
+      expect(colorMenu.buttonLabel, 'TechRed');
+      expect(modeMenu.buttonStyle, CNButtonStyle.glass);
+      expect(colorMenu.buttonStyle, CNButtonStyle.glass);
+      final systemIndex = colorMenu.items.indexWhere(
+        (item) => item is CNPopupMenuItem && item.label == 'system',
+      );
+      expect(systemIndex, isNonNegative);
+
+      colorMenu.onSelected(systemIndex);
+      await tester.pumpAndSettle();
+
+      final updatedColorMenu = menuFor('主题色');
+      expect(updatedColorMenu.buttonLabel, 'system');
+      expect((updatedColorMenu.items[systemIndex] as CNPopupMenuItem).checked, isTrue);
+      expect(host.storage.colorScheme, AppColorScheme.system.name);
+
+      final body = find.ancestor(
+        of: find.byType(ListView),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is ClipRect && widget.clipper != null,
+        ),
+      );
+      final clipper = tester.widget<ClipRect>(body).clipper!;
+      expect(clipper.getClip(tester.getSize(body)).top, 0);
+
+      final scroll = tester.state<NestedScrollViewState>(find.byType(NestedScrollView));
+      scroll.outerController.jumpTo(scroll.outerController.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      final clipTop = clipper.getClip(tester.getSize(body)).top;
+      expect(tester.getTopLeft(body).dy + clipTop, closeTo(62 + 44, 0.01));
     },
   );
 

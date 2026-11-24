@@ -217,6 +217,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
     return AdaptiveNavigationScaffold(
       extendBodyBehindAppBar:
           AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      clipBodyBelowAppBar: true,
       appBar: AdaptiveNavigationScaffold.adaptiveBar(
         ios: () => const IosNativeNavigationBar(
           title: '我的',
@@ -293,20 +294,9 @@ class _SettingsBodyState extends State<_SettingsBody> {
                       _SettingsSectionCard(
                         title: '外观与体验',
                         children: [
-                          _buildThemeModeRow(context, colors, themeService),
+                          _buildThemeModeRow(colors, themeService),
                           if (themeService.supportsColorSchemeSelection)
-                            Builder(
-                              builder: (tileContext) => TpListRow(
-                                icon: TpIcons.sparkles,
-                                iconColor: colors.brandInk,
-                                title: '主题色',
-                                value: _colorSubtitle(themeService),
-                                showChevron: true,
-                                showDivider: _showsHuaweiWatch || supportsAppleWatch(),
-                                onTap: () =>
-                                    _showColorPicker(tileContext, themeService),
-                              ),
-                            ),
+                            _buildThemeColorRow(colors, themeService),
                           if (_showsHuaweiWatch)
                             TpListRow(
                               icon: TpIcons.watch,
@@ -866,12 +856,12 @@ class _SettingsBodyState extends State<_SettingsBody> {
   bool get _showsHuaweiWatch => isAndroid();
 
   Widget _buildThemeModeRow(
-    BuildContext context,
     TpColors colors,
     ThemeService themeService,
   ) {
-    final hasNext =
-        themeService.supportsColorSchemeSelection || _showsHuaweiWatch || supportsAppleWatch();
+    final hasNext = themeService.supportsColorSchemeSelection ||
+        _showsHuaweiWatch ||
+        supportsAppleWatch();
     return AdaptiveNavigationScaffold.adaptiveChrome(
       ios: () => TpListRow(
         icon: _themeModeIcon(themeService.mode),
@@ -914,6 +904,49 @@ class _SettingsBodyState extends State<_SettingsBody> {
           showChevron: true,
           showDivider: hasNext,
           onTap: () => _showThemePicker(tileContext, themeService),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThemeColorRow(TpColors colors, ThemeService themeService) {
+    final hasNext = _showsHuaweiWatch || supportsAppleWatch();
+    return AdaptiveNavigationScaffold.adaptiveChrome(
+      ios: () => TpListRow(
+        icon: TpIcons.sparkles,
+        iconColor: colors.brandInk,
+        title: '主题色',
+        showDivider: hasNext,
+        trailing: AdaptiveSelect(
+          value: themeService.colorScheme.name,
+          placeholder: '选择主题色',
+          accessibilityLabel: '主题色',
+          shrinkWrap: true,
+          options: [
+            for (final scheme in AppColorScheme.values)
+              AdaptiveSelectOption(
+                value: scheme.name,
+                label: scheme == AppColorScheme.system ? 'system' : scheme.label,
+                sfSymbol: switch (scheme) {
+                  AppColorScheme.techRed => 'paintpalette',
+                  AppColorScheme.system => 'sparkles',
+                },
+              ),
+          ],
+          onChanged: (value) => unawaited(
+            themeService.setColorScheme(AppColorScheme.values.byName(value)),
+          ),
+        ),
+      ),
+      material: () => Builder(
+        builder: (tileContext) => TpListRow(
+          icon: TpIcons.sparkles,
+          iconColor: colors.brandInk,
+          title: '主题色',
+          value: _colorSubtitle(themeService),
+          showChevron: true,
+          showDivider: hasNext,
+          onTap: () => _showColorPicker(tileContext, themeService),
         ),
       ),
     );
@@ -1072,13 +1105,9 @@ class _SettingsBodyState extends State<_SettingsBody> {
   }
 
   String _colorSubtitle(ThemeService themeService) {
-    if (themeService.colorScheme == AppColorScheme.system) {
-      if (themeService.usesIosSystemAccent) {
-        return '系统蓝';
-      }
-      if (!themeService.systemDynamicColorAvailable) {
-        return '${themeService.colorScheme.label}（不可用，已回退 TechRed）';
-      }
+    if (themeService.colorScheme == AppColorScheme.system &&
+        !themeService.systemDynamicColorAvailable) {
+      return '${themeService.colorScheme.label}（不可用，已回退 TechRed）';
     }
     return themeService.colorScheme.label;
   }
