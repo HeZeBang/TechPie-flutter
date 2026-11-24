@@ -45,10 +45,10 @@ import 'debug_log_page.dart';
 import 'debug_webview_page.dart';
 import 'developer_lab_page.dart';
 import 'feedback_page.dart';
+import 'huawei_watch_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'third_party_bind_page.dart';
-import 'huawei_watch_page.dart';
 import 'watch_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
