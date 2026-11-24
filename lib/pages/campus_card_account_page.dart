@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../features/campus_card/core/errors/app_failure.dart';
@@ -8,12 +7,10 @@ import '../services/campus_card_service.dart';
 import '../services/ecard_bind_hijack.dart';
 import '../services/ecard_bind_service.dart';
 import '../services/service_provider.dart';
-import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_ecard_wizard.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_field_group.dart';
-import '../widgets/ios/ios_native_navigation_bar.dart';
-import '../widgets/wizard_card_face.dart';
 import 'ecard_wizard_copy.dart';
 import 'sync_settings_page.dart';
 
@@ -187,105 +184,33 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
     Key? key,
     bool primary = true,
   }) {
-    final ios = isIos();
-    final enabled = !_busy && !_card.busy ? action : null;
-    final color = Theme.of(context).brightness == Brightness.dark
-        ? Theme.of(context).colorScheme.primary
-        : ios
-            ? const Color(0xff0065cc)
-            : const Color(0xff904a45);
-    if (ios) {
-      return SizedBox(
-        height: 52,
-        child: CNButton(
-          key: key,
-          label: label,
-          semanticLabel: label,
-          enabled: enabled != null,
-          onPressed: enabled,
-          tint: color,
-          config: CNButtonConfig(
-            style: primary ? CNButtonStyle.filled : CNButtonStyle.plain,
-            minHeight: 52,
-            labelFontSize: 17,
-            labelFontWeight: primary ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
-      );
-    }
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 48),
-      child: primary
-          ? FilledButton(
-              key: key,
-              onPressed: enabled,
-              style: FilledButton.styleFrom(
-                backgroundColor: color,
-                foregroundColor: ThemeData.estimateBrightnessForColor(color) == Brightness.light
-                    ? Colors.black
-                    : Colors.white,
-                shape: const StadiumBorder(),
-                textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-              ),
-              child: Text(label),
-            )
-          : TextButton(key: key, onPressed: enabled, child: Text(label)),
+    return AdaptiveEcardWizardButton(
+      label: label,
+      onPressed: !_busy && !_card.busy ? action : null,
+      buttonKey: key,
+      primary: primary,
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    final ios = isIos();
-    final theme = Theme.of(context);
-    final background = theme.brightness == Brightness.dark
-        ? theme.colorScheme.surface
-        : ios
-            ? const Color(0xfff4f4f8)
-            : const Color(0xfffff8f7);
-    return ListenableBuilder(
-      listenable: _changes,
-      builder: (context, _) {
-        final inSetup = _reviewing || _pending != null || _binding.hijackNeedsStop;
-        return PopScope(
-          canPop: !_busy && !inSetup,
-          onPopInvokedWithResult: (didPop, _) {
-            if (!didPop && !_busy && inSetup) unawaited(_run(_cancel));
-          },
-          child: Scaffold(
-            backgroundColor: background,
-            appBar: ios
-                ? IosNativeNavigationBar(
-                    title: '',
-                    leadingItems: [
-                      IosNativeNavigationBarItem(
-                        id: 'back',
-                        title: _text('Back', '返回'),
-                        sfSymbol: 'chevron.left',
-                        enabled: !_busy && !_card.busy,
-                        accessibilityLabel: _text('Back', '返回'),
-                      ),
-                    ],
-                    onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
-                  )
-                : AppBar(
-                    backgroundColor: background,
-                    surfaceTintColor: Colors.transparent,
-                    toolbarHeight: 64,
-                    title: const Text('eCard'),
-                  ),
-            body: SafeArea(top: false, child: _content()),
-          ),
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: _changes,
+        builder: (context, _) {
+          final inSetup = _reviewing || _pending != null || _binding.hijackNeedsStop;
+          return PopScope(
+            canPop: !_busy && !inSetup,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop && !_busy && inSetup) unawaited(_run(_cancel));
+            },
+            child: _content(),
+          );
+        },
+      );
 
   Widget _content() {
-    final theme = Theme.of(context);
-    final ios = isIos();
     final chinese = View.of(context).platformDispatcher.locale.languageCode == 'zh';
     ({String title, String description}) heading(WizardStep step) =>
-        wizardHeading(step, ios: ios, chinese: chinese);
+        AdaptiveEcardWizard.heading(step, chinese: chinese);
     Widget? field;
     IconData? stateIcon;
     late String title;
@@ -295,9 +220,8 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
     final cancelButton = _button(cancel, () => _run(_cancel), primary: false);
     var showCard = false;
     if (!_ready) {
-      if (_error == null) return const Center(child: CircularProgressIndicator());
       title = _text('Could not load your card', '无法读取校园卡');
-      controls.add(_button(_text('Retry', '重试'), () => _run(_load)));
+      if (_error != null) controls.add(_button(_text('Retry', '重试'), () => _run(_load)));
     } else if (_card.configured && _justConnected) {
       showCard = true;
       title = heading(WizardStep.success).title;
@@ -400,135 +324,38 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
       );
     }
 
-    final artwork = Container(
-      height: ios ? 206 : 236,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: ios
-            ? null
-            : theme.brightness == Brightness.dark
-                ? theme.colorScheme.surfaceContainerHigh
-                : const Color(0xfffceae8),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Semantics(
-        image: true,
-        label: _text('Campus card', '校园卡'),
-        child: const ExcludeSemantics(child: WizardCardFace()),
-      ),
-    );
-    return LayoutBuilder(
-      builder: (context, bounds) {
-        final wide = bounds.maxWidth >= 800 && showCard;
-        final text = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (stateIcon != null) ...[
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: theme.brightness == Brightness.dark
-                        ? theme.colorScheme.surfaceContainerHigh
-                        : ios
-                            ? const Color(0xffe5edfa)
-                            : const Color(0xfffceae8),
-                    borderRadius: BorderRadius.circular(17),
-                  ),
-                  child: Icon(stateIcon, size: 29),
+    final details = _card.configured && !_justConnected
+        ? Card(
+            elevation: 0,
+            child: Column(
+              children: [
+                ListTile(
+                  title: Text(_text('Account', '账号')),
+                  trailing: Text(_card.maskedOpenId ?? '—'),
                 ),
-              ),
-              const SizedBox(height: 26),
-            ],
-            Text(
-              title,
-              style: theme.textTheme.headlineMedium?.copyWith(
-                fontSize: ios ? 28 : 32,
-                height: ios ? 34 / 28 : 1.25,
-                fontWeight: ios ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-            if (description != null) ...[
-              const SizedBox(height: 9),
-              Text(
-                description,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  fontSize: ios ? 17 : 16,
-                  height: ios ? 25 / 17 : 1.5,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-            if (field != null) ...[const SizedBox(height: 24), field],
-            if (_error != null) ...[
-              const SizedBox(height: 16),
-              Semantics(
-                liveRegion: true,
-                child: Text(_message(_error!), style: TextStyle(color: theme.colorScheme.error)),
-              ),
-            ],
-          ],
-        );
-        final details = _card.configured && !_justConnected
-            ? Card(
-                elevation: 0,
-                child: Column(
-                  children: [
-                    ListTile(
-                      title: Text(_text('Account', '账号')),
-                      trailing: Text(_card.maskedOpenId ?? '—'),
-                    ),
-                    ListTile(
-                      title: Text(_text('Status', '状态')),
-                      trailing: Text(_text('Connected', '已连接')),
-                    ),
-                  ],
-                ),
-              )
-            : null;
-        final cardFirst = showCard && !_card.configured;
-        return Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: wide ? 948 : 488),
-            child: CustomScrollView(
-              slivers: [
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(24, ios ? 32 : 20, 24, 12),
-                  sliver: SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (wide)
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(child: artwork),
-                              const SizedBox(width: 40),
-                              Expanded(child: text),
-                            ],
-                          )
-                        else ...[
-                          if (cardFirst) ...[artwork, const SizedBox(height: 26)],
-                          text,
-                          if (showCard && !cardFirst) ...[const SizedBox(height: 26), artwork],
-                        ],
-                        if (details != null) ...[const SizedBox(height: 18), details],
-                        const SizedBox(height: 24),
-                        const Spacer(),
-                        for (final control in controls)
-                          Padding(padding: const EdgeInsets.only(bottom: 6), child: control),
-                      ],
-                    ),
-                  ),
+                ListTile(
+                  title: Text(_text('Status', '状态')),
+                  trailing: Text(_text('Connected', '已连接')),
                 ),
               ],
             ),
-          ),
-        );
-      },
+          )
+        : null;
+    return AdaptiveEcardWizard(
+      title: title,
+      description: description,
+      stateIcon: stateIcon,
+      field: field,
+      error: _error == null ? null : _message(_error!),
+      details: details,
+      showCard: showCard,
+      cardFirst: showCard && !_card.configured,
+      controls: controls,
+      loading: !_ready && _error == null,
+      backLabel: _text('Back', '返回'),
+      cardLabel: _text('Campus card', '校园卡'),
+      backEnabled: !_busy && !_card.busy,
+      onBack: () => unawaited(maybePopAdaptivePage<void>(context)),
     );
   }
 }
