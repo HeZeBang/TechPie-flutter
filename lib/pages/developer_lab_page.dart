@@ -96,7 +96,7 @@ final class DeveloperLabPage extends StatelessWidget {
                 ),
             ],
           ),
-          const _EcardBindProbe(),
+          if (supportsCampusCard()) const _EcardBindProbe(),
         ],
       ),
     );
@@ -207,7 +207,7 @@ final class _EcardBindProbeState extends State<_EcardBindProbe> {
   EcardBindDiagnosis? _diagnosis;
 
   Future<void> _check() async {
-    final bind = ServiceProvider.of(context).ecardBindService;
+    final bind = ServiceProvider.of(context).ecardBindService!;
     setState(() => _busy = true);
     final diagnosis = await bind.diagnose();
     if (!mounted) return;

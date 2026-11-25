@@ -7,6 +7,7 @@ import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
 import '../pages/student_allowance_page.dart';
 import '../theme/tp_icons.dart';
+import '../utils/platform.dart';
 import '../widgets/adaptive_page_navigation.dart';
 
 enum FeatureMode {
@@ -40,7 +41,25 @@ class Feature {
   });
 }
 
-final featureEntries = <Feature>[
+final _mobileEntries = _buildEntries(
+  campusCard: Feature(
+    id: 'campus_card',
+    description: '校园卡',
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const CampusCardPage(
+        entry: CampusCardEntry.paymentCode,
+      ),
+    ),
+    icon: const Icon(TpIcons.wallet),
+  ),
+);
+final _desktopEntries = _buildEntries();
+List<Feature> get featureEntries =>
+    supportsCampusCard() ? _mobileEntries : _desktopEntries;
+
+List<Feature> _buildEntries({Feature? campusCard}) => [
   Feature(
     id: 'elrc_recordings',
     description: '课程录播',
@@ -67,18 +86,7 @@ final featureEntries = <Feature>[
     cookieType: CookieType.egateApp,
     icon: const Icon(TpIcons.building),
   ),
-  Feature(
-    id: 'campus_card',
-    description: '校园卡',
-    mode: FeatureMode.native,
-    nativeEntry: (context) => pushAdaptivePage<void>(
-      context,
-      builder: (_) => const CampusCardPage(
-        entry: CampusCardEntry.paymentCode,
-      ),
-    ),
-    icon: const Icon(TpIcons.wallet),
-  ),
+  if (campusCard != null) campusCard,
   Feature(
     id: 'oa_gym',
     description: '场馆预约',

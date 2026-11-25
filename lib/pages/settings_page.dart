@@ -205,7 +205,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
     final storage = sp.storageService;
     final themeService = sp.themeService;
     final tpAuth = sp.thirdPartyAuthService;
-    final campusCard = sp.campusCardService;
+    final campusCard = supportsCampusCard() ? sp.campusCardService : null;
     final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
       context,
       extra: TpTokens.space3,
@@ -237,9 +237,9 @@ class _SettingsBodyState extends State<_SettingsBody> {
           builder: (context, _) {
             final session = auth.session;
             final boundCount =
-                tpAuth.boundPlatforms.length + (campusCard.configured ? 1 : 0);
+                tpAuth.boundPlatforms.length + (campusCard?.configured == true ? 1 : 0);
             final island = sp.islandService;
-            final spending = sp.spendingAlertService;
+            final spending = supportsCampusCard() ? sp.spendingAlertService : null;
             final hasDeadlineWidgets = !kIsWeb &&
                 defaultTargetPlatform == TargetPlatform.linux &&
                 sp.deadlineWidgetService != null;
@@ -683,7 +683,9 @@ class _SettingsBodyState extends State<_SettingsBody> {
             icon: TpIcons.linkedAccounts,
             iconColor: colors.textSecondary,
             title: '第三方账号',
-            subtitle: '已绑定 $boundCount / 4 项 · IDS / eCard / Gradescope / Hydro',
+            subtitle: supportsCampusCard()
+                ? '已绑定 $boundCount / 4 项 · IDS / eCard / Gradescope / Hydro'
+                : '已绑定 $boundCount / 3 项 · IDS / Gradescope / Hydro',
             showChevron: true,
             showDivider: auth.isLoggedIn,
             onTap: () => unawaited(

@@ -106,7 +106,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
 
   Future<void> _scanQrCode(EgateAppService service) async {
     if (_submitting) return;
-    final runtime = ServiceProvider.of(context).campusCardService.runtime;
+    final runtime = ServiceProvider.of(context).campusCardService!.runtime;
     final wid = await showTechPieScanner(
       context,
       scanner: runtime.scanner,

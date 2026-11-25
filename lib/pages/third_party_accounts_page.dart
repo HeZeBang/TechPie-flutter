@@ -9,6 +9,7 @@ import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
 import '../services/session/session_node.dart';
 import '../theme/theme.dart';
+import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_confirmation_button.dart';
 import '../widgets/adaptive_feedback.dart';
@@ -81,7 +82,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
     final sp = ServiceProvider.of(context);
     final tpAuth = sp.thirdPartyAuthService;
     final auth = sp.authService;
-    final campusCard = sp.campusCardService;
+    final campusCard = supportsCampusCard() ? sp.campusCardService : null;
     final colors = context.tpColors;
     final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
       context,
@@ -117,8 +118,8 @@ class ThirdPartyAccountsPage extends StatelessWidget {
         builder: (context, _) {
           final idsBound = tpAuth.hasIdsBinding;
           final connectedCount =
-              tpAuth.boundPlatforms.length + (campusCard.configured ? 1 : 0);
-          const totalPlatforms = 4;
+              tpAuth.boundPlatforms.length + (campusCard?.configured == true ? 1 : 0);
+          final totalPlatforms = campusCard == null ? 3 : 4;
 
           return ListView(
             padding: EdgeInsets.fromLTRB(
@@ -254,45 +255,46 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                     const SizedBox(height: TpTokens.sectionGap),
 
                     // Group 2: Campus Card & Learning Platforms
-                    const _AccountGroupLabel(title: '校园卡与课程平台'),
+                    _AccountGroupLabel(title: campusCard == null ? '课程平台' : '校园卡与课程平台'),
                     TpCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          TpListRow(
-                            icon: TpIcons.wallet,
-                            iconColor: campusCard.configured
-                                ? colors.brandInk
-                                : colors.textMuted,
-                            title: 'eCard',
-                            subtitle: campusCard.configured
-                                ? '${campusCard.openIdChannel.label} · ${campusCard.maskedOpenId}'
-                                : '未连接',
-                            showDivider: true,
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                TpBadge(
-                                  label: campusCard.configured ? '已连接' : '未连接',
-                                  tone: campusCard.configured
-                                      ? TpBadgeTone.success
-                                      : TpBadgeTone.muted,
+                          if (campusCard != null)
+                            TpListRow(
+                              icon: TpIcons.wallet,
+                              iconColor: campusCard.configured
+                                  ? colors.brandInk
+                                  : colors.textMuted,
+                              title: 'eCard',
+                              subtitle: campusCard.configured
+                                  ? '${campusCard.openIdChannel.label} · ${campusCard.maskedOpenId}'
+                                  : '未连接',
+                              showDivider: true,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TpBadge(
+                                    label: campusCard.configured ? '已连接' : '未连接',
+                                    tone: campusCard.configured
+                                        ? TpBadgeTone.success
+                                        : TpBadgeTone.muted,
+                                  ),
+                                  const SizedBox(width: TpTokens.space1),
+                                  Icon(
+                                    TpIcons.chevronRight,
+                                    size: TpTokens.iconS,
+                                    color: colors.textMuted,
+                                  ),
+                                ],
+                              ),
+                              onTap: () => unawaited(
+                                pushAdaptivePage<void>(
+                                  context,
+                                  builder: (_) => const CampusCardAccountPage(),
                                 ),
-                                const SizedBox(width: TpTokens.space1),
-                                Icon(
-                                  TpIcons.chevronRight,
-                                  size: TpTokens.iconS,
-                                  color: colors.textMuted,
-                                ),
-                              ],
-                            ),
-                            onTap: () => unawaited(
-                              pushAdaptivePage<void>(
-                                context,
-                                builder: (_) => const CampusCardAccountPage(),
                               ),
                             ),
-                          ),
                           _TopLevelTile(
                             platform: ThirdPartyPlatform.gradescope,
                             account:
@@ -317,7 +319,9 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                         horizontal: TpTokens.space2,
                       ),
                       child: Text(
-                        '绑定信息保存在本机安全存储中。开启云同步 (Cloud sync) 后，绑定信息与 eCard OPENID 会经过端到端加密后备份。',
+                        campusCard == null
+                            ? '绑定信息保存在本机安全存储中。开启云同步后，绑定信息会经过端到端加密后备份。'
+                            : '绑定信息保存在本机安全存储中。开启云同步 (Cloud sync) 后，绑定信息与 eCard OPENID 会经过端到端加密后备份。',
                         style: TpTypography.itemMeta(colors),
                       ),
                     ),

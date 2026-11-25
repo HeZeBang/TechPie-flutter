@@ -176,6 +176,7 @@ class _AppShellState extends State<AppShell> {
     final entry = appShellPendingEcardEntry.value;
     if (entry == null || !mounted) return;
     appShellPendingEcardEntry.value = null;
+    if (!supportsCampusCard()) return;
     // Login and playback pages can cover the entire tab shell: the code then
     // opens above that page, and back returns to it.
     final shellCovered = !ModalRoute.of(context)!.isCurrent;

@@ -45,7 +45,9 @@ import 'widgets/privacy_consent.dart';
 import 'widgets/update_dialogs.dart';
 
 @pragma('vm:entry-point')
-Future<void> spendingBackgroundRefresh() => runSpendingBackgroundRefresh();
+Future<void> spendingBackgroundRefresh() async {
+  if (supportsCampusCard()) await runSpendingBackgroundRefresh();
+}
 
 void main(List<String> args) async {
   // If this Flutter engine is a desktop_webview_window title bar (secondary
@@ -98,11 +100,13 @@ Future<void> _realMain(SharedPreferences prefs) async {
     logger: debugLogger,
   );
   final themeService = ThemeService(storageService);
-  final campusCardService =
-      CampusCardService(debugLogger: debugLogger, storage: storageService);
-  final spendingAlertService = SpendingAlertService(storageService);
-  final ecardBindService = EcardBindService();
-  final ecardWidgetService = EcardWidgetService();
+  final campusCardService = supportsCampusCard()
+      ? CampusCardService(debugLogger: debugLogger, storage: storageService)
+      : null;
+  final spendingAlertService =
+      supportsCampusCard() ? SpendingAlertService(storageService) : null;
+  final ecardBindService = supportsCampusCard() ? EcardBindService() : null;
+  final ecardWidgetService = supportsCampusCard() ? EcardWidgetService() : null;
   final thirdPartyAuthService = ThirdPartyAuthService(
     storageService,
     httpClient,
@@ -135,7 +139,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     scheduleService,
     syncReminders: isApple,
   );
-  final wearSource = isAndroid()
+  final wearSource = isAndroid() && campusCardService != null
       ? TechPieWearDataSource(
           auth: authService, accounts: thirdPartyAuthService,
           assignments: assignmentService, campusCard: campusCardService,
@@ -163,7 +167,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     ecard: campusCardService,
     logger: debugLogger,
   );
-  campusCardService.onBindingChanged = syncService.forcePush;
+  campusCardService?.onBindingChanged = syncService.forcePush;
   // It talks to GitHub rather than our backend, so it keeps its own client
   // instead of the logging one the API services share.
   final updateService = UpdateService();
@@ -249,7 +253,9 @@ Future<void> _realMain(SharedPreferences prefs) async {
     ),
   );
 
-  spendingAlertService.start(authService, campusCardService);
+  if (campusCardService != null) {
+    spendingAlertService?.start(authService, campusCardService);
+  }
   bootMark('cached data ready');
   if (isApple || (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux)) {
     deadlineWidgetService.initialize();
@@ -257,16 +263,16 @@ Future<void> _realMain(SharedPreferences prefs) async {
 
   islandService.start();
   oaGymService.startProfileSync();
-  unawaited(campusCardService.refreshAccount());
+  unawaited(campusCardService?.refreshAccount());
 
   // The home-screen widget / shortcut only needs its handler once something
   // could press it — a widget tap on iOS/Android, a long-press shortcut on OHOS.
-  if (isIos() || isAndroid() || isOhos()) ecardWidgetService.initialize();
+  if (isIos() || isAndroid() || isOhos()) ecardWidgetService?.initialize();
 
   // Build the campus-card runtime now that the first frame is up, so tapping the
   // pass does not pay for it. Nothing session-related happens here: a request
   // that needs a session issues one itself.
-  campusCardService.prepare();
+  campusCardService?.prepare();
   if (wearEngineService != null) {
     void accountChanged() => unawaited(wearEngineService.reconcileAccount());
     void deadlinesChanged() {
@@ -301,7 +307,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     assignmentService.addListener(scheduleChanged);
     authService.addListener(accountChanged);
     thirdPartyAuthService.addListener(accountChanged);
-    campusCardService.addListener(accountChanged);
+    campusCardService?.addListener(accountChanged);
     assignmentService.addListener(deadlinesChanged);
     unawaited(wearEngineService.reconcileAccount());
   }
@@ -410,8 +416,8 @@ class TechPieApp extends StatefulWidget {
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
-  final CampusCardService campusCardService;
-  final EcardBindService ecardBindService;
+  final CampusCardService? campusCardService;
+  final EcardBindService? ecardBindService;
   final EcardWidgetService? ecardWidgetService;
   final WearEngineService? wearEngineService;
   final DeadlineWidgetService? deadlineWidgetService;
@@ -509,7 +515,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.spendingAlertService?.dispose();
     widget.islandService?.dispose();
     _studentAllowanceService.dispose();
-    widget.campusCardService.dispose();
+    widget.campusCardService?.dispose();
     widget.wearEngineService?.dispose();
     super.dispose();
   }
@@ -571,6 +577,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   }
 
   Future<void> _openEcardPayCode() async {
+    if (!supportsCampusCard()) return;
     // The shell performs the push: it knows which stack the entry belongs in —
     // the Home tab's on iOS — and it is still there after a cold start.
     _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);

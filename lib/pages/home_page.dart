@@ -20,6 +20,7 @@ import '../services/storage_service.dart';
 import '../theme/theme.dart';
 import '../utils/adaptive_motion.dart';
 import '../utils/haptics.dart';
+import '../utils/platform.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -329,8 +330,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Future<void> _refreshHome() async {
     final sp = ServiceProvider.of(context);
+    final card = supportsCampusCard() ? sp.campusCardService : null;
     final tasks = <Future<void>>[
-      sp.campusCardService.refreshAccount(),
+      if (card != null) card.refreshAccount(),
     ];
     if (sp.thirdPartyAuthService.hasIdsBinding) {
       tasks.add(sp.scheduleService.fetchAll());
@@ -354,7 +356,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final sp = ServiceProvider.of(context);
     final auth = sp.authService;
     final storage = sp.storageService;
-    final campusCard = sp.campusCardService;
+    final campusCard = supportsCampusCard() ? sp.campusCardService : null;
     final isDebug = storage.debugMode;
     final now = _now;
     final week = _resolvedWeek(now);
@@ -385,11 +387,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         },
       ),
     );
-    final campusCardStrip = _buildCampusCardStrip(
-      campusCard,
-      storage,
-      expandedCard: isBento,
-    );
+    final campusCardStrip = campusCard == null
+        ? null
+        : _buildCampusCardStrip(campusCard, storage, expandedCard: isBento);
     final todayClasses = _buildTodayClasses(colors, auth.isLoggedIn);
     final deadlines = _buildPendingAssignments(colors);
     final quickActions = _buildQuickActions();
@@ -427,13 +427,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           if (debugPanel != null) debugPanel,
                         ],
                         secondaryColumn: [
-                          campusCardStrip,
+                          if (campusCardStrip != null) campusCardStrip,
                           quickActions,
                         ],
                       )
                     else ...[
-                      campusCardStrip,
-                      const SizedBox(height: TpTokens.sectionGap),
+                      if (campusCardStrip != null) ...[
+                        campusCardStrip,
+                        const SizedBox(height: TpTokens.sectionGap),
+                      ],
                       todayClasses,
                       const SizedBox(height: TpTokens.sectionGap),
                       deadlines,

@@ -28,7 +28,7 @@ class _WatchSettingsPageState extends State<WatchSettingsPage> {
     if (_loaded) return;
     _loaded = true;
     unawaited(
-      ServiceProvider.of(context).campusCardService.watchSync.refreshStatus(),
+      ServiceProvider.of(context).campusCardService!.watchSync.refreshStatus(),
     );
   }
 
@@ -58,7 +58,7 @@ class _WatchSettingsPageState extends State<WatchSettingsPage> {
         material: () => const BlurredAppBar(title: Text('Apple Watch')),
       ),
       body: WatchSettingsContent(
-        sync: ServiceProvider.of(context).campusCardService.watchSync,
+        sync: ServiceProvider.of(context).campusCardService!.watchSync,
       ),
     );
   }

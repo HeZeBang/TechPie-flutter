@@ -36,8 +36,8 @@ class ServiceProvider extends InheritedWidget {
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
-  final CampusCardService campusCardService;
-  final EcardBindService ecardBindService;
+  final CampusCardService? campusCardService;
+  final EcardBindService? ecardBindService;
   final EcardWidgetService? ecardWidgetService;
   final WearEngineService? wearEngineService;
   final DeadlineWidgetService? deadlineWidgetService;

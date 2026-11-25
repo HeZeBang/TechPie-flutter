@@ -67,6 +67,11 @@ bool isDesktop() =>
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows);
 
+/// Campus card is available on the mobile and web clients.
+bool supportsCampusCard() => kDebugMode
+    ? !isDesktop()
+    : kIsWeb || !(Platform.isLinux || Platform.isMacOS || Platform.isWindows);
+
 /// Check if the current platform is Android and not web.
 bool isAndroid() => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 

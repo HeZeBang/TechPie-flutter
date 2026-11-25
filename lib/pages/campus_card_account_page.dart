@@ -50,7 +50,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
     if (_loaded) return;
     _loaded = true;
     unawaited(_loadOpenId());
-    unawaited(ServiceProvider.of(context).ecardBindService.refreshStatus());
+    unawaited(ServiceProvider.of(context).ecardBindService!.refreshStatus());
   }
 
   @override
@@ -61,7 +61,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
   }
 
   Future<void> _loadOpenId() async {
-    final service = ServiceProvider.of(context).campusCardService;
+    final service = ServiceProvider.of(context).campusCardService!;
     await service.refreshAccount();
     final openId = await service.readOpenId();
     final channel = await service.readOpenIdChannel();
@@ -75,8 +75,8 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    final service = ServiceProvider.of(context).campusCardService;
-    final bindService = ServiceProvider.of(context).ecardBindService;
+    final service = ServiceProvider.of(context).campusCardService!;
+    final bindService = ServiceProvider.of(context).ecardBindService!;
     bool isBusy() => service.busy || _operationBusy;
     final hintStyle = TpTypography.itemMeta(colors).copyWith(height: 1.45);
     final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
@@ -414,7 +414,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
   }
 
   Future<void> _toggleHijack(EcardBindService bindService) async {
-    if (_operationBusy || ServiceProvider.of(context).campusCardService.busy) {
+    if (_operationBusy || ServiceProvider.of(context).campusCardService!.busy) {
       return;
     }
     setState(() => _hijackBusy = true);
@@ -519,7 +519,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
     });
     try {
       await ServiceProvider.of(context)
-          .ecardBindService
+          .ecardBindService!
           .prepareCampusConnection();
       if (!mounted) return;
       await service.verifyOpenId(openId, channel: channel);
@@ -562,7 +562,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> {
     final openId = _openIdController.text.trim();
     final channel = _channel;
     await ServiceProvider.of(context)
-        .ecardBindService
+        .ecardBindService!
         .prepareCampusConnection();
     if (!mounted) return;
     await service.connect(openId, channel: channel);
