@@ -16,6 +16,8 @@ import 'ids_bind_page.dart';
 
 enum _SetupStep { courses, site, credentials, renewal, connected }
 
+enum _SignInFailure { service, connection }
+
 class ThirdPartyBindPage extends StatefulWidget {
   final ThirdPartyPlatform platform;
 
@@ -25,7 +27,7 @@ class ThirdPartyBindPage extends StatefulWidget {
   State<ThirdPartyBindPage> createState() => _ThirdPartyBindPageState();
 }
 
-class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
+class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> with WidgetsBindingObserver {
   final _accountCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _hydroOriginCtrl = TextEditingController(
@@ -36,7 +38,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
   bool _busy = false;
   bool _autoRenew = false;
   String? _inlineError;
-  String? _signInError;
+  _SignInFailure? _signInFailure;
 
   bool get _isHydro => widget.platform == ThirdPartyPlatform.hydro;
   bool get _isGradescope => widget.platform == ThirdPartyPlatform.gradescope;
@@ -50,14 +52,31 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
       .toSet()
       .toList();
 
+  String? get _signInMessage => switch (_signInFailure) {
+        _SignInFailure.service => _text(
+            'Could not sign in to $_name. Please try again.',
+            '无法登录 $_name，请重试。',
+          ),
+        _SignInFailure.connection => _text(
+            'Could not connect. Check your connection and try again.',
+            '无法连接。请检查网络后重试。',
+          ),
+        null => null,
+      };
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _step = _isHydro ? _SetupStep.courses : _SetupStep.credentials;
   }
 
   @override
+  void didChangeLocales(List<Locale>? locales) => setState(() {});
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _accountCtrl.dispose();
     _passwordCtrl.dispose();
     _hydroOriginCtrl.dispose();
@@ -76,7 +95,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _step = step;
-      _inlineError = step == _SetupStep.credentials ? _signInError : null;
+      _inlineError = null;
     });
   }
 
@@ -149,7 +168,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     }
     setState(() {
       _inlineError = error;
-      _signInError = null;
+      _signInFailure = null;
     });
     if (error != null) return;
     // Lock navigation and submission before waiting for the keyboard channel.
@@ -168,17 +187,12 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
       if (!mounted) return;
       _passwordCtrl.clear();
       _go(_SetupStep.connected);
-    } on ThirdPartyBindException catch (e) {
+    } on ThirdPartyBindException {
       if (!mounted) return;
-      setState(() => _inlineError = _signInError = e.message);
+      setState(() => _signInFailure = _SignInFailure.service);
     } catch (_) {
       if (!mounted) return;
-      setState(
-        () => _inlineError = _signInError = _text(
-          'Could not connect. Check your connection and try again.',
-          '无法连接。请检查网络后重试。',
-        ),
-      );
+      setState(() => _signInFailure = _SignInFailure.connection);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -310,8 +324,9 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
           'TechPie sends your credentials to its server to sign in to $_name.',
           'TechPie 会将你的凭据发送到其服务器，用于登录 $_name。',
         );
-        action =
-            _signInError == null ? _text('Connect $_name', '连接 $_name') : _text('Try again', '重试');
+        action = _signInFailure == null
+            ? _text('Connect $_name', '连接 $_name')
+            : _text('Try again', '重试');
         onAction = () => unawaited(_submit());
       case _SetupStep.renewal:
         title = _text('Keep your account connected?', '保持账号连接？');
@@ -397,7 +412,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
         onBack: _back,
         backLabel: _text('Back', '返回'),
         loading: _busy,
-        error: _inlineError,
+        error: _inlineError ?? (_step == _SetupStep.credentials ? _signInMessage : null),
         disclosure: disclosure,
         secondary: secondary,
         children: children,

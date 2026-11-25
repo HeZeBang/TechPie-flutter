@@ -74,7 +74,7 @@ Future<Widget> _host(
 class _BindingAuth extends ThirdPartyAuthService {
   _BindingAuth(this.storage) : super(storage, LoggingHttpClient(DebugLogger()));
   final StorageService storage;
-  bool fail = false;
+  Object? failure;
   Completer<void>? pending;
   int calls = 0;
   bool? renewal;
@@ -98,7 +98,7 @@ class _BindingAuth extends ThirdPartyAuthService {
     origin = hydroOrigin;
     username = account;
     if (pending != null) await pending!.future;
-    if (fail) throw ThirdPartyBindException(platform, 'Sign-in failed');
+    if (failure case final error?) throw error;
     return ThirdPartyAccount(
       platform: platform,
       account: account,
@@ -173,21 +173,60 @@ void main() {
     expect(find.text('Gradescope connected'), findsOneWidget);
   });
 
-  testWidgets('failed sign-in retains credentials and consent for retry', (tester) async {
-    auth.fail = true;
+  for (final platform in [ThirdPartyPlatform.hydro, ThirdPartyPlatform.gradescope]) {
+    testWidgets('${platform.label} localizes a sign-in failure and preserves retry state',
+        (tester) async {
+      final dispatcher = tester.platformDispatcher;
+      dispatcher.localeTestValue = const Locale('en');
+      addTearDown(dispatcher.clearLocaleTestValue);
+      final serverMessage = platform == ThirdPartyPlatform.hydro ? 'Login rejected' : '服务器登录失败';
+      auth.failure = ThirdPartyBindException(platform, serverMessage);
+      await tester.pumpWidget(await _host(auth, platform: platform));
+      if (platform == ThirdPartyPlatform.hydro) {
+        await tester.enterText(find.byType(EditableText), 'course1');
+        await tap(tester, 'Continue');
+      }
+      await credentials(tester);
+      await tap(tester, 'Automatic sign-in');
+      await tap(tester, 'Allow automatic sign-in');
+      await tap(tester, 'Connect ${platform.label}');
+      final englishError = find.text('Could not sign in to ${platform.label}. Please try again.');
+      expect(englishError, findsOneWidget);
+      expect(find.text(serverMessage), findsNothing);
+      expect(find.text('Try again'), findsOneWidget);
+
+      dispatcher.localeTestValue = const Locale('zh', 'CN');
+      await tester.pumpAndSettle();
+      final chineseError = find.text('无法登录 ${platform.label}，请重试。');
+      expect(chineseError, findsOneWidget);
+      expect(englishError, findsNothing);
+      expect(find.text(serverMessage), findsNothing);
+      await tap(tester, '自动登录');
+      expect(chineseError, findsNothing);
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
+      expect(chineseError, findsOneWidget);
+
+      auth.failure = null;
+      await tap(tester, '重试');
+      expect(auth.calls, 2);
+      expect(auth.renewal, true);
+      expect(auth.username, 'student@example.edu');
+      expect(find.text('${platform.label} 已连接'), findsOneWidget);
+      expect(find.byType(EditableText), findsNothing);
+    });
+  }
+
+  testWidgets('connection failure has a localized network prompt', (tester) async {
+    final dispatcher = tester.platformDispatcher;
+    dispatcher.localeTestValue = const Locale('zh', 'CN');
+    addTearDown(dispatcher.clearLocaleTestValue);
+    auth.failure = StateError('Network unavailable');
     await tester.pumpWidget(await _host(auth));
     await credentials(tester);
-    await tap(tester, 'Automatic sign-in');
-    await tap(tester, 'Allow automatic sign-in');
-    await tap(tester, 'Connect Gradescope');
-    expect(find.text('Sign-in failed'), findsOneWidget);
-    auth.fail = false;
-    await tap(tester, 'Try again');
-    expect(auth.calls, 2);
-    expect(auth.renewal, true);
-    expect(auth.username, 'student@example.edu');
-    expect(find.text('Gradescope connected'), findsOneWidget);
-    expect(find.byType(EditableText), findsNothing);
+    await tap(tester, '连接 Gradescope');
+    expect(find.text('无法连接。请检查网络后重试。'), findsOneWidget);
+    expect(find.text('重试'), findsOneWidget);
   });
 
   testWidgets('pending sign-in blocks duplicate submits and back navigation', (tester) async {
