@@ -611,7 +611,13 @@ class AssignmentService extends ChangeNotifier {
               !overrides.hasCompletionOverride(assignment, reminderKey: key)) {
             continue;
           }
-          overrides.scopedCompleted[key] = false;
+          if (assignment.submitted) {
+            overrides.scopedCompleted[key] = false;
+          } else {
+            // The course platform already reports this assignment as open.
+            overrides.scopedCompleted.remove(key);
+            overrides.completed.remove(AssignmentOverrides.keyFor(assignment));
+          }
           overrides.reminderCompletions.remove(key);
           recorded = true;
           continue;

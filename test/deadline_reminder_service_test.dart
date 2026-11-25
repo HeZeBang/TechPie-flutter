@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/assignment.dart';
+import 'package:techpie/models/assignment_overrides.dart';
 import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/pages/assignments_page.dart';
@@ -253,7 +254,10 @@ void main() {
     await flush();
     expect(assignments.isCompleted(course), isFalse);
     expect(assignments.findCustomDeadline(custom.id)?.completed, isFalse);
-    expect(storage.loadAssignmentOverrides().scopedCompleted[courseKey], isFalse);
+    expect(
+      storage.loadAssignmentOverrides().scopedCompleted,
+      isNot(contains(courseKey)),
+    );
     expect(storage.loadCustomDeadlines(null)?.deadlines[custom.id]?.completed, isFalse);
     expect(writes, isEmpty);
 
@@ -262,6 +266,58 @@ void main() {
     expect(assignments.isCompleted(course), isTrue);
     expect(assignments.findCustomDeadline(custom.id)?.completed, isTrue);
   });
+
+  test('keeps a reopened reminder open when its course platform shows submitted', () async {
+    final submitted = Assignment(
+      id: 'submitted',
+      platform: 'blackboard',
+      title: 'Submitted homework',
+      course: 'Course',
+      due: firstDue,
+      status: 'Submitted',
+    );
+    await storage.saveCachedAssignments([submitted.toJson()]);
+    assignments.loadCached();
+    final assignment = assignments.assignments.single;
+    await reminders.add([assignment]);
+    final key = assignments.reminderKeyFor(assignment);
+    nativeCompletions[key] = 100;
+    reminders.initialize();
+    await flush();
+    expect(assignments.isCompleted(assignment), isTrue);
+
+    nativeCompletions.remove(key);
+    await notifyRemindersChanged();
+    expect(assignments.isCompleted(assignment), isFalse);
+    expect(storage.loadAssignmentOverrides().scopedCompleted[key], isFalse);
+    expect(writes, isEmpty);
+  });
+
+  testWidgets(
+    'shows the pencil only when the local status differs from the course platform',
+    (tester) async {
+      final [open, completed] = assignments.assignments;
+      await storage.saveAssignmentOverrides(
+        AssignmentOverrides(
+          scopedCompleted: {
+            assignments.reminderKeyFor(open): false,
+            assignments.reminderKeyFor(completed): true,
+          },
+        ),
+      );
+      assignments.loadCached();
+
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      expect(find.text(open.title), findsOneWidget);
+      expect(find.byTooltip('本地标记'), findsNothing);
+
+      await tester.tap(find.text('已完成 (1)'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('本地标记'), findsOneWidget);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
   test('deleting reminders leaves their TechPie deadlines and completion intact', () async {
     await assignments.saveCustomDeadline(owner: null, title: 'Custom', due: firstDue);
