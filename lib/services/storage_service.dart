@@ -19,6 +19,7 @@ import '../models/custom_course.dart';
 import '../models/graduate_schedule.dart';
 import '../models/ids_passkey.dart';
 import '../models/oa_gym.dart';
+import '../models/quick_shortcuts.dart';
 import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import '../models/user_session.dart';
@@ -55,6 +56,10 @@ class StorageService {
 
   String? get campusWebOwner => _prefs.getString('campus_web_owner');
   Future<void> setCampusWebOwner(String owner) => _prefs.setString('campus_web_owner', owner);
+
+  List<String>? get pinnedQuickFeatureIds => _prefs.getStringList('pinned_quick_features');
+  Future<void> setPinnedQuickFeatureIds(List<String> ids) =>
+      _prefs.setStringList('pinned_quick_features', pinnedShortcutIds(ids));
 
   bool get islandEnabled => _prefs.getBool('island_enabled') ?? false;
   Future<void> setIslandEnabled(bool value) => _prefs.setBool('island_enabled', value);

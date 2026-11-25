@@ -375,6 +375,34 @@ void main() {
     },
   );
 
+  testWidgets('Home opens the campus hub and reads the saved shortcuts on return', (tester) async {
+    tester.view.physicalSize = const Size(1280, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final host = await _buildTestHost(child: const HomePage());
+    await tester.pumpWidget(host.widget);
+    await tester.pumpAndSettle();
+    final quick = find.byKey(const ValueKey('home.quick-actions'));
+    await tester.tap(find.descendant(of: quick, matching: find.text('更多')));
+    await tester.pumpAndSettle();
+    expect(find.text('校园服务中心'), findsOneWidget);
+    await tester.tap(find.byTooltip('编辑首页快捷'));
+    await tester.pumpAndSettle();
+    for (final title in ['学生请假', '学生津贴']) {
+      final tile = find.widgetWithText(CheckboxListTile, title);
+      await tester.ensureVisible(tile);
+      await tester.tap(tile);
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: quick, matching: find.text('学生津贴')), findsOneWidget);
+    expect(find.descendant(of: quick, matching: find.text('学生请假')), findsNothing);
+  });
+
   testWidgets(
     'SettingsPage renders restructured sections, places logout before deletion, and keeps desktop proxy configurable',
     variant: TargetPlatformVariant.only(TargetPlatform.macOS),
