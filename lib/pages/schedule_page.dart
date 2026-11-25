@@ -2541,7 +2541,7 @@ class _CourseBlock extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsetsDirectional.only(start: 2.5),
                   child: CourseBlockLabel(
-                    name: course.name,
+                    name: ServiceProvider.of(context).scheduleService.gridTitle(course),
                     color: textColor,
                     time: course.usesCustomTime
                         ? '${course.startTime}–${course.endTime}'
@@ -2565,16 +2565,21 @@ Widget _buildCourseDetailContent(
   required ValueChanged<Course> onEditCustomCourse,
   required ScheduleService schedule,
   required VoidCallback close,
+  required VoidCallback editGridTitle,
   required EdgeInsets padding,
   bool compact = false,
 }) {
-  if (!course.isCustom) {
-    return CourseDetailContent(
-      course: course,
-      compact: compact,
-      padding: padding,
-    );
-  }
+  final details = CourseDetailContent(
+    course: course,
+    compact: compact,
+    padding: course.isCustom ? EdgeInsets.zero : padding,
+    gridTitle: course.shortNameKey == null ? null : schedule.gridTitle(course),
+    onEditGridTitle: () {
+      close();
+      editGridTitle();
+    },
+  );
+  if (!course.isCustom) return details;
   var deleting = false;
   return StatefulBuilder(
     builder: (context, setPreviewState) => Padding(
@@ -2583,11 +2588,7 @@ Widget _buildCourseDetailContent(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CourseDetailContent(
-            course: course,
-            compact: compact,
-            padding: EdgeInsets.zero,
-          ),
+          details,
           const SizedBox(height: 12),
           Builder(
             builder: (context) {
@@ -2700,10 +2701,39 @@ void _showCourseDetailSheet(
   required ValueChanged<Course> onEditCustomCourse,
 }) {
   final schedule = ServiceProvider.of(context).scheduleService;
+  final revision = schedule.campusAccountRevision;
+  Future<void> editGridTitle() async {
+    if (revision != schedule.campusAccountRevision) return;
+    final title = await showAdaptiveTextInputDialog(
+      context: context,
+      title: '编辑课表简称',
+      fieldLabel: '周课表显示名称',
+      message: '清空后保存可恢复默认名称。',
+      hintText: course.defaultShortName,
+      initialValue: schedule.gridTitle(course),
+      confirmLabel: '保存',
+      trimResult: true,
+      allowEmpty: true,
+    );
+    if (title == null || !context.mounted || revision != schedule.campusAccountRevision) return;
+    try {
+      await schedule.setGridTitle(course, title);
+    } catch (_) {
+      if (context.mounted) {
+        showAdaptiveFeedback(
+          context: context,
+          message: '简称保存失败，请重试',
+          style: AdaptiveFeedbackStyle.error,
+        );
+      }
+    }
+  }
+
   if (usesSidebarLayout(context)) {
     showDesktopPopover(
       anchorContext: context,
       width: 360,
+      scrollable: true,
       placement: DesktopPopoverPlacement.rightTop,
       offset: const Offset(12, 0),
       builder: (context, close) {
@@ -2715,6 +2745,7 @@ void _showCourseDetailSheet(
             onEditCustomCourse: onEditCustomCourse,
             schedule: schedule,
             close: close,
+            editGridTitle: editGridTitle,
             compact: true,
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
           ),
@@ -2734,6 +2765,7 @@ void _showCourseDetailSheet(
           onEditCustomCourse: onEditCustomCourse,
           schedule: schedule,
           close: () => Navigator.pop(sheetContext),
+          editGridTitle: editGridTitle,
           padding: padding,
         );
       },

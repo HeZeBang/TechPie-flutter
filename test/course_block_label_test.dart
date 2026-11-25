@@ -44,6 +44,26 @@ void main() {
     });
   }
 
+  testWidgets('a narrow single-period block keeps a line for the room', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 42,
+            height: 48,
+            child: CourseBlockLabel(
+              name: 'Introduction to Current Life Science',
+              location: '101',
+              color: Colors.black,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('101'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a roomy block shows every part', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

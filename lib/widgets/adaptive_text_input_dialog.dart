@@ -19,6 +19,7 @@ Future<String?> showAdaptiveTextInputDialog({
   String? confirmationFieldLabel,
   String mismatchMessage = 'Values do not match',
   bool trimResult = false,
+  bool allowEmpty = false,
 }) {
   if (isIos()) {
     return showCupertinoDialog<String>(
@@ -33,6 +34,7 @@ Future<String?> showAdaptiveTextInputDialog({
         confirmationFieldLabel: confirmationFieldLabel,
         mismatchMessage: mismatchMessage,
         trimResult: trimResult,
+        allowEmpty: allowEmpty,
         initialValue: initialValue,
         usesCupertinoStyle: true,
       ),
@@ -51,6 +53,7 @@ Future<String?> showAdaptiveTextInputDialog({
       confirmationFieldLabel: confirmationFieldLabel,
       mismatchMessage: mismatchMessage,
       trimResult: trimResult,
+      allowEmpty: allowEmpty,
       initialValue: initialValue,
       usesCupertinoStyle: false,
     ),
@@ -68,6 +71,7 @@ class _AdaptiveTextInputDialog extends StatefulWidget {
     required this.confirmationFieldLabel,
     required this.mismatchMessage,
     required this.trimResult,
+    required this.allowEmpty,
     required this.initialValue,
     required this.usesCupertinoStyle,
   });
@@ -81,6 +85,7 @@ class _AdaptiveTextInputDialog extends StatefulWidget {
   final String? confirmationFieldLabel;
   final String mismatchMessage;
   final bool trimResult;
+  final bool allowEmpty;
   final String initialValue;
   final bool usesCupertinoStyle;
 
@@ -124,7 +129,7 @@ class _AdaptiveTextInputDialogState extends State<_AdaptiveTextInputDialog> {
       ? _controller.text.trim().isNotEmpty
       : _controller.text.isNotEmpty;
 
-  bool get _canSubmit => _hasContent && _valuesMatch;
+  bool get _canSubmit => (widget.allowEmpty || _hasContent) && _valuesMatch;
 
   String get _result =>
       widget.trimResult ? _controller.text.trim() : _controller.text;
