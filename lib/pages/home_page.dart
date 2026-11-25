@@ -488,16 +488,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ),
             );
           },
-          onOpenCard: () => unawaited(
-            pushAdaptivePage<void>(
-              context,
-              builder: (_) => CampusCardPage(
-                entry: campusCard.configured
-                    ? CampusCardEntry.cardManagement
-                    : CampusCardEntry.paymentCode,
-              ),
-            ),
-          ),
         );
       },
     );

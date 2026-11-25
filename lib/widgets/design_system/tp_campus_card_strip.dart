@@ -11,9 +11,13 @@ import 'tp_press_scale.dart';
 
 /// Responsive campus-card entry on Home.
 ///
+/// Tapping anywhere on the card (except the balance visibility toggle) opens the
+/// payment QR code directly; card details and full transaction history are
+/// accessed from inside the payment-code page.
+///
 /// - Compact mode (`expandedCard: false`, mobile/narrow): slim single-row card
-///   with a mini entity-card thumbnail, cached balance (with optional eye
-///   visibility toggle), and one-tap pay button.
+///   with a mini entity-card thumbnail, cached balance (with an enlarged-hit-area
+///   eye visibility toggle), and a lightweight QR entry indicator.
 /// - Expanded mode (`expandedCard: true`, wide Bento column): authentic
 ///   ShanghaiTech skyline entity card surface (`707:445` physical card ratio)
 ///   composed from the crimson header band and `card-bottom.png` skyline canvas
@@ -27,7 +31,6 @@ class TpCampusCardStrip extends StatelessWidget {
     this.hideBalance = false,
     this.onToggleHideBalance,
     required this.onOpenPayCode,
-    required this.onOpenCard,
     this.expandedCard = false,
   });
 
@@ -49,7 +52,6 @@ class TpCampusCardStrip extends StatelessWidget {
   final bool hideBalance;
   final VoidCallback? onToggleHideBalance;
   final VoidCallback onOpenPayCode;
-  final VoidCallback onOpenCard;
   final bool expandedCard;
 
   @override
@@ -75,7 +77,7 @@ class TpCampusCardStrip extends StatelessWidget {
       primaryValue = balanceText!;
     } else {
       eyebrow = '校园一卡通';
-      primaryValue = '查看余额';
+      primaryValue = '点击亮码';
     }
 
     Widget buildCardSurface(double width, double height) {
@@ -223,6 +225,8 @@ class TpCampusCardStrip extends StatelessWidget {
                                 children: [
                                   Row(
                                     mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
                                     children: [
                                       Text(
                                         eyebrow,
@@ -236,19 +240,19 @@ class TpCampusCardStrip extends StatelessWidget {
                                               TpTypography.fontFamilyFallback,
                                         ),
                                       ),
-                                      if (canToggleBalance) ...[
-                                        const SizedBox(width: 4),
+                                      if (canToggleBalance)
                                         _BalanceEyeButton(
                                           hidden: hideBalance,
                                           color: _cardMutedInk,
                                           iconSize:
                                               (14 * scale).clamp(13.5, 16.0),
+                                          hitSize: 36,
                                           onTap: onToggleHideBalance!,
                                         ),
-                                      ],
                                     ],
                                   ),
-                                  const SizedBox(height: 2),
+                                  if (!canToggleBalance)
+                                    const SizedBox(height: 2),
                                   Text(
                                     primaryValue,
                                     key: const ValueKey(
@@ -271,52 +275,21 @@ class TpCampusCardStrip extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: TpTokens.space2),
-                            TpPressScale(
-                              pressedScale: 0.94,
-                              child: Material(
-                                color: _cardPayButtonBg,
-                                borderRadius: BorderRadius.circular(
-                                  TpTokens.radiusPill,
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: InkWell(
-                                  key: const ValueKey('home.campus-card-pay'),
-                                  onTap: onOpenPayCode,
-                                  hoverColor:
-                                      Colors.white.withValues(alpha: 0.14),
-                                  highlightColor:
-                                      Colors.white.withValues(alpha: 0.18),
-                                  splashColor:
-                                      Colors.white.withValues(alpha: 0.24),
-                                  child: Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal:
-                                          (14 * scale).clamp(13.0, 17.0),
-                                      vertical: (8 * scale).clamp(7.5, 9.5),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          TpIcons.qrCode,
-                                          size: (TpTokens.iconXs * scale)
-                                              .clamp(13.5, 16.0),
-                                          color: Colors.white,
-                                        ),
-                                        const SizedBox(width: 5),
-                                        Text(
-                                          configured ? '亮码' : '进入',
-                                          style: TpTypography.badge(
-                                            Colors.white,
-                                          ).copyWith(
-                                            fontSize:
-                                                (11.5 * scale).clamp(11.0, 13.0),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
+                            _PayIndicator(
+                              configured: configured,
+                              foregroundColor: configured
+                                  ? _cardPayButtonBg
+                                  : _cardMutedInk,
+                              backgroundColor: (configured
+                                      ? _cardPayButtonBg
+                                      : _cardMutedInk)
+                                  .withValues(alpha: 0.10),
+                              iconSize: (TpTokens.iconXs * scale)
+                                  .clamp(13.5, 16.0),
+                              fontSize: (11.5 * scale).clamp(11.0, 13.0),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: (10 * scale).clamp(10.0, 12.0),
+                                vertical: (5 * scale).clamp(5.0, 6.0),
                               ),
                             ),
                           ],
@@ -340,7 +313,7 @@ class TpCampusCardStrip extends StatelessWidget {
         borderColor: colors.isDark
             ? Colors.white.withValues(alpha: 0.14)
             : Colors.black.withValues(alpha: 0.06),
-        onTap: onOpenCard,
+        onTap: onOpenPayCode,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.maxWidth.isFinite
@@ -371,150 +344,128 @@ class TpCampusCardStrip extends StatelessWidget {
     } else if (balanceText != null && balanceText!.isNotEmpty) {
       subtitle = '余额 $balanceText';
     } else {
-      subtitle = '点击查看卡包与余额';
+      subtitle = '点击亮码';
     }
 
     return TpPressScale(
       pressedScale: 0.98,
       child: TpCard(
         key: const ValueKey('home.campus-card-strip'),
-        onTap: onOpenCard,
+        onTap: onOpenPayCode,
         padding: const EdgeInsets.symmetric(
           horizontal: TpTokens.cardPaddingHorizontal,
-          vertical: TpTokens.space3,
+          vertical: TpTokens.space1,
         ),
         child: Row(
           children: [
             // Mini entity campus-card thumbnail composed cleanly with zero
             // white-corner bleed in dark mode.
-            Container(
-              key: const ValueKey('home.campus-card-mini-thumb'),
-              width: 48,
-              height: 32,
-              decoration: BoxDecoration(
-                color: _cardBodyCanvas,
-                borderRadius: BorderRadius.circular(TpTokens.radiusXs),
-                border: Border.all(
-                  color: colors.isDark ? colors.border : colors.divider,
-                  width: 0.5,
-                ),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Expanded(
-                    flex: 28,
-                    child: ColoredBox(color: _cardHeaderCrimson),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: TpTokens.space2),
+              child: Container(
+                key: const ValueKey('home.campus-card-mini-thumb'),
+                width: 48,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: _cardBodyCanvas,
+                  borderRadius: BorderRadius.circular(TpTokens.radiusXs),
+                  border: Border.all(
+                    color: colors.isDark ? colors.border : colors.divider,
+                    width: 0.5,
                   ),
-                  Expanded(
-                    flex: 72,
-                    child: ColoredBox(
-                      color: _cardBodyCanvas,
-                      child: Image.asset(
-                        cardBottomAsset,
-                        fit: BoxFit.contain,
-                        alignment: Alignment.bottomCenter,
-                        filterQuality: FilterQuality.medium,
-                        excludeFromSemantics: true,
-                        errorBuilder: (_, __, ___) => const ColoredBox(
-                          color: _cardBodyBlush,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Expanded(
+                      flex: 28,
+                      child: ColoredBox(color: _cardHeaderCrimson),
+                    ),
+                    Expanded(
+                      flex: 72,
+                      child: ColoredBox(
+                        color: _cardBodyCanvas,
+                        child: Image.asset(
+                          cardBottomAsset,
+                          fit: BoxFit.contain,
+                          alignment: Alignment.bottomCenter,
+                          filterQuality: FilterQuality.medium,
+                          excludeFromSemantics: true,
+                          errorBuilder: (_, __, ___) => const ColoredBox(
+                            color: _cardBodyBlush,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(width: TpTokens.space3),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    '校园卡',
-                    style: TpTypography.itemTitle(colors),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          subtitle,
-                          style: TpTypography.itemMeta(colors).copyWith(
-                            color: configured && !hideBalance
-                                ? colors.textSecondary
-                                : colors.textMuted,
-                            fontWeight: configured && !hideBalance
-                                ? FontWeight.w500
-                                : FontWeight.w400,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                  Flexible(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        top: TpTokens.space2,
+                        bottom: canToggleBalance ? 10 : TpTokens.space2,
                       ),
-                      if (canToggleBalance) ...[
-                        const SizedBox(width: 4),
-                        _BalanceEyeButton(
-                          hidden: hideBalance,
-                          color: colors.textMuted,
-                          iconSize: 14,
-                          onTap: onToggleHideBalance!,
-                        ),
-                      ],
-                    ],
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '校园卡',
+                            style: TpTypography.itemTitle(colors),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            style: TpTypography.itemMeta(colors).copyWith(
+                              color: configured && !hideBalance
+                                  ? colors.textSecondary
+                                  : colors.textMuted,
+                              fontWeight: configured && !hideBalance
+                                  ? FontWeight.w500
+                                  : FontWeight.w400,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
+                  if (canToggleBalance)
+                    _BalanceEyeButton(
+                      hidden: hideBalance,
+                      color: colors.textMuted,
+                      iconSize: 14,
+                      hitSize: 38,
+                      onTap: onToggleHideBalance!,
+                    ),
                 ],
               ),
             ),
             const SizedBox(width: TpTokens.space2),
-            TpPressScale(
-              pressedScale: 0.94,
-              child: Material(
-                color: configured ? colors.brand : colors.opaqueBrandContainer,
-                borderRadius: BorderRadius.circular(TpTokens.radiusPill),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  key: const ValueKey('home.campus-card-pay'),
-                  onTap: onOpenPayCode,
-                  hoverColor: configured
-                      ? colors.onBrand.withValues(alpha: 0.12)
-                      : colors.textPrimary.withValues(
-                          alpha: colors.isDark ? 0.06 : 0.04,
-                        ),
-                  highlightColor: configured
-                      ? colors.onBrand.withValues(alpha: 0.16)
-                      : colors.textPrimary.withValues(alpha: 0.08),
-                  splashColor: configured
-                      ? colors.onBrand.withValues(alpha: 0.22)
-                      : colors.brandSoft,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: TpTokens.space3,
-                      vertical: 7,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          TpIcons.qrCode,
-                          size: TpTokens.iconXs,
-                          color: configured ? colors.onBrand : colors.brandInk,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          configured ? '亮码' : '进入',
-                          style: TpTypography.badge(
-                            configured ? colors.onBrand : colors.brandInk,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: TpTokens.space2),
+              child: _PayIndicator(
+                configured: configured,
+                foregroundColor:
+                    configured ? colors.brandInk : colors.textMuted,
+                backgroundColor:
+                    configured ? colors.brandSoft : colors.surfaceSubtle,
+                iconSize: TpTokens.iconXs,
+                fontSize: 11.5,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 5,
                 ),
               ),
             ),
@@ -525,22 +476,82 @@ class TpCampusCardStrip extends StatelessWidget {
   }
 }
 
+/// Passive visual affordance communicating that tapping the card opens the QR
+/// payment code, without introducing a competing nested tap target.
+class _PayIndicator extends StatelessWidget {
+  const _PayIndicator({
+    required this.configured,
+    required this.foregroundColor,
+    required this.backgroundColor,
+    required this.iconSize,
+    required this.fontSize,
+    required this.padding,
+  });
+
+  final bool configured;
+  final Color foregroundColor;
+  final Color backgroundColor;
+  final double iconSize;
+  final double fontSize;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('home.campus-card-pay'),
+      padding: padding,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(TpTokens.radiusPill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            TpIcons.qrCode,
+            size: iconSize,
+            color: foregroundColor,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            configured ? '亮码' : '进入',
+            style: TpTypography.badge(foregroundColor).copyWith(
+              fontSize: fontSize,
+            ),
+          ),
+          const SizedBox(width: 1),
+          Icon(
+            TpIcons.chevronRight,
+            size: iconSize,
+            color: foregroundColor,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _BalanceEyeButton extends StatelessWidget {
   const _BalanceEyeButton({
     required this.hidden,
     required this.color,
     required this.iconSize,
+    required this.hitSize,
     required this.onTap,
   });
 
   final bool hidden;
   final Color color;
   final double iconSize;
+  final double hitSize;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final label = hidden ? '显示余额' : '隐藏余额';
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(TpTokens.radiusS),
+    );
     return Tooltip(
       message: label,
       child: Semantics(
@@ -548,20 +559,22 @@ class _BalanceEyeButton extends StatelessWidget {
         label: label,
         child: Material(
           color: Colors.transparent,
-          shape: const CircleBorder(),
+          shape: shape,
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             key: const ValueKey('home.campus-card-balance-toggle'),
             onTap: onTap,
-            customBorder: const CircleBorder(),
+            customBorder: shape,
             hoverColor: color.withValues(alpha: 0.10),
             splashColor: color.withValues(alpha: 0.16),
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Icon(
-                hidden ? TpIcons.eyeOff : TpIcons.eye,
-                size: iconSize,
-                color: color,
+            child: SizedBox.square(
+              dimension: hitSize,
+              child: Center(
+                child: Icon(
+                  hidden ? TpIcons.eyeOff : TpIcons.eye,
+                  size: iconSize,
+                  color: color,
+                ),
               ),
             ),
           ),

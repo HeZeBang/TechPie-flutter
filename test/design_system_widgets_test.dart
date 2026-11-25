@@ -116,7 +116,6 @@ void main() {
   testWidgets('TpCampusCardStrip respects balance eye toggle and configured state',
       (tester) async {
     var payTaps = 0;
-    var cardTaps = 0;
     var toggleTaps = 0;
 
     // Configured + hidden balance
@@ -128,18 +127,34 @@ void main() {
           hideBalance: true,
           onToggleHideBalance: () => toggleTaps++,
           onOpenPayCode: () => payTaps++,
-          onOpenCard: () => cardTaps++,
         ),
       ),
     );
     expect(find.text('余额 ••••'), findsOneWidget);
     expect(find.text('余额 ¥ 128.50'), findsNothing);
     expect(find.text('亮码'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('home.campus-card-balance-toggle')));
+
+    final eyeFinder =
+        find.byKey(const ValueKey('home.campus-card-balance-toggle'));
+    final eyeSize = tester.getSize(eyeFinder);
+    expect(eyeSize.width, greaterThanOrEqualTo(36));
+    expect(eyeSize.height, greaterThanOrEqualTo(36));
+
+    await tester.tap(eyeFinder);
     expect(toggleTaps, 1);
-    expect(cardTaps, 0);
+    expect(payTaps, 0);
+
+    // Off-center tap near the edge of the enlarged eye hit box still toggles
+    // balance without accidentally opening the payment code.
+    await tester.tapAt(tester.getCenter(eyeFinder) + const Offset(14, 13));
+    expect(toggleTaps, 2);
+    expect(payTaps, 0);
+
+    // Tapping the passive QR indicator and the rest of the card both open pay.
     await tester.tap(find.byKey(const ValueKey('home.campus-card-pay')));
     expect(payTaps, 1);
+    await tester.tap(find.text('校园卡'));
+    expect(payTaps, 2);
 
     // Configured + visible balance (default)
     await tester.pumpWidget(
@@ -149,13 +164,26 @@ void main() {
           balanceText: '¥ 128.50',
           onToggleHideBalance: () => toggleTaps++,
           onOpenPayCode: () => payTaps++,
-          onOpenCard: () => cardTaps++,
         ),
       ),
     );
     expect(find.text('余额 ¥ 128.50'), findsOneWidget);
     await tester.tap(find.text('余额 ¥ 128.50'));
-    expect(cardTaps, 1);
+    expect(payTaps, 3);
+
+    // Configured + uncached balance prompt
+    await tester.pumpWidget(
+      wrap(
+        TpCampusCardStrip(
+          configured: true,
+          balanceText: null,
+          onToggleHideBalance: () => toggleTaps++,
+          onOpenPayCode: () => payTaps++,
+        ),
+      ),
+    );
+    expect(find.text('点击亮码'), findsOneWidget);
+    expect(find.text('点击查看卡包与余额'), findsNothing);
 
     // Unconfigured
     await tester.pumpWidget(
@@ -165,7 +193,6 @@ void main() {
           balanceText: null,
           hideBalance: true,
           onOpenPayCode: () => payTaps++,
-          onOpenCard: () => cardTaps++,
         ),
       ),
     );
@@ -175,13 +202,15 @@ void main() {
       find.byKey(const ValueKey('home.campus-card-balance-toggle')),
       findsNothing,
     );
+    await tester.tap(find.byKey(const ValueKey('home.campus-card-strip')));
+    expect(payTaps, 4);
   });
 
   testWidgets(
-      'TpCampusCardStrip expanded entity card keeps 707:445 proportions, fills tight height, and toggles balance independently',
+      'TpCampusCardStrip expanded entity card keeps 707:445 proportions, fills tight height, and opens pay code across surface',
       (tester) async {
     var toggleTaps = 0;
-    var cardTaps = 0;
+    var payTaps = 0;
 
     for (final width in [304.0, 400.0, 496.0]) {
       await tester.pumpWidget(
@@ -195,8 +224,7 @@ void main() {
                 hideBalance: false,
                 onToggleHideBalance: () => toggleTaps++,
                 expandedCard: true,
-                onOpenPayCode: () {},
-                onOpenCard: () => cardTaps++,
+                onOpenPayCode: () => payTaps++,
               ),
             ),
           ),
@@ -218,12 +246,53 @@ void main() {
       expect(headerSize.height, greaterThanOrEqualTo(54.0));
     }
 
-    await tester.tap(
-      find.byKey(const ValueKey('home.campus-card-balance-toggle')),
-    );
+    final eyeFinder =
+        find.byKey(const ValueKey('home.campus-card-balance-toggle'));
+    final eyeSize = tester.getSize(eyeFinder);
+    expect(eyeSize.width, greaterThanOrEqualTo(36));
+    expect(eyeSize.height, greaterThanOrEqualTo(36));
+
+    await tester.tap(eyeFinder);
     await tester.pumpAndSettle();
     expect(toggleTaps, 1);
-    expect(cardTaps, 0);
+    expect(payTaps, 0);
+
+    await tester.tapAt(tester.getCenter(eyeFinder) + const Offset(13, 12));
+    await tester.pumpAndSettle();
+    expect(toggleTaps, 2);
+    expect(payTaps, 0);
+
+    await tester.tap(find.byKey(const ValueKey('home.campus-card-header-band')));
+    await tester.pumpAndSettle();
+    expect(payTaps, 1);
+
+    await tester.tap(find.byKey(const ValueKey('home.campus-card-entity-balance')));
+    await tester.pumpAndSettle();
+    expect(payTaps, 2);
+
+    await tester.tap(find.byKey(const ValueKey('home.campus-card-pay')));
+    await tester.pumpAndSettle();
+    expect(payTaps, 3);
+
+    // Configured + uncached balance prompt
+    await tester.pumpWidget(
+      wrap(
+        Center(
+          child: SizedBox(
+            width: 360,
+            child: TpCampusCardStrip(
+              configured: true,
+              balanceText: null,
+              expandedCard: true,
+              onToggleHideBalance: () => toggleTaps++,
+              onOpenPayCode: () => payTaps++,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('点击亮码'), findsOneWidget);
 
     // Tight bounded height fills 100% top-to-bottom cleanly.
     await tester.pumpWidget(
@@ -237,7 +306,6 @@ void main() {
               balanceText: '¥ 128.50',
               expandedCard: true,
               onOpenPayCode: () {},
-              onOpenCard: () {},
             ),
           ),
         ),
