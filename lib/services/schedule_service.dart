@@ -103,6 +103,24 @@ class ScheduleService extends ChangeNotifier {
   SemesterInfo? get semesterInfo => _semesterInfo;
   CourseTable? get courseTable => _courseTable;
 
+  String gridTitle(Course course) {
+    final key = course.shortNameKey;
+    if (key == null) return course.name;
+    return _storage.courseShortName(_campusAccount(), key) ?? course.defaultShortName;
+  }
+
+  Future<void> setGridTitle(Course course, String value) async {
+    final key = course.shortNameKey;
+    if (key == null) return;
+    final title = value.trim();
+    await _storage.setCourseShortName(
+      _campusAccount(),
+      key,
+      title.isEmpty || title == course.defaultShortName ? null : title,
+    );
+    notifyListeners();
+  }
+
   /// All fetched courses, with the selected period grid for display.
   CourseTable? get fullCourseTable {
     final table = _courseTable;

@@ -368,6 +368,18 @@ class StorageService {
   static const _selectedSemesterKey = 'schedule_selected_semester';
   static const _scheduleSourceKey = 'schedule_source_preference';
 
+  String _shortNameKey(String? owner, String course) =>
+      'schedule_short_name_${jsonEncode([owner, course])}';
+
+  String? courseShortName(String? owner, String course) =>
+      _prefs.getString(_shortNameKey(owner, course));
+
+  Future<void> setCourseShortName(String? owner, String course, String? name) async {
+    final key = _shortNameKey(owner, course);
+    final saved = name == null ? await _prefs.remove(key) : await _prefs.setString(key, name);
+    if (!saved) throw StateError('保存课表简称失败');
+  }
+
   CampusIdentity? loadCampusIdentity(String owner) {
     final raw = _prefs.getString('schedule_campus_identity');
     if (raw == null) return null;

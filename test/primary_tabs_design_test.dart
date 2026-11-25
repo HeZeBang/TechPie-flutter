@@ -126,6 +126,72 @@ Future<({Widget widget, StorageService storage})> _buildTestHost({
 }
 
 void main() {
+  for (final width in [360.0, 1280.0]) {
+    testWidgets('edit and reset a grid title at width $width', (tester) async {
+      tester.view.physicalSize = Size(width, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const fullName = '普通物理学（上）(PHYS1001)';
+      const table = CourseTable(
+        periods: [
+          CoursePeriod(index: 1, timeRange: '08:15-09:00'),
+          CoursePeriod(index: 2, timeRange: '09:10-09:55'),
+        ],
+        courses: [
+          EamsCourse(
+            name: fullName,
+            classroom: 'H101',
+            teachers: '',
+            weeks: '011',
+            times: {1: [1, 2]},
+          ),
+        ],
+      );
+      final host = await _buildTestHost(
+        signedIn: true,
+        prefsValues: {
+          'schedule_selected_semester': 'term',
+          'schedule_course_table_term': jsonEncode(table.toJson()),
+        },
+        child: const SchedulePage(),
+      );
+      await tester.pumpWidget(host.widget);
+      await tester.pumpAndSettle();
+      expect(find.text('H101'), findsWidgets);
+      await tester.tap(find.text('普物（上）').first);
+      await tester.pumpAndSettle();
+      expect(find.text(fullName), findsOneWidget);
+
+      Future<void> edit(String input, String action) async {
+        await tester.tap(find.byTooltip('编辑课表简称'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), input);
+        await tester.tap(find.text(action));
+        await tester.pumpAndSettle();
+      }
+
+      await edit('力学', '保存');
+      expect(find.text('力学'), findsWidgets);
+      final reopened = StorageService(await SharedPreferences.getInstance());
+      expect(reopened.courseShortName(null, 'course:$fullName'), '力学');
+      expect(reopened.courseShortName('another account', 'course:$fullName'), isNull);
+      await tester.tap(find.text('力学').first);
+      await tester.pumpAndSettle();
+      expect(find.text('课表简称 · 力学'), findsOneWidget);
+      await edit('丢弃', '取消');
+      await tester.tap(find.text('力学').first);
+      await tester.pumpAndSettle();
+      expect(find.text('课表简称 · 力学'), findsOneWidget);
+      await edit('  ', '保存');
+      await tester.tap(find.text('普物（上）').first);
+      await tester.pumpAndSettle();
+      expect(find.text('课表简称 · 普物（上）'), findsOneWidget);
+      expect(reopened.courseShortName(null, 'course:$fullName'), isNull);
+      expect(find.text(fullName), findsOneWidget);
+    });
+  }
+
   testWidgets(
     'SchedulePage supports switching between 周课表 and 日程 agenda with upcoming exams',
     (tester) async {
