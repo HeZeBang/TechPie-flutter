@@ -31,8 +31,9 @@ import '../widgets/page_refresh.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/uni_auth_login.dart';
 import 'campus_card_page.dart';
+import 'campus_feature_navigation.dart';
+import 'campus_services_page.dart';
 import 'custom_deadline_editor_page.dart';
-import 'generic_webview_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -494,47 +495,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Widget _buildQuickActions() {
-    // Campus Card already has its own dedicated hero card directly above.
-    final quickFeatures = featureEntries
-        .where((feature) => feature.id != 'campus_card')
-        .toList(growable: false);
+    final storage = ServiceProvider.of(context).storageService;
     return TpCard(
       key: const ValueKey('home.quick-actions'),
       title: '快捷功能',
       child: AppCard(
-        features: quickFeatures,
+        features: [...homeQuickFeatures(storage.pinnedQuickFeatureIds), moreFeature],
         rows: 2,
         columns: 3,
-        onFeatureTap: _handleFeatureTap,
+        onFeatureTap: (feature) async {
+          if (feature != moreFeature) {
+            openCampusFeature(context, feature);
+            return;
+          }
+          await pushAdaptivePage<void>(context, builder: (_) => CampusServicesPage(storage: storage));
+          if (mounted) setState(() {});
+        },
       ),
     );
-  }
-
-  void _handleFeatureTap(Feature feature) {
-    unawaited(AppHaptics.play(AppHaptics.selection));
-    if (!ServiceProvider.of(context).authService.isLoggedIn) {
-      unawaited(startUniAuthLogin(context));
-      return;
-    }
-    switch (feature.mode) {
-      case FeatureMode.native:
-        feature.nativeEntry?.call(context);
-        break;
-      case FeatureMode.webviewWithCookie:
-        if (feature.url != null) {
-          unawaited(
-            pushAdaptivePage<void>(
-              context,
-              builder: (_) => GenericWebViewPage(
-                title: feature.description,
-                url: feature.url!,
-                cookieType: feature.cookieType,
-              ),
-            ),
-          );
-        }
-        break;
-    }
   }
 
   Widget _buildTodayClasses(TpColors colors, bool isLoggedIn) {
