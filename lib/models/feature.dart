@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../features/campus_card/app/app_providers.dart';
@@ -6,6 +8,7 @@ import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
 import '../pages/student_allowance_page.dart';
+import '../services/service_provider.dart';
 import '../theme/tp_icons.dart';
 import '../widgets/adaptive_page_navigation.dart';
 
@@ -70,10 +73,10 @@ final featureEntries = <Feature>[
     pinnedByDefault: true,
     description: '课程录播',
     mode: FeatureMode.native,
-    nativeEntry: (context) => pushAdaptivePage<void>(
-      context,
-      builder: (_) => const ElrcRecordingsPage(),
-    ),
+    nativeEntry: (context) {
+      final visit = ServiceProvider.of(context).telemetry?.beginRecording();
+      unawaited(pushAdaptivePage<void>(context, builder: (_) => ElrcRecordingsPage(visit: visit)));
+    },
     icon: const Icon(TpIcons.recordings),
   ),
   Feature(

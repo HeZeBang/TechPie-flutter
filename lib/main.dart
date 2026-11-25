@@ -6,6 +6,7 @@ import 'package:desktop_webview_window/desktop_webview_window.dart'
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/utils/platform.dart';
 
@@ -36,6 +37,7 @@ import 'services/theme_service.dart';
 import 'services/third_party_auth_service.dart';
 import 'services/uni_auth_service.dart';
 import 'services/update_service.dart';
+import 'services/usage_telemetry.dart';
 import 'services/wear/android_wear_transport.dart';
 import 'services/wear/techpie_wear_data_source.dart';
 import 'services/wear/wear_engine_service.dart';
@@ -81,6 +83,20 @@ void main(List<String> args) async {
 Future<void> _realMain(SharedPreferences prefs) async {
   final storageService = StorageService(prefs);
   await storageService.migrateLegacyDefaultColorScheme();
+  final package = await PackageInfo.fromPlatform();
+  const collector = String.fromEnvironment(
+    'TECHPIE_TELEMETRY_URL',
+    defaultValue: 'https://techpie.geekpie.club/api/telemetry',
+  );
+  final telemetry = UsageTelemetry(
+    prefs,
+    endpoint: Uri.parse(collector),
+    version: package.buildNumber.isEmpty
+        ? package.version
+        : '${package.version}+${package.buildNumber}',
+    platform: kIsWeb ? 'web' : defaultTargetPlatform.name.toLowerCase(),
+    existingInstall: storageService.privacyAccepted,
+  );
   final configuredProxy =
       supportsInAppProxy() && storageService.appProxyEnabled
           ? normalizeAppProxy(storageService.appProxyUrl)
@@ -207,6 +223,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // Cloud-sync pull hook: after a fresh SSO login, pull cloud bindings onto
   // this device (or surface the master-password restore prompt).
   authService.onLogin = () async {
+    telemetry.firstLogin();
     if (!syncService.enabled) return;
     try {
       await syncService.pull();
@@ -235,6 +252,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
 
   runApp(
     TechPieApp(
+      telemetry: telemetry,
       authService: authService,
       debugLogger: debugLogger,
       storageService: storageService,
@@ -408,6 +426,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
 //   }
 // }
 class TechPieApp extends StatefulWidget {
+  final UsageTelemetry? telemetry;
   final AuthService authService;
   final DebugLogger debugLogger;
   final StorageService storageService;
@@ -432,6 +451,7 @@ class TechPieApp extends StatefulWidget {
 
   const TechPieApp({
     super.key,
+    this.telemetry,
     required this.authService,
     required this.debugLogger,
     required this.storageService,
@@ -553,6 +573,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      widget.telemetry?.opened();
       // Coming back is a cheap moment to top the SSO token up, and it is
       // guarded: a token with time left is left alone.
       widget.wearEngineService?.resumeSync();
@@ -635,6 +656,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         authService: widget.authService,
         debugLogger: widget.debugLogger,
         storageService: widget.storageService,
+        telemetry: widget.telemetry,
         themeService: widget.themeService,
         scheduleService: widget.scheduleService,
         assignmentService: widget.assignmentService,

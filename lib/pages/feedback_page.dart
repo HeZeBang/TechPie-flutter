@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/feedback_service.dart';
+import '../services/usage_telemetry.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
@@ -17,7 +18,8 @@ import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class FeedbackPage extends StatefulWidget {
-  const FeedbackPage({super.key, required this.service});
+  const FeedbackPage({super.key, required this.service, this.telemetry});
+  final UsageTelemetry? telemetry;
   final FeedbackService service;
 
   @override
@@ -29,6 +31,15 @@ class _FeedbackPageState extends State<FeedbackPage> {
   final _message = TextEditingController();
   final _contact = TextEditingController();
   final _images = <FeedbackImage>[];
+  UsageVisit? _visit;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.telemetry?.featureOpened('feedback');
+    _visit = widget.telemetry?.beginFeedback();
+  }
+
   bool _picking = false;
   bool _includeUsername = false;
   bool _includeEmail = false;
@@ -50,6 +61,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
       _busy = true;
       _error = null;
     });
+    _visit?.feedbackAttempt();
     String? errorMessage;
     var timedOut = false;
     try {
@@ -69,6 +81,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
               ? error.toString().substring(11)
               : '反馈未发送成功，内容已保留';
     }
+    if (!timedOut) _visit?.feedbackResult(errorMessage == null);
     if (!mounted) return;
     setState(() {
       _busy = false;

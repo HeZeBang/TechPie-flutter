@@ -24,6 +24,7 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
+import 'package:techpie/services/usage_telemetry.dart';
 import 'package:techpie/theme/tp_icons.dart';
 import 'package:techpie/widgets/app_shell/app_shell.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
@@ -72,58 +73,78 @@ void main() {
     expect(find.text('Second: 0'), findsNothing);
   });
 
-  testWidgets('App shell renders with desktop sidebar', (
-    WidgetTester tester,
-  ) async {
-    tester.view.physicalSize = const Size(1200, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  for (final optIn in [false, true]) {
+    testWidgets('desktop opens after privacy consent with usage statistics set to $optIn', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    SharedPreferences.setMockInitialValues({
-      // These tests are about the shell, not the first-launch consent.
-      'privacy_accepted_v1': true,
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final metrics = UsageTelemetry(
+        prefs,
+        endpoint: Uri.parse('http://localhost/api/telemetry'),
+        version: '1.1.0',
+        platform: 'linux',
+        existingInstall: false,
+      );
+      final storage = StorageService(prefs);
+      final logger = DebugLogger();
+      final http = LoggingHttpClient(logger);
+      final uniAuth = UniAuthService();
+      final auth = AuthService(storage, http, uniAuth);
+      final theme = ThemeService(storage);
+      final tpAuth = ThirdPartyAuthService(storage, http);
+      final schedule = ScheduleService(storage, http, auth, tpAuth);
+      final assignments =
+          AssignmentService(storage, http, auth, tpAuth, schedule);
+      final oaGym = OaGymService(auth, storage, tpAuth);
+      final egateApp = EgateAppService(auth, storage, tpAuth);
+      final sync = SyncService(auth, tpAuth, storage);
+
+      await tester.pumpWidget(
+        TechPieApp(
+          telemetry: metrics,
+          authService: auth,
+          debugLogger: logger,
+          storageService: storage,
+          themeService: theme,
+          scheduleService: schedule,
+          assignmentService: assignments,
+          thirdPartyAuthService: tpAuth,
+          oaGymService: oaGym,
+          egateAppService: egateApp,
+          uniAuthService: uniAuth,
+          syncService: sync,
+          updateService: UpdateService(),
+          campusCardService: CampusCardService(),
+          ecardBindService: EcardBindService(),
+        ),
+      );
+
+      final choice = find.text('发送匿名使用统计（可选）');
+      expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value, isFalse);
+      if (optIn) {
+        await tester.tap(choice);
+        await tester.pump();
+      }
+      expect(metrics.enabled, isFalse);
+      await tester.tap(find.text('同意并继续'));
+      await tester.pumpAndSettle();
+      expect(metrics.enabled, optIn);
+      expect(storage.privacyAccepted, isTrue);
+      expect(find.byType(NavigationRail), findsNothing);
+      expect(find.text('首页'), findsWidgets);
+      expect(find.text('课表'), findsWidgets);
+      expect(find.text('Deadlines'), findsWidgets);
+      expect(find.text('我的'), findsWidgets);
+      await tester.pumpWidget(const SizedBox());
+      metrics.dispose();
     });
-    final prefs = await SharedPreferences.getInstance();
-    final storage = StorageService(prefs);
-    final logger = DebugLogger();
-    final http = LoggingHttpClient(logger);
-    final uniAuth = UniAuthService();
-    final auth = AuthService(storage, http, uniAuth);
-    final theme = ThemeService(storage);
-    final tpAuth = ThirdPartyAuthService(storage, http);
-    final schedule = ScheduleService(storage, http, auth, tpAuth);
-    final assignments =
-        AssignmentService(storage, http, auth, tpAuth, schedule);
-    final oaGym = OaGymService(auth, storage, tpAuth);
-    final egateApp = EgateAppService(auth, storage, tpAuth);
-    final sync = SyncService(auth, tpAuth, storage);
-
-    await tester.pumpWidget(
-      TechPieApp(
-        authService: auth,
-        debugLogger: logger,
-        storageService: storage,
-        themeService: theme,
-        scheduleService: schedule,
-        assignmentService: assignments,
-        thirdPartyAuthService: tpAuth,
-        oaGymService: oaGym,
-        egateAppService: egateApp,
-        uniAuthService: uniAuth,
-        syncService: sync,
-        updateService: UpdateService(),
-        campusCardService: CampusCardService(),
-        ecardBindService: EcardBindService(),
-      ),
-    );
-
-    expect(find.byType(NavigationRail), findsNothing);
-    expect(find.text('首页'), findsWidgets);
-    expect(find.text('课表'), findsWidgets);
-    expect(find.text('Deadlines'), findsWidgets);
-    expect(find.text('我的'), findsWidgets);
-  });
+  }
 
   testWidgets('deadline widget cold and repeated warm routes reuse the page',
       (tester) async {

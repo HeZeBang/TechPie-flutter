@@ -10,7 +10,10 @@ import '../utils/platform.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class ElrcPlayerPage extends StatefulWidget {
+  final VoidCallback? onPlaybackError;
+
   const ElrcPlayerPage({
+    this.onPlaybackError,
     super.key,
     required this.courseName,
     required this.lessonTitle,
@@ -97,6 +100,7 @@ class _ElrcPlayerPageState extends State<ElrcPlayerPage> {
         _trace('request failed before WebKit accepted it');
         setState(() {
           _loading = false;
+          widget.onPlaybackError?.call();
           _error = '视频加载失败';
         });
       }
@@ -180,6 +184,7 @@ JSON.stringify((() => {
     _loadTimeout?.cancel();
     setState(() {
       _loading = false;
+      widget.onPlaybackError?.call();
       _error = '视频加载失败';
     });
   }
@@ -192,6 +197,7 @@ JSON.stringify((() => {
     _trace('load timed out after 30 seconds');
     setState(() {
       _loading = false;
+      widget.onPlaybackError?.call();
       _error = '视频加载超时';
     });
   }

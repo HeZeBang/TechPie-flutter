@@ -241,6 +241,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
             tpAuth,
             campusCard,
             sp.syncService,
+            if (sp.telemetry != null) sp.telemetry!,
             if (sp.spendingAlertService != null) sp.spendingAlertService!,
           ]),
           builder: (context, _) {
@@ -448,6 +449,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                               await pushAdaptivePage<void>(
                                 context,
                                 builder: (_) => FeedbackPage(
+                                  telemetry: sp.telemetry,
                                   service: FeedbackService(
                                     auth,
                                     apiBaseUrl(sp.storageService),
@@ -456,6 +458,20 @@ class _SettingsBodyState extends State<_SettingsBody> {
                               );
                             }()),
                           ),
+                          if (sp.telemetry case final metrics?)
+                            TpListRow(
+                              key: const ValueKey('settings.usage-statistics'),
+                              icon: TpIcons.privacy,
+                              iconColor: colors.textSecondary,
+                              title: '发送匿名使用统计',
+                              subtitle: '统计活跃安装、登录、功能使用、反馈送达和录播加载耗时。仅使用随机安装标识，不含账号及校园内容。',
+                              showDivider: true,
+                              trailing: AdaptiveSwitch(
+                                value: metrics.enabled,
+                                onChanged: (value) => unawaited(metrics.setEnabled(value)),
+                              ),
+                              onTap: () => unawaited(metrics.setEnabled(!metrics.enabled)),
+                            ),
                           TpListRow(
                             icon: TpIcons.privacy,
                             iconColor: colors.textSecondary,
