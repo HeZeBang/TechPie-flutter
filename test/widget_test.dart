@@ -256,7 +256,8 @@ void main() {
     // Tap Settings (我的)
     await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
-    expect(find.text('外观与体验'), findsOneWidget);
+    expect(find.text('外观'), findsOneWidget);
+    expect(find.text('支持与关于'), findsOneWidget);
     expect(find.text('OPENID'), findsNothing);
     expect(find.text('第三方账号'), findsOneWidget);
     await tester.tap(find.text('第三方账号'));

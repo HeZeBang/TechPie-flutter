@@ -8,10 +8,10 @@ import '../theme/tp_typography.dart';
 import 'storage_service.dart';
 
 enum AppThemeMode {
-  system('System', Icons.brightness_auto_outlined),
-  light('Light', Icons.light_mode_outlined),
-  dark('Dark', Icons.dark_mode_outlined),
-  amoled('Dark AMOLED', Icons.brightness_2_outlined);
+  system('跟随系统', Icons.brightness_auto_outlined),
+  light('浅色', Icons.light_mode_outlined),
+  dark('深色', Icons.dark_mode_outlined),
+  amoled('纯黑 AMOLED', Icons.brightness_2_outlined);
 
   const AppThemeMode(this.label, this.icon);
   final String label;
@@ -19,8 +19,8 @@ enum AppThemeMode {
 }
 
 enum AppColorScheme {
-  techRed('TechRed', Icons.palette_outlined),
-  system('System', Icons.colorize_outlined);
+  techRed('科技红 · TechRed', Icons.palette_outlined),
+  system('跟随系统', Icons.colorize_outlined);
 
   const AppColorScheme(this.label, this.icon);
   final String label;
@@ -82,6 +82,27 @@ class ThemeService extends ChangeNotifier {
       _usesIosTheme || _systemLight != null || _systemDark != null;
 
   bool get supportsColorSchemeSelection => true;
+
+  /// Human-readable label for [scheme] on the current platform.
+  String colorSchemeLabel(AppColorScheme scheme) {
+    if (scheme == AppColorScheme.system && usesIosSystemAccent) {
+      return '系统蓝';
+    }
+    return scheme.label;
+  }
+
+  /// Swatch color representing [scheme] under [brightness] for picker previews.
+  Color previewColorForScheme(AppColorScheme scheme, Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
+    if (scheme == AppColorScheme.system) {
+      if (_usesIosTheme) {
+        return isDark ? TpTokens.iosBlueDark : TpTokens.iosBlueLight;
+      }
+      final dynamicScheme = isDark ? _systemDark : _systemLight;
+      if (dynamicScheme != null) return dynamicScheme.primary;
+    }
+    return isDark ? TpTokens.techRedDark : TpTokens.techRedLight;
+  }
 
   ThemeMode get themeMode {
     switch (_mode) {

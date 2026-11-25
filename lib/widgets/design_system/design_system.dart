@@ -9,3 +9,4 @@ export 'tp_page_body.dart';
 export 'tp_page_header.dart';
 export 'tp_press_scale.dart';
 export 'tp_progress_row.dart';
+export 'tp_section_card.dart';

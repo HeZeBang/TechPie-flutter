@@ -226,12 +226,18 @@ void main() {
     await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
 
-    final debugRow = find.byKey(const ValueKey('settings.debug-mode'));
+    final devOptionsRow =
+        find.byKey(const ValueKey('settings.developer-options'));
     await tester.scrollUntilVisible(
-      debugRow,
+      devOptionsRow,
       240,
       scrollable: find.byType(Scrollable).last,
     );
+    await tester.pumpAndSettle();
+    await tester.tap(devOptionsRow);
+    await tester.pumpAndSettle();
+
+    final debugRow = find.byKey(const ValueKey('settings.debug-mode'));
     await tester.pumpAndSettle();
     expect(debugRow, findsOneWidget);
     final switchFinder = find.descendant(

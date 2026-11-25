@@ -250,8 +250,21 @@ class StorageService {
   String get themeMode => _prefs.getString(_themeModeKey) ?? 'system';
   Future<void> setThemeMode(String mode) => _prefs.setString(_themeModeKey, mode);
 
+  static const _colorSchemeDefaultMigratedV1Key =
+      'color_scheme_default_techred_v1';
+
   String get colorScheme => _prefs.getString(_colorSchemeKey) ?? 'techRed';
   Future<void> setColorScheme(String scheme) => _prefs.setString(_colorSchemeKey, scheme);
+
+  /// Migrates legacy installs that stored the pre-v1.1 `'system'` default
+  /// accent to `'techRed'` once, while preserving future user selections.
+  Future<void> migrateLegacyDefaultColorScheme() async {
+    if (_prefs.getBool(_colorSchemeDefaultMigratedV1Key) ?? false) return;
+    if (_prefs.getString(_colorSchemeKey) == 'system') {
+      await _prefs.setString(_colorSchemeKey, 'techRed');
+    }
+    await _prefs.setBool(_colorSchemeDefaultMigratedV1Key, true);
+  }
 
   bool get hideCampusCardBalance =>
       _prefs.getBool(_hideCampusCardBalanceKey) ?? false;
