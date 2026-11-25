@@ -1,7 +1,9 @@
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/adaptive_select.dart';
 
 void main() {
@@ -95,4 +97,89 @@ void main() {
     expect(selected, 'dark');
     debugDefaultTargetPlatformOverride = null;
   });
+
+  testWidgets(
+    'iOS inline selectors update existing native views',
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+    (tester) async {
+      debugUsesIosLiquidGlass = true;
+      addTearDown(() => debugUsesIosLiquidGlass = false);
+
+      final messenger = tester.binding.defaultBinaryMessenger;
+      final callsById = <int, List<MethodCall>>{};
+      final disposed = <int>[];
+      messenger.setMockMethodCallHandler(SystemChannels.platform_views, (call) async {
+        if (call.method == 'create') {
+          final id = (call.arguments as Map<Object?, Object?>)['id'] as int;
+          final calls = callsById[id] = [];
+          messenger.setMockMethodCallHandler(
+            MethodChannel('CupertinoNativePopupMenuButton_$id'),
+            (call) async {
+              calls.add(call);
+              if (call.method == 'getIntrinsicSize') return {'width': 100};
+              return null;
+            },
+          );
+        } else if (call.method == 'dispose') {
+          disposed.add(call.arguments as int);
+        }
+        return null;
+      });
+
+      Widget settings({required String scheme, required Color tint}) => MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  AdaptiveSelect(
+                    value: 'system',
+                    accessibilityLabel: '主题模式',
+                    iosButtonStyle: CNButtonStyle.plain,
+                    iosTint: tint,
+                    shrinkWrap: true,
+                    options: const [
+                      AdaptiveSelectOption(value: 'system', label: '跟随系统'),
+                    ],
+                    onChanged: (_) {},
+                  ),
+                  AdaptiveSelect(
+                    value: scheme,
+                    accessibilityLabel: '主题色',
+                    iosButtonStyle: CNButtonStyle.plain,
+                    iosTint: tint,
+                    shrinkWrap: true,
+                    options: const [
+                      AdaptiveSelectOption(value: 'red', label: '科技红 · TechRed'),
+                      AdaptiveSelectOption(value: 'blue', label: '系统蓝'),
+                    ],
+                    onChanged: (_) {},
+                  ),
+                ],
+              ),
+            ),
+          );
+
+      await tester.pumpWidget(settings(scheme: 'red', tint: Colors.red));
+      await tester.pumpAndSettle();
+      expect(callsById, hasLength(2));
+      final [modeCalls, colorCalls] = callsById.values.toList();
+      modeCalls.clear();
+      colorCalls.clear();
+
+      await tester.pumpWidget(settings(scheme: 'blue', tint: Colors.blue));
+      await tester.pumpAndSettle();
+
+      expect(callsById, hasLength(2));
+      expect(disposed, isEmpty);
+      expect(modeCalls.map((call) => call.method), ['setStyle']);
+      expect(modeCalls.single.arguments, {'tint': Colors.blue.toARGB32()});
+      expect(
+        colorCalls.singleWhere((call) => call.method == 'setButtonTitle').arguments,
+        {'title': '系统蓝'},
+      );
+      final items = colorCalls.singleWhere((call) => call.method == 'setItems').arguments
+          as Map<Object?, Object?>;
+      expect(items['checked'], [false, true]);
+      expect(colorCalls.map((call) => call.method), contains('getIntrinsicSize'));
+    },
+  );
 }
