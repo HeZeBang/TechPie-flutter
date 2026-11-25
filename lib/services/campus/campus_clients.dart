@@ -15,6 +15,7 @@ class CampusClients {
     this.auth,
     this.bindings, {
     VoidCallback? onAccountChanged,
+    EamsRequestQueue? eamsQueue,
   }) : _onAccountChanged = onAccountChanged {
     CampusSession session(String origin, SessionNode node) => CampusSession(
           Uri.parse(origin),
@@ -24,7 +25,10 @@ class CampusClients {
         );
     _lastIdentity = _currentIdentity();
     emap = EmapClient(session('https://egate.shanghaitech.edu.cn', bindings.egateAppNode));
-    eams = EamsClient(session('https://eams.shanghaitech.edu.cn', bindings.eamsNode));
+    eams = EamsClient(
+      session('https://eams.shanghaitech.edu.cn', bindings.eamsNode),
+      queue: eamsQueue,
+    );
     elearning = ElearningClient(
       session('https://elearning.shanghaitech.edu.cn:8443', bindings.elearningNode),
     );
