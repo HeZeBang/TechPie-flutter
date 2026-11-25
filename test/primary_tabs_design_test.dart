@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:techpie/features/campus_card/app/demo_runtime_factory.dart';
+import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
+import 'package:techpie/features/campus_card/data/storage/flutter_secure_credential_store.dart';
+import 'package:techpie/features/campus_card/domain/models/auth_models.dart';
 import 'package:techpie/models/assignment.dart';
 import 'package:techpie/models/course.dart';
 import 'package:techpie/models/course_table.dart';
@@ -57,6 +61,7 @@ Future<({Widget widget, StorageService storage})> _buildTestHost({
   required Widget child,
   bool signedIn = false,
   Map<String, Object> prefsValues = const {},
+  CampusCardService? campusCardService,
 }) async {
   SharedPreferences.setMockInitialValues({
     'privacy_accepted_v1': true,
@@ -100,7 +105,7 @@ Future<({Widget widget, StorageService storage})> _buildTestHost({
     uniAuthService: uniAuth,
     syncService: SyncService(auth, tpAuth, storage),
     updateService: UpdateService(),
-    campusCardService: CampusCardService(),
+    campusCardService: campusCardService ?? CampusCardService(),
     ecardBindService: EcardBindService(),
     child: MaterialApp(
       theme: themeService.lightTheme,
@@ -518,6 +523,64 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('course-detail.location')));
       await tester.pump(const Duration(milliseconds: 350));
       expect(copiedText, '教学中心 204');
+    },
+  );
+
+  testWidgets(
+    'HomePage opens PaymentCodePage when tapping Campus Card surface in both compact and Bento modes',
+    (tester) async {
+      final runtime = await buildDemoRuntime();
+      await runtime.auth.signIn(const DemoAuthCredential());
+
+      final store = InMemorySecureCredentialStore();
+      await SecureSessionCredentialStore(store).stageOpenId('demo-openid-1234');
+      final campusCard = CampusCardService.withStore(
+        store,
+        runtimeFactory: () => runtime,
+      );
+      addTearDown(campusCard.dispose);
+      await campusCard.refreshAccount();
+      expect(campusCard.configured, isTrue);
+
+      Future<void> pumpAndVerifyPaymentCodeOpened(Finder tapTarget) async {
+        await tester.tap(tapTarget);
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 30));
+        }
+        expect(find.byKey(const Key('payment-code-page')), findsOneWidget);
+        expect(find.byKey(const Key('card-manage-page')), findsNothing);
+        await tester.tap(find.byTooltip('返回'));
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 30));
+        }
+        expect(find.byKey(const Key('payment-code-page')), findsNothing);
+      }
+
+      // 1. Compact mobile layout: tapping the thumbnail/title area opens payment code.
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final compactHost = await _buildTestHost(
+        signedIn: true,
+        campusCardService: campusCard,
+        child: const HomePage(),
+      );
+      await tester.pumpWidget(compactHost.widget);
+      await tester.pumpAndSettle();
+
+      await pumpAndVerifyPaymentCodeOpened(
+        find.byKey(const ValueKey('home.campus-card-mini-thumb')),
+      );
+
+      // 2. Wide Bento layout: tapping the entity card header band opens payment code.
+      tester.view.physicalSize = const Size(1280, 900);
+      await tester.pumpAndSettle();
+
+      await pumpAndVerifyPaymentCodeOpened(
+        find.byKey(const ValueKey('home.campus-card-header-band')),
+      );
     },
   );
 }
