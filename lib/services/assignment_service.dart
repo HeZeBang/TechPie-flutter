@@ -358,7 +358,7 @@ class AssignmentService extends ChangeNotifier {
         try {
           await _storage.saveAssignmentOverrides(_overrides);
         } catch (error) {
-          debugPrint('Could not migrate legacy reminder completions: $error');
+          debugPrint('Could not migrate legacy reminder completions: ${error.runtimeType}');
         }
       }),
     );
@@ -1020,7 +1020,7 @@ class AssignmentService extends ChangeNotifier {
                 'token': cp.cookies,
                 'args': {'url': url},
               }),
-              tag: 'deadlines:hydro:$domain',
+              tag: 'deadlines:hydro',
             );
             return CookieAction(r, expired: r.statusCode == 401);
           },

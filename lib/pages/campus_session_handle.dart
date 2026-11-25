@@ -44,7 +44,7 @@ class CampusSessionHandle {
     try {
       await tpAuth.sessionTree.freshCookie(node);
     } catch (error) {
-      debugPrint('Campus session pre-flight failed: $error');
+      debugPrint('Campus session pre-flight failed: ${error.runtimeType}');
     }
   }
 

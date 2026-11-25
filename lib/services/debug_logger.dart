@@ -46,17 +46,21 @@ class DebugLogger extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Summaries contain locally selected diagnostic fields. Callers keep payloads,
+  /// exception messages and headers on the transport side of this boundary.
   void log({
     required String method,
-    required String url,
+    Uri? uri,
+    String? operation,
     int? statusCode,
-    String? requestBody,
-    String? responseBody,
+    Map<String, Object?>? requestSummary,
+    Map<String, Object?>? responseSummary,
     String? error,
     String? tag,
     int? durationMicros,
     int? prepMicros,
   }) {
+    assert((uri == null) != (operation == null));
     if (!_enabled) return;
     if (_entries.length >= _maxEntries) {
       _entries.removeAt(0);
@@ -64,10 +68,10 @@ class DebugLogger extends ChangeNotifier {
     final entry = LogEntry(
       timestamp: DateTime.now(),
       method: method,
-      url: url,
+      url: operation ?? _origin(uri!),
       statusCode: statusCode,
-      requestBody: requestBody,
-      responseBody: responseBody,
+      requestBody: requestSummary == null ? null : jsonEncode(requestSummary),
+      responseBody: responseSummary == null ? null : jsonEncode(responseSummary),
       error: error,
       tag: tag,
       durationMicros: durationMicros,
@@ -87,74 +91,9 @@ class DebugLogger extends ChangeNotifier {
     }
   }
 
-  static const _sensitiveKeys = {
-    'password',
-    'token',
-    'access_token',
-    'refresh_token',
-    'id_token',
-    'tgc',
-    'sessiontoken',
-    'api_token',
-    'sid',
-    'sid.sig',
-    'castgc',
-    'cookies',
-    'cookie',
-    // Cloud-sync: the derived master key and the encrypted blob both must
-    // never appear in logs (the blob is ciphertext, but leaking it still
-    // gives an attacker an offline target; the key is the crown jewel).
-    'techpie_sync',
-    'sync_master_key',
-    'openid',
-    'jsessionid',
-    'paycode',
-    'qrcode',
-    'barcode',
-    'devcode',
-    'devicecode',
-    'authorinfo',
-    'userprivatekey',
-    'privatekey',
-    'ukey',
-    'authorization',
-    'datajson',
-    'wiredatajson',
-    'wirebody',
-  };
+  static String _origin(Uri uri) =>
+      uri.host.isNotEmpty && (uri.isScheme('https') || uri.isScheme('http')) ? uri.origin : '—';
 
-  // Best-effort redaction: parse as JSON and walk the tree replacing
-  // sensitive values with "***". Falls back to regex on the raw string.
-  static String? redactSensitive(String? body) {
-    if (body == null || body.isEmpty) return body;
-    try {
-      final decoded = jsonDecode(body);
-      return jsonEncode(_redactNode(decoded));
-    } catch (_) {
-      var out = body;
-      for (final key in _sensitiveKeys) {
-        final pattern = RegExp(
-          '"${RegExp.escape(key)}"\\s*:\\s*"([^"\\\\]|\\\\.)*"',
-          caseSensitive: false,
-        );
-        out = out.replaceAll(pattern, '"$key":"***"');
-      }
-      return out;
-    }
-  }
-
-  static dynamic _redactNode(dynamic node) {
-    if (node is Map) {
-      return {
-        for (final entry in node.entries)
-          entry.key: _sensitiveKeys.contains(entry.key.toString().toLowerCase())
-              ? (entry.value == null ? null : '***')
-              : _redactNode(entry.value),
-      };
-    }
-    if (node is List) return node.map(_redactNode).toList();
-    return node;
-  }
   void clear() {
     _entries.clear();
     notifyListeners();

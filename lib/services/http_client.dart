@@ -53,7 +53,7 @@ class LoggingHttpClient {
       : _inner = inner ?? http.Client();
 
   /// School SSO redirects can carry tickets and personal records. Log only
-  /// the origin/path, status and structural summary, never credentials or raw bodies.
+  /// the origin, status and structural summary, never credentials or raw bodies.
   Future<http.Response> readOnlyGet(Uri uri, {Map<String, String>? headers}) async {
     final request = http.Request('GET', uri)
       ..followRedirects = false
@@ -94,14 +94,13 @@ class LoggingHttpClient {
     } catch (error) {
       _logger.log(
         method: request.method,
-        url: '${uri.scheme}://${uri.host}${uri.path}',
+        uri: uri,
         error: '网络请求未完成（${error.runtimeType}）',
         tag: 'schoolSchedule:readOnly',
       );
       rethrow;
     }
     final summary = <String, dynamic>{
-      'contentType': response.headers['content-type']?.split(';').first ?? 'unknown',
       'bytes': response.bodyBytes.length,
     };
     try {
@@ -136,9 +135,9 @@ class LoggingHttpClient {
     }
     _logger.log(
       method: request.method,
-      url: '${uri.scheme}://${uri.host}${uri.path}',
+      uri: uri,
       statusCode: response.statusCode,
-      responseBody: jsonEncode(summary),
+      responseSummary: summary,
       tag: 'schoolSchedule:readOnly',
     );
     return response;
@@ -149,22 +148,22 @@ class LoggingHttpClient {
     Map<String, String>? headers,
     String? tag,
   }) async {
-    _logger.log(method: 'GET', url: url.toString(), tag: tag);
+    _logger.log(method: 'GET', uri: url, tag: tag);
     try {
       final response = await _inner.get(url, headers: {'User-Agent': CampusUserAgent.value, ...?headers});
       _logger.log(
         method: 'GET',
-        url: url.toString(),
+        uri: url,
         statusCode: response.statusCode,
-        responseBody: _truncate(response.body),
+        responseSummary: {'bytes': response.bodyBytes.length},
         tag: tag,
       );
       return response;
     } catch (e) {
       _logger.log(
         method: 'GET',
-        url: url.toString(),
-        error: e.toString(),
+        uri: url,
+        error: e.runtimeType.toString(),
         tag: tag,
       );
       rethrow;
@@ -182,8 +181,7 @@ class LoggingHttpClient {
         body is String ? body : (body != null ? jsonEncode(body) : null);
     _logger.log(
       method: 'POST',
-      url: url.toString(),
-      requestBody: bodyStr,
+      uri: url,
       tag: tag,
     );
     try {
@@ -195,17 +193,17 @@ class LoggingHttpClient {
       );
       _logger.log(
         method: 'POST',
-        url: url.toString(),
+        uri: url,
         statusCode: response.statusCode,
-        responseBody: _truncate(response.body),
+        responseSummary: {'bytes': response.bodyBytes.length},
         tag: tag,
       );
       return response;
     } catch (e) {
       _logger.log(
         method: 'POST',
-        url: url.toString(),
-        error: e.toString(),
+        uri: url,
+        error: e.runtimeType.toString(),
         tag: tag,
       );
       rethrow;
@@ -217,12 +215,12 @@ class LoggingHttpClient {
     Map<String, String>? headers,
     String? tag,
   }) async {
-    _logger.log(method: 'HEAD', url: url.toString(), tag: tag);
+    _logger.log(method: 'HEAD', uri: url, tag: tag);
     try {
       final response = await _inner.head(url, headers: {'User-Agent': CampusUserAgent.value, ...?headers});
       _logger.log(
         method: 'HEAD',
-        url: url.toString(),
+        uri: url,
         statusCode: response.statusCode,
         tag: tag,
       );
@@ -230,16 +228,13 @@ class LoggingHttpClient {
     } catch (e) {
       _logger.log(
         method: 'HEAD',
-        url: url.toString(),
-        error: e.toString(),
+        uri: url,
+        error: e.runtimeType.toString(),
         tag: tag,
       );
       rethrow;
     }
   }
-
-  String _truncate(String s, [int maxLen = 2000]) =>
-      s.length > maxLen ? '${s.substring(0, maxLen)}...' : s;
 
   void close() => _inner.close();
 }

@@ -173,26 +173,15 @@ class UniAuthService extends ChangeNotifier {
     }
   }
 
-  /// Debug trace of what the SSO token endpoint answered.
-  ///
-  /// The SDK brings its own HTTP client, so unlike every other call this one is
-  /// not in the app's request log — a refresh that keeps failing was therefore
-  /// completely invisible, and the only way to tell "the token was refused" from
-  /// "the call never landed" is to record it here. Field *names* and the status
-  /// are safe; token values are never logged.
+  /// The SDK uses its own HTTP client. Record its HTTP status and whether
+  /// it returned a rotated refresh token.
   void _traceTokenResponse(String operation, http.Response response) {
     String summary;
     try {
       final body = jsonDecode(response.body);
       if (body is Map) {
-        final keys = body.keys.map((k) => k.toString()).toList()..sort();
         final parts = <String>[
           'status=${response.statusCode}',
-          'keys=[${keys.join(',')}]',
-          if (body['error'] != null) 'error=${body['error']}',
-          if (body['error_description'] != null)
-            'description=${body['error_description']}',
-          if (body['expires_in'] != null) 'expires_in=${body['expires_in']}',
           'rotated=${body['refresh_token'] is String && (body['refresh_token'] as String).isNotEmpty}',
         ];
         summary = parts.join(' ');
@@ -206,43 +195,22 @@ class UniAuthService extends ChangeNotifier {
     if (kDebugMode) debugPrint('[sso] $line');
     _logger?.log(
       method: 'SSO',
-      url: _uniAuthServerUrl,
+      uri: Uri.parse(_uniAuthServerUrl),
       statusCode: response.statusCode,
       tag: 'SSO',
-      responseBody: DebugLogger.redactSensitive(line),
+      responseSummary: {'event': line},
     );
   }
 
-  void _traceTokenError(String operation, Object error, {String? secret}) {
-    final detail = sanitizeErrorDetail(error, secrets: [secret]);
-    final line = 'token $operation: error=${error.runtimeType}'
-        '${detail.isEmpty ? '' : ' $detail'}';
+  void _traceTokenError(String operation, Object error) {
+    final line = 'token $operation: error=${error.runtimeType}';
     if (kDebugMode) debugPrint('[sso] $line');
     _logger?.log(
       method: 'SSO',
-      url: _uniAuthServerUrl,
+      uri: Uri.parse(_uniAuthServerUrl),
       tag: 'SSO',
       error: line,
     );
-  }
-
-  /// Build a single-line, length-capped diagnostic summary for an exception
-  /// without ever echoing token values.
-  static String sanitizeErrorDetail(
-    Object error, {
-    Iterable<String?> secrets = const [],
-  }) {
-    var text = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
-    for (final secret in secrets) {
-      if (secret != null && secret.isNotEmpty) {
-        text = text.replaceAll(secret, '***');
-      }
-    }
-    text = DebugLogger.redactSensitive(text) ?? text;
-    if (text.length > 240) {
-      text = '${text.substring(0, 240)}...';
-    }
-    return text;
   }
 
   /// Lazily initialize the Casdoor SDK instance.
@@ -420,7 +388,7 @@ class UniAuthService extends ChangeNotifier {
           : _getCasdoor().refreshToken(refreshToken, null);
       resp = await future.timeout(_refreshTimeout);
     } catch (error) {
-      _traceTokenError('refresh', error, secret: refreshToken);
+      _traceTokenError('refresh', error);
       throw SsoRefreshException(
         kind: SsoRefreshErrorKind.transient,
         message: 'Token refresh request failed (${error.runtimeType})',
