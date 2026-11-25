@@ -23,6 +23,7 @@ import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
+import 'services/grade_service.dart';
 import 'services/http_client.dart';
 import 'services/ids/ids_client.dart';
 import 'services/island_service.dart';
@@ -484,6 +485,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _nativeChromeObserver = CNTabBarRouteObserver();
   late CampusClients _campusClients;
   bool _ownsCampusClients = false;
+  late GradeService _grades;
+  GradeService _createGrades() => GradeService(
+        _campusClients.eams,
+        widget.storageService,
+        widget.authService,
+        widget.thirdPartyAuthService,
+      );
   late StudentAllowanceService _studentAllowanceService;
 
   void _initCampusClients() {
@@ -516,6 +524,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initCampusClients();
+    _grades = _createGrades();
     widget.wearEngineService?.resumeSync();
     _studentAllowanceService = _createStudentAllowanceService();
     unawaited(_checkForUpdatesQuietly());
@@ -527,7 +536,8 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.campusClients != widget.campusClients) {
+    final clientsChanged = oldWidget.campusClients != widget.campusClients;
+    if (clientsChanged) {
       if (_ownsCampusClients) _campusClients.dispose();
       _initCampusClients();
     } else if (_ownsCampusClients &&
@@ -535,6 +545,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
             oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService)) {
       _campusClients.dispose();
       _initCampusClients();
+    }
+    if (clientsChanged ||
+        oldWidget.authService != widget.authService ||
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+        oldWidget.storageService != widget.storageService) {
+      _grades.dispose();
+      _grades = _createGrades();
     }
     if (oldWidget.authService != widget.authService ||
         oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
@@ -564,6 +581,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.spendingAlertService?.dispose();
     widget.islandService?.dispose();
     _studentAllowanceService.dispose();
+    _grades.dispose();
     if (_ownsCampusClients) _campusClients.dispose();
     widget.telemetry?.dispose();
     widget.campusCardService.dispose();
@@ -665,6 +683,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         oaGymService: widget.oaGymService,
         egateAppService: widget.egateAppService,
         campusClients: _campusClients,
+        gradeService: _grades,
         studentAllowanceService: _studentAllowanceService,
         uniAuthService: widget.uniAuthService,
         syncService: widget.syncService,

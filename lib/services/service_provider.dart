@@ -10,6 +10,7 @@ import 'debug_logger.dart';
 import 'ecard_bind_service.dart';
 import 'ecard_widget_service.dart';
 import 'egate_app_service.dart';
+import 'grade_service.dart';
 import 'island_service.dart';
 import 'oa_gym_service.dart';
 import 'schedule_service.dart';
@@ -39,6 +40,7 @@ class ServiceProvider extends InheritedWidget {
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
+  final GradeService? gradeService;
   final CampusClients? campusClients;
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
@@ -66,6 +68,7 @@ class ServiceProvider extends InheritedWidget {
     required this.syncService,
     required this.updateService,
     this.campusClients,
+    this.gradeService,
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
@@ -101,6 +104,7 @@ class ServiceProvider extends InheritedWidget {
       uniAuthService != oldWidget.uniAuthService ||
       syncService != oldWidget.syncService ||
       updateService != oldWidget.updateService ||
+      gradeService != oldWidget.gradeService ||
       campusClients != oldWidget.campusClients ||
       campusCardService != oldWidget.campusCardService ||
       ecardBindService != oldWidget.ecardBindService ||
