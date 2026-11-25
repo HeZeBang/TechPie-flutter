@@ -565,12 +565,12 @@ class StorageService {
           if (item is! Map) continue;
           courses.add(CustomCourse.fromJson(item.cast<String, dynamic>()));
         } catch (error) {
-          debugPrint('Skipping invalid custom course: $error');
+          debugPrint('Skipping invalid custom course: ${error.runtimeType}');
         }
       }
       return courses;
     } catch (error) {
-      debugPrint('Failed to read custom courses for $semesterId: $error');
+      debugPrint('Failed to read custom courses: ${error.runtimeType}');
       return const [];
     }
   }

@@ -159,7 +159,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
             : info.version;
       });
     } catch (error) {
-      debugPrint('PackageInfo.fromPlatform failed: $error');
+      debugPrint('PackageInfo.fromPlatform failed: ${error.runtimeType}');
     }
   }
 

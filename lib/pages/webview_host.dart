@@ -221,7 +221,7 @@ Future<Webview?> openDesktopWebview({
       ),
     );
   } catch (error) {
-    debugPrint('Desktop webview launch failed: $error');
+    debugPrint('Desktop webview launch failed: ${error.runtimeType}');
     return null;
   }
 

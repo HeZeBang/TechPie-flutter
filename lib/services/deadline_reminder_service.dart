@@ -198,7 +198,7 @@ class DeadlineReminderService with WidgetsBindingObserver {
     } on PlatformException catch (error) {
       debugPrint('Reminder completion sync failed: ${error.code}');
     } on StateError catch (error) {
-      debugPrint('Could not apply reminder completions: $error');
+      debugPrint('Could not apply reminder completions: ${error.runtimeType}');
     } finally {
       _syncing = false;
       if (_syncAgain) {

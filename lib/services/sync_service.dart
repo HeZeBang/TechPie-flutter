@@ -181,9 +181,9 @@ class SyncService extends ChangeNotifier {
     if (kDebugMode) debugPrint('[sync] $s');
     _logger?.log(
       method: 'SYNC',
-      url: 'auth.geekpie.club',
+      uri: Uri.parse(_casdoorBaseUrl),
       tag: 'Sync',
-      responseBody: DebugLogger.redactSensitive(s),
+      responseSummary: {'event': s},
     );
   }
 
@@ -212,17 +212,17 @@ class SyncService extends ChangeNotifier {
         headers: _authHeaders(token),
       );
     } catch (e) {
-      _debugLog('get-account transport error: $e');
+      _debugLog('get-account transport error: ${e.runtimeType}');
       return null;
     }
     if (resp.statusCode != 200) {
-      _debugLog('get-account HTTP ${resp.statusCode}: ${resp.body}');
+      _debugLog('get-account HTTP ${resp.statusCode}');
       return null;
     }
     try {
       return jsonDecode(resp.body) as Map<String, dynamic>;
     } catch (e) {
-      _debugLog('get-account JSON decode error: $e');
+      _debugLog('get-account JSON decode error: ${e.runtimeType}');
       return null;
     }
   }
@@ -250,7 +250,7 @@ class SyncService extends ChangeNotifier {
         body: jsonEncode(body),
       );
     } catch (e) {
-      _debugLog('update-user transport error: $e');
+      _debugLog('update-user transport error: ${e.runtimeType}');
       return SyncCasdoorResult(false, msg: '网络错误: $e');
     }
 
@@ -285,10 +285,7 @@ class SyncService extends ChangeNotifier {
     try {
       decoded = resp.body.isEmpty ? null : jsonDecode(resp.body);
     } catch (_) {
-      final snippet = resp.body.length > 200
-          ? '${resp.body.substring(0, 200)}...'
-          : resp.body;
-      _debugLog('update-user non-JSON HTTP ${resp.statusCode}: $snippet');
+      _debugLog('update-user non-JSON HTTP ${resp.statusCode}');
       return SyncCasdoorResult(false, httpStatus: resp.statusCode, msg: '响应非 JSON');
     }
 
@@ -297,10 +294,10 @@ class SyncService extends ChangeNotifier {
     final msgStr = decoded is Map ? decoded['msg']?.toString() : null;
     // data="Unaffected" is still success (no-op write). Only status!="ok" is failure.
     if (!statusOk) {
-      _debugLog('update-user denied: HTTP ${resp.statusCode} msg=$msgStr body=${resp.body}');
+      _debugLog('update-user denied: HTTP ${resp.statusCode}');
       return SyncCasdoorResult(false, httpStatus: resp.statusCode, msg: msgStr);
     }
-    _debugLog('update-user ok: HTTP ${resp.statusCode} data=$dataStr');
+    _debugLog('update-user ok: HTTP ${resp.statusCode}');
     return SyncCasdoorResult(true, httpStatus: resp.statusCode, msg: dataStr);
   }
 
@@ -404,16 +401,7 @@ class SyncService extends ChangeNotifier {
     }
     final id = _resolveOwnerName(account);
     if (id == null) {
-      // Log the actual response shape so we can see where owner/name live.
-      final keys = account.keys.toList();
-      final dataKeys = account['data'] is Map
-          ? (account['data'] as Map).keys.toList()
-          : '<not a map: ${account['data'].runtimeType}>';
-      _debugLog(
-        'get-account missing owner/name. top-level keys=$keys; '
-        'sub=${account['sub']}; name=${account['name']}; '
-        'data keys=$dataKeys',
-      );
+      _debugLog('get-account missing owner/name');
       return const SyncCasdoorResult(
         false,
         msg: '无法解析云端账号身份，请重新登录主账号',

@@ -133,7 +133,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
         await cookieManager.setCookie(cookie);
       }
     } catch (error) {
-      _trace('campus session pre-flight failed: $error');
+      _trace('campus session pre-flight failed: ${error.runtimeType}');
     }
   }
 
@@ -256,9 +256,10 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   }
 
   String _safeUri(Uri? uri) {
-    if (uri == null) return '<invalid URL>';
-    final port = uri.hasPort ? ':${uri.port}' : '';
-    return '${uri.scheme}://${uri.host}$port${uri.path}';
+    if (uri == null || uri.host.isEmpty || !(uri.isScheme('https') || uri.isScheme('http'))) {
+      return '<no HTTP origin>';
+    }
+    return uri.origin;
   }
 
   void _activate(String? url, {bool pageStarted = false}) {
@@ -424,7 +425,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       });
     } on ElrcException catch (error) {
       if (!mounted || request != _request) return;
-      _trace('course request failed: ${error.message}');
+      _trace('course request failed; needsLogin=${error.needsLogin}');
       if (error.needsLogin) {
         await _openLogin();
         return;
