@@ -32,6 +32,7 @@ import 'services/service_provider.dart';
 import 'services/spending_alert_service.dart';
 import 'services/storage_service.dart';
 import 'services/student_allowance_service.dart';
+import 'services/study_plan_service.dart';
 import 'services/sync_service.dart';
 import 'services/theme_service.dart';
 import 'services/third_party_auth_service.dart';
@@ -503,6 +504,14 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         logger: widget.debugLogger,
       );
 
+  late StudyPlanService _studyPlanService;
+  StudyPlanService _createStudyPlanService() => StudyPlanService(
+        _campusClients.eams,
+        widget.storageService,
+        _campusClients.eams.session.identity,
+        Listenable.merge([widget.authService, widget.thirdPartyAuthService]),
+      );
+
   /// The silent check runs at launch and whenever the app comes back to the
   /// foreground, but not more often than this: a resume is not a reason to hit
   /// the network, and the answer does not change that fast.
@@ -521,13 +530,15 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     unawaited(_checkForUpdatesQuietly());
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
     widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
+    _studyPlanService = _createStudyPlanService();
     widget.deadlineReminderService?.initialize();
   }
 
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.campusClients != widget.campusClients) {
+    final clientsChanged = oldWidget.campusClients != widget.campusClients;
+    if (clientsChanged) {
       if (_ownsCampusClients) _campusClients.dispose();
       _initCampusClients();
     } else if (_ownsCampusClients &&
@@ -541,6 +552,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         oldWidget.debugLogger != widget.debugLogger) {
       _studentAllowanceService.dispose();
       _studentAllowanceService = _createStudentAllowanceService();
+    }
+    if (clientsChanged ||
+        oldWidget.authService != widget.authService ||
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+        oldWidget.storageService != widget.storageService) {
+      _studyPlanService.dispose();
+      _studyPlanService = _createStudyPlanService();
     }
     if (oldWidget.deadlineWidgetService != widget.deadlineWidgetService) {
       oldWidget.deadlineWidgetService?.clearOpenHandler();
@@ -562,6 +580,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.deadlineWidgetService?.dispose();
     widget.deadlineReminderService?.dispose();
     widget.spendingAlertService?.dispose();
+    _studyPlanService.dispose();
     widget.islandService?.dispose();
     _studentAllowanceService.dispose();
     if (_ownsCampusClients) _campusClients.dispose();
@@ -658,6 +677,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         debugLogger: widget.debugLogger,
         storageService: widget.storageService,
         telemetry: widget.telemetry,
+        studyPlanService: _studyPlanService,
         themeService: widget.themeService,
         scheduleService: widget.scheduleService,
         assignmentService: widget.assignmentService,

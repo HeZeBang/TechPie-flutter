@@ -8,6 +8,7 @@ import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
 import '../pages/student_allowance_page.dart';
+import '../pages/study_plan_page.dart';
 import '../services/service_provider.dart';
 import '../theme/tp_icons.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -145,6 +146,17 @@ final featureEntries = <Feature>[
       builder: (_) => const EgateAppPage(),
     ),
     icon: const Icon(TpIcons.scan),
+  ),
+  Feature(
+    id: 'study_plan',
+    category: CampusServiceCategory.academics,
+    description: '培养计划',
+    subtitle: '查看学分进度与完整方案',
+    keywords: const ['培养计划', '培养方案', '学分', 'study plan', 'peiyang'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) =>
+        pushAdaptivePage<void>(context, builder: (_) => const StudyPlanPage()),
+    icon: const Icon(Icons.account_tree_outlined),
   ),
   Feature(
     id: 'student_allowance',
