@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../features/campus_card/app/app_providers.dart';
 import '../pages/campus_card_page.dart';
+import '../pages/course_catalog_search_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
@@ -11,7 +12,6 @@ import '../pages/student_allowance_page.dart';
 import '../services/service_provider.dart';
 import '../theme/tp_icons.dart';
 import '../widgets/adaptive_page_navigation.dart';
-
 import 'quick_shortcuts.dart';
 
 enum CampusServiceCategory {
@@ -158,6 +158,16 @@ final featureEntries = <Feature>[
       builder: (_) => const StudentAllowancePage(),
     ),
     icon: const Icon(TpIcons.allowance),
+  ),
+  Feature(
+    id: 'course_catalog',
+    category: CampusServiceCategory.academics,
+    description: '本科课程目录',
+    subtitle: '按课程、院系和教师检索',
+    keywords: const ['课程目录', '选课', 'catalog', 'course', '搜课', 'kecheng'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const CourseCatalogSearchPage()),
+    icon: const Icon(Icons.menu_book_outlined),
   ),
 ];
 

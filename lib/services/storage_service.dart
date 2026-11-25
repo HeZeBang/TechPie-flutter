@@ -384,6 +384,13 @@ class StorageService {
     return id;
   }
 
+  List<String> catalogHistory(String owner) =>
+      _prefs.getStringList('${_campusCachePrefix}catalog_history_$owner') ?? [];
+  Future<void> saveCatalogHistory(String owner, List<String> terms) =>
+      _prefs.setStringList('${_campusCachePrefix}catalog_history_$owner', terms);
+  Future<void> clearCatalogHistory(String owner) =>
+      _prefs.remove('${_campusCachePrefix}catalog_history_$owner');
+
   // Schedule cache
   static const _semestersKey = 'schedule_semesters';
   static const _courseTablePrefix = 'schedule_course_table_';
