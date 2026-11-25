@@ -1,13 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' show Response;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/main.dart';
+import 'package:techpie/models/feature.dart';
 import 'package:techpie/pages/assignments_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
@@ -84,12 +88,18 @@ void main() {
 
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
+      final opened = <String>[];
       final metrics = UsageTelemetry(
         prefs,
         endpoint: Uri.parse('http://localhost/api/telemetry'),
         version: '1.1.0',
         platform: 'linux',
         existingInstall: false,
+        clientFactory: () => MockClient((request) async {
+          final events = jsonDecode(request.body)['events'] as List<dynamic>;
+          opened.addAll(events.where((e) => e['kind'] == 'feature_open').map((e) => e['feature'] as String));
+          return Response('', 204);
+        }),
       );
       final storage = StorageService(prefs);
       final logger = DebugLogger();
@@ -141,6 +151,11 @@ void main() {
       expect(find.text('课表'), findsWidgets);
       expect(find.text('Deadlines'), findsWidgets);
       expect(find.text('我的'), findsWidgets);
+      final feature = featureEntries.firstWhere((entry) => entry.id == 'elrc_recordings');
+      feature.nativeEntry!(tester.element(find.byType(AppShell)));
+      await tester.pumpAndSettle();
+      await metrics.flush();
+      expect(opened.where((id) => id == feature.id), hasLength(optIn ? 1 : 0));
       await tester.pumpWidget(const SizedBox());
       metrics.dispose();
     });
