@@ -41,6 +41,7 @@ class CampusCardPage extends StatelessWidget {
             () => unawaited(
               pushAdaptivePage<void>(
                 context,
+                rootNavigator: true,
                 builder: (_) => const CampusCardAccountPage(fromCard: true),
               ),
             ),

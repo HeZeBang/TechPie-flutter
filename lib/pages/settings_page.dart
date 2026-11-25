@@ -266,6 +266,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           onRebind: () => unawaited(
                             pushAdaptivePage<void>(
                               context,
+                              rootNavigator: true,
                               builder: (_) => const ThirdPartyBindPage(
                                 platform: ThirdPartyPlatform.ids,
                               ),

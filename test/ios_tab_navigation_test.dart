@@ -11,9 +11,12 @@ import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/main.dart';
 import 'package:techpie/models/assignment.dart';
 import 'package:techpie/pages/assignments_page.dart';
+import 'package:techpie/pages/campus_card_account_page.dart';
 import 'package:techpie/pages/custom_deadline_editor_page.dart';
 import 'package:techpie/pages/hidden_assignments_page.dart';
 import 'package:techpie/pages/settings_page.dart';
+import 'package:techpie/pages/third_party_accounts_page.dart';
+import 'package:techpie/pages/third_party_bind_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -32,6 +35,7 @@ import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/widgets/adaptive_navigation_scaffold.dart';
 import 'package:techpie/widgets/adaptive_page_navigation.dart';
+import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
 import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 import 'package:techpie/widgets/schedule_picker_sheet.dart';
 
@@ -328,4 +332,64 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
+  testWidgets(
+    'all account wizards cover app navigation and restore it when dismissed',
+    (tester) async {
+      await pumpApp(tester);
+      if (find.byType(CNTabBar).evaluate().isNotEmpty) {
+        selectTab(tester, 3);
+      } else {
+        tester.widget<TgBottomNavBar>(find.byType(TgBottomNavBar)).onDestinationSelected(3);
+      }
+      await tester.pumpAndSettle();
+      unawaited(pushAdaptivePage<void>(
+        tester.element(find.byType(SettingsPage)),
+        builder: (_) => const ThirdPartyAccountsPage(),
+      ),);
+      await tester.pumpAndSettle();
+      for (final platform in ['Gradescope', 'Hydro', 'IDS', 'eCard']) {
+        final previousBarCount = find.byType(CNTabBar).evaluate().length + find.byType(TgBottomNavBar).evaluate().length;
+        final row = find.text(platform).first;
+        await tester.ensureVisible(row);
+        await tester.pumpAndSettle();
+        await tester.tap(row);
+        if (platform == 'eCard') {
+          // Only route coverage is relevant while account loading is pending.
+          await tester.pump();
+          await tester.pump(const Duration(seconds: 1));
+        } else {
+          await tester.pumpAndSettle();
+        }
+        expect(find.byType(CNTabBar), findsNothing, reason: platform);
+        expect(find.byType(TgBottomNavBar), findsNothing, reason: platform);
+        final page = platform == 'eCard'
+            ? find.byType(CampusCardAccountPage)
+            : find.byType(ThirdPartyBindPage);
+        expect(page, findsOneWidget);
+        expect(MediaQuery.paddingOf(tester.element(page)).bottom, 0);
+        if (platform == 'Gradescope') {
+          await tester.tap(find.text('Automatic sign-in'));
+          await tester.pumpAndSettle();
+          expect(find.text('Keep your account connected?'), findsOneWidget);
+          expect(find.byType(CNTabBar), findsNothing);
+          expect(find.byType(TgBottomNavBar), findsNothing);
+          await Navigator.of(tester.element(page)).maybePop();
+          await tester.pumpAndSettle();
+          expect(find.text('Off · Change'), findsOneWidget);
+        }
+        if (platform == 'eCard') {
+          Navigator.of(tester.element(page)).pop();
+        } else {
+          await Navigator.of(tester.element(page)).maybePop();
+        }
+        await tester.pumpAndSettle();
+        expect(find.byType(ThirdPartyAccountsPage), findsOneWidget);
+        expect(find.byType(CNTabBar).evaluate().length + find.byType(TgBottomNavBar).evaluate().length, previousBarCount);
+      }
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.iOS, TargetPlatform.android}),
+  );
+
 }
