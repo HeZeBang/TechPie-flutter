@@ -81,15 +81,9 @@ class UpdateService {
     'id': '$_appStoreId',
   });
 
-  Future<UpdateSource> get source async {
-    if (!isIos()) return UpdateSource.github;
-    // The package-info plugin reports distinct installers for TestFlight and
-    // the simulator. The native macOS build is distributed separately.
-    final info = await PackageInfo.fromPlatform();
-    return info.installerStore == 'com.apple'
-        ? UpdateSource.appStore
-        : UpdateSource.github;
-  }
+  // The App Store lists public iOS releases. TestFlight handles beta updates.
+  UpdateSource get source =>
+      isIos() ? UpdateSource.appStore : UpdateSource.github;
 
   /// The version this build is, for a caller that has no other reason to hold it
   /// — the silent check has none. Null when the platform cannot say or the answer
@@ -114,7 +108,7 @@ class UpdateService {
     ProductVersion current, {
     UpdateSource? source,
   }) async {
-    final channel = source ?? await this.source;
+    final channel = source ?? this.source;
     final uri = switch (channel) {
       UpdateSource.appStore => _appStoreLookupUri,
       UpdateSource.github => _latestReleaseUri,

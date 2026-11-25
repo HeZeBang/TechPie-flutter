@@ -3,22 +3,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/utils/product_version.dart';
 
 void main() {
   testWidgets(
-    'uses the App Store catalog for an App Store installation',
+    'uses the App Store catalog for public releases on iOS',
     (tester) async {
-      PackageInfo.setMockInitialValues(
-        appName: 'TechPie',
-        packageName: 'club.geekpie.techpie',
-        version: '1.0.1',
-        buildNumber: '9',
-        buildSignature: '',
-        installerStore: 'com.apple',
-      );
       final service = UpdateService(
         client: _FakeClient((request) async {
           expect(request.url.host, 'itunes.apple.com');
@@ -40,22 +31,6 @@ void main() {
       expect(release?.notes, '修复同步');
       expect(release?.source, UpdateSource.appStore);
       expect(await service.checkForUpdate(const ProductVersion(1, 1, 0, null, 1)), isNull);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
-  );
-
-  testWidgets(
-    'TestFlight keeps using the existing release channel',
-    (tester) async {
-      PackageInfo.setMockInitialValues(
-        appName: 'TechPie',
-        packageName: 'club.geekpie.techpie',
-        version: '1.0.1',
-        buildNumber: '9',
-        buildSignature: '',
-        installerStore: 'com.apple.testflight',
-      );
-      expect(await UpdateService().source, UpdateSource.github);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
