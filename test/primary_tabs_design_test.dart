@@ -34,6 +34,7 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
+import 'package:techpie/theme/theme.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 import 'package:techpie/widgets/course_detail_panel.dart';
 import 'package:techpie/widgets/design_system/design_system.dart';
@@ -107,14 +108,18 @@ Future<({Widget widget, StorageService storage})> _buildTestHost({
     updateService: UpdateService(),
     campusCardService: campusCardService ?? CampusCardService(),
     ecardBindService: EcardBindService(),
-    child: MaterialApp(
-      theme: themeService.lightTheme,
-      darkTheme: themeService.darkTheme,
-      builder: (_, inner) => AdaptiveFeedbackHost(
-        key: adaptiveFeedbackHostKey,
-        child: inner!,
+    child: ListenableBuilder(
+      listenable: themeService,
+      builder: (context, _) => MaterialApp(
+        theme: themeService.lightTheme,
+        darkTheme: themeService.darkTheme,
+        themeMode: themeService.themeMode,
+        builder: (_, inner) => AdaptiveFeedbackHost(
+          key: adaptiveFeedbackHostKey,
+          child: inner!,
+        ),
+        home: child,
       ),
-      home: child,
     ),
   );
   return (widget: widget, storage: storage);
@@ -371,7 +376,7 @@ void main() {
   );
 
   testWidgets(
-    'SettingsPage renders Inset Grouped TpCard sections with plain account header and platform-gated watch entry',
+    'SettingsPage renders restructured sections, places logout before deletion, and keeps desktop proxy configurable',
     variant: TargetPlatformVariant.only(TargetPlatform.macOS),
     (tester) async {
       tester.view.physicalSize = const Size(800, 1200);
@@ -392,18 +397,68 @@ void main() {
       expect(find.text('GeekPie Uni-Auth'), findsOneWidget);
       expect(find.textContaining('20240001'), findsNothing);
       expect(find.text('Huawei Watch'), findsNothing);
+      expect(find.text('设备与提醒'), findsNothing);
       expect(find.text('在线'), findsOneWidget);
       expect(find.text('第三方账号'), findsOneWidget);
       expect(find.text('云同步'), findsOneWidget);
-      expect(find.text('外观与体验'), findsOneWidget);
-      expect(find.text('网络与支持'), findsOneWidget);
+      expect(find.text('外观'), findsOneWidget);
+      expect(find.text('网络'), findsOneWidget);
+      expect(find.byKey(const ValueKey('settings.app-proxy-address')), findsOneWidget);
+      expect(find.byKey(const ValueKey('settings.app-proxy-enabled')), findsNothing);
+      expect(find.text('支持与关于'), findsOneWidget);
+      expect(find.text('检查更新'), findsOneWidget);
+      expect(find.text('账号操作'), findsOneWidget);
+      expect(find.text('开发者'), findsOneWidget);
+      expect(find.byKey(const ValueKey('settings.developer-options')), findsOneWidget);
+      expect(find.byKey(const ValueKey('settings.debug-mode')), findsNothing);
       expect(find.byType(TpCard), findsWidgets);
       expect(find.byType(TpListRow), findsWidgets);
+
+      final logoutTop = tester.getTopLeft(find.text('退出登录')).dy;
+      final deleteTop = tester.getTopLeft(find.text('注销账号')).dy;
+      expect(logoutTop, lessThan(deleteTop));
+
+      // Desktop single-row proxy dialog configures both enabled switch and URL.
+      await tester.tap(find.byKey(const ValueKey('settings.app-proxy-address')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('settings.app-proxy-enabled')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('settings.app-proxy-enabled')));
+      await tester.enterText(find.byType(TextField), '127.0.0.1:7890');
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(host.storage.appProxyEnabled, isTrue);
+      expect(host.storage.appProxyUrl, '127.0.0.1:7890');
+      expect(find.text('127.0.0.1:7890'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'iOS settings use inline theme menus and persist the system color',
+    'Android SettingsPage hides in-app proxy and shows Huawei Watch under 设备与提醒',
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+    (tester) async {
+      tester.view.physicalSize = const Size(412, 915);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final host = await _buildTestHost(
+        signedIn: true,
+        child: const SettingsPage(),
+      );
+
+      await tester.pumpWidget(host.widget);
+      await tester.pumpAndSettle();
+
+      expect(find.text('网络'), findsNothing);
+      expect(find.byKey(const ValueKey('settings.app-proxy-address')), findsNothing);
+      expect(find.text('设备与提醒'), findsOneWidget);
+      expect(find.text('Huawei Watch'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'iOS settings hide proxy, use unified plain inline menus with TechRed tint and color dots, and keep logout row-aligned',
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
     (tester) async {
       tester.view.physicalSize = const Size(402, 874);
@@ -413,9 +468,22 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPadding);
 
-      final host = await _buildTestHost(child: const SettingsPage());
+      final host = await _buildTestHost(signedIn: true, child: const SettingsPage());
       await tester.pumpWidget(host.widget);
       await tester.pumpAndSettle();
+
+      expect(find.text('网络'), findsNothing);
+      expect(find.byKey(const ValueKey('settings.app-proxy-address')), findsNothing);
+      expect(find.byKey(const ValueKey('settings.app-proxy-enabled')), findsNothing);
+      expect(find.text('设备与提醒'), findsOneWidget);
+      expect(find.text('Apple Watch'), findsOneWidget);
+      expect(find.byType(TpListRow), findsWidgets);
+
+      final logoutRow = find.byKey(const ValueKey('settings.logout'));
+      final deleteRow = find.byKey(const ValueKey('settings.delete-account'));
+      expect(logoutRow, findsOneWidget);
+      expect(deleteRow, findsOneWidget);
+      expect(tester.getTopLeft(logoutRow).dy, lessThan(tester.getTopLeft(deleteRow).dy));
 
       CNPopupMenuButton menuFor(String label) => tester.widget<CNPopupMenuButton>(
             find.byWidgetPredicate(
@@ -425,12 +493,21 @@ void main() {
 
       final modeMenu = menuFor('主题模式');
       final colorMenu = menuFor('主题色');
-      expect(modeMenu.buttonLabel, 'System');
-      expect(colorMenu.buttonLabel, 'TechRed');
-      expect(modeMenu.buttonStyle, CNButtonStyle.glass);
-      expect(colorMenu.buttonStyle, CNButtonStyle.glass);
+      expect(modeMenu.buttonLabel, '跟随系统');
+      expect(colorMenu.buttonLabel, '科技红 · TechRed');
+      expect(modeMenu.buttonStyle, CNButtonStyle.plain);
+      expect(colorMenu.buttonStyle, CNButtonStyle.plain);
+      expect(modeMenu.tint, TpTokens.techRedLight);
+      expect(colorMenu.tint, TpTokens.techRedLight);
+
+      final items = colorMenu.items.whereType<CNPopupMenuItem>().toList();
+      expect(items[0].label, '科技红 · TechRed');
+      expect(items[0].icon?.color, TpTokens.techRedLight);
+      expect(items[1].label, '系统蓝');
+      expect(items[1].icon?.color, TpTokens.iosBlueLight);
+
       final systemIndex = colorMenu.items.indexWhere(
-        (item) => item is CNPopupMenuItem && item.label == 'system',
+        (item) => item is CNPopupMenuItem && item.label == '系统蓝',
       );
       expect(systemIndex, isNonNegative);
 
@@ -438,7 +515,11 @@ void main() {
       await tester.pumpAndSettle();
 
       final updatedColorMenu = menuFor('主题色');
-      expect(updatedColorMenu.buttonLabel, 'system');
+      expect(updatedColorMenu.buttonLabel, '系统蓝');
+      expect(
+        updatedColorMenu.tint,
+        TpColors.light(accent: TpTokens.iosBlueLight).brandInk,
+      );
       expect((updatedColorMenu.items[systemIndex] as CNPopupMenuItem).checked, isTrue);
       expect(host.storage.colorScheme, AppColorScheme.system.name);
 

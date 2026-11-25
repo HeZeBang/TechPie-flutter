@@ -1,3 +1,4 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:techpie/theme/theme.dart';
@@ -9,11 +10,13 @@ class AdaptiveSelectOption {
     required this.value,
     required this.label,
     this.sfSymbol,
+    this.sfSymbolColor,
   });
 
   final String value;
   final String label;
   final String? sfSymbol;
+  final Color? sfSymbolColor;
 }
 
 class AdaptiveSelect extends StatelessWidget {
@@ -28,6 +31,8 @@ class AdaptiveSelect extends StatelessWidget {
     this.useIosNativeMenu = true,
     this.shrinkWrap = false,
     this.accessibilityLabel,
+    this.iosButtonStyle = CNButtonStyle.glass,
+    this.iosTint,
   });
 
   final List<AdaptiveSelectOption> options;
@@ -45,6 +50,8 @@ class AdaptiveSelect extends StatelessWidget {
   /// in a list row is, instead of [width].
   final bool shrinkWrap;
   final String? accessibilityLabel;
+  final CNButtonStyle iosButtonStyle;
+  final Color? iosTint;
 
   @override
   Widget build(BuildContext context) {
@@ -65,12 +72,15 @@ class AdaptiveSelect extends StatelessWidget {
           value: value,
           placeholder: placeholder,
           accessibilityLabel: accessibilityLabel ?? placeholder,
+          buttonStyle: iosButtonStyle,
+          tint: iosTint,
           options: [
             for (final option in options)
               IosNativeSelectOption(
                 value: option.value,
                 label: option.label,
                 sfSymbol: option.sfSymbol,
+                sfSymbolColor: option.sfSymbolColor,
               ),
           ],
           onChanged: onChanged,

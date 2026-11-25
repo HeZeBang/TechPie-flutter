@@ -200,8 +200,17 @@ void main() {
       expect(find.text('GeekPie Uni-Auth'), findsOneWidget);
       expect(find.byKey(const ValueKey('settings.mask-personal-info')), findsNothing);
 
-      // Push DebugLogPage onto Settings tab stack, switch to Home, then switch
-      // back to Settings and confirm DebugLogPage was preserved.
+      // Push DeveloperOptionsPage -> DebugLogPage onto Settings tab stack,
+      // switch to Home, then switch back to Settings and confirm DebugLogPage
+      // was preserved.
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('settings.developer-options')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('settings.developer-options')),
+      );
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('查看日志'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看日志'));

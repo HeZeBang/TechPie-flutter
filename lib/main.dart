@@ -78,9 +78,11 @@ void main(List<String> args) async {
 
 Future<void> _realMain(SharedPreferences prefs) async {
   final storageService = StorageService(prefs);
-  final configuredProxy = storageService.appProxyEnabled
-      ? normalizeAppProxy(storageService.appProxyUrl)
-      : '';
+  await storageService.migrateLegacyDefaultColorScheme();
+  final configuredProxy =
+      supportsInAppProxy() && storageService.appProxyEnabled
+          ? normalizeAppProxy(storageService.appProxyUrl)
+          : '';
   final activeProxy = isValidAppProxy(configuredProxy) ? configuredProxy : '';
   configureAppProxy(activeProxy);
   final debugLogger = DebugLogger()..enabled = storageService.debugMode;

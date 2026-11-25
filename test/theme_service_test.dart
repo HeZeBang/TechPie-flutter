@@ -226,4 +226,52 @@ void main() {
       );
     }
   });
+
+  test(
+      'migrateLegacyDefaultColorScheme upgrades legacy system default once while preserving subsequent choices',
+      () async {
+    SharedPreferences.setMockInitialValues({'color_scheme': 'system'});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+
+    await storage.migrateLegacyDefaultColorScheme();
+    expect(storage.colorScheme, 'techRed');
+    expect(ThemeService(storage).colorScheme, AppColorScheme.techRed);
+
+    await storage.setColorScheme(AppColorScheme.system.name);
+    await storage.migrateLegacyDefaultColorScheme();
+    expect(storage.colorScheme, 'system');
+    expect(ThemeService(storage).colorScheme, AppColorScheme.system);
+  });
+
+  test('colorSchemeLabel and previewColorForScheme match platform accents',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    try {
+      final iosTheme = ThemeService(storage);
+      expect(iosTheme.colorSchemeLabel(AppColorScheme.techRed), '科技红 · TechRed');
+      expect(iosTheme.colorSchemeLabel(AppColorScheme.system), '系统蓝');
+      expect(
+        iosTheme.previewColorForScheme(AppColorScheme.techRed, Brightness.light),
+        TpTokens.techRedLight,
+      );
+      expect(
+        iosTheme.previewColorForScheme(AppColorScheme.system, Brightness.light),
+        TpTokens.iosBlueLight,
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final androidTheme = ThemeService(storage);
+      expect(androidTheme.colorSchemeLabel(AppColorScheme.system), '跟随系统');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 }

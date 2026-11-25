@@ -6,11 +6,13 @@ class IosNativeSelectOption {
     required this.value,
     required this.label,
     this.sfSymbol,
+    this.sfSymbolColor,
   });
 
   final String value;
   final String label;
   final String? sfSymbol;
+  final Color? sfSymbolColor;
 }
 
 class IosNativeSelect extends StatelessWidget {
@@ -22,6 +24,8 @@ class IosNativeSelect extends StatelessWidget {
     required this.accessibilityLabel,
     this.value,
     this.shrinkWrap = false,
+    this.buttonStyle = CNButtonStyle.glass,
+    this.tint,
   });
 
   final List<IosNativeSelectOption> options;
@@ -32,6 +36,8 @@ class IosNativeSelect extends StatelessWidget {
 
   /// Size the button to its label instead of the width it is given.
   final bool shrinkWrap;
+  final CNButtonStyle buttonStyle;
+  final Color? tint;
 
   @override
   Widget build(BuildContext context) {
@@ -46,14 +52,20 @@ class IosNativeSelect extends StatelessWidget {
         // UIMenu otherwise reverses its items when it opens upwards, so the
         // same list would read in two orders depending on where it sits.
         preserveTopToBottomOrder: true,
-        buttonStyle: CNButtonStyle.glass,
-        tint: Theme.of(context).colorScheme.onSurface,
+        buttonStyle: buttonStyle,
+        tint: tint ?? Theme.of(context).colorScheme.onSurface,
         items: [
           for (final option in options)
             CNPopupMenuItem(
               label: option.label,
               // Match UIMenu's default size on both creation and updates.
-              icon: option.sfSymbol == null ? null : CNSymbol(option.sfSymbol!, size: 0),
+              icon: option.sfSymbol == null
+                  ? null
+                  : CNSymbol(
+                      option.sfSymbol!,
+                      size: 0,
+                      color: option.sfSymbolColor,
+                    ),
               checked: option.value == value,
             ),
         ],
