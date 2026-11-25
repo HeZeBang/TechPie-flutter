@@ -165,12 +165,13 @@ class _SettingsBodyState extends State<_SettingsBody> {
 
   Future<void> _checkForUpdate() async {
     final updateService = ServiceProvider.of(context).updateService;
+    final source = updateService.source;
     final current = ProductVersion.tryParse(_appVersion);
     if (current == null) {
       await showAdaptiveAlertDialog<void>(
         context: context,
         title: '无法检查更新',
-        message: '当前版本号（$_appVersion）无法识别，没法与 GitHub 上的版本比较。',
+        message: '无法识别当前版本号（$_appVersion）。',
         actions: const [AdaptiveAlertAction<void>(label: '好')],
       );
       return;
@@ -178,17 +179,24 @@ class _SettingsBodyState extends State<_SettingsBody> {
 
     setState(() => _checkingUpdate = true);
     try {
-      final release = await updateService.checkForUpdate(current);
+      final release = await updateService.checkForUpdate(
+        current,
+        source: source,
+      );
       if (!mounted) return;
 
       if (release == null) {
-        await showUpToDateDialog(context, _appVersion);
+        await showUpToDateDialog(context, _appVersion, source: source);
         return;
       }
       await showUpdateAvailableDialog(context, release);
     } on UpdateCheckException catch (error) {
       if (!mounted) return;
-      await showUpdateFailureDialog(context, message: error.message);
+      await showUpdateFailureDialog(
+        context,
+        message: error.message,
+        source: source,
+      );
     } finally {
       if (mounted) setState(() => _checkingUpdate = false);
     }
@@ -206,6 +214,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
     final themeService = sp.themeService;
     final tpAuth = sp.thirdPartyAuthService;
     final campusCard = sp.campusCardService;
+    final updateSourceLabel = sp.updateService.source.label;
     final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
       context,
       extra: TpTokens.space3,
@@ -472,7 +481,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                                 ? '正在检查最新版本…'
                                 : (_appVersion.isEmpty
                                     ? '当前版本未知'
-                                    : '点击检查 GitHub 最新版本'),
+                                    : '点击检查 $updateSourceLabel 最新版本'),
                             value: _appVersion.isEmpty ? null : 'v$_appVersion',
                             trailing: _checkingUpdate
                                 ? const SizedBox(

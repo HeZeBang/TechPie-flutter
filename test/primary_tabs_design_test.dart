@@ -4,6 +4,9 @@ import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/campus_card/app/demo_runtime_factory.dart';
 import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
@@ -63,6 +66,7 @@ Future<({Widget widget, StorageService storage})> _buildTestHost({
   bool signedIn = false,
   Map<String, Object> prefsValues = const {},
   CampusCardService? campusCardService,
+  UpdateService? updateService,
 }) async {
   SharedPreferences.setMockInitialValues({
     'privacy_accepted_v1': true,
@@ -105,7 +109,7 @@ Future<({Widget widget, StorageService storage})> _buildTestHost({
     studentAllowanceService: StudentAllowanceService(auth, tpAuth),
     uniAuthService: uniAuth,
     syncService: SyncService(auth, tpAuth, storage),
-    updateService: UpdateService(),
+    updateService: updateService ?? UpdateService(),
     campusCardService: campusCardService ?? CampusCardService(),
     ecardBindService: EcardBindService(),
     child: ListenableBuilder(
@@ -549,6 +553,73 @@ void main() {
       expect(find.text('设备与提醒'), findsOneWidget);
       expect(find.text('Huawei Watch'), findsOneWidget);
     },
+  );
+
+  testWidgets(
+    'iOS settings show and check the App Store using simulator package metadata',
+    (tester) async {
+      PackageInfo.setMockInitialValues(
+        appName: 'TechPie',
+        packageName: 'club.geekpie.techpie',
+        version: '1.1.0',
+        buildNumber: '32',
+        buildSignature: '',
+        installerStore: 'com.apple.simulator',
+      );
+      const alertChannel = MethodChannel('cn_alert');
+      const launcherChannel = MethodChannel('plugins.flutter.io/url_launcher');
+      final messenger = tester.binding.defaultBinaryMessenger;
+      final alertTitles = <String>[];
+      final openedUrls = <String>[];
+      messenger.setMockMethodCallHandler(alertChannel, (call) async {
+        alertTitles.add(call.arguments['title'] as String);
+        return {'index': 1};
+      });
+      messenger.setMockMethodCallHandler(launcherChannel, (call) async {
+        openedUrls.add(call.arguments['url'] as String);
+        return true;
+      });
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(alertChannel, null);
+        messenger.setMockMethodCallHandler(launcherChannel, null);
+      });
+      final requests = <Uri>[];
+      final client = MockClient((request) async {
+        requests.add(request.url);
+        return http.Response(
+          jsonEncode({
+            'results': [
+              {'trackId': 6771316576, 'version': '1.1.1'},
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      addTearDown(client.close);
+      final host = await _buildTestHost(
+        child: const SettingsPage(),
+        updateService: UpdateService(client: client),
+      );
+      await tester.pumpWidget(host.widget);
+      await tester.pumpAndSettle();
+
+      final row = find.byKey(const ValueKey('settings.check-update'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      expect(find.text('v1.1.0+32'), findsOneWidget);
+      expect(find.text('点击检查 App Store 最新版本'), findsOneWidget);
+      await tester.tap(row);
+      await tester.pump();
+
+      expect(
+        requests,
+        [Uri.parse('https://itunes.apple.com/lookup?id=6771316576')],
+      );
+      expect(alertTitles, ['发现新版本 1.1.1']);
+      expect(openedUrls, ['itms-apps://apps.apple.com/app/id6771316576']);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
 
   testWidgets(

@@ -148,8 +148,10 @@ class CustomDeadline extends Assignment {
   @override
   bool get submitted => completed;
 
-  CustomDeadline withCompletion(bool completed, {int? reminderCompletedAt}) =>
-      CustomDeadline(
+  CustomDeadline withCompletion(
+    bool completed, {
+    required int? reminderCompletedAt,
+  }) => CustomDeadline(
         id: id,
         title: title,
         course: course,
@@ -157,7 +159,7 @@ class CustomDeadline extends Assignment {
         location: location,
         notes: notes,
         completed: completed,
-        reminderCompletedAt: reminderCompletedAt ?? this.reminderCompletedAt,
+        reminderCompletedAt: reminderCompletedAt,
       );
 
   factory CustomDeadline.fromJson(Map<String, dynamic> json) => CustomDeadline(

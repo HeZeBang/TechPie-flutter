@@ -1218,7 +1218,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     final row = _AssignmentRow(
       assignment: a,
       completed: completed,
-      hasOverride: service.hasCompletionOverride(a),
+      showCompletionOverride: completed != a.submitted,
       selected: selected,
       selectionMode: _selectionMode && !_loadingReminders,
       showDivider: !isLast,
@@ -1600,7 +1600,7 @@ double _urgencyProgress({
 class _AssignmentRow extends StatefulWidget {
   final Assignment assignment;
   final bool completed;
-  final bool hasOverride;
+  final bool showCompletionOverride;
   final bool selected;
   final bool selectionMode;
   final bool showDivider;
@@ -1612,7 +1612,7 @@ class _AssignmentRow extends StatefulWidget {
   const _AssignmentRow({
     required this.assignment,
     required this.completed,
-    required this.hasOverride,
+    required this.showCompletionOverride,
     required this.selected,
     required this.selectionMode,
     required this.showDivider,
@@ -1836,7 +1836,7 @@ class _AssignmentRowState extends State<_AssignmentRow> {
                                     ),
                                   ),
                                 ),
-                                if (widget.hasOverride) ...[
+                                if (widget.showCompletionOverride) ...[
                                   const SizedBox(width: 5),
                                   Tooltip(
                                     message: '本地标记',

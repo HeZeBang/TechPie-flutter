@@ -70,12 +70,12 @@ final class DeadlineReminderBridge {
           return
         }
         self.saveSelection(entries, removing: Set(removedKeys), result: result)
-      case "completed":
+      case "completionStates":
         guard let keys = call.arguments as? [String] else {
           result(self.error("reminders_invalid_arguments"))
           return
         }
-        self.completed(keys: Set(keys), result: result)
+        self.completionStates(keys: Set(keys), result: result)
       case "change":
         guard let entries = call.arguments as? [String: String],
           entries.values.allSatisfy({ Change(rawValue: $0) != nil })
@@ -166,24 +166,34 @@ final class DeadlineReminderBridge {
     }
   }
 
-  private func completed(keys: Set<String>, result: @escaping FlutterResult) {
+  private func completionStates(keys: Set<String>, result: @escaping FlutterResult) {
     guard hasAccess, !keys.isEmpty else {
-      result([String: Int64]())
+      result([String: Any]())
       return
     }
     fetchReminders { reminders in
+      guard self.hasAccess else {
+        result(self.error("reminders_denied"))
+        return
+      }
       guard let reminders else {
         result(self.error("reminders_unavailable"))
         return
       }
-      var completedAt = [String: Int64]()
-      for reminder in reminders where reminder.isCompleted {
+      // A null value describes a linked, open reminder. An absent key leaves
+      // the corresponding TechPie deadline untouched.
+      var states = [String: Any]()
+      for reminder in reminders {
         guard let key = self.key(for: reminder), keys.contains(key) else { continue }
-        let timestamp = reminder.completionDate
-          .map { Int64($0.timeIntervalSince1970 * 1000) } ?? 0
-        completedAt[key] = max(timestamp, completedAt[key] ?? 0)
+        if reminder.isCompleted {
+          let timestamp = reminder.completionDate
+            .map { Int64($0.timeIntervalSince1970 * 1000) } ?? 0
+          states[key] = max(timestamp, states[key] as? Int64 ?? 0)
+        } else if states[key] == nil {
+          states[key] = NSNull()
+        }
       }
-      result(completedAt)
+      result(states)
     }
   }
 
