@@ -170,25 +170,33 @@ class _SettingsBodyState extends State<_SettingsBody> {
       await showAdaptiveAlertDialog<void>(
         context: context,
         title: '无法检查更新',
-        message: '当前版本号（$_appVersion）无法识别，没法与 GitHub 上的版本比较。',
+        message: '无法识别当前版本号（$_appVersion）。',
         actions: const [AdaptiveAlertAction<void>(label: '好')],
       );
       return;
     }
 
     setState(() => _checkingUpdate = true);
+    final source = await updateService.source;
     try {
-      final release = await updateService.checkForUpdate(current);
+      final release = await updateService.checkForUpdate(
+        current,
+        source: source,
+      );
       if (!mounted) return;
 
       if (release == null) {
-        await showUpToDateDialog(context, _appVersion);
+        await showUpToDateDialog(context, _appVersion, source: source);
         return;
       }
       await showUpdateAvailableDialog(context, release);
     } on UpdateCheckException catch (error) {
       if (!mounted) return;
-      await showUpdateFailureDialog(context, message: error.message);
+      await showUpdateFailureDialog(
+        context,
+        message: error.message,
+        source: source,
+      );
     } finally {
       if (mounted) setState(() => _checkingUpdate = false);
     }

@@ -456,7 +456,10 @@ class AssignmentService extends ChangeNotifier {
         if (deadline == null) return false;
         final next = completed ?? !deadline.completed;
         if (deadline.completed == next) return false;
-        deadlines[id] = deadline.withCompletion(next);
+        deadlines[id] = deadline.withCompletion(
+          next,
+          reminderCompletedAt: deadline.reminderCompletedAt,
+        );
         _recordReminderCompletion(changes, deadline, next);
         return true;
       });
@@ -579,29 +582,45 @@ class AssignmentService extends ChangeNotifier {
         return changed;
       });
 
+  /// A null completion timestamp represents a linked reminder that is open.
   Future<void> applyReminderCompletions(
-    Map<String, ({Assignment assignment, int completedAt})> completions, {
+    Map<String, ({Assignment assignment, int? completedAt})> states, {
     required int epoch,
   }) async {
-    if (completions.isEmpty) return;
+    if (states.isEmpty) return;
     final owner = _primaryIdentity;
     await _mutateOverrides((overrides) {
       if (epoch != _identityEpoch) return false;
       var recorded = false;
-      for (final entry in completions.entries) {
+      for (final entry in states.entries) {
+        final key = entry.key;
         final (:assignment, :completedAt) = entry.value;
         if (assignment is CustomDeadline ||
             overrides.reminderChanges.containsKey(
-              _overrideReminderKey(assignment, entry.key),
+              _overrideReminderKey(assignment, key),
             )) {
           continue;
         }
-        final previous = overrides.reminderCompletions[entry.key];
+        final previous = overrides.reminderCompletions[key];
+        final completed = overrides.effectiveCompleted(assignment, reminderKey: key);
+        if (completedAt == null) {
+          // A freshly linked, open reminder can coexist with a platform
+          // submission. Reopen a completion seen in Reminders or set in TechPie.
+          if (!completed) continue;
+          if (previous == null &&
+              !overrides.hasCompletionOverride(assignment, reminderKey: key)) {
+            continue;
+          }
+          overrides.scopedCompleted[key] = false;
+          overrides.reminderCompletions.remove(key);
+          recorded = true;
+          continue;
+        }
         if (previous != null && previous >= completedAt) continue;
-        overrides.reminderCompletions[entry.key] = completedAt;
+        overrides.reminderCompletions[key] = completedAt;
         recorded = true;
-        if (!overrides.effectiveCompleted(assignment, reminderKey: entry.key)) {
-          overrides.scopedCompleted[entry.key] = true;
+        if (!completed) {
+          overrides.scopedCompleted[key] = true;
         }
       }
       return recorded;
@@ -610,16 +629,22 @@ class AssignmentService extends ChangeNotifier {
     await _mutateCustomDeadlines(owner, (deadlines, changes) {
       if (epoch != _identityEpoch) return false;
       var updated = false;
-      for (final entry in completions.entries) {
+      for (final entry in states.entries) {
         final (:assignment, :completedAt) = entry.value;
-        if (assignment is! CustomDeadline || changes.containsKey(entry.key)) continue;
-        final deadline = deadlines[assignment.id];
-        if (deadline == null ||
-            (deadline.reminderCompletedAt ?? -1) >= completedAt) {
+        if (assignment is! CustomDeadline || changes.containsKey(entry.key)) {
           continue;
         }
-        deadlines[assignment.id] =
-            deadline.withCompletion(true, reminderCompletedAt: completedAt);
+        final deadline = deadlines[assignment.id];
+        if (deadline == null) continue;
+        if (completedAt == null
+            ? !deadline.completed
+            : (deadline.reminderCompletedAt ?? -1) >= completedAt) {
+          continue;
+        }
+        deadlines[assignment.id] = deadline.withCompletion(
+          completedAt != null,
+          reminderCompletedAt: completedAt,
+        );
         updated = true;
       }
       return updated;

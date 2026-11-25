@@ -4,7 +4,20 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../utils/platform.dart';
 import '../utils/product_version.dart';
+
+const _appStoreId = 6771316576;
+
+enum UpdateSource {
+  github('GitHub', UpdateService.latestReleasePage),
+  appStore('App Store', 'itms-apps://apps.apple.com/app/id$_appStoreId');
+
+  const UpdateSource(this.label, this.releasePage);
+
+  final String label;
+  final String releasePage;
+}
 
 /// Thrown when the check cannot produce an answer. The message is user-facing,
 /// so it says what happened in the user's terms rather than in HTTP's.
@@ -23,6 +36,7 @@ class ReleaseInfo {
     required this.version,
     required this.name,
     required this.notes,
+    this.source = UpdateSource.github,
   });
 
   /// The version the release carries, comparable with the running one.
@@ -31,18 +45,16 @@ class ReleaseInfo {
   /// What the release calls itself — `v1.0.1`, `v1.0.1-rc.2`.
   final String name;
 
-  /// The release's changelog, with the pipeline's checksum block removed.
+  /// The release notes shown in the update prompt.
   final String notes;
+
+  final UpdateSource source;
 
   @override
   String toString() => 'ReleaseInfo($name)';
 }
 
-/// Checks GitHub for a newer release than the one running.
-///
-/// Deliberately not part of the backend: the answer comes from the releases
-/// page a user would look at anyway, so it stays correct even when the API is
-/// down, and it needs no account.
+/// Checks the distribution channel directly for a newer release.
 class UpdateService {
   UpdateService({
     http.Client? client,
@@ -58,14 +70,26 @@ class UpdateService {
 
   static const repository = 'HeZeBang/TechPie-flutter';
 
-  /// Where the update button sends the user. `releases/latest` is GitHub's own
-  /// redirect to the newest non-prerelease release, so the link stays right as
-  /// releases land — and our pipeline never marks a candidate as latest.
+  /// GitHub's redirect to the latest stable release.
   static const latestReleasePage =
       'https://github.com/$repository/releases/latest';
 
   static Uri get _latestReleaseUri =>
       Uri.https('api.github.com', '/repos/$repository/releases/latest');
+
+  static final _appStoreLookupUri = Uri.https('itunes.apple.com', '/lookup', {
+    'id': '$_appStoreId',
+  });
+
+  Future<UpdateSource> get source async {
+    if (!isIos()) return UpdateSource.github;
+    // The package-info plugin reports distinct installers for TestFlight and
+    // the simulator. The native macOS build is distributed separately.
+    final info = await PackageInfo.fromPlatform();
+    return info.installerStore == 'com.apple'
+        ? UpdateSource.appStore
+        : UpdateSource.github;
+  }
 
   /// The version this build is, for a caller that has no other reason to hold it
   /// — the silent check has none. Null when the platform cannot say or the answer
@@ -86,27 +110,37 @@ class UpdateService {
   /// The newest published release when it is newer than [current], or null when
   /// the running build is already the newest — which is not a failure, and must
   /// not read like one.
-  Future<ReleaseInfo?> checkForUpdate(ProductVersion current) async {
+  Future<ReleaseInfo?> checkForUpdate(
+    ProductVersion current, {
+    UpdateSource? source,
+  }) async {
+    final channel = source ?? await this.source;
+    final uri = switch (channel) {
+      UpdateSource.appStore => _appStoreLookupUri,
+      UpdateSource.github => _latestReleaseUri,
+    };
     final http.Response response;
     try {
       response = await _client
           .get(
-            _latestReleaseUri,
-            headers: {
-              // Pin the API version this payload is read under, and say who is
-              // asking: GitHub rejects a request with no user agent.
-              'Accept': 'application/vnd.github+json',
-              'X-GitHub-Api-Version': '2022-11-28',
-              'User-Agent': 'TechPie/$current',
-            },
+            uri,
+            headers: channel == UpdateSource.github
+                ? {
+                    'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28',
+                    'User-Agent': 'TechPie/$current',
+                  }
+                : null,
           )
           .timeout(timeout);
     } on TimeoutException {
-      throw UpdateCheckException('连接 GitHub 超时，请检查网络后重试。');
+      throw UpdateCheckException('连接 ${channel.label} 超时，请检查网络后重试。');
     } catch (error) {
-      // The text here is what the user reads, and it is usually the only clue
-      // about which of the network's ways of failing this was.
-      throw UpdateCheckException('无法连接 GitHub：$error');
+      throw UpdateCheckException('无法连接 ${channel.label}：$error');
+    }
+
+    if (channel == UpdateSource.appStore) {
+      return _appStoreRelease(response, current);
     }
 
     switch (response.statusCode) {
@@ -154,6 +188,55 @@ class UpdateService {
     );
   }
 
+  static ReleaseInfo? _appStoreRelease(
+    http.Response response,
+    ProductVersion current,
+  ) {
+    if (response.statusCode != 200) {
+      throw UpdateCheckException('App Store 返回了 HTTP ${response.statusCode}。');
+    }
+
+    final List<dynamic> results;
+    try {
+      final payload =
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      results = payload['results'] as List<dynamic>;
+    } catch (_) {
+      throw UpdateCheckException('App Store 的响应无法解析。');
+    }
+
+    for (final item in results) {
+      if (item is! Map<String, dynamic> || item['trackId'] != _appStoreId) {
+        continue;
+      }
+      final raw = switch (item['version']) {
+        final String version => version.trim(),
+        _ => '',
+      };
+      final parts = raw.split('.');
+      final published = _appStoreVersion.hasMatch(raw)
+          ? ProductVersion.tryParse(
+              [...parts, ...List.filled(3 - parts.length, '0')].join('.'),
+            )
+          : null;
+      if (published == null) {
+        throw UpdateCheckException('无法识别 App Store 上的版本号（$raw）。');
+      }
+      if (!published.isNewerThan(current)) return null;
+      final notes = item['releaseNotes'];
+      final changelog = notes is String ? notes.trim() : '';
+      return ReleaseInfo(
+        version: published,
+        name: raw,
+        notes: changelog.isEmpty ? _noReleaseNotes : changelog,
+        source: UpdateSource.appStore,
+      );
+    }
+    throw UpdateCheckException('App Store 上暂时无法获取 TechPie 的版本信息。');
+  }
+
+  static final _appStoreVersion = RegExp(r'^\d+(?:\.\d+){0,2}$');
+  static const _noReleaseNotes = '（这个版本没有写更新说明。）';
   static final RegExp _checksumBlock = RegExp(r'\n#+ *SHA-256\b');
 
   /// `release.yml` writes the changelog and the checksums into one body. A
@@ -162,6 +245,6 @@ class UpdateService {
   static String _changelog(String body) {
     final match = _checksumBlock.firstMatch(body);
     final changelog = (match == null ? body : body.substring(0, match.start)).trim();
-    return changelog.isEmpty ? '（这个版本没有写更新说明。）' : changelog;
+    return changelog.isEmpty ? _noReleaseNotes : changelog;
   }
 }

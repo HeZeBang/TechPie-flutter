@@ -54,7 +54,7 @@ void main() {
   late Future<void> Function()? beforeWrite;
   late bool denyEdits;
   late DateTime Function() now;
-  late Completer<Map<String, int>>? blockedRead;
+  late Completer<Map<String, int?>>? blockedRead;
   late Widget Function({Widget home}) buildPage;
 
   Future<void> flush() => Future<void>.delayed(Duration.zero);
@@ -149,8 +149,11 @@ void main() {
         if (denyEdits) throw PlatformException(code: 'reminders_denied');
         return details.keys.toList();
       }
-      expectSync(call.method, 'completed');
-      return blockedRead?.future ?? nativeCompletions;
+      expectSync(call.method, 'completionStates');
+      return blockedRead?.future ?? {
+        for (final key in linkedKeys) key: nativeCompletions[key],
+        ...nativeCompletions,
+      };
     });
     reminders = DeadlineReminderService(assignments, channel: channel);
     buildPage = ({Widget home = const AssignmentsPage()}) {
@@ -230,10 +233,69 @@ void main() {
     expect(writes, [{firstKey: 'reopen'}]);
   });
 
+  test('reopens linked course and custom deadlines after reloading', () async {
+    await assignments.saveCustomDeadline(owner: null, title: 'Custom', due: firstDue);
+    final course = assignments.assignments.firstWhere((a) => a is! CustomDeadline);
+    final custom = assignments.assignments.whereType<CustomDeadline>().single;
+    final courseKey = assignments.reminderKeyFor(course);
+    final customKey = assignments.reminderKeyFor(custom);
+    await reminders.add([course, custom]);
+    nativeCompletions = {courseKey: 100, customKey: 200};
+    reminders.initialize();
+    await flush();
+    expect(assignments.isCompleted(course), isTrue);
+    expect(assignments.findCustomDeadline(custom.id)?.completed, isTrue);
+
+    reminders.dispose();
+    nativeCompletions.clear();
+    assignments.loadCached();
+    reminders.initialize();
+    await flush();
+    expect(assignments.isCompleted(course), isFalse);
+    expect(assignments.findCustomDeadline(custom.id)?.completed, isFalse);
+    expect(storage.loadAssignmentOverrides().scopedCompleted[courseKey], isFalse);
+    expect(storage.loadCustomDeadlines(null)?.deadlines[custom.id]?.completed, isFalse);
+    expect(writes, isEmpty);
+
+    nativeCompletions = {courseKey: 300, customKey: 400};
+    await notifyRemindersChanged();
+    expect(assignments.isCompleted(course), isTrue);
+    expect(assignments.findCustomDeadline(custom.id)?.completed, isTrue);
+  });
+
+  test('deleting reminders leaves their TechPie deadlines and completion intact', () async {
+    await assignments.saveCustomDeadline(owner: null, title: 'Custom', due: firstDue);
+    final course = assignments.assignments.firstWhere((a) => a is! CustomDeadline);
+    final custom = assignments.assignments.whereType<CustomDeadline>().single;
+    final open = assignments.assignments.last;
+    final courseKey = assignments.reminderKeyFor(course);
+    final customKey = assignments.reminderKeyFor(custom);
+    await reminders.add(assignments.assignments);
+    nativeCompletions = {courseKey: 100, customKey: 200};
+    reminders.initialize();
+    await flush();
+
+    linkedKeys.clear();
+    nativeCompletions.clear();
+    await notifyRemindersChanged();
+    assignments.loadCached();
+    await flush();
+    final expectedKeys = {courseKey, customKey, assignments.reminderKeyFor(open)};
+    expect(assignments.visibleAssignments.map(assignments.reminderKeyFor).toSet(), expectedKeys);
+    expect(assignments.isCompleted(course), isTrue);
+    expect(assignments.findCustomDeadline(custom.id)?.completed, isTrue);
+    expect(assignments.isCompleted(open), isFalse);
+    expect(writes, isEmpty);
+    expect(
+      await reminders.linkedKeys(expectedKeys, epoch: assignments.identityEpoch),
+      isEmpty,
+    );
+  });
+
   test('discards a pending completion after the assignment identity resets', () async {
     await reminders.add(assignments.assignments);
     final key = exported.first['key'] as String;
-    blockedRead = Completer<Map<String, int>>();
+    blockedRead = Completer<Map<String, int?>>();
     reminders.initialize();
     await assignments.clearCache();
     blockedRead!.complete({key: 100});

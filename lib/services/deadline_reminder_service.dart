@@ -167,6 +167,7 @@ class DeadlineReminderService with WidgetsBindingObserver {
       if (!_initialized || epoch != _assignments.identityEpoch) return;
 
       final assignments = _assignments.assignments;
+      final revision = _assignments.reminderChangesRevision;
       final pending = _assignments.reminderSyncWork.changes;
       final byKey = {
         for (final assignment in assignments)
@@ -175,19 +176,20 @@ class DeadlineReminderService with WidgetsBindingObserver {
             key: assignment,
       };
       if (byKey.isEmpty) return;
-      final completed = await _channel.invokeMapMethod<String, int>(
-        'completed',
+      final states = await _channel.invokeMapMethod<String, int?>(
+        'completionStates',
         byKey.keys.toList(),
       );
       if (!_initialized ||
-          completed == null ||
+          states == null ||
           epoch != _assignments.identityEpoch ||
+          revision != _assignments.reminderChangesRevision ||
           !identical(assignments, _assignments.assignments)) {
         return;
       }
       await _assignments.applyReminderCompletions(
         {
-          for (final entry in completed.entries)
+          for (final entry in states.entries)
             if (byKey[entry.key] case final assignment?)
               entry.key: (assignment: assignment, completedAt: entry.value),
         },
