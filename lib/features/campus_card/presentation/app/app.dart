@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -127,9 +129,10 @@ final class _EntryGate extends ConsumerWidget {
     if (snapshot == null && auth.hasError) return const SessionRestoreScreen();
 
     return switch (snapshot?.state) {
-      // Nothing read yet. Briefly true on every mount, and the old router waited
-      // on the same future, so the gate waits too rather than flashing a screen.
-      null => const SizedBox.shrink(),
+      // Nothing read yet. Paint the host-themed surface immediately to avoid
+      // exposing an unpainted frame, and only show a subtle indicator if local
+      // session restore takes longer than a brief threshold.
+      null => const _SessionRestoreWaitingPage(),
       AuthState.authenticated =>
         entry == CampusCardEntry.cardManagement
             ? const CardManageScreen()
@@ -144,5 +147,52 @@ final class _EntryGate extends ConsumerWidget {
         const LoginScreen(),
       _ => const SessionRestoreScreen(),
     };
+  }
+}
+
+final class _SessionRestoreWaitingPage extends StatefulWidget {
+  const _SessionRestoreWaitingPage();
+
+  static const Duration _indicatorDelay = Duration(milliseconds: 150);
+
+  @override
+  State<_SessionRestoreWaitingPage> createState() =>
+      _SessionRestoreWaitingPageState();
+}
+
+final class _SessionRestoreWaitingPageState
+    extends State<_SessionRestoreWaitingPage> {
+  Timer? _indicatorTimer;
+  bool _showIndicator = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _indicatorTimer = Timer(_SessionRestoreWaitingPage._indicatorDelay, () {
+      if (!mounted) return;
+      setState(() => _showIndicator = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _indicatorTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: _showIndicator
+          ? const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator.adaptive(strokeWidth: 2.5),
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
   }
 }
