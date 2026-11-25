@@ -87,14 +87,11 @@ Future<({Widget widget, StorageService storage})> _buildTestHost({
   final auth = signedIn
       ? _SignedInAuth(storage, http, uniAuth, session)
       : AuthService(storage, http, uniAuth);
-  final tpAuth = signedIn
-      ? _BoundThirdParty(storage, http)
-      : ThirdPartyAuthService(storage, http);
+  final tpAuth = signedIn ? _BoundThirdParty(storage, http) : ThirdPartyAuthService(storage, http);
   final themeService = ThemeService(storage);
   final schedule = ScheduleService(storage, http, auth, tpAuth);
   await schedule.loadCachedData();
-  final assignments = AssignmentService(storage, http, auth, tpAuth, schedule)
-    ..loadCached();
+  final assignments = AssignmentService(storage, http, auth, tpAuth, schedule)..loadCached();
 
   final widget = ServiceProvider(
     authService: auth,
@@ -148,7 +145,9 @@ void main() {
             classroom: 'H101',
             teachers: '',
             weeks: '011',
-            times: {1: [1, 2]},
+            times: {
+              1: [1, 2],
+            },
           ),
         ],
       );
@@ -197,16 +196,21 @@ void main() {
   }
 
   testWidgets(
-    'SchedulePage supports switching between 周课表 and 日程 agenda with upcoming exams',
+    'SchedulePage agenda scrolls across weeks and updates the header',
     (tester) async {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final now = DateTime.now();
-      final monday = now.subtract(Duration(days: now.weekday - 1));
+      final monday = DateUtils.addDaysToDate(now, 1 - now.weekday);
       final examDue = now.add(const Duration(days: 20));
+      const earlierCourse = '本周较早的课程';
 
       final termCalendar = TermCalendar(
         code: 200,
         schoolYearTerm: '2026-2027-1',
-        termBegin: monday,
+        termBegin: DateUtils.addDaysToDate(monday, -7),
         snapshotDate: null,
         snapshotWeekOfTerm: null,
         allTeachWeeks: 16,
@@ -216,8 +220,8 @@ void main() {
         eveClasses: 4,
       );
 
-      const table = CourseTable(
-        periods: [
+      final table = CourseTable(
+        periods: const [
           CoursePeriod(index: 1, timeRange: '08:15-09:00'),
           CoursePeriod(index: 2, timeRange: '09:10-09:55'),
         ],
@@ -226,9 +230,37 @@ void main() {
             name: '计算机系统导论',
             classroom: '信息学院 1B-201',
             teachers: '王老师',
-            weeks: '01111111111111111',
+            weeks: '00100000000000000',
             times: {
-              1: [1, 2],
+              now.weekday: const [1, 2],
+            },
+          ),
+          if (now.weekday > DateTime.monday)
+            const EamsCourse(
+              name: earlierCourse,
+              classroom: '教学中心 102',
+              teachers: '陈老师',
+              weeks: '00100000000000000',
+              times: {
+                DateTime.monday: [1],
+              },
+            ),
+          const EamsCourse(
+            name: '上周课程',
+            classroom: '教学中心 101',
+            teachers: '陈老师',
+            weeks: '01000000000000000',
+            times: {
+              DateTime.monday: [1],
+            },
+          ),
+          const EamsCourse(
+            name: '下周课程',
+            classroom: '教学中心 103',
+            teachers: '陈老师',
+            weeks: '00010000000000000',
+            times: {
+              DateTime.monday: [1],
             },
           ),
         ],
@@ -260,8 +292,8 @@ void main() {
 
       // Smart weekend default hides Sat/Sun when semester has only weekday classes.
       expect(find.text('一'), findsOneWidget);
-      expect(find.text('六'), findsNothing);
-      expect(find.text('日'), findsNothing);
+      expect(find.text('六'), now.weekday == DateTime.saturday ? findsOneWidget : findsNothing);
+      expect(find.text('日'), now.weekday == DateTime.sunday ? findsOneWidget : findsNothing);
 
       expect(
         find.byKey(const ValueKey('schedule.view-mode-switch')),
@@ -274,6 +306,10 @@ void main() {
         find.byKey(const ValueKey('schedule.view-mode-thumb')),
       );
       await tester.tap(find.text('日程'));
+      await tester.pump();
+      // The first frame shows today's course, with earlier days above it.
+      expect(find.text('计算机系统导论').hitTestable(), findsOneWidget);
+      expect(find.text(earlierCourse).hitTestable(), findsNothing);
       await tester.pumpAndSettle();
       expect(host.storage.scheduleViewMode, 'agenda');
       final thumbAfter = tester.getTopLeft(
@@ -289,6 +325,78 @@ void main() {
       );
       expect(find.text('近期考试'), findsOneWidget);
       expect(find.text('计算机系统导论 期末考试'), findsOneWidget);
+
+      final agenda = find.byType(CustomScrollView);
+      final position = tester.widget<CustomScrollView>(agenda).controller!.position;
+      Finder headerWeek(int week) => find.descendant(
+            of: find.byType(AppBar),
+            matching: find.text('第 $week 周'),
+          );
+      expect(headerWeek(2), findsOneWidget);
+
+      await tester.drag(agenda, const Offset(0, 440));
+      await tester.pumpAndSettle();
+      expect(headerWeek(1), findsOneWidget);
+      expect(find.text('上周课程').hitTestable(), findsOneWidget);
+      expect(tester.widget<CustomScrollView>(agenda).controller!.position, same(position));
+      final floatingToday = find.byType(FloatingActionButton);
+      expect(floatingToday, findsOneWidget);
+      expect(
+        tester.widget<Icon>(find.descendant(of: floatingToday, matching: find.byType(Icon))).icon,
+        Icons.keyboard_arrow_down,
+      );
+      expect(find.byTooltip('下一周'), findsNothing);
+
+      await tester.tap(headerWeek(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('下一周'));
+      await tester.pumpAndSettle();
+      expect(headerWeek(2), findsOneWidget);
+      expect(find.text('计算机系统导论').hitTestable(), findsOneWidget);
+      expect(find.text(earlierCourse).hitTestable(), findsNothing);
+      expect(floatingToday, findsNothing);
+
+      await tester.timedDrag(agenda, const Offset(0, -320), const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(headerWeek(3), findsOneWidget);
+      expect(find.text('下周课程').hitTestable(), findsOneWidget);
+      expect(tester.widget<CustomScrollView>(agenda).controller!.position, same(position));
+
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(headerWeek(18), findsOneWidget);
+
+      tester.view.physicalSize = const Size(600, 812);
+      await tester.pumpAndSettle();
+      expect(floatingToday, findsOneWidget);
+      expect(
+        tester.widget<Icon>(find.descendant(of: floatingToday, matching: find.byType(Icon))).icon,
+        Icons.keyboard_arrow_up,
+      );
+
+      tester.view.physicalSize = const Size(359, 812);
+      await tester.pumpAndSettle();
+      expect(floatingToday, findsOneWidget);
+      expect(tester.getSize(floatingToday), const Size(48, 48));
+      await tester.tap(floatingToday);
+      await tester.pumpAndSettle();
+      expect(headerWeek(2), findsOneWidget);
+      expect(find.text('计算机系统导论').hitTestable(), findsOneWidget);
+      expect(floatingToday, findsNothing);
+
+      if (now.weekday > DateTime.monday) {
+        position.jumpTo(-52);
+        await tester.pumpAndSettle();
+        expect(headerWeek(2), findsOneWidget);
+        expect(floatingToday, findsOneWidget);
+      }
+
+      tester.view.physicalSize = const Size(390, 812);
+      tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(floatingToday, findsOneWidget);
     },
   );
 
@@ -325,7 +433,9 @@ void main() {
             classroom: '报告厅',
             teachers: '王老师',
             weeks: '01111111111111111',
-            times: {6: [1, 2]},
+            times: {
+              6: [1, 2],
+            },
           ),
         ],
       );

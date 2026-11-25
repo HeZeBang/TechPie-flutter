@@ -139,14 +139,26 @@ void main() {
           )
           .map((w) => w.appBar)
           .whereType<IosNativeNavigationBar>()
-          .firstWhere((b) => b.trailingItems.any((i) => i.id == 'currentWeek'));
+          .first;
 
       final pager = tester.widget<PageView>(find.byType(PageView)).controller!;
       pager.jumpToPage(11);
       await tester.pump(const Duration(seconds: 1));
       expect(bar().title, '第 12 周');
 
-      bar().onItemPressed!('currentWeek');
+      expect(find.byType(FloatingActionButton), findsOneWidget);
+      expect(
+        tester
+            .widget<Icon>(
+              find.descendant(
+                of: find.byType(FloatingActionButton),
+                matching: find.byType(Icon),
+              ),
+            )
+            .icon,
+        Icons.keyboard_arrow_up,
+      );
+      await tester.tap(find.byType(FloatingActionButton));
       final titles = <String?>[];
       for (var frame = 0; frame < 40; frame++) {
         await tester.pump(const Duration(milliseconds: 16));
