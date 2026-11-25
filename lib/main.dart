@@ -13,6 +13,7 @@ import 'features/campus_card/app/app_providers.dart';
 import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
+import 'services/campus/campus_clients.dart';
 import 'services/campus_card_service.dart';
 import 'services/deadline_reminder_service.dart';
 import 'services/deadline_widget_service.dart';
@@ -448,6 +449,7 @@ class TechPieApp extends StatefulWidget {
 class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
   final _nativeChromeObserver = CNTabBarRouteObserver();
+  late CampusClients _campusClients;
   late StudentAllowanceService _studentAllowanceService;
 
   StudentAllowanceService _createStudentAllowanceService() => StudentAllowanceService(
@@ -468,6 +470,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _campusClients = CampusClients(widget.authService, widget.thirdPartyAuthService);
     widget.wearEngineService?.resumeSync();
     _studentAllowanceService = _createStudentAllowanceService();
     unawaited(_checkForUpdatesQuietly());
@@ -479,6 +482,11 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.authService != widget.authService ||
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService) {
+      _campusClients.dispose();
+      _campusClients = CampusClients(widget.authService, widget.thirdPartyAuthService);
+    }
     if (oldWidget.authService != widget.authService ||
         oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
         oldWidget.debugLogger != widget.debugLogger) {
@@ -507,6 +515,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.spendingAlertService?.dispose();
     widget.islandService?.dispose();
     _studentAllowanceService.dispose();
+    _campusClients.dispose();
     widget.campusCardService.dispose();
     widget.wearEngineService?.dispose();
     super.dispose();
@@ -603,6 +612,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         thirdPartyAuthService: widget.thirdPartyAuthService,
         oaGymService: widget.oaGymService,
         egateAppService: widget.egateAppService,
+        campusClients: _campusClients,
         studentAllowanceService: _studentAllowanceService,
         uniAuthService: widget.uniAuthService,
         syncService: widget.syncService,
