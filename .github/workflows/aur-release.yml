@@ -1,0 +1,129 @@
+name: AUR Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      publish:
+        default: false
+        type: boolean
+    secrets:
+      AUR_SSH_PRIVATE_KEY:
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable tag, for example v1.0.4+26
+        required: true
+        type: string
+      publish:
+        description: Push to AUR (also requires AUR_PUBLISH_ENABLED)
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aur-techpie-bin
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare and build the Arch package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - name: Download the published stable bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json isDraft,isPrerelease --jq \
+            'if .isDraft or .isPrerelease then error("AUR requires a published stable release") else "stable release confirmed" end'
+          release_name="$(scripts/release-name.sh "$TAG")"
+          asset="TechPie-${release_name}-linux-x86-64.tar.gz"
+          mkdir -p build/aur
+          gh release download "$TAG" --pattern "$asset" --dir build/aur
+          python3 scripts/prepare-aur.py --tag "$TAG" --repository "$GH_REPO" \
+            --bundle "build/aur/$asset" --output build/aur
+          # Seed makepkg's source cache from the same checked-out release.
+          cp assets/icon/icon.png build/aur/techpie.png
+          cp README.md build/aur/README.md
+      - name: Validate with makepkg in Arch Linux
+        run: |
+          docker run --rm -v "$PWD/build/aur:/package" -w /package \
+            archlinux:base-devel bash -euc '
+              useradd --create-home builder
+              chown -R builder:builder /package
+              su builder -c "makepkg --printsrcinfo > .SRCINFO && makepkg --nodeps --noconfirm"
+            '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aur-${{ inputs.tag }}
+          include-hidden-files: true
+          path: |
+            build/aur/PKGBUILD
+            build/aur/.SRCINFO
+            build/aur/techpie.desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-package-${{ inputs.tag }}
+          path: build/aur/*.pkg.tar.zst
+
+  publish:
+    name: Update techpie-bin on AUR
+    needs: prepare
+    if: inputs.publish && vars.AUR_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: aur-${{ inputs.tag }}
+          path: package
+      - name: Push the recipe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AUR_KNOWN_HOSTS: ${{ vars.AUR_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          latest="$(gh release view --json tagName --jq .tagName)"
+          if [[ "$TAG" != "$latest" ]]; then
+            echo '::error::Only the latest stable release may update techpie-bin.'
+            exit 1
+          fi
+          if [[ -z "$AUR_SSH_PRIVATE_KEY" || -z "$AUR_KNOWN_HOSTS" ]]; then
+            echo '::error::Configure AUR_SSH_PRIVATE_KEY and verified AUR_KNOWN_HOSTS first.'
+            exit 1
+          fi
+          key="$RUNNER_TEMP/aur-key"
+          hosts="$RUNNER_TEMP/aur-known-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          umask 077
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$key"
+          printf '%s\n' "$AUR_KNOWN_HOSTS" > "$hosts"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"
+          git clone --depth 1 ssh://aur@aur.archlinux.org/techpie-bin.git aur
+          cp package/PKGBUILD package/.SRCINFO package/techpie.desktop aur/
+          cd aur
+          git config user.name 'TechPie package bot'
+          git config user.email 'techpie-packaging@users.noreply.github.com'
+          git add PKGBUILD .SRCINFO techpie.desktop
+          if git diff --cached --quiet; then
+            echo 'AUR is already up to date.'
+            exit 0
+          fi
+          git commit -m "Update techpie-bin to $TAG"
+          git push origin HEAD:master

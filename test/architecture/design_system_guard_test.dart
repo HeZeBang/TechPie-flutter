@@ -12,7 +12,6 @@ import 'package:techpie/theme/tp_icons.dart';
 const Set<String> designSystemExemptPages = <String>{
   // WebView & SSO bridges
   'lib/pages/campus_session_handle.dart',
-  'lib/pages/egate_app_page.dart',
   'lib/pages/generic_webview_page.dart',
   'lib/pages/uni_auth_webview_page.dart',
   'lib/pages/webview_host.dart',

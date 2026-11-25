@@ -13,24 +13,28 @@ class TpListRow extends StatelessWidget {
     this.subtitle,
     this.value,
     this.icon,
+    this.leading,
     this.iconColor,
     this.trailing,
     this.onTap,
     this.showChevron = false,
     this.showDivider = false,
     this.destructive = false,
+    this.subtitleMaxLines = 2,
   });
 
   final String title;
   final String? subtitle;
   final String? value;
   final IconData? icon;
+  final Widget? leading;
   final Color? iconColor;
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool showChevron;
   final bool showDivider;
   final bool destructive;
+  final int subtitleMaxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +42,8 @@ class TpListRow extends StatelessWidget {
     final effectiveTitleColor =
         destructive ? colors.dangerRed : colors.textPrimary;
     final effectiveIconColor =
-        iconColor ?? (destructive ? colors.dangerRed : colors.brand);
+        iconColor ?? (destructive ? colors.dangerRed : colors.brandInk);
+    final hasLeading = leading != null || icon != null;
 
     final row = Padding(
       padding: const EdgeInsets.symmetric(
@@ -47,7 +52,14 @@ class TpListRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          if (icon != null) ...[
+          if (leading != null) ...[
+            SizedBox(
+              width: TpTokens.iconM,
+              height: TpTokens.iconM,
+              child: Center(child: leading),
+            ),
+            const SizedBox(width: TpTokens.space3),
+          ] else if (icon != null) ...[
             Icon(
               icon,
               size: TpTokens.iconM,
@@ -74,7 +86,7 @@ class TpListRow extends StatelessWidget {
                   Text(
                     subtitle!,
                     style: TpTypography.itemMeta(colors),
-                    maxLines: 2,
+                    maxLines: subtitleMaxLines,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -109,7 +121,7 @@ class TpListRow extends StatelessWidget {
       ),
     );
 
-    final dividerIndent = icon != null
+    final dividerIndent = hasLeading
         ? TpTokens.cardPaddingHorizontal + TpTokens.iconM + TpTokens.space3
         : TpTokens.cardPaddingHorizontal;
 
@@ -121,6 +133,9 @@ class TpListRow extends StatelessWidget {
         else
           InkWell(
             onTap: onTap,
+            hoverColor: colors.textPrimary.withValues(
+              alpha: colors.isDark ? 0.06 : 0.04,
+            ),
             splashColor: colors.brandSoft,
             highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
             child: row,

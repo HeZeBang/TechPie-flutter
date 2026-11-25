@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -181,6 +182,42 @@ void main() {
       true,
       reason: 'both callers should succeed after the shared renew',
     );
+  });
+
+  test('staggered 401 skips redundant renew when another caller already bumped epoch',
+      () async {
+    final releaseSlow = Completer<void>();
+    final fastFinished = Completer<void>();
+    var firstSlow = true;
+
+    final slowFuture = tree.withCookie<int>(tree.ids, (cp) async {
+      if (firstSlow) {
+        firstSlow = false;
+        await releaseSlow.future;
+        return const CookieAction(401, expired: true);
+      }
+      expect(cp.cookies, contains('CASTGC=tgc-v1'));
+      return const CookieAction(200, expired: false);
+    });
+
+    var firstFast = true;
+    final fastResult = await tree.withCookie<int>(tree.ids, (cp) async {
+      if (firstFast) {
+        firstFast = false;
+        return const CookieAction(401, expired: true);
+      }
+      return const CookieAction(200, expired: false);
+    });
+    fastFinished.complete();
+    await fastFinished.future;
+
+    // Fast caller already renewed epoch 0 → 1; now slow caller's stale 401 lands.
+    releaseSlow.complete();
+    final slowResult = await slowFuture;
+
+    expect(fastResult, 200);
+    expect(slowResult, 200);
+    expect(client.renewCalls, 1, reason: 'stale 401 must reuse epoch 1 instead of renewing again');
   });
 
   test('withCookie proactively renews when the schedule is due', () async {

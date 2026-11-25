@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "模块描述"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "TechPie"
+    },
+    {
+      "name": "camera_reason",
+      "value": "使用相机扫描签到码与校园卡付款二维码"
+    },
+    {
+      "name": "ecard_shortcut_label",
+      "value": "消费码"
+    }
+  ]
+}

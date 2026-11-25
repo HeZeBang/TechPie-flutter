@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/feedback_service.dart';
 import '../theme/theme.dart';
+import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
@@ -22,6 +25,7 @@ class FeedbackPage extends StatefulWidget {
 }
 
 class _FeedbackPageState extends State<FeedbackPage> {
+  static const _groupNumber = '1130168501';
   final _message = TextEditingController();
   final _contact = TextEditingController();
   final _images = <FeedbackImage>[];
@@ -46,6 +50,8 @@ class _FeedbackPageState extends State<FeedbackPage> {
       _busy = true;
       _error = null;
     });
+    String? errorMessage;
+    var timedOut = false;
     try {
       await widget.service.submit(
         _message.text,
@@ -55,19 +61,47 @@ class _FeedbackPageState extends State<FeedbackPage> {
         images: _images,
         onImageChanged: _refreshImages,
       );
-      if (mounted) setState(() => _sent = true);
     } catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = error is TimeoutException
-              ? '未能确认送达，内容已保留，请稍后再试'
-              : error is Exception && error.toString().startsWith('Exception: ')
-                  ? error.toString().substring(11)
-                  : '反馈未发送成功，内容已保留';
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      timedOut = error is TimeoutException;
+      errorMessage = timedOut
+          ? '未能确认送达，内容已保留，请稍后再试'
+          : error is Exception && error.toString().startsWith('Exception: ')
+              ? error.toString().substring(11)
+              : '反馈未发送成功，内容已保留';
+    }
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = errorMessage;
+      _sent = errorMessage == null;
+    });
+    if (ModalRoute.of(context)?.isCurrent != true) return;
+
+    final invitation = _sent
+        ? '欢迎加入 TechPie 用户群，了解最新进展、继续反馈问题或提出功能建议。'
+        : '反馈内容已保留。你可以返回重试，也可以加入 TechPie 用户群直接反馈。';
+    final copy = await showAdaptiveAlertDialog<bool>(
+      context: context,
+      title: _sent
+          ? '反馈已提交'
+          : timedOut
+              ? '未能确认送达'
+              : '提交失败',
+      message: '$invitation\n\nQQ群号：$_groupNumber',
+      actions: const [
+        AdaptiveAlertAction(label: '关闭'),
+        AdaptiveAlertAction(label: '复制群号', value: true, isDefault: true),
+      ],
+    );
+    if (copy != true) return;
+    try {
+      await Clipboard.setData(const ClipboardData(text: _groupNumber));
+      showAdaptiveFeedback(message: '群号已复制', style: AdaptiveFeedbackStyle.success);
+    } on PlatformException {
+      showAdaptiveFeedback(
+        message: '复制失败，请手动输入 $_groupNumber',
+        style: AdaptiveFeedbackStyle.error,
+      );
     }
   }
 
@@ -197,6 +231,17 @@ class _FeedbackPageState extends State<FeedbackPage> {
                           style: TpTypography.itemMeta(colors),
                           textAlign: TextAlign.center,
                         ),
+                        const SizedBox(height: TpTokens.space5),
+                        AdaptiveButton(
+                          label: '返回',
+                          icon: TpIcons.chevronLeft,
+                          sfSymbol: 'chevron.left',
+                          role: AdaptiveButtonRole.standard,
+                          width: 160,
+                          height: 44,
+                          onPressed: () =>
+                              unawaited(maybePopAdaptivePage<void>(context)),
+                        ),
                       ],
                     ),
                   )
@@ -257,15 +302,35 @@ class _FeedbackPageState extends State<FeedbackPage> {
                                               bottom: 0,
                                               left: 0,
                                               right: 0,
-                                              child: FilledButton(
-                                                onPressed: _busy
-                                                    ? null
-                                                    : () => unawaited(
-                                                          _retryImage(
-                                                            _images[i],
+                                              child: Material(
+                                                color: colors.dangerRed
+                                                    .withValues(alpha: 0.90),
+                                                child: InkWell(
+                                                  onTap: _busy
+                                                      ? null
+                                                      : () => unawaited(
+                                                            _retryImage(
+                                                              _images[i],
+                                                            ),
                                                           ),
-                                                        ),
-                                                child: const Text('重试'),
+                                                  child: const Padding(
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                      vertical: 4,
+                                                    ),
+                                                    child: Text(
+                                                      '重试',
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
                                               ),
                                             )
                                           else if (_images[i].uploaded)
@@ -278,20 +343,33 @@ class _FeedbackPageState extends State<FeedbackPage> {
                                               ),
                                             ),
                                           Positioned(
-                                            top: 0,
-                                            right: 0,
-                                            child: IconButton.filledTonal(
-                                              tooltip: '移除第 ${i + 1} 张图片',
-                                              icon: const Icon(
-                                                TpIcons.close,
-                                                size: TpTokens.iconS,
+                                            top: 4,
+                                            right: 4,
+                                            child: Material(
+                                              color: Colors.black
+                                                  .withValues(alpha: 0.58),
+                                              shape: const CircleBorder(),
+                                              clipBehavior: Clip.antiAlias,
+                                              child: IconButton(
+                                                tooltip: '移除第 ${i + 1} 张图片',
+                                                constraints:
+                                                    const BoxConstraints.tightFor(
+                                                  width: 24,
+                                                  height: 24,
+                                                ),
+                                                padding: EdgeInsets.zero,
+                                                icon: const Icon(
+                                                  TpIcons.close,
+                                                  size: TpTokens.iconXs,
+                                                  color: Colors.white,
+                                                ),
+                                                onPressed: _busy || _picking
+                                                    ? null
+                                                    : () => setState(
+                                                          () => _images
+                                                              .removeAt(i),
+                                                        ),
                                               ),
-                                              onPressed: _busy || _picking
-                                                  ? null
-                                                  : () => setState(
-                                                        () =>
-                                                            _images.removeAt(i),
-                                                      ),
                                             ),
                                           ),
                                         ],
@@ -352,6 +430,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                               controller: _contact,
                               enabled: !_busy,
                               maxLength: 200,
+                              textInputAction: TextInputAction.done,
                               decoration: const InputDecoration(
                                 labelText: '补充联系方式（选填）',
                                 border: OutlineInputBorder(),
@@ -367,9 +446,8 @@ class _FeedbackPageState extends State<FeedbackPage> {
                       if (_error != null) ...[
                         const SizedBox(height: TpTokens.sectionGap),
                         TpCard(
-                          color: colors.dangerRed
-                              .withValues(alpha: colors.isDark ? 0.16 : 0.08),
-                          borderColor: colors.dangerRed.withValues(alpha: 0.25),
+                          color: colors.opaqueDangerContainer,
+                          borderColor: colors.dangerRed.withValues(alpha: 0.30),
                           padding: const EdgeInsets.all(TpTokens.space3),
                           child: Text(
                             _error!,

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -93,9 +94,18 @@ void main() {
     await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
 
-    // Only the debug section is reachable without an account; the window above is
-    // tall enough for it to be on screen.
-    await tester.tap(find.text('查看日志'));
+    // Only the developer entry is reachable without an account; open it first
+    // and then navigate into DebugLogPage.
+    final devTile = find.byKey(const ValueKey('settings.developer-options'));
+    await tester.ensureVisible(devTile);
+    await tester.pumpAndSettle();
+    await tester.tap(devTile);
+    await tester.pumpAndSettle();
+
+    final logsTile = find.text('查看日志');
+    await tester.ensureVisible(logsTile);
+    await tester.pumpAndSettle();
+    await tester.tap(logsTile);
     await tester.pumpAndSettle();
     expect(find.byType(DebugLogPage), findsOneWidget);
 

@@ -1,6 +1,7 @@
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:techpie/theme/theme.dart';
 import 'package:techpie/utils/platform.dart';
 
 import 'sf_symbol_glyphs.dart';
@@ -393,6 +394,10 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
       // a union ID selects the package's SwiftUI path, whose intrinsic width
       // is hardcoded to 80pt and truncates longer toolbar labels.
     );
+    final tpColors = context.tpColors;
+    final symbolColor = item.role == IosNativeNavigationBarItemRole.done
+        ? tpColors.onBrand
+        : tint;
     final callback = item.enabled ? () => onItemPressed?.call(item.id) : null;
     // Use a compact back chevron; the previous page's name remains available
     // to VoiceOver without squeezing the title or becoming an ellipsis.
@@ -400,7 +405,9 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
     if (!isBack && item.title != null && item.title!.isNotEmpty) {
       return CNButton(
         label: item.title!,
-        icon: item.sfSymbol == null ? null : CNSymbol(item.sfSymbol!, size: 20, color: tint),
+        icon: item.sfSymbol == null
+            ? null
+            : CNSymbol(item.sfSymbol!, size: 20, color: symbolColor),
         semanticLabel: label,
         onPressed: callback,
         enabled: item.enabled,
@@ -409,7 +416,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
       );
     }
     return CNButton.icon(
-      icon: CNSymbol(item.sfSymbol ?? 'ellipsis', size: 20, color: tint),
+      icon: CNSymbol(item.sfSymbol ?? 'ellipsis', size: 20, color: symbolColor),
       semanticLabel: label,
       onPressed: callback,
       enabled: item.enabled,
@@ -428,9 +435,11 @@ extension on IosNativeNavigationBar {
   /// fallback still renders SF Symbols as native views, which take the tap and
   /// leave only the edges of an icon button responsive.
   Widget _legacyAction(BuildContext context, IosNativeNavigationBarItem item) {
-    final tint = item.role == IosNativeNavigationBarItemRole.destructive
-        ? CupertinoColors.systemRed.resolveFrom(context)
+    final tpColors = context.tpColors;
+    final baseTint = item.role == IosNativeNavigationBarItemRole.destructive
+        ? tpColors.dangerRed
         : Theme.of(context).colorScheme.primary;
+    final tint = item.enabled ? baseTint : baseTint.withValues(alpha: 0.38);
     final label = item.accessibilityLabel ?? item.title ?? item.id;
     final isBack = item.sfSymbol == 'chevron.left';
     final title = item.title;

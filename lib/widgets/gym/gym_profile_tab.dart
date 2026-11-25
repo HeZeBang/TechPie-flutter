@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../models/oa_gym.dart';
@@ -16,14 +18,19 @@ class GymProfileTab extends StatefulWidget {
   State<GymProfileTab> createState() => _GymProfileTabState();
 }
 
-class _GymProfileTabState extends State<GymProfileTab> {
+class _GymProfileTabState extends State<GymProfileTab>
+    with AutomaticKeepAliveClientMixin {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   final _email = TextEditingController();
   OaGymService? _service;
   String _owner = '';
+  bool _saving = false;
   OaBookingProfile _lastProfile =
       const OaBookingProfile(name: '', phone: '', email: '');
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void didChangeDependencies() {
@@ -66,19 +73,36 @@ class _GymProfileTabState extends State<GymProfileTab> {
   }
 
   Future<void> _save() async {
-    await ServiceProvider.of(context).oaGymService.saveBookingProfile(
-          OaBookingProfile(
-            name: _name.text.trim(),
-            phone: _phone.text.trim(),
-            email: _email.text.trim(),
-          ),
-        );
-    if (!mounted) return;
-    showAdaptiveFeedback(
-      context: context,
-      message: '预约信息已保存',
-      style: AdaptiveFeedbackStyle.success,
-    );
+    if (_saving) return;
+    final name = _name.text.trim();
+    final phone = _phone.text.trim();
+    if (name.isEmpty || phone.isEmpty) {
+      showAdaptiveFeedback(
+        context: context,
+        message: name.isEmpty ? '请填写姓名' : '请填写手机号',
+        style: AdaptiveFeedbackStyle.error,
+      );
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _saving = true);
+    try {
+      await ServiceProvider.of(context).oaGymService.saveBookingProfile(
+            OaBookingProfile(
+              name: name,
+              phone: phone,
+              email: _email.text.trim(),
+            ),
+          );
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '预约信息已保存',
+        style: AdaptiveFeedbackStyle.success,
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _sync() async {
@@ -99,6 +123,7 @@ class _GymProfileTabState extends State<GymProfileTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final colors = context.tpColors;
     final sp = ServiceProvider.of(context);
     final tpAuth = sp.thirdPartyAuthService;
@@ -212,6 +237,8 @@ class _GymProfileTabState extends State<GymProfileTab> {
                     const SizedBox(height: TpTokens.space4),
                     TextField(
                       controller: _name,
+                      enabled: !_saving,
+                      textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         labelText: '姓名',
                         border: OutlineInputBorder(),
@@ -220,6 +247,8 @@ class _GymProfileTabState extends State<GymProfileTab> {
                     const SizedBox(height: TpTokens.space3),
                     TextField(
                       controller: _phone,
+                      enabled: !_saving,
+                      textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         labelText: '手机号',
                         border: OutlineInputBorder(),
@@ -229,6 +258,9 @@ class _GymProfileTabState extends State<GymProfileTab> {
                     const SizedBox(height: TpTokens.space3),
                     TextField(
                       controller: _email,
+                      enabled: !_saving,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => unawaited(_save()),
                       decoration: const InputDecoration(
                         labelText: '邮箱',
                         border: OutlineInputBorder(),
@@ -237,11 +269,12 @@ class _GymProfileTabState extends State<GymProfileTab> {
                     ),
                     const SizedBox(height: TpTokens.space4),
                     AdaptiveButton(
-                      onPressed: _save,
+                      onPressed: _saving ? null : _save,
                       icon: TpIcons.check,
                       sfSymbol: 'square.and.arrow.down',
                       label: '保存',
                       role: AdaptiveButtonRole.prominent,
+                      loading: _saving,
                       height: 46,
                       accessibilityLabel: '保存预约信息',
                     ),

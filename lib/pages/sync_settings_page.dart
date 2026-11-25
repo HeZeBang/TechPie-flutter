@@ -226,6 +226,7 @@ class _SyncSettingsPageState extends State<SyncSettingsPage> {
       title: '版本对比',
       subtitle: '本地: $localLabel\n云端: $cloudLabel'
           '${compareLabel != null ? ' · $compareLabel' : ''}',
+      subtitleMaxLines: 4,
       trailing: IconButton(
         icon: const Icon(TpIcons.refresh, size: TpTokens.iconS),
         tooltip: '刷新云端版本',
@@ -525,7 +526,7 @@ class _RestoreBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     return TpCard(
-      color: colors.brandSoft,
+      color: colors.opaqueBrandContainer,
       borderColor: colors.brand.withValues(alpha: 0.25),
       padding: const EdgeInsets.all(TpTokens.space4),
       child: Column(
@@ -533,13 +534,17 @@ class _RestoreBanner extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(TpIcons.download, size: TpTokens.iconM, color: colors.brand),
+              Icon(
+                TpIcons.download,
+                size: TpTokens.iconM,
+                color: colors.brandInk,
+              ),
               const SizedBox(width: TpTokens.space2),
               Expanded(
                 child: Text(
                   '云端有可恢复的备份',
                   style: TpTypography.itemTitle(colors).copyWith(
-                    color: colors.brand,
+                    color: colors.brandInk,
                   ),
                 ),
               ),

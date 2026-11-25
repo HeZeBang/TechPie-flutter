@@ -254,17 +254,25 @@ class TermCalendar {
   });
 
   factory TermCalendar.fromJson(Map<String, dynamic> json) {
+    int parseInt(Object? value, [int fallback = 0]) => switch (value) {
+          int v => v,
+          num v => v.toInt(),
+          String v => int.tryParse(v.trim()) ?? fallback,
+          _ => fallback,
+        };
+    final dateText = json['date']?.toString() ?? '';
+    final weekText = json['weekOfTerm']?.toString() ?? '';
     return TermCalendar(
-      code: json['code'] as int? ?? 200,
-      schoolYearTerm: json['schoolYearTerm'] as String? ?? '',
-      termBegin: DateTime.parse(json['termBegin'] as String),
-      snapshotDate: DateTime.tryParse(json['date'] as String? ?? ''),
-      snapshotWeekOfTerm: int.tryParse(json['weekOfTerm'] as String? ?? ''),
-      allTeachWeeks: json['allTeachWeeks'] as int? ?? 0,
-      allTermWeeks: json['allTermWeeks'] as int? ?? 0,
-      amClasses: json['amClasses'] as int? ?? 0,
-      pmClasses: json['pmClasses'] as int? ?? 0,
-      eveClasses: json['eveClasses'] as int? ?? 0,
+      code: parseInt(json['code'], 200),
+      schoolYearTerm: json['schoolYearTerm']?.toString() ?? '',
+      termBegin: DateTime.parse(json['termBegin'].toString()),
+      snapshotDate: DateTime.tryParse(dateText),
+      snapshotWeekOfTerm: int.tryParse(weekText.trim()),
+      allTeachWeeks: parseInt(json['allTeachWeeks']),
+      allTermWeeks: parseInt(json['allTermWeeks']),
+      amClasses: parseInt(json['amClasses']),
+      pmClasses: parseInt(json['pmClasses']),
+      eveClasses: parseInt(json['eveClasses']),
     );
   }
 
@@ -282,16 +290,38 @@ class TermCalendar {
       };
 }
 
+/// Assigns each distinct course key in [courses] a [CourseColor] from
+/// [CourseColor.regularPalette] in canonical key order, ensuring zero color
+/// collisions for up to 12 distinct courses in a semester and identical colors
+/// across weekly grid, agenda, detail, home, and watch views.
+Map<String, CourseColor> assignCourseColors(Iterable<EamsCourse> courses) {
+  final keys = <String>{};
+  for (final course in courses) {
+    keys.add(courseColorKey(course.name));
+  }
+  final sortedKeys = keys.toList()..sort();
+  const palette = CourseColor.regularPalette;
+  return {
+    for (var i = 0; i < sortedKeys.length; i++)
+      sortedKeys[i]: palette[i % palette.length],
+  };
+}
+
 /// Convert EamsCourse list to display Course list, grouping consecutive periods.
 /// When [includeGhosts] is true, non-current-week courses are included with
 /// [Course.isGhost] = true instead of being filtered out.
+///
+/// Pass [colorScope] (e.g. the full semester's courses across graduate schemes)
+/// so every view computes the same deterministic course-to-color mapping.
 List<Course> eamsToDisplayCourses(
   List<EamsCourse> eamsCourses,
   int? weekFilter, {
   bool includeGhosts = false,
   List<Period> timetablePeriods = defaultPeriods,
   DateTime? onDate,
+  Iterable<EamsCourse>? colorScope,
 }) {
+  final colorByKey = assignCourseColors(colorScope ?? eamsCourses);
   final result = <Course>[];
   for (int i = 0; i < eamsCourses.length; i++) {
     final eams = eamsCourses[i];
@@ -302,7 +332,7 @@ List<Course> eamsToDisplayCourses(
         : weekFilter == null || eams.isActiveInWeek(weekFilter);
     if (!active && !includeGhosts) continue;
 
-    final color = CourseColor.values[i % CourseColor.values.length];
+    final color = colorByKey[courseColorKey(eams.name)] ?? CourseColor.primary;
     final clock = onDate == null ? null : eams.clockTime;
     for (final entry in eams.times.entries) {
       final day = entry.key;

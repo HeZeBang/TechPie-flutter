@@ -19,6 +19,7 @@ import '../services/service_provider.dart';
 import '../services/storage_service.dart';
 import '../theme/theme.dart';
 import '../utils/adaptive_motion.dart';
+import '../utils/haptics.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -26,6 +27,7 @@ import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/page_refresh.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/uni_auth_login.dart';
 import 'campus_card_page.dart';
@@ -42,6 +44,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late ScheduleService _schedule;
   late AssignmentService _assignments;
+  late AuthService _auth;
   List<Course> _todayCourses = [];
   List<Period> _periods = defaultPeriods.toList();
   bool _initialized = false;
@@ -78,10 +81,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
     if (!_initialized) {
       _initialized = true;
-      _schedule = ServiceProvider.of(context).scheduleService;
-      _assignments = ServiceProvider.of(context).assignmentService;
+      final sp = ServiceProvider.of(context);
+      _schedule = sp.scheduleService;
+      _assignments = sp.assignmentService;
+      _auth = sp.authService;
       _schedule.addListener(_rebuild);
       _assignments.addListener(_onAssignmentsChanged);
+      _auth.addListener(_onAuthChanged);
       _doRebuild();
       _refreshTimer = Timer.periodic(
         const Duration(minutes: 1),
@@ -95,8 +101,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _refreshTimer?.cancel();
     _schedule.removeListener(_rebuild);
     _assignments.removeListener(_onAssignmentsChanged);
+    _auth.removeListener(_onAuthChanged);
     _staggerController?.dispose();
     super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onAssignmentsChanged() {
@@ -254,8 +265,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return '晚上好';
   }
 
-  static String _avatarLabel(AuthService auth, StorageService storage) {
-    if (!auth.isLoggedIn || storage.maskPersonalInfo) return 'GP';
+  static String _greetingTitle(DateTime now, AuthService auth) {
+    final base = _greeting(now);
+    final session = auth.session;
+    if (!auth.isLoggedIn || session == null) return base;
+    final name = session.userName.trim().isNotEmpty
+        ? session.userName.trim()
+        : session.userId.trim();
+    if (name.isEmpty) return base;
+    return '$base，$name';
+  }
+
+  static String _avatarLabel(AuthService auth) {
+    if (!auth.isLoggedIn) return 'GP';
     final name = auth.session?.userName.trim() ?? '';
     if (name.isEmpty) return 'GP';
     final runes = name.runes.toList();
@@ -305,10 +327,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
+  Future<void> _refreshHome() async {
+    final sp = ServiceProvider.of(context);
+    final tasks = <Future<void>>[
+      sp.campusCardService.refreshAccount(),
+    ];
+    if (sp.thirdPartyAuthService.hasIdsBinding) {
+      tasks.add(sp.scheduleService.fetchAll());
+    }
+    if (sp.authService.isLoggedIn ||
+        sp.thirdPartyAuthService.boundPlatforms.isNotEmpty) {
+      tasks.add(sp.assignmentService.fetchAssignments());
+    }
+    await Future.wait(tasks);
+  }
+
   // ── Build ──
 
   @override
   Widget build(BuildContext context) {
+    // Subscribe to TickerMode so switching back to Home after toggling
+    // privacy blur or debug mode in Settings immediately refreshes the view.
+    // ignore: deprecated_member_use
+    TickerMode.of(context);
     final colors = context.tpColors;
     final sp = ServiceProvider.of(context);
     final auth = sp.authService;
@@ -330,10 +371,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final header = TpPageHeader(
       key: const ValueKey('home.greeting-header'),
       subtitle: dateSubtitle,
-      title: _greeting(now),
+      title: _greetingTitle(now, auth),
       trailing: TpAvatarBadge(
         key: const ValueKey('home.avatar'),
-        text: _avatarLabel(auth, storage),
+        text: _avatarLabel(auth),
         tooltip: auth.isLoggedIn ? '我的' : '登录',
         onTap: () {
           if (auth.isLoggedIn) {
@@ -344,7 +385,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         },
       ),
     );
-    final campusCardStrip = _buildCampusCardStrip(campusCard, storage);
+    final campusCardStrip = _buildCampusCardStrip(
+      campusCard,
+      storage,
+      expandedCard: isBento,
+    );
     final todayClasses = _buildTodayClasses(colors, auth.isLoggedIn);
     final deadlines = _buildPendingAssignments(colors);
     final quickActions = _buildQuickActions();
@@ -354,52 +399,56 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       backgroundColor: colors.canvas,
       body: SafeArea(
         bottom: false,
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            horizontalPadding,
-            isBento ? TpTokens.space5 : TpTokens.space3,
-            horizontalPadding,
-            AppShellMetrics.bottomContentPaddingOf(context),
-          ),
-          children: [
-            TpPageBody(
-              maxWidth: isBento ? 1120 : TpTokens.singleColumnMaxWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  header,
-                  SizedBox(
-                    height: isBento ? TpTokens.space4 : TpTokens.sectionGap,
-                  ),
-                  if (isBento)
-                    TpBentoGrid(
-                      primaryColumn: [
-                        todayClasses,
-                        deadlines,
-                        if (debugPanel != null) debugPanel,
-                      ],
-                      secondaryColumn: [
-                        campusCardStrip,
-                        quickActions,
-                      ],
-                    )
-                  else ...[
-                    campusCardStrip,
-                    const SizedBox(height: TpTokens.sectionGap),
-                    todayClasses,
-                    const SizedBox(height: TpTokens.sectionGap),
-                    deadlines,
-                    const SizedBox(height: TpTokens.sectionGap),
-                    quickActions,
-                    if (debugPanel != null) ...[
+        child: PageRefreshIndicator(
+          onRefresh: _refreshHome,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              isBento ? TpTokens.space5 : TpTokens.space3,
+              horizontalPadding,
+              AppShellMetrics.bottomContentPaddingOf(context),
+            ),
+            children: [
+              TpPageBody(
+                maxWidth: isBento ? 1120 : TpTokens.singleColumnMaxWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    header,
+                    SizedBox(
+                      height: isBento ? TpTokens.space4 : TpTokens.sectionGap,
+                    ),
+                    if (isBento)
+                      TpBentoGrid(
+                        primaryColumn: [
+                          todayClasses,
+                          deadlines,
+                          if (debugPanel != null) debugPanel,
+                        ],
+                        secondaryColumn: [
+                          campusCardStrip,
+                          quickActions,
+                        ],
+                      )
+                    else ...[
+                      campusCardStrip,
                       const SizedBox(height: TpTokens.sectionGap),
-                      debugPanel,
+                      todayClasses,
+                      const SizedBox(height: TpTokens.sectionGap),
+                      deadlines,
+                      const SizedBox(height: TpTokens.sectionGap),
+                      quickActions,
+                      if (debugPanel != null) ...[
+                        const SizedBox(height: TpTokens.sectionGap),
+                        debugPanel,
+                      ],
                     ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -407,8 +456,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildCampusCardStrip(
     CampusCardService campusCard,
-    StorageService storage,
-  ) {
+    StorageService storage, {
+    required bool expandedCard,
+  }) {
     return ListenableBuilder(
       listenable: campusCard,
       builder: (context, _) {
@@ -418,44 +468,50 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         return TpCampusCardStrip(
           configured: campusCard.configured,
           balanceText: balanceText,
-          maskPersonalInfo: storage.maskPersonalInfo,
-          onOpenPayCode: () => unawaited(
-            pushAdaptivePage<void>(
-              context,
-              builder: (_) => const CampusCardPage(
-                entry: CampusCardEntry.paymentCode,
+          hideBalance: storage.hideCampusCardBalance,
+          onToggleHideBalance: () {
+            unawaited(AppHaptics.play(AppHaptics.selection));
+            unawaited(
+              storage.setHideCampusCardBalance(!storage.hideCampusCardBalance),
+            );
+            setState(() {});
+          },
+          expandedCard: expandedCard,
+          onOpenPayCode: () {
+            unawaited(AppHaptics.play(AppHaptics.lightImpact));
+            unawaited(
+              pushAdaptivePage<void>(
+                context,
+                builder: (_) => const CampusCardPage(
+                  entry: CampusCardEntry.paymentCode,
+                ),
               ),
-            ),
-          ),
-          onOpenCard: () => unawaited(
-            pushAdaptivePage<void>(
-              context,
-              builder: (_) => CampusCardPage(
-                entry: campusCard.configured
-                    ? CampusCardEntry.cardManagement
-                    : CampusCardEntry.paymentCode,
-              ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
   }
 
   Widget _buildQuickActions() {
+    // Campus Card already has its own dedicated hero card directly above.
+    final quickFeatures = featureEntries
+        .where((feature) => feature.id != 'campus_card')
+        .toList(growable: false);
     return TpCard(
       key: const ValueKey('home.quick-actions'),
       title: '快捷功能',
       child: AppCard(
-        features: featureEntries,
+        features: quickFeatures,
         rows: 2,
-        columns: 4,
+        columns: 3,
         onFeatureTap: _handleFeatureTap,
       ),
     );
   }
 
   void _handleFeatureTap(Feature feature) {
+    unawaited(AppHaptics.play(AppHaptics.selection));
     if (!ServiceProvider.of(context).authService.isLoggedIn) {
       unawaited(startUniAuthLogin(context));
       return;
@@ -576,14 +632,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final isSoon = status == _CourseStatus.soon;
     final isPast = status == _CourseStatus.past;
 
-    final Color barColor;
-    if (course.isCustom || course.source is ExamCourseSource) {
-      barColor = colors.successGreen;
-    } else if (isActive || index.isEven) {
-      barColor = colors.brand;
-    } else {
-      barColor = colors.infoBlue;
-    }
+    final isExam = course.source is ExamCourseSource;
+    final barColor = isExam
+        ? colors.dangerRed
+        : course.color.accentColor(colors.brightness);
 
     final subtitle = course.location.isNotEmpty
         ? '${course.timeLabel} · ${course.location}'
@@ -594,6 +646,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       trailing = const TpBadge(label: '进行中', tone: TpBadgeTone.brand);
     } else if (isSoon) {
       trailing = const TpBadge(label: '即将开始', tone: TpBadgeTone.success);
+    } else if (isExam) {
+      trailing = const TpBadge(label: '考试', tone: TpBadgeTone.danger);
     }
 
     return TpAccentRow(
@@ -604,15 +658,22 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       boldTitle: isActive,
       opacity: isPast ? 0.45 : 1.0,
       showDivider: index < _todayCourses.length - 1,
+      onTap: () => appShellPendingTab.value = 1,
     );
   }
 
   Widget _buildPendingAssignments(TpColors colors) {
     final now = _now;
+    DateTime activeDueOf(Assignment a) =>
+        (a.effectiveLateDue != null && a.due.isBefore(now))
+            ? a.effectiveLateDue!
+            : a.due;
     final pending = _assignments.visibleAssignments
-        .where((a) => !_assignments.isCompleted(a) && a.due.isAfter(now))
+        .where(
+          (a) => !_assignments.isCompleted(a) && !a.effectiveDue.isBefore(now),
+        )
         .toList()
-      ..sort((a, b) => a.due.compareTo(b.due));
+      ..sort((a, b) => activeDueOf(a).compareTo(activeDueOf(b)));
 
     final showCount = pending.length.clamp(0, 4);
     final overflow = pending.length - showCount;
@@ -647,6 +708,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             if (overflow > 0)
               InkWell(
                 onTap: () => appShellPendingDeadlines.value = true,
+                hoverColor: colors.textPrimary.withValues(
+                  alpha: colors.isDark ? 0.06 : 0.04,
+                ),
+                splashColor: colors.brandSoft,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
                     TpTokens.cardPaddingHorizontal,
@@ -657,17 +722,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        '还有 $overflow 项 · 前往 Deadlines 查看全部',
-                        style: TpTypography.cardMeta(colors).copyWith(
-                          color: colors.brand,
+                      Flexible(
+                        child: Text(
+                          '还有 $overflow 项 · 前往 Deadlines 查看全部',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TpTypography.cardMeta(colors).copyWith(
+                            color: colors.brandInk,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 2),
                       Icon(
                         TpIcons.chevronRight,
                         size: TpTokens.iconXs,
-                        color: colors.brand,
+                        color: colors.brandInk,
                       ),
                     ],
                   ),
@@ -707,9 +776,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     DateTime now, {
     required bool showDivider,
   }) {
-    final dueColor = _dueColor(a.due, now, colors);
-    final dueLabel = _dueLabel(a.due, now);
-    final progress = _urgencyProgress(a.due, now);
+    final inLateWindow = a.effectiveLateDue != null && a.due.isBefore(now);
+    final activeDue = inLateWindow ? a.effectiveLateDue! : a.due;
+    final dueColor =
+        inLateWindow ? colors.dangerRed : _dueColor(activeDue, now, colors);
+    final dueLabel = inLateWindow
+        ? '迟交${_dueLabel(activeDue, now)}'
+        : _dueLabel(activeDue, now);
+    final progress = inLateWindow ? 1.0 : _urgencyProgress(activeDue, now);
     final detail = switch (a) {
       ExamAssignment(:final location) => location.trim(),
       CustomDeadline(:final course, :final location) => [

@@ -144,4 +144,134 @@ void main() {
     expect(mid.canvas, Color.lerp(light.canvas, dark.canvas, 0.5));
     expect(mid.brand, Color.lerp(light.brand, dark.brand, 0.5));
   });
+
+  test('ColorScheme has zero M2 purple/teal leaks, opaque containers & full TechRed wiring',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    final themeService = ThemeService(storage);
+
+    double contrastRatio(Color fg, Color bg) {
+      final l1 = fg.computeLuminance();
+      final l2 = bg.computeLuminance();
+      final hi = l1 > l2 ? l1 : l2;
+      final lo = l1 > l2 ? l2 : l1;
+      return (hi + 0.05) / (lo + 0.05);
+    }
+
+    for (final mode in [
+      AppThemeMode.light,
+      AppThemeMode.dark,
+      AppThemeMode.amoled,
+    ]) {
+      await themeService.setMode(mode);
+      final theme =
+          mode == AppThemeMode.light ? themeService.lightTheme : themeService.darkTheme;
+      final tp = theme.extension<TpColors>()!;
+      final cs = theme.colorScheme;
+
+      // No M2 purple/teal leaks.
+      for (final role in [
+        cs.primaryFixed,
+        cs.primaryFixedDim,
+        cs.secondaryFixed,
+        cs.secondaryFixedDim,
+        cs.tertiaryFixed,
+        cs.tertiaryFixedDim,
+      ]) {
+        expect(role, isNot(const Color(0xFF6200EE)));
+        expect(role, isNot(const Color(0xFFBB86FC)));
+        expect(role, isNot(const Color(0xFF03DAC6)));
+      }
+
+      // Container roles must be fully opaque and distinct from light canvas.
+      expect(cs.primaryContainer.a, 1.0);
+      expect(cs.secondaryContainer.a, 1.0);
+      expect(cs.tertiaryContainer.a, 1.0);
+      expect(cs.errorContainer.a, 1.0);
+      expect(cs.secondaryContainer, isNot(tp.canvas));
+
+      // Legacy & Cupertino wiring.
+      expect(theme.primaryColor, tp.brand);
+      expect(theme.canvasColor, tp.surface);
+      expect(theme.cupertinoOverrideTheme?.applyThemeToAll, isTrue);
+      expect(theme.cupertinoOverrideTheme?.primaryColor, tp.brand);
+
+      // Light bottom glass relies on surfaceContainerLowest == white surface.
+      if (!tp.isDark) {
+        expect(cs.surfaceContainerLowest, TpTokens.lightSurface);
+      }
+
+      // WCAG AA legibility for brandInk, semantic text, muted text, and inversePrimary.
+      expect(contrastRatio(tp.brandInk, tp.surface), greaterThanOrEqualTo(4.5));
+      expect(
+        contrastRatio(tp.brandInk, tp.opaqueBrandContainer),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        contrastRatio(tp.successGreen, tp.surface),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        contrastRatio(tp.warningAmber, tp.surface),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        contrastRatio(tp.textMuted, tp.surface),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        contrastRatio(cs.inversePrimary, cs.inverseSurface),
+        greaterThanOrEqualTo(4.5),
+      );
+    }
+  });
+
+  test(
+      'migrateLegacyDefaultColorScheme upgrades legacy system default once while preserving subsequent choices',
+      () async {
+    SharedPreferences.setMockInitialValues({'color_scheme': 'system'});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+
+    await storage.migrateLegacyDefaultColorScheme();
+    expect(storage.colorScheme, 'techRed');
+    expect(ThemeService(storage).colorScheme, AppColorScheme.techRed);
+
+    await storage.setColorScheme(AppColorScheme.system.name);
+    await storage.migrateLegacyDefaultColorScheme();
+    expect(storage.colorScheme, 'system');
+    expect(ThemeService(storage).colorScheme, AppColorScheme.system);
+  });
+
+  test('colorSchemeLabel and previewColorForScheme match platform accents',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    try {
+      final iosTheme = ThemeService(storage);
+      expect(iosTheme.colorSchemeLabel(AppColorScheme.techRed), '科技红 · TechRed');
+      expect(iosTheme.colorSchemeLabel(AppColorScheme.system), '系统蓝');
+      expect(
+        iosTheme.previewColorForScheme(AppColorScheme.techRed, Brightness.light),
+        TpTokens.techRedLight,
+      );
+      expect(
+        iosTheme.previewColorForScheme(AppColorScheme.system, Brightness.light),
+        TpTokens.iosBlueLight,
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final androidTheme = ThemeService(storage);
+      expect(androidTheme.colorSchemeLabel(AppColorScheme.system), '跟随系统');
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 }

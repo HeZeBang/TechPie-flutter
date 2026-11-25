@@ -44,22 +44,25 @@ Access via `context.tpColors` (registered as a `ThemeExtension<TpColors>` by `Th
 | `surfacePressed` | `#E5E5EA` | `#3A3A3C` | `#28282B` | Pressed/disabled fill |
 | `border` | transparent | `#14FFFFFF` | `#1AFFFFFF` | Hairline card border (light uses contrast only) |
 | `divider` | `#14000000` | `#14FFFFFF` | `#1AFFFFFF` | Subtle inset row divider inside cards |
-| `brand` (default) | `#A30B19` | `#E03140` | `#E03140` | TechRed primary brand accent |
+| `brand` (default) | `#A30B19` | `#E03140` | `#E03140` | TechRed primary brand accent (solid fills, indicators, bars) |
+| `brandInk` | `#A30B19` | `#FF6470` | `#FF6470` | WCAG-AA high-contrast brand text & icons on cards/soft pills |
 | `brandSoft` | 9% `brand` | 14% `brand` | 14% `brand` | Active pill & badge soft tint |
 | `onBrand` | `#FFFFFF` | `#FFFFFF` | `#FFFFFF` | Foreground on `brand` |
 | `textPrimary` | `#171717` | `#FAFAFA` | `#FFFFFF` | Primary titles, body copy, key metrics |
 | `textSecondary` | `#3A3A3C` | `#D1D1D6` | `#D1D1D6` | Tile labels, secondary body |
-| `textMuted` | `#8E8E93` | `#8E8E93` | `#8E8E93` | Dates, rooms, sources, metadata |
+| `textMuted` | `#636366` | `#98989D` | `#98989D` | Dates, rooms, sources, metadata (WCAG AA on `surface`) |
 | `infoBlue` | `#007AFF` | `#0A84FF` | `#0A84FF` | Non-urgent deadlines, secondary course bars |
-| `successGreen` | `#30D158` | `#30D158` | `#30D158` | Online status, custom events, completed state |
-| `warningAmber` | `#D97706` | `#F59E0B` | `#F59E0B` | Upcoming deadline warning (24–72 h) |
+| `successGreen` | `#15803D` | `#30D158` | `#30D158` | Online status, custom events, completed state (WCAG AA) |
+| `warningAmber` | `#B45309` | `#F59E0B` | `#F59E0B` | Upcoming deadline warning (24–72 h, WCAG AA) |
 | `dangerRed` | `#A30B19` | `#FF453A` | `#FF453A` | Urgent deadline (<24 h), destructive/error states |
+
+Derived opaque container helpers (`opaqueBrandContainer`, `opaqueDangerContainer`, `opaqueSuccessContainer`) composite semantic tints onto `surface` so elevated Material 3 controls, selected sidebar items, and banners avoid muddy alpha stacking or transparent-surface contrast regressions.
 
 ### Accent Preference Rule
 
 - **Default on every platform (including iOS)**: `AppColorScheme.techRed`.
 - **Optional `AppColorScheme.system`**: Android uses Material You dynamic accent; iOS uses System Blue (`#007AFF` / `#0A84FF`).
-- Switching accent **only** overrides `brand`, `brandSoft`, and `onBrand`. Neutral surfaces (`canvas`, `surface`, `surfaceSubtle`, `border`, `text*`) stay completely neutral and are never tinted by Material 3 seed generation.
+- Switching accent **only** overrides `brand`, `brandInk`, `brandSoft`, and `onBrand`. Neutral surfaces (`canvas`, `surface`, `surfaceSubtle`, `border`, `text*`) stay completely neutral and are never tinted by Material 3 seed generation.
 
 ## 4. Typography & Iconography
 

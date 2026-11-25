@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/assignment.dart';
 import '../models/assignment_overrides.dart';
@@ -39,6 +40,26 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
   AssignmentService? _service;
 
   @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+  }
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape) {
+      return false;
+    }
+    if (!mounted ||
+        !_selectionMode ||
+        !(ModalRoute.isCurrentOf(context) ?? true)) {
+      return false;
+    }
+    _exitSelectionMode();
+    return true;
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final service = ServiceProvider.of(context).assignmentService;
@@ -51,6 +72,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     _service?.removeListener(_onServiceChanged);
     _tabBarHold?.release();
     super.dispose();
@@ -443,7 +465,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
               return _buildIosRow(context, colors, key, title, subtitle, selected);
             }
             return TpCard(
-              color: selected ? colors.brandSoft : colors.surface,
+              color: selected ? colors.opaqueBrandContainer : colors.surface,
               borderColor: selected ? colors.brand : null,
               borderWidth: selected ? 1.5 : 0.75,
               onTap: _selectionMode ? () => _toggleSelection(key) : null,
@@ -467,7 +489,7 @@ class _HiddenAssignmentsPageState extends State<HiddenAssignmentsPage> {
                         : TpIcons.eyeOff,
                     size: TpTokens.iconM,
                     color: _selectionMode && selected
-                        ? colors.brand
+                        ? colors.brandInk
                         : colors.textMuted,
                   ),
                   const SizedBox(width: TpTokens.space3),

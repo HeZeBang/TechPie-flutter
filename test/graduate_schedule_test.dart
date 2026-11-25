@@ -656,8 +656,11 @@ void main() {
         [
           '/api/schedule/semesters',
           '/api/schedule/course_table',
-          '/api/schedule/term_begin',
         ]);
+    expect(
+      h.requests.where((r) => r.url.path.endsWith('getSchoolCalendar.do')).map((r) => r.url.host),
+      ['egate.shanghaitech.edu.cn'],
+    );
   });
 
   test('a profile with a different student id never opts this account in', () async {
@@ -1785,9 +1788,12 @@ Future<Harness> harness({
             'success': true,
             'data': {'periods': <Object>[], 'courses': <Object>[]},
           },
-        'term_begin' => {
-            'success': true,
-            'data': {'termBegin': '2026-09-07', 'allTeachWeeks': 16, 'allTermWeeks': 20},
+        'getSchoolCalendar.do' => {
+            'code': 200,
+            'schoolYearTerm': '2026-2027-1',
+            'termBegin': '2026-09-07',
+            'allTeachWeeks': 16,
+            'allTermWeeks': 20,
           },
         _ => throw StateError('Unexpected request ${request.url.path}'),
       };

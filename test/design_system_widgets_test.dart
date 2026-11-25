@@ -113,44 +113,77 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('TpCampusCardStrip respects privacy blur and configured state',
+  testWidgets('TpCampusCardStrip respects balance eye toggle and configured state',
       (tester) async {
     var payTaps = 0;
-    var cardTaps = 0;
+    var toggleTaps = 0;
 
-    // Configured + blurred
+    // Configured + hidden balance
     await tester.pumpWidget(
       wrap(
         TpCampusCardStrip(
           configured: true,
           balanceText: '¥ 128.50',
-          maskPersonalInfo: true,
+          hideBalance: true,
+          onToggleHideBalance: () => toggleTaps++,
           onOpenPayCode: () => payTaps++,
-          onOpenCard: () => cardTaps++,
         ),
       ),
     );
     expect(find.text('余额 ••••'), findsOneWidget);
     expect(find.text('余额 ¥ 128.50'), findsNothing);
     expect(find.text('亮码'), findsOneWidget);
+
+    final eyeFinder =
+        find.byKey(const ValueKey('home.campus-card-balance-toggle'));
+    final eyeSize = tester.getSize(eyeFinder);
+    expect(eyeSize.width, greaterThanOrEqualTo(36));
+    expect(eyeSize.height, greaterThanOrEqualTo(36));
+
+    await tester.tap(eyeFinder);
+    expect(toggleTaps, 1);
+    expect(payTaps, 0);
+
+    // Off-center tap near the edge of the enlarged eye hit box still toggles
+    // balance without accidentally opening the payment code.
+    await tester.tapAt(tester.getCenter(eyeFinder) + const Offset(14, 13));
+    expect(toggleTaps, 2);
+    expect(payTaps, 0);
+
+    // Tapping the passive QR indicator and the rest of the card both open pay.
     await tester.tap(find.byKey(const ValueKey('home.campus-card-pay')));
     expect(payTaps, 1);
+    await tester.tap(find.text('校园卡'));
+    expect(payTaps, 2);
 
-    // Configured + unblurred
+    // Configured + visible balance (default)
     await tester.pumpWidget(
       wrap(
         TpCampusCardStrip(
           configured: true,
           balanceText: '¥ 128.50',
-          maskPersonalInfo: false,
+          onToggleHideBalance: () => toggleTaps++,
           onOpenPayCode: () => payTaps++,
-          onOpenCard: () => cardTaps++,
         ),
       ),
     );
     expect(find.text('余额 ¥ 128.50'), findsOneWidget);
     await tester.tap(find.text('余额 ¥ 128.50'));
-    expect(cardTaps, 1);
+    expect(payTaps, 3);
+
+    // Configured + uncached balance prompt
+    await tester.pumpWidget(
+      wrap(
+        TpCampusCardStrip(
+          configured: true,
+          balanceText: null,
+          onToggleHideBalance: () => toggleTaps++,
+          onOpenPayCode: () => payTaps++,
+        ),
+      ),
+    );
+    expect(find.text('点击亮码'), findsOneWidget);
+    expect(find.text('点击查看卡包与余额'), findsNothing);
 
     // Unconfigured
     await tester.pumpWidget(
@@ -158,14 +191,132 @@ void main() {
         TpCampusCardStrip(
           configured: false,
           balanceText: null,
-          maskPersonalInfo: true,
+          hideBalance: true,
           onOpenPayCode: () => payTaps++,
-          onOpenCard: () => cardTaps++,
         ),
       ),
     );
     expect(find.text('进入'), findsOneWidget);
     expect(find.text('绑定后可一键亮码与查看余额'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home.campus-card-balance-toggle')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('home.campus-card-strip')));
+    expect(payTaps, 4);
+  });
+
+  testWidgets(
+      'TpCampusCardStrip expanded entity card keeps 707:445 proportions, fills tight height, and opens pay code across surface',
+      (tester) async {
+    var toggleTaps = 0;
+    var payTaps = 0;
+
+    for (final width in [304.0, 400.0, 496.0]) {
+      await tester.pumpWidget(
+        wrap(
+          Center(
+            child: SizedBox(
+              width: width,
+              child: TpCampusCardStrip(
+                configured: true,
+                balanceText: '¥ 128.50',
+                hideBalance: false,
+                onToggleHideBalance: () => toggleTaps++,
+                expandedCard: true,
+                onOpenPayCode: () => payTaps++,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final cardSize = tester.getSize(
+        find.byKey(const ValueKey('home.campus-card-strip')),
+      );
+      final headerSize = tester.getSize(
+        find.byKey(const ValueKey('home.campus-card-header-band')),
+      );
+      expect(
+        cardSize.height,
+        closeTo(width / TpCampusCardStrip.cardAspectRatio, 2.0),
+      );
+      expect(headerSize.width, closeTo(width, 2.0));
+      expect(headerSize.height, greaterThanOrEqualTo(54.0));
+    }
+
+    final eyeFinder =
+        find.byKey(const ValueKey('home.campus-card-balance-toggle'));
+    final eyeSize = tester.getSize(eyeFinder);
+    expect(eyeSize.width, greaterThanOrEqualTo(36));
+    expect(eyeSize.height, greaterThanOrEqualTo(36));
+
+    await tester.tap(eyeFinder);
+    await tester.pumpAndSettle();
+    expect(toggleTaps, 1);
+    expect(payTaps, 0);
+
+    await tester.tapAt(tester.getCenter(eyeFinder) + const Offset(13, 12));
+    await tester.pumpAndSettle();
+    expect(toggleTaps, 2);
+    expect(payTaps, 0);
+
+    await tester.tap(find.byKey(const ValueKey('home.campus-card-header-band')));
+    await tester.pumpAndSettle();
+    expect(payTaps, 1);
+
+    await tester.tap(find.byKey(const ValueKey('home.campus-card-entity-balance')));
+    await tester.pumpAndSettle();
+    expect(payTaps, 2);
+
+    await tester.tap(find.byKey(const ValueKey('home.campus-card-pay')));
+    await tester.pumpAndSettle();
+    expect(payTaps, 3);
+
+    // Configured + uncached balance prompt
+    await tester.pumpWidget(
+      wrap(
+        Center(
+          child: SizedBox(
+            width: 360,
+            child: TpCampusCardStrip(
+              configured: true,
+              balanceText: null,
+              expandedCard: true,
+              onToggleHideBalance: () => toggleTaps++,
+              onOpenPayCode: () => payTaps++,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('点击亮码'), findsOneWidget);
+
+    // Tight bounded height fills 100% top-to-bottom cleanly.
+    await tester.pumpWidget(
+      wrap(
+        Center(
+          child: SizedBox(
+            width: 420,
+            height: 310,
+            child: TpCampusCardStrip(
+              configured: true,
+              balanceText: '¥ 128.50',
+              expandedCard: true,
+              onOpenPayCode: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('home.campus-card-strip'))).height,
+      closeTo(310.0, 2.0),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('TpFeatureGrid fits 4 columns cleanly at 320px narrow width',

@@ -558,10 +558,27 @@ distinguishable in git, and the file names deliberately do not try to.
   history — `ci/publish-buildenv.sh` stages what the developer machine has and
   pushes it to a private GHCR package, and `ohos-release.yml` pulls it with
   `container:`. The job therefore runs on a stock `ubuntu-24.04`, and there is no
-  `OHOS_CI_ENABLED` / `OHOS_CI_RUNNER` to configure. Upgrading either toolchain
-  means re-running `ci/publish-buildenv.sh` and copying the tag it prints into the
-  workflow's `container.image`; the workflow pins that tag, never `latest`, so a
-  release always names the toolchain it was built and tested against.
+  `OHOS_CI_ENABLED` / `OHOS_CI_RUNNER` to configure. The tag is derived, never
+  hand-written: `<cli version>-<fork version>-r<digest of the recipe>`, where the
+  digest is the Dockerfile with comments stripped. Half of what the image
+  promises is the recipe, so upgrading either toolchain *or* changing what the
+  image bakes means re-running `ci/publish-buildenv.sh` and copying the tag it
+  prints into the workflow's `container.image`; the workflow pins that tag, never
+  `latest`, so a release always names the toolchain and recipe it was built and
+  tested against.
+  Two things in that recipe are not size and not convenience: (1) the image
+  **ships a valid `bin/cache/flutter_tools.stamp`**, because `flutter precache
+  --force` calls `Cache.clearStampFiles()` and deletes it — without the stamp the
+  job's first `flutter` invocation recompiles the tool, and in CI that rebuild is
+  `pub upgrade`, which answers with a gitcode `418` when that host refuses the
+  runner (it cost two 1.0.4 candidates; the Dockerfile therefore runs `flutter
+  --version` *after* `precache`, and `ohos-release.yml` fails fast if the stamp is
+  missing); (2) the image **bakes bare mirrors of the gitcode repos** and rewrites
+  them with `url.<mirror>.insteadOf`, so the fork's `flutter_tools` overrides and
+  the app's `fluttertpc_flutter_secure_storage` resolve without that host, at the
+  commits the image was built from. gitee is not mirrored (it has never refused a
+  runner and costs 536 MB); a host that starts refusing gets a line in that list,
+  which changes the digest and therefore the tag.
   Two settings on the GHCR package are what let the job pull it, and neither is
   implied by the other: **Connect repository** (links the package to this repo) and,
   under **Manage Actions access**, **Add repository** — the documented way to let a

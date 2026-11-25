@@ -40,11 +40,13 @@ class TpBadge extends StatelessWidget {
             Icon(icon, size: TpTokens.iconXs - 2, color: fg),
             const SizedBox(width: TpTokens.space1),
           ],
-          Text(
-            label,
-            style: TpTypography.badge(fg),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          Flexible(
+            child: Text(
+              label,
+              style: TpTypography.badge(fg),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),
@@ -54,7 +56,7 @@ class TpBadge extends StatelessWidget {
   (Color, Color) _resolveColors(TpColors colors) {
     final alpha = colors.isDark ? 0.16 : 0.10;
     return switch (tone) {
-      TpBadgeTone.brand => (colors.brand, colors.brandSoft),
+      TpBadgeTone.brand => (colors.brandInk, colors.brandSoft),
       TpBadgeTone.info => (
           colors.infoBlue,
           colors.infoBlue.withValues(alpha: alpha),

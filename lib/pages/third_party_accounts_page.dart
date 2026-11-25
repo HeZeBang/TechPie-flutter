@@ -153,7 +153,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                                 child: Icon(
                                   TpIcons.linkedAccounts,
                                   size: TpTokens.iconM,
-                                  color: colors.brand,
+                                  color: colors.brandInk,
                                 ),
                               ),
                               const SizedBox(width: TpTokens.space3),
@@ -212,7 +212,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                             renewStatus: tpAuth.renewStatus('ids'),
                             showDivider: true,
                           ),
-                          Container(
+                          Material(
                             color: colors.surfaceSubtle.withValues(
                               alpha: colors.isDark ? 0.55 : 0.65,
                             ),
@@ -262,7 +262,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                           TpListRow(
                             icon: TpIcons.wallet,
                             iconColor: campusCard.configured
-                                ? colors.brand
+                                ? colors.brandInk
                                 : colors.textMuted,
                             title: 'eCard',
                             subtitle: campusCard.configured
@@ -494,7 +494,7 @@ class _TopLevelTileState extends State<_TopLevelTile> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                _dottedIcon(colors, _icon, colors.brand, health),
+                _dottedIcon(colors, _icon, colors.brandInk, health),
                 const SizedBox(width: TpTokens.space3),
                 Expanded(
                   child: Column(
@@ -797,7 +797,7 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
                 _dottedIcon(
                   colors,
                   widget.icon,
-                  colors.brand,
+                  colors.brandInk,
                   health,
                   size: TpTokens.iconS,
                 ),

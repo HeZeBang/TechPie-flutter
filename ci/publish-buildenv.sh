@@ -14,10 +14,12 @@
 # of the sources and the stage dir sharing a filesystem; it falls back to a real
 # copy when they do not.
 #
-# The image tag is derived from the two toolchain versions, never hand-written:
-# a tag that says what is inside it is the only way to tell two builds of this
-# image apart, and `latest` would let CI drift from the toolchain it was tested
-# against. After pushing, point `container.image` in
+# The image tag is derived, never hand-written: the two toolchain versions plus a
+# digest of the image recipe (the Dockerfile, comments excluded). A tag that says
+# what is inside it is the only way to tell two builds of this image apart;
+# `latest` would let CI drift from the toolchain it was tested against, and a
+# recipe change under an unchanged version pair would leave two different images
+# wearing one tag. After pushing, point `container.image` in
 # .github/workflows/ohos-release.yml at the printed tag.
 
 set -euo pipefail
@@ -59,7 +61,16 @@ docker_tag() {
   printf '%s' "${1//+/_}"
 }
 
-tag="$(docker_tag "${cli_version}-${flutter_version}")"
+# The tag has to name everything that decides what is in the image, or two
+# different images can wear one name. The toolchain versions are half of it; the
+# recipe is the other half — the Dockerfile is where the gitcode mirrors and
+# their pinned commits live (see the mirror step), so an edit there changes what
+# a release resolves to without touching either toolchain version.
+#
+# The digest is taken over the recipe with comments and blank lines removed: a
+# comment edit must not demand a 3.7 GB republish, a real line edit must.
+recipe="$(sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//' -e '/^$/d' "$DOCKERFILE" | sha256sum | cut -c1-8)"
+tag="$(docker_tag "${cli_version}-${flutter_version}")-r${recipe}"
 
 # --- Staging context --------------------------------------------------------
 # Next to the sources so the hard links are on one filesystem; $TMPDIR may be a

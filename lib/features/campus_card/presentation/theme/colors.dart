@@ -136,8 +136,35 @@ final class GpColors extends ThemeExtension<GpColors> {
   GpColors copyWith() => this;
 
   @override
-  GpColors lerp(ThemeExtension<GpColors>? other, double t) =>
-      t < 0.5 ? this : (other as GpColors? ?? this);
+  GpColors lerp(ThemeExtension<GpColors>? other, double t) {
+    if (other is! GpColors) return this;
+    Color mix(Color a, Color b) => Color.lerp(a, b, t) ?? a;
+    return GpColors(
+      brightness: t < 0.5 ? brightness : other.brightness,
+      bg: mix(bg, other.bg),
+      surface: mix(surface, other.surface),
+      surfaceRaised: mix(surfaceRaised, other.surfaceRaised),
+      textPrimary: mix(textPrimary, other.textPrimary),
+      textSecondary: mix(textSecondary, other.textSecondary),
+      textDisabled: mix(textDisabled, other.textDisabled),
+      surfaceDisabled: mix(surfaceDisabled, other.surfaceDisabled),
+      action: mix(action, other.action),
+      actionAlt: mix(actionAlt, other.actionAlt),
+      onAction: mix(onAction, other.onAction),
+      accent: mix(accent, other.accent),
+      border: mix(border, other.border),
+      borderStrong: mix(borderStrong, other.borderStrong),
+      success: mix(success, other.success),
+      warning: mix(warning, other.warning),
+      danger: mix(danger, other.danger),
+      statusNormal: mix(statusNormal, other.statusNormal),
+      statusAbnormal: mix(statusAbnormal, other.statusAbnormal),
+      qrForeground: mix(qrForeground, other.qrForeground),
+      qrBackground: mix(qrBackground, other.qrBackground),
+      cardMat: mix(cardMat, other.cardMat),
+      textOnCard: mix(textOnCard, other.textOnCard),
+    );
+  }
 }
 
 extension GpColorsContext on BuildContext {

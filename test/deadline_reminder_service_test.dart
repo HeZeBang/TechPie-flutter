@@ -571,7 +571,7 @@ void main() {
           );
           bar().onMenuSelected!(more.id, 'manageReminders');
         } else {
-          await tester.tap(find.byType(PopupMenuButton<String>));
+          await tester.tap(find.byTooltip('更多操作'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('添加到提醒事项'));
         }

@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../theme/theme.dart';
+import '../utils/haptics.dart';
 import 'desktop_popup.dart';
 
 typedef DesktopSelectAnchorBuilder = Widget Function(
@@ -53,28 +57,31 @@ class _DesktopSelectPopoverState<T> extends State<DesktopSelectPopover<T>> {
   final GlobalKey _anchorKey = GlobalKey();
   OverlayEntry? _entry;
   ScrollController? _scrollController;
+  KeyEventCallback? _keyHandler;
+  DesktopPopoverMotionController? _motionController;
+  bool _closing = false;
 
-  bool get _isOpen => _entry != null;
+  bool get _isOpen => _entry != null && !_closing;
 
   @override
   void didUpdateWidget(covariant DesktopSelectPopover<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_isOpen &&
+    if (_entry != null &&
         (oldWidget.value != widget.value ||
             !listEquals(oldWidget.items, widget.items))) {
-      _close(notify: false);
+      _close(notify: false, immediate: true);
     }
   }
 
   @override
   void dispose() {
-    _close(notify: false);
+    _close(notify: false, immediate: true);
     super.dispose();
   }
 
   @override
   void reassemble() {
-    _close(notify: false);
+    _close(notify: false, immediate: true);
     super.reassemble();
   }
 
@@ -88,6 +95,9 @@ class _DesktopSelectPopoverState<T> extends State<DesktopSelectPopover<T>> {
 
   void _open() {
     if (widget.items.isEmpty) return;
+    if (_entry != null) {
+      _close(notify: false, immediate: true);
+    }
 
     final anchorContext = _anchorKey.currentContext;
     if (anchorContext == null) return;
@@ -111,6 +121,8 @@ class _DesktopSelectPopoverState<T> extends State<DesktopSelectPopover<T>> {
     final top = rawTop
         .clamp(16.0, math.max(16.0, screenSize.height - menuHeight - 24))
         .toDouble();
+    final alignment =
+        left >= anchorOffset.dx ? Alignment.topLeft : Alignment.topRight;
 
     final selectedIndex = widget.items.indexOf(widget.value);
     final initialIndex = selectedIndex < 0
@@ -123,7 +135,10 @@ class _DesktopSelectPopoverState<T> extends State<DesktopSelectPopover<T>> {
     final scrollController = ScrollController(
       initialScrollOffset: initialIndex * widget.itemHeight,
     );
+    final motionController = DesktopPopoverMotionController();
     _scrollController = scrollController;
+    _motionController = motionController;
+    _closing = false;
 
     _entry = OverlayEntry(
       builder: (context) {
@@ -140,20 +155,25 @@ class _DesktopSelectPopoverState<T> extends State<DesktopSelectPopover<T>> {
               left: left,
               top: top,
               width: widget.width,
-              child: Theme(
-                data: theme,
-                child: _DesktopSelectMenu<T>(
-                  items: widget.items,
-                  value: widget.value,
-                  controller: scrollController,
-                  itemHeight: widget.itemHeight,
-                  visibleItemCount: widget.visibleItemCount,
-                  labelBuilder: widget.labelBuilder,
-                  leadingBuilder: widget.leadingBuilder,
-                  onSelected: (item) {
-                    _close();
-                    widget.onChanged(item);
-                  },
+              child: DesktopPopoverMotion(
+                controller: motionController,
+                alignment: alignment,
+                child: Theme(
+                  data: theme,
+                  child: _DesktopSelectMenu<T>(
+                    items: widget.items,
+                    value: widget.value,
+                    controller: scrollController,
+                    itemHeight: widget.itemHeight,
+                    visibleItemCount: widget.visibleItemCount,
+                    labelBuilder: widget.labelBuilder,
+                    leadingBuilder: widget.leadingBuilder,
+                    onSelected: (item) {
+                      unawaited(AppHaptics.play(AppHaptics.selection));
+                      _close();
+                      widget.onChanged(item);
+                    },
+                  ),
                 ),
               ),
             ),
@@ -162,16 +182,68 @@ class _DesktopSelectPopoverState<T> extends State<DesktopSelectPopover<T>> {
       },
     );
 
+    _keyHandler = (event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        _close();
+        return true;
+      }
+      return false;
+    };
+    HardwareKeyboard.instance.addHandler(_keyHandler!);
     overlay.insert(_entry!);
     setState(() {});
   }
 
-  void _close({bool notify = true}) {
-    _entry?.remove();
-    _entry = null;
-    _scrollController?.dispose();
-    _scrollController = null;
+  void _removeOverlayNow({
+    required OverlayEntry? entry,
+    required ScrollController? scrollController,
+    required bool notify,
+  }) {
+    if (_entry == entry) {
+      _entry = null;
+      _motionController = null;
+      _closing = false;
+    }
+    entry?.remove();
+    if (_scrollController == scrollController) {
+      _scrollController = null;
+    }
+    scrollController?.dispose();
     if (notify && mounted) setState(() {});
+  }
+
+  void _close({bool notify = true, bool immediate = false}) {
+    if (_keyHandler != null) {
+      HardwareKeyboard.instance.removeHandler(_keyHandler!);
+      _keyHandler = null;
+    }
+    final entry = _entry;
+    final scrollController = _scrollController;
+    final motion = _motionController;
+    if (entry == null) return;
+
+    if (immediate || motion == null) {
+      _removeOverlayNow(
+        entry: entry,
+        scrollController: scrollController,
+        notify: notify,
+      );
+      return;
+    }
+
+    if (_closing) return;
+    _closing = true;
+    if (notify && mounted) setState(() {});
+    unawaited(
+      motion.dismiss().whenComplete(
+        () => _removeOverlayNow(
+          entry: entry,
+          scrollController: scrollController,
+          notify: notify,
+        ),
+      ),
+    );
   }
 
   @override
@@ -255,13 +327,17 @@ class _DesktopSelectMenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colors = context.tpColors;
 
-    return InkWell(
-      onTap: onTap,
-      child: ColoredBox(
-        color:
-            selected ? colorScheme.surfaceContainerHighest : Colors.transparent,
+    return Material(
+      color: selected ? colors.opaqueBrandContainer : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        hoverColor: colors.textPrimary.withValues(
+          alpha: colors.isDark ? 0.06 : 0.04,
+        ),
+        highlightColor: colors.textPrimary.withValues(alpha: 0.06),
+        splashColor: colors.brand.withValues(alpha: 0.10),
         child: Row(
           children: [
             SizedBox(
@@ -271,13 +347,21 @@ class _DesktopSelectMenuRow extends StatelessWidget {
                     (selected
                         ? Icon(
                             Icons.check_rounded,
-                            size: 24,
-                            color: colorScheme.primary,
+                            size: 20,
+                            color: colors.brandInk,
                           )
                         : const SizedBox.shrink()),
               ),
             ),
-            Expanded(child: Text(label, style: theme.textTheme.titleMedium)),
+            Expanded(
+              child: Text(
+                label,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: colors.textPrimary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
           ],
         ),
       ),

@@ -18,7 +18,8 @@ class GymSearchTab extends StatefulWidget {
   State<GymSearchTab> createState() => _GymSearchTabState();
 }
 
-class _GymSearchTabState extends State<GymSearchTab> {
+class _GymSearchTabState extends State<GymSearchTab>
+    with AutomaticKeepAliveClientMixin {
   DateTime _startDate = DateTime.now();
   DateTime _endDate = DateTime.now();
   RangeValues _timeRange = const RangeValues(18, 20);
@@ -26,13 +27,18 @@ class _GymSearchTabState extends State<GymSearchTab> {
   final Set<String> _venues = {};
   List<OaCourtSearchResult> _results = [];
   bool _loading = false;
+  bool _hasSearched = false;
   String? _error;
   int _searchRequest = 0;
   bool _metadataStarted = false;
 
+  @override
+  bool get wantKeepAlive => true;
+
   void _invalidateSearch() {
     _searchRequest++;
     _loading = false;
+    _hasSearched = false;
     _results = [];
     _error = null;
   }
@@ -102,6 +108,7 @@ class _GymSearchTabState extends State<GymSearchTab> {
 
     setState(() {
       _loading = true;
+      _hasSearched = true;
       _error = null;
       _results = [];
     });
@@ -138,6 +145,7 @@ class _GymSearchTabState extends State<GymSearchTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final colors = context.tpColors;
     final service = ServiceProvider.of(context).oaGymService;
     final groupedVenues = gymVenuesBySport(service.venues.keys, _sports);
@@ -404,7 +412,7 @@ class _GymSearchTabState extends State<GymSearchTab> {
                                 ),
                                 for (var i = 0; i < timeGroup.items.length; i++)
                                   TpAccentRow(
-                                    accentColor: colors.infoBlue,
+                                    accentColor: colors.brand,
                                     title: timeGroup.items[i].venue,
                                     subtitle: [
                                       if (timeGroup.items[i].user.isNotEmpty)
@@ -433,7 +441,10 @@ class _GymSearchTabState extends State<GymSearchTab> {
                   ),
                 )
               else if (!_loading && _error == null)
-                const GymMessageCard(message: '暂无查询结果', isError: false),
+                GymMessageCard(
+                  message: _hasSearched ? '暂无查询结果' : '选择条件后点击「查询预约记录」',
+                  isError: false,
+                ),
             ],
           ),
         ),
@@ -462,6 +473,10 @@ class _DatePickChip extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        hoverColor: colors.textPrimary.withValues(
+          alpha: colors.isDark ? 0.06 : 0.04,
+        ),
+        splashColor: colors.brandSoft,
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: TpTokens.space3,

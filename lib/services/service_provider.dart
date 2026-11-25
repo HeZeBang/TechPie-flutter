@@ -20,6 +20,7 @@ import 'theme_service.dart';
 import 'third_party_auth_service.dart';
 import 'uni_auth_service.dart';
 import 'update_service.dart';
+import 'wear/wear_engine_service.dart';
 
 class ServiceProvider extends InheritedWidget {
   final AuthService authService;
@@ -38,6 +39,7 @@ class ServiceProvider extends InheritedWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final WearEngineService? wearEngineService;
   final DeadlineWidgetService? deadlineWidgetService;
   final DeadlineReminderService? deadlineReminderService;
   final SpendingAlertService? spendingAlertService;
@@ -61,6 +63,7 @@ class ServiceProvider extends InheritedWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.wearEngineService,
     this.deadlineWidgetService,
     this.deadlineReminderService,
     this.spendingAlertService,
@@ -94,6 +97,7 @@ class ServiceProvider extends InheritedWidget {
       campusCardService != oldWidget.campusCardService ||
       ecardBindService != oldWidget.ecardBindService ||
       ecardWidgetService != oldWidget.ecardWidgetService ||
+      wearEngineService != oldWidget.wearEngineService ||
       deadlineWidgetService != oldWidget.deadlineWidgetService ||
       deadlineReminderService != oldWidget.deadlineReminderService ||
       spendingAlertService != oldWidget.spendingAlertService;

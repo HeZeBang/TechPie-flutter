@@ -88,6 +88,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
       _weekdays.add(DateTime.now().weekday);
       _startPeriod = 1;
       _endPeriod = 1;
+      _color = _pickDefaultColor();
       return;
     }
 
@@ -299,31 +300,42 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     }
 
     setState(() => _saving = true);
-    await _schedule.saveCustomCourse(
-      semesterId!,
-      CustomCourse(
-        id: _id ?? CustomCourse.newId(),
-        semesterId: _originSemesterId ?? semesterId,
-        name: name,
-        location: _location.text.trim(),
-        teachers: _teachers.text.trim(),
-        // A one-off is placed by its own date; a stored column could only
-        // disagree with it later.
-        weekdays: _isOneOff ? const [] : (_weekdays.toList()..sort()),
-        time: _timeMode == 0
-            ? periodTime
-            : ClockCourseTime(
-                startTime: _formatTime(_startTime),
-                endTime: _formatTime(_endTime),
-              ),
-        weeks: _isOneOff ? const [] : (_weeks.toList()..sort()),
-        date: _isOneOff ? _date : null,
-        color: _color,
-      ),
-      periods: _periods,
-    );
-    if (!mounted) return;
-    Navigator.pop(context);
+    try {
+      await _schedule.saveCustomCourse(
+        semesterId!,
+        CustomCourse(
+          id: _id ?? CustomCourse.newId(),
+          semesterId: _originSemesterId ?? semesterId,
+          name: name,
+          location: _location.text.trim(),
+          teachers: _teachers.text.trim(),
+          // A one-off is placed by its own date; a stored column could only
+          // disagree with it later.
+          weekdays: _isOneOff ? const [] : (_weekdays.toList()..sort()),
+          time: _timeMode == 0
+              ? periodTime
+              : ClockCourseTime(
+                  startTime: _formatTime(_startTime),
+                  endTime: _formatTime(_endTime),
+                ),
+          weeks: _isOneOff ? const [] : (_weeks.toList()..sort()),
+          date: _isOneOff ? _date : null,
+          color: _color,
+        ),
+        periods: _periods,
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (error) {
+      if (!mounted) return;
+      showAdaptiveFeedback(
+        context: context,
+        message: '保存失败：$error',
+        style: AdaptiveFeedbackStyle.error,
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _delete() async {
@@ -417,6 +429,13 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                         ],
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: TpTokens.sectionGap),
+                _section(
+                  '颜色',
+                  children: [
+                    _buildColorPicker(context, colors),
                   ],
                 ),
                 const SizedBox(height: TpTokens.sectionGap),
@@ -705,18 +724,126 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
     final week =
         date == null ? null : teachingWeekOf(date, _schedule.termBegin);
 
-    return TpListRow(
-      icon: TpIcons.calendar,
-      title: '上课日期',
-      subtitle: date == null
-          ? '未选择'
-          : '${_formatDate(date)} ${_weekdayLabels[date.weekday - 1]}'
-              '${week == null ? '' : ' · 第 $week 周'}',
-      trailing: Text(
-        '选择',
-        style: TpTypography.badge(colors.brand),
-      ),
+    return InkWell(
       onTap: _pickDate,
+      borderRadius: BorderRadius.circular(TpTokens.radiusS),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              TpIcons.calendar,
+              size: TpTokens.iconM,
+              color: colors.brandInk,
+            ),
+            const SizedBox(width: TpTokens.space3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '上课日期',
+                    style: TpTypography.itemTitle(colors)
+                        .copyWith(fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    date == null
+                        ? '未选择'
+                        : '${_formatDate(date)} ${_weekdayLabels[date.weekday - 1]}'
+                            '${week == null ? '' : ' · 第 $week 周'}',
+                    style: TpTypography.itemMeta(colors),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: TpTokens.space2),
+            Text(
+              '选择',
+              style: TpTypography.badge(colors.brandInk),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  CourseColor _pickDefaultColor() {
+    final used = <CourseColor>{
+      ...assignCourseColors(
+        _schedule.fullCourseTable?.courses ?? const <EamsCourse>[],
+      ).values,
+      for (final c in _schedule.customCoursesFor(_semesterId)) c.color,
+    };
+    return CourseColor.regularPalette.firstWhere(
+      (color) => !used.contains(color),
+      orElse: () => CourseColor.regularPalette[
+          used.length % CourseColor.regularPalette.length],
+    );
+  }
+
+  Widget _buildColorPicker(BuildContext context, TpColors colors) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final options = <CourseColor>[
+      ...CourseColor.regularPalette,
+      if (_color == CourseColor.error) CourseColor.error,
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: TpTokens.space1),
+      child: Wrap(
+        spacing: TpTokens.space2,
+        runSpacing: TpTokens.space2,
+        children: [
+          for (final option in options)
+            _buildColorSwatch(
+              option: option,
+              selected: option == _color,
+              colorScheme: colorScheme,
+              colors: colors,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildColorSwatch({
+    required CourseColor option,
+    required bool selected,
+    required ColorScheme colorScheme,
+    required TpColors colors,
+  }) {
+    final accent = option.accentColor(colors.brightness);
+    final fill = option.containerColor(colorScheme);
+    final checkColor = option.onContainerColor(colorScheme);
+    return Tooltip(
+      message: option.displayLabel,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: '课程颜色：${option.displayLabel}',
+        child: InkResponse(
+          key: ValueKey('custom-course.color.${option.name}'),
+          onTap: () => setState(() => _color = option),
+          radius: 18,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected ? fill : accent,
+              border: Border.all(
+                color: selected ? accent : option.borderColor(colors.brightness),
+                width: selected ? 2.5 : 1,
+              ),
+            ),
+            child: selected
+                ? Icon(TpIcons.check, size: TpTokens.iconS, color: checkColor)
+                : null,
+          ),
+        ),
+      ),
     );
   }
 

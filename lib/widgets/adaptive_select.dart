@@ -1,5 +1,7 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:techpie/theme/theme.dart';
 import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/ios/ios_native_select.dart';
 
@@ -8,11 +10,13 @@ class AdaptiveSelectOption {
     required this.value,
     required this.label,
     this.sfSymbol,
+    this.sfSymbolColor,
   });
 
   final String value;
   final String label;
   final String? sfSymbol;
+  final Color? sfSymbolColor;
 }
 
 class AdaptiveSelect extends StatelessWidget {
@@ -27,6 +31,8 @@ class AdaptiveSelect extends StatelessWidget {
     this.useIosNativeMenu = true,
     this.shrinkWrap = false,
     this.accessibilityLabel,
+    this.iosButtonStyle = CNButtonStyle.glass,
+    this.iosTint,
   });
 
   final List<AdaptiveSelectOption> options;
@@ -44,6 +50,8 @@ class AdaptiveSelect extends StatelessWidget {
   /// in a list row is, instead of [width].
   final bool shrinkWrap;
   final String? accessibilityLabel;
+  final CNButtonStyle iosButtonStyle;
+  final Color? iosTint;
 
   @override
   Widget build(BuildContext context) {
@@ -64,12 +72,15 @@ class AdaptiveSelect extends StatelessWidget {
           value: value,
           placeholder: placeholder,
           accessibilityLabel: accessibilityLabel ?? placeholder,
+          buttonStyle: iosButtonStyle,
+          tint: iosTint,
           options: [
             for (final option in options)
               IosNativeSelectOption(
                 value: option.value,
                 label: option.label,
                 sfSymbol: option.sfSymbol,
+                sfSymbolColor: option.sfSymbolColor,
               ),
           ],
           onChanged: onChanged,
@@ -118,16 +129,26 @@ class AdaptiveSelect extends StatelessWidget {
   }
 
   Widget _buildMaterialSelect(BuildContext context) {
+    final colors = context.tpColors;
+    final radius = BorderRadius.circular(TpTokens.radiusS);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(14),
+        color: colors.surfaceSubtle,
+        borderRadius: radius,
+        border: Border.all(
+          color: colors.isDark
+              ? colors.border
+              : Theme.of(context).colorScheme.outline.withValues(alpha: 0.45),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             isExpanded: true,
+            dropdownColor: colors.surface,
+            focusColor: colors.brandSoft,
+            borderRadius: radius,
             value:
                 options.any((option) => option.value == value) ? value : null,
             hint: Text(placeholder),

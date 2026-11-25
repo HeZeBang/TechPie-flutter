@@ -254,7 +254,7 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
             children: [
               TpListRow(
                 icon: TpIcons.calendar,
-                iconColor: colors.brand,
+                iconColor: colors.brandInk,
                 title: '截止日期',
                 subtitle: date == null
                     ? '未选择'

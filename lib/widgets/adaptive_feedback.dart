@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../theme/theme.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import 'adaptive_alert_dialog.dart';
@@ -258,35 +259,50 @@ class _FeedbackBanner extends StatelessWidget {
     final style = _FeedbackStyle.from(theme, entry.style);
     final radius = BorderRadius.circular(rounded ? 16 : 10);
 
-    return AnimatedContainer(
-      duration: repositionDuration,
-      curve: repositionCurve,
-      decoration: BoxDecoration(
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: Material(
         color: style.backgroundColor,
-        borderRadius: radius,
-        boxShadow: kElevationToShadow[6],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(style.icon, color: style.foregroundColor),
-          const SizedBox(width: 12),
-          Flexible(
-            child: Text(
-              entry.message,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: style.foregroundColor),
-            ),
+        elevation: 6,
+        shadowColor: Colors.black.withValues(alpha: 0.25),
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: style.borderColor == null
+              ? BorderSide.none
+              : BorderSide(color: style.borderColor!),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: AnimatedContainer(
+          duration: repositionDuration,
+          curve: repositionCurve,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(style.icon, color: style.iconColor),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  entry.message,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: style.foregroundColor),
+                ),
+              ),
+              if (entry.actionLabel != null) ...[
+                const SizedBox(width: 8),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: style.actionColor,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  onPressed: () =>
+                      adaptiveFeedbackHostKey.currentState?._runAction(entry),
+                  child: Text(entry.actionLabel!),
+                ),
+              ],
+            ],
           ),
-          if (entry.actionLabel != null) ...[
-            const SizedBox(width: 8),
-            TextButton(
-              onPressed: () => adaptiveFeedbackHostKey.currentState?._runAction(entry),
-              child: Text(entry.actionLabel!),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -296,30 +312,46 @@ class _FeedbackStyle {
   const _FeedbackStyle({
     required this.backgroundColor,
     required this.foregroundColor,
+    required this.iconColor,
+    required this.actionColor,
     required this.icon,
+    this.borderColor,
   });
 
   final Color backgroundColor;
   final Color foregroundColor;
+  final Color iconColor;
+  final Color actionColor;
+  final Color? borderColor;
   final IconData icon;
 
   static _FeedbackStyle from(ThemeData theme, AdaptiveFeedbackStyle style) {
     final colors = theme.colorScheme;
+    final tp = TpColors.fromTheme(theme);
+    final ext = theme.extension<TpColors>() ?? tp;
 
     return switch (style) {
       AdaptiveFeedbackStyle.success => _FeedbackStyle(
-          backgroundColor: colors.primaryContainer,
-          foregroundColor: colors.onPrimaryContainer,
+          backgroundColor: ext.opaqueSuccessContainer,
+          foregroundColor: ext.textPrimary,
+          iconColor: ext.successGreen,
+          actionColor: ext.successGreen,
+          borderColor: ext.successGreen.withValues(alpha: ext.isDark ? 0.36 : 0.26),
           icon: Icons.check_circle_outline,
         ),
       AdaptiveFeedbackStyle.error => _FeedbackStyle(
-          backgroundColor: colors.errorContainer,
-          foregroundColor: colors.onErrorContainer,
+          backgroundColor: ext.opaqueDangerContainer,
+          foregroundColor: ext.textPrimary,
+          iconColor: ext.dangerRed,
+          actionColor: ext.dangerRed,
+          borderColor: ext.dangerRed.withValues(alpha: ext.isDark ? 0.36 : 0.26),
           icon: Icons.error_outline,
         ),
       AdaptiveFeedbackStyle.info => _FeedbackStyle(
           backgroundColor: colors.inverseSurface,
           foregroundColor: colors.onInverseSurface,
+          iconColor: colors.onInverseSurface,
+          actionColor: colors.inversePrimary,
           icon: Icons.info_outline,
         ),
     };

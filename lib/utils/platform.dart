@@ -102,6 +102,10 @@ bool supportsSystemDynamicColor() =>
 /// Whether this platform has a paired Apple Watch companion settings surface.
 bool supportsAppleWatch() => isIos();
 
+/// Whether this platform exposes and applies the in-app HTTP proxy setting.
+/// Mobile OSes route traffic through system VPN/proxy settings instead.
+bool supportsInAppProxy() => isDesktop();
+
 /// Whether calendar export can import events directly into the device calendar.
 bool supportsDirectCalendarImport() => isIos() || isAndroid();
 
