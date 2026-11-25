@@ -267,7 +267,7 @@ class _IdsBindFormState extends State<IdsBindForm> with WidgetsBindingObserver {
       );
     }
     final details = <Widget>[];
-    if (connected != null || upgrade) {
+    if (connected != null || (upgrade && !verifying)) {
       details.add(
         TpCard(
           child: Column(
@@ -292,7 +292,10 @@ class _IdsBindFormState extends State<IdsBindForm> with WidgetsBindingObserver {
       );
     } else if (verifying) {
       details.add(
-        Row(
+        Wrap(
+          spacing: TpTokens.space3,
+          runSpacing: TpTokens.space2,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(TpTokens.radiusS),
@@ -380,7 +383,7 @@ class _IdsBindFormState extends State<IdsBindForm> with WidgetsBindingObserver {
           : verifying
               ? _submitCaptcha
               : () => unawaited(_bind()),
-      secondary: upgrade
+      secondary: upgrade && !verifying
           ? TextButton(
               onPressed: _busy
                   ? null
