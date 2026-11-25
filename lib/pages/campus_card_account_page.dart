@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../features/campus_card/core/errors/app_failure.dart';
+import '../features/campus_card/domain/models/auth_models.dart';
 import '../services/campus_card_service.dart';
 import '../services/ecard_bind_hijack.dart';
 import '../services/ecard_bind_service.dart';
 import '../services/service_provider.dart';
+import '../theme/tp_tokens.dart';
+import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_ecard_wizard.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -25,6 +28,8 @@ class CampusCardAccountPage extends StatefulWidget {
 
 class _CampusCardAccountPageState extends State<CampusCardAccountPage> with WidgetsBindingObserver {
   final _code = TextEditingController();
+  final _openId = TextEditingController();
+  EcardOpenIdChannel _channel = EcardOpenIdChannel.wechat;
   late final EcardBindService _binding;
   late final CampusCardService _card;
   late final Listenable _changes;
@@ -60,6 +65,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
     await Future.wait([_card.refreshAccount(), _binding.refreshStatus()]);
     if (!_ready &&
         widget.fromCard &&
+        !isDesktop() &&
         !_card.configured &&
         _binding.status == EcardBindHijackStatus.inactive) {
       _reviewing = true;
@@ -75,6 +81,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
       unawaited(_binding.stopHijack().catchError((Object _) {}));
     }
     _code.dispose();
+    _openId.dispose();
     super.dispose();
   }
 
@@ -114,6 +121,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
     _pending = null;
     _reviewing = false;
     _code.clear();
+    _openId.clear();
   }
 
   Future<void> _redeem() async {
@@ -128,16 +136,33 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
 
   Future<void> _finishConnection() async {
     final credential = _pending!;
+    await _connect(credential.openId, channel: credential.channel);
+  }
+
+  Future<void> _connectManually() async {
+    final openId = _openId.text.trim();
+    final channel = _channel;
+    OpenIdAuthCredential(openId: openId, channel: channel).validate();
+    await _connect(openId, channel: channel);
+  }
+
+  Future<void> _connect(String openId, {required EcardOpenIdChannel channel}) async {
     await _binding.prepareCampusConnection();
     if (!mounted) return;
     if (!_card.configured) {
-      await _card.connect(credential.openId, channel: credential.channel);
+      await _card.connect(openId, channel: channel);
     }
     if (!mounted) return;
     _justConnected = true;
     _pending = null;
     _code.clear();
+    _openId.clear();
     _reviewing = false;
+  }
+
+  Future<void> _openCloudSync() async {
+    await pushAdaptivePage<void>(context, builder: (_) => const SyncSettingsPage());
+    if (mounted) await _run(_load);
   }
 
   Future<void> _disconnect() async {
@@ -167,13 +192,18 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
         'ECARD_BIND_DNS_NOT_RESTORED' =>
           'Your normal connection has not returned yet. Try again shortly.',
         _ => switch (error.kind) {
-            FailureKind.invalidInput => 'Check your binding code and try again.',
+            FailureKind.invalidInput => isDesktop()
+                ? 'Check your OPENID and channel, then try again.'
+                : 'Check your binding code and try again.',
             FailureKind.permissionDenied =>
               'Permission was denied. Review the request and try again.',
             FailureKind.network || FailureKind.timeout => 'Check your network and try again.',
             _ => 'Could not complete setup. Please try again.',
           },
       };
+    }
+    if (error is FormatException && isDesktop()) {
+      return _text('Enter a valid OPENID.', '请输入有效的 OPENID。');
     }
     return _text('Could not complete setup. Please try again.', '未能完成设置，请重试。');
   }
@@ -260,6 +290,58 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
       title = _text('Restore your connection', '恢复网络连接');
       description = _text('Stop the temporary VPN before continuing.', '请先停止临时 VPN 连接。');
       controls.add(_button(_text('Stop temporary VPN', '停止临时 VPN'), () => _run(_cancel)));
+    } else if (isDesktop()) {
+      showCard = true;
+      title = heading(WizardStep.welcome).title;
+      description = _text(
+        'Enter your WeChat or Alipay eCard OPENID.',
+        '输入微信或支付宝校园卡的 OPENID。',
+      );
+      final enabled = !_busy && !_card.busy;
+      field = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DropdownButtonFormField<EcardOpenIdChannel>(
+            initialValue: _channel,
+            decoration: InputDecoration(labelText: _text('OPENID channel', 'OPENID 渠道')),
+            items: [
+              for (final channel in EcardOpenIdChannel.values)
+                DropdownMenuItem(value: channel, child: Text(channel.label)),
+            ],
+            onChanged: enabled
+                ? (channel) {
+                    if (channel == null) return;
+                    setState(() {
+                      _channel = channel;
+                      _error = null;
+                    });
+                  }
+                : null,
+          ),
+          const SizedBox(height: TpTokens.space3),
+          AdaptiveTextFieldGroup(
+            key: const Key('openid-field'),
+            items: [
+              AdaptiveTextFieldGroupItem(
+                controller: _openId,
+                placeholder: 'OPENID',
+                obscureText: true,
+                enabled: enabled,
+                textInputAction: TextInputAction.done,
+                onSubmitted: enabled ? (_) => unawaited(_run(_connectManually)) : null,
+              ),
+            ],
+          ),
+        ],
+      );
+      controls.addAll([
+        _button(
+          _text('Connect eCard', '连接校园卡'),
+          () => _run(_connectManually),
+          key: const Key('openid-save-button'),
+        ),
+        _button(_text('Open Cloud sync', '打开云同步'), _openCloudSync, primary: false),
+      ]);
     } else if (_binding.status == EcardBindHijackStatus.unsupported) {
       showCard = true;
       title = _text('Use your card on this device', '在此设备上使用校园卡');
@@ -267,15 +349,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
         'Back up your card on your phone with Cloud sync, then restore your linked accounts here using the same GeekPie account.',
         '先在手机上通过云同步备份校园卡，再使用同一 GeekPie 账号在此恢复已绑定的账号。',
       );
-      controls.add(
-        _button(
-          _text('Open Cloud sync', '打开云同步'),
-          () async {
-            await pushAdaptivePage<void>(context, builder: (_) => const SyncSettingsPage());
-            if (mounted) await _run(_load);
-          },
-        ),
-      );
+      controls.add(_button(_text('Open Cloud sync', '打开云同步'), _openCloudSync));
     } else if (_binding.hijackActive) {
       stateIcon = Icons.pin_outlined;
       title = heading(WizardStep.code).title;

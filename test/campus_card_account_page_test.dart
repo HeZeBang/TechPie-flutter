@@ -49,7 +49,7 @@ void main() {
   /// Mounts the editor on a phone-width, tall surface: the page is taller than
   /// the default 800x600 test window, and a ListView never builds what falls
   /// below the fold — which would silently hide the controls under test.
-  Future<Widget> mount(WidgetTester tester) async {
+  Future<Widget> mount(WidgetTester tester, {bool fromCard = false}) async {
     resolvedAddresses = null;
     tester.view.physicalSize = const Size(780, 2600);
     tester.view.devicePixelRatio = 2;
@@ -139,7 +139,7 @@ void main() {
       updateService: UpdateService(),
       campusCardService: service,
       ecardBindService: bindService,
-      child: const MaterialApp(home: CampusCardAccountPage()),
+      child: MaterialApp(home: CampusCardAccountPage(fromCard: fromCard)),
     );
   }
 
@@ -157,6 +157,12 @@ void main() {
   Future<void> submitCode(WidgetTester tester) async {
     await tester.enterText(find.byKey(const Key('ecard-bind-code-field')), '123456');
     await tester.tap(find.text('Connect eCard'));
+    await tester.pump();
+  }
+
+  Future<void> enterOpenId(WidgetTester tester, String value) async {
+    await tester.tap(find.byKey(const Key('openid-field')));
+    tester.testTextInput.enterText(value);
     await tester.pump();
   }
 
@@ -348,6 +354,69 @@ void main() {
     expect(tunnel.stopCalls, 1);
     expect(find.text('Connect my card'), findsOneWidget);
   });
+
+  testWidgets(
+    'desktop users can connect from the campus card with a manual OPENID',
+    (tester) async {
+      final app = await mount(tester, fromCard: true);
+      tunnel.current = EcardBindHijackStatus.unsupported;
+      tester.view.physicalSize = const Size(2080, 1380);
+      await tester.pumpWidget(app);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Open Cloud sync'), findsOneWidget);
+      expect(find.byKey(const Key('ecard-bind-hijack-button')), findsNothing);
+      await tester.tap(find.text(EcardOpenIdChannel.wechat.label));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(EcardOpenIdChannel.alipay.label).last);
+      await tester.pumpAndSettle();
+      await enterOpenId(tester, '  $openId  ');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(await service.readOpenId(), openId);
+      expect(await service.readOpenIdChannel(), EcardOpenIdChannel.alipay);
+      expect(find.text('Your eCard is ready'), findsOneWidget);
+      expect(find.byKey(const Key('openid-field')), findsNothing);
+      expect(tunnel.startCalls, 0);
+      expect(tunnel.stopCalls, 0);
+    },
+    variant: TargetPlatformVariant.desktop(),
+  );
+
+  testWidgets(
+    'desktop manual binding validates input and keeps it after a connection failure',
+    (tester) async {
+      final app = await mount(tester);
+      tunnel.current = EcardBindHijackStatus.unsupported;
+      await tester.pumpWidget(app);
+      await tester.pumpAndSettle();
+
+      final connect = find.byKey(const Key('openid-save-button'));
+      await tester.tap(connect);
+      await tester.pumpAndSettle();
+      expect(find.text('Enter a valid OPENID.'), findsOneWidget);
+      expect(auth.signInCalls, 0);
+
+      resolvedAddresses = [EcardBindHijackService.targetIp];
+      await enterOpenId(tester, openId);
+      await tester.tap(connect);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Your normal connection has not returned yet. Try again shortly.'),
+        findsOneWidget,
+      );
+      expect(await service.readOpenId(), isNull);
+      expect(auth.signInCalls, 0);
+
+      resolvedAddresses = ['10.17.0.54'];
+      await tester.tap(connect);
+      await tester.pumpAndSettle();
+      expect(await service.readOpenId(), openId);
+      expect(await service.readOpenIdChannel(), EcardOpenIdChannel.wechat);
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.linux}),
+  );
 
   testWidgets('unsupported device uses the existing Cloud sync screen', (tester) async {
     final app = await mount(tester);
