@@ -12,6 +12,7 @@ import 'package:techpie/utils/platform.dart';
 
 import 'features/campus_card/app/app_providers.dart';
 import 'models/third_party_account.dart';
+import 'services/academic_certificate_service.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
 import 'services/campus/campus_clients.dart';
@@ -492,6 +493,14 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _nativeChromeObserver = CNTabBarRouteObserver();
   late CampusClients _campusClients;
   bool _ownsCampusClients = false;
+  late AcademicCertificateService _certificates;
+  AcademicCertificateService _createAcademicCertificateService() =>
+      AcademicCertificateService(
+        _campusClients.eams,
+        widget.storageService,
+        widget.authService,
+        widget.thirdPartyAuthService,
+      );
   late PnpMinorService _pnpMinor;
   PnpMinorService _createPnpMinorService() => PnpMinorService(
         _campusClients.eams,
@@ -570,6 +579,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.wearEngineService?.resumeSync();
     _studentAllowanceService = _createStudentAllowanceService();
     unawaited(_checkForUpdatesQuietly());
+    _certificates = _createAcademicCertificateService();
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
     widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
     widget.deadlineReminderService?.initialize();
@@ -597,6 +607,8 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         oldWidget.authService != widget.authService ||
         oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
         oldWidget.storageService != widget.storageService) {
+      _certificates.dispose();
+      _certificates = _createAcademicCertificateService();
       _pnpMinor.dispose();
       _pnpMinor = _createPnpMinorService();
       _holidayTravel.dispose();
@@ -648,6 +660,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     _holidayTravel.dispose();
     _studentLeave.dispose();
     _studentAllowanceService.dispose();
+    _certificates.dispose();
     _pnpMinor.dispose();
     _courseCatalog.dispose();
     _grades.dispose();
@@ -752,6 +765,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         oaGymService: widget.oaGymService,
         egateAppService: widget.egateAppService,
         campusClients: _campusClients,
+        certificates: _certificates,
         pnpMinor: _pnpMinor,
         courseCatalog: _courseCatalog,
         gradeService: _grades,
