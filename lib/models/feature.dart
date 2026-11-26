@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../features/campus_card/app/app_providers.dart';
 import '../pages/campus_card_page.dart';
+import '../pages/counseling_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
@@ -158,6 +159,16 @@ final featureEntries = <Feature>[
       builder: (_) => const StudentAllowancePage(),
     ),
     icon: const Icon(TpIcons.allowance),
+  ),
+  Feature(
+    id: 'counseling',
+    category: CampusServiceCategory.life,
+    description: '心理咨询',
+    subtitle: '查看排班与个人预约',
+    keywords: const ['心理', '咨询', '辅导', 'counseling', 'xinli', '预约'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const CounselingPage()),
+    icon: const Icon(Icons.spa_outlined),
   ),
 ];
 
