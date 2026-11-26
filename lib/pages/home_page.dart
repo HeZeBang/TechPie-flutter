@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -11,6 +13,7 @@ import '../models/course_table.dart';
 import '../models/custom_course.dart';
 import '../models/exam_course.dart';
 import '../models/feature.dart';
+import '../models/home_layout.dart';
 import '../services/assignment_service.dart';
 import '../services/auth_service.dart';
 import '../services/campus_card_service.dart';
@@ -29,6 +32,9 @@ import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/home/home_bento_editor.dart';
+import '../widgets/home/home_widget_chrome.dart';
+import '../widgets/home/home_widget_gallery_sheet.dart';
 import '../widgets/page_refresh.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/uni_auth_login.dart';
@@ -68,6 +74,23 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   List<Animation<double>> _itemSlides = [];
   List<Animation<double>> _itemFades = [];
 
+  // Customizable dashboard layout state (mobile & desktop stored independently).
+  late StorageService _storage;
+  HomeMobileLayout _mobileLayout = HomeMobileLayout.defaults();
+  HomeDesktopLayout _desktopLayout = HomeDesktopLayout.defaults();
+  bool _isEditing = false;
+  final ValueNotifier<HomeGalleryState> _galleryState = ValueNotifier(
+    const HomeGalleryState(
+      visibleIds: {
+        HomeWidgetId.campusCard,
+        HomeWidgetId.todayCourses,
+        HomeWidgetId.deadlines,
+        HomeWidgetId.quickActions,
+      },
+      campusCardStyle: HomeCampusCardStyle.compact,
+    ),
+  );
+
   /// Returns the debug-overridden time or real time.
   DateTime get _now => _debugNow ?? DateTime.now();
 
@@ -92,16 +115,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _auth = sp.authService;
       _tpAuth = sp.thirdPartyAuthService;
       _campusCard = sp.campusCardService;
+      _storage = sp.storageService;
+      _mobileLayout = _storage.homeMobileLayout;
+      _desktopLayout = _storage.homeDesktopLayout;
       _schedule.addListener(_rebuild);
       _assignments.addListener(_onAssignmentsChanged);
       _auth.addListener(_onAuthChanged);
       _tpAuth.addListener(_onAuthChanged);
       _campusCard.addListener(_onAuthChanged);
+      appShellPendingHomeEdit.addListener(_onPendingHomeEdit);
+      HardwareKeyboard.instance.addHandler(_handleHardwareKey);
       _doRebuild();
       _refreshTimer = Timer.periodic(
         const Duration(minutes: 1),
         (_) => _onTimerTick(),
       );
+      _consumePendingHomeEdit();
+    } else {
+      _consumePendingHomeEdit();
     }
   }
 
@@ -113,8 +144,190 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _auth.removeListener(_onAuthChanged);
     _tpAuth.removeListener(_onAuthChanged);
     _campusCard.removeListener(_onAuthChanged);
+    appShellPendingHomeEdit.removeListener(_onPendingHomeEdit);
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
+    _galleryState.dispose();
     _staggerController?.dispose();
     super.dispose();
+  }
+
+  bool _handleHardwareKey(KeyEvent event) {
+    if (!mounted || !_isEditing) return false;
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape) {
+      return false;
+    }
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) {
+      return false;
+    }
+    _exitEditMode();
+    return true;
+  }
+
+  void _onPendingHomeEdit() {
+    _consumePendingHomeEdit();
+  }
+
+  void _consumePendingHomeEdit() {
+    if (!appShellPendingHomeEdit.value) return;
+    appShellPendingHomeEdit.value = false;
+    if (!mounted || _isEditing) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isEditing) return;
+      final isBento =
+          MediaQuery.sizeOf(context).width >= TpTokens.bentoBreakpoint;
+      _enterEditMode(isBento);
+    });
+  }
+
+  void _syncGalleryNotifier(bool isBento) {
+    _galleryState.value = isBento
+        ? HomeGalleryState(
+            visibleIds: {
+              ..._desktopLayout.primary,
+              ..._desktopLayout.secondary,
+            },
+            campusCardStyle: _desktopLayout.campusCardStyle,
+          )
+        : HomeGalleryState(
+            visibleIds: _mobileLayout.order.toSet(),
+            campusCardStyle: _mobileLayout.campusCardStyle,
+          );
+  }
+
+  void _enterEditMode(bool isBento) {
+    _syncGalleryNotifier(isBento);
+    if (mounted) {
+      setState(() => _isEditing = true);
+    }
+  }
+
+  void _exitEditMode() {
+    if (!mounted || !_isEditing) return;
+    setState(() => _isEditing = false);
+  }
+
+  void _updateMobileLayout(HomeMobileLayout next) {
+    if (next == _mobileLayout) return;
+    setState(() => _mobileLayout = next);
+    _syncGalleryNotifier(false);
+    unawaited(_storage.setHomeMobileLayout(next));
+  }
+
+  void _updateDesktopLayout(HomeDesktopLayout next) {
+    if (next == _desktopLayout) return;
+    setState(() => _desktopLayout = next);
+    _syncGalleryNotifier(true);
+    unawaited(_storage.setHomeDesktopLayout(next));
+  }
+
+  void _onMobileReorder(int oldIndex, int newIndex) {
+    final next = _mobileLayout.reorder(oldIndex, newIndex);
+    if (next == _mobileLayout) return;
+    unawaited(AppHaptics.play(AppHaptics.selection));
+    _updateMobileLayout(next);
+  }
+
+  void _setCampusCardStyle(
+    HomeCampusCardStyle style, {
+    required bool isBento,
+  }) {
+    if (isBento) {
+      _updateDesktopLayout(_desktopLayout.copyWith(campusCardStyle: style));
+    } else {
+      _updateMobileLayout(_mobileLayout.copyWith(campusCardStyle: style));
+    }
+  }
+
+  void _removeWidget(
+    HomeWidgetId id, {
+    required bool isBento,
+    bool showFeedback = true,
+  }) {
+    final previousMobile = _mobileLayout;
+    final previousDesktop = _desktopLayout;
+    if (isBento) {
+      final next = _desktopLayout.removeWidget(id);
+      if (next == _desktopLayout) return;
+      _updateDesktopLayout(next);
+    } else {
+      final next = _mobileLayout.removeWidget(id);
+      if (next == _mobileLayout) return;
+      _updateMobileLayout(next);
+    }
+    if (!showFeedback) return;
+    showAdaptiveFeedback(
+      context: context,
+      message: '已移除「${homeWidgetMetaFor(id).title}」',
+      actionLabel: '撤销',
+      onAction: () {
+        if (!mounted) return;
+        if (isBento) {
+          _updateDesktopLayout(previousDesktop);
+        } else {
+          _updateMobileLayout(previousMobile);
+        }
+      },
+    );
+  }
+
+  void _addWidget(HomeWidgetId id, {required bool isBento}) {
+    if (isBento) {
+      _updateDesktopLayout(_desktopLayout.addWidget(id));
+    } else {
+      _updateMobileLayout(_mobileLayout.addWidget(id));
+    }
+  }
+
+  void _resetLayout(bool isBento) {
+    final previousMobile = _mobileLayout;
+    final previousDesktop = _desktopLayout;
+    if (isBento) {
+      final defaults = HomeDesktopLayout.defaults();
+      if (defaults == _desktopLayout) return;
+      _updateDesktopLayout(defaults);
+    } else {
+      final defaults = HomeMobileLayout.defaults();
+      if (defaults == _mobileLayout) return;
+      _updateMobileLayout(defaults);
+    }
+    showAdaptiveFeedback(
+      context: context,
+      message: '已恢复默认主页布局',
+      actionLabel: '撤销',
+      onAction: () {
+        if (!mounted) return;
+        if (isBento) {
+          _updateDesktopLayout(previousDesktop);
+        } else {
+          _updateMobileLayout(previousMobile);
+        }
+      },
+    );
+  }
+
+  void _openWidgetGallery(bool isBento) {
+    _syncGalleryNotifier(isBento);
+    unawaited(
+      showHomeWidgetGallery(
+        context: context,
+        stateListenable: _galleryState,
+        onAddWidget: (id) => _addWidget(id, isBento: isBento),
+        onRemoveWidget: (id) =>
+            _removeWidget(id, isBento: isBento, showFeedback: false),
+        onChangeCampusCardStyle: (style) =>
+            _setCampusCardStyle(style, isBento: isBento),
+        onResetDefaults: () => _resetLayout(isBento),
+      ),
+    );
+  }
+
+  Future<void> _openQuickActionsEditor(StorageService storage) async {
+    await pushAdaptivePage<void>(
+      context,
+      builder: (_) => CampusServicesPage(storage: storage),
+    );
+    if (mounted) setState(() {});
   }
 
   void _onAuthChanged() {
@@ -396,82 +609,255 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       key: const ValueKey('home.greeting-header'),
       subtitle: dateSubtitle,
       title: _greetingTitle(now, auth, tpAuth, campusCard),
-      trailing: TpAvatarBadge(
-        key: const ValueKey('home.avatar'),
-        text: _avatarLabel(auth, tpAuth, campusCard),
-        tooltip: auth.isLoggedIn ? '我的' : '登录',
-        onTap: () {
-          if (auth.isLoggedIn) {
-            appShellPendingTab.value = 3;
-          } else {
-            unawaited(startUniAuthLogin(context));
-          }
-        },
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AdaptiveButton(
+            key: const ValueKey('home.edit-toggle'),
+            onPressed: _isEditing ? _exitEditMode : () => _enterEditMode(isBento),
+            icon: _isEditing ? TpIcons.check : TpIcons.dashboard,
+            sfSymbol: _isEditing ? 'checkmark' : 'square.grid.2x2',
+            accessibilityLabel: _isEditing ? '完成编辑' : '定制主页',
+            role: AdaptiveButtonRole.plain,
+            width: 44,
+            height: 44,
+          ),
+          const SizedBox(width: TpTokens.space1),
+          TpAvatarBadge(
+            key: const ValueKey('home.avatar'),
+            text: _avatarLabel(auth, tpAuth, campusCard),
+            tooltip: auth.isLoggedIn ? '我的' : '登录',
+            onTap: () {
+              if (auth.isLoggedIn) {
+                appShellPendingTab.value = 3;
+              } else {
+                unawaited(startUniAuthLogin(context));
+              }
+            },
+          ),
+        ],
       ),
     );
-    final campusCardStrip = _buildCampusCardStrip(
-      campusCard,
-      storage,
-      expandedCard: isBento,
-    );
-    final todayClasses = _buildTodayClasses(colors, auth.isLoggedIn);
-    final deadlines = _buildPendingAssignments(colors);
-    final quickActions = _buildQuickActions();
-    final debugPanel = isDebug ? _buildDebugPanel(colors) : null;
+    final effectiveCardStyle = isBento
+        ? _desktopLayout.campusCardStyle
+        : _mobileLayout.campusCardStyle;
 
-    return Scaffold(
-      backgroundColor: colors.canvas,
-      body: SafeArea(
-        bottom: false,
-        child: PageRefreshIndicator(
-          onRefresh: _refreshHome,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              isBento ? TpTokens.space5 : TpTokens.space3,
-              horizontalPadding,
-              AppShellMetrics.bottomContentPaddingOf(context),
+    Widget buildWidgetCard(HomeWidgetId id) => switch (id) {
+          HomeWidgetId.campusCard => _buildCampusCardStrip(
+              campusCard,
+              storage,
+              expandedCard: effectiveCardStyle == HomeCampusCardStyle.full,
             ),
-            children: [
-              TpPageBody(
-                maxWidth: isBento ? 1120 : TpTokens.singleColumnMaxWidth,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    header,
-                    SizedBox(
-                      height: isBento ? TpTokens.space4 : TpTokens.sectionGap,
+          HomeWidgetId.todayCourses => _buildTodayClasses(colors, auth.isLoggedIn),
+          HomeWidgetId.deadlines => _buildPendingAssignments(colors),
+          HomeWidgetId.quickActions => _buildQuickActions(),
+        };
+
+    final debugPanel = isDebug ? _buildDebugPanel(colors) : null;
+    final maxBodyWidth = isBento ? 1120.0 : TpTokens.singleColumnMaxWidth;
+    final isLayoutEmpty =
+        isBento ? _desktopLayout.isEmpty : _mobileLayout.isEmpty;
+
+    return PopScope(
+      canPop: !_isEditing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _isEditing) {
+          _exitEditMode();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: colors.canvas,
+        body: SafeArea(
+          bottom: false,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final sidePad = math.max(
+                horizontalPadding,
+                (constraints.maxWidth - maxBodyWidth) / 2,
+              );
+              final topPad = isBento ? TpTokens.space5 : TpTokens.space3;
+              final bottomPad = AppShellMetrics.bottomContentPaddingOf(context);
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_isEditing)
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        sidePad,
+                        topPad,
+                        sidePad,
+                        TpTokens.space2,
+                      ),
+                      child: _HomeEditBar(
+                        isBento: isBento,
+                        onOpenGallery: () => _openWidgetGallery(isBento),
+                        onReset: () => _resetLayout(isBento),
+                        onDone: _exitEditMode,
+                      ),
                     ),
-                    if (isBento)
-                      TpBentoGrid(
-                        primaryColumn: [
-                          todayClasses,
-                          deadlines,
-                          if (debugPanel != null) debugPanel,
-                        ],
-                        secondaryColumn: [
-                          campusCardStrip,
-                          quickActions,
-                        ],
-                      )
-                    else ...[
-                      campusCardStrip,
-                      const SizedBox(height: TpTokens.sectionGap),
-                      todayClasses,
-                      const SizedBox(height: TpTokens.sectionGap),
-                      deadlines,
-                      const SizedBox(height: TpTokens.sectionGap),
-                      quickActions,
-                      if (debugPanel != null) ...[
-                        const SizedBox(height: TpTokens.sectionGap),
-                        debugPanel,
-                      ],
+                  Expanded(
+                    child: PageRefreshIndicator(
+                      onRefresh: _refreshHome,
+                      child: CustomScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          SliverPadding(
+                            padding: EdgeInsets.fromLTRB(
+                              sidePad,
+                              _isEditing ? TpTokens.space1 : topPad,
+                              sidePad,
+                              0,
+                            ),
+                            sliver: SliverToBoxAdapter(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  header,
+                                  SizedBox(
+                                    height: isBento
+                                        ? TpTokens.space4
+                                        : TpTokens.sectionGap,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      if (isLayoutEmpty)
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            sidePad,
+                            0,
+                            sidePad,
+                            debugPanel != null ? TpTokens.sectionGap : bottomPad,
+                          ),
+                          sliver: SliverToBoxAdapter(
+                            child: TpStateCard.empty(
+                              key: const ValueKey('home.empty-widgets'),
+                              icon: TpIcons.dashboard,
+                              title: '主页暂无组件',
+                              message: '可从组件库重新添加所需模块，或一键恢复默认布局。',
+                              primaryActionLabel: '添加组件',
+                              primaryActionIcon: TpIcons.add,
+                              primaryActionSfSymbol: 'plus',
+                              onPrimaryAction: () => _openWidgetGallery(isBento),
+                              secondaryActionLabel: '恢复默认',
+                              secondaryActionIcon: TpIcons.reset,
+                              secondaryActionSfSymbol: 'arrow.counterclockwise',
+                              onSecondaryAction: () => _resetLayout(isBento),
+                            ),
+                          ),
+                        )
+                      else if (isBento)
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            sidePad,
+                            0,
+                            sidePad,
+                            bottomPad,
+                          ),
+                          sliver: SliverToBoxAdapter(
+                            child: HomeBentoEditor(
+                              layout: _desktopLayout,
+                              isEditing: _isEditing,
+                              cardBuilder: buildWidgetCard,
+                              onMoveToSlot: (id, col, slot) =>
+                                  _updateDesktopLayout(
+                                _desktopLayout.moveToSlot(id, col, slot),
+                              ),
+                              onMoveBy: (id, delta) => _updateDesktopLayout(
+                                _desktopLayout.moveBy(id, delta),
+                              ),
+                              onSwapColumn: (id) => _updateDesktopLayout(
+                                _desktopLayout.swapColumn(id),
+                              ),
+                              onRemove: (id) => _removeWidget(id, isBento: true),
+                              onEnterEditMode: () => _enterEditMode(true),
+                              onCampusCardStyleChanged: (style) =>
+                                  _setCampusCardStyle(style, isBento: true),
+                              onConfigureQuickActions: () =>
+                                  _openQuickActionsEditor(storage),
+                              footerWidget: debugPanel,
+                            ),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            sidePad,
+                            0,
+                            sidePad,
+                            debugPanel != null ? 0 : bottomPad,
+                          ),
+                          sliver: SliverReorderableList(
+                            itemCount: _mobileLayout.order.length,
+                            onReorder:
+                                _isEditing ? _onMobileReorder : (_, __) {},
+                            proxyDecorator: (child, index, animation) {
+                              return Material(
+                                color: Colors.transparent,
+                                elevation: 6,
+                                borderRadius:
+                                    BorderRadius.circular(TpTokens.radiusL),
+                                child: child,
+                              );
+                            },
+                            itemBuilder: (context, index) {
+                              final id = _mobileLayout.order[index];
+                              final isLast =
+                                  index == _mobileLayout.order.length - 1;
+                              return Padding(
+                                key: ValueKey('home.mobile-item-${id.key}'),
+                                padding: EdgeInsets.only(
+                                  bottom: isLast ? 0 : TpTokens.sectionGap,
+                                ),
+                                child: HomeEditableCardFrame(
+                                  id: id,
+                                  index: index,
+                                  itemCount: _mobileLayout.order.length,
+                                  isEditing: _isEditing,
+                                  isDesktopMode: false,
+                                  enableReorderDragHandle: _isEditing,
+                                  campusCardStyle:
+                                      id == HomeWidgetId.campusCard
+                                          ? _mobileLayout.campusCardStyle
+                                          : null,
+                                  onCampusCardStyleChanged: (style) =>
+                                      _setCampusCardStyle(
+                                    style,
+                                    isBento: false,
+                                  ),
+                                  onConfigureQuickActions:
+                                      id == HomeWidgetId.quickActions
+                                          ? () =>
+                                              _openQuickActionsEditor(storage)
+                                          : null,
+                                  onEnterEditMode: () => _enterEditMode(false),
+                                  onRemove: () =>
+                                      _removeWidget(id, isBento: false),
+                                  child: buildWidgetCard(id),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      if (debugPanel != null && (!isBento || isLayoutEmpty))
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            sidePad,
+                            TpTokens.sectionGap,
+                            sidePad,
+                            bottomPad,
+                          ),
+                          sliver: SliverToBoxAdapter(child: debugPanel),
+                        ),
                     ],
-                  ],
+                  ),
                 ),
               ),
-            ],
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -531,8 +917,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             openCampusFeature(context, feature);
             return;
           }
-          await pushAdaptivePage<void>(context, builder: (_) => CampusServicesPage(storage: storage));
-          if (mounted) setState(() {});
+          await _openQuickActionsEditor(storage);
         },
       ),
     );
@@ -1086,6 +1471,129 @@ class _DebugChip extends StatelessWidget {
       label: Text(label),
       onPressed: onPressed,
       visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+class _HomeEditBar extends StatelessWidget {
+  const _HomeEditBar({
+    required this.isBento,
+    required this.onOpenGallery,
+    required this.onReset,
+    required this.onDone,
+  });
+
+  final bool isBento;
+  final VoidCallback onOpenGallery;
+  final VoidCallback onReset;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    return TpCard(
+      key: const ValueKey('home.edit-bar'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: TpTokens.space3,
+        vertical: TpTokens.space2,
+      ),
+      child: Row(
+        children: [
+          Icon(TpIcons.dashboard, size: TpTokens.iconS, color: colors.brandInk),
+          const SizedBox(width: TpTokens.space2),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '编辑主页',
+                  style: TpTypography.itemTitle(colors).copyWith(fontSize: 13.5),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  isBento ? '拖动组件或使用箭头调整栏位' : '按住右侧手柄拖动排序',
+                  style: TpTypography.itemMeta(colors),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: TpTokens.space2),
+          _HomeEditPillButton(
+            key: const ValueKey('home.open-gallery'),
+            icon: TpIcons.add,
+            label: '组件',
+            onTap: onOpenGallery,
+          ),
+          const SizedBox(width: TpTokens.space1 + 2),
+          _HomeEditPillButton(
+            key: const ValueKey('home.reset-layout'),
+            icon: TpIcons.reset,
+            label: '重置',
+            onTap: onReset,
+          ),
+          const SizedBox(width: TpTokens.space1 + 2),
+          _HomeEditPillButton(
+            key: const ValueKey('home.edit-done'),
+            icon: TpIcons.check,
+            label: '完成',
+            primary: true,
+            onTap: onDone,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeEditPillButton extends StatelessWidget {
+  const _HomeEditPillButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.primary = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final fg = primary ? colors.onBrand : colors.textPrimary;
+    final bg = primary ? colors.brandInk : colors.surfaceSubtle;
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(TpTokens.radiusPill),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(TpTokens.radiusPill),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: TpTokens.space2 + 2,
+              vertical: 7,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 13, color: fg),
+                const SizedBox(width: TpTokens.space1),
+                Text(label, style: TpTypography.badge(fg)),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

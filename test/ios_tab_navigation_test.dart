@@ -143,7 +143,7 @@ void main() {
         find.text('Submit report'),
         300,
         scrollable: find.descendant(
-          of: find.byType(ListView),
+          of: find.byType(CustomScrollView),
           matching: find.byType(Scrollable),
         ).first,
       );

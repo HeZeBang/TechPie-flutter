@@ -38,6 +38,7 @@ class DesktopWorkbenchChrome extends StatelessWidget {
     required this.canNavigateBack,
     required this.onOpenCampusServices,
     required this.onToggleTheme,
+    this.onEditHomeLayout,
     this.sidebarCollapsed = false,
     this.onToggleSidebar,
     this.enableMenuBar = true,
@@ -51,6 +52,7 @@ class DesktopWorkbenchChrome extends StatelessWidget {
   final bool Function() canNavigateBack;
   final VoidCallback onOpenCampusServices;
   final VoidCallback onToggleTheme;
+  final VoidCallback? onEditHomeLayout;
   final bool sidebarCollapsed;
   final VoidCallback? onToggleSidebar;
   final bool enableMenuBar;
@@ -258,6 +260,11 @@ class DesktopWorkbenchChrome extends StatelessWidget {
                   ),
               ],
             ),
+            if (onEditHomeLayout != null)
+              PlatformMenuItem(
+                label: '定制主页控件',
+                onSelected: onEditHomeLayout,
+              ),
             PlatformMenuItem(
               label: '切换深浅外观',
               onSelected: onToggleTheme,

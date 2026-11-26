@@ -18,6 +18,7 @@ import '../models/campus_identity.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
 import '../models/graduate_schedule.dart';
+import '../models/home_layout.dart';
 import '../models/ids_passkey.dart';
 import '../models/oa_gym.dart';
 import '../models/quick_shortcuts.dart';
@@ -47,6 +48,8 @@ class StorageService {
   static const _scheduleShowGhostCoursesKey = 'schedule_show_ghost_courses';
   static const _deadlinesShowAssignmentsKey = 'deadlines_show_assignments';
   static const _deadlinesShowExamsKey = 'deadlines_show_exams';
+  static const _homeMobileLayoutKey = 'home_mobile_layout_v1';
+  static const _homeDesktopLayoutKey = 'home_desktop_layout_v1';
   static const _proxyUrlKey = 'app_proxy_url';
   static const _proxyEnabledKey = 'app_proxy_enabled';
 
@@ -61,6 +64,16 @@ class StorageService {
   List<String>? get pinnedQuickFeatureIds => _prefs.getStringList('pinned_quick_features');
   Future<void> setPinnedQuickFeatureIds(List<String> ids) =>
       _prefs.setStringList('pinned_quick_features', pinnedShortcutIds(ids));
+
+  HomeMobileLayout get homeMobileLayout =>
+      HomeMobileLayout.decode(_prefs.getString(_homeMobileLayoutKey));
+  Future<void> setHomeMobileLayout(HomeMobileLayout layout) =>
+      _prefs.setString(_homeMobileLayoutKey, layout.encode());
+
+  HomeDesktopLayout get homeDesktopLayout =>
+      HomeDesktopLayout.decode(_prefs.getString(_homeDesktopLayoutKey));
+  Future<void> setHomeDesktopLayout(HomeDesktopLayout layout) =>
+      _prefs.setString(_homeDesktopLayoutKey, layout.encode());
 
   String _studyPlanKey(bool full) =>
       '${_campusCachePrefix}study_plan_${full ? 'catalog' : 'progress'}';

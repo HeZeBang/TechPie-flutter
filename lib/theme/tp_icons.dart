@@ -90,4 +90,14 @@ abstract final class TpIcons {
   static const IconData sidebar = LucideIcons.panel_left;
   static const IconData sidebarCollapse = LucideIcons.panel_left_close;
   static const IconData sidebarExpand = LucideIcons.panel_left_open;
+
+  // Home dashboard editing & layout customization.
+  static const IconData dragHandle = LucideIcons.grip_vertical;
+  static const IconData dragHandleHorizontal = LucideIcons.grip_horizontal;
+  static const IconData minus = LucideIcons.minus;
+  static const IconData reset = LucideIcons.rotate_ccw;
+  static const IconData arrowUp = LucideIcons.arrow_up;
+  static const IconData arrowDown = LucideIcons.arrow_down;
+  static const IconData swapColumns = LucideIcons.arrow_left_right;
+  static const IconData dashboard = LucideIcons.layout_dashboard;
 }

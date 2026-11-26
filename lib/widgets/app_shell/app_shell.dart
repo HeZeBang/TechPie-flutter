@@ -68,6 +68,7 @@ SidebarBadgeData? computeDeadlineSidebarBadge(
 final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
 final appShellPendingDeadlines = ValueNotifier<bool>(false);
 final appShellPendingTab = ValueNotifier<int?>(null);
+final appShellPendingHomeEdit = ValueNotifier<bool>(false);
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -335,6 +336,11 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
+  void _openHomeEditMode() {
+    _onDestinationSelected(0);
+    appShellPendingHomeEdit.value = true;
+  }
+
   void _openCommandPalette({required bool allowSidebarToggle}) {
     if (closeDesktopCommandPaletteIfOpen()) return;
     final services =
@@ -429,6 +435,15 @@ class _AppShellState extends State<AppShell> {
           keywords: const ['sidebar', 'cebianlan', 'collapse'],
           onExecute: _onSidebarToggleCollapsed,
         ),
+      DesktopCommandItem(
+        id: 'action.edit_home',
+        title: '定制主页控件',
+        subtitle: '排序、增删或切换校园卡展示样式',
+        group: '快捷操作',
+        icon: TpIcons.dashboard,
+        keywords: const ['home', 'widget', 'layout', '定制', '主页', '组件', '排序'],
+        onExecute: _openHomeEditMode,
+      ),
       if (services != null)
         DesktopCommandItem(
           id: 'action.toggle_theme',
@@ -607,6 +622,7 @@ class _AppShellState extends State<AppShell> {
       canNavigateBack: _canNavigateBackInActiveTab,
       onOpenCampusServices: _openCampusServices,
       onToggleTheme: _toggleLightDarkTheme,
+      onEditHomeLayout: _openHomeEditMode,
       sidebarCollapsed: effectiveSidebarCollapsed,
       onToggleSidebar:
           desktopShell && showSidebarToggle ? _onSidebarToggleCollapsed : null,
