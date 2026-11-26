@@ -1643,8 +1643,20 @@ void main() {
         200,
         headers: {'content-type': 'application/json; charset=utf-8'},
       );
-      h.overrides['blackboard'] = http.Response('{"success":true,"data":[]}', 200);
-      final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule)
+      final assignments = AssignmentService(
+        h.storage,
+        h.httpClient,
+        h.auth,
+        h.tp,
+        h.schedule,
+        blackboardDeadlines: () async {
+          if (pausedEndpoint == 'blackboard') {
+            if (!h.eamsEntered.isCompleted) h.eamsEntered.complete();
+            await h.resumeEams.future;
+          }
+          return [];
+        },
+      )
         ..loadCached()
         ..enableAutoRefetch();
       addTearDown(assignments.dispose);

@@ -38,6 +38,7 @@ class AssignmentService extends ChangeNotifier {
   final AuthService _auth;
   final ThirdPartyAuthService _tpAuth;
   final ScheduleService _schedule;
+  final Future<List<Assignment>> Function()? blackboardDeadlines;
   final bool _syncReminders;
   final DateTime Function() _now;
 
@@ -196,6 +197,7 @@ class AssignmentService extends ChangeNotifier {
     this._auth,
     this._tpAuth,
     this._schedule, {
+    this.blackboardDeadlines,
     bool syncReminders = false,
     DateTime Function() now = DateTime.now,
   })  : _syncReminders = syncReminders,
@@ -242,7 +244,7 @@ class AssignmentService extends ChangeNotifier {
         _remoteAssignments = primaryChanged
             ? const []
             : _remoteAssignments
-                .where((a) => !changed.contains(_sourcePlatform(a.platform)))
+                .where((a) => !changed.contains(_sourcePlatform(a.platform.toLowerCase())))
                 .toList();
         if (primaryChanged) {
           _loadCustomDeadlines();
@@ -906,28 +908,22 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<List<Assignment>?> _fetchBlackboard() async {
-    final node = _tpAuth.elearningNode;
-    // withCookie handles initial minting if the downstream cookie isn't set.
-    if (!_tpAuth.hasIdsBinding) return null;
-
+    if (!_tpAuth.hasIdsBinding || blackboardDeadlines == null) return null;
     try {
-      final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
-        node,
-        (cp) async {
-          // cp.cookies is the elearning cookie string minted from the
-          // ids CASTGC. The backend uses it directly to query
-          // Blackboard (no SSO bounce needed).
-          final r = await _http.post(
-            Uri.parse('$_baseUrl/deadlines/blackboard'),
-            headers: _jsonHeaders(),
-            body: jsonEncode({'token': cp.cookies}),
-            tag: 'deadlines:blackboard',
-          );
-          return CookieAction(r, expired: r.statusCode == 401);
-        },
-      );
-      if (resp == null) return null;
-      return _parseDeadlinesResponse(resp, 'blackboard');
+      final items = await blackboardDeadlines!();
+      // The previous endpoint capitalized its platform label. Existing
+      // overrides, widget entries and Apple reminder hashes include that case.
+      final legacyIds = {
+        for (final item in _remoteAssignments)
+          if (item.platform == 'Blackboard') item.id,
+      };
+      return [
+        for (final item in items)
+          if (legacyIds.contains(item.id))
+            Assignment.fromJson({...item.toJson(), 'platform': 'Blackboard'})
+          else
+            item,
+      ];
     } catch (e) {
       _platformErrors['blackboard'] = '同步失败，请检查网络或稍后重试';
       return null;
