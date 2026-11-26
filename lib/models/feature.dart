@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../features/campus_card/app/app_providers.dart';
 import '../pages/campus_card_page.dart';
+import '../pages/campus_jobs_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elearning_hub_page.dart';
 import '../pages/elrc_recordings_page.dart';
@@ -162,6 +163,16 @@ final featureEntries = <Feature>[
       builder: (_) => const ElearningHubPage(),
     ),
     icon: const Icon(Icons.school_outlined),
+  ),
+  Feature(
+    id: 'campus_jobs',
+    category: CampusServiceCategory.activities,
+    description: '校园岗位',
+    subtitle: '勤工助学与助教岗位',
+    keywords: const ['勤工', '助教', '兼职', 'ta', 'job', 'qingong', 'zhujiao', '工资'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const CampusJobsPage()),
+    icon: const Icon(Icons.work_outline),
   ),
   Feature(
     id: 'student_allowance',
