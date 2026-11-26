@@ -391,6 +391,19 @@ class StorageService {
   Future<void> clearCatalogHistory(String owner) =>
       _prefs.remove('${_campusCachePrefix}catalog_history_$owner');
 
+  String _gradeKey(String owner, String scope) =>
+      '${_campusCachePrefix}grades_${jsonEncode([owner, scope])}';
+
+  String? loadGradeCache(String owner, String scope) => _prefs.getString(_gradeKey(owner, scope));
+
+  Future<void> saveGradeCache(String owner, String scope, String data) =>
+      _prefs.setString(_gradeKey(owner, scope), data);
+
+  Future<void> clearGradeCache(String owner) async {
+    final prefix = '${_campusCachePrefix}grades_[${jsonEncode(owner)},';
+    await Future.wait(_prefs.getKeys().where((key) => key.startsWith(prefix)).map(_prefs.remove));
+  }
+
   // Schedule cache
   static const _semestersKey = 'schedule_semesters';
   static const _courseTablePrefix = 'schedule_course_table_';
@@ -604,6 +617,24 @@ class StorageService {
       return const [];
     }
   }
+
+  static const _blackboardIndexKey = '${_campusCachePrefix}blackboard_index';
+
+  Map<String, dynamic>? get blackboardIndex {
+    final value = _prefs.getString(_blackboardIndexKey);
+    if (value == null) return null;
+    try {
+      return jsonDecode(value) as Map<String, dynamic>;
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
+  }
+
+  Future<void> saveBlackboardIndex(Map<String, dynamic> index) =>
+      _prefs.setString(_blackboardIndexKey, jsonEncode(index));
+  Future<void> clearBlackboardIndex() => _prefs.remove(_blackboardIndexKey);
 
   // Assignments cache (non-sensitive — stored as JSON in SharedPreferences)
   static const _assignmentsKey = 'cached_assignments';

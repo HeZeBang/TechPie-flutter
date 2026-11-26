@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'dart:convert';
 import 'dart:math';
 
@@ -15,6 +14,7 @@ import '../models/graduate_schedule.dart';
 import '../models/third_party_account.dart';
 import 'api_base_url.dart';
 import 'auth_service.dart';
+import 'campus/eams_schedule_parser.dart';
 import 'http_client.dart';
 import 'schedule_service.dart';
 import 'session/session_tree.dart';
@@ -38,6 +38,7 @@ class AssignmentService extends ChangeNotifier {
   final AuthService _auth;
   final ThirdPartyAuthService _tpAuth;
   final ScheduleService _schedule;
+  final Future<List<Assignment>> Function()? blackboardDeadlines;
   final bool _syncReminders;
   final DateTime Function() _now;
 
@@ -196,6 +197,7 @@ class AssignmentService extends ChangeNotifier {
     this._auth,
     this._tpAuth,
     this._schedule, {
+    this.blackboardDeadlines,
     bool syncReminders = false,
     DateTime Function() now = DateTime.now,
   })  : _syncReminders = syncReminders,
@@ -242,7 +244,7 @@ class AssignmentService extends ChangeNotifier {
         _remoteAssignments = primaryChanged
             ? const []
             : _remoteAssignments
-                .where((a) => !changed.contains(_sourcePlatform(a.platform)))
+                .where((a) => !changed.contains(_sourcePlatform(a.platform.toLowerCase())))
                 .toList();
         if (primaryChanged) {
           _loadCustomDeadlines();
@@ -906,28 +908,22 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<List<Assignment>?> _fetchBlackboard() async {
-    final node = _tpAuth.elearningNode;
-    // withCookie handles initial minting if the downstream cookie isn't set.
-    if (!_tpAuth.hasIdsBinding) return null;
-
+    if (!_tpAuth.hasIdsBinding || blackboardDeadlines == null) return null;
     try {
-      final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
-        node,
-        (cp) async {
-          // cp.cookies is the elearning cookie string minted from the
-          // ids CASTGC. The backend uses it directly to query
-          // Blackboard (no SSO bounce needed).
-          final r = await _http.post(
-            Uri.parse('$_baseUrl/deadlines/blackboard'),
-            headers: _jsonHeaders(),
-            body: jsonEncode({'token': cp.cookies}),
-            tag: 'deadlines:blackboard',
-          );
-          return CookieAction(r, expired: r.statusCode == 401);
-        },
-      );
-      if (resp == null) return null;
-      return _parseDeadlinesResponse(resp, 'blackboard');
+      final items = await blackboardDeadlines!();
+      // The previous endpoint capitalized its platform label. Existing
+      // overrides, widget entries and Apple reminder hashes include that case.
+      final legacyIds = {
+        for (final item in _remoteAssignments)
+          if (item.platform == 'Blackboard') item.id,
+      };
+      return [
+        for (final item in items)
+          if (legacyIds.contains(item.id))
+            Assignment.fromJson({...item.toJson(), 'platform': 'Blackboard'})
+          else
+            item,
+      ];
     } catch (e) {
       _platformErrors['blackboard'] = '同步失败，请检查网络或稍后重试';
       return null;
@@ -950,42 +946,58 @@ class AssignmentService extends ChangeNotifier {
 
   Future<_ExamResult?> _fetchExamTable() async {
     if (_examSelection.unsupported || !await _schedule.canFetchUndergraduateExams()) return null;
-    var selection = _examSelection;
-    if (selection.unsupported || selection.semesterId?.isNotEmpty != true) return null;
+    final selection = _examSelection;
+    final semester = selection.semesterId;
+    if (selection.unsupported || semester == null || semester.isEmpty) return null;
     var idsSession = _idsSession;
-
     bool requestIsCurrent() => selection == _examSelection && idsSession == _idsSession;
-
     try {
-      final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
+      // Cookie acquisition can renew the IDS parent. Reclassify before sending
+      // any selected semester to the undergraduate system.
+      final ready = await _tpAuth.sessionTree.withCookie<bool>(
         _tpAuth.eamsNode,
-        (cp) async {
-          // Minting EAMS cookies can renew IDS after the initial identity check.
-          idsSession = _idsSession;
-          if (!await _schedule.canFetchUndergraduateExams() || idsSession != _idsSession) {
-            throw const FormatException('学校身份尚未确认');
-          }
-          final current = _examSelection;
-          final semesterId = current.semesterId;
-          if (current.unsupported || semesterId == null || semesterId.isEmpty) {
-            throw const FormatException('本科课表学期尚未确认');
-          }
-          selection = current;
-          final r = await _http.post(
-            Uri.parse('$_baseUrl/schedule/exam_table'),
-            headers: _jsonHeaders(),
-            body: jsonEncode({
-              'semester_id': semesterId,
-              'cookies': cp.cookies,
-            }),
-            tag: 'schedule:exam_table',
-          );
-          return CookieAction(r, expired: r.statusCode == 401 && requestIsCurrent());
-        },
+        (cp) async => const CookieAction(true, expired: false),
       );
-      if (resp == null || !requestIsCurrent()) return null;
-      final items = _parseExamTableResponse(resp, selection.semesterId!);
-      return items == null ? null : (selection: selection, idsSession: idsSession, items: items);
+      if (ready != true ||
+          !await _schedule.canFetchUndergraduateExams() ||
+          selection != _examSelection) {
+        return null;
+      }
+      idsSession = _idsSession;
+      final source = await _schedule.eams.getHtml(
+        '/eams/stdExamTable.action',
+        query: {'semester.id': semester},
+      );
+      if (!requestIsCurrent()) return null;
+      final items = <Assignment>[];
+      late final Map<String, String> batches;
+      String? student;
+      try {
+        batches = EamsScheduleParser.batches(source);
+      } on FormatException {
+        // Older EAMS deployments render a shell and load this semester fragment.
+        student = (await _schedule.undergraduateEntry()).entry.table;
+        if (!requestIsCurrent()) return null;
+        final inner = await _schedule.eams.postForm('/eams/stdExamTable!innerIndex.action', {
+          'semesterId': semester,
+          'examBatch.id': '',
+          'tutorRedirectstudentId': student,
+        });
+        batches = EamsScheduleParser.batches(inner);
+      }
+      for (final batch in batches.entries) {
+        if (!requestIsCurrent()) return null;
+        final page = await _schedule.eams.getHtml(
+          '/eams/stdExamTable!examTable.action',
+          query: {
+            'examBatch.id': batch.key,
+            if (student != null) 'tutorRedirectstudentId': student,
+          },
+        );
+        if (!requestIsCurrent()) return null;
+        items.addAll(EamsScheduleParser.exams(page, semester, batch.key, batch.value));
+      }
+      return (selection: selection, idsSession: idsSession, items: items);
     } catch (_) {
       if (requestIsCurrent() && !_examSelection.unsupported) {
         _platformErrors['exam'] = '同步失败，请检查网络或稍后重试';
@@ -1099,112 +1111,6 @@ class AssignmentService extends ChangeNotifier {
     return raw
         .map((e) => Assignment.fromJson(e as Map<String, dynamic>))
         .toList();
-  }
-
-  List<Assignment>? _parseExamTableResponse(http.Response resp, String requestedSemester) {
-    Map<String, dynamic> data;
-    try {
-      data = jsonDecode(resp.body) as Map<String, dynamic>;
-    } catch (_) {
-      _platformErrors['exam'] = '同步失败，服务器返回异常数据';
-      return null;
-    }
-
-    if (resp.statusCode != 200 || data['success'] != true) {
-      _platformErrors['exam'] =
-          (data['error'] as String?) ?? '同步失败 (HTTP ${resp.statusCode})';
-      return null;
-    }
-
-    final payload = data['data'] is Map
-        ? (data['data'] as Map).cast<String, dynamic>()
-        : const <String, dynamic>{};
-    final batchId = payload['examBatchId']?.toString() ?? '';
-    final batchName = payload['examBatchName']?.toString() ?? '考试';
-    final semesterId = payload['semesterId']?.toString() ?? requestedSemester;
-    if (semesterId != requestedSemester) {
-      _platformErrors['exam'] = '考试学期与当前课表不一致，请刷新后重试';
-      return null;
-    }
-    final raw = payload['exams'] as List<dynamic>? ?? const [];
-
-    return raw
-        .map((exam) => exam is Map ? exam.cast<String, dynamic>() : null)
-        .whereType<Map<String, dynamic>>()
-        .map(
-          (exam) => _assignmentFromExam(
-            exam,
-            batchId: batchId,
-            batchName: batchName,
-            semesterId: semesterId,
-          ),
-        )
-        .whereType<Assignment>()
-        .toList();
-  }
-
-  Assignment? _assignmentFromExam(
-    Map<String, dynamic> exam, {
-    required String batchId,
-    required String batchName,
-    required String semesterId,
-  }) {
-    final courseCode = _stringField(exam, 'courseCode');
-    final courseName = _stringField(exam, 'courseName');
-    final examType = _stringField(exam, 'examType');
-    final examDate = _stringField(exam, 'examDate');
-    final examTimeRange = _stringField(exam, 'examTimeRange');
-    final examPlace = _stringField(exam, 'examPlace');
-    final examStatus = _stringField(exam, 'examStatus');
-    final seatUrl = _stringField(exam, 'seatUrl');
-    final examRoomId = _stringField(exam, 'examRoomId');
-
-    final due = _examDateTime(examDate, examTimeRange, pickEnd: false);
-    if (due == null) return null;
-    final end = _examDateTime(examDate, examTimeRange, pickEnd: true);
-
-    final detailParts = [
-      if (examPlace.isNotEmpty) examPlace,
-      if (batchName.isNotEmpty) batchName,
-    ];
-
-    return ExamAssignment(
-      id: '$semesterId:$batchId:$courseCode:$examRoomId',
-      title: '$courseName $examType'.trim(),
-      course: detailParts.isEmpty
-          ? courseName
-          : '$courseName · ${detailParts.join(' · ')}',
-      due: due,
-      lateDue: end,
-      status: examStatus.isEmpty ? null : examStatus,
-      url: seatUrl.isEmpty ? null : seatUrl,
-      semesterId: semesterId,
-      location: examPlace,
-      batchName: batchName,
-    );
-  }
-
-  String _stringField(Map<String, dynamic> data, String key) =>
-      data[key]?.toString().trim() ?? '';
-
-  DateTime? _examDateTime(
-    String examDate,
-    String examTimeRange, {
-    required bool pickEnd,
-  }) {
-    final dateMatch = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(examDate);
-    final timeMatches =
-        RegExp(r'(\d{1,2}):(\d{2})').allMatches(examTimeRange).toList();
-    if (dateMatch == null || timeMatches.length < 2) return null;
-
-    final timeMatch = pickEnd ? timeMatches.last : timeMatches.first;
-    return DateTime(
-      int.parse(dateMatch.group(1)!),
-      int.parse(dateMatch.group(2)!),
-      int.parse(dateMatch.group(3)!),
-      int.parse(timeMatch.group(1)!),
-      int.parse(timeMatch.group(2)!),
-    );
   }
 
   String? _selectedSemesterId() =>

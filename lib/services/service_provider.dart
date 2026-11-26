@@ -11,12 +11,15 @@ import 'debug_logger.dart';
 import 'ecard_bind_service.dart';
 import 'ecard_widget_service.dart';
 import 'egate_app_service.dart';
+import 'grade_service.dart';
+import 'holiday_travel_service.dart';
 import 'island_service.dart';
 import 'oa_gym_service.dart';
 import 'schedule_service.dart';
 import 'spending_alert_service.dart';
 import 'storage_service.dart';
 import 'student_allowance_service.dart';
+import 'student_leave_service.dart';
 import 'sync_service.dart';
 import 'theme_service.dart';
 import 'third_party_auth_service.dart';
@@ -36,11 +39,13 @@ class ServiceProvider extends InheritedWidget {
   final ThirdPartyAuthService thirdPartyAuthService;
   final OaGymService oaGymService;
   final EgateAppService egateAppService;
+  final StudentLeaveService? studentLeaveService;
   final StudentAllowanceService studentAllowanceService;
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
   final CourseCatalogService? courseCatalog;
+  final GradeService? gradeService;
   final CampusClients? campusClients;
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
@@ -49,6 +54,7 @@ class ServiceProvider extends InheritedWidget {
   final DeadlineWidgetService? deadlineWidgetService;
   final DeadlineReminderService? deadlineReminderService;
   final SpendingAlertService? spendingAlertService;
+  final HolidayTravelService? holidayTravelService;
   final IslandService? islandService;
 
   const ServiceProvider({
@@ -63,12 +69,14 @@ class ServiceProvider extends InheritedWidget {
     required this.thirdPartyAuthService,
     required this.oaGymService,
     required this.egateAppService,
+    this.studentLeaveService,
     required this.studentAllowanceService,
     required this.uniAuthService,
     required this.syncService,
     required this.updateService,
     this.campusClients,
     this.courseCatalog,
+    this.gradeService,
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
@@ -76,6 +84,7 @@ class ServiceProvider extends InheritedWidget {
     this.deadlineWidgetService,
     this.deadlineReminderService,
     this.spendingAlertService,
+    this.holidayTravelService,
     this.islandService,
     required super.child,
   });
@@ -89,6 +98,7 @@ class ServiceProvider extends InheritedWidget {
 
   @override
   bool updateShouldNotify(ServiceProvider oldWidget) =>
+      holidayTravelService != oldWidget.holidayTravelService ||
       islandService != oldWidget.islandService ||
       authService != oldWidget.authService ||
       debugLogger != oldWidget.debugLogger ||
@@ -100,11 +110,13 @@ class ServiceProvider extends InheritedWidget {
       thirdPartyAuthService != oldWidget.thirdPartyAuthService ||
       oaGymService != oldWidget.oaGymService ||
       egateAppService != oldWidget.egateAppService ||
+      studentLeaveService != oldWidget.studentLeaveService ||
       studentAllowanceService != oldWidget.studentAllowanceService ||
       uniAuthService != oldWidget.uniAuthService ||
       syncService != oldWidget.syncService ||
       updateService != oldWidget.updateService ||
       courseCatalog != oldWidget.courseCatalog ||
+      gradeService != oldWidget.gradeService ||
       campusClients != oldWidget.campusClients ||
       campusCardService != oldWidget.campusCardService ||
       ecardBindService != oldWidget.ecardBindService ||
