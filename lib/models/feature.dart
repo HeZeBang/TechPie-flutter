@@ -8,6 +8,7 @@ import '../pages/campus_jobs_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elearning_hub_page.dart';
 import '../pages/elrc_recordings_page.dart';
+import '../pages/grades_page.dart';
 import '../pages/holiday_travel_page.dart';
 import '../pages/oa_gym_page.dart';
 import '../pages/student_allowance_page.dart';
@@ -199,6 +200,17 @@ final featureEntries = <Feature>[
       builder: (_) => const HolidayTravelPage(),
     ),
     icon: const Icon(Icons.luggage_outlined),
+  ),
+  Feature(
+    id: 'grades',
+    category: CampusServiceCategory.academics,
+    description: '成绩与 GPA',
+    subtitle: '查询课程、英语成绩与试算绩点',
+    keywords: const ['绩点', '成绩', 'gpa', 'chengji'],
+    pinnedByDefault: true,
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const GradesPage()),
+    icon: const Icon(Icons.school_outlined),
   ),
 ];
 

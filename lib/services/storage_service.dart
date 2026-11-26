@@ -384,6 +384,19 @@ class StorageService {
     return id;
   }
 
+  String _gradeKey(String owner, String scope) =>
+      '${_campusCachePrefix}grades_${jsonEncode([owner, scope])}';
+
+  String? loadGradeCache(String owner, String scope) => _prefs.getString(_gradeKey(owner, scope));
+
+  Future<void> saveGradeCache(String owner, String scope, String data) =>
+      _prefs.setString(_gradeKey(owner, scope), data);
+
+  Future<void> clearGradeCache(String owner) async {
+    final prefix = '${_campusCachePrefix}grades_[${jsonEncode(owner)},';
+    await Future.wait(_prefs.getKeys().where((key) => key.startsWith(prefix)).map(_prefs.remove));
+  }
+
   // Schedule cache
   static const _semestersKey = 'schedule_semesters';
   static const _courseTablePrefix = 'schedule_course_table_';
