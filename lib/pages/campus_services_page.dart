@@ -1,17 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/feature.dart';
 import '../models/quick_shortcuts.dart';
+import '../services/service_provider.dart';
 import '../services/storage_service.dart';
 import '../theme/theme.dart';
+import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
+import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
 import 'campus_feature_navigation.dart';
 
 class CampusServicesPage extends StatefulWidget {
-  const CampusServicesPage({super.key, required this.storage});
-  final StorageService storage;
+  const CampusServicesPage({
+    super.key,
+    this.storage,
+    this.isRootDestination = false,
+  });
+
+  final StorageService? storage;
+  final bool isRootDestination;
 
   @override
   State<CampusServicesPage> createState() => _CampusServicesPageState();
@@ -32,6 +43,19 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
     setState(() => _query = '');
   }
 
+  StorageService _resolveStorage(BuildContext context) =>
+      widget.storage ?? ServiceProvider.of(context).storageService;
+
+  void _openShortcutEditor(BuildContext context) {
+    final storage = _resolveStorage(context);
+    unawaited(
+      pushAdaptivePage<void>(
+        context,
+        builder: (_) => HomeShortcutEditorPage(storage: storage),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
@@ -42,27 +66,28 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
     );
     return Scaffold(
       backgroundColor: colors.canvas,
-      appBar: AppBar(
-        title: const Text('校园服务中心'),
-        actions: [
-          IconButton(
-            tooltip: '编辑首页快捷',
-            icon: const Icon(TpIcons.sliders),
-            onPressed: () => pushAdaptivePage<void>(
-              context,
-              builder: (_) => _ShortcutEditor(storage: widget.storage),
+      appBar: widget.isRootDestination
+          ? null
+          : BlurredAppBar(
+              title: const Text('校园服务中心'),
+              actions: [
+                IconButton(
+                  tooltip: '编辑首页快捷',
+                  icon: const Icon(TpIcons.sliders),
+                  onPressed: () => _openShortcutEditor(context),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
       body: SafeArea(
-        top: false,
+        top: widget.isRootDestination,
         bottom: false,
         child: TpPageBody(
           maxWidth: 1120,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final gutter = constraints.maxWidth < 600 ? TpTokens.space4 : TpTokens.space5;
+              final gutter = constraints.maxWidth < 600
+                  ? TpTokens.space4
+                  : TpTokens.space5;
               final columns = constraints.maxWidth < 600
                   ? 1
                   : constraints.maxWidth < 960
@@ -70,14 +95,70 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
                       : 3;
               final width =
                   (constraints.maxWidth - 2 * gutter - (columns - 1) * TpTokens.space3) / columns;
+              final topPadding = widget.isRootDestination &&
+                      constraints.maxWidth >= 600
+                  ? TpTokens.space5
+                  : TpTokens.space4;
               return ListView(
                 padding: EdgeInsets.fromLTRB(
                   gutter,
-                  TpTokens.space4,
+                  topPadding,
                   gutter,
                   AppShellMetrics.bottomContentPaddingOf(context),
                 ),
                 children: [
+                  if (widget.isRootDestination) ...[
+                    TpPageHeader(
+                      key: const ValueKey('campus_services.header'),
+                      padding: const EdgeInsets.only(bottom: TpTokens.space4),
+                      subtitle: '全部校内应用与快捷入口',
+                      title: '校园服务',
+                      trailing: Semantics(
+                        button: true,
+                        label: '编辑首页快捷',
+                        child: Tooltip(
+                          message: '编辑首页快捷',
+                          child: Material(
+                            key: const ValueKey('campus_services.edit-shortcuts'),
+                            color: colors.surface,
+                            shape: StadiumBorder(
+                              side: BorderSide(color: colors.divider),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              customBorder: const StadiumBorder(),
+                              onTap: () => _openShortcutEditor(context),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: TpTokens.space3,
+                                  vertical: TpTokens.space2,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      TpIcons.sliders,
+                                      size: TpTokens.iconS,
+                                      color: colors.brandInk,
+                                    ),
+                                    const SizedBox(width: TpTokens.space2),
+                                    Text(
+                                      '首页快捷',
+                                      style: TpTypography.itemTitle(colors)
+                                          .copyWith(
+                                        fontSize: 13.5,
+                                        color: colors.textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   TextField(
                     controller: _search,
                     onChanged: (text) => setState(() => _query = text),
@@ -143,15 +224,15 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
   }
 }
 
-class _ShortcutEditor extends StatefulWidget {
-  const _ShortcutEditor({required this.storage});
+class HomeShortcutEditorPage extends StatefulWidget {
+  const HomeShortcutEditorPage({super.key, required this.storage});
   final StorageService storage;
 
   @override
-  State<_ShortcutEditor> createState() => _ShortcutEditorState();
+  State<HomeShortcutEditorPage> createState() => _HomeShortcutEditorPageState();
 }
 
-class _ShortcutEditorState extends State<_ShortcutEditor> {
+class _HomeShortcutEditorPageState extends State<HomeShortcutEditorPage> {
   late final _available = {
     for (final f in featureEntries)
       if (f.id != 'campus_card') f.id: f,
@@ -175,7 +256,11 @@ class _ShortcutEditorState extends State<_ShortcutEditor> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('快捷入口保存失败，请重试')));
+      showAdaptiveFeedback(
+        context: context,
+        message: '快捷入口保存失败，请重试',
+        style: AdaptiveFeedbackStyle.error,
+      );
       return;
     }
     if (mounted) Navigator.of(context).pop();
@@ -191,7 +276,7 @@ class _ShortcutEditorState extends State<_ShortcutEditor> {
     final colors = context.tpColors;
     return Scaffold(
       backgroundColor: colors.canvas,
-      appBar: AppBar(
+      appBar: BlurredAppBar(
         leading: IconButton(
           tooltip: '取消',
           icon: const Icon(TpIcons.close),
@@ -226,13 +311,13 @@ class _ShortcutEditorState extends State<_ShortcutEditor> {
                             IconButton(
                               tooltip: '上移',
                               onPressed: i == 0 || _saving ? null : () => _move(i, -1),
-                              icon: const Icon(Icons.arrow_upward),
+                              icon: const Icon(TpIcons.arrowUp),
                             ),
                             IconButton(
                               tooltip: '下移',
                               onPressed:
                                   i == _selected.length - 1 || _saving ? null : () => _move(i, 1),
-                              icon: const Icon(Icons.arrow_downward),
+                              icon: const Icon(TpIcons.arrowDown),
                             ),
                           ],
                         ),

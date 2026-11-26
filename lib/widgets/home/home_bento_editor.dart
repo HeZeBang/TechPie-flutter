@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../../models/home_layout.dart';
@@ -13,9 +11,9 @@ typedef HomeWidgetCardBuilder = Widget Function(HomeWidgetId id);
 /// Dual-column Bento workspace for wide/desktop viewports.
 ///
 /// Renders a single tree-stable Bento structure across view, direct hold-drag,
-/// and Edit Mode. Picking up a card automatically enters Edit Mode so the user
-/// sees the edit toolbar and per-card options without obscuring the Bento grid
-/// underneath a full-size opaque card.
+/// and Edit Mode. Picking up a card automatically enters Edit Mode while
+/// carrying a translucent scaled copy of the real card itself and snapping
+/// smoothly onto upper/lower card halves or column drop slots.
 class HomeBentoEditor extends StatefulWidget {
   const HomeBentoEditor({
     super.key,
@@ -49,8 +47,31 @@ class HomeBentoEditor extends StatefulWidget {
   State<HomeBentoEditor> createState() => _HomeBentoEditorState();
 }
 
+typedef _BentoSlotTarget = ({HomeBentoColumn column, int slot});
+
 class _HomeBentoEditorState extends State<HomeBentoEditor> {
   HomeWidgetId? _draggingId;
+  _BentoSlotTarget? _hoveredSlot;
+
+  void _setHoveredSlot(HomeBentoColumn column, int slot) {
+    final target = (column: column, slot: slot);
+    if (_hoveredSlot == target) return;
+    setState(() => _hoveredSlot = target);
+  }
+
+  void _clearHoveredSlotIf(HomeBentoColumn column, int slot) {
+    final target = (column: column, slot: slot);
+    if (_hoveredSlot != target) return;
+    setState(() => _hoveredSlot = null);
+  }
+
+  void _acceptSlot(HomeWidgetId id, HomeBentoColumn column, int slot) {
+    setState(() {
+      _draggingId = null;
+      _hoveredSlot = null;
+    });
+    widget.onMoveToSlot(id, column, slot);
+  }
 
   Widget _wrapCard(
     HomeWidgetId id,
@@ -114,16 +135,19 @@ class _HomeBentoEditorState extends State<HomeBentoEditor> {
                   isEditing: widget.isEditing,
                   isDragging: isDragging,
                   draggingId: _draggingId,
-                  buildCard: (id, index, count) => _buildDraggableCard(
+                  hoveredSlot: _hoveredSlot,
+                  buildCard: (id, index, count, columnWidth) =>
+                      _buildDraggableCard(
                     id,
                     HomeBentoColumn.primary,
                     index,
                     count,
+                    columnWidth,
                   ),
-                  onAcceptSlot: (id, slot) {
-                    setState(() => _draggingId = null);
-                    widget.onMoveToSlot(id, HomeBentoColumn.primary, slot);
-                  },
+                  onHoverSlot: _setHoveredSlot,
+                  onLeaveSlot: _clearHoveredSlotIf,
+                  onAcceptSlot: (id, slot) =>
+                      _acceptSlot(id, HomeBentoColumn.primary, slot),
                   footer: showDropChrome ? null : widget.footerWidget,
                 ),
               ),
@@ -143,16 +167,19 @@ class _HomeBentoEditorState extends State<HomeBentoEditor> {
                   isEditing: widget.isEditing,
                   isDragging: isDragging,
                   draggingId: _draggingId,
-                  buildCard: (id, index, count) => _buildDraggableCard(
+                  hoveredSlot: _hoveredSlot,
+                  buildCard: (id, index, count, columnWidth) =>
+                      _buildDraggableCard(
                     id,
                     HomeBentoColumn.secondary,
                     index,
                     count,
+                    columnWidth,
                   ),
-                  onAcceptSlot: (id, slot) {
-                    setState(() => _draggingId = null);
-                    widget.onMoveToSlot(id, HomeBentoColumn.secondary, slot);
-                  },
+                  onHoverSlot: _setHoveredSlot,
+                  onLeaveSlot: _clearHoveredSlotIf,
+                  onAcceptSlot: (id, slot) =>
+                      _acceptSlot(id, HomeBentoColumn.secondary, slot),
                 ),
               ),
           ],
@@ -170,8 +197,10 @@ class _HomeBentoEditorState extends State<HomeBentoEditor> {
     HomeBentoColumn column,
     int index,
     int count,
+    double columnWidth,
   ) {
     final framed = _wrapCard(id, column, index, count);
+    final isDragging = _draggingId != null;
     final isThisDragging = _draggingId == id;
     final surface = Opacity(
       opacity: isThisDragging ? 0.28 : 1.0,
@@ -179,11 +208,15 @@ class _HomeBentoEditorState extends State<HomeBentoEditor> {
     );
     final feedback = _DesktopDragFeedbackCard(
       key: ValueKey('home.drag-feedback-${id.key}'),
-      id: id,
+      width: columnWidth,
+      child: widget.cardBuilder(id),
     );
 
     void onDragStarted() {
-      setState(() => _draggingId = id);
+      setState(() {
+        _draggingId = id;
+        _hoveredSlot = null;
+      });
       if (!widget.isEditing) {
         widget.onEnterEditMode();
       }
@@ -191,18 +224,21 @@ class _HomeBentoEditorState extends State<HomeBentoEditor> {
 
     void clearDrag() {
       if (mounted && _draggingId == id) {
-        setState(() => _draggingId = null);
+        setState(() {
+          _draggingId = null;
+          _hoveredSlot = null;
+        });
       }
     }
 
-    return KeyedSubtree(
+    final draggable = KeyedSubtree(
       key: ValueKey('home.bento-card-wrap-${id.key}'),
       child: widget.isEditing
           ? Draggable<HomeWidgetId>(
               key: ValueKey('home.draggable-${id.key}'),
               data: id,
               maxSimultaneousDrags: 1,
-              dragAnchorStrategy: pointerDragAnchorStrategy,
+              dragAnchorStrategy: childDragAnchorStrategy,
               ignoringFeedbackPointer: true,
               onDragStarted: onDragStarted,
               onDragCompleted: clearDrag,
@@ -217,7 +253,7 @@ class _HomeBentoEditorState extends State<HomeBentoEditor> {
               data: id,
               delay: const Duration(milliseconds: 260),
               maxSimultaneousDrags: 1,
-              dragAnchorStrategy: pointerDragAnchorStrategy,
+              dragAnchorStrategy: childDragAnchorStrategy,
               ignoringFeedbackPointer: true,
               onDragStarted: onDragStarted,
               onDragCompleted: clearDrag,
@@ -228,110 +264,125 @@ class _HomeBentoEditorState extends State<HomeBentoEditor> {
               child: surface,
             ),
     );
+
+    return Stack(
+      children: [
+        draggable,
+        if (isDragging && !isThisDragging)
+          Positioned.fill(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _CardSnapHalfTarget(
+                    key: ValueKey('home.snap-${id.key}-top'),
+                    draggingSelfId: id,
+                    onHover: () => _setHoveredSlot(column, index),
+                    onLeave: () => _clearHoveredSlotIf(column, index),
+                    onAccept: (dragged) => _acceptSlot(dragged, column, index),
+                  ),
+                ),
+                Expanded(
+                  child: _CardSnapHalfTarget(
+                    key: ValueKey('home.snap-${id.key}-bottom'),
+                    draggingSelfId: id,
+                    onHover: () => _setHoveredSlot(column, index + 1),
+                    onLeave: () => _clearHoveredSlotIf(column, index + 1),
+                    onAccept: (dragged) =>
+                        _acceptSlot(dragged, column, index + 1),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _CardSnapHalfTarget extends StatelessWidget {
+  const _CardSnapHalfTarget({
+    super.key,
+    required this.draggingSelfId,
+    required this.onHover,
+    required this.onLeave,
+    required this.onAccept,
+  });
+
+  final HomeWidgetId draggingSelfId;
+  final VoidCallback onHover;
+  final VoidCallback onLeave;
+  final ValueChanged<HomeWidgetId> onAccept;
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<HomeWidgetId>(
+      hitTestBehavior: HitTestBehavior.opaque,
+      onWillAcceptWithDetails: (details) => details.data != draggingSelfId,
+      onMove: (_) => onHover(),
+      onLeave: (_) => onLeave(),
+      onAcceptWithDetails: (details) => onAccept(details.data),
+      builder: (_, __, ___) => const SizedBox.expand(),
+    );
   }
 }
 
 class _DesktopDragFeedbackCard extends StatelessWidget {
   const _DesktopDragFeedbackCard({
     super.key,
-    required this.id,
+    required this.width,
+    required this.child,
   });
 
-  final HomeWidgetId id;
+  final double width;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    final meta = homeWidgetMetaFor(id);
-    final surfaceTint =
-        colors.surface.withValues(alpha: colors.isDark ? 0.72 : 0.78);
-    final borderColor =
-        colors.brandInk.withValues(alpha: colors.isDark ? 0.45 : 0.35);
+    final radius = BorderRadius.circular(TpTokens.radiusL);
+    final borderColor = colors.brandInk.withValues(
+      alpha: colors.isDark ? 0.55 : 0.42,
+    );
 
-    return Transform.translate(
-      offset: const Offset(14, 14),
+    return IgnorePointer(
       child: Material(
         type: MaterialType.transparency,
-        child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 196, maxWidth: 248),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(TpTokens.radiusL),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: surfaceTint,
-                borderRadius: BorderRadius.circular(TpTokens.radiusL),
-                border: Border.all(color: borderColor, width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: colors.textPrimary.withValues(
-                      alpha: colors.isDark ? 0.28 : 0.14,
-                    ),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: TpTokens.space3,
-                  vertical: TpTokens.space2 + 2,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: colors.brandSoft,
-                        borderRadius: BorderRadius.circular(TpTokens.radiusS),
+        child: SizedBox(
+          width: width,
+          child: Transform.scale(
+            scale: 0.86,
+            alignment: Alignment.center,
+            child: Opacity(
+              opacity: 0.58,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: radius,
+                  boxShadow: [
+                    BoxShadow(
+                      color: colors.textPrimary.withValues(
+                        alpha: colors.isDark ? 0.34 : 0.18,
                       ),
-                      child: Icon(
-                        homeWidgetIcon(id),
-                        size: TpTokens.iconS,
-                        color: colors.brandInk,
-                      ),
-                    ),
-                    const SizedBox(width: TpTokens.space2),
-                    Flexible(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            meta.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TpTypography.itemTitle(colors).copyWith(
-                              fontSize: 13.5,
-                            ),
-                          ),
-                          Text(
-                            '拖动到目标栏位',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TpTypography.cardMeta(colors).copyWith(
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: TpTokens.space2),
-                    Icon(
-                      TpIcons.dragHandle,
-                      size: TpTokens.iconXs,
-                      color: colors.textMuted,
+                      blurRadius: 24,
+                      offset: const Offset(0, 12),
                     ),
                   ],
+                ),
+                child: DecoratedBox(
+                  position: DecorationPosition.foreground,
+                  decoration: BoxDecoration(
+                    borderRadius: radius,
+                    border: Border.all(color: borderColor, width: 1.5),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: radius,
+                    child: child,
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -345,7 +396,10 @@ class _BentoColumn extends StatelessWidget {
     required this.isEditing,
     required this.isDragging,
     required this.draggingId,
+    required this.hoveredSlot,
     required this.buildCard,
+    required this.onHoverSlot,
+    required this.onLeaveSlot,
     required this.onAcceptSlot,
     this.footer,
   });
@@ -356,81 +410,105 @@ class _BentoColumn extends StatelessWidget {
   final bool isEditing;
   final bool isDragging;
   final HomeWidgetId? draggingId;
-  final Widget Function(HomeWidgetId id, int index, int count) buildCard;
+  final _BentoSlotTarget? hoveredSlot;
+  final Widget Function(
+    HomeWidgetId id,
+    int index,
+    int count,
+    double columnWidth,
+  ) buildCard;
+  final void Function(HomeBentoColumn column, int slotIndex) onHoverSlot;
+  final void Function(HomeBentoColumn column, int slotIndex) onLeaveSlot;
   final void Function(HomeWidgetId id, int slotIndex) onAcceptSlot;
   final Widget? footer;
 
   String get _colName =>
       column == HomeBentoColumn.primary ? 'primary' : 'secondary';
 
+  bool _isSlotHighlighted(int slotIndex) =>
+      hoveredSlot == (column: column, slot: slotIndex);
+
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final showDropChrome = isEditing || isDragging;
 
-    return Column(
-      key: ValueKey('home.bento-col-$_colName'),
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (showDropChrome)
-          Padding(
-            key: ValueKey('home.bento-header-$_colName'),
-            padding: const EdgeInsets.only(
-              left: TpTokens.space1,
-              bottom: TpTokens.space2,
-            ),
-            child: Text(
-              label,
-              style: TpTypography.cardMeta(colors).copyWith(
-                fontWeight: FontWeight.w600,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columnWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 460.0;
+        return Column(
+          key: ValueKey('home.bento-col-$_colName'),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (showDropChrome)
+              Padding(
+                key: ValueKey('home.bento-header-$_colName'),
+                padding: const EdgeInsets.only(
+                  left: TpTokens.space1,
+                  bottom: TpTokens.space2,
+                ),
+                child: Text(
+                  label,
+                  style: TpTypography.cardMeta(colors).copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
-            ),
-          ),
-        if (items.isEmpty)
-          if (showDropChrome)
-            _EmptyColumnDropZone(
-              key: ValueKey('home.empty-column-$_colName'),
-              draggingId: draggingId,
-              onAccept: (id) => onAcceptSlot(id, 0),
-            )
-          else
-            const SizedBox.shrink()
-        else ...[
-          _BentoDropSlot(
-            key: ValueKey('home.drop-$_colName-0'),
-            isEditing: isEditing,
-            isDraggingAny: isDragging,
-            draggingId: draggingId,
-            isEdgeSlot: true,
-            onAccept: (id) => onAcceptSlot(id, 0),
-          ),
-          for (var i = 0; i < items.length; i++) ...[
-            buildCard(items[i], i, items.length),
-            _BentoDropSlot(
-              key: ValueKey('home.drop-$_colName-${i + 1}'),
-              isEditing: isEditing,
-              isDraggingAny: isDragging,
-              draggingId: draggingId,
-              isEdgeSlot: i == items.length - 1,
-              onAccept: (id) => onAcceptSlot(id, i + 1),
-            ),
-          ],
-        ],
-        if (footer != null)
-          KeyedSubtree(
-            key: ValueKey('home.bento-footer-$_colName'),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (items.isNotEmpty)
-                  const SizedBox(height: TpTokens.sectionGap),
-                footer!,
+            if (items.isEmpty)
+              if (showDropChrome)
+                _EmptyColumnDropZone(
+                  key: ValueKey('home.empty-column-$_colName'),
+                  draggingId: draggingId,
+                  onAccept: (id) => onAcceptSlot(id, 0),
+                )
+              else
+                const SizedBox.shrink()
+            else ...[
+              _BentoDropSlot(
+                key: ValueKey('home.drop-$_colName-0'),
+                isEditing: isEditing,
+                isDraggingAny: isDragging,
+                draggingId: draggingId,
+                isExternallyHighlighted: _isSlotHighlighted(0),
+                isEdgeSlot: true,
+                onHoverEnter: () => onHoverSlot(column, 0),
+                onHoverLeave: () => onLeaveSlot(column, 0),
+                onAccept: (id) => onAcceptSlot(id, 0),
+              ),
+              for (var i = 0; i < items.length; i++) ...[
+                buildCard(items[i], i, items.length, columnWidth),
+                _BentoDropSlot(
+                  key: ValueKey('home.drop-$_colName-${i + 1}'),
+                  isEditing: isEditing,
+                  isDraggingAny: isDragging,
+                  draggingId: draggingId,
+                  isExternallyHighlighted: _isSlotHighlighted(i + 1),
+                  isEdgeSlot: i == items.length - 1,
+                  onHoverEnter: () => onHoverSlot(column, i + 1),
+                  onHoverLeave: () => onLeaveSlot(column, i + 1),
+                  onAccept: (id) => onAcceptSlot(id, i + 1),
+                ),
               ],
-            ),
-          ),
-      ],
+            ],
+            if (footer != null)
+              KeyedSubtree(
+                key: ValueKey('home.bento-footer-$_colName'),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (items.isNotEmpty)
+                      const SizedBox(height: TpTokens.sectionGap),
+                    footer!,
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -441,14 +519,20 @@ class _BentoDropSlot extends StatelessWidget {
     required this.isEditing,
     required this.isDraggingAny,
     required this.draggingId,
+    required this.isExternallyHighlighted,
     this.isEdgeSlot = false,
+    required this.onHoverEnter,
+    required this.onHoverLeave,
     required this.onAccept,
   });
 
   final bool isEditing;
   final bool isDraggingAny;
   final HomeWidgetId? draggingId;
+  final bool isExternallyHighlighted;
   final bool isEdgeSlot;
+  final VoidCallback onHoverEnter;
+  final VoidCallback onHoverLeave;
   final ValueChanged<HomeWidgetId> onAccept;
 
   @override
@@ -469,10 +553,14 @@ class _BentoDropSlot extends StatelessWidget {
 
     return DragTarget<HomeWidgetId>(
       onWillAcceptWithDetails: (_) => true,
+      onMove: (_) => onHoverEnter(),
+      onLeave: (_) => onHoverLeave(),
       onAcceptWithDetails: (details) => onAccept(details.data),
       builder: (context, candidates, rejected) {
-        final hovered = candidates.isNotEmpty;
-        final candidateId = hovered ? (candidates.first ?? draggingId) : null;
+        final hovered = candidates.isNotEmpty || isExternallyHighlighted;
+        final candidateId = hovered
+            ? (candidates.isNotEmpty ? (candidates.first ?? draggingId) : draggingId)
+            : null;
         final label = candidateId != null
             ? '放置「${homeWidgetMetaFor(candidateId).title}」到此处'
             : '放置到此处';

@@ -37,6 +37,7 @@ import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_item.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_tokens.dart';
 import 'package:techpie/widgets/app_shell/mobile_shell.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
+import 'package:techpie/widgets/design_system/tp_brand_mark.dart';
 import 'package:techpie/widgets/ios/ios_native_tab_bar.dart';
 
 class _TestSignedInAuth extends AuthService {
@@ -217,10 +218,26 @@ void main() {
       final commandTrigger =
           find.byKey(const ValueKey('desktop.command-palette-trigger'));
       final toggleButton = find.byKey(const ValueKey('desktop.sidebar-toggle'));
+      final brandTile = find.byKey(const ValueKey('desktop.sidebar-brand'));
+      final campusServicesItem =
+          find.byKey(const ValueKey('desktop.sidebar-campus-services'));
       expect(commandTrigger, findsOneWidget);
       expect(find.text('⌘K'), findsOneWidget);
+      expect(brandTile, findsOneWidget);
       expect(
-        find.byKey(const ValueKey('desktop.sidebar-campus-services')),
+        find.descendant(
+          of: brandTile,
+          matching: find.byType(TpBrandMark),
+        ),
+        findsOneWidget,
+      );
+      expect(campusServicesItem, findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is DesktopSidebarItem &&
+              w.key == const ValueKey('desktop.sidebar-campus-services'),
+        ),
         findsOneWidget,
       );
 
@@ -244,9 +261,13 @@ void main() {
         findsOneWidget,
       );
 
-      // Top toggle button sits above command trigger & account tile (expanded & collapsed).
+      // macOS header places titlebar toggle above lightweight brand row, then command trigger & footer.
       expect(
         tester.getTopLeft(toggleButton).dy,
+        lessThan(tester.getTopLeft(brandTile).dy),
+      );
+      expect(
+        tester.getTopLeft(brandTile).dy,
         lessThan(tester.getTopLeft(commandTrigger).dy),
       );
       expect(
@@ -254,14 +275,28 @@ void main() {
         lessThan(tester.getTopLeft(accountTile).dy),
       );
 
+      // Collapsing to 78px rail hides the brand row while keeping toggle above command trigger.
       await tester.tap(toggleButton);
       await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byType(DesktopSidebar)).width,
+        closeTo(DesktopSidebarTokens.collapsedWidth, 0.5),
+      );
+      expect(brandTile, findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(DesktopSidebar),
+          matching: find.byType(TpBrandMark),
+        ),
+        findsNothing,
+      );
       expect(
         tester.getTopLeft(toggleButton).dy,
         lessThan(tester.getTopLeft(commandTrigger).dy),
       );
       await tester.tap(toggleButton);
       await tester.pumpAndSettle();
+      expect(brandTile, findsOneWidget);
 
       // Tapping account footer opens Settings, highlights the account tile,
       // and fades out the upper nav sliding indicator.
@@ -291,19 +326,88 @@ void main() {
       );
       expect(activeIndicator.opacity, 1.0);
 
-      // Tapping Campus Services opens CampusServicesPage, and Cmd+[ pops back.
-      await tester.tap(
-        find.byKey(const ValueKey('desktop.sidebar-campus-services')),
-      );
+      // Tapping Campus Services switches to the root destination (no back arrow),
+      // preserves the upper sliding indicator, and opens/pops shortcut editor subpages.
+      await tester.tap(campusServicesItem);
       await tester.pumpAndSettle();
       expect(find.byType(CampusServicesPage), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('campus_services.header')),
+        findsOneWidget,
+      );
+      expect(find.byType(AppBar), findsNothing);
+      expect(
+        tester
+            .widget<DesktopSidebarItem>(campusServicesItem)
+            .selected,
+        isTrue,
+      );
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(
+                const ValueKey('desktop.sidebar-active-indicator-opacity'),
+              ),
+            )
+            .opacity,
+        1.0,
+      );
+
+      // Root tab cannot pop further via Cmd+[.
+      await _sendChord(
+        tester,
+        LogicalKeyboardKey.bracketLeft,
+        modifier: LogicalKeyboardKey.metaLeft,
+      );
+      expect(find.byType(CampusServicesPage), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('campus_services.header')),
+        findsOneWidget,
+      );
+
+      // Pushing HomeShortcutEditorPage can pop back via Cmd+[.
+      await tester.tap(
+        find.byKey(const ValueKey('campus_services.edit-shortcuts')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(HomeShortcutEditorPage), findsOneWidget);
 
       await _sendChord(
         tester,
         LogicalKeyboardKey.bracketLeft,
         modifier: LogicalKeyboardKey.metaLeft,
       );
-      expect(find.byType(CampusServicesPage), findsNothing);
+      expect(find.byType(HomeShortcutEditorPage), findsNothing);
+      expect(
+        find.byKey(const ValueKey('campus_services.header')),
+        findsOneWidget,
+      );
+
+      // Tapping sidebar brand returns to Home, and tapping "更多" in Quick Actions
+      // switches directly to the desktop Campus Services tab.
+      await tester.tap(brandTile);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('home.greeting-header')), findsOneWidget);
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('home.quick-actions')),
+          matching: find.text('更多'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('campus_services.header')),
+        findsOneWidget,
+      );
+      await _sendChord(
+        tester,
+        LogicalKeyboardKey.bracketLeft,
+        modifier: LogicalKeyboardKey.metaLeft,
+      );
+      expect(
+        find.byKey(const ValueKey('campus_services.header')),
+        findsOneWidget,
+      );
     },
     variant: const TargetPlatformVariant({TargetPlatform.macOS}),
   );
@@ -317,8 +421,8 @@ void main() {
       expect(find.byType(PlatformMenuBar), findsNothing);
       expect(find.text('Ctrl K'), findsOneWidget);
 
-      // Ctrl+2 -> Schedule (SchedulePage shows loading spinner without cached semester),
-      // then Ctrl+3 -> Deadlines, Ctrl+4 -> Settings, Ctrl+1 -> Home.
+      // Ctrl+2 -> Schedule, Ctrl+3 -> Deadlines, Ctrl+4 -> CampusServices,
+      // Ctrl+5 -> Settings, Ctrl+1 -> Home.
       await _sendChord(
         tester,
         LogicalKeyboardKey.digit2,
@@ -337,6 +441,16 @@ void main() {
       await _sendChord(
         tester,
         LogicalKeyboardKey.digit4,
+        modifier: LogicalKeyboardKey.controlLeft,
+      );
+      expect(
+        find.byKey(const ValueKey('campus_services.header')),
+        findsOneWidget,
+      );
+
+      await _sendChord(
+        tester,
+        LogicalKeyboardKey.digit5,
         modifier: LogicalKeyboardKey.controlLeft,
       );
       expect(find.byType(SettingsPage), findsOneWidget);

@@ -125,6 +125,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _auth.addListener(_onAuthChanged);
       _tpAuth.addListener(_onAuthChanged);
       _campusCard.addListener(_onAuthChanged);
+      _storage.pinnedQuickFeaturesVersion.addListener(_onQuickShortcutsChanged);
       appShellPendingHomeEdit.addListener(_onPendingHomeEdit);
       HardwareKeyboard.instance.addHandler(_handleHardwareKey);
       _doRebuild();
@@ -146,6 +147,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _auth.removeListener(_onAuthChanged);
     _tpAuth.removeListener(_onAuthChanged);
     _campusCard.removeListener(_onAuthChanged);
+    _storage.pinnedQuickFeaturesVersion.removeListener(_onQuickShortcutsChanged);
     appShellPendingHomeEdit.removeListener(_onPendingHomeEdit);
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     _galleryState.dispose();
@@ -324,11 +326,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Future<void> _openQuickActionsEditor(StorageService storage) async {
+  Future<void> _openMoreCampusServices(StorageService storage) async {
+    final inDesktopShell = usesDesktopSidebarShell(context) &&
+        context.findAncestorWidgetOfExactType<DesktopShell>() != null;
+    if (inDesktopShell) {
+      appShellPendingTab.value = AppShell.campusServicesTabIndex;
+      return;
+    }
     await pushAdaptivePage<void>(
       context,
       builder: (_) => CampusServicesPage(storage: storage),
     );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openQuickActionsEditor(StorageService storage) async {
+    await pushAdaptivePage<void>(
+      context,
+      builder: (_) => HomeShortcutEditorPage(storage: storage),
+    );
+    if (mounted) setState(() {});
+  }
+
+  void _onQuickShortcutsChanged() {
     if (mounted) setState(() {});
   }
 
@@ -922,7 +942,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             openCampusFeature(context, feature);
             return;
           }
-          await _openQuickActionsEditor(storage);
+          await _openMoreCampusServices(storage);
         },
       ),
     );

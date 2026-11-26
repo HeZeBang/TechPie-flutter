@@ -73,6 +73,12 @@ final appShellPendingHomeEdit = ValueNotifier<bool>(false);
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
+  static const int homeTabIndex = 0;
+  static const int scheduleTabIndex = 1;
+  static const int deadlinesTabIndex = 2;
+  static const int accountTabIndex = 3;
+  static const int campusServicesTabIndex = 4;
+
   @override
   State<AppShell> createState() => _AppShellState();
 }
@@ -83,10 +89,10 @@ class _AppShellState extends State<AppShell> {
   /// The tab the campus card lives in on iOS: it is entered from Home's feature
   /// grid, so a widget or shortcut opens it there too, the way a system app's
   /// widget opens its content where that content belongs.
-  static const int _campusCardTab = 0;
+  static const int _campusCardTab = AppShell.homeTabIndex;
 
-  int _selectedIndex = 0;
-  int _previousSelectedIndex = 0;
+  int _selectedIndex = AppShell.homeTabIndex;
+  int _previousSelectedIndex = AppShell.homeTabIndex;
   bool _sidebarCollapsed = false;
   bool _sidebarPrefLoaded = false;
 
@@ -131,7 +137,21 @@ class _AppShellState extends State<AppShell> {
       selectedSfSymbol: 'person.fill',
       page: SettingsPage(key: ValueKey('settings')),
     ),
+    AppDestination(
+      label: '校园服务',
+      icon: TpIcons.activities,
+      selectedIcon: TpIcons.activities,
+      sfSymbol: 'square.grid.2x2',
+      selectedSfSymbol: 'square.grid.2x2.fill',
+      page: CampusServicesPage(
+        key: ValueKey('campus_services'),
+        isRootDestination: true,
+      ),
+    ),
   ];
+
+  static final List<AppDestination> _mobileDestinations =
+      _destinations.sublist(0, 4);
 
   @override
   void initState() {
@@ -172,6 +192,11 @@ class _AppShellState extends State<AppShell> {
     if (!mounted || target == null) return;
     appShellPendingTab.value = null;
     if (target < 0 || target >= _destinations.length) return;
+    if (target == AppShell.campusServicesTabIndex &&
+        !(_desktopShellEnabled && usesDesktopSidebarShell(context))) {
+      _openCampusServices();
+      return;
+    }
     _onDestinationSelected(target);
   }
 
@@ -218,7 +243,13 @@ class _AppShellState extends State<AppShell> {
       _returnToTabRoot(index);
       return;
     }
-    const features = ['home', 'schedule', 'deadlines', 'settings'];
+    const features = [
+      'home',
+      'schedule',
+      'deadlines',
+      'settings',
+      'campus_services',
+    ];
     context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened(features[index]);
     _previousSelectedIndex = _selectedIndex;
     setState(() => _selectedIndex = index);
@@ -288,6 +319,10 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _openCampusServices() {
+    if (_desktopShellEnabled && usesDesktopSidebarShell(context)) {
+      _onDestinationSelected(AppShell.campusServicesTabIndex);
+      return;
+    }
     final services =
         context.getInheritedWidgetOfExactType<ServiceProvider>();
     if (services == null) return;
@@ -297,6 +332,15 @@ class _AppShellState extends State<AppShell> {
         builder: (_) => CampusServicesPage(storage: services.storageService),
       ),
     );
+  }
+
+  void _onDesktopShortcutTab(int index) {
+    if (index == AppShell.campusServicesTabIndex &&
+        !(_desktopShellEnabled && usesDesktopSidebarShell(context))) {
+      _openCampusServices();
+      return;
+    }
+    _onDestinationSelected(index);
   }
 
   void _refreshWorkbenchData() {
@@ -380,25 +424,25 @@ class _AppShellState extends State<AppShell> {
         onExecute: () => _onDestinationSelected(2),
       ),
       DesktopCommandItem(
+        id: 'tab.campus_services',
+        title: '校园服务',
+        subtitle: '浏览全部校内应用与首页快捷入口',
+        group: '导航',
+        icon: TpIcons.activities,
+        shortcutLabel: '${mod}4',
+        keywords: const ['services', 'campus', 'fuwu', 'more', '更多', '校园服务中心'],
+        onExecute: _openCampusServices,
+      ),
+      DesktopCommandItem(
         id: 'tab.settings',
         title: '我的',
         subtitle: '账号绑定、云同步与外观设置',
         group: '导航',
         icon: TpIcons.profile,
-        shortcutLabel: '${mod}4',
+        shortcutLabel: '${mod}5',
         keywords: const ['settings', 'me', 'wode', 'shezhi'],
-        onExecute: () => _onDestinationSelected(3),
+        onExecute: () => _onDestinationSelected(AppShell.accountTabIndex),
       ),
-      if (services != null)
-        DesktopCommandItem(
-          id: 'service.hub',
-          title: '校园服务中心',
-          subtitle: '浏览全部校园服务与首页快捷编辑',
-          group: '校园服务',
-          icon: TpIcons.activities,
-          keywords: const ['services', 'fuwu', 'more', '更多'],
-          onExecute: _openCampusServices,
-        ),
       if (services != null)
         for (final feature in featureEntries)
           DesktopCommandItem(
@@ -486,10 +530,12 @@ class _AppShellState extends State<AppShell> {
   Widget _buildPageView(
     BuildContext context, {
     required bool usePerTabNavigators,
+    required int selectedIndex,
+    required int previousSelectedIndex,
   }) {
     return AppDestinationSwitcher(
-      selectedIndex: _selectedIndex,
-      previousSelectedIndex: _previousSelectedIndex,
+      selectedIndex: selectedIndex,
+      previousSelectedIndex: previousSelectedIndex,
       preserveVisitedPages: usePerTabNavigators,
       animationsEnabled: !MediaQuery.disableAnimationsOf(context),
       pages: [
@@ -544,9 +590,30 @@ class _AppShellState extends State<AppShell> {
     final effectiveSidebarCollapsed = autoCollapsedRail || _sidebarCollapsed;
     final showSidebarToggle = !autoCollapsedRail;
 
+    final clampedToMobile =
+        !desktopShell && _selectedIndex >= _mobileDestinations.length;
+    final effectiveSelectedIndex =
+        clampedToMobile ? AppShell.homeTabIndex : _selectedIndex;
+    final effectivePreviousIndex =
+        !desktopShell && _previousSelectedIndex >= _mobileDestinations.length
+            ? AppShell.homeTabIndex
+            : _previousSelectedIndex;
+
+    if (clampedToMobile) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!(_desktopShellEnabled && usesDesktopSidebarShell(context)) &&
+            _selectedIndex >= _mobileDestinations.length) {
+          setState(() => _selectedIndex = AppShell.homeTabIndex);
+        }
+      });
+    }
+
     final pageView = _buildPageView(
       context,
       usePerTabNavigators: isIos() || desktopShell || isDesktop(),
+      selectedIndex: effectiveSelectedIndex,
+      previousSelectedIndex: effectivePreviousIndex,
     );
 
     final services =
@@ -565,17 +632,16 @@ class _AppShellState extends State<AppShell> {
       if (listenables.isEmpty) {
         shellWidget = DesktopShell(
           destinations: _destinations,
-          selectedIndex: _selectedIndex,
+          selectedIndex: effectiveSelectedIndex,
           sidebarCollapsed: effectiveSidebarCollapsed,
           showToggleButton: showSidebarToggle,
           onDestinationSelected: _onDestinationSelected,
           onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
           onOpenCommandPalette: () =>
               _openCommandPalette(allowSidebarToggle: showSidebarToggle),
-          onOpenCampusServices:
-              services == null ? null : _openCampusServices,
-          accountDestinationIndex: 3,
-          onOpenAccount: () => _onDestinationSelected(3),
+          onBrandTap: () => _onDestinationSelected(AppShell.homeTabIndex),
+          accountDestinationIndex: AppShell.accountTabIndex,
+          onOpenAccount: () => _onDestinationSelected(AppShell.accountTabIndex),
           child: pageView,
         );
       } else {
@@ -586,7 +652,7 @@ class _AppShellState extends State<AppShell> {
                 computeDeadlineSidebarBadge(services!.assignmentService);
             return DesktopShell(
               destinations: _destinations,
-              selectedIndex: _selectedIndex,
+              selectedIndex: effectiveSelectedIndex,
               sidebarCollapsed: effectiveSidebarCollapsed,
               showToggleButton: showSidebarToggle,
               badges: deadlineBadge == null ? const {} : {2: deadlineBadge},
@@ -594,10 +660,11 @@ class _AppShellState extends State<AppShell> {
               onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
               onOpenCommandPalette: () =>
                   _openCommandPalette(allowSidebarToggle: showSidebarToggle),
-              onOpenCampusServices: _openCampusServices,
+              onBrandTap: () => _onDestinationSelected(AppShell.homeTabIndex),
               accountSummary: _buildAccountSummary(services),
-              accountDestinationIndex: 3,
-              onOpenAccount: () => _onDestinationSelected(3),
+              accountDestinationIndex: AppShell.accountTabIndex,
+              onOpenAccount: () =>
+                  _onDestinationSelected(AppShell.accountTabIndex),
               child: child!,
             );
           },
@@ -606,8 +673,8 @@ class _AppShellState extends State<AppShell> {
       }
     } else {
       shellWidget = MobileShell(
-        destinations: _destinations,
-        selectedIndex: _selectedIndex,
+        destinations: _mobileDestinations,
+        selectedIndex: effectiveSelectedIndex,
         onDestinationSelected: _onDestinationSelected,
         child: pageView,
       );
@@ -616,13 +683,12 @@ class _AppShellState extends State<AppShell> {
     if (!isDesktop()) return shellWidget;
 
     return DesktopWorkbenchChrome(
-      onSelectTab: _onDestinationSelected,
+      onSelectTab: _onDesktopShortcutTab,
       onToggleCommandPalette: () =>
           _openCommandPalette(allowSidebarToggle: desktopShell && showSidebarToggle),
       onRefresh: _refreshWorkbenchData,
       onNavigateBack: _navigateBackInActiveTab,
       canNavigateBack: _canNavigateBackInActiveTab,
-      onOpenCampusServices: _openCampusServices,
       onToggleTheme: _toggleLightDarkTheme,
       onEditHomeLayout: _openHomeEditMode,
       sidebarCollapsed: effectiveSidebarCollapsed,

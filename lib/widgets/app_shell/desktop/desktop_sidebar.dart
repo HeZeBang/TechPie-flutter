@@ -22,7 +22,7 @@ class DesktopSidebar extends StatelessWidget {
   final ValueChanged<int> onSelected;
   final VoidCallback onToggleCollapsed;
   final VoidCallback? onOpenCommandPalette;
-  final VoidCallback? onOpenCampusServices;
+  final VoidCallback? onBrandTap;
   final DesktopSidebarAccountSummary? accountSummary;
   final int? accountDestinationIndex;
   final VoidCallback? onOpenAccount;
@@ -37,7 +37,7 @@ class DesktopSidebar extends StatelessWidget {
     required this.onSelected,
     required this.onToggleCollapsed,
     this.onOpenCommandPalette,
-    this.onOpenCampusServices,
+    this.onBrandTap,
     this.accountSummary,
     this.accountDestinationIndex,
     this.onOpenAccount,
@@ -79,6 +79,7 @@ class DesktopSidebar extends StatelessWidget {
               collapsed: collapsed,
               showToggleButton: showToggleButton,
               onToggleCollapsed: onToggleCollapsed,
+              onBrandTap: onBrandTap,
             ),
             if (onOpenCommandPalette != null)
               Padding(
@@ -106,42 +107,16 @@ class DesktopSidebar extends StatelessWidget {
                   children: [
                     Expanded(
                       child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _SlidingSidebarNavList(
-                              entries: navEntries,
-                              selectedIndex: selectedIndex,
-                              collapsed: collapsed,
-                              itemSpacing: itemSpacing,
-                              badges: badges,
-                              onSelected: (index) {
-                                unawaited(AppHaptics.play(AppHaptics.tabSelect));
-                                onSelected(index);
-                              },
-                            ),
-                            if (onOpenCampusServices != null) ...[
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: TpTokens.space1 + 2,
-                                ),
-                                child: Divider(
-                                  height: 1,
-                                  thickness: 0.5,
-                                  color: colors.divider,
-                                ),
-                              ),
-                              _SidebarUtilityButton(
-                                buttonKey: const ValueKey(
-                                  'desktop.sidebar-campus-services',
-                                ),
-                                icon: TpIcons.activities,
-                                label: '校园服务',
-                                collapsed: collapsed,
-                                onTap: onOpenCampusServices!,
-                              ),
-                            ],
-                          ],
+                        child: _SlidingSidebarNavList(
+                          entries: navEntries,
+                          selectedIndex: selectedIndex,
+                          collapsed: collapsed,
+                          itemSpacing: itemSpacing,
+                          badges: badges,
+                          onSelected: (index) {
+                            unawaited(AppHaptics.play(AppHaptics.tabSelect));
+                            onSelected(index);
+                          },
                         ),
                       ),
                     ),
@@ -312,6 +287,9 @@ class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
           children: [
             for (var slot = 0; slot < widget.entries.length; slot++) ...[
               DesktopSidebarItem(
+                key: widget.entries[slot].destination.label == '校园服务'
+                    ? const ValueKey('desktop.sidebar-campus-services')
+                    : ValueKey('desktop.sidebar-nav-${widget.entries[slot].index}'),
                 destination: widget.entries[slot].destination,
                 selected: widget.entries[slot].index == widget.selectedIndex,
                 collapsed: widget.collapsed,
@@ -334,114 +312,128 @@ class _SidebarDragHeader extends StatelessWidget {
   final bool collapsed;
   final bool showToggleButton;
   final VoidCallback onToggleCollapsed;
+  final VoidCallback? onBrandTap;
 
   const _SidebarDragHeader({
     required this.horizontalPadding,
     required this.collapsed,
     required this.showToggleButton,
     required this.onToggleCollapsed,
+    this.onBrandTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final topInset = isMacOsDesktop() ? macOsTitlebarInset : 0.0;
-    return MacOsWindowDragRegion(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          horizontalPadding,
-          DesktopSidebarTokens.headerTopPadding + topInset,
-          horizontalPadding,
-          DesktopSidebarTokens.headerBottomPadding,
-        ),
-        child: _SidebarBrand(
-          collapsed: collapsed,
-          showToggleButton: showToggleButton,
-          onToggleCollapsed: onToggleCollapsed,
-        ),
-      ),
-    );
-  }
-}
-
-class _SidebarBrand extends StatelessWidget {
-  final bool collapsed;
-  final bool showToggleButton;
-  final VoidCallback onToggleCollapsed;
-
-  const _SidebarBrand({
-    required this.collapsed,
-    required this.showToggleButton,
-    required this.onToggleCollapsed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tpColors;
+    final isMac = isMacOsDesktop();
+    if (collapsed) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (isMac)
+            const MacOsWindowDragRegion(
+              child: SizedBox(
+                height: DesktopSidebarTokens.macOsTitlebarRowHeight,
+              ),
+            ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              isMac ? 4 : DesktopSidebarTokens.headerTopPadding,
+              horizontalPadding,
+              DesktopSidebarTokens.headerBottomPadding,
+            ),
+            child: showToggleButton
+                ? Center(
+                    child: _SidebarToggleButton(
+                      collapsed: true,
+                      compact: false,
+                      onPressed: onToggleCollapsed,
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      );
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final requiredExpandedWidth = DesktopSidebarTokens.iconColumnWidth +
+        final minExpandedWidth = DesktopSidebarTokens.iconColumnWidth +
             DesktopSidebarTokens.brandTextGap +
-            DesktopSidebarTokens.minLabelWidth +
-            (showToggleButton ? DesktopSidebarTokens.toggleButtonSize + 4 : 0);
-        final canShowLabel =
-            !collapsed && constraints.maxWidth >= requiredExpandedWidth;
+            DesktopSidebarTokens.minLabelWidth;
+        final innerWidth = (constraints.maxWidth - 2 * horizontalPadding)
+            .clamp(0.0, double.infinity);
+        final canShowLabel = innerWidth >= minExpandedWidth;
 
-        final logo = SizedBox(
-          width: DesktopSidebarTokens.iconColumnWidth,
-          child: Center(
-            child: TpBrandMark(
-              size: 28,
-              semanticLabel: canShowLabel ? null : 'TechPie',
-            ),
-          ),
-        );
-
-        if (collapsed) {
+        if (isMac) {
           return Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SizedBox(
-                height: DesktopSidebarTokens.brandHeight,
-                child: Tooltip(message: 'TechPie', child: logo),
-              ),
-              if (showToggleButton) ...[
-                const SizedBox(height: 6),
-                _SidebarToggleButton(
-                  collapsed: true,
-                  compact: false,
-                  onPressed: onToggleCollapsed,
+                height: DesktopSidebarTokens.macOsTitlebarRowHeight,
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: MacOsWindowDragRegion(
+                        child: SizedBox.expand(),
+                      ),
+                    ),
+                    if (showToggleButton && canShowLabel)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          right: (horizontalPadding - 2).clamp(0.0, 24.0),
+                        ),
+                        child: _SidebarToggleButton(
+                          collapsed: false,
+                          compact: true,
+                          onPressed: onToggleCollapsed,
+                        ),
+                      ),
+                  ],
                 ),
-              ],
+              ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  2,
+                  horizontalPadding,
+                  DesktopSidebarTokens.headerBottomPadding,
+                ),
+                child: _SidebarBrandTile(
+                  canShowLabel: canShowLabel,
+                  onTap: onBrandTap,
+                ),
+              ),
             ],
           );
         }
 
-        return SizedBox(
-          height: DesktopSidebarTokens.brandHeight,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              if (!canShowLabel)
-                Tooltip(message: 'TechPie', child: logo)
-              else
-                logo,
-              if (canShowLabel) ...[
-                const SizedBox(width: DesktopSidebarTokens.brandTextGap),
+        final canShowToggleWithLabel = showToggleButton &&
+            innerWidth >=
+                minExpandedWidth +
+                    TpTokens.space1 +
+                    DesktopSidebarTokens.toggleButtonSize;
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            DesktopSidebarTokens.headerTopPadding,
+            horizontalPadding,
+            DesktopSidebarTokens.headerBottomPadding,
+          ),
+          child: SizedBox(
+            height: DesktopSidebarTokens.brandHeight,
+            child: Row(
+              children: [
                 Expanded(
-                  child: Text(
-                    'TechPie',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TpTypography.cardTitle(colors).copyWith(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.3,
-                    ),
+                  child: _SidebarBrandTile(
+                    canShowLabel: canShowLabel,
+                    onTap: onBrandTap,
                   ),
                 ),
-                if (showToggleButton) ...[
+                if (canShowToggleWithLabel) ...[
                   const SizedBox(width: TpTokens.space1),
                   _SidebarToggleButton(
                     collapsed: false,
@@ -450,10 +442,90 @@ class _SidebarBrand extends StatelessWidget {
                   ),
                 ],
               ],
-            ],
+            ),
           ),
         );
       },
+    );
+  }
+}
+
+class _SidebarBrandTile extends StatelessWidget {
+  const _SidebarBrandTile({
+    required this.canShowLabel,
+    this.onTap,
+  });
+
+  final bool canShowLabel;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final radius = BorderRadius.circular(TpTokens.radiusS);
+    final logo = SizedBox(
+      width: DesktopSidebarTokens.iconColumnWidth,
+      child: Center(
+        child: TpBrandMark(
+          size: DesktopSidebarTokens.brandIconSize,
+          semanticLabel: canShowLabel ? null : 'TechPie',
+        ),
+      ),
+    );
+
+    final row = SizedBox(
+      height: DesktopSidebarTokens.brandHeight,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          logo,
+          if (canShowLabel) ...[
+            const SizedBox(width: DesktopSidebarTokens.brandTextGap),
+            Expanded(
+              child: Text(
+                'TechPie',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TpTypography.cardTitle(colors).copyWith(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                  color: colors.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    final tile = Material(
+      key: const ValueKey('desktop.sidebar-brand'),
+      type: MaterialType.transparency,
+      shape: RoundedRectangleBorder(borderRadius: radius),
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null
+          ? row
+          : InkWell(
+              onTap: onTap,
+              borderRadius: radius,
+              hoverColor: colors.textPrimary.withValues(
+                alpha: colors.isDark ? 0.05 : 0.035,
+              ),
+              highlightColor: colors.textPrimary.withValues(alpha: 0.06),
+              splashColor: colors.brand.withValues(alpha: 0.08),
+              child: row,
+            ),
+    );
+
+    if (onTap == null) return tile;
+    return Semantics(
+      button: true,
+      label: 'TechPie 返回首页',
+      child: Tooltip(
+        message: '返回首页',
+        child: tile,
+      ),
     );
   }
 }
@@ -549,89 +621,6 @@ class _SidebarCommandTrigger extends StatelessWidget {
 
         if (canShowLabel) return button;
         return Tooltip(message: tooltipMessage, child: button);
-      },
-    );
-  }
-}
-
-class _SidebarUtilityButton extends StatelessWidget {
-  const _SidebarUtilityButton({
-    required this.buttonKey,
-    required this.icon,
-    required this.label,
-    required this.collapsed,
-    required this.onTap,
-  });
-
-  final Key buttonKey;
-  final IconData icon;
-  final String label;
-  final bool collapsed;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tpColors;
-    final radius = BorderRadius.circular(TpTokens.radiusS);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final canShowLabel = !collapsed &&
-            constraints.maxWidth >=
-                DesktopSidebarTokens.iconColumnWidth +
-                    DesktopSidebarTokens.navItemTextGap +
-                    DesktopSidebarTokens.minLabelWidth;
-        final item = Semantics(
-          button: true,
-          label: label,
-          child: Material(
-            key: buttonKey,
-            color: colors.surface,
-            shape: RoundedRectangleBorder(borderRadius: radius),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: radius,
-              hoverColor: colors.textPrimary.withValues(
-                alpha: colors.isDark ? 0.06 : 0.04,
-              ),
-              child: SizedBox(
-                height: DesktopSidebarTokens.navItemHeight,
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: DesktopSidebarTokens.iconColumnWidth,
-                      child: Center(
-                        child: Icon(
-                          icon,
-                          size: TpTokens.iconM,
-                          color: colors.textMuted,
-                        ),
-                      ),
-                    ),
-                    if (canShowLabel) ...[
-                      const SizedBox(width: DesktopSidebarTokens.navItemTextGap),
-                      Expanded(
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TpTypography.itemTitle(colors).copyWith(
-                            fontSize: 14,
-                            color: colors.textSecondary,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: TpTokens.space3),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-        if (canShowLabel) return item;
-        return Tooltip(message: label, child: item);
       },
     );
   }

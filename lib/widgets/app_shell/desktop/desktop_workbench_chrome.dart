@@ -25,7 +25,7 @@ class NavigateBackIntent extends Intent {
   const NavigateBackIntent();
 }
 
-/// Wraps the desktop shell with global keyboard shortcuts (`Cmd/Ctrl+1..4`,
+/// Wraps the desktop shell with global keyboard shortcuts (`Cmd/Ctrl+1..5`,
 /// `Cmd/Ctrl+K`, `Cmd/Ctrl+R` / plain `R`, `Cmd/Ctrl+\`, `Esc` / `Cmd+[`) and
 /// mounts macOS's native `PlatformMenuBar` on macOS builds.
 class DesktopWorkbenchChrome extends StatelessWidget {
@@ -36,7 +36,6 @@ class DesktopWorkbenchChrome extends StatelessWidget {
     required this.onRefresh,
     required this.onNavigateBack,
     required this.canNavigateBack,
-    required this.onOpenCampusServices,
     required this.onToggleTheme,
     this.onEditHomeLayout,
     this.sidebarCollapsed = false,
@@ -50,7 +49,6 @@ class DesktopWorkbenchChrome extends StatelessWidget {
   final VoidCallback onRefresh;
   final VoidCallback onNavigateBack;
   final bool Function() canNavigateBack;
-  final VoidCallback onOpenCampusServices;
   final VoidCallback onToggleTheme;
   final VoidCallback? onEditHomeLayout;
   final bool sidebarCollapsed;
@@ -78,7 +76,12 @@ class DesktopWorkbenchChrome extends StatelessWidget {
       SingleActivator(LogicalKeyboardKey.digit3, meta: isMac, control: !isMac):
           const SwitchTabIntent(2),
       SingleActivator(LogicalKeyboardKey.digit4, meta: isMac, control: !isMac):
+          const SwitchTabIntent(4),
+      SingleActivator(LogicalKeyboardKey.digit5, meta: isMac, control: !isMac):
           const SwitchTabIntent(3),
+      if (isMac)
+        const SingleActivator(LogicalKeyboardKey.comma, meta: true):
+            const SwitchTabIntent(3),
       SingleActivator(LogicalKeyboardKey.keyK, meta: isMac, control: !isMac):
           const ToggleCommandPaletteIntent(),
       SingleActivator(LogicalKeyboardKey.keyR, meta: isMac, control: !isMac):
@@ -201,9 +204,17 @@ class DesktopWorkbenchChrome extends StatelessWidget {
                   onSelected: () => onSelectTab(2),
                 ),
                 PlatformMenuItem(
-                  label: '我的',
+                  label: '校园服务',
                   shortcut: const SingleActivator(
                     LogicalKeyboardKey.digit4,
+                    meta: true,
+                  ),
+                  onSelected: () => onSelectTab(4),
+                ),
+                PlatformMenuItem(
+                  label: '我的',
+                  shortcut: const SingleActivator(
+                    LogicalKeyboardKey.digit5,
                     meta: true,
                   ),
                   onSelected: () => onSelectTab(3),
@@ -212,10 +223,6 @@ class DesktopWorkbenchChrome extends StatelessWidget {
             ),
             PlatformMenuItemGroup(
               members: <PlatformMenuItem>[
-                PlatformMenuItem(
-                  label: '校园服务中心',
-                  onSelected: onOpenCampusServices,
-                ),
                 PlatformMenuItem(
                   label: '快速命令面板…',
                   shortcut: const SingleActivator(

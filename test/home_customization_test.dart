@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/main.dart';
 import 'package:techpie/models/home_layout.dart';
+import 'package:techpie/pages/campus_services_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -367,29 +368,60 @@ void main() {
         expect(find.text('编辑'), findsNothing);
 
         // Press and hold quickActions outside Edit Mode (past 260ms delay):
-        // renders the compact translucent drag feedback AND auto-enters Edit Mode
-        // so card-level style/settings controls become discoverable.
+        // lifts a translucent scaled copy of the real card AND auto-enters Edit
+        // Mode so card-level style/settings controls become discoverable.
         final quickDrag =
             find.byKey(const ValueKey('home.draggable-quick_actions'));
         final gesture = await tester.startGesture(tester.getCenter(quickDrag));
         await tester.pump(const Duration(milliseconds: 300));
         await tester.pump(const Duration(milliseconds: 160));
 
+        final dragFeedback =
+            find.byKey(const ValueKey('home.drag-feedback-quick_actions'));
+        expect(dragFeedback, findsOneWidget);
         expect(
-          find.byKey(const ValueKey('home.drag-feedback-quick_actions')),
+          find.descendant(
+            of: dragFeedback,
+            matching: find.byKey(const ValueKey('home.quick-actions')),
+          ),
           findsOneWidget,
         );
+        final feedbackOpacity = tester.widget<Opacity>(
+          find.descendant(
+            of: dragFeedback,
+            matching: find.byType(Opacity),
+          ).first,
+        );
+        expect(feedbackOpacity.opacity, closeTo(0.58, 0.01));
+        final feedbackScale = tester.widget<Transform>(
+          find.descendant(
+            of: dragFeedback,
+            matching: find.byWidgetPredicate(
+              (w) => w is Transform && w.transform.storage[0] != 1.0,
+            ),
+          ),
+        );
+        expect(feedbackScale.transform.storage[0], closeTo(0.86, 0.01));
         expect(find.byKey(const ValueKey('home.edit-bar')), findsOneWidget);
         expect(
           find.byKey(const ValueKey('home.campus-card-style-compact')),
           findsOneWidget,
         );
 
-        // Drop slots wake up immediately when LongPressDraggable activates.
-        final primaryTopSlot = find.byKey(const ValueKey('home.drop-primary-0'));
-        expect(primaryTopSlot, findsOneWidget);
-        await gesture.moveTo(tester.getCenter(primaryTopSlot));
-        await tester.pump(const Duration(milliseconds: 100));
+        // Hovering upper half of todayCourses highlights home.drop-primary-0 and
+        // dropping commits quickActions into slot 0 via smart snap.
+        final todayCoursesSnapTop =
+            find.byKey(const ValueKey('home.snap-today_courses-top'));
+        expect(todayCoursesSnapTop, findsOneWidget);
+        await gesture.moveTo(tester.getCenter(todayCoursesSnapTop));
+        await tester.pump(const Duration(milliseconds: 160));
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('home.drop-primary-0')),
+            matching: find.text('放置「快捷入口」到此处'),
+          ),
+          findsOneWidget,
+        );
         await gesture.up();
         await tester.pumpAndSettle();
 
@@ -402,6 +434,19 @@ void main() {
           findsNothing,
         );
         // Remains in Edit Mode after pick-up drop until Done / Escape.
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsOneWidget);
+
+        // Tapping "定制" on Quick Actions opens HomeShortcutEditorPage directly
+        // rather than routing through CampusServicesPage.
+        await tester.tap(
+          find.byKey(const ValueKey('home.configure-quick-actions')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(HomeShortcutEditorPage), findsOneWidget);
+        expect(find.byType(CampusServicesPage), findsNothing);
+        await tester.tap(find.byTooltip('取消'));
+        await tester.pumpAndSettle();
+        expect(find.byType(HomeShortcutEditorPage), findsNothing);
         expect(find.byKey(const ValueKey('home.edit-bar')), findsOneWidget);
 
         // Inside Edit Mode, immediately drag campusCard (0ms delay) into primary,

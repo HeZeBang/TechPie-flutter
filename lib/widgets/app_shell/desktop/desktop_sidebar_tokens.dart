@@ -32,7 +32,7 @@ class DesktopSidebarAccountSummary {
 }
 
 abstract final class DesktopSidebarTokens {
-  static const double collapsedWidth = 68;
+  static const double collapsedWidth = 78;
   static const double mediumExpandedWidth = 120;
   static const double expandedWidthFactor = 0.2;
   static const double maxExpandedWidth = 228;
@@ -40,16 +40,17 @@ abstract final class DesktopSidebarTokens {
   static const Duration widthAnimationDuration = Duration(milliseconds: 180);
   static const Curve widthAnimationCurve = Curves.easeOutCubic;
 
+  static const double macOsTitlebarRowHeight = 38;
   static const double headerHeight = 56;
-  static const double collapsedHorizontalPadding = 12;
+  static const double collapsedHorizontalPadding = 17;
   static const double mediumHorizontalPadding = 12;
   static const double expandedHorizontalPadding = 12;
   static const double headerTopPadding = 10;
   static const double headerBottomPadding = 8;
 
   static const double brandHeight = 36;
-  static const double brandIconSize = 20;
-  static const double brandTextGap = 8;
+  static const double brandIconSize = 22;
+  static const double brandTextGap = navItemTextGap;
 
   static const double toggleButtonSize = 32;
   static const double toggleIconSize = 18;

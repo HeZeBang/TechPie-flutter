@@ -58,12 +58,16 @@ class StorageService {
 
   StorageService(this._prefs) : _secure = appSecureStorage;
 
+  final ValueNotifier<int> pinnedQuickFeaturesVersion = ValueNotifier<int>(0);
+
   String? get campusWebOwner => _prefs.getString('campus_web_owner');
   Future<void> setCampusWebOwner(String owner) => _prefs.setString('campus_web_owner', owner);
 
   List<String>? get pinnedQuickFeatureIds => _prefs.getStringList('pinned_quick_features');
-  Future<void> setPinnedQuickFeatureIds(List<String> ids) =>
-      _prefs.setStringList('pinned_quick_features', pinnedShortcutIds(ids));
+  Future<void> setPinnedQuickFeatureIds(List<String> ids) async {
+    await _prefs.setStringList('pinned_quick_features', pinnedShortcutIds(ids));
+    pinnedQuickFeaturesVersion.value++;
+  }
 
   HomeMobileLayout get homeMobileLayout =>
       HomeMobileLayout.decode(_prefs.getString(_homeMobileLayoutKey));

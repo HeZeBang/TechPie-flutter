@@ -55,11 +55,6 @@ const Map<String, Set<DesignSystemRule>> legacyMaterialTransitionPages =
     DesignSystemRule.bareAppBar,
     DesignSystemRule.materialIcons,
   },
-  'lib/pages/campus_services_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
-  },
   'lib/pages/course_catalog_search_page.dart': <DesignSystemRule>{
     DesignSystemRule.bareAppBar,
     DesignSystemRule.materialIcons,

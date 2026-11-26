@@ -16,7 +16,7 @@ class DesktopShell extends StatelessWidget {
   final ValueChanged<int> onDestinationSelected;
   final VoidCallback onToggleSidebarCollapsed;
   final VoidCallback? onOpenCommandPalette;
-  final VoidCallback? onOpenCampusServices;
+  final VoidCallback? onBrandTap;
   final DesktopSidebarAccountSummary? accountSummary;
   final int? accountDestinationIndex;
   final VoidCallback? onOpenAccount;
@@ -32,7 +32,7 @@ class DesktopShell extends StatelessWidget {
     required this.onDestinationSelected,
     required this.onToggleSidebarCollapsed,
     this.onOpenCommandPalette,
-    this.onOpenCampusServices,
+    this.onBrandTap,
     this.accountSummary,
     this.accountDestinationIndex,
     this.onOpenAccount,
@@ -68,7 +68,7 @@ class DesktopShell extends StatelessWidget {
                   onSelected: onDestinationSelected,
                   onToggleCollapsed: onToggleSidebarCollapsed,
                   onOpenCommandPalette: onOpenCommandPalette,
-                  onOpenCampusServices: onOpenCampusServices,
+                  onBrandTap: onBrandTap,
                   accountSummary: accountSummary,
                   accountDestinationIndex: accountDestinationIndex,
                   onOpenAccount: onOpenAccount,
