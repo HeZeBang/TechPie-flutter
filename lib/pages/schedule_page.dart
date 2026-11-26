@@ -265,7 +265,7 @@ class _SchedulePageState extends State<SchedulePage> {
       final sameSemester = _hasBuiltCourses && _displayedSemesterId == _schedule.selectedSemesterId;
       final sameCalendar = sameSemester && _displayedTermBegin == _schedule.termBegin;
       final preserveWeek =
-          _viewMode == _ScheduleViewMode.agenda ? sameCalendar : isDesktop() && sameSemester;
+          _viewMode == _ScheduleViewMode.agenda ? sameCalendar : isDesktop() && sameCalendar;
       final initialWeek =
           _schedule.isGraduate && !_schedule.isTodayInTerm ? 1 : _schedule.currentWeek();
       _currentWeek =
