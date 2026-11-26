@@ -1199,7 +1199,9 @@ class _SchedulePageState extends State<SchedulePage> {
   }) {
     final todayStart = DateUtils.dateOnly(today);
     final visibleDays = _visibleDayIndices;
-    final upcomingExams = _semesterExams.where((exam) => !exam.due.isBefore(todayStart)).toList()
+    final upcomingExams = _semesterExams
+        .where((exam) => !exam.isExpiredAt(today))
+        .toList()
       ..sort((a, b) => a.due.compareTo(b.due));
     final hasTimetable = _schedule.semesterInfo != null || _schedule.courseTable != null;
     final emptyState = emptyWeekStateOf(
@@ -1281,6 +1283,7 @@ class _SchedulePageState extends State<SchedulePage> {
                   _buildUpcomingExamRow(
                     colors,
                     upcomingExams[i],
+                    now: today,
                     todayStart: todayStart,
                     showDivider: i < upcomingExams.length - 1,
                   ),
@@ -1489,9 +1492,11 @@ class _SchedulePageState extends State<SchedulePage> {
   Widget _buildUpcomingExamRow(
     TpColors colors,
     ExamAssignment exam, {
+    required DateTime now,
     required DateTime todayStart,
     required bool showDivider,
   }) {
+    final inProgress = exam.isInProgressAt(now);
     final examDay = DateTime(exam.due.year, exam.due.month, exam.due.day);
     final daysLeft = examDay.difference(todayStart).inDays;
     final dateStr = DateFormat('MM/dd HH:mm').format(exam.due);
@@ -1506,8 +1511,12 @@ class _SchedulePageState extends State<SchedulePage> {
       subtitle: subtitle,
       showDivider: showDivider,
       trailing: TpBadge(
-        label: daysLeft <= 0 ? '今天' : '$daysLeft 天后',
-        tone: daysLeft <= 3 ? TpBadgeTone.danger : TpBadgeTone.warning,
+        label: inProgress
+            ? '考试中'
+            : (daysLeft <= 0 ? '今天' : '$daysLeft 天后'),
+        tone: (inProgress || daysLeft <= 3)
+            ? TpBadgeTone.danger
+            : TpBadgeTone.warning,
       ),
     );
   }

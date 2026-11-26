@@ -57,6 +57,13 @@ class Assignment {
 
   bool get submitted => status == 'Submitted' || status == 'Graded';
 
+  /// Whether this item can enter the overdue state once past due.
+  bool get canBeOverdue => true;
+
+  /// Whether this item has expired and should disappear from active deadline
+  /// views rather than being shown as overdue.
+  bool isExpiredAt(DateTime now) => false;
+
   /// Only Gradescope exposes a late-submission deadline. Other platforms use
   /// their primary [due] time as the final deadline.
   bool get supportsLateDue => platform.toLowerCase() == 'gradescope';
@@ -201,6 +208,20 @@ class ExamAssignment extends Assignment {
     required this.location,
     required this.batchName,
   }) : super(platform: 'exam', kind: DeadlineKind.exam);
+
+  /// The exam's end time, falling back to [due] when no end time is available.
+  DateTime get endTime =>
+      lateDue != null && lateDue!.isAfter(due) ? lateDue! : due;
+
+  @override
+  bool get canBeOverdue => false;
+
+  @override
+  bool isExpiredAt(DateTime now) => !endTime.isAfter(now);
+
+  /// True while the exam is underway ([due] <= [now] < [endTime]).
+  bool isInProgressAt(DateTime now) =>
+      !now.isBefore(due) && endTime.isAfter(now);
 
   @override
   Map<String, dynamic> toJson() => {

@@ -79,7 +79,7 @@ IslandFrame? buildIslandFrame({
       kind: 'class',
       title: running.name,
       subTitle: '${running.startTime}–${running.endTime}',
-      statusLine: '上课中',
+      statusLine: running.source is ExamCourseSource ? '考试中' : '上课中',
       detail: running.location,
       expiresAt: _clockOn(now, parseClockMinutes(running.endTime) ?? 0),
     );
