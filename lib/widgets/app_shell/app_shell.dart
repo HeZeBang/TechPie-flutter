@@ -574,6 +574,7 @@ class _AppShellState extends State<AppShell> {
               _openCommandPalette(allowSidebarToggle: showSidebarToggle),
           onOpenCampusServices:
               services == null ? null : _openCampusServices,
+          accountDestinationIndex: 3,
           onOpenAccount: () => _onDestinationSelected(3),
           child: pageView,
         );
@@ -595,6 +596,7 @@ class _AppShellState extends State<AppShell> {
                   _openCommandPalette(allowSidebarToggle: showSidebarToggle),
               onOpenCampusServices: _openCampusServices,
               accountSummary: _buildAccountSummary(services),
+              accountDestinationIndex: 3,
               onOpenAccount: () => _onDestinationSelected(3),
               child: child!,
             );

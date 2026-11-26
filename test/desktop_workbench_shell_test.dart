@@ -167,6 +167,7 @@ void main() {
         find.byKey(const ValueKey('desktop.sidebar-toggle')),
         findsNothing,
       );
+      expect(find.byKey(const ValueKey('home.avatar')), findsNothing);
 
       // Expanding to >=960dp restores user's non-collapsed sidebar & toggle button.
       tester.view.physicalSize = const Size(1280, 800);
@@ -179,13 +180,15 @@ void main() {
         find.byKey(const ValueKey('desktop.sidebar-toggle')),
         findsOneWidget,
       );
+      expect(find.byKey(const ValueKey('home.avatar')), findsNothing);
 
-      // Shrinking <600dp falls back cleanly to MobileShell.
+      // Shrinking <600dp falls back cleanly to MobileShell and restores header avatar.
       tester.view.physicalSize = const Size(500, 800);
       await tester.pumpAndSettle();
       expect(find.byType(MobileShell), findsOneWidget);
       expect(find.byType(TgBottomNavBar), findsOneWidget);
       expect(find.byType(DesktopSidebar), findsNothing);
+      expect(find.byKey(const ValueKey('home.avatar')), findsOneWidget);
     },
     variant: const TargetPlatformVariant({TargetPlatform.macOS}),
   );
@@ -211,14 +214,23 @@ void main() {
       await _pumpWorkbenchApp(tester);
 
       expect(find.byType(PlatformMenuBar), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('desktop.command-palette-trigger')),
-        findsOneWidget,
-      );
+      final commandTrigger =
+          find.byKey(const ValueKey('desktop.command-palette-trigger'));
+      final toggleButton = find.byKey(const ValueKey('desktop.sidebar-toggle'));
+      expect(commandTrigger, findsOneWidget);
       expect(find.text('⌘K'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('desktop.sidebar-campus-services')),
         findsOneWidget,
+      );
+
+      // "我的" is merged into the footer account tile, not duplicated in primary nav.
+      expect(
+        find.descendant(
+          of: find.byType(DesktopSidebarItem),
+          matching: find.text('我的'),
+        ),
+        findsNothing,
       );
 
       final accountTile = find.byKey(const ValueKey('desktop.sidebar-account'));
@@ -232,10 +244,52 @@ void main() {
         findsOneWidget,
       );
 
-      // Tapping account footer opens the Settings/Profile tab.
+      // Top toggle button sits above command trigger & account tile (expanded & collapsed).
+      expect(
+        tester.getTopLeft(toggleButton).dy,
+        lessThan(tester.getTopLeft(commandTrigger).dy),
+      );
+      expect(
+        tester.getTopLeft(commandTrigger).dy,
+        lessThan(tester.getTopLeft(accountTile).dy),
+      );
+
+      await tester.tap(toggleButton);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(toggleButton).dy,
+        lessThan(tester.getTopLeft(commandTrigger).dy),
+      );
+      await tester.tap(toggleButton);
+      await tester.pumpAndSettle();
+
+      // Tapping account footer opens Settings, highlights the account tile,
+      // and fades out the upper nav sliding indicator.
       await tester.tap(accountTile);
       await tester.pumpAndSettle();
       expect(find.byType(SettingsPage), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('desktop.sidebar-account-active-bar')),
+        findsOneWidget,
+      );
+      final fadedIndicator = tester.widget<AnimatedOpacity>(
+        find.byKey(const ValueKey('desktop.sidebar-active-indicator-opacity')),
+      );
+      expect(fadedIndicator.opacity, 0.0);
+
+      await _sendChord(
+        tester,
+        LogicalKeyboardKey.digit1,
+        modifier: LogicalKeyboardKey.metaLeft,
+      );
+      expect(
+        find.byKey(const ValueKey('desktop.sidebar-account-active-bar')),
+        findsNothing,
+      );
+      final activeIndicator = tester.widget<AnimatedOpacity>(
+        find.byKey(const ValueKey('desktop.sidebar-active-indicator-opacity')),
+      );
+      expect(activeIndicator.opacity, 1.0);
 
       // Tapping Campus Services opens CampusServicesPage, and Cmd+[ pops back.
       await tester.tap(

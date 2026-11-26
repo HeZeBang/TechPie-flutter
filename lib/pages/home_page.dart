@@ -22,6 +22,7 @@ import '../services/service_provider.dart';
 import '../services/storage_service.dart';
 import '../services/third_party_auth_service.dart';
 import '../theme/theme.dart';
+import '../utils/adaptive_layout.dart';
 import '../utils/adaptive_motion.dart';
 import '../utils/haptics.dart';
 import '../utils/user_display_name.dart';
@@ -31,6 +32,7 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
+import '../widgets/app_shell/desktop/desktop_shell.dart';
 import '../widgets/design_system/design_system.dart';
 import '../widgets/home/home_bento_editor.dart';
 import '../widgets/home/home_widget_chrome.dart';
@@ -605,6 +607,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ? TpTokens.pageHorizontalPaddingWide
         : TpTokens.pageHorizontalPadding;
 
+    final showHeaderAvatar = !(usesDesktopSidebarShell(context) &&
+        context.findAncestorWidgetOfExactType<DesktopShell>() != null);
+
     final header = TpPageHeader(
       key: const ValueKey('home.greeting-header'),
       subtitle: dateSubtitle,
@@ -622,19 +627,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             width: 44,
             height: 44,
           ),
-          const SizedBox(width: TpTokens.space1),
-          TpAvatarBadge(
-            key: const ValueKey('home.avatar'),
-            text: _avatarLabel(auth, tpAuth, campusCard),
-            tooltip: auth.isLoggedIn ? '我的' : '登录',
-            onTap: () {
-              if (auth.isLoggedIn) {
-                appShellPendingTab.value = 3;
-              } else {
-                unawaited(startUniAuthLogin(context));
-              }
-            },
-          ),
+          if (showHeaderAvatar) ...[
+            const SizedBox(width: TpTokens.space1),
+            TpAvatarBadge(
+              key: const ValueKey('home.avatar'),
+              text: _avatarLabel(auth, tpAuth, campusCard),
+              tooltip: auth.isLoggedIn ? '我的' : '登录',
+              onTap: () {
+                if (auth.isLoggedIn) {
+                  appShellPendingTab.value = 3;
+                } else {
+                  unawaited(startUniAuthLogin(context));
+                }
+              },
+            ),
+          ],
         ],
       ),
     );

@@ -161,12 +161,16 @@ void main() {
       );
       expect(cardPos.dx, greaterThan(coursesPos.dx));
 
-      // Avatar always displays real initial for signed-in user without privacy blur.
+      // Desktop sidebar merges profile into the footer tile and hides the
+      // duplicate Home header avatar.
+      expect(find.byKey(const ValueKey('home.avatar')), findsNothing);
+      final accountTile = find.byKey(const ValueKey('desktop.sidebar-account'));
       expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('home.avatar')),
-          matching: find.text('张'),
-        ),
+        find.descendant(of: accountTile, matching: find.text('张')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: accountTile, matching: find.text('张同学')),
         findsOneWidget,
       );
 
@@ -174,7 +178,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('desktop.sidebar-toggle')));
       await tester.pumpAndSettle();
       expect(built.storage.desktopSidebarCollapsed, isTrue);
-      for (final label in ['首页', '课表', 'Deadlines', '我的']) {
+      for (final label in ['首页', '课表', 'Deadlines']) {
         expect(
           find.descendant(
             of: find.byType(DesktopSidebarItem),
@@ -185,17 +189,28 @@ void main() {
           findsOneWidget,
         );
       }
+      expect(
+        find.descendant(
+          of: find.byType(DesktopSidebarItem),
+          matching: find.text('我的'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.ancestor(
+          of: accountTile,
+          matching: find.byWidgetPredicate(
+            (w) => w is Tooltip && (w.message?.contains('张同学') ?? false),
+          ),
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const ValueKey('desktop.sidebar-toggle')));
       await tester.pumpAndSettle();
       expect(built.storage.desktopSidebarCollapsed, isFalse);
 
       // 3. Account header shows plain username + GeekPie Uni-Auth (no blur switch).
-      await tester.tap(
-        find.descendant(
-          of: find.byType(DesktopSidebarItem),
-          matching: find.text('我的'),
-        ),
-      );
+      await tester.tap(accountTile);
       await tester.pumpAndSettle();
       expect(
         find.descendant(
@@ -232,22 +247,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.descendant(
-          of: find.byType(DesktopSidebarItem),
-          matching: find.text('我的'),
-        ),
-      );
+      await tester.tap(accountTile);
       await tester.pumpAndSettle();
       expect(find.byType(DebugLogPage), findsOneWidget);
 
-      // Tapping active sidebar tab unwinds its stack back to root.
-      await tester.tap(
-        find.descendant(
-          of: find.byType(DesktopSidebarItem),
-          matching: find.text('我的'),
-        ),
-      );
+      // Tapping active sidebar account tile unwinds its stack back to root.
+      await tester.tap(accountTile);
       await tester.pumpAndSettle();
       expect(find.byType(DebugLogPage), findsNothing);
     },

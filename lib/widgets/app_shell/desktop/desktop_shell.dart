@@ -18,6 +18,7 @@ class DesktopShell extends StatelessWidget {
   final VoidCallback? onOpenCommandPalette;
   final VoidCallback? onOpenCampusServices;
   final DesktopSidebarAccountSummary? accountSummary;
+  final int? accountDestinationIndex;
   final VoidCallback? onOpenAccount;
   final Widget child;
 
@@ -33,6 +34,7 @@ class DesktopShell extends StatelessWidget {
     this.onOpenCommandPalette,
     this.onOpenCampusServices,
     this.accountSummary,
+    this.accountDestinationIndex,
     this.onOpenAccount,
     required this.child,
   });
@@ -68,6 +70,7 @@ class DesktopShell extends StatelessWidget {
                   onOpenCommandPalette: onOpenCommandPalette,
                   onOpenCampusServices: onOpenCampusServices,
                   accountSummary: accountSummary,
+                  accountDestinationIndex: accountDestinationIndex,
                   onOpenAccount: onOpenAccount,
                 ),
               ),

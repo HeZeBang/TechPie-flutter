@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
 import '../../../theme/theme.dart';
+import '../../../utils/adaptive_motion.dart';
 import '../../../utils/haptics.dart';
 import '../../../utils/motion.dart';
 import '../../design_system/tp_brand_mark.dart';
@@ -23,6 +24,7 @@ class DesktopSidebar extends StatelessWidget {
   final VoidCallback? onOpenCommandPalette;
   final VoidCallback? onOpenCampusServices;
   final DesktopSidebarAccountSummary? accountSummary;
+  final int? accountDestinationIndex;
   final VoidCallback? onOpenAccount;
 
   const DesktopSidebar({
@@ -37,6 +39,7 @@ class DesktopSidebar extends StatelessWidget {
     this.onOpenCommandPalette,
     this.onOpenCampusServices,
     this.accountSummary,
+    this.accountDestinationIndex,
     this.onOpenAccount,
   });
 
@@ -47,7 +50,21 @@ class DesktopSidebar extends StatelessWidget {
         ? DesktopSidebarTokens.collapsedHorizontalPadding
         : DesktopSidebarTokens.expandedHorizontalPadding;
     final itemSpacing = DesktopSidebarTokens.navItemSpacing;
-    final hasFooterItems = accountSummary != null || showToggleButton;
+    final navEntries = <_SidebarNavEntry>[
+      for (var index = 0; index < destinations.length; index++)
+        if (index != accountDestinationIndex)
+          _SidebarNavEntry(index: index, destination: destinations[index]),
+    ];
+    final showAccountFooter =
+        accountSummary != null || accountDestinationIndex != null;
+    final resolvedSummary = accountSummary ??
+        const DesktopSidebarAccountSummary(
+          displayName: '我的',
+          avatarText: '',
+          isLoggedIn: false,
+        );
+    final accountSelected = accountDestinationIndex != null &&
+        selectedIndex == accountDestinationIndex;
 
     return ColoredBox(
       color: colors.surface,
@@ -60,6 +77,8 @@ class DesktopSidebar extends StatelessWidget {
             _SidebarDragHeader(
               horizontalPadding: horizontalPadding,
               collapsed: collapsed,
+              showToggleButton: showToggleButton,
+              onToggleCollapsed: onToggleCollapsed,
             ),
             if (onOpenCommandPalette != null)
               Padding(
@@ -91,7 +110,7 @@ class DesktopSidebar extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _SlidingSidebarNavList(
-                              destinations: destinations,
+                              entries: navEntries,
                               selectedIndex: selectedIndex,
                               collapsed: collapsed,
                               itemSpacing: itemSpacing,
@@ -104,7 +123,7 @@ class DesktopSidebar extends StatelessWidget {
                             if (onOpenCampusServices != null) ...[
                               Padding(
                                 padding: const EdgeInsets.symmetric(
-                                  vertical: TpTokens.space2,
+                                  vertical: TpTokens.space1 + 2,
                                 ),
                                 child: Divider(
                                   height: 1,
@@ -126,25 +145,15 @@ class DesktopSidebar extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (hasFooterItems) const SizedBox(height: TpTokens.space2),
-                    if (accountSummary != null) ...[
+                    if (showAccountFooter) ...[
+                      const SizedBox(height: TpTokens.space2),
                       Divider(height: 1, thickness: 0.5, color: colors.divider),
                       const SizedBox(height: TpTokens.space2),
                       _SidebarAccountTile(
-                        summary: accountSummary!,
+                        summary: resolvedSummary,
                         collapsed: collapsed,
+                        selected: accountSelected,
                         onTap: onOpenAccount,
-                      ),
-                    ],
-                    if (showToggleButton) ...[
-                      if (accountSummary != null)
-                        const SizedBox(height: TpTokens.space1),
-                      Align(
-                        alignment: Alignment.bottomLeft,
-                        child: _SidebarToggleButton(
-                          collapsed: collapsed,
-                          onPressed: onToggleCollapsed,
-                        ),
                       ),
                     ],
                   ],
@@ -158,9 +167,16 @@ class DesktopSidebar extends StatelessWidget {
   }
 }
 
+class _SidebarNavEntry {
+  const _SidebarNavEntry({required this.index, required this.destination});
+
+  final int index;
+  final AppDestination destination;
+}
+
 class _SlidingSidebarNavList extends StatefulWidget {
   const _SlidingSidebarNavList({
-    required this.destinations,
+    required this.entries,
     required this.selectedIndex,
     required this.collapsed,
     required this.itemSpacing,
@@ -168,7 +184,7 @@ class _SlidingSidebarNavList extends StatefulWidget {
     required this.onSelected,
   });
 
-  final List<AppDestination> destinations;
+  final List<_SidebarNavEntry> entries;
   final int selectedIndex;
   final bool collapsed;
   final double itemSpacing;
@@ -183,16 +199,24 @@ class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
     with SingleTickerProviderStateMixin {
   late final AnimationController _indicatorIndex = AnimationController.unbounded(
     vsync: this,
-    value: widget.selectedIndex.toDouble(),
+    value: _slotFor(widget.selectedIndex).clamp(0, _maxSlot).toDouble(),
   );
+
+  int get _maxSlot =>
+      widget.entries.isEmpty ? 0 : widget.entries.length - 1;
+
+  int _slotFor(int destinationIndex) =>
+      widget.entries.indexWhere((entry) => entry.index == destinationIndex);
 
   @override
   void didUpdateWidget(covariant _SlidingSidebarNavList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedIndex != widget.selectedIndex) {
-      final target = widget.selectedIndex.toDouble();
+    final oldSlot = _slotFor(oldWidget.selectedIndex);
+    final newSlot = _slotFor(widget.selectedIndex);
+    if (newSlot >= 0 && (oldSlot != newSlot || oldWidget.entries.length != widget.entries.length)) {
+      final target = newSlot.toDouble();
       final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-      if (reduceMotion) {
+      if (reduceMotion || oldSlot < 0) {
         _indicatorIndex.value = target;
       } else {
         unawaited(
@@ -217,13 +241,15 @@ class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
 
   @override
   Widget build(BuildContext context) {
-    if (widget.destinations.isEmpty) return const SizedBox.shrink();
+    if (widget.entries.isEmpty) return const SizedBox.shrink();
     final colors = context.tpColors;
     final radius = BorderRadius.circular(TpTokens.radiusS);
     final selectedBorder = colors.brand.withValues(
       alpha: colors.isDark ? 0.30 : 0.22,
     );
     final stride = DesktopSidebarTokens.navItemHeight + widget.itemSpacing;
+    final activeSlot = _slotFor(widget.selectedIndex);
+    final showIndicator = activeSlot >= 0;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -233,7 +259,7 @@ class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
           builder: (context, child) {
             final top = (_indicatorIndex.value * stride).clamp(
               0.0,
-              (widget.destinations.length - 1) * stride,
+              _maxSlot * stride,
             );
             return Positioned(
               left: 0,
@@ -243,29 +269,37 @@ class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
               child: IgnorePointer(child: child),
             );
           },
-          child: Material(
-            key: const ValueKey('desktop.sidebar-active-indicator'),
-            color: colors.opaqueBrandContainer,
-            shape: RoundedRectangleBorder(
-              borderRadius: radius,
-              side: BorderSide(color: selectedBorder),
+          child: AnimatedOpacity(
+            key: const ValueKey('desktop.sidebar-active-indicator-opacity'),
+            opacity: showIndicator ? 1.0 : 0.0,
+            duration: appAnimationDuration(
+              context,
+              const Duration(milliseconds: 140),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Container(
-                  width: TpTokens.accentBarWidth,
-                  decoration: const BoxDecoration(
-                    borderRadius: BorderRadius.horizontal(
-                      right: Radius.circular(TpTokens.radiusBar),
+            child: Material(
+              key: const ValueKey('desktop.sidebar-active-indicator'),
+              color: colors.opaqueBrandContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: radius,
+                side: BorderSide(color: selectedBorder),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Container(
+                    width: TpTokens.accentBarWidth,
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.horizontal(
+                        right: Radius.circular(TpTokens.radiusBar),
+                      ),
                     ),
-                  ),
-                  foregroundDecoration: BoxDecoration(
-                    color: colors.brand,
-                    borderRadius: const BorderRadius.horizontal(
-                      right: Radius.circular(TpTokens.radiusBar),
+                    foregroundDecoration: BoxDecoration(
+                      color: colors.brand,
+                      borderRadius: const BorderRadius.horizontal(
+                        right: Radius.circular(TpTokens.radiusBar),
+                      ),
                     ),
                   ),
                 ),
@@ -276,16 +310,16 @@ class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (var index = 0; index < widget.destinations.length; index++) ...[
+            for (var slot = 0; slot < widget.entries.length; slot++) ...[
               DesktopSidebarItem(
-                destination: widget.destinations[index],
-                selected: index == widget.selectedIndex,
+                destination: widget.entries[slot].destination,
+                selected: widget.entries[slot].index == widget.selectedIndex,
                 collapsed: widget.collapsed,
                 usesSlidingIndicator: true,
-                badge: widget.badges[index],
-                onTap: () => widget.onSelected(index),
+                badge: widget.badges[widget.entries[slot].index],
+                onTap: () => widget.onSelected(widget.entries[slot].index),
               ),
-              if (index < widget.destinations.length - 1)
+              if (slot < widget.entries.length - 1)
                 SizedBox(height: widget.itemSpacing),
             ],
           ],
@@ -298,26 +332,31 @@ class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
 class _SidebarDragHeader extends StatelessWidget {
   final double horizontalPadding;
   final bool collapsed;
+  final bool showToggleButton;
+  final VoidCallback onToggleCollapsed;
 
   const _SidebarDragHeader({
     required this.horizontalPadding,
     required this.collapsed,
+    required this.showToggleButton,
+    required this.onToggleCollapsed,
   });
 
   @override
   Widget build(BuildContext context) {
     final topInset = isMacOsDesktop() ? macOsTitlebarInset : 0.0;
     return MacOsWindowDragRegion(
-      child: SizedBox(
-        height: DesktopSidebarTokens.headerHeight + topInset,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            horizontalPadding,
-            DesktopSidebarTokens.headerTopPadding + topInset,
-            horizontalPadding,
-            DesktopSidebarTokens.headerBottomPadding,
-          ),
-          child: _SidebarBrand(collapsed: collapsed),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          horizontalPadding,
+          DesktopSidebarTokens.headerTopPadding + topInset,
+          horizontalPadding,
+          DesktopSidebarTokens.headerBottomPadding,
+        ),
+        child: _SidebarBrand(
+          collapsed: collapsed,
+          showToggleButton: showToggleButton,
+          onToggleCollapsed: onToggleCollapsed,
         ),
       ),
     );
@@ -326,34 +365,62 @@ class _SidebarDragHeader extends StatelessWidget {
 
 class _SidebarBrand extends StatelessWidget {
   final bool collapsed;
+  final bool showToggleButton;
+  final VoidCallback onToggleCollapsed;
 
-  const _SidebarBrand({required this.collapsed});
+  const _SidebarBrand({
+    required this.collapsed,
+    required this.showToggleButton,
+    required this.onToggleCollapsed,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
 
-    return SizedBox(
-      height: DesktopSidebarTokens.brandHeight,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final canShowLabel = !collapsed &&
-              constraints.maxWidth >=
-                  DesktopSidebarTokens.iconColumnWidth +
-                      DesktopSidebarTokens.brandTextGap +
-                      DesktopSidebarTokens.minLabelWidth;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final requiredExpandedWidth = DesktopSidebarTokens.iconColumnWidth +
+            DesktopSidebarTokens.brandTextGap +
+            DesktopSidebarTokens.minLabelWidth +
+            (showToggleButton ? DesktopSidebarTokens.toggleButtonSize + 4 : 0);
+        final canShowLabel =
+            !collapsed && constraints.maxWidth >= requiredExpandedWidth;
 
-          final logo = SizedBox(
-            width: DesktopSidebarTokens.iconColumnWidth,
-            child: Center(
-              child: TpBrandMark(
-                size: 40,
-                semanticLabel: canShowLabel ? null : 'TechPie',
-              ),
+        final logo = SizedBox(
+          width: DesktopSidebarTokens.iconColumnWidth,
+          child: Center(
+            child: TpBrandMark(
+              size: 28,
+              semanticLabel: canShowLabel ? null : 'TechPie',
             ),
-          );
+          ),
+        );
 
-          return Row(
+        if (collapsed) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                height: DesktopSidebarTokens.brandHeight,
+                child: Tooltip(message: 'TechPie', child: logo),
+              ),
+              if (showToggleButton) ...[
+                const SizedBox(height: 6),
+                _SidebarToggleButton(
+                  collapsed: true,
+                  compact: false,
+                  onPressed: onToggleCollapsed,
+                ),
+              ],
+            ],
+          );
+        }
+
+        return SizedBox(
+          height: DesktopSidebarTokens.brandHeight,
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
               if (!canShowLabel)
@@ -368,17 +435,25 @@ class _SidebarBrand extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TpTypography.cardTitle(colors).copyWith(
-                      fontSize: 17.5,
+                      fontSize: 16,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.3,
                     ),
                   ),
                 ),
+                if (showToggleButton) ...[
+                  const SizedBox(width: TpTokens.space1),
+                  _SidebarToggleButton(
+                    collapsed: false,
+                    compact: true,
+                    onPressed: onToggleCollapsed,
+                  ),
+                ],
               ],
             ],
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -425,7 +500,7 @@ class _SidebarCommandTrigger extends StatelessWidget {
               alpha: colors.isDark ? 0.06 : 0.04,
             ),
             child: SizedBox(
-              height: 36,
+              height: 34,
               child: Row(
                 children: [
                   const SizedBox(
@@ -566,17 +641,22 @@ class _SidebarAccountTile extends StatelessWidget {
   const _SidebarAccountTile({
     required this.summary,
     required this.collapsed,
+    required this.selected,
     this.onTap,
   });
 
   final DesktopSidebarAccountSummary summary;
   final bool collapsed;
+  final bool selected;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final radius = BorderRadius.circular(TpTokens.radiusS);
+    final selectedBorder = colors.brand.withValues(
+      alpha: colors.isDark ? 0.30 : 0.22,
+    );
     final title = summary.isLoggedIn && summary.displayName.isNotEmpty
         ? summary.displayName
         : '点击登录';
@@ -597,7 +677,9 @@ class _SidebarAccountTile extends StatelessWidget {
           width: 30,
           height: 30,
           decoration: BoxDecoration(
-            color: summary.isLoggedIn ? colors.brandSoft : colors.surfaceSubtle,
+            color: summary.isLoggedIn || selected
+                ? colors.brandSoft
+                : colors.surfaceSubtle,
             shape: BoxShape.circle,
           ),
           alignment: Alignment.center,
@@ -609,58 +691,102 @@ class _SidebarAccountTile extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 )
-              : Icon(TpIcons.profile, size: 15, color: colors.textMuted),
+              : Icon(
+                  TpIcons.profile,
+                  size: 15,
+                  color: selected ? colors.brandInk : colors.textMuted,
+                ),
         );
 
-        final tile = Material(
-          key: const ValueKey('desktop.sidebar-account'),
-          color: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: radius),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: radius,
-            hoverColor: colors.textPrimary.withValues(
-              alpha: colors.isDark ? 0.06 : 0.04,
+        final tile = Semantics(
+          selected: selected,
+          button: true,
+          label: summary.isLoggedIn ? '我的：$title' : '我的',
+          child: Material(
+            key: const ValueKey('desktop.sidebar-account'),
+            color: selected ? colors.opaqueBrandContainer : Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              side: selected
+                  ? BorderSide(color: selectedBorder)
+                  : BorderSide.none,
             ),
-            child: SizedBox(
-              height: DesktopSidebarTokens.navItemHeight,
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: DesktopSidebarTokens.iconColumnWidth,
-                    child: Center(child: avatar),
-                  ),
-                  if (canShowLabel) ...[
-                    const SizedBox(width: DesktopSidebarTokens.navItemTextGap),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TpTypography.itemTitle(colors).copyWith(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w600,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: radius,
+              hoverColor: colors.textPrimary.withValues(
+                alpha: colors.isDark ? 0.06 : 0.04,
+              ),
+              child: SizedBox(
+                height: collapsed ? 44 : 48,
+                child: Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [
+                    if (selected)
+                      Positioned(
+                        left: 0,
+                        top: 10,
+                        bottom: 10,
+                        child: Container(
+                          key: const ValueKey(
+                            'desktop.sidebar-account-active-bar',
+                          ),
+                          width: TpTokens.accentBarWidth,
+                          decoration: BoxDecoration(
+                            color: colors.brand,
+                            borderRadius: const BorderRadius.horizontal(
+                              right: Radius.circular(TpTokens.radiusBar),
                             ),
                           ),
-                          Text(
-                            status,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TpTypography.cardMeta(colors).copyWith(
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: DesktopSidebarTokens.iconColumnWidth,
+                          child: Center(child: avatar),
+                        ),
+                        if (canShowLabel) ...[
+                          const SizedBox(
+                            width: DesktopSidebarTokens.navItemTextGap,
+                          ),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TpTypography.itemTitle(colors).copyWith(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  status,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TpTypography.cardMeta(colors).copyWith(
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            TpIcons.settings,
+                            size: 15,
+                            color: selected ? colors.brandInk : colors.textMuted,
+                          ),
+                          const SizedBox(width: TpTokens.space2),
+                        ],
+                      ],
                     ),
-                    const SizedBox(width: TpTokens.space2),
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -668,7 +794,7 @@ class _SidebarAccountTile extends StatelessWidget {
 
         if (canShowLabel) return tile;
         return Tooltip(
-          message: summary.isLoggedIn ? '$title · $status' : status,
+          message: summary.isLoggedIn ? '我的 · $title ($status)' : '我的 · $status',
           child: tile,
         );
       },
@@ -678,40 +804,37 @@ class _SidebarAccountTile extends StatelessWidget {
 
 class _SidebarToggleButton extends StatelessWidget {
   final bool collapsed;
+  final bool compact;
   final VoidCallback onPressed;
 
   const _SidebarToggleButton({
     required this.collapsed,
+    required this.compact,
     required this.onPressed,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
+    final shortcutHint = isMacOsDesktop() ? '⌘\\' : 'Ctrl+\\';
+    final width = compact
+        ? DesktopSidebarTokens.toggleButtonSize
+        : DesktopSidebarTokens.iconColumnWidth;
+    final height = compact ? DesktopSidebarTokens.toggleButtonSize : 34.0;
 
     return IconButton(
       key: const ValueKey('desktop.sidebar-toggle'),
-      tooltip: collapsed ? '展开侧边栏' : '收起侧边栏',
+      tooltip: collapsed
+          ? '展开侧边栏 ($shortcutHint)'
+          : '收起侧边栏 ($shortcutHint)',
       onPressed: onPressed,
-      icon: SizedBox(
-        width: DesktopSidebarTokens.iconColumnWidth,
-        height: DesktopSidebarTokens.navItemHeight,
-        child: Center(
-          child: Icon(
-            collapsed ? TpIcons.sidebarExpand : TpIcons.sidebarCollapse,
-            size: TpTokens.iconM,
-          ),
-        ),
+      icon: Icon(
+        collapsed ? TpIcons.sidebarExpand : TpIcons.sidebarCollapse,
+        size: DesktopSidebarTokens.toggleIconSize,
       ),
       style: IconButton.styleFrom(
-        fixedSize: const Size(
-          DesktopSidebarTokens.iconColumnWidth,
-          DesktopSidebarTokens.navItemHeight,
-        ),
-        minimumSize: const Size(
-          DesktopSidebarTokens.iconColumnWidth,
-          DesktopSidebarTokens.navItemHeight,
-        ),
+        fixedSize: Size(width, height),
+        minimumSize: Size(width, height),
         padding: EdgeInsets.zero,
         foregroundColor: colors.textMuted,
         backgroundColor: Colors.transparent,
