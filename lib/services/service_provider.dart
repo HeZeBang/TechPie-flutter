@@ -17,6 +17,7 @@ import 'schedule_service.dart';
 import 'spending_alert_service.dart';
 import 'storage_service.dart';
 import 'student_allowance_service.dart';
+import 'student_leave_service.dart';
 import 'sync_service.dart';
 import 'theme_service.dart';
 import 'third_party_auth_service.dart';
@@ -36,6 +37,7 @@ class ServiceProvider extends InheritedWidget {
   final ThirdPartyAuthService thirdPartyAuthService;
   final OaGymService oaGymService;
   final EgateAppService egateAppService;
+  final StudentLeaveService? studentLeaveService;
   final StudentAllowanceService studentAllowanceService;
   final UniAuthService uniAuthService;
   final SyncService syncService;
@@ -63,6 +65,7 @@ class ServiceProvider extends InheritedWidget {
     required this.thirdPartyAuthService,
     required this.oaGymService,
     required this.egateAppService,
+    this.studentLeaveService,
     required this.studentAllowanceService,
     required this.uniAuthService,
     required this.syncService,
@@ -101,6 +104,7 @@ class ServiceProvider extends InheritedWidget {
       thirdPartyAuthService != oldWidget.thirdPartyAuthService ||
       oaGymService != oldWidget.oaGymService ||
       egateAppService != oldWidget.egateAppService ||
+      studentLeaveService != oldWidget.studentLeaveService ||
       studentAllowanceService != oldWidget.studentAllowanceService ||
       uniAuthService != oldWidget.uniAuthService ||
       syncService != oldWidget.syncService ||

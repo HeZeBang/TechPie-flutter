@@ -1,21 +1,21 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 import '../models/campus_identity.dart';
 import '../models/course.dart';
 import '../models/course_table.dart';
 import '../models/custom_course.dart';
 import '../models/graduate_schedule.dart';
-import 'api_base_url.dart';
 import 'auth_service.dart';
+import 'campus/campus_session.dart' hide CampusIdentity;
+import 'campus/eams_client.dart';
+import 'campus/eams_schedule_parser.dart';
 import 'graduate_schedule_client.dart';
 import 'http_client.dart';
 import 'school_calendar_client.dart';
-import 'session/cookie_provider.dart';
 import 'session/session_tree.dart';
 import 'storage_service.dart';
 import 'third_party_auth_service.dart';
@@ -95,7 +95,9 @@ class ScheduleService extends ChangeNotifier {
   bool _suppressAssignmentRefetch = false;
   bool get suppressAssignmentRefetch => _suppressAssignmentRefetch;
 
-  String get _baseUrl => apiBaseUrl(_storage);
+  late final EamsClient eams;
+  late final Dio _eamsTransport;
+  String? _projectId;
 
   // Fallback used before the school calendar has been fetched at least once.
   static const _fallbackTotalWeeks = 25;
@@ -153,7 +155,41 @@ class ScheduleService extends ChangeNotifier {
       .expand((table) => table.courses)
       .fold<int>(minimum, (max, course) => math.max(max, course.weeks.length - 1));
 
-  ScheduleService(this._storage, this._http, AuthService _, this._tpAuth) {
+  ScheduleService(
+    this._storage,
+    this._http,
+    AuthService auth,
+    this._tpAuth, {
+    Dio? eamsTransport,
+    Duration eamsInterval = const Duration(milliseconds: 1600),
+    EamsRequestQueue? eamsQueue,
+  }) {
+    _eamsTransport =
+        eamsTransport ??
+        Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 15),
+            receiveTimeout: const Duration(seconds: 20),
+          ),
+        );
+    eams = EamsClient(
+      CampusSession(
+        Uri.https('eams.shanghaitech.edu.cn'),
+        _eamsTransport,
+        <T>(action) => _tpAuth.sessionTree.withCookie<T>(_tpAuth.eamsNode, (cp) async {
+          final revision = _accountRevision;
+          final session = _idsSession;
+          _checkUndergraduate(revision, session);
+          final result = await action(cp);
+          _checkUndergraduate(revision, session);
+          return result;
+        }),
+        // A local IDS binding alone has always supported timetable access.
+        () => (user: auth.session?.userId ?? '', ids: _campusAccount()),
+      ),
+      minInterval: eamsInterval,
+      queue: eamsQueue,
+    );
     _observedAccount = _campusAccount();
     _observedIdsSession = _idsSession;
     // Passkey replacement suppresses facade notifications until persistence
@@ -170,6 +206,8 @@ class ScheduleService extends ChangeNotifier {
     if (accountChanged) {
       _observedAccount = account;
       _accountRevision++;
+      _projectId = null;
+      eams.session.reset();
       _identityForAccount = null;
       _identityForSession = null;
       _identityResolved = false;
@@ -246,19 +284,6 @@ class ScheduleService extends ChangeNotifier {
     final week = (diff ~/ 7) + 1;
     return week <= _calendarWeeks;
   }
-
-  Map<String, String> _jsonHeaders() => {
-        'Content-Type': 'application/json; charset=UTF-8',
-      };
-
-  /// Auth payload built from a [CookieProvider] snapshot captured at request
-  /// time. The epoch captured alongside is what makes the renew-retry
-  /// storm-safe (see [_postWithRetry]).
-  Map<String, dynamic> _authBody(CookieProvider cp) => {
-        // eams downstream cookie; studentId comes from the ids binding.
-        'studentId': _tpAuth.idsNode.account?.sid ?? '',
-        'cookies': cp.cookies,
-      };
 
   bool get _hasIdsBinding => _tpAuth.hasIdsBinding;
 
@@ -683,18 +708,42 @@ class ScheduleService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<({ScheduleEntry entry, String html})> undergraduateEntry() async {
+    var page = await eams.getHtml('/eams/courseTableForStd.action');
+    try {
+      return (entry: EamsScheduleParser.entry(page), html: page);
+    } on FormatException {
+      // A freshly minted EAMS session can return its shell until home is visited.
+      await eams.getHtml('/eams/home.action');
+      page = await eams.getHtml('/eams/courseTableForStd.action');
+      return (entry: EamsScheduleParser.entry(page), html: page);
+    }
+  }
+
   Future<void> fetchSemesters() async {
     final owner = _campusAccount();
-    await _postWithRetry(
-      '$_baseUrl/schedule/semesters',
-      const <String, dynamic>{},
-      'fetchSemesters',
-      (data) async {
-        _semesterInfo = SemesterInfo.fromJson(data);
-        await _storage.saveSemesters(_semesterInfo!, owner: owner);
-        notifyListeners();
-      },
+    final revision = _accountRevision;
+    final session = _idsSession;
+    final page = await undergraduateEntry();
+    final entry = page.entry;
+    _checkUndergraduate(revision, session);
+    final tag = RegExp(r'''id=["']semesterBar([a-zA-Z0-9_]+)["']''').firstMatch(page.html)?[1];
+    final source = await eams.postForm(
+      '/eams/dataQuery.action',
+      tag == null || entry.semester.isEmpty
+          ? {'dataType': 'semester'}
+          : {
+              'tagId': 'semesterBar${tag}Semester',
+              'dataType': 'semesterCalendar',
+              'value': entry.semester,
+              'empty': 'false',
+            },
     );
+    _checkUndergraduate(revision, session);
+    _semesterInfo = EamsScheduleParser.semesters(entry, source);
+    _projectId = entry.project;
+    await _storage.saveSemesters(_semesterInfo!, owner: owner);
+    notifyListeners();
   }
 
   Future<void> fetchCourseTable(String semesterId) async {
@@ -708,22 +757,26 @@ class ScheduleService extends ChangeNotifier {
       return;
     }
     final owner = _campusAccount();
-    final extra = <String, dynamic>{
-      'semester_id': semesterId,
-      if (_semesterInfo?.tableId.isNotEmpty == true) 'table_id': _semesterInfo!.tableId,
-    };
-
-    await _postWithRetry(
-      '$_baseUrl/schedule/course_table',
-      extra,
-      'fetchCourseTable',
-      (data) async {
-        if (semesterId != _selectedSemesterId) return;
-        _courseTable = CourseTable.fromApiResponse(data);
-        await _storage.saveCourseTable(semesterId, _courseTable!, owner: owner);
-        notifyListeners();
-      },
-    );
+    final revision = _accountRevision;
+    final session = _idsSession;
+    // Older caches store a setting kind in tableId. Re-read the entry before
+    // using any cached timetable id with the direct endpoint.
+    if (_projectId == null) await fetchSemesters();
+    _checkUndergraduate(revision, session);
+    final source = await eams.postForm('/eams/courseTableForStd!courseTable.action', {
+      'ignoreHead': '1',
+      'setting.kind': 'std',
+      'startWeek': '',
+      'semester.id': semesterId,
+      'ids': _semesterInfo!.tableId,
+      'project.id': _projectId!,
+      'tutorRedirectstudentId': _semesterInfo!.tableId,
+    });
+    _checkUndergraduate(revision, session);
+    if (semesterId != _selectedSemesterId) return;
+    _courseTable = EamsScheduleParser.timetable(source);
+    await _storage.saveCourseTable(semesterId, _courseTable!, owner: owner);
+    notifyListeners();
   }
 
   Future<void> _fetchTermBeginForSemester(String semesterId) async {
@@ -860,74 +913,14 @@ class ScheduleService extends ChangeNotifier {
 
   /// EAMS can renew the IDS parent while acquiring or retrying a cookie.
   /// A new IDS session in automatic mode must first go through classification.
-  Future<void> _postWithRetry(
-    String url,
-    Map<String, dynamic> extra,
-    String tag,
-    Future<void> Function(Map<String, dynamic>) accept,
-  ) async {
-    final revision = _accountRevision;
-    final automatic = scheduleSource == CampusScheduleSource.automatic;
-    const changedSession = FormatException('IDS 会话不可用或已变更，请刷新课表');
-
-    void checkIdentity() {
-      if (revision != _accountRevision) throw StateError('学校账号已切换');
-      if (automatic && (!_identityIsCurrent || _graduateIdentity || _idsSession == null)) {
-        throw changedSession;
-      }
+  void _checkUndergraduate(int revision, String? session) {
+    if (revision != _accountRevision) throw StateError('学校账号已切换');
+    if (session != _idsSession ||
+        scheduleSource == CampusScheduleSource.graduate ||
+        (scheduleSource == CampusScheduleSource.automatic &&
+            (!_identityIsCurrent || _graduateIdentity || session == null))) {
+      throw const FormatException('IDS 会话不可用或已变更，请刷新课表');
     }
-
-    checkIdentity();
-    String? requestSession;
-    final resp = await _tpAuth.sessionTree.withCookie<http.Response>(
-      _tpAuth.eamsNode,
-      (cp) async {
-        checkIdentity();
-        final session = requestSession = _idsSession;
-        final body = {..._authBody(cp), ...extra};
-        final r = await _http.post(
-          Uri.parse(url),
-          headers: _jsonHeaders(),
-          body: jsonEncode(body),
-          tag: tag,
-        );
-        checkIdentity();
-        if (session != _idsSession) throw changedSession;
-        return CookieAction(
-          r,
-          expired: r.statusCode == 401,
-        );
-      },
-    );
-    checkIdentity();
-    if (resp == null) {
-      throw Exception('ids session unavailable');
-    }
-    if (requestSession != _idsSession) throw changedSession;
-    if (resp.statusCode != 200) {
-      if (resp.statusCode == 401) {
-        throw const FormatException('教务系统登录态已失效（HTTP 401），请刷新 IDS 绑定后重试');
-      }
-      String? backendError;
-      try {
-        final decoded = jsonDecode(resp.body);
-        if (decoded is Map && decoded['error'] is String) {
-          backendError = (decoded['error'] as String).trim();
-        }
-      } on FormatException {
-        // Non-JSON error body; fall back to HTTP status.
-      }
-      throw FormatException(
-        backendError != null && backendError.isNotEmpty
-            ? '课表服务请求失败（HTTP ${resp.statusCode}）：$backendError'
-            : '课表服务请求失败（HTTP ${resp.statusCode}）',
-      );
-    }
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    if (data['success'] != true) {
-      throw Exception(data['error'] as String? ?? '$tag failed');
-    }
-    await accept(data['data'] as Map<String, dynamic>);
   }
 
   @override
@@ -935,6 +928,8 @@ class ScheduleService extends ChangeNotifier {
     _pendingFetch?.cancel();
     _pendingFetch = null;
     _tpAuth.idsNode.removeListener(_onCampusChanged);
+    eams.session.reset();
+    _eamsTransport.close(force: true);
     super.dispose();
   }
 }
