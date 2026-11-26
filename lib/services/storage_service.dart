@@ -384,6 +384,13 @@ class StorageService {
     return id;
   }
 
+  List<String> catalogHistory(String owner) =>
+      _prefs.getStringList('${_campusCachePrefix}catalog_history_$owner') ?? [];
+  Future<void> saveCatalogHistory(String owner, List<String> terms) =>
+      _prefs.setStringList('${_campusCachePrefix}catalog_history_$owner', terms);
+  Future<void> clearCatalogHistory(String owner) =>
+      _prefs.remove('${_campusCachePrefix}catalog_history_$owner');
+
   String _gradeKey(String owner, String scope) =>
       '${_campusCachePrefix}grades_${jsonEncode([owner, scope])}';
 

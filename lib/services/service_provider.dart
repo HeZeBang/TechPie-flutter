@@ -4,6 +4,7 @@ import 'assignment_service.dart';
 import 'auth_service.dart';
 import 'campus/campus_clients.dart';
 import 'campus_card_service.dart';
+import 'course_catalog_service.dart';
 import 'deadline_reminder_service.dart';
 import 'deadline_widget_service.dart';
 import 'debug_logger.dart';
@@ -43,6 +44,7 @@ class ServiceProvider extends InheritedWidget {
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
+  final CourseCatalogService? courseCatalog;
   final GradeService? gradeService;
   final CampusClients? campusClients;
   final CampusCardService campusCardService;
@@ -73,6 +75,7 @@ class ServiceProvider extends InheritedWidget {
     required this.syncService,
     required this.updateService,
     this.campusClients,
+    this.courseCatalog,
     this.gradeService,
     required this.campusCardService,
     required this.ecardBindService,
@@ -112,6 +115,7 @@ class ServiceProvider extends InheritedWidget {
       uniAuthService != oldWidget.uniAuthService ||
       syncService != oldWidget.syncService ||
       updateService != oldWidget.updateService ||
+      courseCatalog != oldWidget.courseCatalog ||
       gradeService != oldWidget.gradeService ||
       campusClients != oldWidget.campusClients ||
       campusCardService != oldWidget.campusCardService ||
