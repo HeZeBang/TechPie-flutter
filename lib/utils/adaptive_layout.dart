@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import 'platform.dart';
+
 enum AppWindowSizeClass { compact, medium, expanded }
 
 const double mediumWindowBreakpoint = 600;
@@ -24,6 +26,19 @@ bool usesSidebarLayout(BuildContext context) {
 }
 
 /// Whether [AppShell] displays the desktop sidebar instead of the bottom bar.
+///
+/// Native desktop windows enter the sidebar shell at `>= 600dp` (auto-collapsing
+/// to a compact icon rail across `600–959dp`), whereas mobile targets reserve
+/// the sidebar shell for wide (`>= 960dp`) tablet/foldable layouts.
 bool usesDesktopSidebarShell(BuildContext context) {
-  return appWindowSizeClassOf(context) == AppWindowSizeClass.expanded;
+  final sizeClass = appWindowSizeClassOf(context);
+  if (sizeClass == AppWindowSizeClass.expanded) return true;
+  return isDesktop() && sizeClass == AppWindowSizeClass.medium;
+}
+
+/// Whether a desktop window is in the `600–959dp` medium tier and should keep
+/// its sidebar automatically collapsed as an icon rail.
+bool usesAutoCollapsedSidebarRail(BuildContext context) {
+  return isDesktop() &&
+      appWindowSizeClassOf(context) == AppWindowSizeClass.medium;
 }
