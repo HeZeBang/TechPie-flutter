@@ -175,12 +175,75 @@ class ElearningService {
     final columns = _rows((await client.getGradebookColumns(course, allPages: true))['results']);
     _check(version);
     final byId = {
-      for (final result
-          in _rows((await client.getMyGrades(course, user['id'] as String, allPages: true))['results']))
+      for (final result in _rows(
+        (await client.getMyGrades(course, user['id'] as String, allPages: true))['results'],
+      ))
         result['columnId']: result,
     };
     _check(version);
     return [for (final col in columns) _grade(course, col, byId[col['id']])];
+  }
+
+  Uri myGradesUrl(String course) => web('/webapps/bb-mygrades-BBLEARN/myGrades', {
+        'course_id': course,
+        'stream_name': 'mygrades',
+      });
+
+  Future<BlackboardReceiptPage> submissionReceipts(String course) async {
+    unawaited(accountChanged());
+    final version = _version;
+    final stream = myGradesUrl(course);
+    final grades = html.parse(await client.getWebHtml(stream.toString()));
+    _check(version);
+    final link = grades.querySelector('#submissionReceipts a[href]');
+    final count = int.tryParse(link?.text.trim() ?? '');
+    if (count == null || count < 0) throw CampusRequestException.invalid;
+    if (count == 0) return const BlackboardReceiptPage(0, []);
+    final url = stream.resolve(link!.attributes['href']!);
+    if (url.userInfo.isNotEmpty ||
+        !url.isScheme('https') ||
+        url.origin != stream.origin ||
+        url.path != '/webapps/gradebook/do/instructor/viewAttemptReceipts' ||
+        url.queryParameters['course_id'] != course ||
+        (url.queryParameters['user_id'] ?? '').isEmpty ||
+        (url.queryParameters['is_stream'] ?? '').isEmpty) {
+      throw CampusRequestException.invalid;
+    }
+    final detail = html.parse(await client.getWebHtml(url.toString()));
+    _check(version);
+    final table = detail.querySelector('table#listContainer_datatable');
+    if (table == null) throw CampusRequestException.invalid;
+    final headings = table.querySelectorAll('thead th').map((h) => h.text.trim()).toList();
+    final indexes = [
+      for (final alternatives in const [
+        ['确认编号', 'Confirmation Number'],
+        ['课程作业', 'Coursework'],
+        ['日期', 'Date'],
+        ['提交', 'Submission'],
+        ['大小', 'Size'],
+      ])
+        headings.indexWhere(alternatives.contains),
+    ];
+    if (indexes.contains(-1)) throw CampusRequestException.invalid;
+    final receipts = <BlackboardReceipt>[];
+    for (final row in table.querySelectorAll('tbody > tr')) {
+      final cells = row.children;
+      if (cells.length != headings.length) continue;
+      final number = cells[indexes[0]].text.trim();
+      final assignment = cells[indexes[1]].text.trim();
+      if (number.isEmpty || assignment.isEmpty) continue;
+      receipts.add(
+        BlackboardReceipt(
+          number,
+          assignment,
+          cells[indexes[2]].text.trim(),
+          cells[indexes[3]].text.trim(),
+          cells[indexes[4]].text.trim(),
+        ),
+      );
+    }
+    if (receipts.isEmpty) throw CampusRequestException.invalid;
+    return BlackboardReceiptPage(count, receipts);
   }
 
   BlackboardGrade _grade(String course, Map<String, dynamic> col, Map<String, dynamic>? mark) {
@@ -203,8 +266,7 @@ class ElearningService {
   }
 
   Future<List<BlackboardGroup>> groups(String course) async => [
-        for (final row
-            in _rows((await client.getCourseGroups(course, allPages: true))['results']))
+        for (final row in _rows((await client.getCourseGroups(course, allPages: true))['results']))
           BlackboardGroup(row['name'] as String? ?? '', _plain(row['description'])),
       ];
 

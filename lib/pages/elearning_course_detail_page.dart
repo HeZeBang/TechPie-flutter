@@ -47,8 +47,86 @@ class ElearningCourseDetailPage extends StatelessWidget {
             body: TabBarView(
               children: [
                 _Contents(service: s, course: course.id),
-                BlackboardList<BlackboardGrade>(
-                  load: () => s.grades(course.id),
+                _Grades(service: s, course: course.id),
+                _News(service: s, course: course.id),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+class _Grades extends StatefulWidget {
+  const _Grades({required this.service, required this.course});
+  final ElearningService service;
+  final String course;
+  @override
+  State<_Grades> createState() => _GradesState();
+}
+
+class _GradesState extends State<_Grades> {
+  bool receipts = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.service;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('成绩明细')),
+              ButtonSegment(value: true, label: Text('提交确认')),
+            ],
+            selected: {receipts},
+            onSelectionChanged: (v) => setState(() => receipts = v.first),
+          ),
+        ),
+        Expanded(
+          child: receipts
+              ? BlackboardList<BlackboardReceiptPage>(
+                  load: () async {
+                    final page = await s.submissionReceipts(widget.course);
+                    return page.total == 0 ? [] : [page];
+                  },
+                  empty: '本课程暂无提交确认',
+                  buildRows: (context, pages) {
+                    final page = pages.single;
+                    return [
+                      for (final receipt in page.receipts)
+                        ExpansionTile(
+                          title: Text(receipt.assignment),
+                          subtitle: Text(receipt.date),
+                          children: [
+                            ListTile(
+                              title: const Text('确认编号'),
+                              subtitle: SelectableText(receipt.number),
+                            ),
+                            if (receipt.submission.isNotEmpty || receipt.size.isNotEmpty)
+                              ListTile(
+                                title: const Text('提交'),
+                                subtitle: Text(
+                                  [
+                                    if (receipt.submission.isNotEmpty) receipt.submission,
+                                    if (receipt.size.isNotEmpty) receipt.size,
+                                  ].join(' · '),
+                                ),
+                              ),
+                          ],
+                        ),
+                      if (page.receipts.length < page.total)
+                        ListTile(
+                          title: Text('已显示 ${page.receipts.length} 条，共 ${page.total} 条'),
+                          subtitle: const Text('前往 Blackboard 查看完整列表'),
+                          trailing: const Icon(Icons.open_in_new),
+                          onTap: () => _web(context, '我的成绩', s.myGradesUrl(widget.course)),
+                        ),
+                    ];
+                  },
+                )
+              : BlackboardList<BlackboardGrade>(
+                  load: () => s.grades(widget.course),
                   empty: '暂无成绩',
                   buildRows: (context, items) => [
                     for (final g in items)
@@ -68,12 +146,10 @@ class ElearningCourseDetailPage extends StatelessWidget {
                       ),
                   ],
                 ),
-                _News(service: s, course: course.id),
-              ],
-            ),
-          ),
         ),
-      );
+      ],
+    );
+  }
 }
 
 class _News extends StatefulWidget {

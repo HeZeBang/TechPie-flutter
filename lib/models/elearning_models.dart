@@ -34,6 +34,17 @@ class BlackboardGrade {
   final Uri? attemptUrl;
 }
 
+class BlackboardReceipt {
+  const BlackboardReceipt(this.number, this.assignment, this.date, this.submission, this.size);
+  final String number, assignment, date, submission, size;
+}
+
+class BlackboardReceiptPage {
+  const BlackboardReceiptPage(this.total, this.receipts);
+  final int total;
+  final List<BlackboardReceipt> receipts;
+}
+
 class BlackboardAnnouncement {
   const BlackboardAnnouncement(this.title, this.text);
   final String title, text;
