@@ -23,6 +23,7 @@ import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
+import 'services/holiday_travel_service.dart';
 import 'services/http_client.dart';
 import 'services/ids/ids_client.dart';
 import 'services/island_service.dart';
@@ -484,6 +485,12 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _nativeChromeObserver = CNTabBarRouteObserver();
   late CampusClients _campusClients;
   bool _ownsCampusClients = false;
+  late HolidayTravelService _holidayTravel;
+  HolidayTravelService _createHolidayTravel() => HolidayTravelService(
+        _campusClients.emap,
+        widget.storageService,
+        Listenable.merge([widget.authService, widget.thirdPartyAuthService]),
+      );
   late StudentAllowanceService _studentAllowanceService;
 
   void _initCampusClients() {
@@ -516,6 +523,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initCampusClients();
+    _holidayTravel = _createHolidayTravel();
     widget.wearEngineService?.resumeSync();
     _studentAllowanceService = _createStudentAllowanceService();
     unawaited(_checkForUpdatesQuietly());
@@ -527,14 +535,24 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
+    var clientsChanged = false;
     if (oldWidget.campusClients != widget.campusClients) {
       if (_ownsCampusClients) _campusClients.dispose();
       _initCampusClients();
+      clientsChanged = true;
     } else if (_ownsCampusClients &&
         (oldWidget.authService != widget.authService ||
             oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService)) {
       _campusClients.dispose();
       _initCampusClients();
+      clientsChanged = true;
+    }
+    if (clientsChanged ||
+        oldWidget.authService != widget.authService ||
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+        oldWidget.storageService != widget.storageService) {
+      _holidayTravel.dispose();
+      _holidayTravel = _createHolidayTravel();
     }
     if (oldWidget.authService != widget.authService ||
         oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
@@ -563,6 +581,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.deadlineReminderService?.dispose();
     widget.spendingAlertService?.dispose();
     widget.islandService?.dispose();
+    _holidayTravel.dispose();
     _studentAllowanceService.dispose();
     if (_ownsCampusClients) _campusClients.dispose();
     widget.telemetry?.dispose();
@@ -676,6 +695,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         deadlineWidgetService: widget.deadlineWidgetService,
         deadlineReminderService: widget.deadlineReminderService,
         spendingAlertService: widget.spendingAlertService,
+        holidayTravelService: _holidayTravel,
         islandService: widget.islandService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
