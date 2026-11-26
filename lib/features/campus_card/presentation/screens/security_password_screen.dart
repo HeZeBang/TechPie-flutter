@@ -185,6 +185,7 @@ final class _PasswordRow extends StatelessWidget {
         decoration: InputDecoration(
           labelText: label,
           counterText: '',
+          filled: false,
           border: InputBorder.none,
         ),
       ),

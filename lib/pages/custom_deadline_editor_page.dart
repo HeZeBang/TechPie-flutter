@@ -216,6 +216,7 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
           child: Column(
             children: [
               AdaptiveTextFieldGroup(
+                embedded: true,
                 items: [
                   AdaptiveTextFieldGroupItem(
                     controller: _title,
@@ -244,6 +245,7 @@ class _CustomDeadlineEditorPageState extends State<CustomDeadlineEditorPage> {
                 minLines: 2,
                 maxLines: 4,
                 enabled: !_busy,
+                embedded: true,
               ),
             ],
           ),

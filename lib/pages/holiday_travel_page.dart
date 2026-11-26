@@ -410,19 +410,27 @@ class _RegistrationsState extends State<_Registrations> {
                         ].join('\n'),
                       ),
                     ),
-                    Wrap(
-                      spacing: TpTokens.space2,
-                      children: [
-                        TextButton(
-                          onPressed: (preparing || submitting) ? null : () => reuse(r),
-                          child: const Text('复用此记录的去向'),
-                        ),
-                        if (r['WID'].isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        TpTokens.space2,
+                        0,
+                        TpTokens.space2,
+                        TpTokens.space2,
+                      ),
+                      child: Wrap(
+                        spacing: TpTokens.space2,
+                        children: [
                           TextButton(
-                            onPressed: (preparing || submitting) ? null : () => confirmReturn(r),
-                            child: const Text('确认返校'),
+                            onPressed: (preparing || submitting) ? null : () => reuse(r),
+                            child: const Text('复用此记录的去向'),
                           ),
-                      ],
+                          if (r['WID'].isNotEmpty)
+                            TextButton(
+                              onPressed: (preparing || submitting) ? null : () => confirmReturn(r),
+                              child: const Text('确认返校'),
+                            ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

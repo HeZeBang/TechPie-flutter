@@ -138,6 +138,7 @@ class _BindCardScreenState extends ConsumerState<BindCardScreen> {
                       dropdownColor: context.gpColors.surface,
                       decoration: const InputDecoration(
                         labelText: '证件类型',
+                        filled: false,
                         border: InputBorder.none,
                       ),
                       items: const [
@@ -235,6 +236,7 @@ final class _Field extends StatelessWidget {
         decoration: InputDecoration(
           labelText: label,
           counterText: '',
+          filled: false,
           border: InputBorder.none,
         ),
       ),

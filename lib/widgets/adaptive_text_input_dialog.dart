@@ -225,6 +225,22 @@ class _AdaptiveTextInputDialogState extends State<_AdaptiveTextInputDialog> {
         autofocus: autofocus,
         placeholder: hint == null ? label : '$label - $hint',
         textInputAction: action,
+        suffix: widget.obscureText
+            ? Semantics(
+                button: true,
+                label: _obscured ? '显示密码' : '隐藏密码',
+                child: CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  minimumSize: const Size.square(32),
+                  onPressed: () => setState(() => _obscured = !_obscured),
+                  child: Icon(
+                    _obscured ? TpIcons.eye : TpIcons.eyeOff,
+                    size: TpTokens.iconS,
+                    color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                  ),
+                ),
+              )
+            : null,
         onChanged: _onChanged,
         onSubmitted: onSubmitted,
       );

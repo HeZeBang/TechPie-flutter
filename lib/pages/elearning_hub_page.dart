@@ -168,7 +168,7 @@ class _BlackboardListState<T> extends State<BlackboardList<T>> {
         builder: (context, snapshot) {
           final items = snapshot.data ?? widget.cached;
           final loading = snapshot.connectionState != ConnectionState.done;
-          return RefreshIndicator(
+          return RefreshIndicator.adaptive(
             onRefresh: () async {
               setState(() => response = _reload());
               try {
