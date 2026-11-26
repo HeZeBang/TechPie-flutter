@@ -7,6 +7,7 @@ import '../pages/campus_card_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elearning_hub_page.dart';
 import '../pages/elrc_recordings_page.dart';
+import '../pages/holiday_travel_page.dart';
 import '../pages/oa_gym_page.dart';
 import '../pages/student_allowance_page.dart';
 import '../pages/student_leave_page.dart';
@@ -174,6 +175,19 @@ final featureEntries = <Feature>[
       builder: (_) => const StudentAllowancePage(),
     ),
     icon: const Icon(TpIcons.allowance),
+  ),
+  Feature(
+    id: 'holiday_travel',
+    category: CampusServiceCategory.life,
+    description: '节假日离返校',
+    subtitle: '离返校登记与去向复用',
+    keywords: const ['节假日', '离校', '返校', '假期', 'jiaqi', 'travel', 'holiday'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const HolidayTravelPage(),
+    ),
+    icon: const Icon(Icons.luggage_outlined),
   ),
 ];
 
