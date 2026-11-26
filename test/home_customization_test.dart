@@ -366,13 +366,24 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('编辑'), findsNothing);
 
-        // Press and hold quickActions outside Edit Mode (past 260ms delay),
-        // drag into primary column drop slot 0, and drop cleanly.
+        // Press and hold quickActions outside Edit Mode (past 260ms delay):
+        // renders the compact translucent drag feedback AND auto-enters Edit Mode
+        // so card-level style/settings controls become discoverable.
         final quickDrag =
             find.byKey(const ValueKey('home.draggable-quick_actions'));
         final gesture = await tester.startGesture(tester.getCenter(quickDrag));
         await tester.pump(const Duration(milliseconds: 300));
         await tester.pump(const Duration(milliseconds: 160));
+
+        expect(
+          find.byKey(const ValueKey('home.drag-feedback-quick_actions')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('home.campus-card-style-compact')),
+          findsOneWidget,
+        );
 
         // Drop slots wake up immediately when LongPressDraggable activates.
         final primaryTopSlot = find.byKey(const ValueKey('home.drop-primary-0'));
@@ -386,14 +397,19 @@ void main() {
           storage.homeDesktopLayout.primary.first,
           HomeWidgetId.quickActions,
         );
-        expect(find.byKey(const ValueKey('home.edit-bar')), findsNothing);
+        expect(
+          find.byKey(const ValueKey('home.drag-feedback-quick_actions')),
+          findsNothing,
+        );
+        // Remains in Edit Mode after pick-up drop until Done / Escape.
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsOneWidget);
 
-        // Empty secondary column by moving campusCard via hold-drag as well.
+        // Inside Edit Mode, immediately drag campusCard (0ms delay) into primary,
+        // emptying secondary column.
         final campusDrag =
             find.byKey(const ValueKey('home.draggable-campus_card'));
         final g2 = await tester.startGesture(tester.getCenter(campusDrag));
-        await tester.pump(const Duration(milliseconds: 300));
-        await tester.pump(const Duration(milliseconds: 160));
+        await tester.pump(const Duration(milliseconds: 50));
         final slotAfterQuick = find.byKey(const ValueKey('home.drop-primary-1'));
         await g2.moveTo(tester.getCenter(slotAfterQuick));
         await tester.pump(const Duration(milliseconds: 100));
@@ -401,13 +417,18 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(storage.homeDesktopLayout.secondary, isEmpty);
+
+        // Exit Edit Mode via Escape -> empty secondary column collapses cleanly.
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsNothing);
         expect(
           find.byKey(const ValueKey('home.bento-col-secondary')),
           findsNothing,
         );
 
-        // Hold-dragging a card from collapsed single-column primary wakes up
-        // the empty secondary drop zone cleanly mid-drag and restores two columns.
+        // Hold-dragging a card from collapsed single-column primary auto-enters
+        // Edit Mode and wakes up the empty secondary drop zone mid-drag.
         final g3 = await tester.startGesture(
           tester.getCenter(
             find.byKey(const ValueKey('home.draggable-quick_actions')),
@@ -415,6 +436,7 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 300));
         await tester.pump(const Duration(milliseconds: 160));
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsOneWidget);
         final wokenSecondary =
             find.byKey(const ValueKey('home.empty-column-secondary'));
         expect(wokenSecondary, findsOneWidget);

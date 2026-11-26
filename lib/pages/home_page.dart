@@ -686,6 +686,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 children: [
                   if (_isEditing)
                     Padding(
+                      key: const ValueKey('home.edit-bar-slot'),
                       padding: EdgeInsets.fromLTRB(
                         sidePad,
                         topPad,
@@ -700,6 +701,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     ),
                   Expanded(
+                    key: const ValueKey('home.scroll-body'),
                     child: PageRefreshIndicator(
                       onRefresh: _refreshHome,
                       child: CustomScrollView(

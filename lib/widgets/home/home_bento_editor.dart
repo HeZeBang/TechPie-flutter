@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../../models/home_layout.dart';
@@ -11,10 +13,9 @@ typedef HomeWidgetCardBuilder = Widget Function(HomeWidgetId id);
 /// Dual-column Bento workspace for wide/desktop viewports.
 ///
 /// Renders a single tree-stable Bento structure across view, direct hold-drag,
-/// and Edit Mode so initiating a drag outside Edit Mode never unmounts the
-/// active draggable or flashes column headers unnecessarily. When neither edit
-/// mode nor an active drag is in progress and one column is empty, the
-/// populated column cleanly expands to full width.
+/// and Edit Mode. Picking up a card automatically enters Edit Mode so the user
+/// sees the edit toolbar and per-card options without obscuring the Bento grid
+/// underneath a full-size opaque card.
 class HomeBentoEditor extends StatefulWidget {
   const HomeBentoEditor({
     super.key,
@@ -51,7 +52,12 @@ class HomeBentoEditor extends StatefulWidget {
 class _HomeBentoEditorState extends State<HomeBentoEditor> {
   HomeWidgetId? _draggingId;
 
-  Widget _wrapCard(HomeWidgetId id, HomeBentoColumn column, int index, int count) {
+  Widget _wrapCard(
+    HomeWidgetId id,
+    HomeBentoColumn column,
+    int index,
+    int count,
+  ) {
     return KeyedSubtree(
       key: ValueKey('home.desktop-card-${id.key}'),
       child: HomeEditableCardFrame(
@@ -166,58 +172,167 @@ class _HomeBentoEditorState extends State<HomeBentoEditor> {
     int count,
   ) {
     final framed = _wrapCard(id, column, index, count);
-    return LayoutBuilder(
+    final isThisDragging = _draggingId == id;
+    final surface = Opacity(
+      opacity: isThisDragging ? 0.28 : 1.0,
+      child: framed,
+    );
+    final feedback = _DesktopDragFeedbackCard(
+      key: ValueKey('home.drag-feedback-${id.key}'),
+      id: id,
+    );
+
+    void onDragStarted() {
+      setState(() => _draggingId = id);
+      if (!widget.isEditing) {
+        widget.onEnterEditMode();
+      }
+    }
+
+    void clearDrag() {
+      if (mounted && _draggingId == id) {
+        setState(() => _draggingId = null);
+      }
+    }
+
+    return KeyedSubtree(
       key: ValueKey('home.bento-card-wrap-${id.key}'),
-      builder: (context, constraints) {
-        final width = constraints.maxWidth.isFinite ? constraints.maxWidth : 400.0;
-        final feedback = Material(
-          color: Colors.transparent,
-          elevation: 10,
-          borderRadius: BorderRadius.circular(TpTokens.radiusL + 2),
-          child: Transform.scale(
-            scale: 1.015,
-            child: SizedBox(
-              width: width,
-              child: Opacity(opacity: 0.94, child: framed),
+      child: widget.isEditing
+          ? Draggable<HomeWidgetId>(
+              key: ValueKey('home.draggable-${id.key}'),
+              data: id,
+              maxSimultaneousDrags: 1,
+              dragAnchorStrategy: pointerDragAnchorStrategy,
+              ignoringFeedbackPointer: true,
+              onDragStarted: onDragStarted,
+              onDragCompleted: clearDrag,
+              onDragEnd: (_) => clearDrag(),
+              onDraggableCanceled: (_, __) => clearDrag(),
+              feedback: feedback,
+              childWhenDragging: surface,
+              child: surface,
+            )
+          : LongPressDraggable<HomeWidgetId>(
+              key: ValueKey('home.draggable-${id.key}'),
+              data: id,
+              delay: const Duration(milliseconds: 260),
+              maxSimultaneousDrags: 1,
+              dragAnchorStrategy: pointerDragAnchorStrategy,
+              ignoringFeedbackPointer: true,
+              onDragStarted: onDragStarted,
+              onDragCompleted: clearDrag,
+              onDragEnd: (_) => clearDrag(),
+              onDraggableCanceled: (_, __) => clearDrag(),
+              feedback: feedback,
+              childWhenDragging: surface,
+              child: surface,
+            ),
+    );
+  }
+}
+
+class _DesktopDragFeedbackCard extends StatelessWidget {
+  const _DesktopDragFeedbackCard({
+    super.key,
+    required this.id,
+  });
+
+  final HomeWidgetId id;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final meta = homeWidgetMetaFor(id);
+    final surfaceTint =
+        colors.surface.withValues(alpha: colors.isDark ? 0.72 : 0.78);
+    final borderColor =
+        colors.brandInk.withValues(alpha: colors.isDark ? 0.45 : 0.35);
+
+    return Transform.translate(
+      offset: const Offset(14, 14),
+      child: Material(
+        type: MaterialType.transparency,
+        child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 196, maxWidth: 248),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(TpTokens.radiusL),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: surfaceTint,
+                borderRadius: BorderRadius.circular(TpTokens.radiusL),
+                border: Border.all(color: borderColor, width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: colors.textPrimary.withValues(
+                      alpha: colors.isDark ? 0.28 : 0.14,
+                    ),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: TpTokens.space3,
+                  vertical: TpTokens.space2 + 2,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: colors.brandSoft,
+                        borderRadius: BorderRadius.circular(TpTokens.radiusS),
+                      ),
+                      child: Icon(
+                        homeWidgetIcon(id),
+                        size: TpTokens.iconS,
+                        color: colors.brandInk,
+                      ),
+                    ),
+                    const SizedBox(width: TpTokens.space2),
+                    Flexible(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            meta.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TpTypography.itemTitle(colors).copyWith(
+                              fontSize: 13.5,
+                            ),
+                          ),
+                          Text(
+                            '拖动到目标栏位',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TpTypography.cardMeta(colors).copyWith(
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: TpTokens.space2),
+                    Icon(
+                      TpIcons.dragHandle,
+                      size: TpTokens.iconXs,
+                      color: colors.textMuted,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        );
-        final placeholder = Opacity(opacity: 0.35, child: framed);
-
-        void onDragStarted() => setState(() => _draggingId = id);
-        void clearDrag() {
-          if (mounted && _draggingId != null) {
-            setState(() => _draggingId = null);
-          }
-        }
-
-        if (widget.isEditing) {
-          return Draggable<HomeWidgetId>(
-            key: ValueKey('home.draggable-${id.key}'),
-            data: id,
-            maxSimultaneousDrags: 1,
-            onDragStarted: onDragStarted,
-            onDragEnd: (_) => clearDrag(),
-            onDraggableCanceled: (_, __) => clearDrag(),
-            feedback: feedback,
-            childWhenDragging: placeholder,
-            child: framed,
-          );
-        }
-
-        return LongPressDraggable<HomeWidgetId>(
-          key: ValueKey('home.draggable-${id.key}'),
-          data: id,
-          delay: const Duration(milliseconds: 260),
-          maxSimultaneousDrags: 1,
-          onDragStarted: onDragStarted,
-          onDragEnd: (_) => clearDrag(),
-          onDraggableCanceled: (_, __) => clearDrag(),
-          feedback: feedback,
-          childWhenDragging: placeholder,
-          child: framed,
-        );
-      },
+        ),
+      ),
+      ),
     );
   }
 }
@@ -276,10 +391,9 @@ class _BentoColumn extends StatelessWidget {
           if (showDropChrome)
             _EmptyColumnDropZone(
               key: ValueKey('home.empty-column-$_colName'),
+              draggingId: draggingId,
               onAccept: (id) => onAcceptSlot(id, 0),
             )
-          else if (footer == null)
-            const SizedBox.shrink()
           else
             const SizedBox.shrink()
         else ...[
@@ -287,6 +401,7 @@ class _BentoColumn extends StatelessWidget {
             key: ValueKey('home.drop-$_colName-0'),
             isEditing: isEditing,
             isDraggingAny: isDragging,
+            draggingId: draggingId,
             isEdgeSlot: true,
             onAccept: (id) => onAcceptSlot(id, 0),
           ),
@@ -296,6 +411,7 @@ class _BentoColumn extends StatelessWidget {
               key: ValueKey('home.drop-$_colName-${i + 1}'),
               isEditing: isEditing,
               isDraggingAny: isDragging,
+              draggingId: draggingId,
               isEdgeSlot: i == items.length - 1,
               onAccept: (id) => onAcceptSlot(id, i + 1),
             ),
@@ -324,12 +440,14 @@ class _BentoDropSlot extends StatelessWidget {
     super.key,
     required this.isEditing,
     required this.isDraggingAny,
+    required this.draggingId,
     this.isEdgeSlot = false,
     required this.onAccept,
   });
 
   final bool isEditing;
   final bool isDraggingAny;
+  final HomeWidgetId? draggingId;
   final bool isEdgeSlot;
   final ValueChanged<HomeWidgetId> onAccept;
 
@@ -354,6 +472,11 @@ class _BentoDropSlot extends StatelessWidget {
       onAcceptWithDetails: (details) => onAccept(details.data),
       builder: (context, candidates, rejected) {
         final hovered = candidates.isNotEmpty;
+        final candidateId = hovered ? (candidates.first ?? draggingId) : null;
+        final label = candidateId != null
+            ? '放置「${homeWidgetMetaFor(candidateId).title}」到此处'
+            : '放置到此处';
+
         return AnimatedContainer(
           duration: duration,
           curve: Curves.easeOutCubic,
@@ -372,7 +495,7 @@ class _BentoDropSlot extends StatelessWidget {
           child: hovered
               ? Center(
                   child: Text(
-                    '放置到此处',
+                    label,
                     style: TpTypography.badge(colors.brandInk),
                   ),
                 )
@@ -384,8 +507,13 @@ class _BentoDropSlot extends StatelessWidget {
 }
 
 class _EmptyColumnDropZone extends StatelessWidget {
-  const _EmptyColumnDropZone({super.key, required this.onAccept});
+  const _EmptyColumnDropZone({
+    super.key,
+    required this.draggingId,
+    required this.onAccept,
+  });
 
+  final HomeWidgetId? draggingId;
   final ValueChanged<HomeWidgetId> onAccept;
 
   @override
@@ -401,6 +529,13 @@ class _EmptyColumnDropZone extends StatelessWidget {
       onAcceptWithDetails: (details) => onAccept(details.data),
       builder: (context, candidates, rejected) {
         final hovered = candidates.isNotEmpty;
+        final candidateId = hovered ? (candidates.first ?? draggingId) : null;
+        final message = hovered
+            ? (candidateId != null
+                ? '松开将「${homeWidgetMetaFor(candidateId).title}」放入本栏'
+                : '松开即可放置到本栏')
+            : '可将组件拖入此栏';
+
         return AnimatedContainer(
           duration: duration,
           constraints: const BoxConstraints(minHeight: 160),
@@ -424,7 +559,7 @@ class _EmptyColumnDropZone extends StatelessWidget {
                 ),
                 const SizedBox(height: TpTokens.space2),
                 Text(
-                  hovered ? '松开即可放置到本栏' : '可将组件拖入此栏',
+                  message,
                   style: TpTypography.itemMeta(colors).copyWith(
                     color: hovered ? colors.brandInk : colors.textMuted,
                   ),
