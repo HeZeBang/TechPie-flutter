@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/course.dart';
+import '../pages/elearning_hub_page.dart';
 import '../theme/theme.dart';
 import '../utils/haptics.dart';
 import '../utils/platform.dart';
@@ -205,6 +206,7 @@ class CourseDetailContent extends StatelessWidget {
               ],
             ),
           ),
+          if (course.source is EamsCourseSource) BlackboardTimetableLink(course.name),
           if (onEdit != null) ...[
             const SizedBox(height: TpTokens.space3),
             Align(

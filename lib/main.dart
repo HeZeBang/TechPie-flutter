@@ -17,12 +17,15 @@ import 'services/auth_service.dart';
 import 'services/campus/campus_clients.dart';
 import 'services/campus/campus_file_share.dart';
 import 'services/campus_card_service.dart';
+import 'services/course_catalog_service.dart';
 import 'services/deadline_reminder_service.dart';
 import 'services/deadline_widget_service.dart';
 import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
+import 'services/grade_service.dart';
+import 'services/holiday_travel_service.dart';
 import 'services/http_client.dart';
 import 'services/ids/ids_client.dart';
 import 'services/island_service.dart';
@@ -33,6 +36,7 @@ import 'services/service_provider.dart';
 import 'services/spending_alert_service.dart';
 import 'services/storage_service.dart';
 import 'services/student_allowance_service.dart';
+import 'services/student_leave_service.dart';
 import 'services/sync_service.dart';
 import 'services/theme_service.dart';
 import 'services/third_party_auth_service.dart';
@@ -130,6 +134,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final campusClients = CampusClients(
     authService,
     thirdPartyAuthService,
+    storage: storageService,
     onAccountChanged: () => unawaited(CampusFileShare.clearScopedFiles()),
   );
   final scheduleService = ScheduleService(
@@ -137,6 +142,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     httpClient,
     authService,
     thirdPartyAuthService,
+    eamsQueue: campusClients.eams.queue,
   );
   final oaGymService = OaGymService(
     authService,
@@ -157,6 +163,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     authService,
     thirdPartyAuthService,
     scheduleService,
+    blackboardDeadlines: () => campusClients.blackboard.deadlines(),
     syncReminders: isApple,
   );
   final wearSource = isAndroid()
@@ -492,6 +499,32 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         widget.authService,
         widget.thirdPartyAuthService,
       );
+  late CourseCatalogService _courseCatalog;
+  CourseCatalogService _createCourseCatalogService() => CourseCatalogService(
+        _campusClients.eams,
+        widget.storageService,
+        widget.authService,
+        widget.thirdPartyAuthService,
+      );
+  late GradeService _grades;
+  GradeService _createGrades() => GradeService(
+        _campusClients.eams,
+        widget.storageService,
+        widget.authService,
+        widget.thirdPartyAuthService,
+      );
+  late HolidayTravelService _holidayTravel;
+  HolidayTravelService _createHolidayTravel() => HolidayTravelService(
+        _campusClients.emap,
+        widget.storageService,
+        Listenable.merge([widget.authService, widget.thirdPartyAuthService]),
+      );
+  late StudentLeaveService _studentLeave;
+  StudentLeaveService _createStudentLeave() => StudentLeaveService(
+        _campusClients.emap,
+        widget.storageService,
+        Listenable.merge([widget.authService, widget.thirdPartyAuthService]),
+      );
   late StudentAllowanceService _studentAllowanceService;
 
   void _initCampusClients() {
@@ -500,7 +533,12 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       _campusClients = external;
       _ownsCampusClients = false;
     } else {
-      _campusClients = CampusClients(widget.authService, widget.thirdPartyAuthService);
+      _campusClients = CampusClients(
+        widget.authService,
+        widget.thirdPartyAuthService,
+        storage: widget.storageService,
+        eamsQueue: widget.scheduleService.eams.queue,
+      );
       _ownsCampusClients = true;
     }
   }
@@ -525,6 +563,10 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _initCampusClients();
     _pnpMinor = _createPnpMinorService();
+    _courseCatalog = _createCourseCatalogService();
+    _grades = _createGrades();
+    _holidayTravel = _createHolidayTravel();
+    _studentLeave = _createStudentLeave();
     widget.wearEngineService?.resumeSync();
     _studentAllowanceService = _createStudentAllowanceService();
     unawaited(_checkForUpdatesQuietly());
@@ -543,10 +585,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       clientsChanged = true;
     } else if (_ownsCampusClients &&
         (oldWidget.authService != widget.authService ||
-            oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService)) {
+            oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+            oldWidget.storageService != widget.storageService)) {
       _campusClients.dispose();
       _initCampusClients();
       clientsChanged = true;
+    } else if (_ownsCampusClients && oldWidget.scheduleService != widget.scheduleService) {
+      _campusClients.eams.shareQueueWith(widget.scheduleService.eams);
     }
     if (clientsChanged ||
         oldWidget.authService != widget.authService ||
@@ -554,6 +599,24 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         oldWidget.storageService != widget.storageService) {
       _pnpMinor.dispose();
       _pnpMinor = _createPnpMinorService();
+      _holidayTravel.dispose();
+      _holidayTravel = _createHolidayTravel();
+      _studentLeave.dispose();
+      _studentLeave = _createStudentLeave();
+    }
+    if (clientsChanged ||
+        oldWidget.authService != widget.authService ||
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+        oldWidget.storageService != widget.storageService) {
+      _grades.dispose();
+      _grades = _createGrades();
+    }
+    if (clientsChanged ||
+        oldWidget.authService != widget.authService ||
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+        oldWidget.storageService != widget.storageService) {
+      _courseCatalog.dispose();
+      _courseCatalog = _createCourseCatalogService();
     }
     if (oldWidget.authService != widget.authService ||
         oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
@@ -582,8 +645,12 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.deadlineReminderService?.dispose();
     widget.spendingAlertService?.dispose();
     widget.islandService?.dispose();
+    _holidayTravel.dispose();
+    _studentLeave.dispose();
     _studentAllowanceService.dispose();
     _pnpMinor.dispose();
+    _courseCatalog.dispose();
+    _grades.dispose();
     if (_ownsCampusClients) _campusClients.dispose();
     widget.telemetry?.dispose();
     widget.campusCardService.dispose();
@@ -686,6 +753,9 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         egateAppService: widget.egateAppService,
         campusClients: _campusClients,
         pnpMinor: _pnpMinor,
+        courseCatalog: _courseCatalog,
+        gradeService: _grades,
+        studentLeaveService: _studentLeave,
         studentAllowanceService: _studentAllowanceService,
         uniAuthService: widget.uniAuthService,
         syncService: widget.syncService,
@@ -697,6 +767,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         deadlineWidgetService: widget.deadlineWidgetService,
         deadlineReminderService: widget.deadlineReminderService,
         spendingAlertService: widget.spendingAlertService,
+        holidayTravelService: _holidayTravel,
         islandService: widget.islandService,
         child: MaterialApp(
           navigatorKey: _navigatorKey,
