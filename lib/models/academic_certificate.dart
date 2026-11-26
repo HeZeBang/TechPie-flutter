@@ -11,11 +11,10 @@ enum CertificateKind {
   const CertificateKind(this.label, this.path);
   final String label, path;
   Uri get entry => Uri.https('eams.shanghaitech.edu.cn', '$path.action');
-  String? get submitPath => switch (this) {
-        CertificateKind.transcript => '$path!report.action',
-        CertificateKind.ranking => '$path!apply.action',
-        CertificateKind.average => null,
-      };
+  String get entity => path.split('/').last;
+  bool get usesBlankEditor => this != CertificateKind.ranking;
+  String get submitPath =>
+      usesBlankEditor ? '$path!save.action' : '$path!apply.action';
 }
 
 class CertificateDownload {
@@ -31,10 +30,19 @@ class AcademicCertificate {
 }
 
 class CertificateField {
-  const CertificateField(this.name, this.label, this.value, this.options, this.required);
+  const CertificateField(
+    this.name,
+    this.label,
+    this.value,
+    this.options,
+    this.required, {
+    this.omitWhenEmpty = false,
+    this.readOnly = false,
+    this.multiline = false,
+  });
   final String name, label, value;
   final Map<String, String> options;
-  final bool required;
+  final bool required, omitWhenEmpty, readOnly, multiline;
 }
 
 class CertificateForm {
@@ -45,12 +53,14 @@ class CertificateForm {
   Map<String, String> values(Map<String, String> input) {
     final result = {...hidden};
     for (final f in fields) {
-      final value = input[f.name] ?? f.value;
+      final value = f.readOnly ? f.value : input[f.name] ?? f.value;
       if ((f.required && value.trim().isEmpty) ||
-          (value.isNotEmpty && f.options.isNotEmpty && !f.options.containsKey(value))) {
+          (value.isNotEmpty &&
+              f.options.isNotEmpty &&
+              !f.options.containsKey(value))) {
         throw FormatException('请检查${f.label}');
       }
-      result[f.name] = value;
+      if (!f.omitWhenEmpty || value.isNotEmpty) result[f.name] = value;
     }
     return result;
   }
@@ -204,7 +214,8 @@ CertificateForm? parseCertificateForm(CertificateKind kind, String source) {
       if (e.attributes.containsKey('disabled')) continue;
       final type = (e.attributes['type'] ?? 'text').toLowerCase();
       if (e.localName == 'button' ||
-          (e.localName == 'input' && const {'submit', 'button', 'reset', 'image'}.contains(type))) {
+          (e.localName == 'input' &&
+              const {'submit', 'button', 'reset', 'image'}.contains(type))) {
         continue;
       }
       final name = e.attributes['name'] ?? '';
@@ -237,7 +248,8 @@ CertificateForm? parseCertificateForm(CertificateKind kind, String source) {
       }
       // Script-driven fields, uploads and multiple choices use the original form.
       if (e.attributes.containsKey('multiple') ||
-          (e.localName == 'input' && !const {'text', 'number', 'checkbox'}.contains(type))) {
+          (e.localName == 'input' &&
+              !const {'text', 'number', 'checkbox'}.contains(type))) {
         unsupported = true;
         break;
       }
@@ -247,35 +259,59 @@ CertificateForm? parseCertificateForm(CertificateKind kind, String source) {
           unsupported = true;
           break;
         }
-        final checkedVal = (e.attributes['value'] ?? '').isNotEmpty ? e.attributes['value']! : 'on';
+        final checkedVal = (e.attributes['value'] ?? '').isNotEmpty
+            ? e.attributes['value']!
+            : 'on';
         final initial = e.attributes.containsKey('checked') ? checkedVal : '';
         items.add(
-          CertificateField(
-            name,
-            label,
-            initial,
-            {checkedVal: '是', '': '否'},
-            e.attributes.containsKey('required'),
-          ),
+          CertificateField(name, label, initial, {
+            checkedVal: '是',
+            '': '否',
+          }, e.attributes.containsKey('required'),),
         );
         continue;
       }
-      final options = {
-        for (final o in e.querySelectorAll('option'))
-          (o.attributes['value'] ?? o.text.trim()): o.text.trim(),
-      };
+      final transcriptType =
+          kind == CertificateKind.transcript && name == 'stdPrinterApply.type';
+      final allChoices = e.querySelectorAll('option');
+      final enabled = allChoices.where(
+        (o) =>
+            !o.attributes.containsKey('disabled') &&
+            !(o.parent?.localName == 'optgroup' &&
+                o.parent!.attributes.containsKey('disabled')),
+      );
+      final choices = enabled.where(
+        (o) => !transcriptType || o.text.trim() != '...',
+      );
+      String optionValue(dom.Element option) =>
+          option.attributes['value'] ?? option.text.trim();
+      final options = {for (final o in choices) optionValue(o): o.text.trim()};
       final label = _resolveFieldLabel(e, doc, f);
       if (label == null || label.isEmpty) {
         unsupported = true;
         break;
       }
+      final selected =
+          allChoices
+              .where((o) => o.attributes.containsKey('selected'))
+              .lastOrNull ??
+          enabled.firstOrNull;
+      if (e.localName == 'select' && options.isEmpty) return null;
+      final unavailable = selected != null && !choices.contains(selected);
       final initial = e.localName == 'select'
-          ? (e.querySelector('option[selected]')?.attributes['value'] ??
-              options.keys.firstOrNull ??
-              '')
+          ? (selected == null || unavailable ? '' : optionValue(selected))
           : e.attributes['value'] ?? e.text.trim();
       items.add(
-        CertificateField(name, label, initial, options, e.attributes.containsKey('required')),
+        CertificateField(
+          name,
+          label,
+          initial,
+          options,
+          transcriptType || e.attributes.containsKey('required'),
+          omitWhenEmpty: unavailable && !options.containsKey(''),
+          readOnly: e.attributes.containsKey('readonly'),
+          multiline: e.localName == 'textarea',
+        ),
       );
     }
     if (unsupported) continue;
@@ -324,6 +360,11 @@ CertificateForm? parseCertificateForm(CertificateKind kind, String source) {
           ),
         );
       }
+    }
+    if (kind.usesBlankEditor &&
+        (hidden['${kind.entity}.id'] != '' ||
+            !fields.any((f) => f.name == '${kind.entity}.applyReason'))) {
+      continue;
     }
     if (!unsupported && fields.isNotEmpty) {
       return CertificateForm(action.toString(), hidden, fields);

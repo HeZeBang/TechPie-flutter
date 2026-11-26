@@ -23,6 +23,9 @@ class AcademicCertificateService extends ChangeNotifier {
   int generation = 0;
   final records = <CertificateKind, List<AcademicCertificate>>{};
   final forms = <CertificateKind, CertificateForm>{};
+  final _editFields = <CertificateKind, Map<String, String>>{};
+  bool canApply(CertificateKind kind) => forms.containsKey(kind) || _editFields.containsKey(kind);
+
   void _account() {
     final id = eams.session.identity();
     final owner = (id.user?.isNotEmpty == true && id.ids?.isNotEmpty == true)
@@ -34,6 +37,7 @@ class AcademicCertificateService extends ChangeNotifier {
     generation++;
     records.clear();
     forms.clear();
+    _editFields.clear();
     if (owner != null) {
       for (final k in CertificateKind.values) {
         final raw = storage.academicCertificateCache(owner, k.name);
@@ -70,10 +74,38 @@ class AcademicCertificateService extends ChangeNotifier {
       jsonEncode(list.map((r) => r.fields).toList()),
     );
     if (version != generation) return;
+    _editFields.remove(kind);
+    final editor = kind.usesBlankEditor ? _editorLink(kind, data) : null;
+    if (editor != null) _editFields[kind] = editor;
     records[kind] = list;
     forms.remove(kind);
     if (form != null) forms[kind] = form;
     notifyListeners();
+  }
+
+  Map<String, String>? _editorLink(CertificateKind kind, String source) {
+    final doc = html.parse(source);
+    final scripts = doc.querySelectorAll('script').map((node) => node.text).join('\n');
+    final entity = RegExp(r"""bar\.addEntityAction\(\s*['"]([^'"]+)['"]\s*,""");
+    if (!entity.allMatches(scripts).any((match) => match.group(1) == kind.entity) ||
+        !RegExp(r"""bar\.addItem\(\s*['"]申请['"]\s*,\s*action\.add\(\s*\)""").hasMatch(scripts)) {
+      return null;
+    }
+    final params = doc.querySelector('input[type="hidden"][name="params"]')?.attributes['value'];
+    return {'${kind.entity}.id': '', if (params != null && params.isNotEmpty) 'params': params};
+  }
+
+  Future<CertificateForm> openForm(CertificateKind kind) async {
+    final fields = _editFields[kind];
+    if (fields != null) {
+      final version = generation;
+      final source = await eams.postForm('${kind.path}!edit.action', fields);
+      if (version != generation) throw CampusRequestException.expired;
+      final form = parseCertificateForm(kind, source);
+      if (form == null) throw const FormatException('无法读取教务系统的申请表单，请刷新后重试');
+      return forms[kind] = form;
+    }
+    return forms[kind] ?? (throw const FormatException('请刷新申请记录后再试'));
   }
 
   Future<String> apply(

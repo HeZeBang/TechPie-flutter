@@ -90,9 +90,15 @@ class _CertificatesState extends State<_Certificates> {
         ),
       );
 
-  Future<void> apply(CertificateForm form) async {
+  Future<void> apply() async {
     final s = widget.service;
     final generation = s.generation;
+    CertificateForm? opened;
+    await run(() async {
+      opened = await s.openForm(kind);
+    });
+    final form = opened;
+    if (form == null || !mounted || generation != s.generation) return;
     final values = await showDialog<Map<String, String>>(
       context: context,
       builder: (context) => _FormDialog(form: form, kind: kind, service: s, generation: generation),
@@ -148,7 +154,7 @@ class _CertificatesState extends State<_Certificates> {
   Widget build(BuildContext context) {
     final s = widget.service;
     final rows = s.records[kind];
-    final form = s.forms[kind];
+    final native = s.canApply(kind);
     return Scaffold(
       appBar: AppBar(
         title: const Text('成绩单与证明'),
@@ -199,13 +205,13 @@ class _CertificatesState extends State<_Certificates> {
                     Align(
                       alignment: AlignmentDirectional.centerStart,
                       child: FilledButton.icon(
-                        icon: Icon(form == null ? Icons.open_in_new : Icons.add),
+                        icon: Icon(native ? Icons.add : Icons.open_in_new),
                         onPressed: busy
                             ? null
-                            : form == null
-                                ? web
-                                : () => apply(form),
-                        label: Text(form == null ? '在 EAMS 网页中办理' : '新申请'),
+                            : native
+                                ? apply
+                                : web,
+                        label: Text(native ? '新申请' : '在 EAMS 网页中办理'),
                       ),
                     ),
                     if (rows != null && rows.isEmpty) const ListTile(title: Text('暂无申请记录')),
@@ -292,6 +298,9 @@ class _FormDialogState extends State<_FormDialog> {
                 if (field.options.isEmpty)
                   TextFormField(
                     initialValue: field.value,
+                    readOnly: field.readOnly,
+                    minLines: field.multiline ? 3 : 1,
+                    maxLines: field.multiline ? 6 : 1,
                     decoration: InputDecoration(labelText: field.label),
                     onChanged: (v) => values[field.name] = v,
                   )
