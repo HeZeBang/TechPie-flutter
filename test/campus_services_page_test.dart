@@ -36,8 +36,11 @@ void main() {
           .map((f) => f.id),
       ['student_allowance', 'elrc_recordings', 'ecourse', 'student_leave', 'oa_gym'],
     );
-    final ids = featureEntries.map((f) => f.id);
-    await storage.setPinnedQuickFeatureIds(['campus_card', 'oa_gym', 'oa_gym', ...ids]);
+    // Use an existing user's saved order across catalog additions.
+    await storage.setPinnedQuickFeatureIds([
+      'campus_card', 'oa_gym', 'oa_gym', 'elrc_recordings',
+      'ecourse', 'student_leave', 'egate_xshd', 'student_allowance',
+    ]);
     expect(
       storage.pinnedQuickFeatureIds,
       ['oa_gym', 'elrc_recordings', 'ecourse', 'student_leave', 'egate_xshd'],
