@@ -138,7 +138,7 @@ class _HomeWidgetGalleryBody extends StatelessWidget {
               ),
               const SizedBox(height: TpTokens.space1),
               Text(
-                '选择主页展示的模块与校园卡外观；改动会立即应用并自动保存。',
+                '选择主页展示的模块与校园卡外观；改动立即生效并自动保存。',
                 style: TpTypography.itemMeta(colors),
               ),
               const SizedBox(height: TpTokens.space3),

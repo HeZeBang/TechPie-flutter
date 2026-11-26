@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 import '../../models/home_layout.dart';
 import '../../theme/theme.dart';
 import '../../utils/adaptive_motion.dart';
 import '../../utils/haptics.dart';
+import '../../utils/motion.dart';
 
 IconData homeWidgetIcon(HomeWidgetId id) => switch (id) {
       HomeWidgetId.campusCard => TpIcons.campusCard,
@@ -16,15 +19,16 @@ IconData homeWidgetIcon(HomeWidgetId id) => switch (id) {
 
 /// Wraps a Home dashboard widget with adaptive customization chrome:
 ///
-/// - Mobile (`isDesktopMode == false`): long-pressing anywhere on the card
-///   enters edit mode with haptic feedback; in edit mode an iOS-inspired
-///   toolbar shows a remove control, inline widget options (campus card style /
-///   shortcut customization), and an explicit [ReorderableDragStartListener]
-///   handle so normal vertical scrolling never collides with dragging.
-/// - Desktop (`isDesktopMode == true`): right-clicking opens a context menu;
-///   in edit mode an editorial toolbar adds grab handles, column swap, up/down
-///   buttons, inline style switches, and remove actions without infinite
-///   jiggle animations.
+/// - Mobile (`isDesktopMode == false`): touching and holding a card triggers
+///   subtle scale-down anticipation followed by haptic tick + perimeter focus
+///   halo (`home.hold-halo-*`), then enters edit mode at `onLongPress` without
+///   blocking normal taps or scrolling; in edit mode an iOS-inspired toolbar
+///   exposes remove, options, and an explicit [ReorderableDragStartListener]
+///   handle.
+/// - Desktop (`isDesktopMode == true`): right-clicking opens a context menu and
+///   pressing/holding lets the parent drag directly with a quiet press cue (no
+///   obtrusive hover badge); in edit mode an editorial toolbar exposes move/swap
+///   actions, inline style options, and remove controls.
 class HomeEditableCardFrame extends StatefulWidget {
   const HomeEditableCardFrame({
     super.key,
@@ -68,8 +72,6 @@ class HomeEditableCardFrame extends StatefulWidget {
 }
 
 class _HomeEditableCardFrameState extends State<HomeEditableCardFrame> {
-  bool _hovered = false;
-
   void _triggerLongPressEdit() {
     if (widget.isEditing || widget.onEnterEditMode == null) return;
     unawaited(AppHaptics.play(AppHaptics.tabHold));
@@ -184,31 +186,30 @@ class _HomeEditableCardFrameState extends State<HomeEditableCardFrame> {
 
     if (!widget.isEditing) {
       if (widget.isDesktopMode) {
-        return MouseRegion(
-          onEnter: (_) => setState(() => _hovered = true),
-          onExit: (_) => setState(() => _hovered = false),
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onSecondaryTapDown: _showDesktopContextMenu,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                content,
-                if (_hovered && widget.onEnterEditMode != null)
-                  Positioned(
-                    top: TpTokens.space2,
-                    right: TpTokens.space2,
-                    child: _HoverEditBadge(onTap: widget.onEnterEditMode!),
-                  ),
-              ],
-            ),
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onSecondaryTapDown: _showDesktopContextMenu,
+          child: _HomeHoldAffordance(
+            id: widget.id,
+            enabled: true,
+            desktopMode: true,
+            immediateScale: 1.0,
+            chargedScale: 0.986,
+            child: content,
           ),
         );
       }
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
         onLongPress: _triggerLongPressEdit,
-        child: content,
+        child: _HomeHoldAffordance(
+          id: widget.id,
+          enabled: true,
+          desktopMode: false,
+          immediateScale: widget.id == HomeWidgetId.campusCard ? 0.992 : 0.98,
+          chargedScale: 0.968,
+          child: content,
+        ),
       );
     }
 
@@ -287,6 +288,244 @@ class _HomeEditableCardFrameState extends State<HomeEditableCardFrame> {
           ),
           content,
         ],
+      ),
+    );
+  }
+}
+
+/// Passive touch/hold tactile affordance for Home dashboard widgets outside edit
+/// mode. Never competes in the gesture arena so clicks and scrolling behave
+/// identically while stationary holds feel responsive and alive.
+class _HomeHoldAffordance extends StatefulWidget {
+  const _HomeHoldAffordance({
+    required this.id,
+    required this.enabled,
+    required this.desktopMode,
+    required this.immediateScale,
+    required this.chargedScale,
+    required this.child,
+  });
+
+  final HomeWidgetId id;
+  final bool enabled;
+  final bool desktopMode;
+  final double immediateScale;
+  final double chargedScale;
+  final Widget child;
+
+  @override
+  State<_HomeHoldAffordance> createState() => _HomeHoldAffordanceState();
+}
+
+class _HomeHoldAffordanceState extends State<_HomeHoldAffordance>
+    with TickerProviderStateMixin {
+  late final AnimationController _scale;
+  late final AnimationController _charge;
+
+  Timer? _chargeTimer;
+  int? _activePointer;
+  Offset? _downPosition;
+  bool _pressed = false;
+  bool _charging = false;
+
+  bool get _reduceMotion =>
+      MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scale = AnimationController.unbounded(vsync: this, value: 1.0);
+    _charge = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_reduceMotion && (_pressed || _charging)) {
+      _resetImmediate();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _HomeHoldAffordance oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled) {
+      _release();
+    }
+  }
+
+  @override
+  void dispose() {
+    _chargeTimer?.cancel();
+    _scale.dispose();
+    _charge.dispose();
+    super.dispose();
+  }
+
+  void _resetImmediate() {
+    _chargeTimer?.cancel();
+    _chargeTimer = null;
+    _activePointer = null;
+    _downPosition = null;
+    _pressed = false;
+    _charging = false;
+    _scale.value = 1.0;
+    _charge.value = 0.0;
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (!widget.enabled || _reduceMotion || _activePointer != null) return;
+    if (event.kind == PointerDeviceKind.mouse &&
+        event.buttons != kPrimaryMouseButton) {
+      return;
+    }
+    _activePointer = event.pointer;
+    _downPosition = event.position;
+    _pressed = true;
+    _charging = false;
+
+    if (!widget.desktopMode && widget.immediateScale < 1.0) {
+      unawaited(
+        _scale.animateTo(
+          widget.immediateScale,
+          duration: const Duration(milliseconds: 75),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    }
+
+    _chargeTimer?.cancel();
+    _chargeTimer = Timer(
+      Duration(milliseconds: widget.desktopMode ? 110 : 120),
+      _beginHoldCharge,
+    );
+  }
+
+  void _beginHoldCharge() {
+    if (!mounted || !_pressed) return;
+    _charging = true;
+    if (!widget.desktopMode) {
+      unawaited(AppHaptics.play(AppHaptics.selection));
+    }
+    unawaited(
+      _scale.animateTo(
+        widget.chargedScale,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+    unawaited(_charge.forward(from: _charge.value));
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (!_pressed || event.pointer != _activePointer || _downPosition == null) {
+      return;
+    }
+    if ((event.position - _downPosition!).distance > kTouchSlop) {
+      _release();
+    }
+  }
+
+  void _onPointerEnd(PointerEvent event) {
+    if (event.pointer != _activePointer) return;
+    _release();
+  }
+
+  void _release() {
+    _chargeTimer?.cancel();
+    _chargeTimer = null;
+    _activePointer = null;
+    _downPosition = null;
+    if (!_pressed && !_charging) return;
+    _pressed = false;
+    _charging = false;
+    if (!mounted) return;
+    if (_reduceMotion) {
+      _scale.value = 1.0;
+      _charge.value = 0.0;
+      return;
+    }
+    unawaited(
+      _charge.animateBack(
+        0.0,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+    unawaited(
+      _scale
+          .animateWith(
+            SpringSimulation(TgMotion.tactileSpring, _scale.value, 1.0, 0),
+          )
+          .whenComplete(() {
+        if (mounted && !_pressed) _scale.value = 1.0;
+      }),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled || _reduceMotion) {
+      return widget.child;
+    }
+    final colors = context.tpColors;
+
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerEnd,
+      onPointerCancel: _onPointerEnd,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_scale, _charge]),
+        builder: (context, child) {
+          final rawScale = _scale.value;
+          final scale = (rawScale - 1.0).abs() < 1e-4 ? 1.0 : rawScale;
+          final progress = _charge.value;
+
+          return Transform.scale(
+            scale: scale,
+            alignment: Alignment.center,
+            child: Stack(
+              fit: StackFit.passthrough,
+              clipBehavior: Clip.none,
+              children: [
+                child!,
+                if (progress > 0.01)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        key: ValueKey('home.hold-halo-${widget.id.key}'),
+                        decoration: BoxDecoration(
+                          borderRadius:
+                              BorderRadius.circular(TpTokens.radiusM),
+                          color: colors.brandSoft
+                              .withValues(alpha: 0.14 * progress),
+                          border: Border.all(
+                            color: colors.brandInk
+                                .withValues(alpha: 0.45 * progress),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colors.brandInk
+                                  .withValues(alpha: 0.12 * progress),
+                              blurRadius: 10 * progress,
+                              spreadRadius: 0.5 * progress,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+        child: widget.child,
       ),
     );
   }
@@ -588,41 +827,6 @@ class _SmallIconAction extends StatelessWidget {
                   ? colors.textSecondary
                   : colors.textMuted.withValues(alpha: 0.35),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HoverEditBadge extends StatelessWidget {
-  const _HoverEditBadge({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tpColors;
-    return Material(
-      color: colors.surface.withValues(alpha: 0.92),
-      elevation: 2,
-      shape: StadiumBorder(side: BorderSide(color: colors.divider)),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                TpIcons.dragHandleHorizontal,
-                size: 13,
-                color: colors.textSecondary,
-              ),
-              const SizedBox(width: 4),
-              Text('编辑', style: TpTypography.badge(colors.textSecondary)),
-            ],
           ),
         ),
       ),

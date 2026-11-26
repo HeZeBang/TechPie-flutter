@@ -617,15 +617,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AdaptiveButton(
+          _HomeHeaderEditButton(
             key: const ValueKey('home.edit-toggle'),
-            onPressed: _isEditing ? _exitEditMode : () => _enterEditMode(isBento),
-            icon: _isEditing ? TpIcons.check : TpIcons.dashboard,
-            sfSymbol: _isEditing ? 'checkmark' : 'square.grid.2x2',
-            accessibilityLabel: _isEditing ? '完成编辑' : '定制主页',
-            role: AdaptiveButtonRole.plain,
-            width: 44,
-            height: 44,
+            isEditing: _isEditing,
+            onPressed:
+                _isEditing ? _exitEditMode : () => _enterEditMode(isBento),
           ),
           if (showHeaderAvatar) ...[
             const SizedBox(width: TpTokens.space1),
@@ -1482,6 +1478,59 @@ class _DebugChip extends StatelessWidget {
   }
 }
 
+class _HomeHeaderEditButton extends StatelessWidget {
+  const _HomeHeaderEditButton({
+    super.key,
+    required this.isEditing,
+    required this.onPressed,
+  });
+
+  final bool isEditing;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final label = isEditing ? '完成编辑' : '定制主页';
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: Tooltip(
+        message: label,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: Material(
+              color: isEditing ? colors.brandInk : colors.surfaceSubtle,
+              shape: CircleBorder(
+                side: isEditing
+                    ? BorderSide.none
+                    : BorderSide(color: colors.divider, width: 0.75),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onPressed,
+                child: SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: Icon(
+                    isEditing ? TpIcons.check : TpIcons.dashboard,
+                    size: TpTokens.iconS,
+                    color: isEditing ? colors.onBrand : colors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _HomeEditBar extends StatelessWidget {
   const _HomeEditBar({
     required this.isBento,
@@ -1520,7 +1569,9 @@ class _HomeEditBar extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  isBento ? '拖动组件或使用箭头调整栏位' : '按住右侧手柄拖动排序',
+                  isBento
+                      ? '拖动组件调整栏位（主页直接按住卡片也可拖动）'
+                      : '按住右侧手柄拖动排序（主页长按卡片可快速进入）',
                   style: TpTypography.itemMeta(colors),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -338,6 +339,133 @@ void main() {
           tester.getSize(find.byKey(const ValueKey('home.today-courses'))).width,
           greaterThan(700),
         );
+      },
+    );
+  });
+
+  testWidgets(
+      'desktop hides hover edit pill and supports direct hold-drag outside Edit Mode including waking empty column',
+      (tester) async {
+    await runWithHomeApp(
+      tester,
+      size: const Size(1280, 800),
+      platformOverride: TargetPlatform.macOS,
+      body: (storage) async {
+        // Hovering cards must not show an obtrusive "编辑" corner badge.
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: Offset.zero);
+        addTearDown(mouse.removePointer);
+        await mouse.moveTo(
+          tester.getCenter(find.byKey(const ValueKey('home.today-courses'))),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('编辑'), findsNothing);
+        await mouse.moveTo(
+          tester.getCenter(find.byKey(const ValueKey('home.campus-card-strip'))),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('编辑'), findsNothing);
+
+        // Press and hold quickActions outside Edit Mode (past 260ms delay),
+        // drag into primary column drop slot 0, and drop cleanly.
+        final quickDrag =
+            find.byKey(const ValueKey('home.draggable-quick_actions'));
+        final gesture = await tester.startGesture(tester.getCenter(quickDrag));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(const Duration(milliseconds: 160));
+
+        // Drop slots wake up immediately when LongPressDraggable activates.
+        final primaryTopSlot = find.byKey(const ValueKey('home.drop-primary-0'));
+        expect(primaryTopSlot, findsOneWidget);
+        await gesture.moveTo(tester.getCenter(primaryTopSlot));
+        await tester.pump(const Duration(milliseconds: 100));
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(
+          storage.homeDesktopLayout.primary.first,
+          HomeWidgetId.quickActions,
+        );
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsNothing);
+
+        // Empty secondary column by moving campusCard via hold-drag as well.
+        final campusDrag =
+            find.byKey(const ValueKey('home.draggable-campus_card'));
+        final g2 = await tester.startGesture(tester.getCenter(campusDrag));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(const Duration(milliseconds: 160));
+        final slotAfterQuick = find.byKey(const ValueKey('home.drop-primary-1'));
+        await g2.moveTo(tester.getCenter(slotAfterQuick));
+        await tester.pump(const Duration(milliseconds: 100));
+        await g2.up();
+        await tester.pumpAndSettle();
+
+        expect(storage.homeDesktopLayout.secondary, isEmpty);
+        expect(
+          find.byKey(const ValueKey('home.bento-col-secondary')),
+          findsNothing,
+        );
+
+        // Hold-dragging a card from collapsed single-column primary wakes up
+        // the empty secondary drop zone cleanly mid-drag and restores two columns.
+        final g3 = await tester.startGesture(
+          tester.getCenter(
+            find.byKey(const ValueKey('home.draggable-quick_actions')),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(const Duration(milliseconds: 160));
+        final wokenSecondary =
+            find.byKey(const ValueKey('home.empty-column-secondary'));
+        expect(wokenSecondary, findsOneWidget);
+        await g3.moveTo(tester.getCenter(wokenSecondary));
+        await tester.pump(const Duration(milliseconds: 100));
+        await g3.up();
+        await tester.pumpAndSettle();
+
+        expect(
+          storage.homeDesktopLayout.secondary,
+          [HomeWidgetId.quickActions],
+        );
+        expect(
+          find.byKey(const ValueKey('home.bento-col-secondary')),
+          findsOneWidget,
+        );
+      },
+    );
+  });
+
+  testWidgets(
+      'mobile hold shows perimeter charging halo on non-campus cards and cancels cleanly on scroll',
+      (tester) async {
+    await runWithHomeApp(
+      tester,
+      size: const Size(390, 844),
+      platformOverride: TargetPlatform.iOS,
+      body: (_) async {
+        final coursesCard = find.byKey(const ValueKey('home.today-courses'));
+        final gesture = await tester.startGesture(tester.getCenter(coursesCard));
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 150));
+
+        // Anticipation focus halo renders past 120ms without entering edit mode yet.
+        expect(
+          find.byKey(const ValueKey('home.hold-halo-today_courses')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsNothing);
+
+        // Moving finger to scroll cancels hold affordance cleanly.
+        await gesture.moveBy(const Offset(0, -60));
+        await tester.pump();
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('home.hold-halo-today_courses')),
+          findsNothing,
+        );
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsNothing);
       },
     );
   });
