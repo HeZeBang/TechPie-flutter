@@ -384,6 +384,20 @@ class StorageService {
     return id;
   }
 
+  String _academicCertificateKey(String owner, String kind) =>
+      '${_campusCachePrefix}certificate_${jsonEncode([owner, kind])}';
+
+  String? academicCertificateCache(String owner, String kind) =>
+      _prefs.getString(_academicCertificateKey(owner, kind));
+
+  Future<void> saveAcademicCertificateCache(String owner, String kind, String value) =>
+      _prefs.setString(_academicCertificateKey(owner, kind), value);
+
+  Future<void> clearAcademicCertificateCache(String owner) async {
+    final prefix = '${_campusCachePrefix}certificate_[${jsonEncode(owner)},';
+    await Future.wait(_prefs.getKeys().where((k) => k.startsWith(prefix)).map(_prefs.remove));
+  }
+
   // Schedule cache
   static const _semestersKey = 'schedule_semesters';
   static const _courseTablePrefix = 'schedule_course_table_';

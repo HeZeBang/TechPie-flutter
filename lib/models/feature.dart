@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../features/campus_card/app/app_providers.dart';
+import '../pages/academic_certificates_page.dart';
 import '../pages/campus_card_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
@@ -158,6 +159,17 @@ final featureEntries = <Feature>[
       builder: (_) => const StudentAllowancePage(),
     ),
     icon: const Icon(TpIcons.allowance),
+  ),
+  Feature(
+    id: 'academic_certificates',
+    category: CampusServiceCategory.academics,
+    description: '成绩单与证明',
+    subtitle: '查看教务申请记录与 PDF',
+    keywords: const ['成绩单', '排名', '证明', 'gpa', 'transcript', 'certificate', '平均分'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) =>
+        pushAdaptivePage<void>(context, builder: (_) => const AcademicCertificatesPage()),
+    icon: const Icon(Icons.description_outlined),
   ),
 ];
 
