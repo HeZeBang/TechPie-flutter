@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/assignment.dart';
 import 'package:techpie/models/campus_identity.dart';
@@ -18,6 +19,7 @@ import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 
+import 'support/eams_transport.dart';
 import 'support/fake_ids_client.dart';
 
 void main() {
@@ -545,41 +547,26 @@ void main() {
           200,
         );
       }
-      if (url.path.endsWith('/schedule/exam_table')) {
-        return http.Response.bytes(
-          utf8.encode(
-            jsonEncode({
-              'success': true,
-              'data': {
-                'examBatchId': '1222',
-                'examBatchName': '2025-2026学年春季学期期中考试',
-                'semesterId': '263',
-                'studentId': '26192',
-                'exams': [
-                  {
-                    'courseCode': 'CS130.01',
-                    'courseName': '操作系统I',
-                    'examType': '期中考试',
-                    'examDate': '2026-04-23',
-                    'examTimeRange': '15:00~16:40',
-                    'examPlace': '教学中心204',
-                    'examStatus': '正常',
-                    'seatUrl': 'https://eams.example/seat',
-                    'examRoomId': '7987',
-                  },
-                ],
-              },
-            }),
-          ),
-          200,
-          headers: {'content-type': 'application/json; charset=utf-8'},
-        );
-      }
       return http.Response('not found', 404);
     });
     final auth = AuthService(storage, httpClient, UniAuthService());
     final tpAuth = ThirdPartyAuthService(storage, httpClient, idsClient: FakeIdsClient());
-    final schedule = ScheduleService(storage, httpClient, auth, tpAuth);
+    final eamsRequests = <http.Request>[];
+    final server = MockClient((r) async {
+      eamsRequests.add(r);
+      return http.Response.bytes(
+        utf8.encode(r.url.path.endsWith('/stdExamTable.action') ? examBatches : examTable),
+        200,
+      );
+    });
+    final schedule = ScheduleService(
+      storage,
+      httpClient,
+      auth,
+      tpAuth,
+      eamsTransport: eamsTransport(server),
+      eamsInterval: Duration.zero,
+    );
     await auth.loadSession();
     await tpAuth.initialize();
     await schedule.loadCachedData();
@@ -606,16 +593,13 @@ void main() {
     expect(exam.due, DateTime(2026, 4, 23, 15));
     expect(exam.lateDue, DateTime(2026, 4, 23, 16, 40));
     expect(exam.status, '正常');
-    expect(exam.url, 'https://eams.example/seat');
-    expect(
-      seenBodies,
-      contains(
-        predicate<Map<String, dynamic>>((body) {
-          return body['semester_id'] == '263' &&
-              body['cookies'] == 'JSESSIONID=eams-mock';
-        }),
-      ),
-    );
+    expect(exam.url, 'https://eams.shanghaitech.edu.cn/eams/seat?examRoom.id=7987');
+    expect(eamsRequests.first.url.queryParameters, {'semester.id': '263'});
+    expect(eamsRequests.last.url.queryParameters, {'examBatch.id': '1222'});
+    for (final r in eamsRequests) {
+      expect(r.headers['cookie'], contains('JSESSIONID=eams-mock'));
+      expect(r.headers['cookie'], isNot(contains('CASTGC')));
+    }
     expect(storage.loadCachedAssignments().single['kind'], 'exam');
     final cached = Assignment.fromJson(storage.loadCachedAssignments().single);
     expect(cached, isA<ExamAssignment>());

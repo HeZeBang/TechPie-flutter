@@ -18,6 +18,7 @@ import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 
+import 'support/eams_transport.dart';
 import 'support/fake_ids_client.dart';
 
 void main() {
@@ -63,14 +64,22 @@ void main() {
 
     final logger = DebugLogger();
     final requests = <Uri>[];
-    final http = LoggingHttpClient(logger, inner: _RecordingClient(requests));
+    final server = _RecordingClient(requests);
+    final http = LoggingHttpClient(logger, inner: server);
     final uniAuth = UniAuthService();
     final auth = AuthService(storage, http, uniAuth);
     await auth.loadSession();
     final tpAuth = ThirdPartyAuthService(storage, http, idsClient: FakeIdsClient());
     await tpAuth.initialize();
 
-    final schedule = ScheduleService(storage, http, auth, tpAuth);
+    final schedule = ScheduleService(
+      storage,
+      http,
+      auth,
+      tpAuth,
+      eamsTransport: eamsTransport(server),
+      eamsInterval: Duration.zero,
+    );
     addTearDown(schedule.dispose);
     expect(schedule.semesterInfo, isNull, reason: 'nothing in hand yet');
 
@@ -87,7 +96,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 900));
 
     expect(
-      _pathsOf(requests).where((path) => path.startsWith('/api/schedule/')).length,
+      _pathsOf(requests).where((path) => path.startsWith('/eams/courseTableForStd')).length,
       1,
       reason: 'the burst is one round; the client fails on the first business request, '
           'so a second round would show up as a second request',
@@ -109,22 +118,36 @@ void main() {
 
     final logger = DebugLogger();
     final requests = <Uri>[];
-    final http = LoggingHttpClient(logger, inner: _AnsweringClient(requests));
+    final server = _AnsweringClient(requests);
+    final http = LoggingHttpClient(logger, inner: server);
     final uniAuth = UniAuthService();
     final auth = AuthService(storage, http, uniAuth);
     await auth.loadSession();
     final tpAuth = ThirdPartyAuthService(storage, http, idsClient: FakeIdsClient());
     await tpAuth.initialize();
 
-    final schedule = ScheduleService(storage, http, auth, tpAuth);
+    final schedule = ScheduleService(
+      storage,
+      http,
+      auth,
+      tpAuth,
+      eamsTransport: eamsTransport(server),
+      eamsInterval: Duration.zero,
+    );
     addTearDown(schedule.dispose);
     schedule.requestFetch(force: true);
     await Future<void>.delayed(const Duration(milliseconds: 900));
     expect(
-      _pathsOf(requests).where((path) => path.contains('/schedule/')).toList(),
+      _pathsOf(requests)
+          .where(
+            (path) =>
+                (path.startsWith('/eams/courseTableForStd') || path == '/eams/dataQuery.action'),
+          )
+          .toList(),
       [
-        '/api/schedule/semesters',
-        '/api/schedule/course_table',
+        '/eams/courseTableForStd.action',
+        '/eams/dataQuery.action',
+        '/eams/courseTableForStd!courseTable.action',
       ],
       reason: 'the first forced trigger is what fetches at boot',
     );
@@ -139,8 +162,13 @@ void main() {
     schedule.requestFetch(force: true);
     await Future<void>.delayed(const Duration(milliseconds: 900));
     expect(
-      _pathsOf(requests).where((path) => path.contains('/schedule/')).length,
-      2,
+      _pathsOf(requests)
+          .where(
+            (path) =>
+                (path.startsWith('/eams/courseTableForStd') || path == '/eams/dataQuery.action'),
+          )
+          .length,
+      3,
       reason: 'a successful round is the answer; do not ask for it again',
     );
   });
@@ -300,23 +328,12 @@ class _AnsweringClient extends http.BaseClient {
     final body = switch (request.url.path) {
       '/personalInfo/personCenter/index.html' => '<html>IDS</html>',
       '/personalInfo/common/getUserConf' => jsonEncode({
-          'code': '0',
-          'datas': {'uid': '20240001', 'categoryName': '学生/本科生'},
-        }),
-      '/api/schedule/semesters' => jsonEncode({
-          'success': true,
-          'data': {
-            'semesters': {
-              '2025-2026': {'秋': 'sem-1'},
-            },
-            'defaultSemester': 'sem-1',
-            'tableId': 't1',
-          },
-        }),
-      '/api/schedule/course_table' => jsonEncode({
-          'success': true,
-          'data': {'periods': <Object?>[], 'courses': <Object?>[]},
-        }),
+        'code': '0',
+        'datas': {'uid': '20240001', 'categoryName': '学生/本科生'},
+      }),
+      '/eams/courseTableForStd.action' => scheduleEntry('sem-1'),
+      '/eams/dataQuery.action' => semesterOptions('2025-2026', 'sem-1'),
+      '/eams/courseTableForStd!courseTable.action' => emptyTimetable,
       SchoolCalendarClient.calendarPath => jsonEncode({
           'code': 200,
           'schoolYearTerm': '2025-2026-1',

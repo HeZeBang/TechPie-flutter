@@ -137,6 +137,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     httpClient,
     authService,
     thirdPartyAuthService,
+    eamsQueue: campusClients.eams.queue,
   );
   final oaGymService = OaGymService(
     authService,
@@ -498,6 +499,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         widget.authService,
         widget.thirdPartyAuthService,
         storage: widget.storageService,
+        eamsQueue: widget.scheduleService.eams.queue,
       );
       _ownsCampusClients = true;
     }
@@ -542,6 +544,8 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
             oldWidget.storageService != widget.storageService)) {
       _campusClients.dispose();
       _initCampusClients();
+    } else if (_ownsCampusClients && oldWidget.scheduleService != widget.scheduleService) {
+      _campusClients.eams.shareQueueWith(widget.scheduleService.eams);
     }
     if (oldWidget.authService != widget.authService ||
         oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
