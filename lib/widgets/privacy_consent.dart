@@ -31,8 +31,12 @@ class PrivacyGate extends StatefulWidget {
 }
 
 class _PrivacyGateState extends State<PrivacyGate> {
+  bool _shareUsage = false;
+
   Future<void> _accept() async {
-    await ServiceProvider.of(context).storageService.setPrivacyAccepted(true);
+    final services = ServiceProvider.of(context);
+    await services.storageService.setPrivacyAccepted(true);
+    if (_shareUsage) await services.telemetry?.setEnabled(true);
     if (mounted) setState(() {});
   }
 
@@ -40,7 +44,16 @@ class _PrivacyGateState extends State<PrivacyGate> {
   Widget build(BuildContext context) {
     final storage = ServiceProvider.of(context).storageService;
     if (storage.privacyAccepted) return widget.child;
-    return PrivacyConsentPage(onAccept: _accept);
+    return PrivacyConsentPage(
+      onAccept: _accept,
+      usageChoice: ServiceProvider.of(context).telemetry == null ? null : CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        value: _shareUsage,
+        title: const Text('发送匿名使用统计（可选）'),
+        subtitle: const Text('用随机安装标识统计登录、功能使用、反馈送达和录播加载。不会发送账号或校园内容，可在设置中关闭。'),
+        onChanged: (value) => setState(() => _shareUsage = value == true),
+      ),
+    );
   }
 }
 
@@ -50,11 +63,13 @@ class PrivacyConsentPage extends StatelessWidget {
     super.key,
     required this.onAccept,
     this.onDecline,
+    this.usageChoice,
     this.compact = false,
   });
 
   final Future<void> Function() onAccept;
   final VoidCallback? onDecline;
+  final Widget? usageChoice;
 
   /// Dialog-sized instead of full-screen.
   final bool compact;
@@ -68,7 +83,7 @@ class PrivacyConsentPage extends StatelessWidget {
         builder: (dialogContext) => AlertDialog(
           title: const Text('需要你的同意'),
           content: const Text(
-            '不同意隐私政策时，TechPie 无法连接校园服务，也就无法提供课表和作业等功能。'
+            '不同意隐私政策时，TechPie 无法连接校园服务，也就无法提供课表、作业和校园卡功能。'
             '你仍然可以随时重新打开应用并选择同意。',
           ),
           actions: [
@@ -92,7 +107,7 @@ class PrivacyConsentPage extends StatelessWidget {
         Text('隐私政策', style: theme.textTheme.titleLarge),
         const SizedBox(height: 12),
         Text(
-          'TechPie 是第三方校园工具，需要连接校园服务才能显示课表和作业等信息。'
+          'TechPie 是第三方校园工具，需要连接校园服务才能显示课表、作业与校园卡信息。'
           '在你使用之前，请阅读并同意《隐私政策》。我们会说明收集哪些信息、'
           '用于什么目的，以及你如何查询、更正或删除它们。',
           style: theme.textTheme.bodyMedium,
@@ -106,6 +121,7 @@ class PrivacyConsentPage extends StatelessWidget {
             label: const Text('查看《隐私政策》'),
           ),
         ),
+        if (usageChoice != null) usageChoice!,
         const SizedBox(height: 8),
         Row(
           children: [

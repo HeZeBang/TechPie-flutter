@@ -128,6 +128,10 @@ void main() {
     final fixture = await _Fixture.create();
     await tester.pumpWidget(fixture.app(const HomePage()));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('更多'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '津贴');
+    await tester.pumpAndSettle();
     await tester.tap(find.text('学生津贴'));
     await tester.pumpAndSettle();
     expect(find.byType(StudentAllowancePage), findsOneWidget);

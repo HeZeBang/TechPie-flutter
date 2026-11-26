@@ -10,7 +10,10 @@ import '../utils/platform.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class ElrcPlayerPage extends StatefulWidget {
+  final VoidCallback? onPlaybackError;
+
   const ElrcPlayerPage({
+    this.onPlaybackError,
     super.key,
     required this.courseName,
     required this.lessonTitle,
@@ -99,6 +102,7 @@ class _ElrcPlayerPageState extends State<ElrcPlayerPage> {
           _loading = false;
           _error = '视频加载失败';
         });
+        widget.onPlaybackError?.call();
       }
     }
   }
@@ -182,6 +186,7 @@ JSON.stringify((() => {
       _loading = false;
       _error = '视频加载失败';
     });
+    widget.onPlaybackError?.call();
   }
 
   bool _matchesCurrentMedia(String? url) =>
@@ -194,6 +199,7 @@ JSON.stringify((() => {
       _loading = false;
       _error = '视频加载超时';
     });
+    widget.onPlaybackError?.call();
   }
 
   void _showPlayer(int generation) {

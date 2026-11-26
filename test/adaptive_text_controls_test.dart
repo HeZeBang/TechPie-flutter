@@ -9,8 +9,48 @@ import 'package:techpie/widgets/secure_password_field.dart';
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  testWidgets(
-      'iOS grouped fields use Flutter text input and update controllers', (
+  testWidgets('secure Material input has an accessible name and masked value', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SecurePasswordField(
+            controller: controller,
+            placeholder: 'IDS password',
+          ),
+        ),
+      ),
+    );
+    final editable = find.byWidgetPredicate((widget) => widget is EditableText);
+    await tester.tap(editable);
+    tester.testTextInput.enterText('synthetic-secret');
+    await tester.pump();
+    final node = tester.getSemantics(editable);
+    expect(
+      node,
+      matchesSemantics(
+        label: 'IDS password',
+        value: '•' * controller.text.length,
+        isTextField: true,
+        isObscured: true,
+        isFocused: true,
+        isFocusable: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        hasFocusAction: true,
+        hasSetTextAction: true,
+        hasSetSelectionAction: true,
+        hasTapAction: true,
+        hasMoveCursorBackwardByCharacterAction: true,
+        hasMoveCursorBackwardByWordAction: true,
+      ),
+    );
+    semantics.dispose();
+  });
+
+  testWidgets('iOS grouped fields use Flutter text input and update controllers', (
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;

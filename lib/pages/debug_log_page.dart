@@ -156,9 +156,9 @@ class _LogTile extends StatelessWidget {
       ),
       children: [
         if (entry.requestBody != null)
-          _DetailSection(title: 'Request', content: entry.requestBody!),
+          _DetailSection(title: 'Request summary', content: entry.requestBody!),
         if (entry.responseBody != null)
-          _DetailSection(title: 'Response', content: entry.responseBody!),
+          _DetailSection(title: 'Response summary', content: entry.responseBody!),
         if (entry.error != null)
           _DetailSection(title: 'Error', content: entry.error!),
       ],

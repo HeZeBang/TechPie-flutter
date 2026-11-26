@@ -159,18 +159,19 @@ class _SettingsBodyState extends State<_SettingsBody> {
             : info.version;
       });
     } catch (error) {
-      debugPrint('PackageInfo.fromPlatform failed: $error');
+      debugPrint('PackageInfo.fromPlatform failed: ${error.runtimeType}');
     }
   }
 
   Future<void> _checkForUpdate() async {
     final updateService = ServiceProvider.of(context).updateService;
+    final source = updateService.source;
     final current = ProductVersion.tryParse(_appVersion);
     if (current == null) {
       await showAdaptiveAlertDialog<void>(
         context: context,
         title: '无法检查更新',
-        message: '当前版本号（$_appVersion）无法识别，没法与 GitHub 上的版本比较。',
+        message: '无法识别当前版本号（$_appVersion）。',
         actions: const [AdaptiveAlertAction<void>(label: '好')],
       );
       return;
@@ -178,17 +179,24 @@ class _SettingsBodyState extends State<_SettingsBody> {
 
     setState(() => _checkingUpdate = true);
     try {
-      final release = await updateService.checkForUpdate(current);
+      final release = await updateService.checkForUpdate(
+        current,
+        source: source,
+      );
       if (!mounted) return;
 
       if (release == null) {
-        await showUpToDateDialog(context, _appVersion);
+        await showUpToDateDialog(context, _appVersion, source: source);
         return;
       }
       await showUpdateAvailableDialog(context, release);
     } on UpdateCheckException catch (error) {
       if (!mounted) return;
-      await showUpdateFailureDialog(context, message: error.message);
+      await showUpdateFailureDialog(
+        context,
+        message: error.message,
+        source: source,
+      );
     } finally {
       if (mounted) setState(() => _checkingUpdate = false);
     }
@@ -205,7 +213,8 @@ class _SettingsBodyState extends State<_SettingsBody> {
     final storage = sp.storageService;
     final themeService = sp.themeService;
     final tpAuth = sp.thirdPartyAuthService;
-    final campusCard = supportsCampusCard() ? sp.campusCardService : null;
+    final campusCard = sp.campusCardService;
+    final updateSourceLabel = sp.updateService.source.label;
     final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
       context,
       extra: TpTokens.space3,
@@ -232,14 +241,15 @@ class _SettingsBodyState extends State<_SettingsBody> {
             tpAuth,
             campusCard,
             sp.syncService,
+            if (sp.telemetry != null) sp.telemetry!,
             if (sp.spendingAlertService != null) sp.spendingAlertService!,
           ]),
           builder: (context, _) {
             final session = auth.session;
             final boundCount =
-                tpAuth.boundPlatforms.length + (campusCard?.configured == true ? 1 : 0);
+                tpAuth.boundPlatforms.length + (campusCard.configured ? 1 : 0);
             final island = sp.islandService;
-            final spending = supportsCampusCard() ? sp.spendingAlertService : null;
+            final spending = sp.spendingAlertService;
             final hasDeadlineWidgets = !kIsWeb &&
                 defaultTargetPlatform == TargetPlatform.linux &&
                 sp.deadlineWidgetService != null;
@@ -354,6 +364,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                           onRebind: () => unawaited(
                             pushAdaptivePage<void>(
                               context,
+                              rootNavigator: true,
                               builder: (_) => const ThirdPartyBindPage(
                                 platform: ThirdPartyPlatform.ids,
                               ),
@@ -438,6 +449,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                               await pushAdaptivePage<void>(
                                 context,
                                 builder: (_) => FeedbackPage(
+                                  telemetry: sp.telemetry,
                                   service: FeedbackService(
                                     auth,
                                     apiBaseUrl(sp.storageService),
@@ -446,6 +458,20 @@ class _SettingsBodyState extends State<_SettingsBody> {
                               );
                             }()),
                           ),
+                          if (sp.telemetry case final metrics?)
+                            TpListRow(
+                              key: const ValueKey('settings.usage-statistics'),
+                              icon: TpIcons.privacy,
+                              iconColor: colors.textSecondary,
+                              title: '发送匿名使用统计',
+                              subtitle: '统计活跃安装、登录、功能使用、反馈送达和录播加载耗时。仅使用随机安装标识，不含账号及校园内容。',
+                              showDivider: true,
+                              trailing: AdaptiveSwitch(
+                                value: metrics.enabled,
+                                onChanged: (value) => unawaited(metrics.setEnabled(value)),
+                              ),
+                              onTap: () => unawaited(metrics.setEnabled(!metrics.enabled)),
+                            ),
                           TpListRow(
                             icon: TpIcons.privacy,
                             iconColor: colors.textSecondary,
@@ -472,7 +498,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                                 ? '正在检查最新版本…'
                                 : (_appVersion.isEmpty
                                     ? '当前版本未知'
-                                    : '点击检查 GitHub 最新版本'),
+                                    : '点击检查 $updateSourceLabel 最新版本'),
                             value: _appVersion.isEmpty ? null : 'v$_appVersion',
                             trailing: _checkingUpdate
                                 ? const SizedBox(
@@ -683,9 +709,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
             icon: TpIcons.linkedAccounts,
             iconColor: colors.textSecondary,
             title: '第三方账号',
-            subtitle: supportsCampusCard()
-                ? '已绑定 $boundCount / 4 项 · IDS / eCard / Gradescope / Hydro'
-                : '已绑定 $boundCount / 3 项 · IDS / Gradescope / Hydro',
+            subtitle: '已绑定 $boundCount / 4 项 · IDS / eCard / Gradescope / Hydro',
             showChevron: true,
             showDivider: auth.isLoggedIn,
             onTap: () => unawaited(

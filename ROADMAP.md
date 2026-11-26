@@ -1,6 +1,6 @@
 # ROADMAP
 
-This file provides an overview of the direction this project is heading. The roadmap is organized in steps that focus on a specific theme,for instance, UX.
+M1–M3 include opt-in usage reporting for first launches, feature visits, feedback delivery and lecture recordings. Run the local collector, import distributor install counts and generate reports with the [telemetry guide](tools/telemetry/README.md).
 
 ## M1 - Adoption and First Login
 

@@ -20,7 +20,6 @@ import '../services/storage_service.dart';
 import '../theme/theme.dart';
 import '../utils/adaptive_motion.dart';
 import '../utils/haptics.dart';
-import '../utils/platform.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -32,8 +31,9 @@ import '../widgets/page_refresh.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/uni_auth_login.dart';
 import 'campus_card_page.dart';
+import 'campus_feature_navigation.dart';
+import 'campus_services_page.dart';
 import 'custom_deadline_editor_page.dart';
-import 'generic_webview_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -330,9 +330,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Future<void> _refreshHome() async {
     final sp = ServiceProvider.of(context);
-    final card = supportsCampusCard() ? sp.campusCardService : null;
     final tasks = <Future<void>>[
-      if (card != null) card.refreshAccount(),
+      sp.campusCardService.refreshAccount(),
     ];
     if (sp.thirdPartyAuthService.hasIdsBinding) {
       tasks.add(sp.scheduleService.fetchAll());
@@ -356,7 +355,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final sp = ServiceProvider.of(context);
     final auth = sp.authService;
     final storage = sp.storageService;
-    final campusCard = supportsCampusCard() ? sp.campusCardService : null;
+    final campusCard = sp.campusCardService;
     final isDebug = storage.debugMode;
     final now = _now;
     final week = _resolvedWeek(now);
@@ -387,9 +386,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         },
       ),
     );
-    final campusCardStrip = campusCard == null
-        ? null
-        : _buildCampusCardStrip(campusCard, storage, expandedCard: isBento);
+    final campusCardStrip = _buildCampusCardStrip(
+      campusCard,
+      storage,
+      expandedCard: isBento,
+    );
     final todayClasses = _buildTodayClasses(colors, auth.isLoggedIn);
     final deadlines = _buildPendingAssignments(colors);
     final quickActions = _buildQuickActions();
@@ -427,15 +428,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           if (debugPanel != null) debugPanel,
                         ],
                         secondaryColumn: [
-                          if (campusCardStrip != null) campusCardStrip,
+                          campusCardStrip,
                           quickActions,
                         ],
                       )
                     else ...[
-                      if (campusCardStrip != null) ...[
-                        campusCardStrip,
-                        const SizedBox(height: TpTokens.sectionGap),
-                      ],
+                      campusCardStrip,
+                      const SizedBox(height: TpTokens.sectionGap),
                       todayClasses,
                       const SizedBox(height: TpTokens.sectionGap),
                       deadlines,
@@ -496,47 +495,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Widget _buildQuickActions() {
-    // Campus Card already has its own dedicated hero card directly above.
-    final quickFeatures = featureEntries
-        .where((feature) => feature.id != 'campus_card')
-        .toList(growable: false);
+    final storage = ServiceProvider.of(context).storageService;
     return TpCard(
       key: const ValueKey('home.quick-actions'),
       title: '快捷功能',
       child: AppCard(
-        features: quickFeatures,
+        features: [...homeQuickFeatures(storage.pinnedQuickFeatureIds), moreFeature],
         rows: 2,
         columns: 3,
-        onFeatureTap: _handleFeatureTap,
+        onFeatureTap: (feature) async {
+          if (feature != moreFeature) {
+            openCampusFeature(context, feature);
+            return;
+          }
+          await pushAdaptivePage<void>(context, builder: (_) => CampusServicesPage(storage: storage));
+          if (mounted) setState(() {});
+        },
       ),
     );
-  }
-
-  void _handleFeatureTap(Feature feature) {
-    unawaited(AppHaptics.play(AppHaptics.selection));
-    if (!ServiceProvider.of(context).authService.isLoggedIn) {
-      unawaited(startUniAuthLogin(context));
-      return;
-    }
-    switch (feature.mode) {
-      case FeatureMode.native:
-        feature.nativeEntry?.call(context);
-        break;
-      case FeatureMode.webviewWithCookie:
-        if (feature.url != null) {
-          unawaited(
-            pushAdaptivePage<void>(
-              context,
-              builder: (_) => GenericWebViewPage(
-                title: feature.description,
-                url: feature.url!,
-                cookieType: feature.cookieType,
-              ),
-            ),
-          );
-        }
-        break;
-    }
   }
 
   Widget _buildTodayClasses(TpColors colors, bool isLoggedIn) {

@@ -8,6 +8,7 @@ import '../services/auth_service.dart';
 import '../services/elrc_client.dart';
 import '../services/service_provider.dart';
 import '../services/third_party_auth_service.dart';
+import '../services/usage_telemetry.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
@@ -19,13 +20,14 @@ import 'campus_session_handle.dart';
 import 'elrc_player_page.dart';
 
 class ElrcRecordingsPage extends StatefulWidget {
-  const ElrcRecordingsPage({super.key});
+  const ElrcRecordingsPage({super.key, this.visit});
+  final UsageVisit? visit;
 
   @override
   State<ElrcRecordingsPage> createState() => _ElrcRecordingsPageState();
 }
 
-class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
+class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> with WidgetsBindingObserver {
   static final _reviewUri = Uri.parse(
     'https://elrc.shanghaitech.edu.cn/learn/videoreview?type=1',
   );
@@ -42,7 +44,18 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   ElrcCourse? _selectedCourse;
   List<ElrcLesson>? _lessons;
   String _searchQuery = '';
-  String? _error;
+  UsageVisit? _visit;
+  UsageTelemetry? _telemetry;
+  bool _backgrounded = false;
+  bool _routeVisible = true;
+  bool _playingLesson = false;
+  bool? _visitVisible;
+  String? _visibleError;
+  String? get _error => _visibleError;
+  set _error(String? value) {
+    if (value != null) _visit?.recordingError();
+    _visibleError = value;
+  }
   Uri? _activeUri;
   int _request = 0;
   bool _starting = true;
@@ -66,8 +79,12 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_tpAuth != null) return;
     final services = ServiceProvider.of(context);
+    _telemetry = services.telemetry;
+    _routeVisible = (ModalRoute.isCurrentOf(context) ?? true) && TickerMode.valuesOf(context).enabled;
+    _updateVisit();
+    if (_tpAuth != null) return;
+    WidgetsBinding.instance.addObserver(this);
     _tpAuth = services.thirdPartyAuthService;
     _auth = services.authService;
     _primaryUserId = _auth!.session?.userId;
@@ -133,7 +150,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
         await cookieManager.setCookie(cookie);
       }
     } catch (error) {
-      _trace('campus session pre-flight failed: $error');
+      _trace('campus session pre-flight failed: ${error.runtimeType}');
     }
   }
 
@@ -256,9 +273,10 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   }
 
   String _safeUri(Uri? uri) {
-    if (uri == null) return '<invalid URL>';
-    final port = uri.hasPort ? ':${uri.port}' : '';
-    return '${uri.scheme}://${uri.host}$port${uri.path}';
+    if (uri == null || uri.host.isEmpty || !(uri.isScheme('https') || uri.isScheme('http'))) {
+      return '<no HTTP origin>';
+    }
+    return uri.origin;
   }
 
   void _activate(String? url, {bool pageStarted = false}) {
@@ -419,12 +437,13 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       }
       setState(() {
         _courses = courses;
+        if (courses.isNotEmpty) _visit?.recordingReady();
         _selectedCourse = null;
         _lessons = null;
       });
     } on ElrcException catch (error) {
       if (!mounted || request != _request) return;
-      _trace('course request failed: ${error.message}');
+      _trace('course request failed; needsLogin=${error.needsLogin}');
       if (error.needsLogin) {
         await _openLogin();
         return;
@@ -484,11 +503,13 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       final sources = await client.sources(course, lesson);
       if (!mounted || request != _request) return;
       setState(() => _busy = false);
-      // Playback is immersive, so it covers the tab bar.
+      // The player covers the tab bar but belongs to the same recording visit.
+      _playingLesson = true;
       await pushAdaptivePage<void>(
         context,
         rootNavigator: true,
         builder: (_) => ElrcPlayerPage(
+          onPlaybackError: () => _visit?.recordingError(),
           courseName: course.name,
           lessonTitle: lesson.title,
           referer: course.referer,
@@ -505,6 +526,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       if (!mounted || request != _request) return;
       setState(() => _error = '播放地址加载失败');
     } finally {
+      _playingLesson = false;
       if (mounted && request == _request) setState(() => _busy = false);
     }
   }
@@ -943,8 +965,33 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
     );
   }
 
+  void _updateVisit() {
+    final visible = (_routeVisible || _playingLesson) && !_backgrounded;
+    if (visible == _visitVisible) return;
+    final first = _visitVisible == null;
+    _visitVisible = visible;
+    if (first) _visit = widget.visit;
+    if (visible) {
+      _visit ??= _telemetry?.beginRecording();
+      if (_courses?.isNotEmpty == true) _visit?.recordingReady();
+      if (_error != null) _visit?.recordingError();
+    } else {
+      _visit?.recordingExit();
+      _visit = null;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive) return;
+    _backgrounded = state != AppLifecycleState.resumed;
+    _updateVisit();
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _visit?.recordingExit();
     _searchCtrl.dispose();
     _auth?.removeListener(_primaryAccountChanged);
     _request++;

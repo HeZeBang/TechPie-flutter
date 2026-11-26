@@ -19,6 +19,7 @@ import '../models/custom_course.dart';
 import '../models/graduate_schedule.dart';
 import '../models/ids_passkey.dart';
 import '../models/oa_gym.dart';
+import '../models/quick_shortcuts.dart';
 import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import '../models/user_session.dart';
@@ -56,6 +57,10 @@ class StorageService {
   String? get campusWebOwner => _prefs.getString('campus_web_owner');
   Future<void> setCampusWebOwner(String owner) => _prefs.setString('campus_web_owner', owner);
 
+  List<String>? get pinnedQuickFeatureIds => _prefs.getStringList('pinned_quick_features');
+  Future<void> setPinnedQuickFeatureIds(List<String> ids) =>
+      _prefs.setStringList('pinned_quick_features', pinnedShortcutIds(ids));
+
   bool get islandEnabled => _prefs.getBool('island_enabled') ?? false;
   Future<void> setIslandEnabled(bool value) => _prefs.setBool('island_enabled', value);
 
@@ -70,8 +75,30 @@ class StorageService {
     return UserSession.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
+  static const _emapCachePrefix = 'emap_cache_';
+  static const _campusCachePrefix = 'campus_cache_';
+
+  String? readEmapCache(String feature) => _prefs.getString('$_emapCachePrefix$feature');
+
+  Future<void> writeEmapCache(String feature, String? value) => value == null
+      ? _prefs.remove('$_emapCachePrefix$feature')
+      : _prefs.setString('$_emapCachePrefix$feature', value);
+
+  Future<void> clearCampusCaches() async {
+    final keys = _prefs
+        .getKeys()
+        .where(
+          (k) => k.startsWith(_emapCachePrefix) || k.startsWith(_campusCachePrefix),
+        )
+        .toList();
+    for (final key in keys) {
+      await _prefs.remove(key);
+    }
+  }
+
   Future<void> clearSession() async {
     await _secure.delete(key: _sessionKey);
+    await clearCampusCaches();
   }
 
   Future<void> saveIdsCandidate(String account, IdsPasskey credential) =>
@@ -153,6 +180,7 @@ class StorageService {
       for (final key in _legacyCampusKeys) {
         await _secure.delete(key: key);
       }
+      await clearCampusCaches();
     }
   }
 
@@ -363,6 +391,18 @@ class StorageService {
   static const _selectedSemesterKey = 'schedule_selected_semester';
   static const _scheduleSourceKey = 'schedule_source_preference';
 
+  String _shortNameKey(String? owner, String course) =>
+      'schedule_short_name_${jsonEncode([owner, course])}';
+
+  String? courseShortName(String? owner, String course) =>
+      _prefs.getString(_shortNameKey(owner, course));
+
+  Future<void> setCourseShortName(String? owner, String course, String? name) async {
+    final key = _shortNameKey(owner, course);
+    final saved = name == null ? await _prefs.remove(key) : await _prefs.setString(key, name);
+    if (!saved) throw StateError('保存课表简称失败');
+  }
+
   CampusIdentity? loadCampusIdentity(String owner) {
     final raw = _prefs.getString('schedule_campus_identity');
     if (raw == null) return null;
@@ -548,12 +588,12 @@ class StorageService {
           if (item is! Map) continue;
           courses.add(CustomCourse.fromJson(item.cast<String, dynamic>()));
         } catch (error) {
-          debugPrint('Skipping invalid custom course: $error');
+          debugPrint('Skipping invalid custom course: ${error.runtimeType}');
         }
       }
       return courses;
     } catch (error) {
-      debugPrint('Failed to read custom courses for $semesterId: $error');
+      debugPrint('Failed to read custom courses: ${error.runtimeType}');
       return const [];
     }
   }

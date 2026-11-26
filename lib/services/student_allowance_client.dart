@@ -376,7 +376,7 @@ class StudentAllowanceClient {
     final path = 'student-allowance/${stage.name}';
     _logger?.log(
       method: diagnostic != null ? 'CHECK' : (stage == _FinanceStage.queryPost ? 'POST' : 'GET'),
-      url: diagnostic == null ? path : '$path/${diagnostic.name}',
+      operation: diagnostic == null ? path : '$path/${diagnostic.name}',
       statusCode: status,
       durationMicros: elapsedMicros,
       tag: 'StudentAllowance',

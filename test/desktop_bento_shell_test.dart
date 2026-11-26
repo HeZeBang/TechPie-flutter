@@ -2,13 +2,12 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:techpie/features/campus_card/app/app_providers.dart';
 import 'package:techpie/main.dart';
-import 'package:techpie/models/feature.dart';
-import 'package:techpie/pages/campus_card_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
+import 'package:techpie/services/campus_card_service.dart';
 import 'package:techpie/services/debug_logger.dart';
+import 'package:techpie/services/ecard_bind_service.dart';
 import 'package:techpie/services/egate_app_service.dart';
 import 'package:techpie/services/http_client.dart';
 import 'package:techpie/services/oa_gym_service.dart';
@@ -22,7 +21,6 @@ import 'package:techpie/services/update_service.dart';
 import 'package:techpie/theme/theme.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 import 'package:techpie/widgets/app_shell/app_destination.dart';
-import 'package:techpie/widgets/app_shell/app_shell.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_shell.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_item.dart';
@@ -62,79 +60,61 @@ void main() {
         uniAuthService: uniAuth,
         syncService: SyncService(auth, tpAuth, storage),
         updateService: UpdateService(),
-        campusCardService: null,
-        ecardBindService: null,
+        campusCardService: CampusCardService(),
+        ecardBindService: EcardBindService(),
       ),
     );
     await tester.pumpAndSettle();
   }
 
-  testWidgets(
-    'desktop shows the shared services without campus card',
-    (tester) async {
-      tester.view.physicalSize = const Size(1280, 800);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('wide window renders DesktopShell sidebar and two-column Bento Home',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-      await pumpApp(tester);
+    await pumpApp(tester);
 
-      expect(find.byType(DesktopShell), findsOneWidget);
-      expect(find.byType(DesktopSidebar), findsOneWidget);
-      expect(find.byType(TgBottomNavBar), findsNothing);
-      expect(find.byType(TpBrandMark), findsOneWidget);
-      expect(find.text('TechPie'), findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byType(DesktopSidebar),
-          matching: find.byIcon(TpIcons.graduation),
-        ),
-        findsNothing,
-      );
+    expect(find.byType(DesktopShell), findsOneWidget);
+    expect(find.byType(DesktopSidebar), findsOneWidget);
+    expect(find.byType(TgBottomNavBar), findsNothing);
+    expect(find.byType(TpBrandMark), findsOneWidget);
+    expect(find.text('TechPie'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(DesktopSidebar),
+        matching: find.byIcon(TpIcons.graduation),
+      ),
+      findsNothing,
+    );
 
-      // Desktop has no card destination, including pending widget requests.
-      expect(
-        featureEntries.map((feature) => feature.id),
-        isNot(contains('campus_card')),
-      );
-      appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
-      await tester.pumpAndSettle();
-      expect(appShellPendingEcardEntry.value, isNull);
-      expect(find.byType(CampusCardPage), findsNothing);
-      expect(find.byKey(const ValueKey('home.campus-card-strip')), findsNothing);
-      final coursesPos = tester.getTopLeft(
-        find.byKey(const ValueKey('home.today-courses')),
-      );
-      final actionsPos = tester.getTopLeft(
-        find.byKey(const ValueKey('home.quick-actions')),
-      );
-      expect(actionsPos.dx, greaterThan(coursesPos.dx));
+    // Bento Home places Campus Card & Quick Actions to the right of Today Courses.
+    final coursesPos = tester.getTopLeft(
+      find.byKey(const ValueKey('home.today-courses')),
+    );
+    final cardPos = tester.getTopLeft(
+      find.byKey(const ValueKey('home.campus-card-strip')),
+    );
+    final actionsPos = tester.getTopLeft(
+      find.byKey(const ValueKey('home.quick-actions')),
+    );
+    expect(cardPos.dx, greaterThan(coursesPos.dx));
+    expect(actionsPos.dx, greaterThan(coursesPos.dx));
 
-      // Toggle sidebar collapse and expand cleanly.
-      final expandedWidth = tester.getSize(find.byType(DesktopSidebar)).width;
-      expect(expandedWidth, greaterThan(DesktopSidebarTokens.collapsedWidth));
-      await tester.tap(find.byKey(const ValueKey('desktop.sidebar-toggle')));
-      await tester.pumpAndSettle();
-      expect(
-        tester.getSize(find.byType(DesktopSidebar)).width,
-        closeTo(DesktopSidebarTokens.collapsedWidth, 0.5),
-      );
-      await tester.tap(find.byKey(const ValueKey('desktop.sidebar-toggle')));
-      await tester.pumpAndSettle();
-      expect(tester.getSize(find.byType(DesktopSidebar)).width, expandedWidth);
-
-      await tester.tap(find.text('我的').first);
-      await tester.pumpAndSettle();
-      expect(find.text('已绑定 0 / 3 项 · IDS / Gradescope / Hydro'), findsOneWidget);
-      await tester.tap(find.text('第三方账号'));
-      await tester.pumpAndSettle();
-      expect(find.text('课程平台'), findsOneWidget);
-      expect(find.text('eCard'), findsNothing);
-    },
-    variant: const TargetPlatformVariant({
-      TargetPlatform.linux, TargetPlatform.macOS, TargetPlatform.windows,
-    }),
-  );
+    // Toggle sidebar collapse and expand cleanly.
+    final expandedWidth = tester.getSize(find.byType(DesktopSidebar)).width;
+    expect(expandedWidth, greaterThan(DesktopSidebarTokens.collapsedWidth));
+    await tester.tap(find.byKey(const ValueKey('desktop.sidebar-toggle')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(DesktopSidebar)).width,
+      closeTo(DesktopSidebarTokens.collapsedWidth, 0.5),
+    );
+    await tester.tap(find.byKey(const ValueKey('desktop.sidebar-toggle')));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(DesktopSidebar)).width, expandedWidth);
+  });
 
   testWidgets('AdaptiveFeedback clears bottom bar on mobile but not DesktopShell',
       (tester) async {

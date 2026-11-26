@@ -1,6 +1,7 @@
 package club.geekpie.techpie
 
 import android.Manifest
+import android.content.ClipData
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Intent
@@ -48,6 +49,16 @@ class MainActivity : FlutterActivity() {
             IslandCapabilityProbe(this), IslandNotificationFactory(this, FocusSequenceStore(this)),
         ) { requestNotificationPermission() }
         spendingAlerts = SpendingNotificationBridge(this, flutterEngine.dartExecutor.binaryMessenger, this)
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            PLATFORM_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "shareFile" -> handleShareCampusFile(call, result)
+                else -> result.notImplemented()
+            }
+        }
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -362,7 +373,55 @@ class MainActivity : FlutterActivity() {
         val result: MethodChannel.Result,
     )
 
+    private fun handleShareCampusFile(
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        val scope = (call.argument<String>("scope") ?: "").trim()
+        val filename = (call.argument<String>("filename") ?: "").trim()
+        val mimeType = call.argument<String>("mimeType")?.trim()
+        if (!SCOPE_REGEX.matches(scope) ||
+            filename.isEmpty() ||
+            filename == "." ||
+            filename == ".." ||
+            filename.contains('/') ||
+            filename.contains('\\') ||
+            filename.contains("..")
+        ) {
+            result.error("invalid_file", "Invalid campus file arguments.", null)
+            return
+        }
+        try {
+            val root = java.io.File(cacheDir, "campus_files/$scope").canonicalFile
+            val file = java.io.File(root, filename).canonicalFile
+            if (!file.path.startsWith(root.path + java.io.File.separator) || !file.isFile) {
+                result.error("missing_file", "Campus file is unavailable.", null)
+                return
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "$packageName.fileProvider.com.crazecoder.openfile",
+                file,
+            )
+            val resolvedType = mimeType?.takeIf { it.isNotEmpty() }
+                ?: contentResolver.getType(uri)
+                ?: "application/octet-stream"
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = resolvedType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = ClipData.newRawUri(filename, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, null))
+            result.success(null)
+        } catch (_: Exception) {
+            result.error("share_failed", "Cannot share file.", null)
+        }
+    }
+
     private companion object {
+        const val PLATFORM_CHANNEL = "techpie/platform"
+        val SCOPE_REGEX = Regex("^[a-z0-9_-]{1,32}$")
         const val CALENDAR_IMPORTER_CHANNEL = "techpie/calendar_importer"
         const val ECARD_BIND_CHANNEL = "techpie/ecard_bind"
         const val REQUEST_ISLAND_NOTIFICATION = 48292

@@ -74,7 +74,9 @@ class CampusHttp {
   }
 
   Future<String> cookieHeader(Uri uri) async =>
-      (await jar.loadForRequest(uri)).map((c) => '${c.name}=${c.value}').join('; ');
+      (await jar.loadForRequest(uri))
+          .where((c) => c.name.toUpperCase() != 'CASTGC' || uri.host == 'ids.shanghaitech.edu.cn')
+          .map((c) => '${c.name}=${c.value}').join('; ');
   Future<String?> cookie(Uri uri, String name) async {
     for (final value in await jar.loadForRequest(uri)) {
       if (value.name == name) return value.value;
@@ -100,9 +102,8 @@ class CampusHttp {
       Response<List<int>> response;
       // Query parameters can contain a username or CAS ticket. Request bodies,
       // headers and HTML can contain passwords, captcha or assertion material.
-      final logUrl = '${uri.origin}${uri.path}';
       final timer = Stopwatch()..start();
-      _logger?.log(method: method, url: logUrl, tag: 'IDS');
+      _logger?.log(method: method, uri: uri, tag: 'IDS');
       try {
         response = await http.request<List<int>>(
           uri.toString(),
@@ -122,7 +123,7 @@ class CampusHttp {
       } on DioException {
         _logger?.log(
           method: method,
-          url: logUrl,
+          uri: uri,
           error: '无法连接学校认证服务，请检查网络后重试',
           durationMicros: timer.elapsedMicroseconds,
           tag: 'IDS',
@@ -132,9 +133,9 @@ class CampusHttp {
       if (_logger?.enabled == true) {
         _logger!.log(
           method: method,
-          url: logUrl,
+          uri: uri,
           statusCode: response.statusCode,
-          responseBody: _responseCode(response),
+          responseSummary: _responseCode(response),
           durationMicros: timer.elapsedMicroseconds,
           tag: 'IDS',
         );
@@ -165,12 +166,12 @@ class CampusHttp {
   static String text(Response<List<int>> response) =>
       utf8.decode(response.data ?? [], allowMalformed: true);
 
-  String? _responseCode(Response<List<int>> response) {
+  Map<String, Object?>? _responseCode(Response<List<int>> response) {
     if (!(response.headers.value('content-type') ?? '').contains('application/json')) return null;
     try {
       final data = jsonDecode(text(response));
       final code = data is Map ? int.tryParse('${data['code']}') : null;
-      return code == null ? null : jsonEncode({'code': code});
+      return code == null ? null : {'code': code};
     } on FormatException {
       return null;
     }

@@ -135,9 +135,9 @@ class AuthService extends ChangeNotifier {
       if (kDebugMode) debugPrint('[sso] $line');
       _logger?.log(
         method: 'SSO',
-        url: 'auth.geekpie.club',
+        uri: Uri.https('auth.geekpie.club'),
         tag: 'SSO',
-        responseBody: DebugLogger.redactSensitive(line),
+        responseSummary: {'event': line},
       );
       return Future.value(SessionRenewalResult.skipped);
     }
@@ -185,13 +185,12 @@ class AuthService extends ChangeNotifier {
       final result = e.isInvalidGrant
           ? SessionRenewalResult.expired
           : SessionRenewalResult.transientError;
-      _logRenewalOutcome(result, e, secrets: [refreshToken, session.geekpieToken]);
+      _logRenewalOutcome(result, e);
       return result;
     } catch (e) {
       _logRenewalOutcome(
         SessionRenewalResult.transientError,
         e,
-        secrets: [refreshToken, session.geekpieToken],
       );
       return SessionRenewalResult.transientError;
     }
@@ -199,29 +198,27 @@ class AuthService extends ChangeNotifier {
 
   void _logRenewalOutcome(
     SessionRenewalResult result,
-    Object error, {
-    Iterable<String?> secrets = const [],
-  }) {
+    Object error,
+  ) {
     final parts = <String>[
       'token refresh: outcome=${result.name}',
       'error=${error.runtimeType}',
       if (error is SsoRefreshException && error.statusCode != null)
         'status=${error.statusCode}',
       if (error is SsoRefreshException &&
-          error.oauthError != null &&
-          error.oauthError!.isNotEmpty)
+          const {
+            'invalid_grant', 'invalid_token', 'invalid_client',
+            'server_error', 'temporarily_unavailable',
+          }.contains(error.oauthError))
         'oauth=${error.oauthError}',
       if (error is SsoRefreshException && error.cause != null)
         'cause=${error.cause.runtimeType}',
     ];
-    final detail = error is SsoRefreshException
-        ? ''
-        : UniAuthService.sanitizeErrorDetail(error, secrets: secrets);
-    final line = detail.isEmpty ? parts.join(' ') : '${parts.join(' ')} $detail';
+    final line = parts.join(' ');
     if (kDebugMode) debugPrint('[sso] $line');
     _logger?.log(
       method: 'SSO',
-      url: 'auth.geekpie.club',
+      uri: Uri.https('auth.geekpie.club'),
       statusCode: error is SsoRefreshException ? error.statusCode : null,
       tag: 'SSO',
       error: line,

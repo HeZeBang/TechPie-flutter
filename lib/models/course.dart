@@ -52,6 +52,31 @@ class Course {
         _ => null,
       };
 
+  String? get shortNameKey => switch (source) {
+        CustomCourseSource(:final id) => 'custom:$id',
+        EamsCourseSource() => 'course:$name',
+        ExamCourseSource() => null,
+      };
+
+  static final _commonTitle = RegExp(
+    r'^(普通物理学?|大学物理|高等数学|线性代数)'
+    r'(\s*(?:[（(][上下ⅠⅡⅢIV一二三]+[）)]|[上下ⅠⅡⅢIV]+))?'
+    r'(?:\s*[（(][A-Za-z]{2,}[- ]?\d+[A-Za-z]?[）)])?$',
+  );
+
+  String get defaultShortName {
+    if (source is! EamsCourseSource) return name;
+    final match = _commonTitle.firstMatch(name.trim());
+    if (match == null) return name;
+    final base = switch (match[1]) {
+      '高等数学' => '高数',
+      '线性代数' => '线代',
+      '大学物理' => '大物',
+      _ => '普物',
+    };
+    return '$base${match[2]?.trim() ?? ''}';
+  }
+
   bool occursOn(DateTime value) {
     final day = date;
     return day == null ||

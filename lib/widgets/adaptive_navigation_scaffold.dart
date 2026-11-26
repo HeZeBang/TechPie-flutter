@@ -26,6 +26,10 @@ class AdaptiveNavigationScaffold extends StatefulWidget {
   /// Whether non-iOS app bars blur behind scrolling body content.
   static bool extendsBodyBehindAppBar() => !isIos() && !usesLegacyIosChrome();
 
+  /// Whether the page's primary vertical scroll view should attach to this
+  /// scaffold's outer [PrimaryScrollController] for large-title coordination.
+  static bool coordinatesPrimaryScroll() => isIos();
+
   /// Top content inset reserved below a blurred app bar on non-iOS platforms.
   static double contentTopInsetOf(
     BuildContext context, {

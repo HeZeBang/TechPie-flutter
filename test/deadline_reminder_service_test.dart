@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/assignment.dart';
+import 'package:techpie/models/assignment_overrides.dart';
 import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/pages/assignments_page.dart';
@@ -54,7 +55,7 @@ void main() {
   late Future<void> Function()? beforeWrite;
   late bool denyEdits;
   late DateTime Function() now;
-  late Completer<Map<String, int>>? blockedRead;
+  late Completer<Map<String, int?>>? blockedRead;
   late Widget Function({Widget home}) buildPage;
 
   Future<void> flush() => Future<void>.delayed(Duration.zero);
@@ -149,8 +150,11 @@ void main() {
         if (denyEdits) throw PlatformException(code: 'reminders_denied');
         return details.keys.toList();
       }
-      expectSync(call.method, 'completed');
-      return blockedRead?.future ?? nativeCompletions;
+      expectSync(call.method, 'completionStates');
+      return blockedRead?.future ?? {
+        for (final key in linkedKeys) key: nativeCompletions[key],
+        ...nativeCompletions,
+      };
     });
     reminders = DeadlineReminderService(assignments, channel: channel);
     buildPage = ({Widget home = const AssignmentsPage()}) {
@@ -230,10 +234,124 @@ void main() {
     expect(writes, [{firstKey: 'reopen'}]);
   });
 
+  test('reopens linked course and custom deadlines after reloading', () async {
+    await assignments.saveCustomDeadline(owner: null, title: 'Custom', due: firstDue);
+    final course = assignments.assignments.firstWhere((a) => a is! CustomDeadline);
+    final custom = assignments.assignments.whereType<CustomDeadline>().single;
+    final courseKey = assignments.reminderKeyFor(course);
+    final customKey = assignments.reminderKeyFor(custom);
+    await reminders.add([course, custom]);
+    nativeCompletions = {courseKey: 100, customKey: 200};
+    reminders.initialize();
+    await flush();
+    expect(assignments.isCompleted(course), isTrue);
+    expect(assignments.findCustomDeadline(custom.id)?.completed, isTrue);
+
+    reminders.dispose();
+    nativeCompletions.clear();
+    assignments.loadCached();
+    reminders.initialize();
+    await flush();
+    expect(assignments.isCompleted(course), isFalse);
+    expect(assignments.findCustomDeadline(custom.id)?.completed, isFalse);
+    expect(
+      storage.loadAssignmentOverrides().scopedCompleted,
+      isNot(contains(courseKey)),
+    );
+    expect(storage.loadCustomDeadlines(null)?.deadlines[custom.id]?.completed, isFalse);
+    expect(writes, isEmpty);
+
+    nativeCompletions = {courseKey: 300, customKey: 400};
+    await notifyRemindersChanged();
+    expect(assignments.isCompleted(course), isTrue);
+    expect(assignments.findCustomDeadline(custom.id)?.completed, isTrue);
+  });
+
+  test('keeps a reopened reminder open when its course platform shows submitted', () async {
+    final submitted = Assignment(
+      id: 'submitted',
+      platform: 'blackboard',
+      title: 'Submitted homework',
+      course: 'Course',
+      due: firstDue,
+      status: 'Submitted',
+    );
+    await storage.saveCachedAssignments([submitted.toJson()]);
+    assignments.loadCached();
+    final assignment = assignments.assignments.single;
+    await reminders.add([assignment]);
+    final key = assignments.reminderKeyFor(assignment);
+    nativeCompletions[key] = 100;
+    reminders.initialize();
+    await flush();
+    expect(assignments.isCompleted(assignment), isTrue);
+
+    nativeCompletions.remove(key);
+    await notifyRemindersChanged();
+    expect(assignments.isCompleted(assignment), isFalse);
+    expect(storage.loadAssignmentOverrides().scopedCompleted[key], isFalse);
+    expect(writes, isEmpty);
+  });
+
+  testWidgets(
+    'shows the pencil only when the local status differs from the course platform',
+    (tester) async {
+      final [open, completed] = assignments.assignments;
+      await storage.saveAssignmentOverrides(
+        AssignmentOverrides(
+          scopedCompleted: {
+            assignments.reminderKeyFor(open): false,
+            assignments.reminderKeyFor(completed): true,
+          },
+        ),
+      );
+      assignments.loadCached();
+
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      expect(find.text(open.title), findsOneWidget);
+      expect(find.byTooltip('本地标记'), findsNothing);
+
+      await tester.tap(find.text('已完成 (1)'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('本地标记'), findsOneWidget);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  test('deleting reminders leaves their TechPie deadlines and completion intact', () async {
+    await assignments.saveCustomDeadline(owner: null, title: 'Custom', due: firstDue);
+    final course = assignments.assignments.firstWhere((a) => a is! CustomDeadline);
+    final custom = assignments.assignments.whereType<CustomDeadline>().single;
+    final open = assignments.assignments.last;
+    final courseKey = assignments.reminderKeyFor(course);
+    final customKey = assignments.reminderKeyFor(custom);
+    await reminders.add(assignments.assignments);
+    nativeCompletions = {courseKey: 100, customKey: 200};
+    reminders.initialize();
+    await flush();
+
+    linkedKeys.clear();
+    nativeCompletions.clear();
+    await notifyRemindersChanged();
+    assignments.loadCached();
+    await flush();
+    final expectedKeys = {courseKey, customKey, assignments.reminderKeyFor(open)};
+    expect(assignments.visibleAssignments.map(assignments.reminderKeyFor).toSet(), expectedKeys);
+    expect(assignments.isCompleted(course), isTrue);
+    expect(assignments.findCustomDeadline(custom.id)?.completed, isTrue);
+    expect(assignments.isCompleted(open), isFalse);
+    expect(writes, isEmpty);
+    expect(
+      await reminders.linkedKeys(expectedKeys, epoch: assignments.identityEpoch),
+      isEmpty,
+    );
+  });
+
   test('discards a pending completion after the assignment identity resets', () async {
     await reminders.add(assignments.assignments);
     final key = exported.first['key'] as String;
-    blockedRead = Completer<Map<String, int>>();
+    blockedRead = Completer<Map<String, int?>>();
     reminders.initialize();
     await assignments.clearCache();
     blockedRead!.complete({key: 100});

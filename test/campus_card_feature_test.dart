@@ -67,10 +67,10 @@ void main() {
 
     expect(find.text('eCard 初始化失败'), findsNothing);
     expect(find.byType(LoginScreen), findsOneWidget);
-    expect(find.text('打开 Account 设置'), findsOneWidget);
-    expect(find.byTooltip('返回'), findsOneWidget);
+    expect(find.text('Connect my card'), findsOneWidget);
+    expect(find.byTooltip('Back'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('返回'));
+    await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();
 
     expect(find.byType(CampusCardPage), findsNothing);

@@ -16,6 +16,8 @@ class CourseDetailContent extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final bool compact;
   final Color? accentColor;
+  final String? gridTitle;
+  final VoidCallback? onEditGridTitle;
 
   /// Shown only for a session the user entered by hand — a fetched course has
   /// nothing here to edit.
@@ -27,6 +29,8 @@ class CourseDetailContent extends StatelessWidget {
     this.padding = const EdgeInsets.fromLTRB(24, 20, 24, 24),
     this.compact = false,
     this.accentColor,
+    this.gridTitle,
+    this.onEditGridTitle,
     this.onEdit,
   });
 
@@ -66,6 +70,14 @@ class CourseDetailContent extends StatelessWidget {
     }
 
     final metadataRows = <_MetadataEntry>[
+      if (gridTitle != null)
+        _MetadataEntry(
+          icon: glyph(TpIcons.schedule, CupertinoIcons.calendar),
+          text: '课表简称 · $gridTitle',
+          onTap: onEditGridTitle,
+          trailingIcon: TpIcons.edit,
+          tooltip: '编辑课表简称',
+        ),
       if (course.location.isNotEmpty)
         _MetadataEntry(
           key: const ValueKey('course-detail.location'),

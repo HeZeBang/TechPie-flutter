@@ -31,7 +31,7 @@ class CampusCardPage extends StatelessWidget {
   Widget build(BuildContext context) {
     if (kDebugMode) debugPrint('[ecard] page opened');
     final services = runtime == null ? ServiceProvider.of(context) : null;
-    final value = runtime ?? services!.campusCardService!.runtime;
+    final value = runtime ?? services!.campusCardService.runtime;
     return CampusCardHostScope(
       navigator: Navigator.of(context),
       child: ProviderScope(
@@ -41,7 +41,8 @@ class CampusCardPage extends StatelessWidget {
             () => unawaited(
               pushAdaptivePage<void>(
                 context,
-                builder: (_) => const CampusCardAccountPage(),
+                rootNavigator: true,
+                builder: (_) => const CampusCardAccountPage(fromCard: true),
               ),
             ),
           ),

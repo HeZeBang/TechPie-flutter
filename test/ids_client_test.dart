@@ -32,7 +32,7 @@ void main() {
     final completed = logger.entries.where((e) => e.statusCode != null).toList();
     expect(completed, hasLength(adapter.requests.length));
     expect(
-        completed.map((e) => e.url), adapter.requests.map((r) => '${r.uri.origin}${r.uri.path}'),);
+        completed.map((e) => e.url), adapter.requests.map((r) => r.uri.origin),);
     expect(completed.every((e) => e.tag == 'IDS' && e.durationMicros! >= 0), true);
     expect(completed.any((e) => e.statusCode == 302), true);
     expect(
@@ -89,7 +89,7 @@ void main() {
     expect(logger.entries, hasLength(4));
     expect(logger.entries[1].statusCode, 302);
     expect(logger.entries.last.method, 'GET');
-    expect(logger.entries.last.url, '${SoftwarePasskey.origin}/authserver/next');
+    expect(logger.entries.last.url, SoftwarePasskey.origin);
     expect(logger.entries.last.error, '无法连接学校认证服务，请检查网络后重试');
     expect(logger.entries.last.durationMicros, isNotNull);
     expect(logger.entries.every((e) => Uri.parse(e.url).query.isEmpty), true);

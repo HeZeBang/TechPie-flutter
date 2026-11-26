@@ -176,7 +176,7 @@ class _AppShellState extends State<AppShell> {
     final entry = appShellPendingEcardEntry.value;
     if (entry == null || !mounted) return;
     appShellPendingEcardEntry.value = null;
-    if (!supportsCampusCard()) return;
+    context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened('campus_card');
     // Login and playback pages can cover the entire tab shell: the code then
     // opens above that page, and back returns to it.
     final shellCovered = !ModalRoute.of(context)!.isCurrent;
@@ -207,6 +207,8 @@ class _AppShellState extends State<AppShell> {
       _returnToTabRoot(index);
       return;
     }
+    const features = ['home', 'schedule', 'deadlines', 'settings'];
+    context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened(features[index]);
     _previousSelectedIndex = _selectedIndex;
     setState(() => _selectedIndex = index);
   }
@@ -240,6 +242,7 @@ class _AppShellState extends State<AppShell> {
     super.didChangeDependencies();
     if (!_sidebarPrefLoaded) {
       _sidebarPrefLoaded = true;
+      context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened('home');
       final storage = context
           .dependOnInheritedWidgetOfExactType<ServiceProvider>()
           ?.storageService;
