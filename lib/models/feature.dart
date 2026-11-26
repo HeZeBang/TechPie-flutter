@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../features/campus_card/app/app_providers.dart';
 import '../pages/campus_card_page.dart';
 import '../pages/egate_app_page.dart';
+import '../pages/elearning_hub_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
 import '../pages/student_allowance_page.dart';
@@ -12,7 +13,6 @@ import '../pages/student_leave_page.dart';
 import '../services/service_provider.dart';
 import '../theme/tp_icons.dart';
 import '../widgets/adaptive_page_navigation.dart';
-
 import 'quick_shortcuts.dart';
 
 enum CampusServiceCategory {
@@ -148,6 +148,19 @@ final featureEntries = <Feature>[
       builder: (_) => const EgateAppPage(),
     ),
     icon: const Icon(TpIcons.scan),
+  ),
+  Feature(
+    id: 'blackboard',
+    category: CampusServiceCategory.academics,
+    description: 'Blackboard 课程',
+    subtitle: '课件、成绩与课程公告',
+    keywords: const ['blackboard', 'bb', 'elearning', '课件', '作业', '公告'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const ElearningHubPage(),
+    ),
+    icon: const Icon(Icons.school_outlined),
   ),
   Feature(
     id: 'student_allowance',

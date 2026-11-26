@@ -598,6 +598,24 @@ class StorageService {
     }
   }
 
+  static const _blackboardIndexKey = '${_campusCachePrefix}blackboard_index';
+
+  Map<String, dynamic>? get blackboardIndex {
+    final value = _prefs.getString(_blackboardIndexKey);
+    if (value == null) return null;
+    try {
+      return jsonDecode(value) as Map<String, dynamic>;
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
+  }
+
+  Future<void> saveBlackboardIndex(Map<String, dynamic> index) =>
+      _prefs.setString(_blackboardIndexKey, jsonEncode(index));
+  Future<void> clearBlackboardIndex() => _prefs.remove(_blackboardIndexKey);
+
   // Assignments cache (non-sensitive — stored as JSON in SharedPreferences)
   static const _assignmentsKey = 'cached_assignments';
 

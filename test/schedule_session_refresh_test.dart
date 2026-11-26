@@ -13,6 +13,7 @@ import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 
+import 'support/eams_transport.dart';
 import 'support/fake_ids_client.dart';
 
 void main() {
@@ -33,14 +34,22 @@ void main() {
 
     final logger = DebugLogger();
     final requests = <Uri>[];
-    final http = LoggingHttpClient(logger, inner: _RecordingClient(requests));
+    final server = _RecordingClient(requests);
+    final http = LoggingHttpClient(logger, inner: server);
     final uniAuth = UniAuthService();
     final auth = AuthService(storage, http, uniAuth);
     await auth.loadSession();
     final tpAuth = ThirdPartyAuthService(storage, http, idsClient: FakeIdsClient());
     await tpAuth.initialize();
 
-    final schedule = ScheduleService(storage, http, auth, tpAuth);
+    final schedule = ScheduleService(
+      storage,
+      http,
+      auth,
+      tpAuth,
+      eamsTransport: eamsTransport(server),
+      eamsInterval: Duration.zero,
+    );
     expect(requests, isEmpty, reason: 'constructing it does not fetch');
     expect(schedule.semesterInfo, isNull, reason: 'nothing in hand');
 
@@ -53,7 +62,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 900));
 
     expect(
-      requests.where((url) => url.path.startsWith('/api/schedule/')),
+      requests.where((url) => url.path.startsWith('/eams/courseTableForStd')),
       isNotEmpty,
       reason: 'the table was empty, so a renew has to lead to a fetch',
     );
