@@ -6,6 +6,7 @@ import 'package:desktop_webview_window/desktop_webview_window.dart'
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/utils/platform.dart';
@@ -66,6 +67,9 @@ void main(List<String> args) async {
 
   WidgetsFlutterBinding.ensureInitialized();
   await initializePlatformCapabilities();
+  if (isAndroid()) {
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+  }
   await initializeCampusUserAgent();
   // OHOS white-screen probe disabled to speed up startup. Re-enable by
   // restoring the runApp(_BootProbe...) calls and wrapping init in try/catch.
@@ -806,10 +810,28 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: rootMessengerKey,
           navigatorObservers: [FeedbackRouteObserver(), _nativeChromeObserver],
-          builder: (context, child) => AdaptiveFeedbackHost(
-            key: adaptiveFeedbackHostKey,
-            child: child ?? const SizedBox.shrink(),
-          ),
+          builder: (context, child) {
+            final host = AdaptiveFeedbackHost(
+              key: adaptiveFeedbackHostKey,
+              child: child ?? const SizedBox.shrink(),
+            );
+            if (!isAndroid()) return host;
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final iconBrightness = isDark ? Brightness.light : Brightness.dark;
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: iconBrightness,
+                statusBarBrightness:
+                    isDark ? Brightness.dark : Brightness.light,
+                systemNavigationBarColor: Colors.transparent,
+                systemNavigationBarDividerColor: Colors.transparent,
+                systemNavigationBarIconBrightness: iconBrightness,
+                systemNavigationBarContrastEnforced: false,
+              ),
+              child: host,
+            );
+          },
           title: 'TechPie',
           theme: widget.themeService.lightTheme,
           darkTheme: widget.themeService.darkTheme,

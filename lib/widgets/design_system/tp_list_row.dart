@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/tp_colors.dart';
+import '../../theme/tp_density.dart';
 import '../../theme/tp_icons.dart';
 import '../../theme/tp_tokens.dart';
 import '../../theme/tp_typography.dart';
@@ -39,6 +40,7 @@ class TpListRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
+    final density = context.tpDensity;
     final effectiveTitleColor =
         destructive ? colors.dangerRed : colors.textPrimary;
     final effectiveIconColor =
@@ -46,23 +48,20 @@ class TpListRow extends StatelessWidget {
     final hasLeading = leading != null || icon != null;
 
     final row = Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: TpTokens.cardPaddingHorizontal,
-        vertical: 12,
-      ),
+      padding: density.rowPadding,
       child: Row(
         children: [
           if (leading != null) ...[
             SizedBox(
-              width: TpTokens.iconM,
-              height: TpTokens.iconM,
+              width: density.iconSize,
+              height: density.iconSize,
               child: Center(child: leading),
             ),
             const SizedBox(width: TpTokens.space3),
           ] else if (icon != null) ...[
             Icon(
               icon,
-              size: TpTokens.iconM,
+              size: density.iconSize,
               color: effectiveIconColor,
             ),
             const SizedBox(width: TpTokens.space3),
@@ -122,8 +121,8 @@ class TpListRow extends StatelessWidget {
     );
 
     final dividerIndent = hasLeading
-        ? TpTokens.cardPaddingHorizontal + TpTokens.iconM + TpTokens.space3
-        : TpTokens.cardPaddingHorizontal;
+        ? density.cardPaddingHorizontal + density.iconSize + TpTokens.space3
+        : density.cardPaddingHorizontal;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -144,7 +143,7 @@ class TpListRow extends StatelessWidget {
           Padding(
             padding: EdgeInsets.only(
               left: dividerIndent,
-              right: TpTokens.cardPaddingHorizontal,
+              right: density.cardPaddingHorizontal,
             ),
             child: Divider(height: 1, thickness: 0.5, color: colors.divider),
           ),

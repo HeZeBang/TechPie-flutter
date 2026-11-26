@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/tp_colors.dart';
+import '../../theme/tp_density.dart';
 import '../../theme/tp_tokens.dart';
 import '../../theme/tp_typography.dart';
 
@@ -42,6 +43,7 @@ class TpCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
+    final density = context.tpDensity;
     final resolvedBorder = borderColor ?? colors.border;
     final radius = BorderRadius.circular(borderRadius);
 
@@ -52,13 +54,7 @@ class TpCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: headerPadding ??
-                const EdgeInsets.fromLTRB(
-                  TpTokens.cardPaddingHorizontal,
-                  TpTokens.cardPaddingVertical,
-                  TpTokens.cardPaddingHorizontal,
-                  TpTokens.space2,
-                ),
+            padding: headerPadding ?? density.cardHeaderPadding,
             child: Row(
               children: [
                 if (leadingIcon != null) ...[

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.CalendarContract
@@ -15,6 +16,7 @@ import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import club.geekpie.techpie.ecardbind.EcardBindVpnService
 import club.geekpie.techpie.wear.WearEngineBridge
 import club.geekpie.techpie.island.FocusSequenceStore
@@ -28,6 +30,11 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        super.onCreate(savedInstanceState)
+    }
+
     private var pendingCalendarImport: PendingCalendarImport? = null
     private var pendingVpnConsent: PendingVpnConsent? = null
     private val mainHandler = Handler(Looper.getMainLooper())

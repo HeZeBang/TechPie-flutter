@@ -3,15 +3,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/tp_colors.dart';
+import '../theme/tp_icons.dart';
 import '../theme/tp_tokens.dart';
 import '../theme/tp_typography.dart';
 import 'storage_service.dart';
 
 enum AppThemeMode {
-  system('跟随系统', Icons.brightness_auto_outlined),
-  light('浅色', Icons.light_mode_outlined),
-  dark('深色', Icons.dark_mode_outlined),
-  amoled('纯黑 AMOLED', Icons.brightness_2_outlined);
+  system('跟随系统', TpIcons.smartphone),
+  light('浅色', TpIcons.sun),
+  dark('深色', TpIcons.moon),
+  amoled('纯黑 AMOLED', TpIcons.amoled);
 
   const AppThemeMode(this.label, this.icon);
   final String label;
@@ -19,8 +20,8 @@ enum AppThemeMode {
 }
 
 enum AppColorScheme {
-  techRed('科技红 · TechRed', Icons.palette_outlined),
-  system('跟随系统', Icons.colorize_outlined);
+  techRed('科技红 · TechRed', TpIcons.palette),
+  system('跟随系统', TpIcons.sparkles);
 
   const AppColorScheme(this.label, this.icon);
   final String label;
@@ -411,6 +412,13 @@ class ThemeService extends ChangeNotifier {
           : InputDecorationTheme(
               border: inputBorder,
             ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+        },
+      ),
       extensions: <ThemeExtension<dynamic>>[tp],
     );
   }
