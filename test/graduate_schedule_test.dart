@@ -26,6 +26,7 @@ import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 
+import 'support/eams_transport.dart';
 import 'support/fake_ids_client.dart';
 
 Map<String, dynamic> fixture() => {
@@ -642,26 +643,27 @@ void main() {
     expect(entryCalls, 1);
   });
 
-  test('IDS undergraduate identity uses original requests without opening the graduate system',
-      () async {
-    final h = await harness(graduate: false);
-    addTearDown(h.schedule.dispose);
-    await h.schedule.fetchAll();
-    expect(h.schedule.error, isNull);
-    expect(h.schedule.isGraduate, isFalse);
-    expect(h.schedule.selectedSemesterId, 'undergrad-term');
-    expect(h.requests.any((r) => r.url.host == GraduateScheduleClient.host), isFalse);
-    expect(
-        h.requests.where((r) => r.url.path.contains('/schedule/')).map((r) => r.url.path).toList(),
-        [
-          '/api/schedule/semesters',
-          '/api/schedule/course_table',
-        ]);
-    expect(
-      h.requests.where((r) => r.url.path.endsWith('getSchoolCalendar.do')).map((r) => r.url.host),
-      ['egate.shanghaitech.edu.cn'],
-    );
-  });
+  test(
+    'IDS undergraduate identity uses original requests without opening the graduate system',
+    () async {
+      final h = await harness(graduate: false);
+      addTearDown(h.schedule.dispose);
+      await h.schedule.fetchAll();
+      expect(h.schedule.error, isNull);
+      expect(h.schedule.isGraduate, isFalse);
+      expect(h.schedule.selectedSemesterId, 'undergrad-term');
+      expect(h.requests.any((r) => r.url.host == GraduateScheduleClient.host), isFalse);
+      expect(h.requests.where((r) => _timetablePath(r.url.path)).map((r) => r.url.path).toList(), [
+        '/eams/courseTableForStd.action',
+        '/eams/dataQuery.action',
+        '/eams/courseTableForStd!courseTable.action',
+      ]);
+      expect(
+        h.requests.where((r) => r.url.path.endsWith('getSchoolCalendar.do')).map((r) => r.url.host),
+        ['egate.shanghaitech.edu.cn'],
+      );
+    },
+  );
 
   test('a profile with a different student id never opts this account in', () async {
     final h = await harness(profileSid: 'OTHER');
@@ -670,7 +672,7 @@ void main() {
     expect(h.schedule.error, contains('IDS 当前账号与学校绑定学号不一致'));
     expect(h.schedule.isGraduate, isFalse);
     expect(h.requests.any((r) => r.url.path.endsWith('loadKbxx.do')), isFalse);
-    expect(h.requests.any((r) => r.url.path.contains('/schedule/')), isFalse);
+    expect(h.requests.any((r) => _timetablePath(r.url.path)), isFalse);
   });
 
   test('IDS failure never silently falls back to undergraduate requests', () async {
@@ -724,7 +726,7 @@ void main() {
     expect(h.schedule.error, contains('404'));
     expect(h.schedule.courseTable!.courses.single.name, '合成研究生课程');
     expect(h.requests.where((r) => r.url.path.endsWith('loadKbxx.do')), hasLength(1));
-    expect(h.requests.any((r) => r.url.path.contains('/schedule/')), isFalse);
+    expect(h.requests.any((r) => _timetablePath(r.url.path)), isFalse);
     expect(h.requests.any((r) => r.url.path.endsWith('loadStdInfo.do')), isFalse);
   });
 
@@ -768,7 +770,7 @@ void main() {
     final h = await harness();
     addTearDown(h.schedule.dispose);
     await h.schedule.selectScheduleSource(CampusScheduleSource.graduate);
-    h.overrides['semesters'] = http.Response('offline', 503);
+    h.overrides['courseTableForStd.action'] = http.Response('offline', 503);
     final switching = h.schedule.selectScheduleSource(CampusScheduleSource.undergraduate);
     expect(h.schedule.semesterInfo, isNull);
     expect(h.schedule.courseTable, isNull);
@@ -781,10 +783,10 @@ void main() {
     await restarted.loadCachedData();
     expect(restarted.courseTable, isNull);
 
-    h.overrides.remove('semesters');
+    h.overrides.remove('courseTableForStd.action');
     await h.schedule.fetchAll();
     await h.schedule.selectScheduleSource(CampusScheduleSource.graduate);
-    h.overrides['semesters'] = http.Response('offline', 503);
+    h.overrides['courseTableForStd.action'] = http.Response('offline', 503);
     final cachedSwitch = h.schedule.selectScheduleSource(CampusScheduleSource.undergraduate);
     expect(h.schedule.selectedSemesterId, 'undergrad-term');
     expect(h.schedule.courseTable!.courses, isEmpty);
@@ -1000,16 +1002,15 @@ void main() {
       addTearDown(h.schedule.dispose);
       await h.storage.setSelectedSemester('undergrad-term');
       h.identityGate = Completer<void>();
-      h.overrides['exam_table'] = http.Response(
-        jsonEncode({'success': true, 'data': {'exams': <Object>[]}}),
-        200,
-      );
+      h.overrides['stdExamTable.action'] = http.Response(emptyExamBatches, 200);
       final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule);
       addTearDown(assignments.dispose);
       h.schedule.requestFetch(force: true);
       final exams = assignments.fetchPlatform('exam');
       await h.identityEntered.future.timeout(const Duration(seconds: 3));
-      final earlyExams = h.requests.where((r) => r.url.path.endsWith('/exam_table')).toList();
+      final earlyExams = h.requests
+          .where((r) => r.url.path.endsWith('/stdExamTable.action'))
+          .toList();
       final scheduleDone = Completer<void>();
       h.schedule.addListener(() {
         if (!h.schedule.loading && !scheduleDone.isCompleted) scheduleDone.complete();
@@ -1018,7 +1019,7 @@ void main() {
       await Future.wait([exams, scheduleDone.future]);
       expect(earlyExams, isEmpty);
       expect(
-        h.requests.where((r) => r.url.path.endsWith('/exam_table')),
+        h.requests.where((r) => r.url.path.endsWith('/stdExamTable.action')),
         hasLength(graduate ? 0 : 1),
       );
       expect(h.requests.where((r) => r.url.path.endsWith('/getUserConf')), hasLength(1));
@@ -1034,7 +1035,7 @@ void main() {
     final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule);
     addTearDown(assignments.dispose);
     await assignments.fetchPlatform('exam');
-    expect(h.requests.any((r) => r.url.path.endsWith('/exam_table')), isFalse);
+    expect(h.requests.any((r) => r.url.path.endsWith('/stdExamTable.action')), isFalse);
     expect(h.requests.any((r) => r.url.path.endsWith('/eams')), isFalse);
   });
 
@@ -1045,13 +1046,11 @@ void main() {
       '20260001|20260001', CampusIdentity.fromCategory('学生/本科生'),
     );
     h.overrides['getUserConf'] = http.Response('offline', 503);
-    h.overrides['exam_table'] = http.Response(
-      jsonEncode({'success': true, 'data': {'exams': <Object>[]}}), 200,
-    );
+    h.overrides['stdExamTable.action'] = http.Response(emptyExamBatches, 200);
     final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule);
     addTearDown(assignments.dispose);
     await assignments.fetchPlatform('exam');
-    expect(h.requests.where((r) => r.url.path.endsWith('/exam_table')), hasLength(1));
+    expect(h.requests.where((r) => r.url.path.endsWith('/stdExamTable.action')), hasLength(1));
     expect(assignments.platformErrors, isEmpty);
     h.overrides['getUserConf'] = http.Response(
       jsonEncode({'code': '0', 'datas': {'uid': 'different-account', 'categoryName': '学生/本科生'}}),
@@ -1061,7 +1060,7 @@ void main() {
     await h.schedule.fetchAll();
     h.requests.clear();
     await assignments.fetchPlatform('exam');
-    expect(h.requests.any((r) => r.url.path.endsWith('/exam_table')), isFalse);
+    expect(h.requests.any((r) => r.url.path.endsWith('/stdExamTable.action')), isFalse);
   });
 
   test('a new campus account fetches once after the previous account finishes', () async {
@@ -1188,9 +1187,7 @@ void main() {
         200,
         headers: {'content-type': 'application/json; charset=utf-8'},
       );
-      h.overrides['exam_table'] = http.Response(
-        jsonEncode({'success': true, 'data': {'exams': <Object>[]}}), 200,
-      );
+      h.overrides['stdExamTable.action'] = http.Response(emptyExamBatches, 200);
       await h.tp.updateRaw(ThirdPartyPlatform.ids, {'tgc': 'rotated-session'});
       expect(h.schedule.courseTable, same(previous));
       h.requests.clear();
@@ -1203,13 +1200,13 @@ void main() {
       }
       expect(h.schedule.error, contains('学号不一致'));
       expect(h.requests.where((r) => r.url.path.endsWith('getUserConf')), hasLength(1));
-      expect(h.requests.any((r) => r.url.path.endsWith('exam_table')), isFalse);
+      expect(h.requests.any((r) => r.url.path.endsWith('stdExamTable.action')), isFalse);
       expect(h.requests.any((r) => r.url.host == GraduateScheduleClient.host), isFalse);
       expect(h.storage.loadCampusIdentity(owner), isNull);
       h.overrides['getUserConf'] = http.Response('offline', 503);
       h.requests.clear();
       await assignments.fetchPlatform('exam');
-      expect(h.requests.any((r) => r.url.path.endsWith('exam_table')), isFalse);
+      expect(h.requests.any((r) => r.url.path.endsWith('stdExamTable.action')), isFalse);
     });
   }
 
@@ -1223,9 +1220,7 @@ void main() {
       200,
       headers: {'content-type': 'application/json; charset=utf-8'},
     );
-    h.overrides['exam_table'] = http.Response(
-      jsonEncode({'success': true, 'data': {'exams': <Object>[]}}), 200,
-    );
+    h.overrides['stdExamTable.action'] = http.Response(emptyExamBatches, 200);
     h.tp.idsNode.seedNextRenewTimestamp(DateTime(2020));
     h.requests.clear();
     final assignments = AssignmentService(h.storage, h.httpClient, h.auth, h.tp, h.schedule);
@@ -1233,7 +1228,7 @@ void main() {
     await assignments.fetchPlatform('exam');
     expect(h.tp.idsNode.rawFields['tgc'], 'tgc-value');
     expect(h.schedule.error, contains('学号不一致'));
-    expect(h.requests.any((r) => r.url.path.endsWith('exam_table')), isFalse);
+    expect(h.requests.any((r) => r.url.path.endsWith('stdExamTable.action')), isFalse);
   });
 
   test('a failed IDS renewal does not queue another timetable login', () async {
@@ -1258,7 +1253,7 @@ void main() {
     expect(ids.loginAttempts, 2);
   });
 
-  for (final endpoint in ['semesters', 'course_table']) {
+  for (final endpoint in ['courseTableForStd.action', 'courseTableForStd!courseTable.action']) {
     test('rotating IDS during $endpoint discards the old undergraduate response', () async {
       final h = await harness(graduate: false);
       addTearDown(h.schedule.dispose);
@@ -1276,13 +1271,11 @@ void main() {
 
       expect(h.schedule.error, contains('IDS 会话'));
       expect(h.schedule.courseTable, same(cachedTable));
-      if (endpoint == 'semesters') {
+      if (endpoint == 'courseTableForStd.action') {
         expect(h.schedule.semesterInfo, same(cachedSemesters));
         expect(
-          h.requests.where((r) => r.url.path.startsWith('/api/schedule/')).map(
-                (r) => r.url.pathSegments.last,
-              ),
-          ['semesters'],
+          h.requests.where((r) => _timetablePath(r.url.path)).map((r) => r.url.pathSegments.last),
+          ['courseTableForStd.action'],
         );
       }
 
@@ -1297,7 +1290,7 @@ void main() {
       );
       await h.schedule.fetchAll();
       expect(h.schedule.error, contains('学号不一致'));
-      expect(h.requests.any((r) => r.url.path.startsWith('/api/schedule/')), isFalse);
+      expect(h.requests.any((r) => _timetablePath(r.url.path)), isFalse);
     });
   }
 
@@ -1640,22 +1633,13 @@ void main() {
     expect(h.requests, isEmpty);
   });
 
-  for (final pausedEndpoint in ['exam_table', 'blackboard']) {
-    test('switching to graduate discards old exams while $pausedEndpoint is pending',
-        () async {
+  for (final pausedEndpoint in ['stdExamTable.action', 'blackboard']) {
+    test('switching to graduate discards old exams while $pausedEndpoint is pending', () async {
       final h = await harness(graduate: false);
       addTearDown(h.schedule.dispose);
       await h.schedule.fetchAll();
-      h.overrides['exam_table'] = http.Response(
-        jsonEncode({
-          'success': true,
-          'data': {
-            'semesterId': 'undergrad-term',
-            'exams': [
-              {'courseName': '本科考试', 'examDate': '2026-10-15', 'examTimeRange': '08:15-09:55'},
-            ],
-          },
-        }),
+      h.overrides['stdExamTable.action'] = http.Response(
+        examBatches,
         200,
         headers: {'content-type': 'application/json; charset=utf-8'},
       );
@@ -1665,7 +1649,7 @@ void main() {
         ..enableAutoRefetch();
       addTearDown(assignments.dispose);
       h.pausedEamsEndpoint = pausedEndpoint;
-      final pending = pausedEndpoint == 'exam_table'
+      final pending = pausedEndpoint == 'stdExamTable.action'
           ? assignments.fetchPlatform('exam')
           : assignments.fetchAssignments();
       await h.eamsEntered.future;
@@ -1690,9 +1674,9 @@ void main() {
       ..loadCached()
       ..enableAutoRefetch();
     addTearDown(assignments.dispose);
-    h.overrides['exam_table'] = http.Response('{"success":true,"data":{"exams":[]}}', 200);
+    h.overrides['stdExamTable.action'] = http.Response(emptyExamBatches, 200);
     h.overrides['blackboard'] = http.Response('{"success":true,"data":[]}', 200);
-    h.pausedEamsEndpoint = 'course_table';
+    h.pausedEamsEndpoint = 'courseTableForStd!courseTable.action';
     final switching = h.schedule.selectScheduleSource(CampusScheduleSource.undergraduate);
     await h.eamsEntered.future;
     await Future<void>.delayed(Duration.zero);
@@ -1700,7 +1684,10 @@ void main() {
     h.resumeEams.complete();
     await switching;
     await h.examAnswered.future.timeout(const Duration(seconds: 3));
-    expect(h.requests.where((request) => request.url.path.endsWith('/exam_table')), hasLength(1));
+    expect(
+      h.requests.where((request) => request.url.path.endsWith('/stdExamTable.action')),
+      hasLength(1),
+    );
   });
 }
 
@@ -1737,73 +1724,61 @@ Future<Harness> harness({
     FakeIdsClient.account('20260001'),
   );
   final h = Harness()..category = graduate ? '学生/硕士生' : '学生/本科生';
-  final client = LoggingHttpClient(
-    DebugLogger(),
-    inner: MockClient((request) async {
-      h.requests.add(request);
-      final endpoint = request.url.pathSegments.last;
-      if (endpoint == h.pausedEamsEndpoint) {
-        h.pausedEamsEndpoint = null;
-        h.eamsEntered.complete();
-        await h.resumeEams.future;
-      }
-      final override = h.overrides[endpoint];
-      if (endpoint == 'exam_table' && !h.examAnswered.isCompleted) h.examAnswered.complete();
-      if (override != null) return override;
-      if (request.url.path.endsWith('getUserConf') && h.identityGate != null) {
-        h.identityEntered.complete();
-        await h.identityGate!.future;
-      }
-      if (request.url.path.endsWith('loadKbxx.do') && h.tableGate != null) {
-        h.tableEntered.complete();
-        await h.tableGate!.future;
-      }
-      if (h.fail) throw const FormatException('synthetic offline');
-      final Object data = switch (endpoint) {
-        'index.html' || 'course.html' || 'login' || 'index.do' => '<html>synthetic entry</html>',
-        'getUserConf' => {
-            'code': '0',
-            'datas': {'uid': profileSid, 'categoryName': h.category},
-          },
-        'loadKbxx.do' => timetable ?? fixture(),
-        'loadPublicInfo_course.do' => {
-            'lcxxMap': {'XNXQDM': '20261', 'XNXQMC': '2026-2027学年秋季学期'},
-          },
-        'eams' => {
-            'success': true,
-            'data': {'token': 'school-session'},
-          },
-        'stdDetail.action' => '<html>姓名： </td><td>TEST</td></html>',
-        'semesters' => {
-            'success': true,
-            'data': {
-              'semesters': {
-                '2026-2027': {'秋': 'undergrad-term'},
-              },
-              'defaultSemester': 'undergrad-term',
-              'tableId': 't1',
-            },
-          },
-        'course_table' => {
-            'success': true,
-            'data': {'periods': <Object>[], 'courses': <Object>[]},
-          },
-        'getSchoolCalendar.do' => {
-            'code': 200,
-            'schoolYearTerm': '2026-2027-1',
-            'termBegin': '2026-09-07',
-            'allTeachWeeks': 16,
-            'allTermWeeks': 20,
-          },
-        _ => throw StateError('Unexpected request ${request.url.path}'),
-      };
-      return http.Response(
-        data is String ? data : jsonEncode(data),
-        200,
-        headers: {'content-type': 'application/json; charset=utf-8'},
-      );
-    }),
-  );
+  final server = MockClient((request) async {
+    h.requests.add(request);
+    final endpoint = request.url.pathSegments.last;
+    if (endpoint == h.pausedEamsEndpoint) {
+      h.pausedEamsEndpoint = null;
+      h.eamsEntered.complete();
+      await h.resumeEams.future;
+    }
+    final override = h.overrides[endpoint];
+    if (endpoint == 'stdExamTable.action' && !h.examAnswered.isCompleted) h.examAnswered.complete();
+    if (override != null) return override;
+    if (request.url.path.endsWith('getUserConf') && h.identityGate != null) {
+      h.identityEntered.complete();
+      await h.identityGate!.future;
+    }
+    if (request.url.path.endsWith('loadKbxx.do') && h.tableGate != null) {
+      h.tableEntered.complete();
+      await h.tableGate!.future;
+    }
+    if (h.fail) throw const FormatException('synthetic offline');
+    final Object data = switch (endpoint) {
+      'index.html' || 'course.html' || 'login' || 'index.do' => '<html>synthetic entry</html>',
+      'getUserConf' => {
+        'code': '0',
+        'datas': {'uid': profileSid, 'categoryName': h.category},
+      },
+      'loadKbxx.do' => timetable ?? fixture(),
+      'loadPublicInfo_course.do' => {
+        'lcxxMap': {'XNXQDM': '20261', 'XNXQMC': '2026-2027学年秋季学期'},
+      },
+      'eams' => {
+        'success': true,
+        'data': {'token': 'school-session'},
+      },
+      'stdDetail.action' => '<html>姓名： </td><td>TEST</td></html>',
+      'courseTableForStd.action' => scheduleEntry('undergrad-term'),
+      'dataQuery.action' => semesterOptions('2026-2027', 'undergrad-term'),
+      'courseTableForStd!courseTable.action' => emptyTimetable,
+      'stdExamTable!examTable.action' => examTable,
+      'getSchoolCalendar.do' => {
+        'code': 200,
+        'schoolYearTerm': '2026-2027-1',
+        'termBegin': '2026-09-07',
+        'allTeachWeeks': 16,
+        'allTermWeeks': 20,
+      },
+      _ => throw StateError('Unexpected request ${request.url.path}'),
+    };
+    return http.Response(
+      data is String ? data : jsonEncode(data),
+      200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
+  });
+  final client = LoggingHttpClient(DebugLogger(), inner: server);
   final auth = AuthService(storage, client, UniAuthService());
   final tp = ThirdPartyAuthService(storage, client, idsClient: idsClient ?? FakeIdsClient());
   await tp.initialize();
@@ -1811,7 +1786,14 @@ Future<Harness> harness({
   h.httpClient = client;
   h.auth = auth;
   h.tp = tp;
-  h.schedule = ScheduleService(storage, client, auth, tp);
+  h.schedule = ScheduleService(
+    storage,
+    client,
+    auth,
+    tp,
+    eamsTransport: eamsTransport(server),
+    eamsInterval: Duration.zero,
+  );
   return h;
 }
 
@@ -1872,3 +1854,6 @@ class _PausedStorage extends StorageService {
     await _pause('table');
   }
 }
+
+bool _timetablePath(String path) =>
+    path.startsWith('/eams/courseTableForStd') || path == '/eams/dataQuery.action';
