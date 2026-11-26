@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/campus_card/presentation/theme/colors.dart';
 import 'package:techpie/features/campus_card/presentation/theme/theme.dart';
+import 'package:techpie/features/campus_card/presentation/theme/tokens.dart';
+import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/services/theme_service.dart';
+import 'package:techpie/theme/tp_colors.dart';
 
 void main() {
   test(
@@ -40,5 +45,39 @@ void main() {
     expect(colors.surface, scheme.surfaceContainerLow);
     expect(colors.surfaceRaised, scheme.surfaceContainer);
     expect(colors.surfaceDisabled, scheme.surfaceContainerHighest);
+  });
+
+  test('GeekPayTheme bridges GpColors directly from TpColors when attached',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final themeService =
+        ThemeService(StorageService(await SharedPreferences.getInstance()));
+
+    for (final mode in [
+      AppThemeMode.light,
+      AppThemeMode.dark,
+      AppThemeMode.amoled,
+    ]) {
+      await themeService.setMode(mode);
+      final host = mode == AppThemeMode.light
+          ? themeService.lightTheme
+          : themeService.darkTheme;
+      final tp = host.extension<TpColors>()!;
+      final gp = GeekPayTheme.inherit(host).extension<GpColors>()!;
+
+      expect(gp.bg, tp.canvas);
+      expect(gp.surface, tp.surface);
+      expect(gp.surfaceRaised, tp.surfaceSubtle);
+      expect(gp.surfaceDisabled, tp.surfacePressed);
+      expect(gp.action, tp.brand);
+      expect(gp.actionAlt, tp.brandSoft);
+      expect(gp.accent, tp.brand);
+      expect(gp.textPrimary, tp.textPrimary);
+      expect(gp.textSecondary, tp.textMuted);
+      expect(gp.qrForeground, GpTokens.qrForeground);
+      expect(gp.qrBackground, GpTokens.qrBackground);
+      expect(gp.cardMat, GpTokens.cardMat);
+      expect(gp.textOnCard, GpTokens.textOnCard);
+    }
   });
 }

@@ -30,7 +30,7 @@ void main() {
       }
 
       expect(find.byType(LoginScreen), findsOneWidget);
-      expect(find.text('打开 Account 设置'), findsOneWidget);
+      expect(find.text('Connect my card'), findsOneWidget);
       expect(find.textContaining('演示数据'), findsNothing);
     },
   );

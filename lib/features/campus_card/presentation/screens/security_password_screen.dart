@@ -139,8 +139,8 @@ class _SecurityPasswordScreenState
                           shape: const StadiumBorder(),
                         ),
                         child: _loading
-                            ? const CupertinoActivityIndicator(
-                                color: Colors.white,
+                            ? CupertinoActivityIndicator(
+                                color: context.gpColors.action,
                               )
                             : const Text('保存'),
                       ),

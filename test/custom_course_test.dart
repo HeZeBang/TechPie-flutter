@@ -1,8 +1,10 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/course.dart';
+import 'package:techpie/models/course_table.dart';
 import 'package:techpie/models/custom_course.dart';
 import 'package:techpie/services/storage_service.dart';
 
@@ -166,6 +168,23 @@ void main() {
       );
 
       expect(withCustomCourses(const [], [recurring], null, termBegin), hasLength(1));
+    });
+
+    test('today includes dated courses when the term start is unknown', () {
+      final today = DateTime(2026, 9, 8);
+      const time = PeriodCourseTime(startPeriod: 1, endPeriod: 1);
+      final courses = withCustomCourses(
+        const [],
+        [
+          CustomCourse(id: 'today', name: '今日课程', time: time, date: today),
+          CustomCourse(id: 'tomorrow', name: '明日课程', time: time, date: DateTime(2026, 9, 9)),
+          const CustomCourse(id: 'weekly', name: '周课', time: time, weekdays: [2], weeks: [1]),
+        ],
+        0,
+        null,
+        onDate: today,
+      );
+      expect(courses.map((course) => course.customId), ['today']);
     });
   });
 
@@ -331,5 +350,87 @@ void main() {
     final courses = StorageService(preferences).loadCustomCourses('semester');
 
     expect(courses.map((course) => course.id), ['valid']);
+  });
+
+  group('course color scheme and grouping', () {
+    test('groups split sessions and recitations by base course code while separating labs', () {
+      expect(courseColorKey('模拟电路(EE115A.02)'), 'code:EE115A');
+      expect(courseColorKey('模拟电路(EE115A.02D)'), 'code:EE115A');
+      expect(courseColorKey('模拟电路实验(EE115AL.01)'), 'code:EE115AL');
+      expect(courseColorKey('面向对象编程(C++)'), 'name:面向对象编程(c++)');
+      expect(courseColorKey('  机器学习  '), 'name:机器学习');
+    });
+
+    test('assigns 12 distinct non-error colors without collisions and stays stable across weeks',
+        () {
+      final courses = <EamsCourse>[
+        // Same course split into two EAMS entries (lecture + recitation, different weeks).
+        const EamsCourse(
+          name: '模拟电路(EE115A.02)',
+          classroom: '物质学院 1-501',
+          teachers: '王浩宇',
+          weeks: '01110',
+          times: {2: [1, 2]},
+        ),
+        const EamsCourse(
+          name: '模拟电路(EE115A.02D)',
+          classroom: '教学中心 102',
+          teachers: '助教',
+          weeks: '01010',
+          times: {4: [3, 4]},
+        ),
+        // 11 more distinct courses (12 unique courses total).
+        for (var i = 1; i <= 11; i++)
+          EamsCourse(
+            name: '课程$i(CS${100 + i}.01)',
+            classroom: 'Room $i',
+            teachers: 'Teacher $i',
+            weeks: '01110',
+            times: {1: [1, 2]},
+          ),
+      ];
+
+      final week1 = eamsToDisplayCourses(courses, 1);
+      final week2 = eamsToDisplayCourses(courses, 2);
+
+      final lectureW1 = week1.firstWhere((c) => c.name == '模拟电路(EE115A.02)');
+      final recitationW1 = week1.firstWhere((c) => c.name == '模拟电路(EE115A.02D)');
+      final lectureW2 = week2.firstWhere((c) => c.name == '模拟电路(EE115A.02)');
+
+      expect(lectureW1.color, recitationW1.color);
+      expect(lectureW1.color, lectureW2.color);
+
+      final uniqueColors = week1.map((c) => c.color).toSet();
+      expect(uniqueColors, hasLength(12));
+      expect(uniqueColors, isNot(contains(CourseColor.error)));
+    });
+
+    test('every CourseColor clears WCAG AA contrast in both light and dark modes', () {
+      double contrastRatio(Color a, Color b) {
+        final la = a.computeLuminance();
+        final lb = b.computeLuminance();
+        final lighter = la > lb ? la : lb;
+        final darker = la > lb ? lb : la;
+        return (lighter + 0.05) / (darker + 0.05);
+      }
+
+      for (final brightness in Brightness.values) {
+        final scheme = ColorScheme.fromSeed(
+          seedColor: Colors.red,
+          brightness: brightness,
+        );
+        for (final color in CourseColor.values) {
+          final ratio = contrastRatio(
+            color.containerColor(scheme),
+            color.onContainerColor(scheme),
+          );
+          expect(
+            ratio,
+            greaterThanOrEqualTo(4.5),
+            reason: '${color.name} in $brightness had contrast ${ratio.toStringAsFixed(2)}',
+          );
+        }
+      }
+    });
   });
 }

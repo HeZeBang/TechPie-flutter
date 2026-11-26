@@ -39,7 +39,6 @@ class LiveGlanceShell extends StatefulWidget {
 
 class _LiveGlanceShellState extends State<LiveGlanceShell> {
   Timer? _ticker;
-  bool _tickerEnabled = true;
   GlanceSection? _requested;
   int _requestRevision = 0;
 
@@ -54,12 +53,6 @@ class _LiveGlanceShellState extends State<LiveGlanceShell> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _tickerEnabled = TickerMode.valuesOf(context).enabled;
-  }
-
-  @override
   void dispose() {
     appShellPendingEcardEntry.removeListener(_consumeEntry);
     _ticker?.cancel();
@@ -67,12 +60,11 @@ class _LiveGlanceShellState extends State<LiveGlanceShell> {
   }
 
   void _consumeEntry() {
-    if (!widget.consumeEntry || !mounted || !_tickerEnabled) return;
+    if (!widget.consumeEntry || !mounted) return;
     final entry = appShellPendingEcardEntry.value;
     if (entry == null) return;
     appShellPendingEcardEntry.value = null;
-    if (widget.paymentBuilder == null ||
-        !widget.settings.isEnabled(GlanceSection.payment)) {
+    if (widget.paymentBuilder == null || !widget.settings.isEnabled(GlanceSection.payment)) {
       return;
     }
     setState(() {
@@ -98,8 +90,7 @@ class _LiveGlanceShellState extends State<LiveGlanceShell> {
         final schedule = widget.scheduleService;
         final assignments = widget.assignmentService;
         final now = DateTime.now();
-        final week =
-            teachingWeekOf(now, schedule.termBegin) ?? schedule.currentWeek();
+        final week = teachingWeekOf(now, schedule.termBegin) ?? schedule.currentWeek();
         final pending = assignments.visibleAssignments
             .where((item) => !assignments.isCompleted(item) && item.due.isAfter(now))
             .toList();

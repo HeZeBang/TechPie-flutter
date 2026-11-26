@@ -11,6 +11,7 @@ import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/page_refresh.dart';
 
 import '../../app/app_providers.dart';
+import '../../core/config/payment_code_preferences.dart';
 import '../../domain/models/card_models.dart';
 import '../../domain/ports/platform_ports.dart';
 import '../app/navigation.dart';
@@ -475,6 +476,8 @@ final class _ActivitySliver extends ConsumerWidget {
             ),
     );
     final transactions = ref.watch(transactionFeedProvider(query));
+    final showAllRecords =
+        ref.watch(showAllTransactionRecordsProvider).valueOrNull ?? false;
     return SliverMainAxisGroup(
       slivers: [
         SliverToBoxAdapter(
@@ -498,7 +501,9 @@ final class _ActivitySliver extends ConsumerWidget {
           AsyncData(:final value) => SliverMainAxisGroup(
               slivers: [
                 TransactionList(
+                  showAllRecords: showAllRecords,
                   items: value.items,
+                  aliases: ref.watch(merchantAliasConfigProvider),
                   onTap: (record) => unawaited(
                     pushCampusCardPage<void>(context, builder: (_) => BillTransactionScreen(transactionId: record.id)),
                   ),
@@ -585,7 +590,10 @@ final class _AndroidDateRangePickerShell extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(48),
                   foregroundColor: actionColor,
-                  backgroundColor: actionColor.withValues(alpha: 0.08),
+                  backgroundColor: Color.alphaBlend(
+                    actionColor.withValues(alpha: 0.08),
+                    context.gpColors.surface,
+                  ),
                   side: BorderSide(color: actionColor.withValues(alpha: 0.28)),
                   shape: const StadiumBorder(),
                 ),

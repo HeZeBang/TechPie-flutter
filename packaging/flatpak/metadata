@@ -1,0 +1,4 @@
+[Application]
+name=club.geekpie.TechPie
+runtime=org.gnome.Platform/x86_64/51
+command=techpie

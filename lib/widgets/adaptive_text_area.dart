@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/theme.dart';
 import '../utils/platform.dart';
 
 class AdaptiveTextArea extends StatelessWidget {
@@ -37,6 +38,7 @@ class AdaptiveTextArea extends StatelessWidget {
       );
     }
 
+    final colors = context.tpColors;
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 108),
       child: CupertinoTextField(
@@ -51,10 +53,8 @@ class AdaptiveTextArea extends StatelessWidget {
         textAlignVertical: TextAlignVertical.top,
         clearButtonMode: OverlayVisibilityMode.editing,
         decoration: BoxDecoration(
-          color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(
-            context,
-          ),
-          borderRadius: BorderRadius.circular(10),
+          color: colors.surfaceSubtle,
+          borderRadius: BorderRadius.circular(TpTokens.radiusS),
         ),
       ),
     );

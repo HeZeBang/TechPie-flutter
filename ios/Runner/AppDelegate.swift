@@ -13,6 +13,7 @@ import WidgetKit
   private var watchBridge: WatchConnectivityBridge?
   private var flutterConfigured = false
   private let deadlineWidgetBridge = DeadlineWidgetBridge()
+  private let deadlineReminderBridge = DeadlineReminderBridge()
 
   override func application(
     _ application: UIApplication,
@@ -46,6 +47,11 @@ import WidgetKit
     }
 
     self.window = window
+    window.tintColor = UIColor { trait in
+      trait.userInterfaceStyle == .dark
+        ? UIColor(red: 0xE0 / 255.0, green: 0x31 / 255.0, blue: 0x40 / 255.0, alpha: 1.0)
+        : UIColor(red: 0xA3 / 255.0, green: 0x0B / 255.0, blue: 0x19 / 255.0, alpha: 1.0)
+    }
     GeneratedPluginRegistrant.register(with: flutterViewController)
 
     guard
@@ -62,21 +68,68 @@ import WidgetKit
     ecardBindTunnel = EcardBindTunnelPlugin(messenger: registrar.messenger())
     watchBridge = WatchConnectivityBridge(registrar: registrar)
     deadlineWidgetBridge.configure(messenger: registrar.messenger())
+    deadlineReminderBridge.configure(messenger: registrar.messenger())
 
     let platformChannel = FlutterMethodChannel(
       name: "techpie/platform", binaryMessenger: registrar.messenger()
     )
-    platformChannel.setMethodCallHandler { call, result in
-      guard call.method == "getUserAgentInfo" else {
+    platformChannel.setMethodCallHandler { [weak flutterViewController] call, result in
+      switch call.method {
+      case "getUserAgentInfo":
+        result([
+          "device": UIDevice.current.model,
+          "system": UIDevice.current.systemName,
+          "systemVersion": UIDevice.current.systemVersion,
+          "scale": window.screen.scale,
+        ])
+      case "shareFile":
+        guard let args = call.arguments as? [String: Any],
+          let scope = args["scope"] as? String,
+          let filename = args["filename"] as? String,
+          scope.range(of: #"^[a-z0-9_-]{1,32}$"#, options: .regularExpression) != nil,
+          !filename.isEmpty,
+          filename != ".",
+          filename != "..",
+          !filename.contains("/"),
+          !filename.contains("\\"),
+          !filename.contains(".."),
+          let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        else {
+          result(FlutterError(code: "invalid_file", message: "Invalid campus file arguments.", details: nil))
+          return
+        }
+        let root = cache.appendingPathComponent("campus_files")
+          .appendingPathComponent(scope)
+          .resolvingSymlinksInPath()
+        let file = root.appendingPathComponent(filename).resolvingSymlinksInPath()
+        guard file.path.hasPrefix(root.path + "/"),
+          FileManager.default.fileExists(atPath: file.path)
+        else {
+          result(FlutterError(code: "missing_file", message: "Campus file is unavailable.", details: nil))
+          return
+        }
+        guard let rootViewController = flutterViewController else {
+          result(FlutterError(code: "unavailable", message: "Presenter unavailable.", details: nil))
+          return
+        }
+        var presenter: UIViewController = rootViewController
+        while let next = presenter.presentedViewController {
+          presenter = next
+        }
+        if presenter.isBeingDismissed || presenter.isBeingPresented {
+          result(FlutterError(code: "busy", message: "Another presentation is in progress.", details: nil))
+          return
+        }
+        let share = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+        share.popoverPresentationController?.sourceView = presenter.view
+        let bounds = presenter.view.bounds
+        share.popoverPresentationController?.sourceRect = CGRect(
+          x: bounds.midX, y: bounds.midY, width: 1, height: 1
+        )
+        presenter.present(share, animated: true) { result(nil) }
+      default:
         result(FlutterMethodNotImplemented)
-        return
       }
-      result([
-        "device": UIDevice.current.model,
-        "system": UIDevice.current.systemName,
-        "systemVersion": UIDevice.current.systemVersion,
-        "scale": window.screen.scale,
-      ])
     }
     self.platformChannel = platformChannel
 

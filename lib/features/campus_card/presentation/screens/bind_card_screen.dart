@@ -135,6 +135,7 @@ class _BindCardScreenState extends ConsumerState<BindCardScreen> {
                       // Flutter 3.27 uses value; newer SDKs call it initialValue.
                       // ignore: deprecated_member_use
                       value: _type,
+                      dropdownColor: context.gpColors.surface,
                       decoration: const InputDecoration(
                         labelText: '证件类型',
                         border: InputBorder.none,
@@ -192,7 +193,9 @@ class _BindCardScreenState extends ConsumerState<BindCardScreen> {
                   shape: const StadiumBorder(),
                 ),
                 child: _loading
-                    ? const CupertinoActivityIndicator(color: Colors.white)
+                    ? CupertinoActivityIndicator(
+                        color: context.gpColors.action,
+                      )
                     : const Text('确认绑定'),
               ),
             ],

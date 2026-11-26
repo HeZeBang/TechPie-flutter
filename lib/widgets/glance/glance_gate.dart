@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../features/campus_card/app/app_providers.dart';
 import '../../features/glance/presentation/glance_payment_view.dart';
 import '../../features/glance/presentation/live_glance_shell.dart';
 import '../../models/screen_form_factor.dart';
 import '../../services/glance_settings_service.dart';
 import '../../services/screen_form_factor_service.dart';
 import '../../services/service_provider.dart';
+import '../app_shell/app_entry_notifier.dart';
 import 'glance_active_scope.dart';
 
 /// Chooses between the full app and the compact glance, keeping both alive.
@@ -91,7 +93,8 @@ class _GlanceGateState extends State<GlanceGate> with WidgetsBindingObserver {
           enabled: settings.enabled,
         );
         final active = services.storageService.privacyAccepted &&
-            surface != GlanceSurface.none && settings.hasSections;
+            surface != GlanceSurface.none &&
+            settings.hasSections;
         if (active) _glanceMounted = true;
 
         if (kDebugMode && surface != _lastSurface) {
@@ -123,20 +126,22 @@ class _GlanceGateState extends State<GlanceGate> with WidgetsBindingObserver {
                 offstage: !active,
                 child: TickerMode(
                   enabled: active,
-                  child: LiveGlanceShell(
-                    surface: surface == GlanceSurface.none
-                        ? GlanceSurface.cover
-                        : surface,
-                    settings: settings,
-                    scheduleService: services.scheduleService,
-                    assignmentService: services.assignmentService,
-                    authService: services.authService,
-                    paymentBuilder:
-                        settings.isEnabled(GlanceSection.payment)
-                            ? (context) => GlancePaymentView(
-                                  runtime: services.campusCardService.runtime,
-                                )
-                            : null,
+                  child: ValueListenableBuilder<CampusCardEntry?>(
+                    valueListenable: appShellPendingEcardEntry,
+                    builder: (context, pendingEntry, _) => LiveGlanceShell(
+                      key: ValueKey(pendingEntry),
+                      surface: surface == GlanceSurface.none ? GlanceSurface.cover : surface,
+                      settings: settings,
+                      scheduleService: services.scheduleService,
+                      assignmentService: services.assignmentService,
+                      authService: services.authService,
+                      consumeEntry: active,
+                      paymentBuilder: settings.isEnabled(GlanceSection.payment)
+                          ? (context) => GlancePaymentView(
+                                runtime: services.campusCardService.runtime,
+                              )
+                          : null,
+                    ),
                   ),
                 ),
               ),

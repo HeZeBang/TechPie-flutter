@@ -4,6 +4,7 @@ import '../features/glance/presentation/glance_payment_card.dart';
 import '../features/glance/presentation/live_glance_shell.dart';
 import '../models/screen_form_factor.dart';
 import '../services/service_provider.dart';
+import '../theme/tp_icons.dart';
 import '../widgets/blurred_app_bar.dart';
 
 /// Fixed-size preview so the layouts can be checked on a normal phone.
@@ -51,12 +52,12 @@ class _GlancePreviewPageState extends State<GlancePreviewPage> {
                         ButtonSegment(
                           value: GlanceSurface.cover,
                           label: Text('外屏'),
-                          icon: Icon(Icons.stay_current_portrait, size: 16),
+                          icon: Icon(TpIcons.smartphone, size: 16),
                         ),
                         ButtonSegment(
                           value: GlanceSurface.rear,
                           label: Text('背屏'),
-                          icon: Icon(Icons.stay_current_landscape, size: 16),
+                          icon: Icon(TpIcons.smartphone, size: 16),
                         ),
                       ],
                       selected: {_surface},

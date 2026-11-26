@@ -145,19 +145,19 @@ void main() {
     tester,
   ) async {
     await _pumpApp(tester, size: const Size(390, 844));
-    await tester.tap(find.text('Settings').first);
+    await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
-    expect(find.text('Account'), findsOneWidget);
+    expect(find.text('登录 TechPie'), findsOneWidget);
 
     tester.view.physicalSize = const Size(506, 439);
     await tester.pumpAndSettle();
     expect(find.byType(GlanceShell), findsOneWidget);
-    expect(find.text('Account'), findsNothing);
+    expect(find.text('登录 TechPie'), findsNothing);
 
     tester.view.physicalSize = const Size(390, 844);
     await tester.pumpAndSettle();
     expect(find.byType(AppShell), findsOneWidget);
-    expect(find.text('Account'), findsOneWidget);
+    expect(find.text('登录 TechPie'), findsOneWidget);
 
     await _close(tester);
   });

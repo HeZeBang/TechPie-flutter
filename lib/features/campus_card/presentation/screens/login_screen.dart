@@ -10,13 +10,14 @@ import '../widgets/apple_wallet_components.dart';
 import '../widgets/gp_state.dart';
 
 /// Account prerequisite shown when TechPie has no campus-card OpenID.
-/// OpenID entry lives in TechPie's Account settings rather than in this flow.
 final class LoginScreen extends ConsumerWidget {
   const LoginScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
+    final zh = View.of(context).platformDispatcher.locale.languageCode == 'zh';
+    final connect = zh ? '连接我的校园卡' : 'Connect my card';
     final openAccount = ref.watch(campusCardAccountProvider);
 
     return Scaffold(
@@ -26,7 +27,7 @@ final class LoginScreen extends ConsumerWidget {
             id: 'back',
             sfSymbol: 'chevron.left',
             icon: GpPlatformIcons.back(context),
-            label: '返回',
+            label: zh ? '返回' : 'Back',
             onPressed: () {
               popCampusCard(context);
             },
@@ -58,7 +59,7 @@ final class LoginScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 28),
               Text(
-                '连接 eCard',
+                zh ? '连接校园卡' : 'Connect your eCard',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w700,
@@ -66,7 +67,9 @@ final class LoginScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                '请在 TechPie 的 Account 设置中配置 OPENID。eCard 会自动使用该账号建立会话。',
+                zh
+                    ? '在 TechPie 中使用校园卡付款、查看交易记录。'
+                    : 'Use your campus card for payments and recent activity in TechPie.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: context.gpColors.textSecondary,
@@ -86,11 +89,11 @@ final class LoginScreen extends ConsumerWidget {
                 onPressed: auth.isLoading ? null : openAccount,
                 icon: Icons.manage_accounts_outlined,
                 sfSymbol: 'person.crop.circle.badge.plus',
-                label: '打开 Account 设置',
+                label: connect,
                 role: AdaptiveButtonRole.prominent,
                 loading: auth.isLoading,
                 width: double.infinity,
-                accessibilityLabel: '打开 Account 设置',
+                accessibilityLabel: connect,
               ),
             ],
           ),

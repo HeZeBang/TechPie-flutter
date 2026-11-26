@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -16,12 +17,25 @@ class DeadlineWidgetService with WidgetsBindingObserver {
     this._assignments, {
     MethodChannel? channel,
     DateTime Function()? now,
+    bool enabled = true,
   })  : _channel = channel ?? const MethodChannel('techpie/deadline_widgets'),
+        _enabled = enabled,
+        _linux = !kIsWeb && defaultTargetPlatform == TargetPlatform.linux,
         _now = now ?? DateTime.now;
 
   final AssignmentService _assignments;
   final MethodChannel _channel;
   final DateTime Function() _now;
+  final bool _linux;
+  bool _enabled;
+  bool get enabled => _enabled;
+
+  Future<void> setEnabled(bool enabled) async {
+    _enabled = enabled;
+    _lastPublished = null;
+    await _publish();
+  }
+
   OpenDeadlinesHandler? _handler;
   bool _pendingRoute = false;
   bool _dispatching = false;
@@ -47,25 +61,26 @@ class DeadlineWidgetService with WidgetsBindingObserver {
     bool Function(Assignment) completed,
     DateTime now,
   ) {
-    final items =
-        assignments.where((a) => !completed(a) && a.due.isAfter(now)).toList()
-          ..sort((a, b) {
-            final order = a.due.compareTo(b.due);
-            return order != 0
-                ? order
-                : AssignmentOverrides.keyFor(a)
-                    .compareTo(AssignmentOverrides.keyFor(b));
-          });
+    final items = assignments.where((a) => !completed(a) && a.due.isAfter(now)).toList()
+      ..sort((a, b) {
+        final order = a.due.compareTo(b.due);
+        return order != 0
+            ? order
+            : AssignmentOverrides.keyFor(a).compareTo(AssignmentOverrides.keyFor(b));
+      });
     return [
       for (final a in items)
         {
           'id': AssignmentOverrides.keyFor(a),
-          'kind': a.kind.id,
+          // Schema v1 shares the assignment icon for all non-exam deadlines.
+          'kind': a is CustomDeadline ? DeadlineKind.assignment.id : a.kind.id,
           'title': a.title,
           // Exam titles already name the course, so the line under them is
           // where to go — the same choice the Deadlines and Home pages make.
           'subtitle': switch (a) {
             ExamAssignment(:final location) => location.trim(),
+            CustomDeadline(:final course, :final location) =>
+              course.trim().isNotEmpty ? course.trim() : location.trim(),
             _ => a.course,
           },
           'dueAt': a.due.toUtc().millisecondsSinceEpoch / 1000,
@@ -73,19 +88,50 @@ class DeadlineWidgetService with WidgetsBindingObserver {
     ];
   }
 
+  static List<Map<String, Object>> _linuxItems(List<Map<String, Object>> items) {
+    final result = <Map<String, Object>>[];
+    final ids = <String>{};
+    var bytes = 1024; // Reserve the envelope and list separators.
+    for (final item in items) {
+      final id = item['id']! as String;
+      final due = item['dueAt']! as num;
+      if (utf8.encode(id).length > 4096 || !ids.add(id) || due < 0 || due > 253402300799) continue;
+      final row = <String, Object>{
+        'id': id,
+        'kind': item['kind']!,
+        'title': String.fromCharCodes((item['title']! as String).runes.take(256)),
+        'course': String.fromCharCodes((item['subtitle']! as String).runes.take(128)),
+        'dueAt': due,
+      };
+      final size = utf8.encode(jsonEncode(row)).length + 1;
+      if (bytes + size > 262144) break;
+      result.add(row);
+      bytes += size;
+      if (result.length == 512) break;
+    }
+    return result;
+  }
+
   void _changed() => unawaited(_publish());
 
   Future<void> _publish() async {
     final epoch = _assignments.identityEpoch;
-    final ready = _assignments.hasCachedData;
-    final items = displayItems(
-      _assignments.visibleAssignments,
-      _assignments.isCompleted,
-      _now(),
-    );
+    final ready = _enabled && (_linux || _assignments.hasCachedData);
+    final display = _assignments.hasCachedData
+        ? displayItems(
+            _assignments.visibleAssignments,
+            _assignments.isCompleted,
+            _now(),
+          )
+        : <Map<String, Object>>[];
+    final items = _linux ? _linuxItems(display) : display;
     final content = ready ? jsonEncode(items) : null;
     _writes = _writes.then((_) async {
-      if (_disposed || epoch != _assignments.identityEpoch) return;
+      if (_disposed ||
+          epoch != _assignments.identityEpoch ||
+          ready != (_enabled && (_linux || _assignments.hasCachedData))) {
+        return;
+      }
       if (_lastPublished == content && content != null) return;
       try {
         if (!ready) {

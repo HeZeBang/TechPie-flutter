@@ -1,0 +1,61 @@
+<div class="screen">
+  <swiper class="deck" vertical="true" loop="false" index="{{ pageIndex }}" ref="deck" onchange="onPageChange" onswipe="onSwipe" if="{{ view === 'deck' }}">
+    <div class="panel">
+      <div class="panel-header"><text class="page-title" onclick="showAccount">校园码 ›</text></div>
+      <div class="code-area" show="{{ codeVisible }}"><canvas class="qr" id="campusQr" ref="qr"></canvas></div>
+      <div class="code-area" show="{{ !codeVisible }}"><div class="code-placeholder" onclick="refreshCode">
+        <text class="placeholder-title">{{ codeMessage }}</text>
+      </div></div>
+      <text class="code-caption" onclick="refreshCode">{{ crownError || (codeVisible ? codeMessage : codeHint) }}</text>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><text class="page-title">课表</text></div>
+      <div class="preview-area">
+        <div class="preview-card" for="{{ coursePreview }}" onclick="showSchedule">
+          <text class="preview-title">{{ $item.title }}</text><text class="preview-caption">{{ $item.caption }}</text>
+        </div>
+        <text class="preview-empty" if="{{ coursePreview.length === 0 }}">{{ emptyCourse }}</text>
+      </div>
+      <input class="glance-action" type="button" value="今日课程 · {{ courseCount }} 节" onclick="showSchedule" />
+    </div>
+    <div class="panel">
+      <div class="panel-header"><text class="page-title">{{ alertTitle || '待办' }}</text></div>
+      <div class="preview-area">
+        <div class="preview-card" for="{{ ddlPreview }}" onclick="showDdl">
+          <text class="preview-title">{{ $item.title }}</text><text class="preview-caption urgent" if="{{ $item.urgent }}">{{ $item.caption }}</text>
+          <text class="preview-caption" if="{{ !$item.urgent }}">{{ $item.caption }}</text>
+        </div>
+        <text class="preview-empty" if="{{ ddlPreview.length === 0 }}">暂无待办</text>
+      </div>
+      <input class="glance-action" type="button" value="全部待办 · {{ ddlCount }} 项" onclick="showDdl" />
+    </div>
+  </swiper>
+  <list class="details" ref="details" onswipe="onSwipe" if="{{ view !== 'deck' }}">
+    <list-item class="detail-header"><div class="detail-heading">
+      <text class="detail-title">{{ detailTitle }}</text>
+      <text class="detail-subtitle">{{ view === 'schedule' ? dayLabel : '向右滑动返回' }}</text>
+    </div></list-item>
+    <list-item class="day-controls" if="{{ view === 'schedule' }}"><div class="control-pair">
+      <input class="day-button" type="button" value="前一天" onclick="previousDay" if="{{ dayOffset > 0 }}" />
+      <input class="day-button" type="button" value="后一天" onclick="nextDay" if="{{ dayOffset < 6 }}" />
+    </div></list-item>
+    <list-item class="detail-row" for="{{ view === 'schedule' || view === 'ddl' ? rows : [] }}"><div class="detail-card">
+      <text class="row-caption">{{ $item.caption }}</text>
+      <text class="row-title">{{ $item.title }}</text>
+      <text class="row-detail">{{ $item.detail }}</text>
+    </div></list-item>
+    <list-item class="empty-row" if="{{ (view === 'schedule' || view === 'ddl') &amp;&amp; rows.length === 0 }}"><div class="empty-box">
+      <text class="empty-text">{{ view === 'schedule' ? '当天没有课程' : '暂无待办' }}</text>
+    </div></list-item>
+    <list-item class="account-row" if="{{ view === 'account' }}"><div class="account-box">
+      <text class="account-name">{{ name }}</text>
+      <text class="account-id">学号 {{ studentId }}</text>
+      <text class="account-sync">上次同步 {{ lastSync }}</text>
+    </div></list-item>
+    <list-item class="sync-row"><div class="sync-box">
+      <input class="sync-button" type="button" value="同步数据" onclick="synchronize" />
+      <text class="sync-note">{{ error || status }}</text>
+    </div></list-item>
+    <list-item class="end-row"><div class="end-space"></div></list-item>
+  </list>
+</div>

@@ -2,6 +2,7 @@ import 'package:casdoor_flutter_sdk/casdoor_flutter_sdk.dart';
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/pages/uni_auth_webview_page.dart';
 import 'package:techpie/services/uni_auth_service.dart';
@@ -18,6 +19,47 @@ void main() {
     WebViewPlatform.instance = browser;
   });
   tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+  testWidgets('Linux login passes the proxy to the native window and can cancel', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    final service = UniAuthService(proxyUrl: '127.0.0.1:7890');
+    addTearDown(service.dispose);
+    const channel = MethodChannel('techpie/uni_auth');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    MethodCall? request;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      request = call;
+      throw PlatformException(code: 'CANCELLED');
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    Object? error;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              try {
+                await service.login(context);
+              } catch (e) {
+                error = e;
+              }
+            },
+            child: const Text('Login'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Login'));
+    await tester.pumpAndSettle();
+    expect(request?.method, 'authenticate');
+    final args = request!.arguments as Map;
+    expect(args['proxy'], '127.0.0.1:7890');
+    expect(Uri.parse(args['url'] as String).host, 'auth.geekpie.club');
+    expect(find.byType(UniAuthWebViewPage), findsNothing);
+    expect(error, isA<CasdoorAuthCancelledException>());
+    expect(service.loading, isFalse);
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   testWidgets('iOS login opens the OAuth WebView directly and native back cancels', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:techpie/features/campus_card/data/api/decrypted_http_trace.dart';
 import 'package:techpie/features/campus_card/data/api/ecard_api_client.dart';
 import 'package:techpie/features/campus_card/data/api/ecard_cipher.dart';
 import 'package:techpie/services/campus_card_http_trace.dart';
@@ -22,7 +23,8 @@ void main() {
     expect((response.data as Map)['data'], receipt['data']);
     final logged = logger.entries.last.responseBody!;
     expect(logged, isNot(contains('secret-')));
-    expect(jsonDecode(logged)['data']['cardbal'], '65.48');
+    expect(logged, isNot(contains('65.48')));
+    expect(jsonDecode(logged)['requestId'], 1);
   });
 
   test('shared debug switch records card requests, responses and failures',
@@ -93,11 +95,11 @@ void main() {
     final request = logger.entries.first;
     final response = logger.entries.last;
     expect(request.method, 'POST');
-    expect(request.url, 'https://ecard.test/balance');
+    expect(request.url, 'https://ecard.test');
     expect(request.tag, 'Campus Card');
-    expect(request.requestBody, contains('decryptedDatajson'));
+    expect(request.requestBody, isNot(contains('decryptedDatajson')));
     expect(response.statusCode, 200);
-    expect(jsonDecode(response.responseBody!)['balance'], 123);
+    expect(jsonDecode(response.responseBody!), jsonDecode(request.requestBody!));
     // The wait is reported split: how long the request took, and how much of it
     // happened before anything was sent. A send is not a duration.
     expect(response.durationMicros, isNotNull);
@@ -125,6 +127,30 @@ void main() {
     responseGate = null;
     await client.get('/disabled', {});
     expect(logger.entries, hasLength(count));
+  });
+
+  test('the trace drops private fields before calling either diagnostic sink', () async {
+    final records = <Map<String, Object?>>[];
+    final dio = Dio(BaseOptions(baseUrl: 'https://ecard.test'));
+    addTearDown(() => dio.close(force: true));
+    dio.interceptors.add(DecryptedHttpTraceInterceptor(enabled: () => true, onRecord: records.add));
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      handler.resolve(Response<Object?>(
+        requestOptions: options,
+        headers: Headers.fromMap({'set-cookie': ['CASTGC=private-cookie']}),
+        statusCode: 200,
+        data: {'studentId': 'private-student'},
+      ), true,);
+    },),);
+    final response = await dio.post<Object?>(
+      '/private-student?token=private-ticket',
+      data: {'password': 'private-password'},
+      options: Options(headers: {'Authorization': 'Bearer private-token'}),
+    );
+    expect(response.data, {'studentId': 'private-student'});
+    expect(records, hasLength(2));
+    expect(records.last['statusCode'], 200);
+    expect(jsonEncode(records), isNot(contains('private-')));
   });
 
   test('scan code fingerprints prove both phases carry the same value',
@@ -212,25 +238,6 @@ void main() {
           .map((e) => '${e.requestBody}${e.responseBody}')
           .join(),
       isNot(contains('p010_')),
-    );
-  });
-
-  test('redaction covers campus credentials in nested and malformed JSON', () {
-    final result = DebugLogger.redactSensitive(
-      jsonEncode({
-        'OpenID': 'secret-openid',
-        'nested': [
-          {'JSESSIONID': 'secret-session', 'authorinfo': 'secret-offline'},
-        ],
-        'datajson': 'secret-wire',
-        'balance': 123,
-      }),
-    );
-    expect(result, isNot(contains('secret-')));
-    expect(result, contains('123'));
-    expect(
-      DebugLogger.redactSensitive('{"OPENID":"secret-openid", broken'),
-      isNot(contains('secret-openid')),
     );
   });
 }

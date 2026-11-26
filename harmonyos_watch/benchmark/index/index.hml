@@ -1,0 +1,11 @@
+<div class="panel" onswipe="onSwipe">
+  <div class="panel-header"><text class="page-title">性能测试</text><text class="metrics">{{ timing }}</text></div>
+  <text class="code-caption">{{ status }}</text>
+  <div class="code-area" if="{{ picture }}"><canvas class="qr" ref="qr"></canvas></div>
+  <div class="controls" if="{{ !picture }}">
+    <input class="sync-button" type="button" value="测试签名" onclick="sign" />
+    <input class="sync-button" type="button" value="测试绘制" onclick="draw" />
+  </div>
+  <text class="code-caption" if="{{ picture }}" onclick="back">返回</text>
+  <text class="code-caption" if="{{ !picture }}" onclick="openCompanion">校园码</text>
+</div>

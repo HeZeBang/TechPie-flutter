@@ -16,7 +16,7 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.4+26
+version: 1.1.0+32
 
 environment:
   sdk: ">=3.6.2 <4.0.0"
@@ -45,6 +45,7 @@ dependencies:
   dynamic_color: ">=1.7.0 <1.8.0"
   flutter:
     sdk: flutter
+  flutter_lucide: ^1.77.0
   flutter_riverpod: 2.6.1
   flutter_secure_storage: ^9.2.4
   flutter_secure_storage_ohos: # HarmonyOS 安全存储
@@ -177,8 +178,9 @@ flutter_launcher_icons:
   android: true
   min_sdk_android: 21
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
-  adaptive_icon_monochrome: "assets/icon/icon_monochrome.png"
+  # Use the source directly: Git symlinks may become text files on Windows.
+  adaptive_icon_foreground: "assets/icon/icon.png"
+  adaptive_icon_monochrome: "assets/icon/icon.png"
   ios: true
   remove_alpha_ios: true
   web:
@@ -205,9 +207,12 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/icon/icon.png
     - assets/help/ids_passkey.png
     - assets/campus_card/audio/
     - assets/campus_card/data/
+    - assets/campus_card/images/wizard-arc.png
+    - assets/campus_card/images/wizard-skyline.png
     - assets/campus_card/images/card-full.png
     - assets/campus_card/images/card-top.png
     - assets/campus_card/images/card-bottom.png

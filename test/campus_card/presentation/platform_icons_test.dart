@@ -5,7 +5,7 @@ import 'package:techpie/features/campus_card/presentation/icons/platform_icons.d
 
 void main() {
   test('every semantic icon has Apple and Material resources', () {
-    expect(GpPlatformIcons.all, hasLength(37));
+    expect(GpPlatformIcons.all, hasLength(39));
     for (final icon in GpPlatformIcons.all) {
       final apple = icon.forPlatform(TargetPlatform.iOS);
       final mac = icon.forPlatform(TargetPlatform.macOS);
@@ -13,7 +13,12 @@ void main() {
       expect(apple, icon.apple);
       expect(mac, icon.apple);
       expect(android, icon.android);
-      expect(apple.fontPackage, CupertinoIcons.iconFontPackage);
+      // Cupertino's bundled font has no dining symbol.
+      if (icon == GpPlatformIcons.dining) {
+        expect(apple.fontFamily, 'MaterialIcons');
+      } else {
+        expect(apple.fontPackage, CupertinoIcons.iconFontPackage);
+      }
       expect(android.fontFamily, 'MaterialIcons');
     }
   });

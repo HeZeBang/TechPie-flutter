@@ -6,16 +6,17 @@ import 'package:flutter/services.dart';
 import '../models/third_party_account.dart';
 import '../services/service_provider.dart';
 import '../services/third_party_auth_service.dart';
-import '../utils/platform.dart';
-import '../widgets/adaptive_alert_dialog.dart';
-import '../widgets/adaptive_feedback.dart';
+import '../theme/theme.dart';
+import '../widgets/adaptive_account_setup.dart';
 import '../widgets/adaptive_page_navigation.dart';
-import '../widgets/adaptive_switch.dart';
 import '../widgets/adaptive_text_area.dart';
 import '../widgets/adaptive_text_field_group.dart';
-import '../widgets/blurred_app_bar.dart';
-import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/design_system/design_system.dart';
 import 'ids_bind_page.dart';
+
+enum _SetupStep { courses, site, credentials, renewal, connected }
+
+enum _SignInFailure { service, connection }
 
 class ThirdPartyBindPage extends StatefulWidget {
   final ThirdPartyPlatform platform;
@@ -26,33 +27,56 @@ class ThirdPartyBindPage extends StatefulWidget {
   State<ThirdPartyBindPage> createState() => _ThirdPartyBindPageState();
 }
 
-class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
-  final _formKey = GlobalKey<FormState>();
+class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> with WidgetsBindingObserver {
   final _accountCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _hydroOriginCtrl = TextEditingController(
     text: 'https://acm.shanghaitech.edu.cn',
   );
   final _hydroDomainsCtrl = TextEditingController();
+  late _SetupStep _step;
   bool _busy = false;
-  bool _obscure = true;
   bool _autoRenew = false;
   String? _inlineError;
-
-  bool get _isIds => widget.platform == ThirdPartyPlatform.ids;
+  _SignInFailure? _signInFailure;
 
   bool get _isHydro => widget.platform == ThirdPartyPlatform.hydro;
   bool get _isGradescope => widget.platform == ThirdPartyPlatform.gradescope;
+  String get _name => widget.platform.label;
+  String _text(String en, String zh) =>
+      View.of(context).platformDispatcher.locale.languageCode == 'zh' ? zh : en;
+  String get _identityLabel => _isGradescope ? _text('Email', '邮箱') : _text('Username', '用户名');
+  List<String> get _domains => _hydroDomainsCtrl.text
+      .split(RegExp(r'[\s,，]+'))
+      .where((value) => value.isNotEmpty)
+      .toSet()
+      .toList();
 
-  Future<void> _dismissKeyboard() async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    if (isIos()) {
-      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
-    }
+  String? get _signInMessage => switch (_signInFailure) {
+        _SignInFailure.service => _text(
+            'Could not sign in to $_name. Please try again.',
+            '无法登录 $_name，请重试。',
+          ),
+        _SignInFailure.connection => _text(
+            'Could not connect. Check your connection and try again.',
+            '无法连接。请检查网络后重试。',
+          ),
+        null => null,
+      };
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _step = _isHydro ? _SetupStep.courses : _SetupStep.credentials;
   }
 
   @override
+  void didChangeLocales(List<Locale>? locales) => setState(() {});
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _accountCtrl.dispose();
     _passwordCtrl.dispose();
     _hydroOriginCtrl.dispose();
@@ -60,427 +84,338 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> {
     super.dispose();
   }
 
-  Future<void> _onAutoRenewChanged(bool value) async {
-    if (!value) {
-      setState(() => _autoRenew = false);
+  Future<void> _dismissKeyboard() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    try {
+      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    } catch (_) {}
+  }
+
+  void _go(_SetupStep step) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _step = step;
+      _inlineError = null;
+    });
+  }
+
+  void _back() {
+    if (_busy) return;
+    switch (_step) {
+      case _SetupStep.site:
+        _go(_SetupStep.courses);
+      case _SetupStep.renewal:
+        _go(_SetupStep.credentials);
+      case _SetupStep.credentials when _isHydro:
+        _go(_SetupStep.courses);
+      default:
+        unawaited(maybePopAdaptivePage<void>(context));
+    }
+  }
+
+  bool get _canLeave =>
+      !_busy &&
+      (_step == _SetupStep.connected ||
+          _step == _SetupStep.courses ||
+          (!_isHydro && _step == _SetupStep.credentials));
+
+  bool _validateSite() {
+    final uri = Uri.tryParse(_hydroOriginCtrl.text.trim());
+    if (uri == null ||
+        !uri.hasAuthority ||
+        uri.host.isEmpty ||
+        !['https', 'http'].contains(uri.scheme) ||
+        uri.userInfo.isNotEmpty ||
+        (uri.path.isNotEmpty && uri.path != '/') ||
+        uri.hasQuery ||
+        uri.hasFragment) {
+      setState(
+        () => _inlineError = _text(
+          'Enter a site address such as https://acm.shanghaitech.edu.cn.',
+          '请输入站点地址，例如 https://acm.shanghaitech.edu.cn。',
+        ),
+      );
+      return false;
+    }
+    _hydroOriginCtrl.text = uri.origin;
+    return true;
+  }
+
+  void _continueCourses() {
+    if (_domains.isEmpty) {
+      setState(() => _inlineError = _text('Enter at least one course domain.', '请至少输入一个课程域。'));
       return;
     }
+    if (!_validateSite()) {
+      setState(() => _step = _SetupStep.site);
+      return;
+    }
+    _go(_SetupStep.credentials);
+  }
 
-    // Optimistically set to true so the native switch and Flutter state stay
-    // in sync. If the user cancels the native presenter, we'll revert to false.
-    setState(() => _autoRenew = true);
-
-    final ok = await showAdaptiveAlertDialog<bool>(
-      context: context,
-      title: '开启自动更新 Token',
-      message: '打开后，APP 将于本地加密存储你的账号和密码信息,'
-          '用于在过期前 48 小时内自动触发 Token 更新。\n\n'
-          '凭据存放在本设备的 Keychain / EncryptedSharedPreferences 中。'
-          '若开启云同步，密码也会被端到端加密后备份至 Casdoor(仅你能用主密码解密)。',
-      actions: const [
-        AdaptiveAlertAction<bool>(label: '取消', value: false),
-        AdaptiveAlertAction<bool>(
-          label: '我知道了,开启',
-          value: true,
-          isDefault: true,
-        ),
-      ],
-    );
-
-    if (!mounted) return;
-
-    // If user didn't accept, revert to false so native presenter and switch
-    // UI are consistent.
-    setState(() => _autoRenew = ok == true);
+  void _setRenewal(bool enabled) {
+    setState(() => _autoRenew = enabled);
+    _go(_SetupStep.credentials);
   }
 
   Future<void> _submit() async {
-    if (!_validateForSubmit()) return;
-    await _dismissKeyboard();
-    if (!mounted) return;
-    setState(() => _busy = true);
-
-    final tpAuth = ServiceProvider.of(context).thirdPartyAuthService;
-
-    List<String>? domains;
-    if (_isHydro) {
-      domains = _hydroDomainsCtrl.text
-          .split(RegExp(r'[\s,]+'))
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
+    if (_busy || _step != _SetupStep.credentials) return;
+    String? error;
+    if (_accountCtrl.text.trim().isEmpty) {
+      error = _text('Enter your ${_isGradescope ? 'email' : 'username'}.', '请填写$_identityLabel。');
+    } else if (_passwordCtrl.text.isEmpty) {
+      error = _text('Enter your password.', '请填写密码。');
     }
-
+    setState(() {
+      _inlineError = error;
+      _signInFailure = null;
+    });
+    if (error != null) return;
+    // Lock navigation and submission before waiting for the keyboard channel.
+    setState(() => _busy = true);
     try {
-      await tpAuth.bind(
-        platform: widget.platform,
-        account: _accountCtrl.text.trim(),
-        password: _passwordCtrl.text,
-        hydroOrigin: _isHydro ? _hydroOriginCtrl.text.trim() : null,
-        hydroDomains: domains,
-        autoRenew: _autoRenew,
-      );
-      if (!mounted) return;
-      setState(() => _inlineError = null);
       await _dismissKeyboard();
       if (!mounted) return;
-      if (!isIos()) {
-        showAdaptiveFeedback(
-          context: context,
-          message: '${widget.platform.label} 绑定成功',
-          style: AdaptiveFeedbackStyle.success,
-        );
-      }
-      await maybePopAdaptivePage<void>(context);
-    } on ThirdPartyBindException catch (e) {
+      await ServiceProvider.of(context).thirdPartyAuthService.bind(
+            platform: widget.platform,
+            account: _accountCtrl.text.trim(),
+            password: _passwordCtrl.text,
+            hydroOrigin: _isHydro ? _hydroOriginCtrl.text.trim() : null,
+            hydroDomains: _isHydro ? _domains : null,
+            autoRenew: _autoRenew,
+          );
       if (!mounted) return;
-      if (isIos()) {
-        setState(() => _inlineError = e.message);
-      } else {
-        showAdaptiveFeedback(
-          context: context,
-          message: e.message,
-          style: AdaptiveFeedbackStyle.error,
-        );
-      }
-    } catch (e) {
+      _passwordCtrl.clear();
+      _go(_SetupStep.connected);
+    } on ThirdPartyBindException {
       if (!mounted) return;
-      if (isIos()) {
-        setState(() => _inlineError = e.toString());
-      } else {
-        showAdaptiveFeedback(
-          context: context,
-          message: e.toString(),
-          style: AdaptiveFeedbackStyle.error,
-        );
-      }
+      setState(() => _signInFailure = _SignInFailure.service);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _signInFailure = _SignInFailure.connection);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  bool _validateForSubmit() {
-    if (!isIos()) {
-      return _formKey.currentState?.validate() ?? true;
-    }
+  Widget _field(
+    String label,
+    TextEditingController controller, {
+    bool password = false,
+    TextInputType keyboard = TextInputType.text,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(label, style: TpTypography.itemMeta(context.tpColors)),
+        const SizedBox(height: TpTokens.space2),
+        AdaptiveTextFieldGroup(
+          items: [
+            AdaptiveTextFieldGroupItem(
+              controller: controller,
+              placeholder: label,
+              obscureText: password,
+              keyboardType: keyboard,
+              enabled: !_busy,
+              textInputAction: password ? TextInputAction.done : TextInputAction.next,
+              onSubmitted: password ? (_) => unawaited(_submit()) : null,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
-    String? message;
-    if (_accountCtrl.text.trim().isEmpty) {
-      message = '请填写${_isGradescope ? '邮箱' : '用户名'}';
-    } else if (_passwordCtrl.text.isEmpty) {
-      message = '请填写密码';
-    } else if (_isHydro && _hydroOriginCtrl.text.trim().isEmpty) {
-      message = '请填写 Hydro 站点 origin';
-    } else if (_isHydro) {
-      final domains = _hydroDomainsCtrl.text
-          .split(RegExp(r'[\s,]+'))
-          .where((value) => value.trim().isNotEmpty);
-      if (domains.isEmpty) message = '至少填写一个课程 domain';
-    }
-
-    setState(() => _inlineError = message);
-    return message == null;
+  Widget _choice(String label, String value, VoidCallback onTap) {
+    final colors = context.tpColors;
+    return Semantics(
+      button: true,
+      enabled: !_busy,
+      child: TpCard(
+        onTap: _busy ? null : onTap,
+        padding: const EdgeInsets.all(TpTokens.space4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(label, style: TpTypography.itemMeta(colors)),
+            const SizedBox(height: TpTokens.space1),
+            Text(value, style: TpTypography.itemTitle(colors).copyWith(color: colors.brand)),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isIds) {
+    if (widget.platform == ThirdPartyPlatform.ids) {
       return IdsBindPage(
         legacyAccount: ServiceProvider.of(context).thirdPartyAuthService.idsAccount,
       );
     }
-    if (isIos()) {
-      return _buildIosBindPage(context);
-    }
-
-    final useLegacyIosChrome = usesLegacyIosChrome();
-    final topInset = useLegacyIosChrome
-        ? 16.0
-        : 16 + adaptiveTopBarHeight() + MediaQuery.viewPaddingOf(context).top;
-
-    return Scaffold(
-      extendBodyBehindAppBar: !useLegacyIosChrome,
-      appBar: BlurredAppBar(title: Text('Bind ${widget.platform.label}')),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            topInset,
-            16,
-            16,
-          ),
-          children: [
-            if (_inlineError != null) ...[
-              _InlineBindFeedback(message: _inlineError!),
-              const SizedBox(height: 12),
-            ],
-            TextFormField(
-              controller: _accountCtrl,
-              autofillHints: const [AutofillHints.username],
-              keyboardType: _isGradescope
-                  ? TextInputType.emailAddress
-                  : TextInputType.text,
-              decoration: InputDecoration(
-                labelText: _isGradescope ? '邮箱' : '用户名',
-                border: const OutlineInputBorder(),
-              ),
-              validator: (v) => (v == null || v.trim().isEmpty) ? '必填' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _passwordCtrl,
-              autofillHints: const [AutofillHints.password],
-              obscureText: _obscure,
-              decoration: InputDecoration(
-                labelText: '密码',
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscure ? Icons.visibility_off : Icons.visibility,
-                  ),
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                ),
-              ),
-              validator: (v) => (v == null || v.isEmpty) ? '必填' : null,
-            ),
-            if (_isHydro) ...[
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _hydroOriginCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Hydro 站点 origin',
-                  helperText: '默认 https://acm.shanghaitech.edu.cn',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? '必填' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
+    late String title;
+    String? description;
+    late IconData icon;
+    late String action;
+    late VoidCallback onAction;
+    String? disclosure;
+    Widget? secondary;
+    final children = <Widget>[];
+    switch (_step) {
+      case _SetupStep.courses:
+        title = _text('Choose your courses', '选择课程');
+        description = _text(
+          'Enter the domain IDs from your Hydro course pages. Separate multiple IDs with commas.',
+          '输入 Hydro 课程页面中的域 ID。多个 ID 请用逗号分隔。',
+        );
+        icon = TpIcons.course;
+        children.addAll([
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(_text('Course domains', '课程域'), style: TpTypography.itemMeta(context.tpColors)),
+              const SizedBox(height: TpTokens.space2),
+              AdaptiveTextArea(
                 controller: _hydroDomainsCtrl,
-                minLines: 2,
-                maxLines: 6,
-                decoration: const InputDecoration(
-                  labelText: '课程 domain (每行一个,或用逗号分隔)',
-                  helperText: '例: SI100B_2025_Autumn',
-                  border: OutlineInputBorder(),
-                  alignLabelWithHint: true,
-                ),
-                validator: (v) {
-                  final list = (v ?? '')
-                      .split(RegExp(r'[\s,]+'))
-                      .where((e) => e.trim().isNotEmpty);
-                  return list.isEmpty ? '至少填一个 domain' : null;
-                },
+                placeholder: 'SI100B_2025_Autumn',
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.done,
               ),
             ],
-            const SizedBox(height: 8),
-            if (isIos())
-              MergeSemantics(
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('自动更新 Token'),
-                  subtitle: const Text('过期前 48 小时内自动重登,免去手动重绑'),
-                  trailing: AdaptiveSwitch(
-                    value: _autoRenew,
-                    onChanged: (v) => unawaited(_onAutoRenewChanged(v)),
+          ),
+          _choice(
+            _text('Campus site · Change', '校园站点 · 更改'),
+            Uri.tryParse(_hydroOriginCtrl.text)?.host ?? _hydroOriginCtrl.text,
+            () => _go(_SetupStep.site),
+          ),
+        ]);
+        action = _text('Continue', '继续');
+        onAction = _continueCourses;
+      case _SetupStep.site:
+        title = _text('Change Hydro site', '更改 Hydro 站点');
+        description =
+            _text('Use the address where you sign in to Hydro.', '输入你平时登录 Hydro 使用的站点地址。');
+        icon = TpIcons.globe;
+        children.add(
+          _field(_text('Site address', '站点地址'), _hydroOriginCtrl, keyboard: TextInputType.url),
+        );
+        action = _text('Use this site', '使用此站点');
+        onAction = () {
+          if (_validateSite()) _go(_SetupStep.courses);
+        };
+      case _SetupStep.credentials:
+        title = _text('Connect $_name', '连接 $_name');
+        icon = TpIcons.lock;
+        children.addAll([
+          _field(
+            _identityLabel,
+            _accountCtrl,
+            keyboard: _isGradescope ? TextInputType.emailAddress : TextInputType.text,
+          ),
+          _field(_text('Password', '密码'), _passwordCtrl, password: true),
+          _choice(
+            _text('Automatic sign-in', '自动登录'),
+            _autoRenew ? _text('On · Change', '已开启 · 更改') : _text('Off · Change', '已关闭 · 更改'),
+            () => _go(_SetupStep.renewal),
+          ),
+        ]);
+        disclosure = _text(
+          'TechPie sends your credentials to its server to sign in to $_name.',
+          'TechPie 会将你的凭据发送到其服务器，用于登录 $_name。',
+        );
+        action = _signInFailure == null
+            ? _text('Connect $_name', '连接 $_name')
+            : _text('Try again', '重试');
+        onAction = () => unawaited(_submit());
+      case _SetupStep.renewal:
+        title = _text('Keep your account connected?', '保持账号连接？');
+        description = _text(
+          'TechPie can sign in again before your session expires.',
+          'TechPie 可在会话过期前自动重新登录。',
+        );
+        icon = TpIcons.refresh;
+        children.add(
+          TpCard(
+            padding: const EdgeInsets.all(TpTokens.space4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(_text('On this device', '在此设备上'),
+                    style: TpTypography.cardTitle(context.tpColors),),
+                const SizedBox(height: TpTokens.space2),
+                Text(
+                  _text(
+                    'Your username and password are stored in encrypted device storage.',
+                    '你的账号和密码会加密保存在此设备上。',
                   ),
-                  onTap: () => unawaited(_onAutoRenewChanged(!_autoRenew)),
                 ),
-              )
-            else
-              CheckboxListTile(
-                value: _autoRenew,
-                onChanged: (v) => unawaited(_onAutoRenewChanged(v ?? false)),
-                title: const Text('自动更新 Token'),
-                subtitle: const Text('过期前 48 小时内自动重登,免去手动重绑'),
-                controlAffinity: ListTileControlAffinity.leading,
-                contentPadding: EdgeInsets.zero,
-              ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _busy ? null : () => unawaited(_submit()),
-              child: _busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('绑定'),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '凭据将通过 HTTPS 发送到 techpie 后端,后端代为登录上游平台并返回 token。'
-              'token 与原始 payload 在本设备加密保存;开启云同步后会以端到端加密形式备份至 Casdoor。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIosBindPage(BuildContext context) {
-    final theme = Theme.of(context);
-    final secondaryLabel = theme.colorScheme.onSurfaceVariant;
-
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: IosNativeNavigationBar(
-        title: 'Bind ${widget.platform.label}',
-        leadingItems: [
-          if (Navigator.canPop(context))
-            const IosNativeNavigationBarItem(
-              id: 'back',
-              title: '返回',
-              sfSymbol: 'chevron.left',
-              accessibilityLabel: '返回',
-            ),
-        ],
-        onItemPressed: (id) {
-          if (id == 'back') {
-            unawaited(maybePopAdaptivePage<void>(context));
-          }
-        },
-      ),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-          children: [
-            if (_inlineError != null) ...[
-              _InlineBindFeedback(message: _inlineError!),
-              const SizedBox(height: 16),
-            ],
-            AdaptiveTextFieldGroup(
-              items: [
-                AdaptiveTextFieldGroupItem(
-                  placeholder: _isGradescope ? '邮箱' : '用户名',
-                  controller: _accountCtrl,
-                  keyboardType: _isGradescope
-                      ? TextInputType.emailAddress
-                      : TextInputType.text,
-                  textInputAction: TextInputAction.next,
+                const SizedBox(height: TpTokens.space4),
+                Text(
+                  _text('With Cloud sync', '开启云同步时'),
+                  style: TpTypography.cardTitle(context.tpColors),
                 ),
-                AdaptiveTextFieldGroupItem(
-                  placeholder: '密码',
-                  controller: _passwordCtrl,
-                  obscureText: _obscure,
-                  textInputAction:
-                      _isHydro ? TextInputAction.next : TextInputAction.done,
-                  onSubmitted: (_) {
-                    if (!_isHydro) unawaited(_submit());
-                  },
+                const SizedBox(height: TpTokens.space2),
+                Text(
+                  _text(
+                    'An end-to-end encrypted backup includes your password. Your master password unlocks it.',
+                    '端到端加密备份将包含你的密码。你可以使用主密码解密。',
+                  ),
                 ),
               ],
             ),
-            if (_isHydro) ...[
-              const SizedBox(height: 16),
-              AdaptiveTextFieldGroup(
-                items: [
-                  AdaptiveTextFieldGroupItem(
-                    placeholder: 'Origin',
-                    controller: _hydroOriginCtrl,
-                    keyboardType: TextInputType.url,
-                    textInputAction: TextInputAction.next,
-                  ),
+          ),
+        );
+        secondary = TextButton(
+          onPressed: () => _setRenewal(false),
+          child: Text(_text('Keep automatic sign-in off', '关闭自动登录')),
+        );
+        action = _text('Allow automatic sign-in', '允许自动登录');
+        onAction = () => _setRenewal(true);
+      case _SetupStep.connected:
+        title = _text('$_name connected', '$_name 已连接');
+        description =
+            _text('You can manage this connection in Linked accounts.', '你可以在“第三方账号”中管理此连接。');
+        icon = TpIcons.check;
+        children.add(
+          TpCard(
+            padding: const EdgeInsets.all(TpTokens.space4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(_identityLabel, style: TpTypography.itemMeta(context.tpColors)),
+                Text(_accountCtrl.text.trim()),
+                if (_isHydro) ...[
+                  const SizedBox(height: TpTokens.space4),
+                  Text(_text('Course domains', '课程域'),
+                      style: TpTypography.itemMeta(context.tpColors),),
+                  Text(_domains.join(', ')),
                 ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '默认 https://acm.shanghaitech.edu.cn',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: secondaryLabel,
-                ),
-              ),
-              const SizedBox(height: 10),
-              AdaptiveTextArea(
-                placeholder: 'Domain',
-                controller: _hydroDomainsCtrl,
-                minLines: 2,
-                maxLines: 6,
-                textInputAction: TextInputAction.done,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '每行一个,或用逗号分隔\n例: SI100B_2025_Autumn',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: secondaryLabel,
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            MergeSemantics(
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('自动更新 Token'),
-                subtitle: Text(
-                  '过期前 48 小时内自动重登,免去手动重绑',
-                  style: TextStyle(color: secondaryLabel),
-                ),
-                trailing: AdaptiveSwitch(
-                  value: _autoRenew,
-                  onChanged: (value) => unawaited(_onAutoRenewChanged(value)),
-                ),
-                onTap: () => unawaited(_onAutoRenewChanged(!_autoRenew)),
-              ),
+              ],
             ),
-            const SizedBox(height: 18),
-            FilledButton(
-              onPressed: _busy ? null : () => unawaited(_submit()),
-              child: _busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('绑定'),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '凭据将通过 HTTPS 发送到 techpie 后端,后端代为登录上游平台并返回 token。'
-              'token 与原始 payload 仅在本设备加密保存。',
-              style: theme.textTheme.bodySmall?.copyWith(color: secondaryLabel),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _InlineBindFeedback extends StatelessWidget {
-  const _InlineBindFeedback({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: scheme.errorContainer.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.info_outline, size: 18, color: scheme.onErrorContainer),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                message,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: scheme.onErrorContainer,
-                    ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        );
+        action = _text('Done', '完成');
+        onAction = () => unawaited(maybePopAdaptivePage<void>(context));
+    }
+    return PopScope(
+      canPop: _canLeave,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: AdaptiveAccountSetup(
+        title: title,
+        description: description,
+        icon: icon,
+        action: action,
+        onAction: onAction,
+        onBack: _back,
+        backLabel: _text('Back', '返回'),
+        loading: _busy,
+        error: _inlineError ?? (_step == _SetupStep.credentials ? _signInMessage : null),
+        disclosure: disclosure,
+        secondary: secondary,
+        children: children,
       ),
     );
   }

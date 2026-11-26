@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,8 +11,12 @@ import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/main.dart';
 import 'package:techpie/models/assignment.dart';
 import 'package:techpie/pages/assignments_page.dart';
+import 'package:techpie/pages/campus_card_account_page.dart';
+import 'package:techpie/pages/custom_deadline_editor_page.dart';
 import 'package:techpie/pages/hidden_assignments_page.dart';
 import 'package:techpie/pages/settings_page.dart';
+import 'package:techpie/pages/third_party_accounts_page.dart';
+import 'package:techpie/pages/third_party_bind_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -28,8 +33,11 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
+import 'package:techpie/widgets/adaptive_navigation_scaffold.dart';
 import 'package:techpie/widgets/adaptive_page_navigation.dart';
+import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
 import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
+import 'package:techpie/widgets/schedule_picker_sheet.dart';
 
 /// On iOS the tab bar is the app's top level: a page pushed from a tab stays
 /// inside that tab, under the bar, so another tab is always one tap away and
@@ -95,6 +103,61 @@ void main() {
 
   void selectTab(WidgetTester tester, int index) =>
       tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(index);
+
+  testWidgets(
+    'a guest can add a deadline and edit it from Home',
+    (tester) async {
+      await pumpApp(tester);
+      selectTab(tester, 2);
+      await tester.pumpAndSettle();
+      final menuBar = tester
+          .widget<AdaptiveNavigationScaffold>(
+            find.byType(AdaptiveNavigationScaffold),
+          )
+          .appBar as IosNativeNavigationBar;
+      final more = menuBar.trailingItems.single;
+      expect(
+        more.menuItems.expand((item) => item.children).map((item) => item.title),
+        contains('添加 Deadline'),
+      );
+      menuBar.onMenuSelected!(more.id, 'addDeadline');
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(EditableText).first, 'Submit report');
+      await tester.tap(find.text('截止日期'));
+      await tester.pumpAndSettle();
+      tester.widget<CupertinoDatePicker>(find.byType(CupertinoDatePicker))
+          .onDateTimeChanged(DateTime.now().add(const Duration(days: 2)));
+      tester.widget<IosSheetHeader>(find.byType(IosSheetHeader)).onConfirm!();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('截止时间'));
+      await tester.pumpAndSettle();
+      tester.widget<IosSheetHeader>(find.byType(IosSheetHeader)).onConfirm!();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      expect(find.text('自定义'), findsOneWidget);
+
+      selectTab(tester, 0);
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Submit report'),
+        300,
+        scrollable: find.descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        ).first,
+      );
+      await tester.tap(find.text('Submit report'));
+      await tester.pumpAndSettle();
+      expect(find.byType(CustomDeadlineEditorPage), findsOneWidget);
+      await tester.ensureVisible(find.text('标记完成'));
+      await tester.tap(find.text('标记完成'));
+      await tester.pumpAndSettle();
+      expect(assignmentService.visibleAssignments.single.submitted, isTrue);
+      expect(find.text('取消完成'), findsOneWidget);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
   testWidgets(
     'ignored items can scroll above the tab bar and the selection toolbar',
@@ -269,4 +332,64 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
+  testWidgets(
+    'all account wizards cover app navigation and restore it when dismissed',
+    (tester) async {
+      await pumpApp(tester);
+      if (find.byType(CNTabBar).evaluate().isNotEmpty) {
+        selectTab(tester, 3);
+      } else {
+        tester.widget<TgBottomNavBar>(find.byType(TgBottomNavBar)).onDestinationSelected(3);
+      }
+      await tester.pumpAndSettle();
+      unawaited(pushAdaptivePage<void>(
+        tester.element(find.byType(SettingsPage)),
+        builder: (_) => const ThirdPartyAccountsPage(),
+      ),);
+      await tester.pumpAndSettle();
+      for (final platform in ['Gradescope', 'Hydro', 'IDS', 'eCard']) {
+        final previousBarCount = find.byType(CNTabBar).evaluate().length + find.byType(TgBottomNavBar).evaluate().length;
+        final row = find.text(platform).first;
+        await tester.ensureVisible(row);
+        await tester.pumpAndSettle();
+        await tester.tap(row);
+        if (platform == 'eCard') {
+          // Only route coverage is relevant while account loading is pending.
+          await tester.pump();
+          await tester.pump(const Duration(seconds: 1));
+        } else {
+          await tester.pumpAndSettle();
+        }
+        expect(find.byType(CNTabBar), findsNothing, reason: platform);
+        expect(find.byType(TgBottomNavBar), findsNothing, reason: platform);
+        final page = platform == 'eCard'
+            ? find.byType(CampusCardAccountPage)
+            : find.byType(ThirdPartyBindPage);
+        expect(page, findsOneWidget);
+        expect(MediaQuery.paddingOf(tester.element(page)).bottom, 0);
+        if (platform == 'Gradescope') {
+          await tester.tap(find.text('Automatic sign-in'));
+          await tester.pumpAndSettle();
+          expect(find.text('Keep your account connected?'), findsOneWidget);
+          expect(find.byType(CNTabBar), findsNothing);
+          expect(find.byType(TgBottomNavBar), findsNothing);
+          await Navigator.of(tester.element(page)).maybePop();
+          await tester.pumpAndSettle();
+          expect(find.text('Off · Change'), findsOneWidget);
+        }
+        if (platform == 'eCard') {
+          Navigator.of(tester.element(page)).pop();
+        } else {
+          await Navigator.of(tester.element(page)).maybePop();
+        }
+        await tester.pumpAndSettle();
+        expect(find.byType(ThirdPartyAccountsPage), findsOneWidget);
+        expect(find.byType(CNTabBar).evaluate().length + find.byType(TgBottomNavBar).evaluate().length, previousBarCount);
+      }
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.iOS, TargetPlatform.android}),
+  );
+
 }

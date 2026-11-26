@@ -52,6 +52,31 @@ class Course {
         _ => null,
       };
 
+  String? get shortNameKey => switch (source) {
+        CustomCourseSource(:final id) => 'custom:$id',
+        EamsCourseSource() => 'course:$name',
+        ExamCourseSource() => null,
+      };
+
+  static final _commonTitle = RegExp(
+    r'^(普通物理学?|大学物理|高等数学|线性代数)'
+    r'(\s*(?:[（(][上下ⅠⅡⅢIV一二三]+[）)]|[上下ⅠⅡⅢIV]+))?'
+    r'(?:\s*[（(][A-Za-z]{2,}[- ]?\d+[A-Za-z]?[）)])?$',
+  );
+
+  String get defaultShortName {
+    if (source is! EamsCourseSource) return name;
+    final match = _commonTitle.firstMatch(name.trim());
+    if (match == null) return name;
+    final base = switch (match[1]) {
+      '高等数学' => '高数',
+      '线性代数' => '线代',
+      '大学物理' => '大物',
+      _ => '普物',
+    };
+    return '$base${match[2]?.trim() ?? ''}';
+  }
+
   bool occursOn(DateTime value) {
     final day = date;
     return day == null ||
@@ -68,7 +93,7 @@ class Course {
   bool get usesCustomTime => placement.usesCustomTime;
 
   static CourseColor colorFromIndex(int index) =>
-      CourseColor.values[index % CourseColor.values.length];
+      CourseColor.regularPalette[index % CourseColor.regularPalette.length];
 }
 
 /// How a course specifies its time before it is placed on the timetable.
@@ -224,6 +249,61 @@ enum CourseColor {
   green,
   orange,
   pink,
+  sky,
+  coral,
+  indigo,
+  lime,
+  plum,
+  slate;
+
+  /// Twelve regular course slots ordered for maximal hue separation around the
+  /// OKLCH color wheel. [CourseColor.error] is reserved exclusively for exams
+  /// so regular classes never collide with exam alerts.
+  static const List<CourseColor> regularPalette = [
+    CourseColor.primary,
+    CourseColor.orange,
+    CourseColor.secondary,
+    CourseColor.tertiary,
+    CourseColor.green,
+    CourseColor.pink,
+    CourseColor.sky,
+    CourseColor.coral,
+    CourseColor.indigo,
+    CourseColor.lime,
+    CourseColor.plum,
+    CourseColor.slate,
+  ];
+}
+
+final _trailingCourseCodePattern = RegExp(
+  r'[(\（]\s*([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?)\s*[)\）]\s*$',
+);
+final _validBaseCourseCodePattern = RegExp(r'^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]+$');
+final _trailingSectionSuffixPattern = RegExp(r'-\d+[A-Za-z]?$');
+
+/// Canonical grouping key so every session belonging to the same course shares
+/// one color.
+///
+/// For EAMS courses with a trailing course code (e.g. `模拟电路(EE115A.02)` and
+/// its recitation `模拟电路(EE115A.02D)`), strips the section suffix after `.`
+/// so lecture + recitation + split room/week entries map to `code:EE115A`,
+/// while independent lab courses with distinct codes (`EE115AL.01`) map to
+/// `code:EE115AL`. Courses without a structured code (e.g. graduate or custom
+/// courses) fall back to normalized course name.
+String courseColorKey(String rawName) {
+  final trimmed = rawName.trim();
+  final match = _trailingCourseCodePattern.firstMatch(trimmed);
+  if (match != null) {
+    final fullCode = match.group(1)!;
+    final dot = fullCode.indexOf('.');
+    var base = dot > 0 ? fullCode.substring(0, dot) : fullCode;
+    base = base.replaceFirst(_trailingSectionSuffixPattern, '');
+    if (_validBaseCourseCodePattern.hasMatch(base)) {
+      return 'code:${base.toUpperCase()}';
+    }
+  }
+  final normalized = trimmed.replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+  return 'name:$normalized';
 }
 
 class Period {
@@ -276,23 +356,199 @@ String formatWeekRanges(List<int> weeks) {
 }
 
 extension CourseColorScheme on CourseColor {
-  /// Seed color for generating a proper tonal [ColorScheme] per course color.
-  /// Using [ColorScheme.fromSeed] ensures every container/onContainer pair
-  /// meets MD3's contrast requirements (WCAG 4.5:1 for normal text).
-  Color get _seed => switch (this) {
-        CourseColor.primary => Colors.deepPurple,
-        CourseColor.secondary => Colors.blueGrey,
-        CourseColor.tertiary => Colors.teal,
-        CourseColor.error => Colors.red,
-        CourseColor.green => Colors.green,
-        CourseColor.orange => Colors.deepOrange,
-        CourseColor.pink => Colors.pink,
+  /// Curated 12+1 OKLCH perceptually uniform palette (Apple Calendar / Notion
+  /// translucent aesthetic) calibrated for Light, Dark, and AMOLED canvases.
+  /// Every (container, onContainer) pair clears WCAG AAA (>= 7.1:1 light,
+  /// >= 9.8:1 dark) with uniform visual weight across hues.
+  ({Color container, Color onContainer, Color accent}) _tokens(
+    Brightness brightness,
+  ) {
+    final isDark = brightness == Brightness.dark;
+    return switch (this) {
+      // Cobalt Blue (OKLCH h=252°)
+      CourseColor.primary => isDark
+          ? (
+              container: const Color(0xFF102135),
+              onContainer: const Color(0xFFA7D0FF),
+              accent: const Color(0xFF5BA5F6),
+            )
+          : (
+              container: const Color(0xFFE1EFFF),
+              onContainer: const Color(0xFF004C8D),
+              accent: const Color(0xFF217AD0),
+            ),
+      // Teal (OKLCH h=186°)
+      CourseColor.secondary => isDark
+          ? (
+              container: const Color(0xFF042623),
+              onContainer: const Color(0xFF88DFD4),
+              accent: const Color(0xFF00BAAD),
+            )
+          : (
+              container: const Color(0xFFD7F4F0),
+              onContainer: const Color(0xFF005852),
+              accent: const Color(0xFF008C82),
+            ),
+      // Violet (OKLCH h=296°)
+      CourseColor.tertiary => isDark
+          ? (
+              container: const Color(0xFF221C33),
+              onContainer: const Color(0xFFD1C1FF),
+              accent: const Color(0xFFAA8EEE),
+            )
+          : (
+              container: const Color(0xFFEEEAFF),
+              onContainer: const Color(0xFF54378B),
+              accent: const Color(0xFF8261C9),
+            ),
+      // Exam Danger Crimson (OKLCH h=24° — reserved for exams)
+      CourseColor.error => isDark
+          ? (
+              container: const Color(0xFF351614),
+              onContainer: const Color(0xFFFFB7B1),
+              accent: const Color(0xFFF6736F),
+            )
+          : (
+              container: const Color(0xFFFFE7E4),
+              onContainer: const Color(0xFF8D121D),
+              accent: const Color(0xFFCD3F41),
+            ),
+      // Emerald (OKLCH h=150°)
+      CourseColor.green => isDark
+          ? (
+              container: const Color(0xFF102616),
+              onContainer: const Color(0xFFA2DDAD),
+              accent: const Color(0xFF5DB874),
+            )
+          : (
+              container: const Color(0xFFDFF4E2),
+              onContainer: const Color(0xFF005C26),
+              accent: const Color(0xFF1D9046),
+            ),
+      // Amber (OKLCH h=74°)
+      CourseColor.orange => isDark
+          ? (
+              container: const Color(0xFF2D1D05),
+              onContainer: const Color(0xFFF2C385),
+              accent: const Color(0xFFD59224),
+            )
+          : (
+              container: const Color(0xFFFBEAD5),
+              onContainer: const Color(0xFF684300),
+              accent: const Color(0xFFA36C00),
+            ),
+      // Rose (OKLCH h=352°)
+      CourseColor.pink => isDark
+          ? (
+              container: const Color(0xFF301822),
+              onContainer: const Color(0xFFFBB4D2),
+              accent: const Color(0xFFE07DAA),
+            )
+          : (
+              container: const Color(0xFFFFE5EF),
+              onContainer: const Color(0xFF7C2653),
+              accent: const Color(0xFFB74E82),
+            ),
+      // Sky / Cerulean (OKLCH h=222°)
+      CourseColor.sky => isDark
+          ? (
+              container: const Color(0xFF03252F),
+              onContainer: const Color(0xFF87DAF6),
+              accent: const Color(0xFF00B3DC),
+            )
+          : (
+              container: const Color(0xFFD7F3FD),
+              onContainer: const Color(0xFF00556A),
+              accent: const Color(0xFF0086A6),
+            ),
+      // Apricot / Terracotta (OKLCH h=44°)
+      CourseColor.coral => isDark
+          ? (
+              container: const Color(0xFF32190E),
+              onContainer: const Color(0xFFFFBA9C),
+              accent: const Color(0xFFE88254),
+            )
+          : (
+              container: const Color(0xFFFFE8DE),
+              onContainer: const Color(0xFF7F2E00),
+              accent: const Color(0xFFC05319),
+            ),
+      // Indigo (OKLCH h=274°)
+      CourseColor.indigo => isDark
+          ? (
+              container: const Color(0xFF1A1F35),
+              onContainer: const Color(0xFFBCC9FF),
+              accent: const Color(0xFF8799F8),
+            )
+          : (
+              container: const Color(0xFFE7ECFF),
+              onContainer: const Color(0xFF374194),
+              accent: const Color(0xFF5E6ED3),
+            ),
+      // Moss / Olive (OKLCH h=122°)
+      CourseColor.lime => isDark
+          ? (
+              container: const Color(0xFF1D230D),
+              onContainer: const Color(0xFFC2D697),
+              accent: const Color(0xFF94AE4E),
+            )
+          : (
+              container: const Color(0xFFE9F1DA),
+              onContainer: const Color(0xFF435400),
+              accent: const Color(0xFF6B8500),
+            ),
+      // Orchid / Plum (OKLCH h=326°)
+      CourseColor.plum => isDark
+          ? (
+              container: const Color(0xFF2B192B),
+              onContainer: const Color(0xFFECB8EC),
+              accent: const Color(0xFFCC83CE),
+            )
+          : (
+              container: const Color(0xFFF9E6F9),
+              onContainer: const Color(0xFF6E2D70),
+              accent: const Color(0xFFA456A7),
+            ),
+      // Nordic Slate (OKLCH h=242°, low chroma)
+      CourseColor.slate => isDark
+          ? (
+              container: const Color(0xFF1B2126),
+              onContainer: const Color(0xFFBDCFDE),
+              accent: const Color(0xFF8BA5BA),
+            )
+          : (
+              container: const Color(0xFFE7EEF4),
+              onContainer: const Color(0xFF384F60),
+              accent: const Color(0xFF617D92),
+            ),
+    };
+  }
+
+  String get displayLabel => switch (this) {
+        CourseColor.primary => '钴蓝',
+        CourseColor.secondary => '青绿',
+        CourseColor.tertiary => '紫罗兰',
+        CourseColor.error => '警示红',
+        CourseColor.green => '翠绿',
+        CourseColor.orange => '琥珀',
+        CourseColor.pink => '玫粉',
+        CourseColor.sky => '天蓝',
+        CourseColor.coral => '暖橘',
+        CourseColor.indigo => '靛蓝',
+        CourseColor.lime => '苔绿',
+        CourseColor.plum => '梅紫',
+        CourseColor.slate => '岩灰',
       };
 
-  ColorScheme _scheme(Brightness brightness) =>
-      ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);
+  Color containerColor(ColorScheme scheme) => _tokens(scheme.brightness).container;
 
-  Color containerColor(ColorScheme scheme) => _scheme(scheme.brightness).primaryContainer;
+  Color onContainerColor(ColorScheme scheme) =>
+      _tokens(scheme.brightness).onContainer;
 
-  Color onContainerColor(ColorScheme scheme) => _scheme(scheme.brightness).onPrimaryContainer;
+  Color accentColor(Brightness brightness) => _tokens(brightness).accent;
+
+  Color borderColor(Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
+    return _tokens(brightness).accent.withValues(alpha: isDark ? 0.30 : 0.22);
+  }
 }

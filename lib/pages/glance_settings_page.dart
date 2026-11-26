@@ -6,6 +6,8 @@ import '../models/screen_form_factor.dart';
 import '../services/glance_settings_service.dart';
 import '../services/screen_form_factor_service.dart';
 import '../services/service_provider.dart';
+import '../theme/tp_icons.dart';
+import '../theme/tp_tokens.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/blurred_app_bar.dart';
 import 'glance_preview_page.dart';
@@ -55,7 +57,7 @@ class GlanceSettingsPage extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               SwitchListTile(
-                secondary: const Icon(Icons.auto_awesome_outlined),
+                secondary: const Icon(TpIcons.sparkles),
                 title: const Text('自动切换到小屏界面'),
                 subtitle: const Text('在小米背屏或折叠屏外屏上显示精简界面'),
                 value: settings.enabled,
@@ -79,10 +81,10 @@ class GlanceSettingsPage extends StatelessWidget {
               _sectionLabel(context, '预览'),
               if (info?.isFlipDevice == true)
                 ListTile(
-                  leading: const Icon(Icons.stay_current_portrait),
+                  leading: const Icon(TpIcons.smartphone),
                   title: const Text('外屏预览'),
                   subtitle: const Text('MIX Flip · 1392 × 1208 px（约 506 × 439 dp）'),
-                trailing: const Icon(Icons.chevron_right),
+                  trailing: const Icon(TpIcons.chevronRight),
                   onTap: () => unawaited(
                     pushAdaptivePage<void>(
                       context,
@@ -94,10 +96,10 @@ class GlanceSettingsPage extends StatelessWidget {
                 ),
               if (info?.isRearDevice == true)
                 ListTile(
-                  leading: const Icon(Icons.stay_current_landscape),
+                  leading: const Icon(TpIcons.smartphone),
                   title: const Text('背屏预览'),
                   subtitle: const Text('小米 17 Pro 系列 · 340 × 210 dp'),
-                trailing: const Icon(Icons.chevron_right),
+                  trailing: const Icon(TpIcons.chevronRight),
                   onTap: () => unawaited(
                     pushAdaptivePage<void>(
                       context,
@@ -133,9 +135,9 @@ class GlanceSettingsPage extends StatelessWidget {
   }
 
   static IconData _sectionIcon(GlanceSection section) => switch (section) {
-        GlanceSection.courses => Icons.calendar_month_outlined,
-        GlanceSection.assignments => Icons.assignment_outlined,
-        GlanceSection.payment => Icons.qr_code_2_outlined,
+        GlanceSection.courses => TpIcons.calendar,
+        GlanceSection.assignments => TpIcons.document,
+        GlanceSection.payment => TpIcons.qrCode,
       };
 
   static String _sectionTitle(GlanceSection section) => switch (section) {
@@ -178,9 +180,9 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final (label, icon) = switch (surface) {
-      GlanceSurface.cover => ('当前：折叠外屏', Icons.stay_current_portrait),
-      GlanceSurface.rear => ('当前：背屏', Icons.stay_current_landscape),
-      GlanceSurface.none => ('当前：普通屏幕', Icons.smartphone),
+      GlanceSurface.cover => ('当前：折叠外屏', TpIcons.smartphone),
+      GlanceSurface.rear => ('当前：背屏', TpIcons.smartphone),
+      GlanceSurface.none => ('当前：普通屏幕', TpIcons.smartphone),
     };
     final details = info == null
         ? '未读取到屏幕信息'
@@ -195,7 +197,7 @@ class _StatusCard extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(TpTokens.radiusM),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -238,7 +240,7 @@ class _StatusCard extends StatelessWidget {
             ),
             IconButton(
               onPressed: onRefresh,
-              icon: const Icon(Icons.refresh, size: 18),
+              icon: const Icon(TpIcons.refresh, size: 18),
               tooltip: '重新检测',
               visualDensity: VisualDensity.compact,
             ),

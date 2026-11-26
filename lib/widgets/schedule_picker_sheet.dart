@@ -1,10 +1,44 @@
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/course_table.dart';
+import '../theme/theme.dart';
 import '../utils/platform.dart';
+
+Future<TimeOfDay?> showScheduleTimePicker({
+  required BuildContext context,
+  required TimeOfDay initialTime,
+  required String title,
+}) {
+  var selected = initialTime;
+  return showSchedulePickerSheet<TimeOfDay>(
+    context: context,
+    title: title,
+    selection: () => selected,
+    builder: (context) {
+      final scrollBehavior = ScrollConfiguration.of(context);
+      return ScrollConfiguration(
+        behavior: scrollBehavior.copyWith(
+          dragDevices: {...scrollBehavior.dragDevices, PointerDeviceKind.mouse},
+        ),
+        child: SizedBox(
+          height: 216,
+          child: CupertinoDatePicker(
+            mode: CupertinoDatePickerMode.time,
+            use24hFormat: true,
+            initialDateTime:
+                DateTime(2026, 1, 1, selected.hour, selected.minute),
+            onDateTimeChanged: (value) =>
+                selected = TimeOfDay.fromDateTime(value),
+          ),
+        ),
+      );
+    },
+  );
+}
 
 /// A confirm-or-cancel sheet for a pending choice — the app's pickers (wheels,
 /// dates, times, multi-select lists) all present through it. Edits remain
@@ -23,6 +57,7 @@ Future<T?> showSchedulePickerSheet<T>({
 }) {
   FocusManager.instance.primaryFocus?.unfocus();
   final ios = isIos();
+  final tp = context.tpColors;
   return CNBottomSheet.show<T>(
     context: context,
     useRootNavigator: true,
@@ -30,52 +65,65 @@ Future<T?> showSchedulePickerSheet<T>({
     // one has a single height, so it is dismissed by swiping or ✕ alone.
     showDragHandle: !ios,
     isScrollControlled: isScrollControlled,
-    backgroundColor: ios
-        ? (grouped
-                ? CupertinoColors.systemGroupedBackground
-                : CupertinoColors.systemBackground)
-            .resolveFrom(context)
-        : null,
-    builder: (context) => SafeArea(
-      top: false,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(ios ? 0 : 8, ios ? 16 : 0, ios ? 0 : 8, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ios
-                ? IosSheetHeader(
-                    title: title,
-                    onCancel: () => Navigator.pop(context),
-                    onConfirm: () => Navigator.pop(context, selection()),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: Row(
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('取消'),
-                        ),
-                        Expanded(
-                          child: Text(
-                            title,
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.titleMedium,
+    backgroundColor: ios ? (grouped ? tp.canvas : tp.surface) : null,
+    builder: (context) {
+      final colors = context.tpColors;
+      final scrollBehavior = ScrollConfiguration.of(context);
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(ios ? 0 : 8, ios ? 16 : 0, ios ? 0 : 8, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ios
+                  ? IosSheetHeader(
+                      title: title,
+                      onCancel: () => Navigator.pop(context),
+                      onConfirm: () => Navigator.pop(context, selection()),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Row(
+                        children: [
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              foregroundColor: colors.textSecondary,
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('取消'),
                           ),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, selection()),
-                          child: const Text('确定'),
-                        ),
-                      ],
+                          Expanded(
+                            child: Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(context, selection()),
+                            child: const Text('确定'),
+                          ),
+                        ],
+                      ),
                     ),
+              Flexible(
+                child: ScrollConfiguration(
+                  behavior: scrollBehavior.copyWith(
+                    dragDevices: {
+                      ...scrollBehavior.dragDevices,
+                      PointerDeviceKind.mouse,
+                    },
                   ),
-            Flexible(child: builder(context)),
-          ],
+                  child: builder(context),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 

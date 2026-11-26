@@ -8,16 +8,47 @@ import '../../pages/campus_card_page.dart';
 import '../../pages/home_page.dart';
 import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
+import '../../services/assignment_service.dart';
+import '../../services/service_provider.dart';
+import '../../theme/tp_icons.dart';
 import '../../utils/adaptive_layout.dart';
+import '../../utils/motion.dart';
 import '../../utils/platform.dart';
 import '../../widgets/adaptive_page_navigation.dart';
 import '../glance/glance_active_scope.dart';
 import 'app_destination.dart';
 import 'app_entry_notifier.dart';
 import 'desktop/desktop_shell.dart';
+import 'desktop/desktop_sidebar_tokens.dart';
 import 'mobile_shell.dart';
 
 export 'app_entry_notifier.dart';
+
+/// Computes the live desktop sidebar badge for the Deadlines tab.
+///
+/// Counts uncompleted upcoming items (including those currently inside their
+/// late-submission window). Marks the badge urgent when any item is inside its
+/// late window or due within 24 hours.
+SidebarBadgeData? computeDeadlineSidebarBadge(
+  AssignmentService service, {
+  DateTime? now,
+}) {
+  final current = now ?? DateTime.now();
+  var count = 0;
+  var urgent = false;
+  for (final item in service.visibleAssignments) {
+    if (service.isCompleted(item)) continue;
+    if (item.effectiveDue.isBefore(current)) continue;
+    count++;
+    final inLateWindow = item.effectiveLateDue != null && item.due.isBefore(current);
+    final remaining = item.effectiveDue.difference(current);
+    if (inLateWindow || remaining < const Duration(hours: 24)) {
+      urgent = true;
+    }
+  }
+  if (count <= 0) return null;
+  return SidebarBadgeData(count: count, urgent: urgent);
+}
 
 /// A campus-card entry the host asked for — a home-screen widget tap, a
 /// shortcut, a `techpie://ecard/pay` link — that has not been shown yet.
@@ -27,8 +58,8 @@ export 'app_entry_notifier.dart';
 /// tab the user left the app on — or the selected destination on a wide
 /// window, and on the root navigator otherwise. A value set before the shell
 /// mounts waits for it, which is what a cold start needs.
-// Shared with the glance host through app_entry_notifier.dart.
 final appShellPendingDeadlines = ValueNotifier<bool>(false);
+final appShellPendingTab = ValueNotifier<int?>(null);
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -38,12 +69,7 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  // Temporarily disabled: the wide-window sidebar (DesktopShell) is turned
-  // off so every window width uses MobileShell's bottom nav bar instead.
-  // Flip this back to true to restore the sidebar at width >= 600. The
-  // nav-bar-clearance check in adaptive_feedback.dart was changed to match —
-  // re-enabling this alone is not enough, see that call site as well.
-  static const bool _desktopShellEnabled = false;
+  static const bool _desktopShellEnabled = true;
 
   /// The tab the campus card lives in on iOS: it is entered from Home's feature
   /// grid, so a widget or shortcut opens it there too, the way a system app's
@@ -53,51 +79,46 @@ class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
   int _previousSelectedIndex = 0;
   bool _sidebarCollapsed = false;
+  bool _sidebarPrefLoaded = false;
 
-  /// One stack per destination, and a key for each: the content navigator is
-  /// rebuilt when the destination changes, and two live navigators must not
-  /// share one GlobalKey.
-  final _contentNavigatorKeys = <int, GlobalKey<NavigatorState>>{};
-
-  /// On iOS each tab owns its page stack, so the tab bar stays on screen as
-  /// the user drills in and switching tabs returns to where that tab was —
-  /// what UITabBarController does. Each stack needs its own hero controller,
-  /// and its root its own primary scroll controller, so a second tap on the
-  /// tab can scroll that tab, and only that tab, back to the top.
+  /// Per-tab navigation stacks, hero controllers, and primary scroll
+  /// controllers. Used on iOS (like UITabBarController) and in DesktopShell so
+  /// switching tabs preserves each tab's state, scroll offset, and subpage
+  /// stack, while tapping the active tab pops to root and scrolls to top.
   final _tabNavigatorKeys = <int, GlobalKey<NavigatorState>>{};
   final _tabHeroControllers = <int, HeroController>{};
   final _tabScrollControllers = <int, ScrollController>{};
   static const List<AppDestination> _destinations = [
     AppDestination(
-      label: 'Home',
-      icon: Icons.home_outlined,
-      selectedIcon: Icons.home,
+      label: '首页',
+      icon: TpIcons.home,
+      selectedIcon: TpIcons.home,
       sfSymbol: 'house',
       selectedSfSymbol: 'house.fill',
       page: HomePage(key: ValueKey('home')),
     ),
     AppDestination(
-      label: 'Schedule',
-      icon: Icons.calendar_month_outlined,
-      selectedIcon: Icons.calendar_month,
+      label: '课表',
+      icon: TpIcons.schedule,
+      selectedIcon: TpIcons.schedule,
       sfSymbol: 'calendar',
       selectedSfSymbol: 'calendar.circle.fill',
       page: SchedulePage(key: ValueKey('schedule')),
     ),
     AppDestination(
       label: 'Deadlines',
-      icon: Icons.assignment_outlined,
-      selectedIcon: Icons.assignment,
+      icon: TpIcons.deadlines,
+      selectedIcon: TpIcons.deadlines,
       sfSymbol: 'checkmark.circle',
       selectedSfSymbol: 'checkmark.circle.fill',
       page: AssignmentsPage(key: ValueKey('assignments')),
     ),
     AppDestination(
-      label: 'Settings',
-      icon: Icons.settings_outlined,
-      selectedIcon: Icons.settings,
-      sfSymbol: 'gearshape',
-      selectedSfSymbol: 'gearshape.fill',
+      label: '我的',
+      icon: TpIcons.profile,
+      selectedIcon: TpIcons.profile,
+      sfSymbol: 'person',
+      selectedSfSymbol: 'person.fill',
       page: SettingsPage(key: ValueKey('settings')),
     ),
   ];
@@ -107,8 +128,12 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     appShellPendingEcardEntry.addListener(_showPendingEcardEntry);
     appShellPendingDeadlines.addListener(_showDeadlines);
+    appShellPendingTab.addListener(_showPendingTab);
     if (appShellPendingDeadlines.value) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showDeadlines());
+    }
+    if (appShellPendingTab.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showPendingTab());
     }
     if (appShellPendingEcardEntry.value != null) {
       // Deferred: a push during the first build is a build-time side effect.
@@ -122,6 +147,7 @@ class _AppShellState extends State<AppShell> {
   void dispose() {
     appShellPendingEcardEntry.removeListener(_showPendingEcardEntry);
     appShellPendingDeadlines.removeListener(_showDeadlines);
+    appShellPendingTab.removeListener(_showPendingTab);
     for (final controller in _tabHeroControllers.values) {
       controller.dispose();
     }
@@ -131,10 +157,17 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
+  void _showPendingTab() {
+    final target = appShellPendingTab.value;
+    if (!mounted || target == null) return;
+    appShellPendingTab.value = null;
+    if (target < 0 || target >= _destinations.length) return;
+    _onDestinationSelected(target);
+  }
+
   void _showDeadlines() {
     if (!mounted || !appShellPendingDeadlines.value) return;
     appShellPendingDeadlines.value = false;
-    _contentNavigatorKeys[2]?.currentState?.popUntil((route) => route.isFirst);
     _tabNavigatorKeys[2]?.currentState?.popUntil((route) => route.isFirst);
     _onDestinationSelected(2);
   }
@@ -142,9 +175,12 @@ class _AppShellState extends State<AppShell> {
   /// Pushes the entry onto the visible navigation stack.
   void _showPendingEcardEntry() {
     final entry = appShellPendingEcardEntry.value;
-    if (entry == null || !mounted) return;
-    if (GlanceActiveScope.isActive(context)) return;
+    if (entry == null || !mounted || GlanceActiveScope.isActive(context)) return;
     appShellPendingEcardEntry.value = null;
+    context
+        .getInheritedWidgetOfExactType<ServiceProvider>()
+        ?.telemetry
+        ?.featureOpened('campus_card');
     // Login and playback pages can cover the entire tab shell: the code then
     // opens above that page, and back returns to it.
     final shellCovered = !ModalRoute.of(context)!.isCurrent;
@@ -158,10 +194,8 @@ class _AppShellState extends State<AppShell> {
       final navigator = _tabNavigatorKeys[_campusCardTab]?.currentState;
       navigator?.popUntil((route) => route.isFirst);
       nested = navigator?.context;
-    } else if (isIos()) {
-      nested = _tabNavigatorKeys[_selectedIndex]?.currentContext;
     } else {
-      nested = _contentNavigatorKeys[_selectedIndex]?.currentContext;
+      nested = _tabNavigatorKeys[_selectedIndex]?.currentContext;
     }
     unawaited(
       pushAdaptivePage<void>(
@@ -177,6 +211,11 @@ class _AppShellState extends State<AppShell> {
       _returnToTabRoot(index);
       return;
     }
+    const features = ['home', 'schedule', 'deadlines', 'settings'];
+    context
+        .getInheritedWidgetOfExactType<ServiceProvider>()
+        ?.telemetry
+        ?.featureOpened(features[index]);
     _previousSelectedIndex = _selectedIndex;
     setState(() => _selectedIndex = index);
   }
@@ -185,8 +224,7 @@ class _AppShellState extends State<AppShell> {
   /// scrolls back to the top — the system tab bar's behaviour.
   void _returnToTabRoot(int index) {
     final navigator = _tabNavigatorKeys[index]?.currentState;
-    if (navigator == null) return;
-    if (navigator.canPop()) {
+    if (navigator != null && navigator.canPop()) {
       navigator.popUntil((route) => route.isFirst);
       return;
     }
@@ -195,30 +233,53 @@ class _AppShellState extends State<AppShell> {
     final animate = !MediaQuery.disableAnimationsOf(context);
     for (final position in controller.positions) {
       if (animate) {
-        unawaited(position.animateTo(
-          position.minScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-        ),);
+        unawaited(
+          position.animateTo(
+            position.minScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+          ),
+        );
       } else {
         position.jumpTo(position.minScrollExtent);
       }
     }
   }
 
-  void _onSidebarToggleCollapsed() {
-    setState(() => _sidebarCollapsed = !_sidebarCollapsed);
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_sidebarPrefLoaded) {
+      _sidebarPrefLoaded = true;
+      context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened('home');
+      final storage = context.dependOnInheritedWidgetOfExactType<ServiceProvider>()?.storageService;
+      if (storage != null) {
+        _sidebarCollapsed = storage.desktopSidebarCollapsed;
+      }
+    }
   }
 
-  Widget _buildPageView(BuildContext context) {
+  void _onSidebarToggleCollapsed() {
+    final next = !_sidebarCollapsed;
+    setState(() => _sidebarCollapsed = next);
+    final storage = context.dependOnInheritedWidgetOfExactType<ServiceProvider>()?.storageService;
+    if (storage != null) {
+      unawaited(storage.setDesktopSidebarCollapsed(next));
+    }
+  }
+
+  Widget _buildPageView(
+    BuildContext context, {
+    required bool usePerTabNavigators,
+  }) {
     return AppDestinationSwitcher(
       selectedIndex: _selectedIndex,
       previousSelectedIndex: _previousSelectedIndex,
-      preserveVisitedPages: isIos(),
+      preserveVisitedPages: usePerTabNavigators,
       animationsEnabled: !MediaQuery.disableAnimationsOf(context),
       pages: [
         for (var index = 0; index < _destinations.length; index++)
-          isIos()
+          usePerTabNavigators
               ? _buildTabNavigator(index, _destinations[index].page)
               : _destinations[index].page,
       ],
@@ -259,54 +320,42 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  Widget _buildDesktopContentNavigator(Widget pageView) {
-    final navigatorKey = _contentNavigatorKeys.putIfAbsent(
-      _selectedIndex,
-      GlobalKey<NavigatorState>.new,
-    );
-
-    // The same reason the settings page needs it: this stack holds the pages a
-    // destination pushed, so the system back has to reach it rather than the
-    // root navigator, which only has the shell on it.
-    return NavigatorPopHandler(
-      onPopWithResult: (_) => navigatorKey.currentState?.pop(),
-      child: Navigator(
-        key: navigatorKey,
-        onGenerateRoute: (settings) => adaptivePageRoute<void>(
-          settings: settings,
-          builder: (context) => pageView,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final windowSizeClass = appWindowSizeClassOf(context);
-    final pageView = _buildPageView(context);
+    final desktopShell = _desktopShellEnabled && usesDesktopSidebarShell(context);
+    final pageView = _buildPageView(
+      context,
+      usePerTabNavigators: isIos() || desktopShell,
+    );
 
-    if (_desktopShellEnabled &&
-        windowSizeClass == AppWindowSizeClass.expanded) {
-      return DesktopShell(
-        destinations: _destinations,
-        selectedIndex: _selectedIndex,
-        sidebarCollapsed: _sidebarCollapsed,
-        onDestinationSelected: _onDestinationSelected,
-        onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
-        child: _buildDesktopContentNavigator(pageView),
-      );
-    }
-
-    if (_desktopShellEnabled &&
-        windowSizeClass == AppWindowSizeClass.medium) {
-      return DesktopShell(
-        destinations: _destinations,
-        selectedIndex: _selectedIndex,
-        sidebarCollapsed: true,
-        showToggleButton: false,
-        onDestinationSelected: _onDestinationSelected,
-        onToggleSidebarCollapsed: () {},
-        child: _buildDesktopContentNavigator(pageView),
+    if (desktopShell) {
+      final assignmentService =
+          context.dependOnInheritedWidgetOfExactType<ServiceProvider>()?.assignmentService;
+      if (assignmentService == null) {
+        return DesktopShell(
+          destinations: _destinations,
+          selectedIndex: _selectedIndex,
+          sidebarCollapsed: _sidebarCollapsed,
+          onDestinationSelected: _onDestinationSelected,
+          onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
+          child: pageView,
+        );
+      }
+      return ListenableBuilder(
+        listenable: assignmentService,
+        builder: (context, child) {
+          final deadlineBadge = computeDeadlineSidebarBadge(assignmentService);
+          return DesktopShell(
+            destinations: _destinations,
+            selectedIndex: _selectedIndex,
+            sidebarCollapsed: _sidebarCollapsed,
+            badges: deadlineBadge == null ? const {} : {2: deadlineBadge},
+            onDestinationSelected: _onDestinationSelected,
+            onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
+            child: child!,
+          );
+        },
+        child: pageView,
       );
     }
 
@@ -381,20 +430,12 @@ class _AppDestinationSwitcherState extends State<AppDestinationSwitcher> {
     }
 
     return PageTransitionSwitcher(
-      duration: const Duration(milliseconds: 300),
-      layoutBuilder: (entries) => Stack(
-        fit: StackFit.expand,
-        children: entries,
-      ),
+      duration: TgMotion.tabsPageSwitch,
+      layoutBuilder: (entries) => Stack(fit: StackFit.expand, children: entries),
       transitionBuilder: (child, animation, secondaryAnimation) {
-        // Pure horizontal slide — no fade, no scale, no color fill.
-        // Controllers always run forward: the new entry's primary (0→1)
-        // drives its incoming slide; the old entry's secondary (0→1)
-        // drives its outgoing slide. Direction is encoded only in the
-        // tween sign, so backward navigation mirrors forward correctly
-        // and the easing curve stays consistent in both directions.
-        final direction =
-            widget.selectedIndex >= widget.previousSelectedIndex ? 1.0 : -1.0;
+        // Pure horizontal slide synced to TgBottomNavBar's 320ms easeOutQuint
+        // timeline so bar capsule and page motion read as one rigid body.
+        final direction = widget.selectedIndex >= widget.previousSelectedIndex ? 1.0 : -1.0;
         final incoming = Tween<Offset>(
           begin: Offset(direction, 0),
           end: Offset.zero,
@@ -407,11 +448,10 @@ class _AppDestinationSwitcherState extends State<AppDestinationSwitcher> {
           animation: Listenable.merge([animation, secondaryAnimation]),
           builder: (context, built) {
             final incomingOffset = incoming.transform(
-              Curves.easeInOutCubicEmphasized.transform(animation.value),
+              TgMotion.easeOutQuint.transform(animation.value),
             );
             final outgoingOffset = outgoing.transform(
-              Curves.easeInOutCubicEmphasized
-                  .transform(secondaryAnimation.value),
+              TgMotion.easeOutQuint.transform(secondaryAnimation.value),
             );
             return FractionalTranslation(
               translation: incomingOffset + outgoingOffset,

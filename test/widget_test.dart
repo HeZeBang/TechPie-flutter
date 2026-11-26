@@ -1,12 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' show Response;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/main.dart';
+import 'package:techpie/models/feature.dart';
 import 'package:techpie/pages/assignments_page.dart';
+import 'package:techpie/pages/campus_feature_navigation.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -22,9 +29,17 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
-import 'package:techpie/widgets/adaptive_select.dart';
+import 'package:techpie/services/usage_telemetry.dart';
+import 'package:techpie/theme/tp_icons.dart';
 import 'package:techpie/widgets/app_shell/app_shell.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
+
+class _SignedInAuth extends AuthService {
+  _SignedInAuth(super.storage, super.http, super.uniAuth);
+
+  @override
+  bool get isLoggedIn => true;
+}
 
 void main() {
   testWidgets('iOS-style destination switching lazily preserves visited pages',
@@ -70,58 +85,89 @@ void main() {
     expect(find.text('Second: 0'), findsNothing);
   });
 
-  testWidgets('App shell renders with desktop sidebar', (
-    WidgetTester tester,
-  ) async {
-    tester.view.physicalSize = const Size(1200, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  for (final optIn in [false, true]) {
+    testWidgets('desktop opens after privacy consent with usage statistics set to $optIn', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    SharedPreferences.setMockInitialValues({
-      // These tests are about the shell, not the first-launch consent.
-      'privacy_accepted_v1': true,
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final opened = <String>[];
+      final metrics = UsageTelemetry(
+        prefs,
+        endpoint: Uri.parse('http://localhost/api/telemetry'),
+        version: '1.1.0',
+        platform: 'linux',
+        existingInstall: false,
+        clientFactory: () => MockClient((request) async {
+          final events = jsonDecode(request.body)['events'] as List<dynamic>;
+          opened.addAll(events.where((e) => e['kind'] == 'feature_open').map((e) => e['feature'] as String));
+          return Response('', 204);
+        }),
+      );
+      final storage = StorageService(prefs);
+      final logger = DebugLogger();
+      final http = LoggingHttpClient(logger);
+      final uniAuth = UniAuthService();
+      final auth = _SignedInAuth(storage, http, uniAuth);
+      final theme = ThemeService(storage);
+      final tpAuth = ThirdPartyAuthService(storage, http);
+      final schedule = ScheduleService(storage, http, auth, tpAuth);
+      final assignments =
+          AssignmentService(storage, http, auth, tpAuth, schedule);
+      final oaGym = OaGymService(auth, storage, tpAuth);
+      final egateApp = EgateAppService(auth, storage, tpAuth);
+      final sync = SyncService(auth, tpAuth, storage);
+
+      await tester.pumpWidget(
+        TechPieApp(
+          telemetry: metrics,
+          authService: auth,
+          debugLogger: logger,
+          storageService: storage,
+          themeService: theme,
+          scheduleService: schedule,
+          assignmentService: assignments,
+          thirdPartyAuthService: tpAuth,
+          oaGymService: oaGym,
+          egateAppService: egateApp,
+          uniAuthService: uniAuth,
+          syncService: sync,
+          updateService: UpdateService(),
+          campusCardService: CampusCardService(),
+          ecardBindService: EcardBindService(),
+        ),
+      );
+
+      final choice = find.text('发送匿名使用统计（可选）');
+      expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value, isFalse);
+      if (optIn) {
+        await tester.tap(choice);
+        await tester.pump();
+      }
+      expect(metrics.enabled, isFalse);
+      await tester.tap(find.text('同意并继续'));
+      await tester.pumpAndSettle();
+      expect(metrics.enabled, optIn);
+      expect(storage.privacyAccepted, isTrue);
+      expect(find.byType(NavigationRail), findsNothing);
+      expect(find.text('首页'), findsWidgets);
+      expect(find.text('课表'), findsWidgets);
+      expect(find.text('Deadlines'), findsWidgets);
+      expect(find.text('我的'), findsWidgets);
+      final feature = featureEntries.firstWhere((entry) => entry.id == 'student_allowance');
+      openCampusFeature(tester.element(find.byType(AppShell)), feature);
+      await tester.pumpAndSettle();
+      await metrics.flush();
+      expect(opened.where((id) => id == feature.id), hasLength(optIn ? 1 : 0));
+      await tester.pumpWidget(const SizedBox());
+      metrics.dispose();
     });
-    final prefs = await SharedPreferences.getInstance();
-    final storage = StorageService(prefs);
-    final logger = DebugLogger();
-    final http = LoggingHttpClient(logger);
-    final uniAuth = UniAuthService();
-    final auth = AuthService(storage, http, uniAuth);
-    final theme = ThemeService(storage);
-    final tpAuth = ThirdPartyAuthService(storage, http);
-    final schedule = ScheduleService(storage, http, auth, tpAuth);
-    final assignments =
-        AssignmentService(storage, http, auth, tpAuth, schedule);
-    final oaGym = OaGymService(auth, storage, tpAuth);
-    final egateApp = EgateAppService(auth, storage, tpAuth);
-    final sync = SyncService(auth, tpAuth, storage);
-
-    await tester.pumpWidget(
-      TechPieApp(
-        authService: auth,
-        debugLogger: logger,
-        storageService: storage,
-        themeService: theme,
-        scheduleService: schedule,
-        assignmentService: assignments,
-        thirdPartyAuthService: tpAuth,
-        oaGymService: oaGym,
-        egateAppService: egateApp,
-        uniAuthService: uniAuth,
-        syncService: sync,
-        updateService: UpdateService(),
-        campusCardService: CampusCardService(),
-        ecardBindService: EcardBindService(),
-      ),
-    );
-
-    expect(find.byType(NavigationRail), findsNothing);
-    expect(find.text('Home'), findsWidgets);
-    expect(find.text('Schedule'), findsWidgets);
-    expect(find.text('Deadlines'), findsWidgets);
-    expect(find.text('Settings'), findsWidgets);
-  });
+  }
 
   testWidgets('deadline widget cold and repeated warm routes reuse the page',
       (tester) async {
@@ -179,7 +225,7 @@ void main() {
       expect(find.text('Deadline detail'), findsOneWidget);
       tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(0);
     } else {
-      await tester.tap(find.text('Home').first);
+      await tester.tap(find.text('首页').first);
     }
     await tester.pumpAndSettle();
     expect(find.byType(AssignmentsPage), findsNothing);
@@ -191,6 +237,10 @@ void main() {
   }, variant: const TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}),);
 
   testWidgets('Navigation switches pages', (WidgetTester tester) async {
+    const bindingChannel = MethodChannel('techpie/ecard_bind');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(bindingChannel, (call) async => 'unsupported');
+    addTearDown(() => messenger.setMockMethodCallHandler(bindingChannel, null));
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -227,52 +277,47 @@ void main() {
         uniAuthService: uniAuth,
         syncService: sync,
         updateService: UpdateService(),
-        campusCardService: CampusCardService(),
+        campusCardService: CampusCardService.withStore(InMemorySecureCredentialStore()),
         ecardBindService: EcardBindService(),
       ),
     );
 
     expect(find.byType(TgBottomNavBar), findsOneWidget);
     // Starts on Home
-    expect(find.text('Welcome to TechPie'), findsOneWidget);
-    expect(find.text('校园卡'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home.greeting-header')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home.campus-card-strip')), findsOneWidget);
+    expect(find.text('校园卡'), findsWidgets);
     expect(find.text('消费码'), findsNothing);
 
     // Tap Schedule
-    await tester.tap(find.text('Schedule').first);
+    await tester.tap(find.text('课表').first);
     await tester.pumpAndSettle();
     // Not logged in, so shows login prompt
-    expect(find.byIcon(Icons.calendar_month), findsOneWidget);
+    expect(find.byIcon(TpIcons.schedule), findsWidgets);
     expect(find.text('登录以查看课表'), findsOneWidget);
 
     // Tap Deadlines
     await tester.tap(find.text('Deadlines').first);
     await tester.pumpAndSettle();
-    expect(find.text('No upcoming deadlines'), findsOneWidget);
+    expect(find.text('连接课程平台以获取Deadlines'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsNothing);
 
-    // Tap Settings
-    await tester.tap(find.text('Settings').first);
+    // Tap Settings (我的)
+    await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
-    expect(find.text('Appearance'), findsOneWidget);
+    expect(find.text('外观'), findsOneWidget);
+    expect(find.text('支持与关于'), findsOneWidget);
     expect(find.text('OPENID'), findsNothing);
-    expect(find.text('Linked accounts'), findsOneWidget);
-    await tester.tap(find.text('Linked accounts'));
+    expect(find.text('第三方账号'), findsOneWidget);
+    await tester.tap(find.text('第三方账号'));
     await tester.pumpAndSettle();
     expect(find.text('eCard'), findsOneWidget);
-    final icon = tester.widget<Icon>(find.byIcon(Icons.account_balance_wallet_outlined));
-    expect(icon.color, isNull);
+    expect(find.byIcon(TpIcons.wallet), findsOneWidget);
     await tester.tap(find.text('eCard'));
     await tester.pumpAndSettle();
     expect(find.text('eCard'), findsWidgets);
-    expect(find.text('连接 eCard'), findsOneWidget);
-    expect(find.text('OPENID 渠道'), findsOneWidget);
-    await tester.tap(find.text('WeChat（微信）'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Alipay（支付宝）').last);
-    await tester.pumpAndSettle();
-    expect(tester.widget<AdaptiveSelect>(find.byType(AdaptiveSelect).last).value, 'alipay_openid');
-    expect(find.textContaining('Cloud sync'), findsOneWidget);
+    expect(find.text('Open Cloud sync'), findsOneWidget);
+    expect(find.textContaining('OPENID'), findsNothing);
   });
 }
 

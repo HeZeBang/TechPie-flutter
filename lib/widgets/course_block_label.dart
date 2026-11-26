@@ -99,10 +99,9 @@ class CourseBlockLabel extends StatelessWidget {
         // One line of name always; it clips itself if even that is too much.
         remaining -= nameM.lineHeight;
 
-        // Then one line each of location and teachers, as the old thresholds
-        // allowed (location from 42px, teachers from 48px), when they fit.
+        // Reserve a room line whenever it fits, including single-period cells.
         final locM =
-            locationText.isEmpty || height < 42 ? null : measure(locationText, locationStyle, 5);
+            locationText.isEmpty ? null : measure(locationText, locationStyle, 5);
         var locLines = 0;
         if (locM != null && remaining >= locM.lineHeight) {
           locLines = 1;

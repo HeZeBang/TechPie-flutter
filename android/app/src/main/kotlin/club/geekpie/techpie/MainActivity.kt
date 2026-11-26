@@ -1,11 +1,14 @@
 package club.geekpie.techpie
 
 import android.Manifest
+import android.content.ClipData
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.CalendarContract
@@ -13,19 +16,34 @@ import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import club.geekpie.techpie.ecardbind.EcardBindVpnService
+import club.geekpie.techpie.wear.WearEngineBridge
+import club.geekpie.techpie.island.FocusSequenceStore
+import club.geekpie.techpie.island.IslandBridge
+import club.geekpie.techpie.island.IslandCapabilityProbe
+import club.geekpie.techpie.island.IslandNotificationFactory
+import club.geekpie.techpie.notification.SpendingNotificationBridge
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        super.onCreate(savedInstanceState)
+    }
+
     private var pendingCalendarImport: PendingCalendarImport? = null
     private var pendingVpnConsent: PendingVpnConsent? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var ecardWidgets: EcardWidgetBridge? = null
     private var ecardFeedback: EcardFeedback? = null
     private var screenFormFactor: ScreenFormFactorBridge? = null
+    private var wearEngine: WearEngineBridge? = null
+    private var islandBridge: IslandBridge? = null
+    private var spendingAlerts: SpendingNotificationBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -34,6 +52,22 @@ class MainActivity : FlutterActivity() {
         }
         ecardFeedback = EcardFeedback(this, flutterEngine.dartExecutor.binaryMessenger)
         screenFormFactor = ScreenFormFactorBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        wearEngine = WearEngineBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        islandBridge = IslandBridge(
+            this, flutterEngine.dartExecutor.binaryMessenger,
+            IslandCapabilityProbe(this), IslandNotificationFactory(this, FocusSequenceStore(this)),
+        ) { requestNotificationPermission() }
+        spendingAlerts = SpendingNotificationBridge(this, flutterEngine.dartExecutor.binaryMessenger, this)
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            PLATFORM_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "shareFile" -> handleShareCampusFile(call, result)
+                else -> result.notImplemented()
+            }
+        }
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -86,7 +120,22 @@ class MainActivity : FlutterActivity() {
         ecardFeedback = null
         screenFormFactor?.dispose()
         screenFormFactor = null
+        wearEngine?.dispose()
+        wearEngine = null
+        islandBridge?.dispose()
+        islandBridge = null
+        spendingAlerts?.dispose()
+        spendingAlerts = null
         super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    private fun requestNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) ActivityCompat.requestPermissions(this,
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_ISLAND_NOTIFICATION)
+        return granted
     }
 
     private fun handleStartEcardBindHijack(
@@ -197,6 +246,7 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 48293) spendingAlerts?.refreshSchedule()
 
         if (requestCode != REQUEST_CALENDAR_PERMISSIONS) return
 
@@ -334,9 +384,58 @@ class MainActivity : FlutterActivity() {
         val result: MethodChannel.Result,
     )
 
+    private fun handleShareCampusFile(
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        val scope = (call.argument<String>("scope") ?: "").trim()
+        val filename = (call.argument<String>("filename") ?: "").trim()
+        val mimeType = call.argument<String>("mimeType")?.trim()
+        if (!SCOPE_REGEX.matches(scope) ||
+            filename.isEmpty() ||
+            filename == "." ||
+            filename == ".." ||
+            filename.contains('/') ||
+            filename.contains('\\') ||
+            filename.contains("..")
+        ) {
+            result.error("invalid_file", "Invalid campus file arguments.", null)
+            return
+        }
+        try {
+            val root = java.io.File(cacheDir, "campus_files/$scope").canonicalFile
+            val file = java.io.File(root, filename).canonicalFile
+            if (!file.path.startsWith(root.path + java.io.File.separator) || !file.isFile) {
+                result.error("missing_file", "Campus file is unavailable.", null)
+                return
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "$packageName.fileProvider.com.crazecoder.openfile",
+                file,
+            )
+            val resolvedType = mimeType?.takeIf { it.isNotEmpty() }
+                ?: contentResolver.getType(uri)
+                ?: "application/octet-stream"
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = resolvedType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = ClipData.newRawUri(filename, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, null))
+            result.success(null)
+        } catch (_: Exception) {
+            result.error("share_failed", "Cannot share file.", null)
+        }
+    }
+
     private companion object {
+        const val PLATFORM_CHANNEL = "techpie/platform"
+        val SCOPE_REGEX = Regex("^[a-z0-9_-]{1,32}$")
         const val CALENDAR_IMPORTER_CHANNEL = "techpie/calendar_importer"
         const val ECARD_BIND_CHANNEL = "techpie/ecard_bind"
+        const val REQUEST_ISLAND_NOTIFICATION = 48292
         const val REQUEST_CALENDAR_PERMISSIONS = 48291
         const val REQUEST_VPN_CONSENT = 0x0ECB
         const val VPN_STATE_ATTEMPTS = 15

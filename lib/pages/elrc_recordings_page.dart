@@ -8,20 +8,26 @@ import '../services/auth_service.dart';
 import '../services/elrc_client.dart';
 import '../services/service_provider.dart';
 import '../services/third_party_auth_service.dart';
-import '../utils/platform.dart';
+import '../services/usage_telemetry.dart';
+import '../theme/theme.dart';
+import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
+import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'campus_session_handle.dart';
 import 'elrc_player_page.dart';
 
 class ElrcRecordingsPage extends StatefulWidget {
-  const ElrcRecordingsPage({super.key});
+  const ElrcRecordingsPage({super.key, this.visit});
+  final UsageVisit? visit;
 
   @override
   State<ElrcRecordingsPage> createState() => _ElrcRecordingsPageState();
 }
 
-class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
+class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> with WidgetsBindingObserver {
   static final _reviewUri = Uri.parse(
     'https://elrc.shanghaitech.edu.cn/learn/videoreview?type=1',
   );
@@ -31,12 +37,25 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
     {'redirect_url': _reviewUri.toString()},
   );
 
+  final _searchCtrl = TextEditingController();
   WebViewController? _controller;
   ElrcClient? _client;
   List<ElrcCourse>? _courses;
   ElrcCourse? _selectedCourse;
   List<ElrcLesson>? _lessons;
-  String? _error;
+  String _searchQuery = '';
+  UsageVisit? _visit;
+  UsageTelemetry? _telemetry;
+  bool _backgrounded = false;
+  bool _routeVisible = true;
+  bool _playingLesson = false;
+  bool? _visitVisible;
+  String? _visibleError;
+  String? get _error => _visibleError;
+  set _error(String? value) {
+    if (value != null) _visit?.recordingError();
+    _visibleError = value;
+  }
   Uri? _activeUri;
   int _request = 0;
   bool _starting = true;
@@ -60,8 +79,12 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_tpAuth != null) return;
     final services = ServiceProvider.of(context);
+    _telemetry = services.telemetry;
+    _routeVisible = (ModalRoute.isCurrentOf(context) ?? true) && TickerMode.valuesOf(context).enabled;
+    _updateVisit();
+    if (_tpAuth != null) return;
+    WidgetsBinding.instance.addObserver(this);
     _tpAuth = services.thirdPartyAuthService;
     _auth = services.authService;
     _primaryUserId = _auth!.session?.userId;
@@ -117,10 +140,6 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
     if (_supported) unawaited(_prepare());
   }
 
-  /// Brings the shared store and the IDS session up to date, then writes the
-  /// session's cookies into the store the given controller will use: the hidden
-  /// webview below writes nothing itself, so it cannot answer a 401 either.
-  /// Best effort — both callers fall back to the SSO redirect.
   Future<void> _writeCampusSession(WebViewController controller) async {
     try {
       final session = CampusSessionHandle(_tpAuth!, _tpAuth!.idsNode);
@@ -131,7 +150,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
         await cookieManager.setCookie(cookie);
       }
     } catch (error) {
-      _trace('campus session pre-flight failed: $error');
+      _trace('campus session pre-flight failed: ${error.runtimeType}');
     }
   }
 
@@ -163,14 +182,10 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
               final target = uri!.replace(scheme: 'https', port: 443);
               _expectedMainFrameCancellations++;
               _trace('upgrade navigation to ${_safeUri(target)}');
-              unawaited(
-                controller.loadRequest(target),
-              );
+              unawaited(controller.loadRequest(target));
               return NavigationDecision.prevent;
             }
-            if (_isLogin(uri) &&
-                !_campusAttempted &&
-                _tpAuth!.hasIdsBinding) {
+            if (_isLogin(uri) && !_campusAttempted && _tpAuth!.hasIdsBinding) {
               _expectedMainFrameCancellations++;
               unawaited(_openLogin());
               return NavigationDecision.prevent;
@@ -242,7 +257,8 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       (uri?.path == '/learn/videoreview' || uri?.path == '/learn/videoreview/');
 
   bool _isAppSide(Uri? uri) =>
-      _isHttpsElrc(uri) && (uri?.path == '/appside' || uri?.path == '/appside/');
+      _isHttpsElrc(uri) &&
+      (uri?.path == '/appside' || uri?.path == '/appside/');
 
   bool _isSessionPage(Uri? uri) => _isReview(uri) || _isAppSide(uri);
 
@@ -257,9 +273,10 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   }
 
   String _safeUri(Uri? uri) {
-    if (uri == null) return '<invalid URL>';
-    final port = uri.hasPort ? ':${uri.port}' : '';
-    return '${uri.scheme}://${uri.host}$port${uri.path}';
+    if (uri == null || uri.host.isEmpty || !(uri.isScheme('https') || uri.isScheme('http'))) {
+      return '<no HTTP origin>';
+    }
+    return uri.origin;
   }
 
   void _activate(String? url, {bool pageStarted = false}) {
@@ -420,12 +437,13 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       }
       setState(() {
         _courses = courses;
+        if (courses.isNotEmpty) _visit?.recordingReady();
         _selectedCourse = null;
         _lessons = null;
       });
     } on ElrcException catch (error) {
       if (!mounted || request != _request) return;
-      _trace('course request failed: ${error.message}');
+      _trace('course request failed; needsLogin=${error.needsLogin}');
       if (error.needsLogin) {
         await _openLogin();
         return;
@@ -485,11 +503,13 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       final sources = await client.sources(course, lesson);
       if (!mounted || request != _request) return;
       setState(() => _busy = false);
-      // Playback is immersive, so it covers the tab bar.
+      // The player covers the tab bar but belongs to the same recording visit.
+      _playingLesson = true;
       await pushAdaptivePage<void>(
         context,
         rootNavigator: true,
         builder: (_) => ElrcPlayerPage(
+          onPlaybackError: () => _visit?.recordingError(),
           courseName: course.name,
           lessonTitle: lesson.title,
           referer: course.referer,
@@ -506,6 +526,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
       if (!mounted || request != _request) return;
       setState(() => _error = '播放地址加载失败');
     } finally {
+      _playingLesson = false;
       if (mounted && request == _request) setState(() => _busy = false);
     }
   }
@@ -536,137 +557,442 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
     );
   }
 
-  Widget _message(String text, VoidCallback retry) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.info_outline, size: 42),
-              const SizedBox(height: 12),
-              Text(text, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _busy ? null : retry,
-                child: const Text('重新加载'),
-              ),
-            ],
+  String _courseSubtitle(ElrcCourse course) {
+    final parts = <String>[
+      if (course.courseNo != null && course.courseNo!.isNotEmpty)
+        course.courseNo!,
+      if (course.schoolYear != null && course.schoolYear!.isNotEmpty)
+        course.semester != null && course.semester!.isNotEmpty
+            ? '${course.schoolYear} · ${course.semester}'
+            : course.schoolYear!,
+      if (course.description.isNotEmpty) course.description,
+    ];
+    return parts.join(' · ');
+  }
+
+  Widget _stateCard(
+    TpColors colors, {
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    Widget? action,
+    bool loading = false,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: TpTokens.pageHorizontalPadding,
+        ),
+        child: TpPageBody(
+          child: TpCard(
+            padding: const EdgeInsets.symmetric(
+              horizontal: TpTokens.space5,
+              vertical: TpTokens.space6,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (loading)
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  )
+                else
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: colors.brandSoft,
+                      borderRadius: BorderRadius.circular(TpTokens.radiusM),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      icon,
+                      size: TpTokens.iconL + 4,
+                      color: colors.brandInk,
+                    ),
+                  ),
+                const SizedBox(height: TpTokens.space4),
+                Text(
+                  title,
+                  style: TpTypography.cardTitle(colors).copyWith(fontSize: 16),
+                  textAlign: TextAlign.center,
+                ),
+                if (subtitle != null && subtitle.isNotEmpty) ...[
+                  const SizedBox(height: TpTokens.space2),
+                  Text(
+                    subtitle,
+                    style: TpTypography.itemMeta(colors),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                if (action != null) ...[
+                  const SizedBox(height: TpTokens.space4),
+                  action,
+                ],
+              ],
+            ),
           ),
         ),
-      );
+      ),
+    );
+  }
 
-  Widget _errorCard(VoidCallback retry) => Card.filled(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+  Widget _errorCard(TpColors colors, VoidCallback retry) => TpCard(
+        color: colors.opaqueDangerContainer,
+        borderColor: colors.dangerRed.withValues(alpha: 0.30),
+        borderRadius: TpTokens.radiusS,
+        padding: const EdgeInsets.fromLTRB(
+          TpTokens.space4,
+          TpTokens.space3,
+          TpTokens.space2,
+          TpTokens.space3,
+        ),
+        child: Row(
+          children: [
+            Icon(TpIcons.info, size: TpTokens.iconS, color: colors.dangerRed),
+            const SizedBox(width: TpTokens.space2),
+            Expanded(
+              child: Text(
+                _error!,
+                style: TpTypography.itemMeta(colors).copyWith(
+                  color: colors.dangerRed,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              TextButton(
-                onPressed: _busy ? null : retry,
-                child: const Text('重试'),
-              ),
-            ],
-          ),
+            ),
+            TextButton(
+              onPressed: _busy ? null : retry,
+              child: const Text('重试'),
+            ),
+          ],
         ),
       );
 
-  Widget _content() {
+  Widget _content(TpColors colors) {
     if (!_supported) {
-      return const Center(child: Text('请在 iPhone 或 Android 手机中观看录播'));
+      return _stateCard(
+        colors,
+        icon: TpIcons.smartphone,
+        title: '请在 iPhone 或 Android 手机中观看录播',
+        subtitle: '课程录播依赖移动端嵌入式鉴权与视频播放组件。',
+      );
     }
     if (_error != null && _courses == null && !_webVisible) {
-      return _message(_error!, _retryCourses);
+      return _stateCard(
+        colors,
+        icon: TpIcons.info,
+        title: _error!,
+        action: AdaptiveButton(
+          onPressed: _busy ? null : _retryCourses,
+          icon: TpIcons.refresh,
+          sfSymbol: 'arrow.clockwise',
+          label: '重新加载',
+          role: AdaptiveButtonRole.prominent,
+          height: 44,
+          width: 200,
+        ),
+      );
     }
     if ((_starting || _busy) && _courses == null) {
-      return const Center(child: CircularProgressIndicator());
+      return _stateCard(
+        colors,
+        icon: TpIcons.recordings,
+        title: '正在连接课程录播…',
+        subtitle: '正在自动同步校园认证会话',
+        loading: true,
+      );
     }
 
     final selectedCourse = _selectedCourse;
     if (selectedCourse != null) {
       final lessons = _lessons;
       if (_busy && lessons == null) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      if (lessons == null) {
-        return _message(
-          _error ?? '录播课次加载失败',
-          () => _retryLessons(selectedCourse),
+        return _stateCard(
+          colors,
+          icon: TpIcons.recordings,
+          title: '正在加载录播课次…',
+          subtitle: selectedCourse.name,
+          loading: true,
         );
       }
+      if (lessons == null) {
+        return _stateCard(
+          colors,
+          icon: TpIcons.info,
+          title: _error ?? '录播课次加载失败',
+          action: AdaptiveButton(
+            onPressed: _busy ? null : () => _retryLessons(selectedCourse),
+            icon: TpIcons.refresh,
+            sfSymbol: 'arrow.clockwise',
+            label: '重新加载',
+            role: AdaptiveButtonRole.prominent,
+            height: 44,
+            width: 200,
+          ),
+        );
+      }
+
+      final meta = _courseSubtitle(selectedCourse);
       return ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          TpTokens.pageHorizontalPadding,
+          TpTokens.space3,
+          TpTokens.pageHorizontalPadding,
+          AppShellMetrics.bottomContentPaddingOf(context),
+        ),
         children: [
-          if (selectedCourse.description.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(selectedCourse.description),
+          TpPageBody(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TpCard(
+                  padding: const EdgeInsets.all(TpTokens.space4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              selectedCourse.name,
+                              style: TpTypography.cardTitle(colors)
+                                  .copyWith(fontSize: 17),
+                            ),
+                          ),
+                          const SizedBox(width: TpTokens.space2),
+                          TpBadge(
+                            label: '${lessons.length} 节录播',
+                            tone: TpBadgeTone.brand,
+                          ),
+                        ],
+                      ),
+                      if (meta.isNotEmpty) ...[
+                        const SizedBox(height: TpTokens.space2),
+                        Text(meta, style: TpTypography.itemMeta(colors)),
+                      ],
+                    ],
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: TpTokens.sectionGap),
+                  _errorCard(colors, () => _retryLessons(selectedCourse)),
+                ],
+                const SizedBox(height: TpTokens.sectionGap),
+                if (lessons.isEmpty)
+                  TpCard(
+                    padding: const EdgeInsets.all(TpTokens.space5),
+                    child: Center(
+                      child: Text(
+                        '该课程暂无可观看录播',
+                        style: TpTypography.itemMeta(colors),
+                      ),
+                    ),
+                  )
+                else
+                  TpCard(
+                    leadingIcon: TpIcons.recordings,
+                    title: '录播课次',
+                    trailing: Text('共 ${lessons.length} 节'),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < lessons.length; i++)
+                          TpAccentRow(
+                            accentColor: colors.brand,
+                            title: lessons[i].title,
+                            subtitle: lessons[i].weekDate.isEmpty
+                                ? null
+                                : lessons[i].weekDate,
+                            showDivider: i < lessons.length - 1,
+                            trailing: const TpBadge(
+                              label: '播放',
+                              icon: TpIcons.recordings,
+                              tone: TpBadgeTone.brand,
+                            ),
+                            onTap: _busy
+                                ? null
+                                : () => unawaited(_openLesson(lessons[i])),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _errorCard(() => _retryLessons(selectedCourse)),
-            ),
-          for (final lesson in lessons)
-            Card.outlined(
-              child: ListTile(
-                title: Text(lesson.title),
-                subtitle: lesson.weekDate.isEmpty ? null : Text(lesson.weekDate),
-                trailing: const Icon(Icons.play_circle_outline),
-                onTap: _busy ? null : () => unawaited(_openLesson(lesson)),
-              ),
-            ),
+          ),
         ],
       );
     }
 
     final courses = _courses;
     if (courses == null) {
-      return _message(_error ?? '课程列表加载失败', _retryCourses);
-    }
-    if (courses.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('当前账号暂无课程录播'),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _openLogin,
-              child: const Text('重新登录'),
-            ),
-          ],
+      return _stateCard(
+        colors,
+        icon: TpIcons.info,
+        title: _error ?? '课程列表加载失败',
+        action: AdaptiveButton(
+          onPressed: _busy ? null : _retryCourses,
+          icon: TpIcons.refresh,
+          sfSymbol: 'arrow.clockwise',
+          label: '重新加载',
+          role: AdaptiveButtonRole.prominent,
+          height: 44,
+          width: 200,
         ),
       );
     }
+    if (courses.isEmpty) {
+      return _stateCard(
+        colors,
+        icon: TpIcons.recordings,
+        title: '当前账号暂无课程录播',
+        subtitle: '如果切换过校园账号或登录已失效，请尝试重新登录。',
+        action: AdaptiveButton(
+          onPressed: _openLogin,
+          icon: TpIcons.login,
+          sfSymbol: 'person.crop.circle',
+          label: '重新登录',
+          role: AdaptiveButtonRole.prominent,
+          height: 44,
+          width: 200,
+        ),
+      );
+    }
+
+    final q = _searchQuery.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? courses
+        : courses.where((course) {
+            return course.name.toLowerCase().contains(q) ||
+                course.description.toLowerCase().contains(q) ||
+                (course.courseNo?.toLowerCase().contains(q) ?? false);
+          }).toList();
+
     return ListView(
-      padding: const EdgeInsets.all(16),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.fromLTRB(
+        TpTokens.pageHorizontalPadding,
+        TpTokens.space3,
+        TpTokens.pageHorizontalPadding,
+        AppShellMetrics.bottomContentPaddingOf(context),
+      ),
       children: [
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _errorCard(_retryCourses),
+        TpPageBody(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Search Bar Card
+              TpCard(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: TpTokens.space3,
+                  vertical: 2,
+                ),
+                child: TextField(
+                  controller: _searchCtrl,
+                  textAlignVertical: TextAlignVertical.center,
+                  onChanged: (value) => setState(() => _searchQuery = value),
+                  decoration: InputDecoration(
+                    hintText: '搜索课程名称或编号',
+                    filled: false,
+                    isDense: true,
+                    border: InputBorder.none,
+                    prefixIcon: Icon(
+                      TpIcons.search,
+                      size: TpTokens.iconS,
+                      color: colors.textMuted,
+                    ),
+                    suffixIcon: _searchQuery.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(
+                              TpIcons.close,
+                              size: TpTokens.iconS,
+                            ),
+                            tooltip: '清除搜索',
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          ),
+                  ),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: TpTokens.sectionGap),
+                _errorCard(colors, _retryCourses),
+              ],
+              const SizedBox(height: TpTokens.sectionGap),
+              if (filtered.isEmpty)
+                TpCard(
+                  padding: const EdgeInsets.all(TpTokens.space5),
+                  child: Center(
+                    child: Text(
+                      '没有匹配「$_searchQuery」的课程',
+                      style: TpTypography.itemMeta(colors),
+                    ),
+                  ),
+                )
+              else
+                TpCard(
+                  leadingIcon: TpIcons.recordings,
+                  title: '课程列表',
+                  trailing: Text('${filtered.length} 门'),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < filtered.length; i++)
+                        TpListRow(
+                          icon: TpIcons.recordings,
+                          iconColor: colors.brandInk,
+                          title: filtered[i].name,
+                          subtitle: _courseSubtitle(filtered[i]).isEmpty
+                              ? null
+                              : _courseSubtitle(filtered[i]),
+                          showChevron: true,
+                          showDivider: i < filtered.length - 1,
+                          onTap: _busy
+                              ? null
+                              : () => unawaited(_loadLessons(filtered[i])),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
           ),
-        for (final course in courses)
-          Card.outlined(
-            child: ListTile(
-              leading: const Icon(Icons.video_library_outlined),
-              title: Text(course.name),
-              subtitle: course.description.isEmpty ? null : Text(course.description),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _busy ? null : () => unawaited(_loadLessons(course)),
-            ),
-          ),
+        ),
       ],
     );
   }
 
+  void _updateVisit() {
+    final visible = (_routeVisible || _playingLesson) && !_backgrounded;
+    if (visible == _visitVisible) return;
+    final first = _visitVisible == null;
+    _visitVisible = visible;
+    if (first) _visit = widget.visit;
+    if (visible) {
+      _visit ??= _telemetry?.beginRecording();
+      if (_courses?.isNotEmpty == true) _visit?.recordingReady();
+      if (_error != null) _visit?.recordingError();
+    } else {
+      _visit?.recordingExit();
+      _visit = null;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive) return;
+    _backgrounded = state != AppLifecycleState.resumed;
+    _updateVisit();
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _visit?.recordingExit();
+    _searchCtrl.dispose();
     _auth?.removeListener(_primaryAccountChanged);
     _request++;
     _tpAuth?.removeListener(_bindingChanged);
@@ -677,89 +1003,109 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-        canPop: _selectedCourse == null,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) _showCourses();
-        },
-        child: Scaffold(
-          appBar: isIos()
-              ? IosNativeNavigationBar(
-                  title: _webVisible ? '登录课程录播' : '课程录播',
-                  leadingItems: [
-                    IosNativeNavigationBarItem(
-                      id: 'back',
-                      sfSymbol: 'chevron.left',
-                      accessibilityLabel: '返回',
-                      enabled: _selectedCourse == null || !_busy,
-                    ),
-                  ],
-                  trailingItems: [
-                    if (!_webVisible && !_starting)
-                      IosNativeNavigationBarItem(
-                        id: 'refresh',
-                        sfSymbol: 'arrow.clockwise',
-                        accessibilityLabel: '刷新',
-                        enabled: !_busy,
-                      ),
-                  ],
-                  onItemPressed: (id) {
-                    if (id == 'back') {
-                      if (_selectedCourse != null) {
-                        _showCourses();
-                      } else {
-                        unawaited(Navigator.of(context).maybePop());
-                      }
-                    } else if (id == 'refresh') {
-                      if (_selectedCourse == null) {
-                        _retryCourses();
-                      } else {
-                        _retryLessons(_selectedCourse!);
-                      }
-                    }
-                  },
-                )
-              : AppBar(
-                  automaticallyImplyLeading: _selectedCourse == null,
-                  leading: _selectedCourse == null
-                      ? null
-                      : IconButton(
-                          onPressed: _busy ? null : _showCourses,
-                          icon: const Icon(Icons.arrow_back),
-                        ),
-                  title: Text(_webVisible ? '登录课程录播' : '课程录播'),
-                  actions: [
-                    if (!_webVisible && !_starting)
-                      IconButton(
-                        tooltip: '刷新',
-                        onPressed: _busy
-                            ? null
-                            : _selectedCourse == null
-                                ? _retryCourses
-                                : () => _retryLessons(_selectedCourse!),
-                        icon: const Icon(Icons.refresh),
-                      ),
-                  ],
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final title = _webVisible
+        ? '登录课程录播'
+        : _selectedCourse != null
+            ? _selectedCourse!.name
+            : '课程录播';
+
+    return PopScope(
+      canPop: _selectedCourse == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _showCourses();
+      },
+      child: Scaffold(
+        backgroundColor: colors.canvas,
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: title,
+            leadingItems: [
+              IosNativeNavigationBarItem(
+                id: 'back',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+                enabled: _selectedCourse == null || !_busy,
+              ),
+            ],
+            trailingItems: [
+              if (_supported && !_webVisible && !_starting)
+                IosNativeNavigationBarItem(
+                  id: 'refresh',
+                  sfSymbol: 'arrow.clockwise',
+                  accessibilityLabel: '刷新',
+                  enabled: !_busy,
                 ),
-          body: SafeArea(
-            child: Stack(
-              children: [
-                Positioned.fill(child: _content()),
-                if (_controller != null)
-                  Positioned.fill(
-                    child: Offstage(
-                      offstage: !_webVisible,
-                      child: WebViewWidget(controller: _controller!),
-                    ),
+            ],
+            onItemPressed: (id) {
+              if (id == 'back') {
+                if (_selectedCourse != null) {
+                  _showCourses();
+                } else {
+                  unawaited(Navigator.of(context).maybePop());
+                }
+              } else if (id == 'refresh') {
+                if (_selectedCourse == null) {
+                  _retryCourses();
+                } else {
+                  _retryLessons(_selectedCourse!);
+                }
+              }
+            },
+          ),
+          material: () => AppBar(
+            automaticallyImplyLeading: _selectedCourse == null,
+            leading: _selectedCourse == null
+                ? null
+                : IconButton(
+                    onPressed: _busy ? null : _showCourses,
+                    icon: const Icon(TpIcons.chevronLeft),
+                    tooltip: '返回课程列表',
                   ),
-                if (_busy && (_courses != null || _lessons != null) && !_webVisible)
-                  const Align(
-                    alignment: Alignment.topCenter,
-                    child: LinearProgressIndicator(),
-                  ),
-              ],
+            title: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
+            actions: [
+              if (_supported && !_webVisible && !_starting)
+                IconButton(
+                  tooltip: '刷新',
+                  onPressed: _busy
+                      ? null
+                      : _selectedCourse == null
+                          ? _retryCourses
+                          : () => _retryLessons(_selectedCourse!),
+                  icon: const Icon(TpIcons.refresh, size: TpTokens.iconM),
+                ),
+            ],
           ),
         ),
-      );
+        body: SafeArea(
+          top: false,
+          bottom: false,
+          child: Stack(
+            children: [
+              Positioned.fill(child: _content(colors)),
+              if (_controller != null)
+                Positioned.fill(
+                  child: Offstage(
+                    offstage: !_webVisible,
+                    child: WebViewWidget(controller: _controller!),
+                  ),
+                ),
+              if (_busy &&
+                  (_courses != null || _lessons != null) &&
+                  !_webVisible)
+                const Align(
+                  alignment: Alignment.topCenter,
+                  child: LinearProgressIndicator(),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

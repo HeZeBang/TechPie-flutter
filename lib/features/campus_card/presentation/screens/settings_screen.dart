@@ -11,6 +11,7 @@ import '../../core/config/scan_payment_preferences.dart';
 import '../../domain/models/feedback_models.dart';
 import '../app/navigation.dart';
 import '../icons/platform_icons.dart';
+import '../theme/colors.dart';
 import '../widgets/apple_wallet_components.dart';
 
 final class SettingsScreen extends ConsumerWidget {
@@ -23,6 +24,8 @@ final class SettingsScreen extends ConsumerWidget {
     final maximizeBrightness =
         ref.watch(maximizePaymentCodeBrightnessProvider).valueOrNull;
     final offlineCodeFirst = ref.watch(offlineCodeFirstProvider).valueOrNull;
+    final showAllRecords =
+        ref.watch(showAllTransactionRecordsProvider).valueOrNull;
     return Scaffold(
       body: AppleWalletPage(
         child: ApplePinnedHeaderLayout(
@@ -106,6 +109,24 @@ final class SettingsScreen extends ConsumerWidget {
                             .read(skipScanConfirmationProvider.notifier)
                             .setEnabled(value),
                       ),
+                    ),
+                  ),
+                  AppleListRow(
+                    icon: GpPlatformIcons.debug(context),
+                    label: '显示所有记录',
+                    verticalPadding: 4,
+                    trailing: _SettingsSwitch(
+                      key: const Key('show-all-transaction-records'),
+                      value: showAllRecords ?? false,
+                      onChanged: showAllRecords == null
+                          ? null
+                          : (enabled) => unawaited(
+                                ref
+                                    .read(
+                                      showAllTransactionRecordsProvider.notifier,
+                                    )
+                                    .setEnabled(enabled),
+                              ),
                     ),
                   ),
                   if (debugModeFeaturesAvailable)
@@ -198,6 +219,9 @@ final class _SettingsSwitch extends StatelessWidget {
   final ValueChanged<bool>? onChanged;
 
   @override
-  Widget build(BuildContext context) =>
-      Switch.adaptive(value: value, onChanged: onChanged);
+  Widget build(BuildContext context) => Switch.adaptive(
+        value: value,
+        activeTrackColor: context.gpColors.action,
+        onChanged: onChanged,
+      );
 }

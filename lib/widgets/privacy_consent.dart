@@ -32,8 +32,12 @@ class PrivacyGate extends StatefulWidget {
 }
 
 class _PrivacyGateState extends State<PrivacyGate> {
+  bool _shareUsage = false;
+
   Future<void> _accept() async {
-    await ServiceProvider.of(context).storageService.setPrivacyAccepted(true);
+    final services = ServiceProvider.of(context);
+    await services.storageService.setPrivacyAccepted(true);
+    if (_shareUsage) await services.telemetry?.setEnabled(true);
     if (!mounted) return;
     setState(() {});
     widget.onAccepted?.call();
@@ -43,7 +47,16 @@ class _PrivacyGateState extends State<PrivacyGate> {
   Widget build(BuildContext context) {
     final storage = ServiceProvider.of(context).storageService;
     if (storage.privacyAccepted) return widget.child;
-    return PrivacyConsentPage(onAccept: _accept);
+    return PrivacyConsentPage(
+      onAccept: _accept,
+      usageChoice: ServiceProvider.of(context).telemetry == null ? null : CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        value: _shareUsage,
+        title: const Text('发送匿名使用统计（可选）'),
+        subtitle: const Text('用随机安装标识统计登录、功能使用、反馈送达和录播加载。不会发送账号或校园内容，可在设置中关闭。'),
+        onChanged: (value) => setState(() => _shareUsage = value == true),
+      ),
+    );
   }
 }
 
@@ -53,11 +66,13 @@ class PrivacyConsentPage extends StatelessWidget {
     super.key,
     required this.onAccept,
     this.onDecline,
+    this.usageChoice,
     this.compact = false,
   });
 
   final Future<void> Function() onAccept;
   final VoidCallback? onDecline;
+  final Widget? usageChoice;
 
   /// Dialog-sized instead of full-screen.
   final bool compact;
@@ -109,6 +124,7 @@ class PrivacyConsentPage extends StatelessWidget {
             label: const Text('查看《隐私政策》'),
           ),
         ),
+        if (usageChoice != null) usageChoice!,
         const SizedBox(height: 8),
         Row(
           children: [

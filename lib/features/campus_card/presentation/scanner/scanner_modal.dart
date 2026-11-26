@@ -278,7 +278,7 @@ final class _ScanConfirmationOverlay extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 560),
           padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + systemBar),
           decoration: BoxDecoration(
-            color: context.gpColors.surfaceDisabled,
+            color: context.gpColors.bg,
             borderRadius: const BorderRadius.vertical(
               top: Radius.circular(32),
             ),
@@ -357,9 +357,9 @@ final class _ScanConfirmationOverlay extends StatelessWidget {
                     child: CupertinoButton(
                       color: context.gpColors.action,
                       onPressed: onContinue,
-                      child: const Text(
+                      child: Text(
                         '继续',
-                        style: TextStyle(color: Colors.white),
+                        style: TextStyle(color: context.gpColors.onAction),
                       ),
                     ),
                   ),
@@ -425,7 +425,7 @@ final class _PayAuthorizationOverlay extends StatelessWidget {
               24 + MediaQuery.viewPaddingOf(context).bottom,
             ),
             decoration: BoxDecoration(
-              color: context.gpColors.surfaceDisabled,
+              color: context.gpColors.bg,
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(32),
               ),

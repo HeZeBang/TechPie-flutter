@@ -51,14 +51,16 @@ jobs:
         shell: bash
     container:
       # Bump by re-running ci/publish-buildenv.sh and pasting the tag it prints.
-      # The tag names the toolchain versions baked into the image, and is the
-      # only thing that says which toolchain this pipeline was tested against —
-      # so it is written out here rather than kept in a repository variable,
-      # where a change would not show up in review. (`container.image` accepts
-      # only the github/needs/strategy/matrix/vars/inputs contexts, so this has
-      # to be a literal — an `env:` entry could not be read here even if it held
-      # the same string.)
-      image: ghcr.io/hezebang/techpie-ohos-buildenv:26.0.0.851-3.41.9_ohos-1.0.2
+      # The tag names the toolchain versions baked into the image plus a digest
+      # of the image recipe (the Dockerfile, where the git mirrors and their
+      # pinned commits live), and is the only thing that says which toolchain
+      # this pipeline was tested against — so it is written out here rather than
+      # kept in a repository variable, where a change would not show up in
+      # review. (`container.image` accepts only the
+      # github/needs/strategy/matrix/vars/inputs contexts, so this has to be a
+      # literal — an `env:` entry could not be read here even if it held the
+      # same string.)
+      image: ghcr.io/hezebang/techpie-ohos-buildenv:26.0.0.851-3.41.9_ohos-1.0.2-r5c4a1874
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -86,6 +88,23 @@ jobs:
             echo "::error::This image is missing: ${missing[*]}. Rebuild it with ci/publish-buildenv.sh and point container.image at the new tag."
             exit 1
           fi
+
+          # The image ships a valid bin/cache/flutter_tools.stamp, so this first
+          # flutter invocation does not rebuild the tool. That is load-bearing,
+          # not an optimisation: a rebuild runs `pub upgrade`, which re-resolves
+          # the fork's gitcode overrides, and gitcode answers a hosted runner
+          # with 418 (see the mirror step in ci/Dockerfile.ohos-buildenv). An
+          # image without the stamp lost two 1.0.4 candidates exactly that way,
+          # so fail here with the cause instead of retrying into it for 70s.
+          stamp=/opt/ohos/flutter_flutter/bin/cache/flutter_tools.stamp
+          if [[ ! -s "$stamp" ]]; then
+            echo "::error::$stamp is missing, so every job rebuilds the flutter tool and needs gitcode.com. Rebuild the image (precache --force deletes the stamp; flutter --version has to run after it) and point container.image at the new tag."
+            exit 1
+          fi
+          # Prints the insteadOf rewrites that keep this job off gitcode.com, so
+          # a run that ever finds itself talking to that host shows it here
+          # rather than only in a 418.
+          git config --system --get-regexp '^url\.' || true
 
           # Prints what actually ran, which is the evidence a mismatch would show
           # up in — the image reference itself is only in the job header.
