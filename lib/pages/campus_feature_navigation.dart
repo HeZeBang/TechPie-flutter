@@ -11,10 +11,12 @@ import 'generic_webview_page.dart';
 
 void openCampusFeature(BuildContext context, Feature feature) {
   unawaited(AppHaptics.play(AppHaptics.selection));
-  if (!ServiceProvider.of(context).authService.isLoggedIn) {
+  final services = ServiceProvider.of(context);
+  if (!services.authService.isLoggedIn) {
     unawaited(startUniAuthLogin(context));
     return;
   }
+  services.telemetry?.featureOpened(feature.id);
   switch (feature.mode) {
     case FeatureMode.native:
       feature.nativeEntry?.call(context);

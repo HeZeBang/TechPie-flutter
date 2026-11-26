@@ -165,4 +165,35 @@ void main() {
     expect(batches.first['installation'], isNot(batches.last['installation']));
     expect((batches.last['events'] as List).map((e) => e['kind']), ['app_open', 'feature_open']);
   });
+
+  test('drops permanently rejected 4xx batches while retaining 408/429/5xx', () async {
+    final metrics = create();
+    addTearDown(metrics.dispose);
+    status = 400;
+    await metrics.setEnabled(true);
+    await metrics.flush();
+    expect(batches, hasLength(1));
+
+    // The 400 batch was discarded, so only newly queued events are sent next.
+    status = 422;
+    metrics.featureOpened('grades');
+    await metrics.flush();
+    expect(batches, hasLength(2));
+    expect(
+      (batches.last['events'] as List).map((e) => e['kind']),
+      ['feature_open'],
+    );
+
+    // 429, 408 and 500 must retain the batch so a later flush resends the same IDs.
+    for (final retryStatus in [429, 408, 500]) {
+      batches.clear();
+      status = retryStatus;
+      metrics.featureOpened('schedule');
+      await metrics.flush();
+      status = 204;
+      await metrics.flush();
+      expect(batches, hasLength(2));
+      expect(batches.last['events'], batches.first['events']);
+    }
+  });
 }

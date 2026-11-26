@@ -100,9 +100,9 @@ class _ElrcPlayerPageState extends State<ElrcPlayerPage> {
         _trace('request failed before WebKit accepted it');
         setState(() {
           _loading = false;
-          widget.onPlaybackError?.call();
           _error = '视频加载失败';
         });
+        widget.onPlaybackError?.call();
       }
     }
   }
@@ -184,9 +184,9 @@ JSON.stringify((() => {
     _loadTimeout?.cancel();
     setState(() {
       _loading = false;
-      widget.onPlaybackError?.call();
       _error = '视频加载失败';
     });
+    widget.onPlaybackError?.call();
   }
 
   bool _matchesCurrentMedia(String? url) =>
@@ -197,9 +197,9 @@ JSON.stringify((() => {
     _trace('load timed out after 30 seconds');
     setState(() {
       _loading = false;
-      widget.onPlaybackError?.call();
       _error = '视频加载超时';
     });
+    widget.onPlaybackError?.call();
   }
 
   void _showPlayer(int generation) {

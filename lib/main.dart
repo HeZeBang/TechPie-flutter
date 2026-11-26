@@ -565,6 +565,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.islandService?.dispose();
     _studentAllowanceService.dispose();
     if (_ownsCampusClients) _campusClients.dispose();
+    widget.telemetry?.dispose();
     widget.campusCardService.dispose();
     widget.wearEngineService?.dispose();
     super.dispose();

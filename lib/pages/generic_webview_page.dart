@@ -94,10 +94,6 @@ class _GenericWebViewPageState extends State<GenericWebViewPage>
       _error = '请先登录 TechPie';
       return;
     }
-    final feature = featureEntries.where(
-      (entry) => entry.mode == FeatureMode.webviewWithCookie && entry.url == widget.url,
-    ).firstOrNull;
-    if (feature != null) services.telemetry?.featureOpened(feature.id);
     _owner = _tpAuth!.campusWebSession.owner;
     _tpAuth!.addListener(_bindingChanged);
     if (isDesktopWebView) {

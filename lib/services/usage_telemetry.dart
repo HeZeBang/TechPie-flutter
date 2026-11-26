@@ -67,7 +67,8 @@ class UsageTelemetry extends ChangeNotifier {
   Timer? _timer;
   http.Client? _sending;
   Duration _retry = const Duration(seconds: 10);
-  bool get enabled => _installation != null;
+  bool _disposed = false;
+  bool get enabled => !_disposed && _installation != null;
 
   Future<void> setEnabled(bool value) async {
     if (enabled == value) return;
@@ -202,6 +203,7 @@ class UsageTelemetry extends ChangeNotifier {
     final client = _clientFactory();
     _sending = client;
     var accepted = false;
+    var permanentlyRejected = false;
     try {
       final request = http.Request('POST', endpoint)
         ..followRedirects = false
@@ -209,8 +211,10 @@ class UsageTelemetry extends ChangeNotifier {
         ..body = jsonEncode({'installation': owner, 'events': batch});
       final response = await client.send(request).timeout(const Duration(seconds: 8));
       await response.stream.drain<void>().timeout(const Duration(seconds: 8));
-      accepted = response.statusCode == 204;
-      if (accepted && _installation == owner) {
+      final status = response.statusCode;
+      accepted = status == 204;
+      permanentlyRejected = status >= 400 && status < 500 && status != 408 && status != 429;
+      if ((accepted || permanentlyRejected) && _installation == owner) {
         final ids = batch.map((e) => e['id']).toSet();
         _events.removeWhere((e) => ids.contains(e['id']));
         await _save();
@@ -221,8 +225,9 @@ class UsageTelemetry extends ChangeNotifier {
       client.close();
       if (identical(_sending, client)) {
         _sending = null;
-        final delay = accepted ? const Duration(seconds: 1) : _retry;
-        _retry = accepted
+        final settled = accepted || permanentlyRejected;
+        final delay = settled ? const Duration(seconds: 1) : _retry;
+        _retry = settled
             ? const Duration(seconds: 10)
             : Duration(seconds: min(300, 2 * _retry.inSeconds));
         _schedule(delay);
@@ -232,7 +237,10 @@ class UsageTelemetry extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _timer?.cancel();
+    _timer = null;
     _installation = null;
     _sending?.close();
     _sending = null;

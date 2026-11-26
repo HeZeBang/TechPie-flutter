@@ -85,7 +85,9 @@ class MetricsTest(unittest.TestCase):
                          [('2026-11-02', 'grades', 1), ('2026-11-02', 'home', 2),
                           ('2026-11-03', 'home', 1)])
         registry = CLI.parents[2] / 'lib/models/feature.dart'
-        self.assertTrue(set(re.findall(r"\bid: '([a-z_]+)'", registry.read_text())) <= FEATURES)
+        self.assertTrue(
+            set(re.findall(r"\bid: '([a-z_]+)'", registry.read_text(encoding='utf-8'))) <= FEATURES
+        )
 
     def test_feedback_out_of_order_unconfirmed_retry_and_late_delivery(self):
         for form in range(1, 6):

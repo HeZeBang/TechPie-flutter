@@ -13,6 +13,7 @@ import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/main.dart';
 import 'package:techpie/models/feature.dart';
 import 'package:techpie/pages/assignments_page.dart';
+import 'package:techpie/pages/campus_feature_navigation.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -32,6 +33,13 @@ import 'package:techpie/services/usage_telemetry.dart';
 import 'package:techpie/theme/tp_icons.dart';
 import 'package:techpie/widgets/app_shell/app_shell.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
+
+class _SignedInAuth extends AuthService {
+  _SignedInAuth(super.storage, super.http, super.uniAuth);
+
+  @override
+  bool get isLoggedIn => true;
+}
 
 void main() {
   testWidgets('iOS-style destination switching lazily preserves visited pages',
@@ -105,7 +113,7 @@ void main() {
       final logger = DebugLogger();
       final http = LoggingHttpClient(logger);
       final uniAuth = UniAuthService();
-      final auth = AuthService(storage, http, uniAuth);
+      final auth = _SignedInAuth(storage, http, uniAuth);
       final theme = ThemeService(storage);
       final tpAuth = ThirdPartyAuthService(storage, http);
       final schedule = ScheduleService(storage, http, auth, tpAuth);
@@ -151,8 +159,8 @@ void main() {
       expect(find.text('课表'), findsWidgets);
       expect(find.text('Deadlines'), findsWidgets);
       expect(find.text('我的'), findsWidgets);
-      final feature = featureEntries.firstWhere((entry) => entry.id == 'elrc_recordings');
-      feature.nativeEntry!(tester.element(find.byType(AppShell)));
+      final feature = featureEntries.firstWhere((entry) => entry.id == 'student_allowance');
+      openCampusFeature(tester.element(find.byType(AppShell)), feature);
       await tester.pumpAndSettle();
       await metrics.flush();
       expect(opened.where((id) => id == feature.id), hasLength(optIn ? 1 : 0));

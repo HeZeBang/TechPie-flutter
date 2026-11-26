@@ -2,14 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'package:techpie/services/service_provider.dart';
-
 import '../features/campus_card/app/app_providers.dart';
 import '../pages/campus_card_page.dart';
 import '../pages/egate_app_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
 import '../pages/student_allowance_page.dart';
+import '../services/service_provider.dart';
 import '../theme/tp_icons.dart';
 import '../widgets/adaptive_page_navigation.dart';
 
@@ -48,7 +47,7 @@ class Feature {
   final bool pinnedByDefault;
   final String subtitle;
   final Icon icon;
-  void Function(BuildContext context)? nativeEntry;
+  final void Function(BuildContext context)? nativeEntry;
 
   Feature({
     required this.id,
@@ -65,22 +64,7 @@ class Feature {
   });
 }
 
-// Bind the registered destinations once so shortcuts and the service directory
-// report the same feature when they invoke its entry.
-List<Feature> _register(List<Feature> features) {
-  for (final feature in features) {
-    final open = feature.nativeEntry;
-    if (open == null) continue;
-    feature.nativeEntry = (context) {
-      context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened(feature.id);
-      open(context);
-    };
-  }
-  return features;
-}
-
-final featureEntries = _register(_entries);
-final _entries = <Feature>[
+final featureEntries = <Feature>[
   Feature(
     id: 'elrc_recordings',
     category: CampusServiceCategory.academics,
