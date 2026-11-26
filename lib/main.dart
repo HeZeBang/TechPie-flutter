@@ -27,6 +27,7 @@ import 'services/http_client.dart';
 import 'services/ids/ids_client.dart';
 import 'services/island_service.dart';
 import 'services/oa_gym_service.dart';
+import 'services/pnp_minor_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
 import 'services/spending_alert_service.dart';
@@ -484,6 +485,13 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _nativeChromeObserver = CNTabBarRouteObserver();
   late CampusClients _campusClients;
   bool _ownsCampusClients = false;
+  late PnpMinorService _pnpMinor;
+  PnpMinorService _createPnpMinorService() => PnpMinorService(
+        _campusClients.eams,
+        widget.storageService,
+        widget.authService,
+        widget.thirdPartyAuthService,
+      );
   late StudentAllowanceService _studentAllowanceService;
 
   void _initCampusClients() {
@@ -516,6 +524,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initCampusClients();
+    _pnpMinor = _createPnpMinorService();
     widget.wearEngineService?.resumeSync();
     _studentAllowanceService = _createStudentAllowanceService();
     unawaited(_checkForUpdatesQuietly());
@@ -527,14 +536,24 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
+    var clientsChanged = false;
     if (oldWidget.campusClients != widget.campusClients) {
       if (_ownsCampusClients) _campusClients.dispose();
       _initCampusClients();
+      clientsChanged = true;
     } else if (_ownsCampusClients &&
         (oldWidget.authService != widget.authService ||
             oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService)) {
       _campusClients.dispose();
       _initCampusClients();
+      clientsChanged = true;
+    }
+    if (clientsChanged ||
+        oldWidget.authService != widget.authService ||
+        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+        oldWidget.storageService != widget.storageService) {
+      _pnpMinor.dispose();
+      _pnpMinor = _createPnpMinorService();
     }
     if (oldWidget.authService != widget.authService ||
         oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
@@ -564,6 +583,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.spendingAlertService?.dispose();
     widget.islandService?.dispose();
     _studentAllowanceService.dispose();
+    _pnpMinor.dispose();
     if (_ownsCampusClients) _campusClients.dispose();
     widget.telemetry?.dispose();
     widget.campusCardService.dispose();
@@ -665,6 +685,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         oaGymService: widget.oaGymService,
         egateAppService: widget.egateAppService,
         campusClients: _campusClients,
+        pnpMinor: _pnpMinor,
         studentAllowanceService: _studentAllowanceService,
         uniAuthService: widget.uniAuthService,
         syncService: widget.syncService,
