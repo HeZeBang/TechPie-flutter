@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:techpie/features/campus_card/data/mock/in_memory_ports.dart';
 import 'package:techpie/main.dart';
 import 'package:techpie/pages/assignments_page.dart';
 import 'package:techpie/services/assignment_service.dart';
@@ -23,7 +25,6 @@ import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/theme/tp_icons.dart';
-import 'package:techpie/widgets/adaptive_select.dart';
 import 'package:techpie/widgets/app_shell/app_shell.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
 
@@ -192,6 +193,10 @@ void main() {
   }, variant: const TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}),);
 
   testWidgets('Navigation switches pages', (WidgetTester tester) async {
+    const bindingChannel = MethodChannel('techpie/ecard_bind');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(bindingChannel, (call) async => 'unsupported');
+    addTearDown(() => messenger.setMockMethodCallHandler(bindingChannel, null));
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -228,7 +233,7 @@ void main() {
         uniAuthService: uniAuth,
         syncService: sync,
         updateService: UpdateService(),
-        campusCardService: CampusCardService(),
+        campusCardService: CampusCardService.withStore(InMemorySecureCredentialStore()),
         ecardBindService: EcardBindService(),
       ),
     );
@@ -267,14 +272,8 @@ void main() {
     await tester.tap(find.text('eCard'));
     await tester.pumpAndSettle();
     expect(find.text('eCard'), findsWidgets);
-    expect(find.text('连接 eCard'), findsOneWidget);
-    expect(find.text('OPENID 渠道'), findsOneWidget);
-    await tester.tap(find.text('WeChat（微信）'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Alipay（支付宝）').last);
-    await tester.pumpAndSettle();
-    expect(tester.widget<AdaptiveSelect>(find.byType(AdaptiveSelect).last).value, 'alipay_openid');
-    expect(find.textContaining('Cloud sync'), findsOneWidget);
+    expect(find.text('Open Cloud sync'), findsOneWidget);
+    expect(find.textContaining('OPENID'), findsNothing);
   });
 }
 

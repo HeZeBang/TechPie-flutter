@@ -211,6 +211,8 @@ flutter:
     - assets/help/ids_passkey.png
     - assets/campus_card/audio/
     - assets/campus_card/data/
+    - assets/campus_card/images/wizard-arc.png
+    - assets/campus_card/images/wizard-skyline.png
     - assets/campus_card/images/card-full.png
     - assets/campus_card/images/card-top.png
     - assets/campus_card/images/card-bottom.png

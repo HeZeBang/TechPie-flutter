@@ -289,6 +289,7 @@ class ThirdPartyAccountsPage extends StatelessWidget {
                             onTap: () => unawaited(
                               pushAdaptivePage<void>(
                                 context,
+                                rootNavigator: true,
                                 builder: (_) => const CampusCardAccountPage(),
                               ),
                             ),
@@ -455,6 +456,7 @@ class _TopLevelTileState extends State<_TopLevelTile> {
         onTap: () => unawaited(
           pushAdaptivePage<void>(
             context,
+            rootNavigator: true,
             builder: (_) => ThirdPartyBindPage(platform: widget.platform),
           ),
         ),
@@ -672,6 +674,7 @@ class _TopLevelTileState extends State<_TopLevelTile> {
     if (upgrade == true && context.mounted) {
       await pushAdaptivePage<void>(
         context,
+        rootNavigator: true,
         builder: (_) =>
             const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
       );
@@ -717,6 +720,7 @@ class _ChildSessionTileState extends State<_ChildSessionTile> {
             onTap: () => unawaited(
               pushAdaptivePage<void>(
                 context,
+                rootNavigator: true,
                 builder: (_) =>
                     const ThirdPartyBindPage(platform: ThirdPartyPlatform.ids),
               ),

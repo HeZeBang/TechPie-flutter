@@ -110,6 +110,9 @@ class _SecurePasswordFieldState extends State<SecurePasswordField>
                 );
           return Semantics(
             label: cupertino ? widget.placeholder : null,
+            enabled: widget.enabled,
+            onTap: widget.enabled ? () => _editableKey.currentState?.requestKeyboard() : null,
+            onFocus: widget.enabled ? () => _editableKey.currentState?.requestKeyboard() : null,
             child: _gestures.buildGestureDetector(
               behavior: HitTestBehavior.translucent,
               child: field,

@@ -414,7 +414,7 @@ void main() {
       for (var i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 30));
       }
-      expect(find.text('打开 Account 设置'), findsOneWidget);
+      expect(find.text('Connect my card'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();

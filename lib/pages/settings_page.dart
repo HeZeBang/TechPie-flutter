@@ -363,6 +363,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                           onRebind: () => unawaited(
                             pushAdaptivePage<void>(
                               context,
+                              rootNavigator: true,
                               builder: (_) => const ThirdPartyBindPage(
                                 platform: ThirdPartyPlatform.ids,
                               ),

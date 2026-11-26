@@ -22,7 +22,16 @@ Future<void> initializePlatformCapabilities() async {
 Future<void> initializeCampusUserAgent() async {
   final package = await PackageInfo.fromPlatform();
   final scale = WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
-  if (isIos()) {
+  if (kIsWeb) {
+    CampusUserAgent.value = CampusUserAgent.format(
+      version: package.version,
+      build: package.buildNumber,
+      device: defaultTargetPlatform.name,
+      system: 'web',
+      systemVersion: '',
+      scale: scale,
+    );
+  } else if (isIos()) {
     final info = (await const MethodChannel('techpie/platform')
         .invokeMapMethod<String, dynamic>('getUserAgentInfo'))!;
     CampusUserAgent.value = CampusUserAgent.format(
