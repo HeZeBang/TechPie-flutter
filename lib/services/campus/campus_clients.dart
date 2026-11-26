@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../auth_service.dart';
+import '../elearning_service.dart';
 import '../session/session_node.dart';
+import '../storage_service.dart';
 import '../third_party_auth_service.dart';
 import 'campus_session.dart';
 import 'eams_client.dart';
@@ -15,6 +19,7 @@ class CampusClients {
     this.auth,
     this.bindings, {
     VoidCallback? onAccountChanged,
+    StorageService? storage,
   }) : _onAccountChanged = onAccountChanged {
     CampusSession session(String origin, SessionNode node) => CampusSession(
           Uri.parse(origin),
@@ -28,6 +33,7 @@ class CampusClients {
     elearning = ElearningClient(
       session('https://elearning.shanghaitech.edu.cn:8443', bindings.elearningNode),
     );
+    blackboard = ElearningService(elearning, storage: storage);
     auth.addListener(_accountChanged);
     bindings.addListener(_accountChanged);
   }
@@ -43,6 +49,7 @@ class CampusClients {
   );
   late final EmapClient emap;
   late final EamsClient eams;
+  late final ElearningService blackboard;
   late final ElearningClient elearning;
   late CampusIdentity _lastIdentity;
 
@@ -52,6 +59,7 @@ class CampusClients {
       );
 
   void _accountChanged() {
+    unawaited(blackboard.accountChanged());
     for (final session in [emap.session, eams.session, elearning.session]) {
       session.accountChanged();
     }
@@ -63,6 +71,7 @@ class CampusClients {
   }
 
   void dispose() {
+    blackboard.dispose();
     auth.removeListener(_accountChanged);
     bindings.removeListener(_accountChanged);
     for (final session in [emap.session, eams.session, elearning.session]) {

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../ids/campus_http.dart';
 import 'campus_errors.dart';
 import 'campus_session.dart';
@@ -13,6 +15,7 @@ class ElearningClient {
       '${_course(course)}/contents/${segment(content)}';
   static const _nested = {
     'availability': {'available'},
+    'duration': {'type', 'start', 'end'},
     'contentHandler': {'id'},
     'grading': {'due', 'type', 'attemptsAllowed'},
     'score': {'possible', 'decimalPlaces'},
@@ -233,7 +236,7 @@ class ElearningClient {
   }) =>
       _get(
         '${_course(courseId)}/gradebook/users/${segment(userId)}',
-        {'columnId', 'score', 'text', 'status', 'displayGrade'},
+        {'columnId', 'id', 'score', 'text', 'status', 'displayGrade'},
         list: true,
         allPages: allPages,
         query: _paginationQuery(limit: limit, offset: offset),
@@ -260,11 +263,44 @@ class ElearningClient {
   }) =>
       _get(
         'terms',
-        {'id', 'name', 'availability'},
+        {'id', 'name', 'availability', 'duration'},
         list: true,
         allPages: allPages,
         query: _paginationQuery(limit: limit, offset: offset),
       );
+
+  Future<List<Map<String, dynamic>>> getCalendarEvents(
+    DateTime start, {
+    DateTime? end,
+  }) async {
+    final data = await getWebHtml(
+      '/webapps/calendar/calendarData/allCourseEvents',
+      query: {
+        'start': start.millisecondsSinceEpoch.toString(),
+        if (end != null) 'end': end.millisecondsSinceEpoch.toString(),
+      },
+    );
+    try {
+      final rows = jsonDecode(data);
+      if (rows is! List || !rows.every((r) => r is Map<String, dynamic>)) {
+        throw CampusRequestException.invalid;
+      }
+      return [
+        for (final row in rows.cast<Map<String, dynamic>>())
+          _select(row, {
+            'end',
+            'start',
+            'itemSourceId',
+            'calendarId',
+            'title',
+            'calendarName',
+            'attemptable',
+          }),
+      ];
+    } on FormatException {
+      throw CampusRequestException.invalid;
+    }
+  }
 
   Future<String> getWebHtml(String path, {Map<String, String>? query}) => session.run((wire) async {
         final r = await wire.request(path, query: query);

@@ -433,7 +433,11 @@ void main() {
       platform: 'gradescope',
       due: DateTime.utc(2026, 1, 20),
     );
-    await storage.saveCachedAssignments([oldBlackboard, oldGradescope]);
+    await storage.saveCachedAssignments([
+      oldBlackboard,
+      oldGradescope,
+      _assignmentJson(id: 'stable-legacy', platform: 'Blackboard', due: DateTime.utc(2026, 1, 6)),
+    ]);
     // Primary account is the SSO identity session — no CASTGC on it.
     await storage.saveSession(
       UserSession(
@@ -458,21 +462,6 @@ void main() {
     );
 
     final httpClient = _AssignmentHttpClient((url, _) {
-      if (url.path.endsWith('/deadlines/blackboard')) {
-        return http.Response(
-          jsonEncode({
-            'success': true,
-            'data': [
-              _assignmentJson(
-                id: 'blackboard-new',
-                platform: 'blackboard',
-                due: DateTime.utc(2026, 1, 5),
-              ),
-            ],
-          }),
-          200,
-        );
-      }
       if (url.path.endsWith('/deadlines/gradescope')) {
         return http.Response(
           jsonEncode({'success': false, 'error': 'upstream failed'}),
@@ -487,12 +476,30 @@ void main() {
     await auth.loadSession();
     await tpAuth.initialize();
 
-    final service =
-        AssignmentService(storage, httpClient, auth, tpAuth, schedule)
-          ..loadCached();
+    final service = AssignmentService(
+      storage,
+      httpClient,
+      auth,
+      tpAuth,
+      schedule,
+      blackboardDeadlines: () async => [
+        for (final id in ['blackboard-new', 'stable-legacy'])
+          Assignment.fromJson(
+            _assignmentJson(id: id, platform: 'blackboard', due: DateTime.utc(2026, 1, 5)),
+          ),
+      ],
+    )..loadCached();
+    final previous = service.assignments.singleWhere((a) => a.id == 'stable-legacy');
+    final reminderKey = service.reminderKeyFor(previous);
+    await service.setCompleted(previous, true);
+    await service.hide(previous);
 
     await service.fetchAssignments();
 
+    final refreshed = service.assignments.singleWhere((a) => a.id == previous.id);
+    expect(service.reminderKeyFor(refreshed), reminderKey);
+    expect(service.isCompleted(refreshed), isTrue);
+    expect(service.isHidden(refreshed), isTrue);
     expect(
       service.assignments.map((a) => a.id),
       containsAll(['blackboard-new', 'gradescope-old']),

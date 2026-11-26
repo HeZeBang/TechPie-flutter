@@ -129,6 +129,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   final campusClients = CampusClients(
     authService,
     thirdPartyAuthService,
+    storage: storageService,
     onAccountChanged: () => unawaited(CampusFileShare.clearScopedFiles()),
   );
   final scheduleService = ScheduleService(
@@ -156,6 +157,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     authService,
     thirdPartyAuthService,
     scheduleService,
+    blackboardDeadlines: () => campusClients.blackboard.deadlines(),
     syncReminders: isApple,
   );
   final wearSource = isAndroid()
@@ -492,7 +494,11 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       _campusClients = external;
       _ownsCampusClients = false;
     } else {
-      _campusClients = CampusClients(widget.authService, widget.thirdPartyAuthService);
+      _campusClients = CampusClients(
+        widget.authService,
+        widget.thirdPartyAuthService,
+        storage: widget.storageService,
+      );
       _ownsCampusClients = true;
     }
   }
@@ -532,7 +538,8 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       _initCampusClients();
     } else if (_ownsCampusClients &&
         (oldWidget.authService != widget.authService ||
-            oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService)) {
+            oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
+            oldWidget.storageService != widget.storageService)) {
       _campusClients.dispose();
       _initCampusClients();
     }
