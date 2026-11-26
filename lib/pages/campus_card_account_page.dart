@@ -328,6 +328,9 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
                 obscureText: true,
                 enabled: enabled,
                 textInputAction: TextInputAction.done,
+                onChanged: (_) {
+                  if (_error != null) setState(() => _error = null);
+                },
                 onSubmitted: enabled ? (_) => unawaited(_run(_connectManually)) : null,
               ),
             ],
@@ -363,6 +366,10 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
             placeholder: _text('Binding code', '绑定码'),
             enabled: !_busy && !_card.busy,
             textInputAction: TextInputAction.done,
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
+            onSubmitted: !_busy && !_card.busy ? (_) => unawaited(_run(_redeem)) : null,
           ),
         ],
       );

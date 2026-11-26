@@ -412,6 +412,7 @@ class _CustomCourseEditorPageState extends State<CustomCourseEditorPage> {
                       onTapOutside: (_) =>
                           FocusManager.instance.primaryFocus?.unfocus(),
                       child: AdaptiveTextFieldGroup(
+                        embedded: true,
                         items: [
                           AdaptiveTextFieldGroupItem(
                             controller: _name,

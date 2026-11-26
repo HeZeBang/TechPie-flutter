@@ -13,6 +13,7 @@ import 'package:techpie/models/user_session.dart';
 import 'package:techpie/pages/assignments_page.dart';
 import 'package:techpie/pages/debug_log_page.dart';
 import 'package:techpie/pages/oa_gym_page.dart';
+import 'package:techpie/pages/settings_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -196,7 +197,13 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('张同学'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(SettingsPage),
+          matching: find.text('张同学'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('GeekPie Uni-Auth'), findsOneWidget);
       expect(find.byKey(const ValueKey('settings.mask-personal-info')), findsNothing);
 

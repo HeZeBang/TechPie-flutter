@@ -238,6 +238,7 @@ class ScheduleService extends ChangeNotifier {
     final previous = _lastFetch;
     if (previous == null || previous.accountRevision != _accountRevision) return true;
     if (retry && _error != null) return true;
+    if (!isGraduate && _semesterInfo != null && _termCalendar == null) return true;
     return previous.idsSession != _idsSession &&
         (scheduleSource == CampusScheduleSource.automatic ||
             _loading ||
@@ -420,7 +421,8 @@ class ScheduleService extends ChangeNotifier {
     if (_semesterInfo == null && (!onStartup || cachedId?.startsWith(graduateSemesterPrefix) != false)) {
       return;
     }
-    final id = _validSemester(cachedId)!;
+    final id = _validSemester(cachedId);
+    if (id == null) return;
     _selectedSemesterId = id;
     _courseTable = _storage.loadCourseTable(id, owner: owner);
     _termCalendar = _storage.loadTermCalendar(id);
@@ -434,11 +436,19 @@ class ScheduleService extends ChangeNotifier {
   }
 
   String? _validSemester(String? selected) {
+    final normalized = selected?.trim();
     final info = _semesterInfo;
-    if (info == null || info.semesters.values.any((terms) => terms.containsValue(selected))) {
-      return selected;
+    if (info == null) {
+      return normalized != null && normalized.isNotEmpty ? normalized : null;
     }
-    return info.defaultSemester;
+    bool contains(String? id) =>
+        id != null &&
+        id.isNotEmpty &&
+        info.semesters.values.any((terms) => terms.containsValue(id));
+    if (contains(normalized)) return normalized;
+    if (contains(info.defaultSemester)) return info.defaultSemester;
+    final inferred = EamsScheduleParser.inferDefaultSemester(info.semesters);
+    return inferred.isNotEmpty ? inferred : null;
   }
 
   Future<bool> canFetchUndergraduateExams() async {

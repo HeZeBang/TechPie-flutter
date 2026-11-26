@@ -14,6 +14,8 @@ class AdaptiveTextArea extends StatelessWidget {
     this.minLines = 1,
     this.maxLines = 1,
     this.enabled = true,
+    this.embedded = false,
+    this.onChanged,
   });
 
   final TextEditingController controller;
@@ -23,6 +25,8 @@ class AdaptiveTextArea extends StatelessWidget {
   final int minLines;
   final int maxLines;
   final bool enabled;
+  final bool embedded;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -35,10 +39,13 @@ class AdaptiveTextArea extends StatelessWidget {
         minLines: minLines,
         maxLines: maxLines,
         enabled: enabled,
+        onChanged: onChanged,
       );
     }
 
     final colors = context.tpColors;
+    final background = embedded ? colors.surfaceSubtle : colors.surface;
+    final borderColor = colors.isDark ? colors.border : colors.divider;
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 108),
       child: CupertinoTextField(
@@ -52,9 +59,11 @@ class AdaptiveTextArea extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         textAlignVertical: TextAlignVertical.top,
         clearButtonMode: OverlayVisibilityMode.editing,
+        onChanged: onChanged,
         decoration: BoxDecoration(
-          color: colors.surfaceSubtle,
+          color: background,
           borderRadius: BorderRadius.circular(TpTokens.radiusS),
+          border: Border.all(color: borderColor, width: 0.75),
         ),
       ),
     );

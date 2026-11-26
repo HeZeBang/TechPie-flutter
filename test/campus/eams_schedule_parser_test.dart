@@ -216,4 +216,101 @@ void main() {
     expect(forms.single, contains('value=263'));
     expect(forms.single, isNot(contains('value=6')));
   });
+
+  test('entry reads semesterCalendar value when hidden semester input value is empty', () {
+    final entry = EamsScheduleParser.entry('''
+      <input name="ids" value="42">
+      <input name="project.id" value="1">
+      <input name="semester.id" value="">
+      <div id="semesterBar123"></div>
+      <script>
+        jQuery("#semesterBar123").semesterCalendar({
+          empty:"false",
+          onChange:"",
+          value:"282"
+        });
+      </script>''');
+    expect(entry, (table: '42', project: '1', semester: '282'));
+  });
+
+  test('semesters infers current academic semester when entry semester is empty', () {
+    const semesterJson = '''
+      {
+        "semesters": {
+          "y0": [
+            {"id":"262","schoolYear":"2025-2026","name":"秋"},
+            {"id":"263","schoolYear":"2025-2026","name":"春"},
+            {"id":"264","schoolYear":"2025-2026","name":"暑"}
+          ],
+          "y1": [
+            {"id":"282","schoolYear":"2026-2027","name":"秋"},
+            {"id":"283","schoolYear":"2026-2027","name":"春"},
+            {"id":"302","schoolYear":"2026-2027","name":"暑"}
+          ]
+        }
+      }''';
+    const missingEntry = (table: '42', project: '1', semester: '');
+    expect(
+      EamsScheduleParser.semesters(
+        missingEntry,
+        semesterJson,
+        now: DateTime(2026, 11, 27),
+      ).defaultSemester,
+      '282',
+    );
+    expect(
+      EamsScheduleParser.semesters(
+        missingEntry,
+        semesterJson,
+        now: DateTime(2026, 4, 15),
+      ).defaultSemester,
+      '263',
+    );
+  });
+
+  test('ScheduleService.loadCachedData heals broken empty defaultSemester cache', () async {
+    SharedPreferences.setMockInitialValues({
+      'schedule_semesters': jsonEncode({
+        'semesters': {
+          '2025-2026': {'1': '262', '2': '263', '3': '264'},
+          '2026-2027': {'1': '282', '2': '283', '3': '302'},
+        },
+        'defaultSemester': '',
+        'tableId': '42',
+        'owner': '20240001|20240001',
+      }),
+      'schedule_selected_semester': '',
+      'schedule_campus_identity': jsonEncode({
+        'owner': '20240001|20240001',
+        'kind': 'undergraduate',
+        'categoryName': '学生/本科生',
+      }),
+    });
+    FlutterSecureStorage.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    await storage.saveSession(
+      UserSession(
+        userId: 'user',
+        userName: 'User',
+        schoolName: 'School',
+        createdAt: DateTime.utc(2026),
+      ),
+    );
+    await storage.saveThirdPartyAccount(FakeIdsClient.account('20240001'));
+    final httpClient = LoggingHttpClient(DebugLogger());
+    addTearDown(httpClient.close);
+    final auth = AuthService(storage, httpClient, UniAuthService());
+    final tpAuth = ThirdPartyAuthService(storage, httpClient, idsClient: FakeIdsClient());
+    await auth.loadSession();
+    await tpAuth.initialize();
+    final schedule = ScheduleService(storage, httpClient, auth, tpAuth);
+    addTearDown(schedule.dispose);
+
+    await schedule.loadCachedData();
+
+    final expected = EamsScheduleParser.inferDefaultSemester(schedule.semesterInfo!.semesters);
+    expect(expected, isNotEmpty);
+    expect(schedule.selectedSemesterId, expected);
+    expect(storage.selectedSemester, expected);
+  });
 }

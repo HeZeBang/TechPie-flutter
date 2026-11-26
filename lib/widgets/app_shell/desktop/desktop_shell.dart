@@ -15,6 +15,10 @@ class DesktopShell extends StatelessWidget {
   final Map<int, SidebarBadgeData> badges;
   final ValueChanged<int> onDestinationSelected;
   final VoidCallback onToggleSidebarCollapsed;
+  final VoidCallback? onOpenCommandPalette;
+  final VoidCallback? onOpenCampusServices;
+  final DesktopSidebarAccountSummary? accountSummary;
+  final VoidCallback? onOpenAccount;
   final Widget child;
 
   const DesktopShell({
@@ -26,6 +30,10 @@ class DesktopShell extends StatelessWidget {
     this.badges = const <int, SidebarBadgeData>{},
     required this.onDestinationSelected,
     required this.onToggleSidebarCollapsed,
+    this.onOpenCommandPalette,
+    this.onOpenCampusServices,
+    this.accountSummary,
+    this.onOpenAccount,
     required this.child,
   });
 
@@ -57,6 +65,10 @@ class DesktopShell extends StatelessWidget {
                   badges: badges,
                   onSelected: onDestinationSelected,
                   onToggleCollapsed: onToggleSidebarCollapsed,
+                  onOpenCommandPalette: onOpenCommandPalette,
+                  onOpenCampusServices: onOpenCampusServices,
+                  accountSummary: accountSummary,
+                  onOpenAccount: onOpenAccount,
                 ),
               ),
               VerticalDivider(

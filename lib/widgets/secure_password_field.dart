@@ -12,6 +12,7 @@ class SecurePasswordField extends StatefulWidget {
     this.decoration,
     this.enabled = true,
     this.textInputAction = TextInputAction.done,
+    this.onChanged,
     this.onSubmitted,
   });
 
@@ -20,6 +21,7 @@ class SecurePasswordField extends StatefulWidget {
   final InputDecoration? decoration;
   final bool enabled;
   final TextInputAction textInputAction;
+  final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
 
   @override
@@ -82,25 +84,29 @@ class _SecurePasswordFieldState extends State<SecurePasswordField>
                 : materialTextSelectionHandleControls,
             contextMenuBuilder: (context, state) =>
                 AdaptiveTextSelectionToolbar.editableText(editableTextState: state),
+            onChanged: widget.onChanged,
             onSubmitted: widget.onSubmitted,
           );
-          final field = cupertino
-              ? Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Stack(
-                    alignment: Alignment.centerLeft,
-                    children: [
-                      if (widget.controller.text.isEmpty)
-                        Text(
-                          widget.placeholder,
-                          style: style.copyWith(
-                            color: CupertinoColors.placeholderText.resolveFrom(context),
-                          ),
-                        ),
-                      editable,
-                    ],
+          final innerCupertino = Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Stack(
+              alignment: Alignment.centerLeft,
+              children: [
+                if (widget.controller.text.isEmpty)
+                  Text(
+                    widget.placeholder,
+                    style: style.copyWith(
+                      color: CupertinoColors.placeholderText.resolveFrom(context),
+                    ),
                   ),
-                )
+                editable,
+              ],
+            ),
+          );
+          final field = cupertino
+              ? (widget.enabled
+                  ? innerCupertino
+                  : Opacity(opacity: 0.45, child: innerCupertino))
               : InputDecorator(
                   decoration: (widget.decoration ?? InputDecoration(hintText: widget.placeholder))
                       .copyWith(enabled: widget.enabled),
@@ -138,6 +144,7 @@ class _MaskedEditableText extends EditableText {
     required super.textInputAction,
     required super.selectionControls,
     required super.contextMenuBuilder,
+    required super.onChanged,
     required super.onSubmitted,
   }) : super(
           obscureText: true,

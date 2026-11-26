@@ -9,6 +9,7 @@ import '../services/academic_certificate_service.dart';
 import '../services/campus/campus_errors.dart';
 import '../services/campus/campus_file_share.dart';
 import '../services/service_provider.dart';
+import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import 'generic_webview_page.dart';
@@ -295,27 +296,41 @@ class _FormDialogState extends State<_FormDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               for (final field in widget.form.fields)
-                if (field.options.isEmpty)
-                  TextFormField(
-                    initialValue: field.value,
-                    readOnly: field.readOnly,
-                    minLines: field.multiline ? 3 : 1,
-                    maxLines: field.multiline ? 6 : 1,
-                    decoration: InputDecoration(labelText: field.label),
-                    onChanged: (v) => values[field.name] = v,
-                  )
-                else
-                  DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    initialValue: field.options.containsKey(field.value) ? field.value : null,
-                    decoration: InputDecoration(labelText: field.label),
-                    items: [
-                      for (final opt in field.options.entries)
-                        DropdownMenuItem(value: opt.key, child: Text(opt.value)),
-                    ],
-                    onChanged: (v) => values[field.name] = v ?? '',
-                  ),
-              if (error != null) Text(error!),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: TpTokens.space3),
+                  child: field.options.isEmpty
+                      ? TextFormField(
+                          initialValue: field.value,
+                          readOnly: field.readOnly,
+                          minLines: field.multiline ? 3 : 1,
+                          maxLines: field.multiline ? 6 : 1,
+                          decoration: InputDecoration(labelText: field.label),
+                          onChanged: (v) {
+                            values[field.name] = v;
+                            if (error != null) setState(() => error = null);
+                          },
+                        )
+                      : DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          initialValue:
+                              field.options.containsKey(field.value) ? field.value : null,
+                          decoration: InputDecoration(labelText: field.label),
+                          items: [
+                            for (final opt in field.options.entries)
+                              DropdownMenuItem(value: opt.key, child: Text(opt.value)),
+                          ],
+                          onChanged: (v) {
+                            values[field.name] = v ?? '';
+                            if (error != null) setState(() => error = null);
+                          },
+                        ),
+                ),
+              if (error != null)
+                Text(
+                  error!,
+                  style: TpTypography.itemMeta(context.tpColors)
+                      .copyWith(color: context.tpColors.dangerRed),
+                ),
             ],
           ),
         ),

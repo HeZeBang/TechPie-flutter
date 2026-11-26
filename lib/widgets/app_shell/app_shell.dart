@@ -3,23 +3,33 @@ import 'dart:async';
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 
+import '../../features/campus_card/app/app_providers.dart';
+import '../../models/feature.dart';
 import '../../pages/assignments_page.dart';
 import '../../pages/campus_card_page.dart';
+import '../../pages/campus_feature_navigation.dart';
+import '../../pages/campus_services_page.dart';
 import '../../pages/home_page.dart';
 import '../../pages/schedule_page.dart';
 import '../../pages/settings_page.dart';
 import '../../services/assignment_service.dart';
 import '../../services/service_provider.dart';
+import '../../services/theme_service.dart';
 import '../../theme/tp_icons.dart';
 import '../../utils/adaptive_layout.dart';
 import '../../utils/motion.dart';
 import '../../utils/platform.dart';
+import '../../utils/user_display_name.dart';
+import '../../widgets/adaptive_feedback.dart';
 import '../../widgets/adaptive_page_navigation.dart';
 import '../glance/glance_active_scope.dart';
 import 'app_destination.dart';
 import 'app_entry_notifier.dart';
+import 'desktop/desktop_command_palette.dart';
 import 'desktop/desktop_shell.dart';
 import 'desktop/desktop_sidebar_tokens.dart';
+import 'desktop/desktop_workbench_chrome.dart';
+import 'desktop/macos_window_drag.dart';
 import 'mobile_shell.dart';
 
 export 'app_entry_notifier.dart';
@@ -107,6 +117,7 @@ class _AppShellState extends State<AppShell> {
     ),
     AppDestination(
       label: 'Deadlines',
+      shortLabel: 'DDL',
       icon: TpIcons.deadlines,
       selectedIcon: TpIcons.deadlines,
       sfSymbol: 'checkmark.circle',
@@ -268,6 +279,201 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
+  BuildContext _activeNavigationContext() =>
+      _tabNavigatorKeys[_selectedIndex]?.currentContext ?? context;
+
+  bool _canNavigateBackInActiveTab() =>
+      _tabNavigatorKeys[_selectedIndex]?.currentState?.canPop() ?? false;
+
+  void _navigateBackInActiveTab() {
+    final navigator = _tabNavigatorKeys[_selectedIndex]?.currentState;
+    if (navigator != null && navigator.canPop()) {
+      navigator.pop();
+    }
+  }
+
+  void _openCampusServices() {
+    final services =
+        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    if (services == null) return;
+    unawaited(
+      pushAdaptivePage<void>(
+        _activeNavigationContext(),
+        builder: (_) => CampusServicesPage(storage: services.storageService),
+      ),
+    );
+  }
+
+  void _refreshWorkbenchData() {
+    final services =
+        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    if (services == null) return;
+    switch (_selectedIndex) {
+      case 1:
+        services.scheduleService.requestFetch(force: true);
+      case 2:
+        unawaited(services.assignmentService.fetchAssignments());
+      case 3:
+        unawaited(services.campusCardService.refreshAccount());
+      default:
+        services.scheduleService.requestFetch(force: true);
+        unawaited(services.assignmentService.fetchAssignments());
+        unawaited(services.campusCardService.refreshAccount());
+    }
+    showAdaptiveFeedback(
+      context: context,
+      message: '正在刷新数据…',
+      duration: const Duration(seconds: 2),
+    );
+  }
+
+  void _toggleLightDarkTheme() {
+    final services =
+        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    if (services == null) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final target = isDark ? AppThemeMode.light : AppThemeMode.dark;
+    unawaited(services.themeService.setMode(target));
+    showAdaptiveFeedback(
+      context: context,
+      message: '已切换为${target.label}外观',
+      duration: const Duration(seconds: 2),
+    );
+  }
+
+  void _openCommandPalette({required bool allowSidebarToggle}) {
+    if (closeDesktopCommandPaletteIfOpen()) return;
+    final services =
+        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    final isMac = isMacOsDesktop();
+    final mod = isMac ? '⌘' : 'Ctrl ';
+
+    final items = <DesktopCommandItem>[
+      DesktopCommandItem(
+        id: 'tab.home',
+        title: '首页',
+        subtitle: '今日课程、校园卡与快捷入口',
+        group: '导航',
+        icon: TpIcons.home,
+        shortcutLabel: '${mod}1',
+        keywords: const ['home', 'shouye'],
+        onExecute: () => _onDestinationSelected(0),
+      ),
+      DesktopCommandItem(
+        id: 'tab.schedule',
+        title: '课表',
+        subtitle: '查看周课表与课程详情',
+        group: '导航',
+        icon: TpIcons.schedule,
+        shortcutLabel: '${mod}2',
+        keywords: const ['schedule', 'kebiao', 'timetable'],
+        onExecute: () => _onDestinationSelected(1),
+      ),
+      DesktopCommandItem(
+        id: 'tab.deadlines',
+        title: 'Deadlines',
+        subtitle: '作业、实验与截止提醒',
+        group: '导航',
+        icon: TpIcons.deadlines,
+        shortcutLabel: '${mod}3',
+        keywords: const ['deadline', 'ddl', 'assignments', 'zuoye'],
+        onExecute: () => _onDestinationSelected(2),
+      ),
+      DesktopCommandItem(
+        id: 'tab.settings',
+        title: '我的',
+        subtitle: '账号绑定、云同步与外观设置',
+        group: '导航',
+        icon: TpIcons.profile,
+        shortcutLabel: '${mod}4',
+        keywords: const ['settings', 'me', 'wode', 'shezhi'],
+        onExecute: () => _onDestinationSelected(3),
+      ),
+      if (services != null)
+        DesktopCommandItem(
+          id: 'service.hub',
+          title: '校园服务中心',
+          subtitle: '浏览全部校园服务与首页快捷编辑',
+          group: '校园服务',
+          icon: TpIcons.activities,
+          keywords: const ['services', 'fuwu', 'more', '更多'],
+          onExecute: _openCampusServices,
+        ),
+      if (services != null)
+        for (final feature in featureEntries)
+          DesktopCommandItem(
+            id: 'feature.${feature.id}',
+            title: feature.description,
+            subtitle: feature.subtitle,
+            group: '校园服务',
+            icon: feature.icon.icon ?? TpIcons.activities,
+            keywords: <String>[...feature.keywords, feature.category.label],
+            onExecute: () =>
+                openCampusFeature(_activeNavigationContext(), feature),
+          ),
+      if (services != null)
+        DesktopCommandItem(
+          id: 'action.refresh',
+          title: '刷新当前数据',
+          subtitle: '同步最新课表、Deadlines 与校园卡余额',
+          group: '快捷操作',
+          icon: TpIcons.refresh,
+          shortcutLabel: '${mod}R',
+          keywords: const ['refresh', 'sync', 'shuaxin'],
+          onExecute: _refreshWorkbenchData,
+        ),
+      if (allowSidebarToggle)
+        DesktopCommandItem(
+          id: 'action.toggle_sidebar',
+          title: _sidebarCollapsed ? '展开侧边栏' : '收起侧边栏',
+          subtitle: '切换桌面侧栏折叠状态',
+          group: '快捷操作',
+          icon: _sidebarCollapsed
+              ? TpIcons.sidebarExpand
+              : TpIcons.sidebarCollapse,
+          shortcutLabel: '$mod\\',
+          keywords: const ['sidebar', 'cebianlan', 'collapse'],
+          onExecute: _onSidebarToggleCollapsed,
+        ),
+      if (services != null)
+        DesktopCommandItem(
+          id: 'action.toggle_theme',
+          title: '切换深浅外观',
+          subtitle: '在浅色与深色模式之间快速切换',
+          group: '快捷操作',
+          icon: TpIcons.palette,
+          keywords: const ['theme', 'dark', 'light', '外观'],
+          onExecute: _toggleLightDarkTheme,
+        ),
+    ];
+
+    unawaited(showDesktopCommandPalette(context: context, items: items));
+  }
+
+  DesktopSidebarAccountSummary? _buildAccountSummary(ServiceProvider? services) {
+    if (services == null) return null;
+    final auth = services.authService;
+    if (!auth.isLoggedIn || auth.session == null) {
+      return const DesktopSidebarAccountSummary(
+        displayName: '',
+        avatarText: 'GP',
+        isLoggedIn: false,
+      );
+    }
+    final displayName = resolveUserDisplayName(
+      session: auth.session,
+      idsRealName: services.thirdPartyAuthService.idsAccount?.name,
+      campusCardOwnerName: services.campusCardService.cachedOwnerName,
+    );
+    return DesktopSidebarAccountSummary(
+      displayName: displayName,
+      avatarText: userAvatarLabel(displayName),
+      isLoggedIn: true,
+      boundPlatformCount:
+          services.thirdPartyAuthService.boundPlatforms.length,
+    );
+  }
+
   Widget _buildPageView(
     BuildContext context, {
     required bool usePerTabNavigators,
@@ -322,48 +528,94 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final desktopShell = _desktopShellEnabled && usesDesktopSidebarShell(context);
+    final desktopShell =
+        _desktopShellEnabled && usesDesktopSidebarShell(context);
+    final autoCollapsedRail =
+        desktopShell && usesAutoCollapsedSidebarRail(context);
+    final effectiveSidebarCollapsed = autoCollapsedRail || _sidebarCollapsed;
+    final showSidebarToggle = !autoCollapsedRail;
     final pageView = _buildPageView(
       context,
-      usePerTabNavigators: isIos() || desktopShell,
+      usePerTabNavigators: isIos() || desktopShell || isDesktop(),
     );
 
+    final services =
+        context.dependOnInheritedWidgetOfExactType<ServiceProvider>();
+
+    Widget shellWidget;
     if (desktopShell) {
-      final assignmentService =
-          context.dependOnInheritedWidgetOfExactType<ServiceProvider>()?.assignmentService;
-      if (assignmentService == null) {
-        return DesktopShell(
+      final listenables = <Listenable>[
+        if (services != null) ...[
+          services.assignmentService,
+          services.authService,
+          services.thirdPartyAuthService,
+          services.campusCardService,
+        ],
+      ];
+      if (listenables.isEmpty) {
+        shellWidget = DesktopShell(
           destinations: _destinations,
           selectedIndex: _selectedIndex,
-          sidebarCollapsed: _sidebarCollapsed,
+          sidebarCollapsed: effectiveSidebarCollapsed,
+          showToggleButton: showSidebarToggle,
           onDestinationSelected: _onDestinationSelected,
           onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
+          onOpenCommandPalette: () =>
+              _openCommandPalette(allowSidebarToggle: showSidebarToggle),
+          onOpenCampusServices:
+              services == null ? null : _openCampusServices,
+          onOpenAccount: () => _onDestinationSelected(3),
+          child: pageView,
+        );
+      } else {
+        shellWidget = ListenableBuilder(
+          listenable: Listenable.merge(listenables),
+          builder: (context, child) {
+            final deadlineBadge =
+                computeDeadlineSidebarBadge(services!.assignmentService);
+            return DesktopShell(
+              destinations: _destinations,
+              selectedIndex: _selectedIndex,
+              sidebarCollapsed: effectiveSidebarCollapsed,
+              showToggleButton: showSidebarToggle,
+              badges: deadlineBadge == null ? const {} : {2: deadlineBadge},
+              onDestinationSelected: _onDestinationSelected,
+              onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
+              onOpenCommandPalette: () =>
+                  _openCommandPalette(allowSidebarToggle: showSidebarToggle),
+              onOpenCampusServices: _openCampusServices,
+              accountSummary: _buildAccountSummary(services),
+              onOpenAccount: () => _onDestinationSelected(3),
+              child: child!,
+            );
+          },
           child: pageView,
         );
       }
-      return ListenableBuilder(
-        listenable: assignmentService,
-        builder: (context, child) {
-          final deadlineBadge = computeDeadlineSidebarBadge(assignmentService);
-          return DesktopShell(
-            destinations: _destinations,
-            selectedIndex: _selectedIndex,
-            sidebarCollapsed: _sidebarCollapsed,
-            badges: deadlineBadge == null ? const {} : {2: deadlineBadge},
-            onDestinationSelected: _onDestinationSelected,
-            onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
-            child: child!,
-          );
-        },
+    } else {
+      shellWidget = MobileShell(
+        destinations: _destinations,
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: _onDestinationSelected,
         child: pageView,
       );
     }
 
-    return MobileShell(
-      destinations: _destinations,
-      selectedIndex: _selectedIndex,
-      onDestinationSelected: _onDestinationSelected,
-      child: pageView,
+    if (!isDesktop()) return shellWidget;
+
+    return DesktopWorkbenchChrome(
+      onSelectTab: _onDestinationSelected,
+      onToggleCommandPalette: () =>
+          _openCommandPalette(allowSidebarToggle: desktopShell && showSidebarToggle),
+      onRefresh: _refreshWorkbenchData,
+      onNavigateBack: _navigateBackInActiveTab,
+      canNavigateBack: _canNavigateBackInActiveTab,
+      onOpenCampusServices: _openCampusServices,
+      onToggleTheme: _toggleLightDarkTheme,
+      sidebarCollapsed: effectiveSidebarCollapsed,
+      onToggleSidebar:
+          desktopShell && showSidebarToggle ? _onSidebarToggleCollapsed : null,
+      child: shellWidget,
     );
   }
 }

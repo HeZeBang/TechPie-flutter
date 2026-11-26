@@ -15,6 +15,22 @@ class SidebarBadgeData {
   String get formatted => count > 99 ? '99+' : '$count';
 }
 
+/// Compact account status summary shown in the desktop sidebar footer.
+@immutable
+class DesktopSidebarAccountSummary {
+  const DesktopSidebarAccountSummary({
+    required this.displayName,
+    required this.avatarText,
+    required this.isLoggedIn,
+    this.boundPlatformCount = 0,
+  });
+
+  final String displayName;
+  final String avatarText;
+  final bool isLoggedIn;
+  final int boundPlatformCount;
+}
+
 abstract final class DesktopSidebarTokens {
   static const double collapsedWidth = 88;
   static const double mediumExpandedWidth = 120;

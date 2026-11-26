@@ -6,6 +6,7 @@ import '../models/catalog_course.dart';
 import '../services/campus/campus_errors.dart';
 import '../services/course_catalog_service.dart';
 import '../services/service_provider.dart';
+import '../theme/theme.dart';
 
 class CourseCatalogSearchPage extends StatelessWidget {
   const CourseCatalogSearchPage({super.key, this.service});
@@ -212,43 +213,55 @@ class _SearchState extends State<_Search> {
                     ExpansionTile(
                       maintainState: true,
                       title: const Text('筛选条件'),
+                      childrenPadding: const EdgeInsets.fromLTRB(
+                        TpTokens.space3,
+                        TpTokens.space2,
+                        TpTokens.space3,
+                        TpTokens.space3,
+                      ),
                       children: [
                         if (filterError != null)
                           TextButton(onPressed: loadOptions, child: Text('$filterError · 重试')),
                         for (final f in CourseCatalogService.dictionaryFields.entries)
-                          Builder(
-                            builder: (context) {
-                              final selected = filters[f.key] ?? '';
-                              final valid = selected.isEmpty ||
-                                      (options[f.key]?.containsKey(selected) ?? false)
-                                  ? selected
-                                  : '';
-                              return DropdownButtonFormField<String>(
-                                key: ValueKey('${f.key}:${options[f.key]?.length ?? 0}:$valid'),
-                                decoration: InputDecoration(labelText: f.value),
-                                initialValue: valid,
-                                items: [
-                                  const DropdownMenuItem(value: '', child: Text('不限')),
-                                  for (final opt
-                                      in (options[f.key] ?? {}).entries.where((e) => e.key != ''))
-                                    DropdownMenuItem(value: opt.key, child: Text(opt.value)),
-                                ],
-                                onChanged: (v) {
-                                  filters[f.key] = v ?? '';
-                                  queueSearch();
-                                },
-                                isExpanded: true,
-                              );
-                            },
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: TpTokens.space3),
+                            child: Builder(
+                              builder: (context) {
+                                final selected = filters[f.key] ?? '';
+                                final valid = selected.isEmpty ||
+                                        (options[f.key]?.containsKey(selected) ?? false)
+                                    ? selected
+                                    : '';
+                                return DropdownButtonFormField<String>(
+                                  key: ValueKey('${f.key}:${options[f.key]?.length ?? 0}:$valid'),
+                                  decoration: InputDecoration(labelText: f.value),
+                                  initialValue: valid,
+                                  items: [
+                                    const DropdownMenuItem(value: '', child: Text('不限')),
+                                    for (final opt
+                                        in (options[f.key] ?? {}).entries.where((e) => e.key != ''))
+                                      DropdownMenuItem(value: opt.key, child: Text(opt.value)),
+                                  ],
+                                  onChanged: (v) {
+                                    filters[f.key] = v ?? '';
+                                    queueSearch();
+                                  },
+                                  isExpanded: true,
+                                );
+                              },
+                            ),
                           ),
                         for (final f in _textFilterLabels.entries)
-                          TextField(
-                            controller: _filterControllers[f.key],
-                            decoration: InputDecoration(labelText: f.value),
-                            onChanged: (v) {
-                              filters[f.key] = v.trim();
-                              queueSearch();
-                            },
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: TpTokens.space3),
+                            child: TextField(
+                              controller: _filterControllers[f.key],
+                              decoration: InputDecoration(labelText: f.value),
+                              onChanged: (v) {
+                                filters[f.key] = v.trim();
+                                queueSearch();
+                              },
+                            ),
                           ),
                         if (hasFilters)
                           Align(

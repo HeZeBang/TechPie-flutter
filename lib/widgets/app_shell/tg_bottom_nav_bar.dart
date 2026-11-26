@@ -9,6 +9,7 @@ import '../../theme/theme.dart';
 import '../../utils/glass.dart';
 import '../../utils/haptics.dart';
 import '../../utils/motion.dart';
+import 'adaptive_destination_label.dart';
 import 'app_destination.dart';
 
 /// Telegram-style bottom navigation bar, ported from the official client's
@@ -228,6 +229,20 @@ class _TgBottomNavBarState extends State<TgBottomNavBar> with TickerProviderStat
   @override
   void didUpdateWidget(covariant TgBottomNavBar oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.destinations.length != widget.destinations.length) {
+      while (_selectedT.length < widget.destinations.length) {
+        _selectedT.add(
+          AnimatedFloat(
+            _invalidate,
+            duration: TgMotion.medium,
+            curve: Curves.decelerate,
+          ),
+        );
+      }
+      if (_selectedT.length > widget.destinations.length) {
+        _selectedT.length = widget.destinations.length;
+      }
+    }
     // An outside selection change (e.g. a tap while the release spring is
     // still settling) invalidates the drag override.
     if (oldWidget.selectedIndex != widget.selectedIndex &&
@@ -426,10 +441,12 @@ class _TgBottomNavBarState extends State<TgBottomNavBar> with TickerProviderStat
                 // ~4dp visual gap below the icon.
                 Positioned(
                   top: 30,
-                  child: Text(
-                    destination.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  left: 2,
+                  right: 2,
+                  child: AdaptiveDestinationLabel(
+                    label: destination.label,
+                    shortLabel: destination.shortLabel,
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       inherit: false,
                       fontFamily: 'RobotoMedium',

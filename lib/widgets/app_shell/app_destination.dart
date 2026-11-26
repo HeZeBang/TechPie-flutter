@@ -4,6 +4,7 @@ import '../ios/ios_native_tab_bar.dart';
 
 class AppDestination {
   final String label;
+  final String? shortLabel;
   final IconData icon;
   final IconData selectedIcon;
   final String sfSymbol;
@@ -12,6 +13,7 @@ class AppDestination {
 
   const AppDestination({
     required this.label,
+    this.shortLabel,
     required this.icon,
     required this.selectedIcon,
     required this.sfSymbol,
@@ -22,6 +24,7 @@ class AppDestination {
   IosNativeTabBarItem toIosNativeTabBarItem() {
     return IosNativeTabBarItem(
       label: label,
+      shortLabel: shortLabel,
       icon: icon,
       selectedIcon: selectedIcon,
       sfSymbol: sfSymbol,

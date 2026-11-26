@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/theme.dart';
+import '../adaptive_destination_label.dart';
 import '../app_destination.dart';
 import 'desktop_sidebar_tokens.dart';
 
@@ -143,15 +144,18 @@ class DesktopSidebarItem extends StatelessWidget {
                             width: DesktopSidebarTokens.navItemTextGap,
                           ),
                           Expanded(
-                            child: Text(
-                              destination.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TpTypography.itemTitle(colors).copyWith(
-                                fontSize: 14,
-                                color: foreground,
-                                fontWeight:
-                                    selected ? FontWeight.w600 : FontWeight.w500,
+                            child: ExcludeSemantics(
+                              child: AdaptiveDestinationLabel(
+                                label: destination.label,
+                                shortLabel: destination.shortLabel,
+                                preserveFullSemantics: false,
+                                style: TpTypography.itemTitle(colors).copyWith(
+                                  fontSize: 14,
+                                  color: foreground,
+                                  fontWeight: selected
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                ),
                               ),
                             ),
                           ),
