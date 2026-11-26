@@ -52,13 +52,21 @@ class CampusSession {
     if (_generation != generation) throw CampusRequestException.expired;
   }
 
-  Future<T> run<T extends Object>(Future<T> Function(CampusWire wire) action) async {
+  Future<T> run<T extends Object>(
+    Future<T> Function(CampusWire wire) action, {
+    bool Function()? canRetryExpired,
+  }) async {
     accountChanged();
     final generation = _generation;
     _check(generation);
     final value = await withCookie<T?>((provider) async {
       _check(generation);
-      if (provider.domain != origin.host || provider.isEmpty) throw CampusRequestException.expired;
+      if (provider.domain != origin.host) throw CampusRequestException.expired;
+      if (provider.isEmpty) {
+        _wire = null;
+        _cookie = null;
+        return const CookieAction(null, expired: true);
+      }
       if (_cookie != provider.cookies || _wire == null) {
         _cookie = provider.cookies;
         final http = CampusHttp(dio, allowedOrigins: {origin.origin});
@@ -80,6 +88,7 @@ class CampusSession {
         _check(generation);
         if (e.kind != CampusErrorKind.sessionExpired) rethrow;
         if (identical(_wire, wire)) _wire = null;
+        if (canRetryExpired != null && !canRetryExpired()) rethrow;
         return const CookieAction(null, expired: true);
       }
     });
@@ -103,10 +112,13 @@ class CampusWire {
     Object? data,
     Map<String, String>? headers,
     ScheduleRequest? schedule,
+    bool allowBodyRedirect = true,
   }) async {
     await _ready;
     var uri = origin.resolve(path);
-    if (query != null) uri = uri.replace(queryParameters: query);
+    if (query != null && query.isNotEmpty) {
+      uri = uri.replace(queryParameters: {...uri.queryParameters, ...query});
+    }
     for (var hop = 0; hop < 10; hop++) {
       if (!uri.isScheme('https') ||
           !uri.hasAuthority ||
@@ -140,6 +152,12 @@ class CampusWire {
       if (location == null) throw CampusRequestException.invalid;
       uri = uri.resolve(location);
       if (uri.host == 'ids.shanghaitech.edu.cn') throw CampusRequestException.expired;
+      if (!allowBodyRedirect && (status == 307 || status == 308) && data != null) {
+        throw const CampusRequestException(
+          CampusErrorKind.rejected,
+          '服务端要求重定向提交，已中止以防重复提交',
+        );
+      }
       if (status == 303 || ((status == 301 || status == 302) && method == 'POST')) {
         method = 'GET';
         data = null;

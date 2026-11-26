@@ -75,8 +75,30 @@ class StorageService {
     return UserSession.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
 
+  static const _emapCachePrefix = 'emap_cache_';
+  static const _campusCachePrefix = 'campus_cache_';
+
+  String? readEmapCache(String feature) => _prefs.getString('$_emapCachePrefix$feature');
+
+  Future<void> writeEmapCache(String feature, String? value) => value == null
+      ? _prefs.remove('$_emapCachePrefix$feature')
+      : _prefs.setString('$_emapCachePrefix$feature', value);
+
+  Future<void> clearCampusCaches() async {
+    final keys = _prefs
+        .getKeys()
+        .where(
+          (k) => k.startsWith(_emapCachePrefix) || k.startsWith(_campusCachePrefix),
+        )
+        .toList();
+    for (final key in keys) {
+      await _prefs.remove(key);
+    }
+  }
+
   Future<void> clearSession() async {
     await _secure.delete(key: _sessionKey);
+    await clearCampusCaches();
   }
 
   Future<void> saveIdsCandidate(String account, IdsPasskey credential) =>
@@ -158,6 +180,7 @@ class StorageService {
       for (final key in _legacyCampusKeys) {
         await _secure.delete(key: key);
       }
+      await clearCampusCaches();
     }
   }
 

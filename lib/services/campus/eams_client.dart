@@ -6,45 +6,73 @@ import 'campus_errors.dart';
 import 'campus_session.dart';
 import 'eams_html_parser.dart';
 
-class EamsClient {
-  EamsClient(
-    this.session, {
+class EamsRequestQueue {
+  EamsRequestQueue({
     this.minInterval = const Duration(milliseconds: 1600),
     this.retryDelay = const Duration(milliseconds: 2500),
   });
-  final CampusSession session;
+
   final Duration minInterval;
   final Duration retryDelay;
   final _clock = Stopwatch()..start();
   Duration _next = Duration.zero;
   Future<void> _tail = Future.value();
-  final _inFlight = Expando<Map<String, Future<CampusResponse>>>();
-  final _semesters = Expando<Map<String, String>>();
 
-  Future<CampusResponse> _schedule(SendRequest send) {
+  Future<CampusResponse> schedule(SendRequest send) {
     final task = _tail.then((_) async {
       final wait = _next - _clock.elapsed;
       if (wait > Duration.zero) await Future<void>.delayed(wait);
+      // Invoke synchronously outside try/finally so pre-flight identity or
+      // account checks that abort before dispatching never advance the clock.
+      final pending = send();
       late final CampusResponse response;
       try {
-        response = await send();
+        response = await pending;
       } finally {
         _next = _clock.elapsed + minInterval;
       }
-      if (_limited(response)) {
+      if (EamsClient._limited(response)) {
         final backoff = _clock.elapsed + retryDelay;
         if (backoff > _next) _next = backoff;
-        throw const CampusRequestException(CampusErrorKind.rateLimited, '教务系统请求过于频繁，请稍后再试');
+        throw const CampusRequestException(
+          CampusErrorKind.rateLimited,
+          '教务系统请求过于频繁，请稍后再试',
+        );
       }
       return response;
     });
     _tail = task.then<void>((_) {}, onError: (Object _) {});
     return task;
   }
+}
+
+class EamsClient {
+  EamsClient(
+    this.session, {
+    Duration minInterval = const Duration(milliseconds: 1600),
+    Duration retryDelay = const Duration(milliseconds: 2500),
+    EamsRequestQueue? queue,
+  }) : _queue = queue ?? EamsRequestQueue(minInterval: minInterval, retryDelay: retryDelay);
+
+  final CampusSession session;
+  EamsRequestQueue _queue;
+  final _inFlight = Expando<Map<String, Future<CampusResponse>>>();
+  final _semesters = Expando<Map<String, String>>();
+
+  EamsRequestQueue get queue => _queue;
+  Duration get minInterval => _queue.minInterval;
+  Duration get retryDelay => _queue.retryDelay;
+
+  void shareQueueWith(EamsClient other) {
+    _queue = other._queue;
+  }
 
   static bool _text(CampusResponse response) {
-    final contentType = response.headers.value('content-type') ?? '';
-    return contentType.isEmpty || contentType.startsWith('text/') || contentType.contains('json');
+    final contentType = (response.headers.value('content-type') ?? '').toLowerCase();
+    return contentType.isEmpty ||
+        contentType.startsWith('text/') ||
+        contentType.contains('json') ||
+        contentType.contains('xhtml');
   }
 
   static bool _limited(CampusResponse r) =>
@@ -75,7 +103,7 @@ class EamsClient {
               query: query,
               data: form,
               headers: form == null ? null : formHeaders,
-              schedule: _schedule,
+              schedule: _queue.schedule,
             );
           } on CampusRequestException catch (error) {
             if (error.kind == CampusErrorKind.rateLimited && attempt == 0) continue;
@@ -95,16 +123,46 @@ class EamsClient {
 
   Future<String> getHtml(String path, {Map<String, String>? query}) =>
       session.run((wire) async => CampusHttp.text(await _request(wire, 'GET', path, query: query)));
+
   Future<String> postForm(String path, Map<String, String> form) =>
       session.run((wire) async => CampusHttp.text(await _request(wire, 'POST', path, form: form)));
+
+  /// Submits a non-idempotent form at most once without coalescing or automatic retries.
+  Future<String> submitFormOnce(String path, Map<String, String> form) {
+    var dispatched = false;
+    return session.run(
+      (wire) async {
+        final r = await wire.request(
+          path,
+          method: 'POST',
+          data: form,
+          headers: formHeaders,
+          allowBodyRedirect: false,
+          schedule: (send) => _queue.schedule(() {
+            dispatched = true;
+            return send();
+          }),
+        );
+        checkStatus(r);
+        if (_text(r) && EamsHtmlParser.isLoginPage(CampusHttp.text(r))) {
+          throw CampusRequestException.expired;
+        }
+        return CampusHttp.text(r);
+      },
+      canRetryExpired: () => !dispatched,
+    );
+  }
+
   Future<Map<String, dynamic>> getJson(String path, {Map<String, String>? query}) =>
       session.run((wire) async => jsonObject(await _request(wire, 'GET', path, query: query)));
+
   Future<List<int>> downloadBytes(
     String path, {
     String method = 'GET',
     Map<String, String>? form,
   }) =>
       session.run((wire) async => (await _request(wire, method, path, form: form)).data ?? []);
+
   Future<Map<String, String>> fetchSemesters({bool forceRefresh = false}) =>
       session.run((wire) async {
         final cached = _semesters[wire];
