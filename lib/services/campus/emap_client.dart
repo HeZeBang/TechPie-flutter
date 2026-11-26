@@ -39,7 +39,8 @@ class EmapClient {
     String path, {
     String method = 'POST',
     Map<String, String>? query,
-    Map<String, String>? form,
+    Object? form,
+    bool fileComponent = false,
     bool singleSubmission = false,
   }) {
     final base = '/xsfw/sys/${segment(app)}/';
@@ -53,6 +54,8 @@ class EmapClient {
       'X-Requested-With': 'XMLHttpRequest',
       'Referer': '${session.origin.origin}$base*default/index.do',
     };
+    final target = fileComponent ? '/xsfw/sys/emapcomponent/file/$route' : '$base$route';
+    final requestHeaders = form is Map<String, String> ? {...headers, ...formHeaders} : headers;
     var dispatched = false;
     return session.run(
       (wire) async {
@@ -79,11 +82,11 @@ class EmapClient {
           }
           dispatched = true;
           final r = await wire.request(
-            '$base$route',
+            target,
             method: method,
             query: query,
             data: form,
-            headers: form == null ? headers : {...headers, ...formHeaders},
+            headers: requestHeaders,
             allowBodyRedirect: false,
           );
           _check(r);
@@ -99,11 +102,11 @@ class EmapClient {
             rethrow;
           }
           final r = await wire.request(
-            '$base$route',
+            target,
             method: method,
             query: query,
             data: form,
-            headers: form == null ? headers : {...headers, ...formHeaders},
+            headers: requestHeaders,
           );
           if (r.statusCode == 403 && attempt == 0) {
             if (identical(cache[key], ready)) cache.remove(key)?.ignore();
@@ -182,6 +185,25 @@ class EmapClient {
           path,
           form: form,
           singleSubmission: singleSubmission,
+        ),
+      );
+
+  /// EMAP's shared file component uses the calling application's session.
+  Future<Map<String, dynamic>> postFileComponent({
+    required String app,
+    required String appId,
+    required String path,
+    required Object form,
+    bool singleSubmission = false,
+  }) async =>
+      jsonObject(
+        await _request(
+          app,
+          appId,
+          path,
+          form: form,
+          singleSubmission: singleSubmission,
+          fileComponent: true,
         ),
       );
 
