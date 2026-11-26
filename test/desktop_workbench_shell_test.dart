@@ -1,3 +1,4 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -26,13 +27,17 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
+import 'package:techpie/theme/theme.dart';
 import 'package:techpie/utils/adaptive_layout.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
+import 'package:techpie/widgets/app_shell/app_destination.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_shell.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar.dart';
+import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_item.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_sidebar_tokens.dart';
 import 'package:techpie/widgets/app_shell/mobile_shell.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
+import 'package:techpie/widgets/ios/ios_native_tab_bar.dart';
 
 class _TestSignedInAuth extends AuthService {
   _TestSignedInAuth(super.storage, super.http, super.uniAuth);
@@ -385,5 +390,205 @@ void main() {
       expect(find.text('正在刷新数据…'), findsNothing);
     },
     variant: const TargetPlatformVariant({TargetPlatform.linux}),
+  );
+
+  testWidgets(
+    'DesktopSidebarItem shows Deadlines when wide and falls back to DDL with badge when narrow',
+    (tester) async {
+      final tp = TpColors.light();
+      const destination = AppDestination(
+        label: 'Deadlines',
+        shortLabel: 'DDL',
+        icon: TpIcons.deadlines,
+        selectedIcon: TpIcons.deadlines,
+        sfSymbol: 'checkmark.circle',
+        selectedSfSymbol: 'checkmark.circle.fill',
+        page: SizedBox(),
+      );
+
+      Widget buildHarness({required double width, SidebarBadgeData? badge}) =>
+          MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              colorScheme: tp.toColorScheme(),
+              extensions: [tp],
+            ),
+            home: Scaffold(
+              body: SizedBox(
+                width: width,
+                child: DesktopSidebarItem(
+                  destination: destination,
+                  selected: true,
+                  collapsed: false,
+                  badge: badge,
+                  onTap: () {},
+                ),
+              ),
+            ),
+          );
+
+      await tester.pumpWidget(buildHarness(width: 260));
+      await tester.pumpAndSettle();
+      expect(find.text('Deadlines'), findsOneWidget);
+      expect(find.text('DDL'), findsNothing);
+
+      await tester.pumpWidget(
+        buildHarness(
+          width: 160,
+          badge: const SidebarBadgeData(count: 12, urgent: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('DDL'), findsOneWidget);
+      expect(find.text('Deadlines'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('sidebar-badge-Deadlines')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'TgBottomNavBar falls back to DDL when constrained while preserving full semantics',
+    (tester) async {
+      final tp = TpColors.light();
+      const home = AppDestination(
+        label: '首页',
+        icon: TpIcons.home,
+        selectedIcon: TpIcons.home,
+        sfSymbol: 'house',
+        selectedSfSymbol: 'house.fill',
+        page: SizedBox(),
+      );
+      const schedule = AppDestination(
+        label: '课表',
+        icon: TpIcons.schedule,
+        selectedIcon: TpIcons.schedule,
+        sfSymbol: 'calendar',
+        selectedSfSymbol: 'calendar.circle.fill',
+        page: SizedBox(),
+      );
+      const deadlines = AppDestination(
+        label: 'Deadlines',
+        shortLabel: 'DDL',
+        icon: TpIcons.deadlines,
+        selectedIcon: TpIcons.deadlines,
+        sfSymbol: 'checkmark.circle',
+        selectedSfSymbol: 'checkmark.circle.fill',
+        page: SizedBox(),
+      );
+      const me = AppDestination(
+        label: '我的',
+        icon: TpIcons.profile,
+        selectedIcon: TpIcons.profile,
+        sfSymbol: 'person',
+        selectedSfSymbol: 'person.fill',
+        page: SizedBox(),
+      );
+
+      Widget buildBar({
+        required List<AppDestination> destinations,
+        TextScaler textScaler = TextScaler.noScaling,
+      }) =>
+          MaterialApp(
+            theme: ThemeData(
+              useMaterial3: true,
+              colorScheme: tp.toColorScheme(),
+              extensions: [tp],
+            ),
+            home: Scaffold(
+              body: MediaQuery(
+                data: MediaQueryData(textScaler: textScaler),
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: TgBottomNavBar(
+                    destinations: destinations,
+                    selectedIndex: 0,
+                    onDestinationSelected: (_) {},
+                  ),
+                ),
+              ),
+            ),
+          );
+
+      await tester.pumpWidget(buildBar(destinations: const [home, deadlines]));
+      await tester.pumpAndSettle();
+      expect(find.text('Deadlines'), findsOneWidget);
+      expect(find.text('DDL'), findsNothing);
+
+      await tester.pumpWidget(
+        buildBar(
+          destinations: const [home, schedule, deadlines, me],
+          textScaler: const TextScaler.linear(1.5),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('DDL'), findsOneWidget);
+      expect(find.text('Deadlines'), findsNothing);
+      expect(find.bySemanticsLabel('Deadlines'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'IosNativeTabBar passes Deadlines when wide and falls back to DDL when narrow',
+    (tester) async {
+      const items = [
+        IosNativeTabBarItem(
+          label: '首页',
+          icon: TpIcons.home,
+          selectedIcon: TpIcons.home,
+          sfSymbol: 'house',
+          selectedSfSymbol: 'house.fill',
+        ),
+        IosNativeTabBarItem(
+          label: '课表',
+          icon: TpIcons.schedule,
+          selectedIcon: TpIcons.schedule,
+          sfSymbol: 'calendar',
+          selectedSfSymbol: 'calendar.circle.fill',
+        ),
+        IosNativeTabBarItem(
+          label: 'Deadlines',
+          shortLabel: 'DDL',
+          icon: TpIcons.deadlines,
+          selectedIcon: TpIcons.deadlines,
+          sfSymbol: 'checkmark.circle',
+          selectedSfSymbol: 'checkmark.circle.fill',
+        ),
+        IosNativeTabBarItem(
+          label: '我的',
+          icon: TpIcons.profile,
+          selectedIcon: TpIcons.profile,
+          sfSymbol: 'person',
+          selectedSfSymbol: 'person.fill',
+        ),
+      ];
+
+      Widget buildNativeBar(double width) => MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: width,
+                  child: IosNativeTabBar(
+                    selectedIndex: 0,
+                    items: items,
+                    onSelected: (_) {},
+                  ),
+                ),
+              ),
+            ),
+          );
+
+      await tester.pumpWidget(buildNativeBar(600));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pumpAndSettle();
+      expect(tester.widget<CNTabBar>(find.byType(CNTabBar)).items[2].label, 'Deadlines');
+
+      await tester.pumpWidget(buildNativeBar(200));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pumpAndSettle();
+      expect(tester.widget<CNTabBar>(find.byType(CNTabBar)).items[2].label, 'DDL');
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
 }

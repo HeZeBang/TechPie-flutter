@@ -115,6 +115,7 @@ class _AppShellState extends State<AppShell> {
     ),
     AppDestination(
       label: 'Deadlines',
+      shortLabel: 'DDL',
       icon: TpIcons.deadlines,
       selectedIcon: TpIcons.deadlines,
       sfSymbol: 'checkmark.circle',
