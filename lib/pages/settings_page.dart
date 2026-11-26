@@ -24,6 +24,7 @@ import '../theme/theme.dart';
 import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
 import '../utils/product_version.dart';
+import '../utils/user_display_name.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
@@ -380,6 +381,11 @@ class _SettingsBodyState extends State<_SettingsBody> {
                         colors: colors,
                         auth: auth,
                         session: session,
+                        displayName: resolveUserDisplayName(
+                          session: session,
+                          idsRealName: tpAuth.idsAccount?.name,
+                          campusCardOwnerName: campusCard.cachedOwnerName,
+                        ),
                         syncService: sp.syncService,
                         boundCount: boundCount,
                       ),
@@ -592,6 +598,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
     required TpColors colors,
     required AuthService auth,
     required UserSession? session,
+    required String displayName,
     required SyncService syncService,
     required int boundCount,
   }) {
@@ -610,7 +617,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
               child: Row(
                 children: [
                   TpAvatarBadge(
-                    text: _avatarInitials(session),
+                    text: userAvatarLabel(displayName),
                     size: 46,
                   ),
                   const SizedBox(width: TpTokens.space3),
@@ -623,8 +630,8 @@ class _SettingsBodyState extends State<_SettingsBody> {
                           children: [
                             Flexible(
                               child: Text(
-                                session.userName.isNotEmpty
-                                    ? session.userName
+                                displayName.isNotEmpty
+                                    ? displayName
                                     : session.userId,
                                 style: TpTypography.cardTitle(colors)
                                     .copyWith(fontSize: 17),
@@ -846,16 +853,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
         AppThemeMode.dark => TpIcons.moon,
         AppThemeMode.amoled => TpIcons.amoled,
       };
-
-  String _avatarInitials(UserSession session) {
-    final name = session.userName.trim();
-    if (name.isEmpty) return 'GP';
-    final runes = name.runes.toList();
-    if (runes.first > 127) {
-      return String.fromCharCode(runes.first);
-    }
-    return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
-  }
 
   Future<void> _confirmLogout(AuthService auth) async {
     final ok = await showAdaptiveAlertDialog<bool>(
