@@ -4,15 +4,18 @@ import 'package:flutter/material.dart';
 
 import '../features/campus_card/app/app_providers.dart';
 import '../pages/campus_card_page.dart';
+import '../pages/campus_jobs_page.dart';
 import '../pages/egate_app_page.dart';
+import '../pages/elearning_hub_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/grades_page.dart';
+import '../pages/holiday_travel_page.dart';
 import '../pages/oa_gym_page.dart';
 import '../pages/student_allowance_page.dart';
+import '../pages/student_leave_page.dart';
 import '../services/service_provider.dart';
 import '../theme/tp_icons.dart';
 import '../widgets/adaptive_page_navigation.dart';
-
 import 'quick_shortcuts.dart';
 
 enum CampusServiceCategory {
@@ -99,9 +102,11 @@ final featureEntries = <Feature>[
     keywords: const ['qingjia', 'leave'],
     pinnedByDefault: true,
     description: '学生请假',
-    mode: FeatureMode.webviewWithCookie,
-    url: 'https://egate.shanghaitech.edu.cn/xsfw/sys/ydxsqjxs/index.html#/',
-    cookieType: CookieType.egateApp,
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const StudentLeavePage(),
+    ),
     icon: const Icon(TpIcons.building),
   ),
   Feature(
@@ -148,6 +153,29 @@ final featureEntries = <Feature>[
     icon: const Icon(TpIcons.scan),
   ),
   Feature(
+    id: 'blackboard',
+    category: CampusServiceCategory.academics,
+    description: 'Blackboard 课程',
+    subtitle: '课件、成绩与课程公告',
+    keywords: const ['blackboard', 'bb', 'elearning', '课件', '作业', '公告'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const ElearningHubPage(),
+    ),
+    icon: const Icon(Icons.school_outlined),
+  ),
+  Feature(
+    id: 'campus_jobs',
+    category: CampusServiceCategory.activities,
+    description: '校园岗位',
+    subtitle: '勤工助学与助教岗位',
+    keywords: const ['勤工', '助教', '兼职', 'ta', 'job', 'qingong', 'zhujiao', '工资'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const CampusJobsPage()),
+    icon: const Icon(Icons.work_outline),
+  ),
+  Feature(
     id: 'student_allowance',
     category: CampusServiceCategory.special,
     subtitle: '查看学生津贴发放记录',
@@ -159,6 +187,19 @@ final featureEntries = <Feature>[
       builder: (_) => const StudentAllowancePage(),
     ),
     icon: const Icon(TpIcons.allowance),
+  ),
+  Feature(
+    id: 'holiday_travel',
+    category: CampusServiceCategory.life,
+    description: '节假日离返校',
+    subtitle: '离返校登记与去向复用',
+    keywords: const ['节假日', '离校', '返校', '假期', 'jiaqi', 'travel', 'holiday'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const HolidayTravelPage(),
+    ),
+    icon: const Icon(Icons.luggage_outlined),
   ),
   Feature(
     id: 'grades',

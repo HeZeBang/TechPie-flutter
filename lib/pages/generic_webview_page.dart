@@ -32,6 +32,7 @@ class GenericWebViewPage extends StatefulWidget {
     required this.title,
     required this.url,
     this.cookieType,
+    this.closeDesktopWindowOnAccountChange = false,
     this.initialUserScripts = const <WebViewUserScript>[],
   });
 
@@ -42,6 +43,8 @@ class GenericWebViewPage extends StatefulWidget {
   /// no campus session (a plain URL).
   final CookieType? cookieType;
 
+  /// Closes the independent desktop window when the opening account changes.
+  final bool closeDesktopWindowOnAccountChange;
   final List<WebViewUserScript> initialUserScripts;
 
   @override
@@ -136,6 +139,17 @@ class _GenericWebViewPageState extends State<GenericWebViewPage>
   // -- Desktop path (desktop_webview_window popup) --
 
   Future<void> _openDesktop() async {
+    final auth = _auth!;
+    final bindings = _tpAuth!;
+    final user = _primaryUserId;
+    final owner = _owner;
+    final account = widget.closeDesktopWindowOnAccountChange
+        ? DesktopWebviewAccount(
+            Listenable.merge([auth, bindings]),
+            () => auth.isLoggedIn && auth.session?.userId == user &&
+                bindings.hasIdsBinding && bindings.campusWebSession.owner == owner,
+          )
+        : null;
     await prepareHostSession();
     if (!mounted) return;
     final webview = await openDesktopWebview(
@@ -143,6 +157,7 @@ class _GenericWebViewPageState extends State<GenericWebViewPage>
       url: widget.url,
       cookies: hostCookies,
       session: hostSession,
+      account: account,
       initialScripts: <String>[
         for (final script in widget.initialUserScripts) script.source,
       ],
