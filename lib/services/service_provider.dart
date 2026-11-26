@@ -21,12 +21,14 @@ import 'theme_service.dart';
 import 'third_party_auth_service.dart';
 import 'uni_auth_service.dart';
 import 'update_service.dart';
+import 'usage_telemetry.dart';
 import 'wear/wear_engine_service.dart';
 
 class ServiceProvider extends InheritedWidget {
   final AuthService authService;
   final DebugLogger debugLogger;
   final StorageService storageService;
+  final UsageTelemetry? telemetry;
   final ThemeService themeService;
   final ScheduleService scheduleService;
   final AssignmentService assignmentService;
@@ -52,6 +54,7 @@ class ServiceProvider extends InheritedWidget {
     required this.authService,
     required this.debugLogger,
     required this.storageService,
+    this.telemetry,
     required this.themeService,
     required this.scheduleService,
     required this.assignmentService,
@@ -87,6 +90,7 @@ class ServiceProvider extends InheritedWidget {
       authService != oldWidget.authService ||
       debugLogger != oldWidget.debugLogger ||
       storageService != oldWidget.storageService ||
+      telemetry != oldWidget.telemetry ||
       themeService != oldWidget.themeService ||
       scheduleService != oldWidget.scheduleService ||
       assignmentService != oldWidget.assignmentService ||

@@ -5,6 +5,26 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/pages/feedback_page.dart';
 import 'package:techpie/services/feedback_service.dart';
+import 'package:techpie/services/usage_telemetry.dart';
+
+class _Recorder extends Fake implements UsageTelemetry {
+  final form = _FormVisit();
+  @override
+  void featureOpened(String feature) => form.events.add(feature);
+  @override
+  UsageVisit beginFeedback() {
+    form.events.add('open');
+    return form;
+  }
+}
+
+class _FormVisit extends Fake implements UsageVisit {
+  final events = <String>[];
+  @override
+  void feedbackAttempt() => events.add('attempt');
+  @override
+  void feedbackResult(bool delivered) => events.add(delivered ? 'success' : 'failure');
+}
 
 class _FeedbackService extends Fake implements FeedbackService {
   Exception? error;
@@ -41,7 +61,9 @@ void main() {
           return null;
         },
       );
-      await tester.pumpWidget(MaterialApp(home: FeedbackPage(service: service)));
+      final recorder = _Recorder();
+      await tester
+          .pumpWidget(MaterialApp(home: FeedbackPage(service: service, telemetry: recorder)));
       await tester.enterText(find.byType(TextField).first, '同步课表时遇到了问题');
       Future<void> submit() async {
         final button = find.text('提交反馈');
@@ -79,6 +101,14 @@ void main() {
         expect(find.text('反馈已提交'), findsOneWidget);
         expect(service.messages, ['同步课表时遇到了问题', '同步课表时遇到了问题']);
       }
+      expect(recorder.form.events, [
+        'feedback',
+        'open',
+        'attempt',
+        if (outcome == 'failure') 'failure',
+        if (outcome != 'success') 'attempt',
+        'success',
+      ]);
     });
   }
 }
