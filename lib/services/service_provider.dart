@@ -22,6 +22,7 @@ import 'spending_alert_service.dart';
 import 'storage_service.dart';
 import 'student_allowance_service.dart';
 import 'student_leave_service.dart';
+import 'study_plan_service.dart';
 import 'sync_service.dart';
 import 'theme_service.dart';
 import 'third_party_auth_service.dart';
@@ -35,6 +36,7 @@ class ServiceProvider extends InheritedWidget {
   final DebugLogger debugLogger;
   final StorageService storageService;
   final UsageTelemetry? telemetry;
+  final StudyPlanService? studyPlanService;
   final ThemeService themeService;
   final ScheduleService scheduleService;
   final AssignmentService assignmentService;
@@ -67,6 +69,7 @@ class ServiceProvider extends InheritedWidget {
     required this.debugLogger,
     required this.storageService,
     this.telemetry,
+    this.studyPlanService,
     required this.themeService,
     required this.scheduleService,
     required this.assignmentService,
@@ -110,6 +113,7 @@ class ServiceProvider extends InheritedWidget {
       debugLogger != oldWidget.debugLogger ||
       storageService != oldWidget.storageService ||
       telemetry != oldWidget.telemetry ||
+      studyPlanService != oldWidget.studyPlanService ||
       themeService != oldWidget.themeService ||
       scheduleService != oldWidget.scheduleService ||
       assignmentService != oldWidget.assignmentService ||

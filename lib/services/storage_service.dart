@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -60,6 +61,25 @@ class StorageService {
   List<String>? get pinnedQuickFeatureIds => _prefs.getStringList('pinned_quick_features');
   Future<void> setPinnedQuickFeatureIds(List<String> ids) =>
       _prefs.setStringList('pinned_quick_features', pinnedShortcutIds(ids));
+
+  String _studyPlanKey(bool full) =>
+      '${_campusCachePrefix}study_plan_${full ? 'catalog' : 'progress'}';
+
+  Map<String, dynamic>? studyPlanCache(bool full) {
+    final value = _prefs.getString(_studyPlanKey(full));
+    if (value == null) return null;
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return decoded.cast<String, dynamic>();
+    } catch (_) {}
+    unawaited(clearStudyPlanCache(full));
+    return null;
+  }
+
+  Future<void> saveStudyPlanCache(bool full, Map<String, dynamic> entry) =>
+      _prefs.setString(_studyPlanKey(full), jsonEncode(entry));
+  Future<void> clearStudyPlanCache(bool full) => _prefs.remove(_studyPlanKey(full));
 
   bool get islandEnabled => _prefs.getBool('island_enabled') ?? false;
   Future<void> setIslandEnabled(bool value) => _prefs.setBool('island_enabled', value);

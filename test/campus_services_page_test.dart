@@ -85,6 +85,7 @@ void main() {
     Future<void> toggle(String title) async {
       final tile = checkbox(title);
       await tester.ensureVisible(tile);
+      await tester.pumpAndSettle();
       await tester.tap(tile);
       await tester.pumpAndSettle();
     }
@@ -99,7 +100,13 @@ void main() {
       of: find.byKey(const ValueKey('pin-student_allowance')),
       matching: find.byTooltip('上移'),
     );
+    await tester.scrollUntilVisible(
+      up,
+      -200,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.ensureVisible(up);
+    await tester.pumpAndSettle();
     await tester.tap(up);
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
