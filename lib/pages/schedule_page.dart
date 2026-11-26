@@ -444,8 +444,16 @@ class _SchedulePageState extends State<SchedulePage> {
 
           return StatefulBuilder(
             builder: (context, setModalState) {
+              final isViewingCurrentWeek = isInTerm && _currentWeek == computedWeek;
+
               void selectWeek(int week) {
                 _setWeek(week);
+                setModalState(() {});
+                Navigator.pop(context);
+              }
+
+              void goToCurrentWeek() {
+                _setWeek(computedWeek);
                 setModalState(() {});
                 Navigator.pop(context);
               }
@@ -468,6 +476,12 @@ class _SchedulePageState extends State<SchedulePage> {
                           ),
                         ],
                       ),
+                      if (!showAdjacentWeeks && !isViewingCurrentWeek)
+                        FilledButton.tonalIcon(
+                          onPressed: goToCurrentWeek,
+                          icon: const Icon(Icons.today_outlined, size: 18),
+                          label: const Text('回到本周'),
+                        ),
                       if (showAdjacentWeeks)
                         Wrap(
                           spacing: TpTokens.space2,
@@ -738,6 +752,13 @@ class _SchedulePageState extends State<SchedulePage> {
           onTitlePressed: isAgenda ? () => _showWeekPicker(showAdjacentWeeks: true) : null,
           trailingItems: [
             IosNativeNavigationBarItem(
+              id: 'currentWeek',
+              sfSymbol: 'calendar.badge.clock',
+              hidden: isAgenda || !isInTerm || isViewingCurrentWeek,
+              accessibilityLabel: '回到本周',
+              placementGroup: 'week-actions',
+            ),
+            IosNativeNavigationBarItem(
               id: 'settings',
               sfSymbol: 'ellipsis',
               accessibilityLabel: '视图设置',
@@ -789,6 +810,11 @@ class _SchedulePageState extends State<SchedulePage> {
               ],
             ),
           ],
+          onItemPressed: (id) {
+            if (id == 'currentWeek') {
+              _goToCurrentWeek();
+            }
+          },
           onMenuSelected: (_, value) => _onMenuSelected(value),
         ),
         material: () => BlurredAppBar(
@@ -825,6 +851,14 @@ class _SchedulePageState extends State<SchedulePage> {
                         ),
                       ),
               ),
+              if (usesSidebarLayout(context) && !isAgenda && isInTerm && !isViewingCurrentWeek) ...[
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: _goToCurrentWeek,
+                  icon: const Icon(TpIcons.calendarCheck, size: TpTokens.iconS),
+                  label: const Text('回到本周'),
+                ),
+              ],
             ],
           ),
           actions: [
