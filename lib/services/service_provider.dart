@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'assignment_service.dart';
 import 'auth_service.dart';
+import 'campus/campus_clients.dart';
 import 'campus_card_service.dart';
 import 'deadline_reminder_service.dart';
 import 'deadline_widget_service.dart';
@@ -36,6 +37,7 @@ class ServiceProvider extends InheritedWidget {
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
+  final CampusClients? campusClients;
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
@@ -60,6 +62,7 @@ class ServiceProvider extends InheritedWidget {
     required this.uniAuthService,
     required this.syncService,
     required this.updateService,
+    this.campusClients,
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
@@ -94,6 +97,7 @@ class ServiceProvider extends InheritedWidget {
       uniAuthService != oldWidget.uniAuthService ||
       syncService != oldWidget.syncService ||
       updateService != oldWidget.updateService ||
+      campusClients != oldWidget.campusClients ||
       campusCardService != oldWidget.campusCardService ||
       ecardBindService != oldWidget.ecardBindService ||
       ecardWidgetService != oldWidget.ecardWidgetService ||

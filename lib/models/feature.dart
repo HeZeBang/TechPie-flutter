@@ -30,6 +30,7 @@ enum CookieType {
   ecourse,
   eams,
   egateApp,
+  elearning,
 }
 
 class Feature {

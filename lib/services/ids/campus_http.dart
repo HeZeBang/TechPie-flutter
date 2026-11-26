@@ -74,7 +74,9 @@ class CampusHttp {
   }
 
   Future<String> cookieHeader(Uri uri) async =>
-      (await jar.loadForRequest(uri)).map((c) => '${c.name}=${c.value}').join('; ');
+      (await jar.loadForRequest(uri))
+          .where((c) => c.name.toUpperCase() != 'CASTGC' || uri.host == 'ids.shanghaitech.edu.cn')
+          .map((c) => '${c.name}=${c.value}').join('; ');
   Future<String?> cookie(Uri uri, String name) async {
     for (final value in await jar.loadForRequest(uri)) {
       if (value.name == name) return value.value;
