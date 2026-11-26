@@ -28,7 +28,8 @@ concurrency:
 jobs:
   build:
     name: Build Linux release
-    runs-on: ubuntu-latest
+    # The KDE widget requires Qt 6.4 or newer.
+    runs-on: ubuntu-24.04
     # A cold Linux desktop build configures CMake, compiles every plugin, then
     # links the runner and bundles the engine: the same order of magnitude as the
     # Android build. A release that dies here leaves its tag and draft behind, so
@@ -87,11 +88,17 @@ jobs:
             cmake \
             ninja-build \
             pkg-config \
+            desktop-file-utils \
+            flatpak \
+            imagemagick \
             libgtk-3-dev \
             liblzma-dev \
             libwebkit2gtk-4.1-dev \
             libsecret-1-dev \
-            libjsoncpp-dev
+            libjsoncpp-dev \
+            libjson-glib-dev \
+            qt6-base-dev \
+            qt6-declarative-dev
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -131,12 +138,28 @@ jobs:
           # platform's artifact, with the file left in whatever shape the build
           # produced. The archive holds `bundle/` itself, so it extracts to one
           # directory — the runner, its libraries and data/ next to each other.
+          cmake -S linux/widgets -B build/linux-widgets -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/linux-widgets --parallel 2
+          mkdir -p build/linux/x64/release/bundle/widgets
+          cp assets/icon/icon.png build/linux/x64/release/bundle/techpie.png
+          cp -R build/linux-widgets/kde linux/widgets/gnome linux/widgets/common \
+            build/linux/x64/release/bundle/widgets/
+          cp linux/widgets/install.py linux/widgets/README.md \
+            build/linux/x64/release/bundle/widgets/
           mkdir -p dist
           tar -czf "dist/TechPie-${RELEASE_NAME}-linux-x86-64.tar.gz" \
             -C build/linux/x64/release bundle
 
           ls -l dist
           sha256sum dist/*.tar.gz
+
+      - name: Package AppImage from the same bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/build-appimage.sh build/linux/x64/release/bundle "$RELEASE_NAME" dist
+
+      - name: Package Flatpak from the same bundle
+        run: scripts/build-flatpak.sh build/linux/x64/release/bundle "$RELEASE_NAME" dist
 
       - name: Attach the Linux artifact
         shell: bash
@@ -151,5 +174,6 @@ jobs:
           # (workflow_dispatch on a tag whose release does not exist yet)
           # therefore fails at this step by design — `gh` refuses an upload to a
           # release that is not there, rather than inventing one.
-          scripts/attach-release-asset.sh "$TAG_NAME" dist/*.tar.gz
-          echo "Attached the Linux artifact to release $TAG_NAME."
+          (cd dist && sha256sum ./*.tar.gz ./*.AppImage ./*.flatpak > SHA256SUMS-linux.txt)
+          scripts/attach-release-asset.sh "$TAG_NAME" dist/*.tar.gz dist/*.AppImage dist/*.flatpak dist/SHA256SUMS-linux.txt
+          echo "Attached the Linux artifacts to release $TAG_NAME."

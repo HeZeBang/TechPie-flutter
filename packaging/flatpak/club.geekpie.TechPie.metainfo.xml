@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>club.geekpie.TechPie</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>TechPie</name>
+  <summary>ShanghaiTech campus services</summary>
+  <description>
+    <p>Access course schedules, deadlines and campus services.</p>
+  </description>
+  <launchable type="desktop-id">club.geekpie.TechPie.desktop</launchable>
+  <url type="homepage">https://github.com/HeZeBang/TechPie-flutter</url>
+  <provides><binary>techpie</binary></provides>
+</component>

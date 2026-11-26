@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../models/wearable_device.dart';
 import '../services/band_service.dart';
+import '../theme/tp_icons.dart';
+import '../widgets/adaptive_feedback.dart';
 import '../widgets/blurred_app_bar.dart';
 
 class BandSettingsPage extends StatefulWidget {
@@ -15,8 +17,7 @@ class BandSettingsPage extends StatefulWidget {
   State<BandSettingsPage> createState() => _BandSettingsPageState();
 }
 
-class _BandSettingsPageState extends State<BandSettingsPage>
-    with WidgetsBindingObserver {
+class _BandSettingsPageState extends State<BandSettingsPage> with WidgetsBindingObserver {
   final BandService _band = BandService.instance;
 
   @override
@@ -56,25 +57,25 @@ class _BandSettingsPageState extends State<BandSettingsPage>
             padding: const EdgeInsets.only(top: kToolbarHeight + 48),
             children: [
               _statusTile(
-                icon: Icons.bluetooth_connected,
+                icon: TpIcons.linkedAccounts,
                 title: '穿戴服务',
                 value: _band.serviceConnected ? '已连接小米运动健康' : '未连接',
                 ok: _band.serviceConnected,
               ),
               _statusTile(
-                icon: Icons.watch_outlined,
+                icon: TpIcons.watch,
                 title: '手环',
                 value: _band.nodeName ?? (_band.hasDevice ? '已发现' : '未发现，请先在小米运动健康中连接'),
                 ok: _band.hasDevice,
               ),
               _statusTile(
-                icon: Icons.verified_user_outlined,
+                icon: TpIcons.privacy,
                 title: '通信授权',
                 value: _band.permissionGranted ? '已授权' : '未授权',
                 ok: _band.permissionGranted,
               ),
               _statusTile(
-                icon: Icons.widgets_outlined,
+                icon: TpIcons.activities,
                 title: '手环应用',
                 value: switch (_band.wearAppInstalled) {
                   true => '已安装',
@@ -84,25 +85,25 @@ class _BandSettingsPageState extends State<BandSettingsPage>
                 ok: _band.wearAppInstalled == true,
               ),
               _statusTile(
-                icon: Icons.sync_alt,
+                icon: TpIcons.sync,
                 title: '最近通信',
                 value: _lastActiveText(),
                 ok: _linkAlive,
               ),
               if (_band.lastError != null)
                 ListTile(
-                  leading: const Icon(Icons.error_outline, color: Colors.red),
+                  leading: const Icon(TpIcons.alertCircle, color: Colors.red),
                   title: const Text('最近错误'),
                   subtitle: Text(_band.lastError!),
                 ),
               const Divider(),
               ListTile(
-                leading: const Icon(Icons.refresh),
+                leading: const Icon(TpIcons.refresh),
                 title: const Text('刷新状态'),
                 onTap: () => unawaited(_run(_band.refresh, () => '状态已刷新')),
               ),
               ListTile(
-                leading: const Icon(Icons.key_outlined),
+                leading: const Icon(TpIcons.lock),
                 title: const Text('申请授权'),
                 subtitle: const Text('首次使用需要在小米运动健康中允许设备管理'),
                 onTap: () => unawaited(
@@ -113,13 +114,13 @@ class _BandSettingsPageState extends State<BandSettingsPage>
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.send_outlined),
+                leading: const Icon(TpIcons.externalLink),
                 title: const Text('发送测试消息'),
                 subtitle: const Text('手环应用打开后，应在屏幕上回显 pong'),
                 onTap: () => unawaited(_run(_band.sendTest, () => '已发送测试消息')),
               ),
               SwitchListTile(
-                secondary: const Icon(Icons.qr_code_outlined),
+                secondary: const Icon(TpIcons.qrCode),
                 title: const Text('同步离线支付凭证'),
                 subtitle: const Text('下发私钥，手环即可离线生成消费码'),
                 value: _band.offlineCredEnabled,
@@ -127,41 +128,39 @@ class _BandSettingsPageState extends State<BandSettingsPage>
               ),
               const Divider(),
               SwitchListTile(
-                secondary: const Icon(Icons.notifications_active_outlined),
+                secondary: const Icon(TpIcons.bellRing),
                 title: const Text('上课提醒'),
                 subtitle: const Text('通过手环通知提醒，无需打开手环应用'),
                 value: _band.reminderEnabled,
                 onChanged: (value) => unawaited(_band.setReminderEnabled(value)),
               ),
               ListTile(
-                leading: const Icon(Icons.timer_outlined),
+                leading: const Icon(TpIcons.clock),
                 title: const Text('提前时间'),
                 subtitle: Text('${_band.reminderLeadMinutes} 分钟'),
                 enabled: _band.reminderEnabled,
                 onTap: _pickLeadMinutes,
               ),
               SwitchListTile(
-                secondary: const Icon(Icons.assignment_outlined),
+                secondary: const Icon(TpIcons.document),
                 title: const Text('作业提醒'),
                 subtitle: const Text('作业/考试截止前一天提醒'),
                 value: _band.assignmentReminderEnabled,
-                onChanged: (value) =>
-                    unawaited(_band.setAssignmentReminderEnabled(value)),
+                onChanged: (value) => unawaited(_band.setAssignmentReminderEnabled(value)),
               ),
               if (_band.reminderEnabled && !_band.exactAlarms)
                 ListTile(
-                  leading: const Icon(Icons.access_time, color: Colors.orange),
+                  leading: const Icon(TpIcons.clock, color: Colors.orange),
                   title: const Text('允许精确提醒'),
                   subtitle: const Text('未授权精确闹钟，提醒可能延迟；点此去系统设置'),
-                  onTap: () =>
-                      unawaited(_band.requestExactAlarmPermission()),
+                  onTap: () => unawaited(_band.requestExactAlarmPermission()),
                 ),
               if (_band.reminderEnabled)
                 ListTile(
                   leading: Icon(
                     (_band.lastReminder?.startsWith('已送达') ?? false)
-                        ? Icons.check_circle_outline
-                        : Icons.error_outline,
+                        ? TpIcons.checkCircle
+                        : TpIcons.alertCircle,
                     color: (_band.lastReminder?.startsWith('已送达') ?? false)
                         ? Colors.green
                         : Colors.orange,
@@ -170,7 +169,7 @@ class _BandSettingsPageState extends State<BandSettingsPage>
                   subtitle: Text(_lastReminderText()),
                 ),
               ListTile(
-                leading: const Icon(Icons.notification_add_outlined),
+                leading: const Icon(TpIcons.bellRing),
                 title: const Text('发送测试通知'),
                 subtitle: const Text('手环应立即震动并显示通知'),
                 onTap: () => unawaited(
@@ -179,7 +178,7 @@ class _BandSettingsPageState extends State<BandSettingsPage>
               ),
               const Divider(),
               const ListTile(
-                leading: Icon(Icons.info_outline),
+                leading: Icon(TpIcons.info),
                 title: Text('使用前提'),
                 subtitle: Text(
                   '1. 手环通过小米运动健康连接手机\n'
@@ -190,7 +189,7 @@ class _BandSettingsPageState extends State<BandSettingsPage>
               if (_band.messages.isNotEmpty) ...[
                 const Divider(),
                 const ListTile(
-                  leading: Icon(Icons.forum_outlined),
+                  leading: Icon(TpIcons.feedback),
                   title: Text('最近消息'),
                 ),
                 for (final message in _band.messages.take(8))
@@ -215,16 +214,14 @@ class _BandSettingsPageState extends State<BandSettingsPage>
       padding: const EdgeInsets.only(top: kToolbarHeight + 48),
       children: [
         ListTile(
-          leading: const Icon(Icons.link_off),
+          leading: const Icon(TpIcons.unlink),
           title: Text('${widget.device.name} 未连接'),
           subtitle: Text(
-            node == null || node.isEmpty
-                ? '请先在小米运动健康中连接该设备'
-                : '当前连接的是 $node；请在小米运动健康中切换到该设备后再管理',
+            node == null || node.isEmpty ? '请先在小米运动健康中连接该设备' : '当前连接的是 $node；请在小米运动健康中切换到该设备后再管理',
           ),
         ),
         ListTile(
-          leading: const Icon(Icons.refresh),
+          leading: const Icon(TpIcons.refresh),
           title: const Text('刷新状态'),
           onTap: () async {
             await _band.refresh();
@@ -246,7 +243,7 @@ class _BandSettingsPageState extends State<BandSettingsPage>
       title: Text(title),
       subtitle: Text(value),
       trailing: Icon(
-        ok ? Icons.check_circle : Icons.cancel,
+        ok ? TpIcons.checkCircle : TpIcons.close,
         color: ok ? Colors.green : Colors.grey,
       ),
     );
@@ -350,13 +347,12 @@ class _BandSettingsPageState extends State<BandSettingsPage>
   Future<void> _run(Future<void> Function() action, String Function() okMessage) async {
     await action();
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(_band.lastError == null ? okMessage() : '出错：${_band.lastError}'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+    final error = _band.lastError;
+    showAdaptiveFeedback(
+      context: context,
+      message: error == null ? okMessage() : '出错：$error',
+      style: error == null ? AdaptiveFeedbackStyle.success : AdaptiveFeedbackStyle.error,
+      duration: const Duration(seconds: 2),
+    );
   }
 }

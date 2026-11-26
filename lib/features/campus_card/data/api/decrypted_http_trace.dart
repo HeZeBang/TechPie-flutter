@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -54,19 +53,13 @@ final class DecryptedHttpTraceInterceptor extends Interceptor {
     final requestId = ++_nextRequestId;
     options.extra[_requestIdKey] = requestId;
     options.extra[_startedAtKey] = DateTime.now().microsecondsSinceEpoch;
-    final decodedRequest = _decodeRequest(options);
+    final scan = options.uri.path == '/scan/scanningResult';
     _write({
       'event': 'request',
       'requestId': requestId,
       'method': options.method,
-      'url': '${options.uri.origin}${options.uri.path}',
-      'scheme': options.uri.scheme,
-      'host': options.uri.host,
-      'port': options.uri.hasPort ? options.uri.port : null,
-      'path': options.uri.path,
-      'headers': options.headers,
-      'payload': decodedRequest,
-      if (_scanCodeFingerprint(options.uri.path, decodedRequest) case final fp?)
+      'url': options.uri.origin,
+      if ((scan ? _scanCodeFingerprint(_decodeRequest(options)) : null) case final fp?)
         'qrcodeFingerprint': fp,
     });
     handler.next(options);
@@ -82,21 +75,17 @@ final class DecryptedHttpTraceInterceptor extends Interceptor {
       handler.next(response);
       return;
     }
-    final decodedResponse = _decodeResponse(response.data);
+    final scan = options.uri.path == '/scan/scanningResult';
     _write({
       'event': 'response',
       'requestId': options.extra[_requestIdKey],
       'method': options.method,
-      'url': '${options.uri.origin}${options.uri.path}',
-      'path': options.uri.path,
+      'url': options.uri.origin,
       'statusCode': response.statusCode,
       'durationMicros': _durationMicros(options),
       if (options.extra[prepMicrosKey] case final prepMicros)
         'prepMicros': prepMicros,
-      'headers': response.headers.map,
-      'payload': decodedResponse,
-      if (_scanCodeFingerprint(options.uri.path, decodedResponse)
-          case final fp?)
+      if ((scan ? _scanCodeFingerprint(_decodeResponse(response.data)) : null) case final fp?)
         'qrcodeFingerprint': fp,
     });
     handler.next(response);
@@ -114,16 +103,12 @@ final class DecryptedHttpTraceInterceptor extends Interceptor {
       'event': 'errorResponse',
       'requestId': options.extra[_requestIdKey],
       'method': options.method,
-      'url': '${options.uri.origin}${options.uri.path}',
-      'path': options.uri.path,
+      'url': options.uri.origin,
       'statusCode': response?.statusCode,
       'durationMicros': _durationMicros(options),
       if (options.extra[prepMicrosKey] case final prepMicros)
         'prepMicros': prepMicros,
       'dioExceptionType': err.type.name,
-      'message': err.message,
-      'headers': response?.headers.map,
-      'payload': _decodeResponse(response?.data),
     });
     handler.next(err);
   }
@@ -152,8 +137,7 @@ final class DecryptedHttpTraceInterceptor extends Interceptor {
   }
 
   /// Length and digest for comparing scan codes in redacted Debug Logs.
-  Object? _scanCodeFingerprint(String path, Object? decoded) {
-    if (path != '/scan/scanningResult') return null;
+  Object? _scanCodeFingerprint(Object? decoded) {
     final code = _findScanCode(decoded);
     if (code == null || code.isEmpty) return null;
     final digest = sha256.convert(utf8.encode(code)).toString();
@@ -174,8 +158,8 @@ final class DecryptedHttpTraceInterceptor extends Interceptor {
   Object? _decodeEnvelope(String envelope) {
     try {
       return EcardCipher.decodeEnvelope(envelope);
-    } catch (error) {
-      return {'decodeError': error.toString(), 'wireDatajson': envelope};
+    } catch (_) {
+      return null;
     }
   }
 
@@ -183,8 +167,8 @@ final class DecryptedHttpTraceInterceptor extends Interceptor {
     if (body is List<int>) return {'binaryBytes': body.length};
     try {
       return EcardCipher.decodeResponse(body);
-    } catch (error) {
-      return {'decodeError': error.toString(), 'wireBody': body};
+    } catch (_) {
+      return null;
     }
   }
 
@@ -205,40 +189,6 @@ final class DecryptedHttpTraceInterceptor extends Interceptor {
       return;
     }
     final requestId = record['requestId'] ?? '?';
-    final encoded = JsonEncoder.withIndent('  ', _toEncodable).convert(record);
-    for (final line in const LineSplitter().convert(encoded)) {
-      if (line.isEmpty) {
-        debugPrintSynchronously('$_marker[$requestId]');
-        continue;
-      }
-      const chunkSize = 700;
-      for (var offset = 0; offset < line.length; offset += chunkSize) {
-        final end = (offset + chunkSize).clamp(0, line.length);
-        debugPrintSynchronously(
-          '$_marker[$requestId] ${line.substring(offset, end)}',
-        );
-      }
-    }
-  }
-
-  Object? _toEncodable(Object? value) {
-    if (value is Uint8List) {
-      return {
-        'encoding': 'base64',
-        'length': value.length,
-        'data': base64Encode(value),
-      };
-    }
-    if (value is ByteBuffer) {
-      final bytes = value.asUint8List();
-      return {
-        'encoding': 'base64',
-        'length': bytes.length,
-        'data': base64Encode(bytes),
-      };
-    }
-    if (value is DateTime) return value.toIso8601String();
-    if (value is Uri) return value.toString();
-    return value.toString();
+    debugPrintSynchronously('$_marker[$requestId] ${jsonEncode(record)}');
   }
 }

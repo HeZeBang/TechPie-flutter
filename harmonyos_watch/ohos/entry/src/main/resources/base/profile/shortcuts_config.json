@@ -1,0 +1,19 @@
+{
+  "shortcuts": [
+    {
+      "shortcutId": "open_pay_code",
+      "label": "$string:ecard_shortcut_label",
+      "icon": "$media:ic_ecard_shortcut",
+      "wants": [
+        {
+          "bundleName": "com.geekpie.techpie",
+          "moduleName": "entry",
+          "abilityName": "EntryAbility",
+          "parameters": {
+            "techpie_ecard_target": "pay"
+          }
+        }
+      ]
+    }
+  ]
+}

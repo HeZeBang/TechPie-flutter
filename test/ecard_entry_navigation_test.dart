@@ -199,7 +199,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await pumpApp(tester);
-    await tester.tap(find.text('Settings').first);
+    await tester.tap(find.text('我的').first);
     await tester.pumpAndSettle();
     expect(find.byType(CampusCardPage), findsNothing);
 
@@ -222,7 +222,7 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.byType(CampusCardPage), findsNothing);
-    expect(find.text('Settings'), findsWidgets);
+    expect(find.text('我的'), findsWidgets);
   });
 
   testWidgets(

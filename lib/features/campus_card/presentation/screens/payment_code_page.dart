@@ -19,6 +19,7 @@ import '../../core/config/debug_mode_features.dart';
 import '../../core/config/offline_authorization_banner_controller.dart';
 import '../../core/config/payment_code_preferences.dart';
 import '../../core/errors/app_failure.dart';
+import '../../domain/models/bill_models.dart';
 import '../../domain/models/card_models.dart';
 import '../../domain/models/offline_models.dart';
 import '../../domain/models/payment_models.dart';
@@ -483,6 +484,8 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
       });
     }
     final transactions = ref.watch(transactionFeedProvider(_allTransactions));
+    final showAllRecords =
+        ref.watch(showAllTransactionRecordsProvider).valueOrNull ?? false;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final manualOffline = ref.watch(manualOfflineModeProvider);
     // Null while the stored preference is being read: the head start waits for
@@ -592,7 +595,11 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
 
     final transactionPage = transactions.valueOrNull;
     final realTransactionCount = transactionPage?.items
-        .where((record) => !record.id.startsWith('DEBUG-'))
+        .where(
+          (record) =>
+              isTransactionVisible(record, showAllRecords: showAllRecords) &&
+              !record.id.startsWith('DEBUG-'),
+        )
         .length;
     if (_active &&
         transactionPage != null &&
@@ -796,9 +803,16 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                 ),
                 sliver: switch (transactions) {
                   AsyncData(:final value) => TransactionList(
+                      showAllRecords: showAllRecords,
+                      aliases: ref.watch(merchantAliasConfigProvider),
                       items: value.items
                           .where(
-                            (record) => !record.id.startsWith('DEBUG-'),
+                            (record) =>
+                                !record.id.startsWith('DEBUG-') &&
+                                isTransactionVisible(
+                                  record,
+                                  showAllRecords: showAllRecords,
+                                ),
                           )
                           .take(25)
                           .toList(),
@@ -923,6 +937,7 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                           // to be on screen". An unavailable grant only blocks turning
                           // the mode on; turning it off remains available.
                           value: manualOffline,
+                          activeTrackColor: context.gpColors.action,
                           onChanged: canToggleOffline
                               ? (value) => Navigator.pop(sheetContext, value)
                               : null,
@@ -964,20 +979,29 @@ final class _PaymentCardLoading extends StatelessWidget {
           color: context.gpColors.surface,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: const Center(child: _PaymentCodeActivityIndicator()),
+        child: Center(
+          child: _PaymentCodeActivityIndicator(
+            color: context.gpColors.action,
+          ),
+        ),
       ),
     );
   }
 }
 
 final class _PaymentCodeActivityIndicator extends StatelessWidget {
-  const _PaymentCodeActivityIndicator({super.key, this.radius = 10});
+  const _PaymentCodeActivityIndicator({
+    super.key,
+    this.radius = 10,
+    this.color,
+  });
 
   final double radius;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => CupertinoActivityIndicator(
-        color: GpTokens.campusRed,
+        color: color ?? GpTokens.campusRed,
         radius: radius,
       );
 }
@@ -1650,15 +1674,19 @@ final class _ActivationRequired extends StatelessWidget {
         Icon(
           GpPlatformIcons.paymentCode(context),
           size: 68,
-          color: context.gpColors.action,
+          color: GpTokens.campusRed,
         ),
         const SizedBox(height: 16),
-        const Text('需要先开通付款码'),
+        const Text(
+          '需要先开通付款码',
+          style: TextStyle(color: Color(0xFF303034)),
+        ),
         const SizedBox(height: 14),
         FilledButton(
           onPressed: onActivate,
           style: FilledButton.styleFrom(
-            backgroundColor: context.gpColors.action,
+            backgroundColor: GpTokens.campusRed,
+            foregroundColor: Colors.white,
             shape: const StadiumBorder(),
           ),
           child: const Text('立即开通'),
@@ -1679,9 +1707,16 @@ final class _CodeFailure extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(message ?? '付款码生成失败'),
+        Text(
+          message ?? '付款码生成失败',
+          style: const TextStyle(color: Color(0xFF303034)),
+        ),
         const SizedBox(height: 8),
-        TextButton(onPressed: onRetry, child: const Text('重试')),
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: GpTokens.campusRed),
+          onPressed: onRetry,
+          child: const Text('重试'),
+        ),
       ],
     );
   }

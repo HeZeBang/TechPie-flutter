@@ -44,7 +44,7 @@ class CampusSessionHandle {
     try {
       await tpAuth.sessionTree.freshCookie(node);
     } catch (error) {
-      debugPrint('Campus session pre-flight failed: $error');
+      debugPrint('Campus session pre-flight failed: ${error.runtimeType}');
     }
   }
 
@@ -61,6 +61,7 @@ SessionNode _nodeFor(ThirdPartyAuthService tpAuth, CookieType cookieType) =>
     switch (cookieType) {
       CookieType.ecourse => tpAuth.idsNode,
       CookieType.eams => tpAuth.eamsNode,
+      CookieType.elearning => tpAuth.elearningNode,
       CookieType.egateApp => tpAuth.egateAppNode,
     };
 
@@ -77,6 +78,7 @@ List<WebViewCookie> _webViewCookies(CookieProvider? provider) {
     final name = part.substring(0, separator).trim();
     final value = part.substring(separator + 1).trim();
     if (name.isEmpty || value.isEmpty) continue;
+    if (name.toUpperCase() == 'CASTGC' && domain != 'ids.shanghaitech.edu.cn') continue;
     cookies.add(
       WebViewCookie(name: name, value: value, domain: domain, path: '/'),
     );

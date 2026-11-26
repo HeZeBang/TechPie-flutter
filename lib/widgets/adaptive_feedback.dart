@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../theme/theme.dart';
+import '../utils/adaptive_layout.dart';
 import '../utils/platform.dart';
+import 'adaptive_alert_dialog.dart';
 import 'app_shell/tg_bottom_nav_bar.dart';
 
 final GlobalKey<ScaffoldMessengerState> rootMessengerKey =
@@ -49,6 +52,32 @@ void showAdaptiveFeedback({
     duration: duration,
     actionLabel: actionLabel,
     onAction: onAction,
+  );
+}
+
+/// Shows a modal alert on iOS or a transient feedback toast elsewhere.
+Future<void> showAdaptiveContextualNotice({
+  required BuildContext context,
+  required String iosTitle,
+  required String iosMessage,
+  required String feedbackMessage,
+  AdaptiveFeedbackStyle style = AdaptiveFeedbackStyle.info,
+}) async {
+  if (isIos()) {
+    await showAdaptiveAlertDialog<void>(
+      context: context,
+      title: iosTitle,
+      message: iosMessage,
+      actions: const [
+        AdaptiveAlertAction<void>(label: '好', isDefault: true),
+      ],
+    );
+    return;
+  }
+  showAdaptiveFeedback(
+    context: context,
+    message: feedbackMessage,
+    style: style,
   );
 }
 
@@ -134,6 +163,12 @@ class AdaptiveFeedbackHostState extends State<AdaptiveFeedbackHost>
     );
   }
 
+  void _runAction(_FeedbackEntry entry) {
+    if (!identical(_entry, entry) || _dismissTimer == null) return;
+    entry.onAction?.call();
+    if (identical(_entry, entry)) dismiss();
+  }
+
   @override
   void dispose() {
     _dismissTimer?.cancel();
@@ -152,12 +187,10 @@ class AdaptiveFeedbackHostState extends State<AdaptiveFeedbackHost>
               valueListenable: _pageRouteDepth,
               builder: (context, depth, banner) {
                 final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-                // MobileShell's bottom nav bar is always the shell now (the
-                // sidebar is temporarily disabled, see
-                // AppShell._desktopShellEnabled), so nav-bar clearance no
-                // longer depends on window width — only whether a full-screen
-                // page currently covers it (depth > 1).
-                final navVisible = depth <= 1;
+                // Only clear the bottom nav bar when MobileShell is showing it
+                // (not covered by a pushed page and not replaced by DesktopShell).
+                final navVisible =
+                    depth <= 1 && !usesDesktopSidebarShell(context);
                 final navClearance = isIos()
                     ? 52.0 + 12
                     : TgBottomNavBar.barHeight + 2 * TgBottomNavBar.margin;
@@ -226,38 +259,50 @@ class _FeedbackBanner extends StatelessWidget {
     final style = _FeedbackStyle.from(theme, entry.style);
     final radius = BorderRadius.circular(rounded ? 16 : 10);
 
-    return AnimatedContainer(
-      duration: repositionDuration,
-      curve: repositionCurve,
-      decoration: BoxDecoration(
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: Material(
         color: style.backgroundColor,
-        borderRadius: radius,
-        boxShadow: kElevationToShadow[6],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(style.icon, color: style.foregroundColor),
-          const SizedBox(width: 12),
-          Flexible(
-            child: Text(
-              entry.message,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: style.foregroundColor),
-            ),
+        elevation: 6,
+        shadowColor: Colors.black.withValues(alpha: 0.25),
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: style.borderColor == null
+              ? BorderSide.none
+              : BorderSide(color: style.borderColor!),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: AnimatedContainer(
+          duration: repositionDuration,
+          curve: repositionCurve,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(style.icon, color: style.iconColor),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  entry.message,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: style.foregroundColor),
+                ),
+              ),
+              if (entry.actionLabel != null) ...[
+                const SizedBox(width: 8),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: style.actionColor,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  onPressed: () =>
+                      adaptiveFeedbackHostKey.currentState?._runAction(entry),
+                  child: Text(entry.actionLabel!),
+                ),
+              ],
+            ],
           ),
-          if (entry.actionLabel != null) ...[
-            const SizedBox(width: 8),
-            TextButton(
-              onPressed: () {
-                entry.onAction?.call();
-                adaptiveFeedbackHostKey.currentState?.dismiss();
-              },
-              child: Text(entry.actionLabel!),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -267,30 +312,46 @@ class _FeedbackStyle {
   const _FeedbackStyle({
     required this.backgroundColor,
     required this.foregroundColor,
+    required this.iconColor,
+    required this.actionColor,
     required this.icon,
+    this.borderColor,
   });
 
   final Color backgroundColor;
   final Color foregroundColor;
+  final Color iconColor;
+  final Color actionColor;
+  final Color? borderColor;
   final IconData icon;
 
   static _FeedbackStyle from(ThemeData theme, AdaptiveFeedbackStyle style) {
     final colors = theme.colorScheme;
+    final tp = TpColors.fromTheme(theme);
+    final ext = theme.extension<TpColors>() ?? tp;
 
     return switch (style) {
       AdaptiveFeedbackStyle.success => _FeedbackStyle(
-          backgroundColor: colors.primaryContainer,
-          foregroundColor: colors.onPrimaryContainer,
+          backgroundColor: ext.opaqueSuccessContainer,
+          foregroundColor: ext.textPrimary,
+          iconColor: ext.successGreen,
+          actionColor: ext.successGreen,
+          borderColor: ext.successGreen.withValues(alpha: ext.isDark ? 0.36 : 0.26),
           icon: Icons.check_circle_outline,
         ),
       AdaptiveFeedbackStyle.error => _FeedbackStyle(
-          backgroundColor: colors.errorContainer,
-          foregroundColor: colors.onErrorContainer,
+          backgroundColor: ext.opaqueDangerContainer,
+          foregroundColor: ext.textPrimary,
+          iconColor: ext.dangerRed,
+          actionColor: ext.dangerRed,
+          borderColor: ext.dangerRed.withValues(alpha: ext.isDark ? 0.36 : 0.26),
           icon: Icons.error_outline,
         ),
       AdaptiveFeedbackStyle.info => _FeedbackStyle(
           backgroundColor: colors.inverseSurface,
           foregroundColor: colors.onInverseSurface,
+          iconColor: colors.onInverseSurface,
+          actionColor: colors.inversePrimary,
           icon: Icons.info_outline,
         ),
     };

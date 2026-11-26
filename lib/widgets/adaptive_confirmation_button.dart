@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:techpie/theme/theme.dart';
 import 'package:techpie/utils/platform.dart';
 
 import 'adaptive_alert_dialog.dart';
@@ -44,18 +45,22 @@ class AdaptiveConfirmationButton extends StatelessWidget {
         : height;
     void callback() => unawaited(_confirm(context));
 
+    final colors = context.tpColors;
     if (!isIos()) {
+      final fg = destructive ? colors.dangerRed : colors.brandInk;
       return SizedBox(
         width: width,
         height: constrainedHeight,
         child: hasLabel
             ? TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: fg),
                 onPressed: callback,
                 icon: Icon(icon, size: 18),
                 label: Text(label!),
               )
             : IconButton(
                 onPressed: callback,
+                color: fg,
                 icon: Icon(icon, size: 18),
                 tooltip: confirmTitle,
               ),
@@ -63,7 +68,7 @@ class AdaptiveConfirmationButton extends StatelessWidget {
     }
 
     final color = destructive
-        ? CupertinoColors.systemRed
+        ? colors.dangerRed
         : CupertinoTheme.of(context).primaryColor;
     return SizedBox(
       width: constrainedWidth,

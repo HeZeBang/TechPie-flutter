@@ -52,7 +52,15 @@ Key services:
 - **ThirdPartyAuthService** — bind/unbind/auto-renew for Gradescope, Hydro, **and eGate**. The eGate binding (`ThirdPartyPlatform.egate`) is the SINGLE source of CASTGC / CpDaily session in the app: `hasEgateBinding`, `egateBinding`, `egateCookies()` (always appends `CASTGC=<tgc>`), `egateStudentId`, `renewEgateBinding()` (renews via `/api/auth/renew` and persists back). Every campus-system feature (schedule, blackboard, exam, oa-gym, ecourse/student-leave webviews) reads its CpDaily session through these accessors, never from `AuthService.session`.
 - **StorageService** — wraps `FlutterSecureStorage` (credentials) + `SharedPreferences` (caches, settings). **Important:** imports `flutter_secure_storage_ohos` (a hard fork), NOT the upstream `flutter_secure_storage` facade
 - **UpdateService** — the settings page's version tile calls GitHub's `releases/latest` and offers a newer release with its changelog; the update action opens the release page. `utils/product_version.dart` owns the comparison (a candidate ranks below the release it leads to, and `+B` is not part of a version). Deliberately independent of our backend, so it still answers when the API does not, and it needs no account
-- **ThemeService** — Material dynamic color, theme mode persistence
+- **ThemeService** — unified `TpColors` (`ThemeExtension`) + `TpTokens` across all platforms, theme mode persistence (Light / Dark / AMOLED), default TechRed accent with optional System accent (Android dynamic / iOS System Blue)
+
+### Design System & Visual Rules (`docs/DESIGN_SYSTEM.md`)
+
+All UI work must follow `docs/DESIGN_SYSTEM.md`:
+- **Unified content layer, platform-native shell**: page content uses `lib/theme/` (`TpTokens`, `TpColors` via `context.tpColors`, `TpTypography`, `TpIcons`) and `lib/widgets/design_system/` identically across iOS, Android, OHOS, and Desktop. Platform-native chrome (iOS 26 Liquid Glass bars, SF Symbols, haptics, `DesktopShell`, `Adaptive*` controls) stays strictly at the shell/control boundary.
+- **No style drift in migrated pages**: never introduce raw `Color(0x...)`, `Card.outlined`, `Card.filled`, direct `isIos()` / `usesIosLiquidGlass()` visual branches, or non-token `BorderRadius.circular(...)` values in pages guarded by `test/architecture/design_system_guard_test.dart`.
+- **Icons**: use `TpIcons` (`flutter_lucide`, pure Dart font asset with `@staticIconProvider`) for in-page icons; keep SF Symbols only on iOS native shell bars.
+- **Campus card bridge**: `GpColors.fromTheme` inherits directly from `TpColors`; keep `campus_card` QR/card-mat safety tokens intact.
 
 ### Auth model boundary (important)
 
@@ -550,10 +558,27 @@ distinguishable in git, and the file names deliberately do not try to.
   history — `ci/publish-buildenv.sh` stages what the developer machine has and
   pushes it to a private GHCR package, and `ohos-release.yml` pulls it with
   `container:`. The job therefore runs on a stock `ubuntu-24.04`, and there is no
-  `OHOS_CI_ENABLED` / `OHOS_CI_RUNNER` to configure. Upgrading either toolchain
-  means re-running `ci/publish-buildenv.sh` and copying the tag it prints into the
-  workflow's `container.image`; the workflow pins that tag, never `latest`, so a
-  release always names the toolchain it was built and tested against.
+  `OHOS_CI_ENABLED` / `OHOS_CI_RUNNER` to configure. The tag is derived, never
+  hand-written: `<cli version>-<fork version>-r<digest of the recipe>`, where the
+  digest is the Dockerfile with comments stripped. Half of what the image
+  promises is the recipe, so upgrading either toolchain *or* changing what the
+  image bakes means re-running `ci/publish-buildenv.sh` and copying the tag it
+  prints into the workflow's `container.image`; the workflow pins that tag, never
+  `latest`, so a release always names the toolchain and recipe it was built and
+  tested against.
+  Two things in that recipe are not size and not convenience: (1) the image
+  **ships a valid `bin/cache/flutter_tools.stamp`**, because `flutter precache
+  --force` calls `Cache.clearStampFiles()` and deletes it — without the stamp the
+  job's first `flutter` invocation recompiles the tool, and in CI that rebuild is
+  `pub upgrade`, which answers with a gitcode `418` when that host refuses the
+  runner (it cost two 1.0.4 candidates; the Dockerfile therefore runs `flutter
+  --version` *after* `precache`, and `ohos-release.yml` fails fast if the stamp is
+  missing); (2) the image **bakes bare mirrors of the gitcode repos** and rewrites
+  them with `url.<mirror>.insteadOf`, so the fork's `flutter_tools` overrides and
+  the app's `fluttertpc_flutter_secure_storage` resolve without that host, at the
+  commits the image was built from. gitee is not mirrored (it has never refused a
+  runner and costs 536 MB); a host that starts refusing gets a line in that list,
+  which changes the digest and therefore the tag.
   Two settings on the GHCR package are what let the job pull it, and neither is
   implied by the other: **Connect repository** (links the package to this repo) and,
   under **Manage Actions access**, **Add repository** — the documented way to let a

@@ -41,12 +41,14 @@ class CampusCardPage extends StatelessWidget {
             () => unawaited(
               pushAdaptivePage<void>(
                 context,
-                builder: (_) => const CampusCardAccountPage(),
+                rootNavigator: true,
+                builder: (_) => const CampusCardAccountPage(fromCard: true),
               ),
             ),
           ),
           campusCardEntryProvider.overrideWithValue(entry),
           homeWidgetPortProvider.overrideWithValue(services?.ecardWidgetService),
+          spendingAlertPortProvider.overrideWithValue(services?.spendingAlertService),
         ],
         child: const CampusCardFeature(),
       ),

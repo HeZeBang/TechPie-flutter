@@ -22,7 +22,16 @@ Future<void> initializePlatformCapabilities() async {
 Future<void> initializeCampusUserAgent() async {
   final package = await PackageInfo.fromPlatform();
   final scale = WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
-  if (isIos()) {
+  if (kIsWeb) {
+    CampusUserAgent.value = CampusUserAgent.format(
+      version: package.version,
+      build: package.buildNumber,
+      device: defaultTargetPlatform.name,
+      system: 'web',
+      systemVersion: '',
+      scale: scale,
+    );
+  } else if (isIos()) {
     final info = (await const MethodChannel('techpie/platform')
         .invokeMapMethod<String, dynamic>('getUserAgentInfo'))!;
     CampusUserAgent.value = CampusUserAgent.format(
@@ -89,3 +98,22 @@ bool supportsSystemDynamicColor() =>
         defaultTargetPlatform == TargetPlatform.linux ||
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows);
+
+/// Whether this platform has a paired Apple Watch companion settings surface.
+bool supportsAppleWatch() => isIos();
+
+/// Whether this platform exposes and applies the in-app HTTP proxy setting.
+/// Mobile OSes route traffic through system VPN/proxy settings instead.
+bool supportsInAppProxy() => isDesktop();
+
+/// Whether calendar export can import events directly into the device calendar.
+bool supportsDirectCalendarImport() => isIos() || isAndroid();
+
+/// Whether the timetable uses horizontal paging across weeks.
+bool usesHorizontalWeekPaging() => isIos();
+
+/// Whether selection mode replaces the bottom tab bar with a native action bar.
+bool usesIosSelectionToolbar() => isIos();
+
+/// Whether the eCard auto-bind helper temporarily occupies the iOS system VPN.
+bool showsIosVpnTunnelNotice() => isIos();

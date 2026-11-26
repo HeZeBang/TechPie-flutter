@@ -1,6 +1,7 @@
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:techpie/theme/theme.dart';
 import 'package:techpie/utils/platform.dart';
 
 import 'sf_symbol_glyphs.dart';
@@ -60,6 +61,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
     this.trailingItems = const [],
     this.selectionMode = false,
     this.largeTitleMode = false,
+    this.onTitlePressed,
     this.onItemPressed,
     this.onMenuSelected,
   });
@@ -70,6 +72,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
   final List<IosNativeNavigationBarItem> trailingItems;
   final bool selectionMode;
   final bool largeTitleMode;
+  final VoidCallback? onTitlePressed;
   final ValueChanged<String>? onItemPressed;
   final void Function(String id, String value)? onMenuSelected;
 
@@ -99,21 +102,25 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
       transitionBetweenRoutes: false,
       border: null,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.9),
-      largeTitle: Text(title, style: TextStyle(color: scheme.onSurface)),
-      middle: hasSubtitle
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text(
-                  subtitle!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-                ),
-              ],
-            )
-          : Text(title, style: TextStyle(color: scheme.onSurface)),
+      largeTitle: _titleControl(
+        Text(title, style: TextStyle(color: scheme.onSurface)),
+      ),
+      middle: _titleControl(
+        hasSubtitle
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                  ),
+                ],
+              )
+            : Text(title, style: TextStyle(color: scheme.onSurface)),
+      ),
       leading: leadingItems.isNotEmpty ? _actions(context, leadingItems) : null,
       trailing: trailingItems.isNotEmpty ? _actions(context, trailingItems) : null,
       bottom: hasSubtitle
@@ -182,23 +189,41 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
                 child: NavigationToolbar(
                   centerMiddle: true,
                   middleSpacing: 8,
-                  leading: leadingItems.isNotEmpty
-                      ? _actions(context, leadingItems)
-                      : null,
-                  middle: largeTitleMode ? null : titleWidget,
-                  trailing: trailingItems.isNotEmpty
-                      ? _actions(context, trailingItems)
-                      : null,
+                  leading: leadingItems.isNotEmpty ? _actions(context, leadingItems) : null,
+                  middle: largeTitleMode ? null : _titleControl(titleWidget),
+                  trailing: trailingItems.isNotEmpty ? _actions(context, trailingItems) : null,
                 ),
               ),
               if (largeTitleMode)
                 Expanded(
-                  child: Align(alignment: AlignmentDirectional.centerStart, child: titleWidget),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: _titleControl(titleWidget),
+                  ),
                 ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _titleControl(Widget child) {
+    final onPressed = onTitlePressed;
+    if (onPressed == null) return child;
+    return Builder(
+      builder: (context) {
+        final inheritedStyle = DefaultTextStyle.of(context).style;
+        return CupertinoButton(
+          padding: EdgeInsets.zero,
+          minimumSize: const Size(44, 44),
+          onPressed: onPressed,
+          child: DefaultTextStyle(
+            style: inheritedStyle,
+            child: child,
+          ),
+        );
+      },
     );
   }
 
@@ -393,6 +418,8 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
       // a union ID selects the package's SwiftUI path, whose intrinsic width
       // is hardcoded to 80pt and truncates longer toolbar labels.
     );
+    final tpColors = context.tpColors;
+    final symbolColor = item.role == IosNativeNavigationBarItemRole.done ? tpColors.onBrand : tint;
     final callback = item.enabled ? () => onItemPressed?.call(item.id) : null;
     // Use a compact back chevron; the previous page's name remains available
     // to VoiceOver without squeezing the title or becoming an ellipsis.
@@ -400,7 +427,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
     if (!isBack && item.title != null && item.title!.isNotEmpty) {
       return CNButton(
         label: item.title!,
-        icon: item.sfSymbol == null ? null : CNSymbol(item.sfSymbol!, size: 20, color: tint),
+        icon: item.sfSymbol == null ? null : CNSymbol(item.sfSymbol!, size: 20, color: symbolColor),
         semanticLabel: label,
         onPressed: callback,
         enabled: item.enabled,
@@ -409,7 +436,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
       );
     }
     return CNButton.icon(
-      icon: CNSymbol(item.sfSymbol ?? 'ellipsis', size: 20, color: tint),
+      icon: CNSymbol(item.sfSymbol ?? 'ellipsis', size: 20, color: symbolColor),
       semanticLabel: label,
       onPressed: callback,
       enabled: item.enabled,
@@ -428,9 +455,11 @@ extension on IosNativeNavigationBar {
   /// fallback still renders SF Symbols as native views, which take the tap and
   /// leave only the edges of an icon button responsive.
   Widget _legacyAction(BuildContext context, IosNativeNavigationBarItem item) {
-    final tint = item.role == IosNativeNavigationBarItemRole.destructive
-        ? CupertinoColors.systemRed.resolveFrom(context)
+    final tpColors = context.tpColors;
+    final baseTint = item.role == IosNativeNavigationBarItemRole.destructive
+        ? tpColors.dangerRed
         : Theme.of(context).colorScheme.primary;
+    final tint = item.enabled ? baseTint : baseTint.withValues(alpha: 0.38);
     final label = item.accessibilityLabel ?? item.title ?? item.id;
     final isBack = item.sfSymbol == 'chevron.left';
     final title = item.title;

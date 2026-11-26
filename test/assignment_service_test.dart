@@ -4,8 +4,10 @@ import 'dart:convert';
 import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/assignment.dart';
+import 'package:techpie/models/campus_identity.dart';
 import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/services/assignment_service.dart';
@@ -17,10 +19,91 @@ import 'package:techpie/services/storage_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 
+import 'support/eams_transport.dart';
 import 'support/fake_ids_client.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('custom changes persist independently of an in-flight refresh', () async {
+    final response = Completer<http.Response>();
+    final requested = Completer<void>();
+    final fixture = await _identityFixture((_, __) {
+      requested.complete();
+      return response.future;
+    });
+    final service = fixture.service;
+    final owner = service.customDeadlineOwner;
+    final due = DateTime(2027, 3, 1, 23, 59);
+    final refresh = service.fetchAssignments();
+    await requested.future;
+
+    await Future.wait([
+      service.saveCustomDeadline(owner: owner, title: 'First', due: due),
+      service.saveCustomDeadline(owner: owner, title: 'Second', due: due),
+    ]);
+    final first = service.assignments.whereType<CustomDeadline>()
+        .singleWhere((a) => a.title == 'First');
+    await Future.wait([
+      service.setCompleted(first, true),
+      service.saveCustomDeadline(
+        owner: owner,
+        id: first.id,
+        title: 'Edited',
+        course: 'Course',
+        notes: 'Bring printed copy',
+        due: due.add(const Duration(hours: 1)),
+      ),
+    ]);
+
+    response.complete(http.Response('{"success":true,"data":[]}', 200));
+    await refresh;
+    expect(fixture.storage.loadCachedAssignments().map((a) => a['id']), ['unrelated']);
+    service.loadCached();
+    expect(service.assignments.whereType<CustomDeadline>().map((a) => a.title), ['Second', 'Edited']);
+    final edited = service.findCustomDeadline(first.id)!;
+    expect(edited, isA<CustomDeadline>());
+    expect(edited.course, 'Course');
+    expect(edited.notes, 'Bring printed copy');
+    expect(edited.due, due.add(const Duration(hours: 1)));
+    expect(service.isCompleted(edited), isTrue);
+    await service.toggleCompleted(edited);
+    expect(service.findCustomDeadline(first.id)?.completed, isFalse);
+    await service.deleteCustomDeadline(first.id, owner: owner);
+    service.loadCached();
+    expect(service.findCustomDeadline(first.id), isNull);
+  });
+
+  test('guest and account workspaces restore their own deadlines', () async {
+    final fixture = await _identityFixture((_, __) => http.Response('', 503));
+    final service = fixture.service;
+    final session = fixture.auth.session!;
+    final due = DateTime(2027, 3, 1, 23, 59);
+    fixture.auth.onLogout = () async {
+      await service.clearCache();
+      await service.clearAllOverrides();
+    };
+    await service.saveCustomDeadline(owner: session.userId, title: 'Account', due: due);
+    final accountDeadline = service.assignments.whereType<CustomDeadline>().single;
+    await service.setCompleted(accountDeadline, true);
+    await fixture.auth.logout();
+    expect(service.assignments, isEmpty);
+    expect(service.hasCachedData, isFalse);
+    await expectLater(
+      service.saveCustomDeadline(owner: session.userId, title: 'Stale draft', due: due),
+      throwsStateError,
+    );
+
+    await service.saveCustomDeadline(owner: null, title: 'Guest', due: due);
+    expect(service.hasCachedData, isTrue);
+    expect(service.visibleAssignments.single.title, 'Guest');
+    await fixture.storage.saveSession(session);
+    await fixture.auth.loadSession();
+    expect(service.visibleAssignments.single.title, 'Account');
+    expect(service.isCompleted(service.visibleAssignments.single), isTrue);
+    await fixture.auth.logout();
+    expect(service.visibleAssignments.single.title, 'Guest');
+  });
 
   test('IDS unbind clears campus deadlines and retains other cached sources', () async {
     final fixture = await _identityFixture(
@@ -180,6 +263,99 @@ void main() {
     });
   }
 
+  test('reminder completion overrides follow the third-party binding', () async {
+    final shared = _assignmentJson(
+      id: 'shared-assignment',
+      platform: 'gradescope',
+      due: DateTime.utc(2027),
+    );
+    final fixture = await _identityFixture(
+      (_, __) => http.Response(
+        jsonEncode({'success': true, 'data': [shared]}),
+        200,
+      ),
+      cached: [shared],
+    );
+    final service = fixture.service;
+    final oldAssignment = service.assignments.single;
+    final oldKey = service.reminderKeyFor(oldAssignment);
+    await service.applyReminderCompletions(
+      {oldKey: (assignment: oldAssignment, completedAt: 100)},
+      epoch: service.identityEpoch,
+    );
+    service.loadCached();
+    expect(service.isCompleted(service.assignments.single), isTrue);
+
+    await fixture.thirdParty.replaceAll([
+      _gradescopeAccount('new-account', 'new-token'),
+    ]);
+    await service.fetchPlatform('gradescope');
+    final newAssignment = service.assignments.single;
+    expect(service.reminderKeyFor(newAssignment), isNot(oldKey));
+    expect(service.isCompleted(newAssignment), isFalse);
+    expect(service.hasCompletionOverride(newAssignment), isFalse);
+    await service.setCompleted(newAssignment, true);
+    await service.clearCompletionOverride(newAssignment);
+    expect(service.isCompleted(newAssignment), isFalse);
+
+    await fixture.thirdParty.replaceAll([
+      _gradescopeAccount('old-account', 'old-token'),
+    ]);
+    await service.fetchPlatform('gradescope');
+    expect(service.isCompleted(service.assignments.single), isTrue);
+  });
+
+  test('scopes matching legacy reminder completions and keeps manual overrides', () async {
+    final fixture = await _identityFixture(
+      (_, __) => http.Response(
+        jsonEncode({
+          'success': true,
+          'data': [
+            _assignmentJson(id: 'old-cache', platform: 'gradescope', due: DateTime.utc(2027)),
+          ],
+        }),
+        200,
+      ),
+    );
+    final service = fixture.service;
+    Assignment gradescopeAssignment() =>
+        service.assignments.singleWhere((a) => a.platform == 'gradescope');
+    final key = service.reminderKeyFor(gradescopeAssignment());
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'assignment_overrides',
+      jsonEncode({
+        'completed': {
+          'gradescope:old-cache': true,
+          'synthetic:unrelated': true,
+          'synthetic:manual-open': false,
+        },
+        'reminderCompletions': {key: 100},
+      }),
+    );
+    service.loadCached();
+    await service.readReminderSyncWork();
+    expect(service.isCompleted(gradescopeAssignment()), isTrue);
+    final unrelated =
+        service.assignments.singleWhere((a) => a.platform == 'synthetic');
+    expect(service.isCompleted(unrelated), isTrue);
+    final saved = fixture.storage.loadAssignmentOverrides();
+    expect(saved.completed, {
+      'synthetic:unrelated': true,
+      'synthetic:manual-open': false,
+    });
+    expect(saved.scopedCompleted, {key: true});
+    expect(saved.reminderCompletions, {key: 100});
+
+    await fixture.thirdParty.replaceAll([
+      _gradescopeAccount('new-account', 'new-token'),
+    ]);
+    await service.fetchPlatform('gradescope');
+    service.loadCached();
+    expect(service.isCompleted(gradescopeAssignment()), isFalse);
+    expect(service.isCompleted(unrelated), isTrue);
+  });
+
   test('a renewal that rotates sid is not an account change', () async {
     var deadlineCalls = 0;
     final fixture = await _identityFixture(
@@ -247,6 +423,7 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
+    await storage.setScheduleSource('20240001|20240001', CampusScheduleSource.undergraduate);
 
     final oldBlackboard = _assignmentJson(
       id: 'blackboard-old',
@@ -258,7 +435,11 @@ void main() {
       platform: 'gradescope',
       due: DateTime.utc(2026, 1, 20),
     );
-    await storage.saveCachedAssignments([oldBlackboard, oldGradescope]);
+    await storage.saveCachedAssignments([
+      oldBlackboard,
+      oldGradescope,
+      _assignmentJson(id: 'stable-legacy', platform: 'Blackboard', due: DateTime.utc(2026, 1, 6)),
+    ]);
     // Primary account is the SSO identity session — no CASTGC on it.
     await storage.saveSession(
       UserSession(
@@ -283,21 +464,6 @@ void main() {
     );
 
     final httpClient = _AssignmentHttpClient((url, _) {
-      if (url.path.endsWith('/deadlines/blackboard')) {
-        return http.Response(
-          jsonEncode({
-            'success': true,
-            'data': [
-              _assignmentJson(
-                id: 'blackboard-new',
-                platform: 'blackboard',
-                due: DateTime.utc(2026, 1, 5),
-              ),
-            ],
-          }),
-          200,
-        );
-      }
       if (url.path.endsWith('/deadlines/gradescope')) {
         return http.Response(
           jsonEncode({'success': false, 'error': 'upstream failed'}),
@@ -312,12 +478,30 @@ void main() {
     await auth.loadSession();
     await tpAuth.initialize();
 
-    final service =
-        AssignmentService(storage, httpClient, auth, tpAuth, schedule)
-          ..loadCached();
+    final service = AssignmentService(
+      storage,
+      httpClient,
+      auth,
+      tpAuth,
+      schedule,
+      blackboardDeadlines: () async => [
+        for (final id in ['blackboard-new', 'stable-legacy'])
+          Assignment.fromJson(
+            _assignmentJson(id: id, platform: 'blackboard', due: DateTime.utc(2026, 1, 5)),
+          ),
+      ],
+    )..loadCached();
+    final previous = service.assignments.singleWhere((a) => a.id == 'stable-legacy');
+    final reminderKey = service.reminderKeyFor(previous);
+    await service.setCompleted(previous, true);
+    await service.hide(previous);
 
     await service.fetchAssignments();
 
+    final refreshed = service.assignments.singleWhere((a) => a.id == previous.id);
+    expect(service.reminderKeyFor(refreshed), reminderKey);
+    expect(service.isCompleted(refreshed), isTrue);
+    expect(service.isHidden(refreshed), isTrue);
     expect(
       service.assignments.map((a) => a.id),
       containsAll(['blackboard-new', 'gradescope-old']),
@@ -339,6 +523,7 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
+    await storage.setScheduleSource('20240001|20240001', CampusScheduleSource.undergraduate);
     await storage.setSelectedSemester('263');
     await storage.saveSession(
       UserSession(
@@ -362,41 +547,26 @@ void main() {
           200,
         );
       }
-      if (url.path.endsWith('/schedule/exam_table')) {
-        return http.Response.bytes(
-          utf8.encode(
-            jsonEncode({
-              'success': true,
-              'data': {
-                'examBatchId': '1222',
-                'examBatchName': '2025-2026学年春季学期期中考试',
-                'semesterId': '263',
-                'studentId': '26192',
-                'exams': [
-                  {
-                    'courseCode': 'CS130.01',
-                    'courseName': '操作系统I',
-                    'examType': '期中考试',
-                    'examDate': '2026-04-23',
-                    'examTimeRange': '15:00~16:40',
-                    'examPlace': '教学中心204',
-                    'examStatus': '正常',
-                    'seatUrl': 'https://eams.example/seat',
-                    'examRoomId': '7987',
-                  },
-                ],
-              },
-            }),
-          ),
-          200,
-          headers: {'content-type': 'application/json; charset=utf-8'},
-        );
-      }
       return http.Response('not found', 404);
     });
     final auth = AuthService(storage, httpClient, UniAuthService());
     final tpAuth = ThirdPartyAuthService(storage, httpClient, idsClient: FakeIdsClient());
-    final schedule = ScheduleService(storage, httpClient, auth, tpAuth);
+    final eamsRequests = <http.Request>[];
+    final server = MockClient((r) async {
+      eamsRequests.add(r);
+      return http.Response.bytes(
+        utf8.encode(r.url.path.endsWith('/stdExamTable.action') ? examBatches : examTable),
+        200,
+      );
+    });
+    final schedule = ScheduleService(
+      storage,
+      httpClient,
+      auth,
+      tpAuth,
+      eamsTransport: eamsTransport(server),
+      eamsInterval: Duration.zero,
+    );
     await auth.loadSession();
     await tpAuth.initialize();
     await schedule.loadCachedData();
@@ -423,16 +593,13 @@ void main() {
     expect(exam.due, DateTime(2026, 4, 23, 15));
     expect(exam.lateDue, DateTime(2026, 4, 23, 16, 40));
     expect(exam.status, '正常');
-    expect(exam.url, 'https://eams.example/seat');
-    expect(
-      seenBodies,
-      contains(
-        predicate<Map<String, dynamic>>((body) {
-          return body['semester_id'] == '263' &&
-              body['cookies'] == 'JSESSIONID=eams-mock';
-        }),
-      ),
-    );
+    expect(exam.url, 'https://eams.shanghaitech.edu.cn/eams/seat?examRoom.id=7987');
+    expect(eamsRequests.first.url.queryParameters, {'semester.id': '263'});
+    expect(eamsRequests.last.url.queryParameters, {'examBatch.id': '1222'});
+    for (final r in eamsRequests) {
+      expect(r.headers['cookie'], contains('JSESSIONID=eams-mock'));
+      expect(r.headers['cookie'], isNot(contains('CASTGC')));
+    }
     expect(storage.loadCachedAssignments().single['kind'], 'exam');
     final cached = Assignment.fromJson(storage.loadCachedAssignments().single);
     expect(cached, isA<ExamAssignment>());
@@ -496,6 +663,11 @@ Future<
   SharedPreferences.setMockInitialValues({});
   FlutterSecureStorage.setMockInitialValues({});
   final storage = StorageService(await SharedPreferences.getInstance());
+  if (account?.platform == ThirdPartyPlatform.ids) {
+    await storage.setScheduleSource(
+      '${account!.sid}|${account.account}', CampusScheduleSource.undergraduate,
+    );
+  }
   await storage.saveSession(
     UserSession(
       userId: 'synthetic-user',

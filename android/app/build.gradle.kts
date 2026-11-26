@@ -122,7 +122,8 @@ android {
         applicationId = "club.geekpie.techpie"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Wear Engine 5.0.3.300 requires Android 6.0 (API 23).
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -143,10 +144,25 @@ android {
 
 dependencies {
     implementation(files("libs/xms-wearable-lib_1.4_release.aar"))
+    implementation("com.xzakota.hyper.notification:focus-api:1.4")
+    implementation("androidx.core:core:1.18.0")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    testImplementation("junit:junit:4.13.2")
 }
 
 tasks.named("preBuild") { dependsOn(prepareEcardWidgetResources) }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("com.huawei.agconnect:agconnect-core:1.5.2.300")
+    implementation("com.huawei.hms:wearengine:5.0.3.300")
+    implementation("androidx.work:work-runtime:2.9.1")
+}
+
+// Local AGConnect settings contain credentials and are not checked into Git.
+if (file("agconnect-services.json").isFile) {
+    apply(plugin = "com.huawei.agconnect")
 }

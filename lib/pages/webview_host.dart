@@ -201,6 +201,31 @@ mixin BhWebViewHost<T extends StatefulWidget> on State<T>
   }
 }
 
+/// Watches a popup after its launching Flutter route has been removed.
+/// Children opened by the page inherit the same account.
+class DesktopWebviewAccount {
+  DesktopWebviewAccount(this.changes, this.isCurrent);
+  final Listenable changes;
+  final bool Function() isCurrent;
+
+  bool bind(Webview window) {
+    if (!isCurrent()) {
+      window.close();
+      return false;
+    }
+    void check() {
+      if (!isCurrent()) {
+        changes.removeListener(check);
+        window.close();
+      }
+    }
+
+    changes.addListener(check);
+    unawaited(window.onClose.then((_) => changes.removeListener(check)));
+    return true;
+  }
+}
+
 /// Opens a campus page in its own desktop window (WebKitGTK on Linux, WebView2
 /// on Windows) with the injected SDK and its own bridge, so a page the campus
 /// page opened keeps working there.
@@ -210,7 +235,9 @@ Future<Webview?> openDesktopWebview({
   List<WebViewCookie> cookies = const <WebViewCookie>[],
   List<String> initialScripts = const <String>[],
   CampusSessionHandle? session,
+  DesktopWebviewAccount? account,
 }) async {
+  if (account != null && !account.isCurrent()) return null;
   final Webview webview;
   try {
     webview = await WebviewWindow.create(
@@ -221,16 +248,18 @@ Future<Webview?> openDesktopWebview({
       ),
     );
   } catch (error) {
-    debugPrint('Desktop webview launch failed: $error');
+    debugPrint('Desktop webview launch failed: ${error.runtimeType}');
     return null;
   }
 
+  if (account != null && !account.bind(webview)) return null;
+
   final bridge = BhMobileSdkBridge(
-    host: DesktopWebviewHost(webview, session),
+    host: DesktopWebviewHost(webview, session, account: account),
     runJavaScript: (script) => webview.evaluateJavaScript(script),
   );
   webview.addOnWebMessageReceivedCallback((message) {
-    unawaited(bridge.handleMessage(message));
+    if (account?.isCurrent() ?? true) unawaited(bridge.handleMessage(message));
   });
   webview.addScriptToExecuteOnDocumentCreated(techPieDocumentStartScript);
   for (final script in initialScripts) {
@@ -253,7 +282,8 @@ Future<Webview?> openDesktopWebview({
 /// Host for a campus page that lives in its own desktop window: it can still
 /// pick files and open pages, but there is no app chrome to drive.
 class DesktopWebviewHost implements BhMobileSdkHost {
-  DesktopWebviewHost(this.webview, this.session);
+  DesktopWebviewHost(this.webview, this.session, {this.account});
+  final DesktopWebviewAccount? account;
 
   final Webview webview;
 
@@ -287,11 +317,13 @@ class DesktopWebviewHost implements BhMobileSdkHost {
   /// A link the campus page opened gets its own window, on the window's own
   /// session — and up to date, since it is a new page load.
   Future<void> _openChildWindow(String url) async {
+    if (!(account?.isCurrent() ?? true)) return;
     await openDesktopWebview(
-      title: url,
+      title: account == null ? url : '校园服务',
       url: url,
       cookies: await session?.freshCookies() ?? const <WebViewCookie>[],
       session: session,
+      account: account,
     );
   }
 

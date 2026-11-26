@@ -10,7 +10,11 @@
 # `OHOS_CI_ENABLED` / a self-hosted `OHOS_CI_RUNNER` are no longer needed.
 #
 # Build and publish it with ci/publish-buildenv.sh — never by hand, because that
-# script is what derives the tag from the two toolchain versions:
+# script is what derives the tag from the two toolchain versions *and* this
+# file's recipe digest. Both halves are load-bearing: the versions say which
+# toolchain, the digest says which image that toolchain is wrapped in (the
+# mirrors below and their pinned commits live in this file, so a recipe change
+# has to be a new tag, not an overwrite of an old one):
 #
 #   ci/publish-buildenv.sh              # build + push
 #   ci/publish-buildenv.sh --no-push    # build only, for local verification
@@ -194,18 +198,76 @@ ENV HOS_SDK_HOME=/opt/ohos/command-line-tools/sdk \
 # building and a confusing failure.
 RUN git config --system --add safe.directory '*'
 
-# Fail the image build, not the release, if the toolchain does not actually work.
-# `flutter --version` proves the fork still runs after the trim — it is the check
-# that caught `.git` being load-bearing.
+# --- Local mirrors of the git host the release resolves from ----------------
+# Two things this pipeline needs are git dependencies on gitcode.com, not pub
+# packages: the fork's own flutter_tools overrides (code_assets, hooks_runner —
+# packages/flutter_tools/pubspec.yaml:135) and the app's OHOS secure storage
+# (pubspec.yaml). gitcode is not GitHub and it does not owe a hosted runner
+# anything — on 2026-11-21 and again on 2026-11-24 its CloudWAF answered the
+# job's very first `git clone` with
 #
+#   fatal: unable to access 'https://gitcode.com/...': The requested URL returned error: 418
+#
+# and stopped the release before it built anything (`flutter --version` in the
+# workflow's verify step, because of the tool rebuild described below). The 418
+# is gitcode's own block page ("访问被拦截！ / 您的请求疑似攻击行为"), i.e. a server
+# decision we cannot fix from here, and one that can come back the same way for
+# any host we do not control.
+#
+# So the download moves to the image, which is the same trade this file already
+# makes for the toolchain: it happens once, on a machine that already has
+# everything, and the pin is the image tag. `insteadOf` (git matches the longest
+# prefix) sends pub's clone and fetch to the bare mirror, so
+#   - a restore with those hosts unreachable still resolves, and
+#   - no run can quietly take a branch tip newer than the one baked here: the
+#     forks' `ref:` values are branches (flutter_3.41.9_deps, br_v9.2.2_ohos),
+#     which `pub upgrade` would otherwise re-resolve against the live host.
+# Both spellings are registered because the urls are written both ways
+# (`...flutter_packages.git`, `...fluttertpc_dart_native`, no suffix).
+#
+# gitee (the app's image_picker / plus_plugins forks) is deliberately NOT here:
+# it has never refused a runner, it is a 536 MB clone against these 55 MB, and
+# its deps come out of the restored pub cache. If it ever starts answering like
+# gitcode did, it gets a line in this list and the recipe digest produces a new
+# tag on its own.
+RUN set -eux; \
+    mkdir -p /opt/ohos/git-mirrors; \
+    mirror() { \
+        url="$1"; name="$2"; \
+        git clone --mirror --quiet "$url" "/opt/ohos/git-mirrors/$name.git"; \
+        git config --system "url./opt/ohos/git-mirrors/$name.git.insteadOf" "${url%.git}.git"; \
+        git config --system --add "url./opt/ohos/git-mirrors/$name.git.insteadOf" "${url%.git}"; \
+    }; \
+    mirror https://gitcode.com/openharmony-sig/fluttertpc_dart_native fluttertpc_dart_native; \
+    mirror https://gitcode.com/openharmony-sig/fluttertpc_flutter_secure_storage.git fluttertpc_flutter_secure_storage; \
+    git config --system --get-regexp '^url\.'
+
+
+# Fail the image build, not the release, if the toolchain does not actually work.
 # `flutter precache --force` is what makes the baked cache internally consistent.
-# `flutter --version` only settles the Dart SDK and the engine stamp; the host
-# artifacts (gen_snapshot, font-subset) keep whatever the developer machine last
-# downloaded. Copying a cache whose stamp says 3.41.9 while those binaries are
-# 3.35.8-era is invisible to the tool — the stamp matches — until a release dies
-# with "Invalid kernel binary format version (expected 127, found 125)", which is
-# exactly how it was found. Forcing the two platforms this image builds for also
-# bakes the OHOS engine artifacts, so a release does not download them.
+# It only settles the engine/Dart artifacts; the host artifacts (gen_snapshot,
+# font-subset) keep whatever the developer machine last downloaded. Copying a
+# cache whose stamp says 3.41.9 while those binaries are 3.35.8-era is invisible
+# to the tool — the stamp matches — until a release dies with "Invalid kernel
+# binary format version (expected 127, found 125)", which is exactly how it was
+# found. Forcing the two platforms this image builds for also bakes the OHOS
+# engine artifacts, so a release does not download them.
+#
+# ORDER MATTERS, and getting it wrong is what the 418 was made of: `precache
+# --force` calls Cache.clearStampFiles() (packages/flutter_tools/lib/src/cache.dart,
+# `getStampFileFor('flutter_tools').deleteSync()`), whose first act is to delete
+# bin/cache/flutter_tools.stamp. Run `flutter --version` *after* it — never
+# before — so the image ships a stamp matching bin/cache/flutter_tools.snapshot.
+# Without it, bin/internal/shared.sh recompiles the tool on the first flutter
+# invocation of every job, and in CI that rebuild is `pub upgrade`: it
+# re-resolves the fork's gitcode overrides and needs that host to answer. With
+# the stamp in place `flutter --version` touches no network at all (verified
+# under `docker run --network none`), which is the property the release relies
+# on; the `test -s` below is what keeps it true.
+#
+# The rebuild is deliberately exercised here anyway: the mirrors above only prove
+# themselves if a from-scratch tool build resolves through them, and a trailing
+# `flutter --version` rebuilds exactly that way and writes the stamp back.
 #
 # `hvigorw --version` then proves hvigor resolves and warms ~/.hvigor/wrapper so
 # CI does not download it on every run.
@@ -227,8 +289,9 @@ RUN set -eux; \
         echo "ERROR: the resource compiler cannot load the libraries above" >&2; \
         exit 1; \
     fi; \
-    flutter --version; \
     flutter precache --linux --ohos --force; \
+    flutter --version; \
+    test -s /opt/ohos/flutter_flutter/bin/cache/flutter_tools.stamp; \
     hvigorw --version
 
 WORKDIR /workspace

@@ -4,11 +4,44 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../models/user_session.dart';
+import '../utils/user_display_name.dart';
 import 'api_base_url.dart';
 import 'debug_logger.dart';
 import 'http_client.dart';
 import 'storage_service.dart';
 import 'uni_auth_service.dart';
+
+/// Result of attempting to renew the GeekPie Uni-Auth (Casdoor) SSO session.
+///
+/// Separating [expired] from [transientError] keeps offline launches, DNS/TLS
+/// hiccups, timeouts, and 5xx outages from falsely telling the user their
+/// login expired.
+enum SessionRenewalResult {
+  /// The stored access token still has plenty of lifetime left; no network
+  /// request was sent.
+  skipped,
+
+  /// The refresh token grant succeeded and updated tokens were persisted.
+  renewed,
+
+  /// No logged-in session or no stored refresh token (legacy session).
+  unavailable,
+
+  /// Casdoor explicitly rejected the refresh token (`invalid_grant` /
+  /// `invalid_token`). The user must sign in again.
+  expired,
+
+  /// Network, timeout, proxy, 5xx, storage, or other transient failure. The
+  /// stored refresh token may still succeed once connectivity recovers.
+  transientError;
+
+  /// True when the session can be used right now (fresh enough to skip or just
+  /// renewed).
+  bool get isUsable => this == skipped || this == renewed;
+
+  /// True only when the server explicitly rejected the refresh grant.
+  bool get isExpired => this == expired;
+}
 
 /// AuthService owns ONLY the primary account: the GeekPie Uni-Auth (Casdoor)
 /// SSO identity session. It knows nothing about CASTGC, IDS, or any
@@ -73,21 +106,25 @@ class AuthService extends ChangeNotifier {
     return parsed.isBefore(now.add(window));
   }
 
-  Future<bool>? _renewal;
+  Future<SessionRenewalResult>? _renewal;
 
   /// Renew the SSO access token via Casdoor's refresh-token grant, unless it
   /// still has [renewWindow] left and [force] is not set. On success the rotated
-  /// tokens are persisted into the session. Returns false (no throw) when there
-  /// is no session, no refresh token, or the refresh fails — the caller decides
-  /// whether to prompt for re-login. Skipping a renewal that is not needed
-  /// reports true: the session is usable either way.
+  /// tokens are persisted into the session. Returns a [SessionRenewalResult]
+  /// (no throw) so callers can distinguish a genuinely expired/revoked grant
+  /// ([SessionRenewalResult.expired]) from offline/timeout/5xx failures
+  /// ([SessionRenewalResult.transientError]) and legacy sessions without a
+  /// refresh token ([SessionRenewalResult.unavailable]).
   ///
   /// Single-flight: Casdoor rotates the refresh token, so two concurrent
   /// renewals would consume each other's credential and one would be refused —
   /// which looks exactly like a dead session.
-  Future<bool> tryRenewSession({bool force = false}) {
+  Future<SessionRenewalResult> tryRenewSession({bool force = false}) {
     final active = _renewal;
     if (active != null) return active;
+    if (_session == null) {
+      return Future.value(SessionRenewalResult.unavailable);
+    }
     if (!force &&
         !needsRenewal(
           _session?.geekpieExpiresAt,
@@ -99,13 +136,13 @@ class AuthService extends ChangeNotifier {
       if (kDebugMode) debugPrint('[sso] $line');
       _logger?.log(
         method: 'SSO',
-        url: 'auth.geekpie.club',
+        uri: Uri.https('auth.geekpie.club'),
         tag: 'SSO',
-        responseBody: DebugLogger.redactSensitive(line),
+        responseSummary: {'event': line},
       );
-      return Future.value(true);
+      return Future.value(SessionRenewalResult.skipped);
     }
-    late final Future<bool> operation;
+    late final Future<SessionRenewalResult> operation;
     operation = _performRenewal().whenComplete(() {
       if (identical(_renewal, operation)) _renewal = null;
     });
@@ -123,25 +160,75 @@ class AuthService extends ChangeNotifier {
     return hours >= 24 ? '${hours ~/ 24}d ${hours % 24}h' : '${hours}h';
   }
 
-  Future<bool> _performRenewal() async {
+  Future<SessionRenewalResult> _performRenewal() async {
     final session = _session;
-    if (session == null) return false;
+    if (session == null) return SessionRenewalResult.unavailable;
     final refreshToken = session.geekpieRefreshToken;
-    if (refreshToken == null || refreshToken.isEmpty) return false;
+    if (refreshToken == null || refreshToken.isEmpty) {
+      return SessionRenewalResult.unavailable;
+    }
 
     try {
       final tokens = await _uniAuth.refresh(refreshToken);
+      final nextRefreshToken =
+          (tokens.refreshToken != null && tokens.refreshToken!.isNotEmpty)
+              ? tokens.refreshToken!
+              : refreshToken;
+      final jwtDisplayName = casdoorDisplayNameFromJwt(
+        tokens.accessToken,
+        currentSessionUserName: session.userName,
+      );
       _session = session.copyWith(
+        userName: jwtDisplayName ?? session.userName,
         geekpieToken: tokens.accessToken,
         geekpieExpiresAt: tokens.expiresAt ?? session.geekpieExpiresAt,
-        geekpieRefreshToken: tokens.refreshToken ?? refreshToken,
+        geekpieRefreshToken: nextRefreshToken,
       );
       await _storage.saveSession(_session!);
       notifyListeners();
-      return true;
-    } catch (_) {
-      return false;
+      return SessionRenewalResult.renewed;
+    } on SsoRefreshException catch (e) {
+      final result = e.isInvalidGrant
+          ? SessionRenewalResult.expired
+          : SessionRenewalResult.transientError;
+      _logRenewalOutcome(result, e);
+      return result;
+    } catch (e) {
+      _logRenewalOutcome(
+        SessionRenewalResult.transientError,
+        e,
+      );
+      return SessionRenewalResult.transientError;
     }
+  }
+
+  void _logRenewalOutcome(
+    SessionRenewalResult result,
+    Object error,
+  ) {
+    final parts = <String>[
+      'token refresh: outcome=${result.name}',
+      'error=${error.runtimeType}',
+      if (error is SsoRefreshException && error.statusCode != null)
+        'status=${error.statusCode}',
+      if (error is SsoRefreshException &&
+          const {
+            'invalid_grant', 'invalid_token', 'invalid_client',
+            'server_error', 'temporarily_unavailable',
+          }.contains(error.oauthError))
+        'oauth=${error.oauthError}',
+      if (error is SsoRefreshException && error.cause != null)
+        'cause=${error.cause.runtimeType}',
+    ];
+    final line = parts.join(' ');
+    if (kDebugMode) debugPrint('[sso] $line');
+    _logger?.log(
+      method: 'SSO',
+      uri: Uri.https('auth.geekpie.club'),
+      statusCode: error is SsoRefreshException ? error.statusCode : null,
+      tag: 'SSO',
+      error: line,
+    );
   }
 
   // -- GeekPie Uni-Auth Login --
@@ -162,9 +249,16 @@ class AuthService extends ChangeNotifier {
         throw Exception(data['error'] as String? ?? 'Login failed');
       }
 
+      final rawUserName = data['userName'] as String? ?? '';
+      final resolvedUserName = casdoorDisplayNameFromJwt(
+            tokens.accessToken,
+            currentSessionUserName: rawUserName,
+          ) ??
+          rawUserName;
+
       _session = UserSession(
         userId: data['userId'] as String? ?? '',
-        userName: data['userName'] as String? ?? '',
+        userName: resolvedUserName,
         schoolName: '上海科技大学',
         createdAt: DateTime.now(),
         geekpieToken: tokens.accessToken,

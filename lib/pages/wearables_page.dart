@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/wearable_device.dart';
 import '../services/band_service.dart';
 import '../services/service_provider.dart';
-import '../utils/platform.dart';
+import '../theme/tp_icons.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
@@ -15,6 +17,11 @@ import 'watch_settings_page.dart';
 /// 穿戴设备列表：右上角添加，长按删除。
 class WearablesPage extends StatefulWidget {
   const WearablesPage({super.key});
+
+  static bool get isSupported =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   @override
   State<WearablesPage> createState() => _WearablesPageState();
@@ -34,10 +41,15 @@ class _WearablesPageState extends State<WearablesPage> {
 
   List<WearableDevice> _load() {
     final stored = ServiceProvider.of(context).storageService.storedWearableDevices;
-    if (stored != null) return stored.where((d) => isIos() ? d.isAppleWatch : !d.isAppleWatch).toList();
+    final isApplePlatform = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+    if (stored != null) {
+      return stored
+          .where((device) => isApplePlatform ? device.isAppleWatch : !device.isAppleWatch)
+          .toList();
+    }
     // iOS keeps its paired Apple Watch entry; bands are user-added only —
     // an empty list is the truth for a fresh install, not a default model.
-    if (isIos()) return const [appleWatchDevice];
+    if (isApplePlatform) return const [appleWatchDevice];
     return const [];
   }
 
@@ -48,8 +60,8 @@ class _WearablesPageState extends State<WearablesPage> {
   Future<void> _addDevice() async {
     // 允许重复添加同型号（一人多设备）。
     final options = <WearableDevice>[
-      if (isAndroid()) ...wearableBandCatalog,
-      if (isIos()) appleWatchDevice,
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) ...wearableBandCatalog,
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) appleWatchDevice,
     ];
     final selected = await showDialog<WearableDevice>(
       context: context,
@@ -109,9 +121,8 @@ class _WearablesPageState extends State<WearablesPage> {
   Future<void> _openDevice(WearableDevice device) async {
     await pushAdaptivePage<void>(
       context,
-      builder: (_) => device.isAppleWatch
-          ? const WatchSettingsPage()
-          : BandSettingsPage(device: device),
+      builder: (_) =>
+          device.isAppleWatch ? const WatchSettingsPage() : BandSettingsPage(device: device),
     );
   }
 
@@ -124,59 +135,58 @@ class _WearablesPageState extends State<WearablesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final useIosChrome = isIos();
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(context);
     return Scaffold(
-      extendBodyBehindAppBar: !useIosChrome,
-      appBar: useIosChrome
-          ? IosNativeNavigationBar(
-              title: '穿戴设备',
-              leadingItems: const [
-                IosNativeNavigationBarItem(
-                  id: 'back',
-                  title: 'Settings',
-                  sfSymbol: 'chevron.left',
-                  accessibilityLabel: '返回 Settings',
-                ),
-              ],
-              trailingItems: const [
-                IosNativeNavigationBarItem(
-                  id: 'add',
-                  title: 'Add',
-                  sfSymbol: 'plus',
-                  accessibilityLabel: '添加设备',
-                ),
-              ],
-              onItemPressed: (id) {
-                if (id == 'back') {
-                  unawaited(maybePopAdaptivePage<void>(context));
-                } else if (id == 'add') {
-                  unawaited(_addDevice());
-                }
-              },
-            )
-          : BlurredAppBar(
-              title: const Text('穿戴设备'),
-              actions: [
-                IconButton(
-                  tooltip: '添加设备',
-                  icon: const Icon(Icons.add),
-                  onPressed: () => unawaited(_addDevice()),
-                ),
-              ],
+      extendBodyBehindAppBar: AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '穿戴设备',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: 'Settings',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回 Settings',
             ),
+          ],
+          trailingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'add',
+              title: 'Add',
+              sfSymbol: 'plus',
+              accessibilityLabel: '添加设备',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') {
+              unawaited(maybePopAdaptivePage<void>(context));
+            } else if (id == 'add') {
+              unawaited(_addDevice());
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: const Text('穿戴设备'),
+          actions: [
+            IconButton(
+              tooltip: '添加设备',
+              icon: const Icon(TpIcons.add),
+              onPressed: () => unawaited(_addDevice()),
+            ),
+          ],
+        ),
+      ),
       body: ListenableBuilder(
         listenable: BandService.instance,
         builder: (context, _) => ListView(
-          padding: EdgeInsets.only(
-            top: useIosChrome ? 0 : kToolbarHeight + 48,
-          ),
+          padding: EdgeInsets.only(top: topInset),
           children: [
             if (_devices.isEmpty)
               const Padding(
                 padding: EdgeInsets.fromLTRB(24, 48, 24, 24),
                 child: Column(
                   children: [
-                    Icon(Icons.watch_outlined, size: 48, color: Colors.grey),
+                    Icon(TpIcons.watch, size: 48, color: Colors.grey),
                     SizedBox(height: 12),
                     Text('暂未添加设备'),
                     SizedBox(height: 4),
@@ -190,19 +200,17 @@ class _WearablesPageState extends State<WearablesPage> {
             for (final entry in _devices.asMap().entries)
               ListTile(
                 leading: Icon(
-                  entry.value.isAppleWatch
-                      ? Icons.watch_outlined
-                      : Icons.bluetooth_connected,
+                  entry.value.isAppleWatch ? TpIcons.watch : TpIcons.linkedAccounts,
                 ),
                 title: Text(entry.value.name),
                 subtitle: Text(_subtitle(entry.value)),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: const Icon(TpIcons.chevronRight),
                 onTap: () => unawaited(_openDevice(entry.value)),
                 onLongPress: () => unawaited(_removeDevice(entry.key)),
               ),
             const Divider(),
             const ListTile(
-              leading: Icon(Icons.info_outline),
+              leading: Icon(TpIcons.info),
               title: Text('提示'),
               subtitle: Text('右上角 + 添加设备；长按设备可删除。手环需先在小米运动健康中完成绑定，华为手表需先在华为运动健康中配对。'),
             ),

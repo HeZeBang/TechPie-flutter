@@ -1,11 +1,56 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/utils/product_version.dart';
 
 void main() {
+  testWidgets(
+    'uses the App Store catalog for public releases on iOS',
+    (tester) async {
+      final service = UpdateService(
+        client: _FakeClient((request) async {
+          expect(request.url.host, 'itunes.apple.com');
+          expect(request.url.path, '/lookup');
+          expect(request.url.queryParameters['id'], '6771316576');
+          return _jsonResponse({
+            'results': [
+              {'trackId': 123, 'version': '9.9.9'},
+              {'trackId': 6771316576, 'version': '1.1', 'releaseNotes': ' 修复同步 '},
+            ],
+          });
+        }),
+      );
+
+      final release = await service.checkForUpdate(const ProductVersion(1, 0, 1, null, 9));
+
+      expect(release?.version, const ProductVersion(1, 1, 0));
+      expect(release?.name, '1.1');
+      expect(release?.notes, '修复同步');
+      expect(release?.source, UpdateSource.appStore);
+      expect(await service.checkForUpdate(const ProductVersion(1, 1, 0, null, 1)), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  test('an empty App Store result fails on that channel', () async {
+    final service = UpdateService(
+      client: _FakeClient((_) async => _jsonResponse({'results': <Object>[]})),
+    );
+    await expectLater(
+      service.checkForUpdate(const ProductVersion(1, 0, 1), source: UpdateSource.appStore),
+      throwsA(
+        isA<UpdateCheckException>().having(
+          (error) => error.message,
+          'message',
+          contains('App Store'),
+        ),
+      ),
+    );
+  });
+
   test('offers the published release when it is newer, without its checksums',
       () async {
     final requests = <http.BaseRequest>[];

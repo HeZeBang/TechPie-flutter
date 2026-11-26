@@ -1,0 +1,47 @@
+name: Linux Packaging Checks
+
+on:
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - 'scripts/*appimage*'
+      - 'scripts/*aur*'
+      - 'scripts/check-linux-packaging.sh'
+      - '.github/workflows/*linux*'
+      - '.github/workflows/aur-release.yml'
+      - '.github/workflows/release.yml'
+  push:
+    paths:
+      - 'packaging/**'
+      - 'scripts/*appimage*'
+      - 'scripts/*aur*'
+      - 'scripts/check-linux-packaging.sh'
+      - '.github/workflows/*linux*'
+      - '.github/workflows/aur-release.yml'
+      - '.github/workflows/release.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 15
+    steps:
+      - name: Install packaging tools
+        run: pacman -Syu --noconfirm --needed git python desktop-file-utils shellcheck
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check scripts and desktop entry
+        run: |
+          shellcheck scripts/build-appimage.sh scripts/check-linux-packaging.sh packaging/linux/AppRun
+          desktop-file-validate packaging/linux/techpie.desktop
+      - name: Build and exercise both package formats
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- "$GITHUB_WORKSPACE/scripts/check-linux-packaging.sh"

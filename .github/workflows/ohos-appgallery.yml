@@ -73,7 +73,7 @@ jobs:
         shell: bash
     container:
       # Same toolchain image as ohos-release.yml: it carries hap-sign-tool.
-      image: ghcr.io/hezebang/techpie-ohos-buildenv:26.0.0.851-3.41.9_ohos-1.0.2
+      image: ghcr.io/hezebang/techpie-ohos-buildenv:26.0.0.851-3.41.9_ohos-1.0.2-r5c4a1874
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}

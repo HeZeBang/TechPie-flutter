@@ -106,6 +106,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    // Drain CNTabBar's 500ms PlatformViewGuard timer created on iOS mount.
+    await tester.pump(const Duration(milliseconds: 500));
   }
 
   testWidgets(
@@ -137,13 +139,17 @@ void main() {
           )
           .map((w) => w.appBar)
           .whereType<IosNativeNavigationBar>()
-          .firstWhere((b) => b.trailingItems.any((i) => i.id == 'currentWeek'));
+          .first;
 
       final pager = tester.widget<PageView>(find.byType(PageView)).controller!;
       pager.jumpToPage(11);
       await tester.pump(const Duration(seconds: 1));
       expect(bar().title, '第 12 周');
 
+      expect(
+        bar().trailingItems.any((item) => item.id == 'currentWeek'),
+        isTrue,
+      );
       bar().onItemPressed!('currentWeek');
       final titles = <String?>[];
       for (var frame = 0; frame < 40; frame++) {
