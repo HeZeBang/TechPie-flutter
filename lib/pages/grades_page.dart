@@ -114,7 +114,7 @@ class _GradesViewState extends State<_GradesView> {
           : Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 840),
-                child: RefreshIndicator(
+                child: RefreshIndicator.adaptive(
                   onRefresh: refresh,
                   child: ListView(
                     padding: const EdgeInsets.all(16),
@@ -304,16 +304,19 @@ class _TrialDialogState extends State<_TrialDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (final isCredits in [true, false])
-              TextField(
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(labelText: isCredits ? '学分' : '预期绩点'),
-                onChanged: (v) => setState(() {
-                  if (isCredits) {
-                    credits = double.tryParse(v);
-                  } else {
-                    point = double.tryParse(v);
-                  }
-                }),
+              Padding(
+                padding: EdgeInsets.only(bottom: isCredits ? 12 : 0),
+                child: TextField(
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(labelText: isCredits ? '学分' : '预期绩点'),
+                  onChanged: (v) => setState(() {
+                    if (isCredits) {
+                      credits = double.tryParse(v);
+                    } else {
+                      point = double.tryParse(v);
+                    }
+                  }),
+                ),
               ),
           ],
         ),

@@ -136,9 +136,12 @@ class _LeaveCardState extends State<_LeaveCard> {
         future: actions,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return TextButton(
-              onPressed: busy ? null : () => load(true),
-              child: const Text('重新读取可用操作'),
+            return Padding(
+              padding: const EdgeInsets.all(TpTokens.space2),
+              child: TextButton(
+                onPressed: busy ? null : () => load(true),
+                child: const Text('重新读取可用操作'),
+              ),
             );
           }
           final allowed = snapshot.data ?? const <LeaveRecordAction>{};

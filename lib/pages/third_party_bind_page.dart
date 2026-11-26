@@ -198,6 +198,15 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> with WidgetsBin
     }
   }
 
+  void _clearErrors() {
+    if (_inlineError != null || _signInFailure != null) {
+      setState(() {
+        _inlineError = null;
+        _signInFailure = null;
+      });
+    }
+  }
+
   Widget _field(
     String label,
     TextEditingController controller, {
@@ -218,6 +227,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> with WidgetsBin
               keyboardType: keyboard,
               enabled: !_busy,
               textInputAction: password ? TextInputAction.done : TextInputAction.next,
+              onChanged: (_) => _clearErrors(),
               onSubmitted: password ? (_) => unawaited(_submit()) : null,
             ),
           ],
@@ -281,6 +291,7 @@ class _ThirdPartyBindPageState extends State<ThirdPartyBindPage> with WidgetsBin
                 minLines: 1,
                 maxLines: 4,
                 textInputAction: TextInputAction.done,
+                onChanged: (_) => _clearErrors(),
               ),
             ],
           ),

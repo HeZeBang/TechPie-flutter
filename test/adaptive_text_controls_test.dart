@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:techpie/theme/theme.dart';
 import 'package:techpie/widgets/adaptive_text_area.dart';
 import 'package:techpie/widgets/adaptive_text_field_group.dart';
 import 'package:techpie/widgets/secure_password_field.dart';
@@ -141,6 +142,141 @@ void main() {
     expect(find.byType(UiKitView), findsNothing);
     await tester.enterText(find.byType(CupertinoTextField), 'SI100B_2026');
     expect(controller.text, 'SI100B_2026');
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('iOS AdaptiveTextFieldGroup & AdaptiveTextArea distinguish surface fill on canvas vs embedded', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    final c1 = TextEditingController();
+    final c2 = TextEditingController();
+    final areaCtrl = TextEditingController();
+    addTearDown(() {
+      c1.dispose();
+      c2.dispose();
+      areaCtrl.dispose();
+    });
+
+    final tp = TpColors.light();
+    final theme = ThemeData(
+      useMaterial3: true,
+      colorScheme: tp.toColorScheme(),
+      extensions: [tp],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: theme,
+        home: Scaffold(
+          backgroundColor: tp.canvas,
+          body: Column(
+            children: [
+              AdaptiveTextFieldGroup(
+                key: const Key('group-canvas'),
+                items: [AdaptiveTextFieldGroupItem(controller: c1, placeholder: 'Canvas')],
+              ),
+              AdaptiveTextFieldGroup(
+                key: const Key('group-embedded'),
+                embedded: true,
+                items: [AdaptiveTextFieldGroupItem(controller: c2, placeholder: 'Embedded')],
+              ),
+              AdaptiveTextArea(
+                key: const Key('area-canvas'),
+                controller: areaCtrl,
+                placeholder: 'Area',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    BoxDecoration? fillDecorationFor(Key key) {
+      final boxes = tester.widgetList<DecoratedBox>(
+        find.descendant(of: find.byKey(key), matching: find.byType(DecoratedBox)),
+      );
+      for (final box in boxes) {
+        final dec = box.decoration;
+        if (dec is BoxDecoration && dec.color != null) return dec;
+      }
+      return null;
+    }
+
+    BoxDecoration? borderDecorationFor(Key key) {
+      final boxes = tester.widgetList<DecoratedBox>(
+        find.descendant(of: find.byKey(key), matching: find.byType(DecoratedBox)),
+      );
+      for (final box in boxes) {
+        final dec = box.decoration;
+        if (dec is BoxDecoration && dec.border != null) return dec;
+      }
+      return null;
+    }
+
+    expect(fillDecorationFor(const Key('group-canvas'))?.color, tp.surface);
+    expect(fillDecorationFor(const Key('group-canvas'))?.color, isNot(tp.canvas));
+    expect(borderDecorationFor(const Key('group-canvas'))?.border, isNotNull);
+    expect(fillDecorationFor(const Key('group-embedded'))?.color, tp.surfaceSubtle);
+
+    final areaField = tester.widget<CupertinoTextField>(
+      find.descendant(
+        of: find.byKey(const Key('area-canvas')),
+        matching: find.byType(CupertinoTextField),
+      ),
+    );
+    expect(areaField.decoration?.color, tp.surface);
+    expect(areaField.decoration?.border, isNotNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('iOS AdaptiveTextFieldGroup Next advances to immediate next field without skipping', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    final c1 = TextEditingController();
+    final c2 = TextEditingController();
+    final c3 = TextEditingController();
+    addTearDown(() {
+      c1.dispose();
+      c2.dispose();
+      c3.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AdaptiveTextFieldGroup(
+            items: [
+              AdaptiveTextFieldGroupItem(
+                controller: c1,
+                placeholder: 'First',
+                textInputAction: TextInputAction.next,
+              ),
+              AdaptiveTextFieldGroupItem(
+                controller: c2,
+                placeholder: 'Second',
+                textInputAction: TextInputAction.next,
+              ),
+              AdaptiveTextFieldGroupItem(
+                controller: c3,
+                placeholder: 'Third',
+                textInputAction: TextInputAction.done,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final editables = find.byType(EditableText);
+    await tester.tap(editables.at(0));
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.pump();
+
+    expect(tester.widget<EditableText>(editables.at(1)).focusNode.hasFocus, isTrue);
+    expect(tester.widget<EditableText>(editables.at(2)).focusNode.hasFocus, isFalse);
     debugDefaultTargetPlatformOverride = null;
   });
 }

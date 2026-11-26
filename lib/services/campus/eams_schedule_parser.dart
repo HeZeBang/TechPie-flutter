@@ -10,36 +10,142 @@ typedef _JsArg = ({String value, bool isStringLiteral});
 typedef _TaskActivityMatch = ({int start, int end, List<_JsArg> args});
 
 class EamsScheduleParser {
+  static String? _nonEmpty(String? raw) {
+    final trimmed = raw?.trim();
+    return trimmed == null || trimmed.isEmpty ? null : trimmed;
+  }
+
   static ScheduleEntry entry(String source) {
     final doc = html.parse(source);
     String? field(String name) {
       final element = doc.querySelector('[name="$name"]');
-      return (element?.localName == 'select'
-                  ? element?.querySelector('option[selected]') ?? element?.querySelector('option')
-                  : element)
-              ?.attributes['value'] ??
-          RegExp('addInput\\(\\s*form\\s*,\\s*["\']${RegExp.escape(name)}["\']\\s*,\\s*["\']([^"\']+)')
-              .firstMatch(source)
-              ?.group(1);
+      final domValue = element?.localName == 'select'
+          ? _nonEmpty(
+                element?.querySelector('option[selected]')?.attributes['value'],
+              ) ??
+              _nonEmpty(element?.querySelector('option')?.attributes['value'])
+          : _nonEmpty(element?.attributes['value']);
+      return domValue ??
+          _nonEmpty(
+            RegExp(
+              'addInput\\(\\s*form\\s*,\\s*["\']${RegExp.escape(name)}["\']\\s*,\\s*["\']([^"\']+)',
+            ).firstMatch(source)?.group(1),
+          );
+    }
+
+    String? extractCalendarSemester() {
+      final block = RegExp(
+        r'''semesterCalendar\s*\(\s*\{([^}]*)\}''',
+        dotAll: true,
+      ).firstMatch(source)?.group(1);
+      if (block != null) {
+        final inBlock = _nonEmpty(
+          RegExp(r'''\bvalue\s*:\s*["']?([^"',}\s]+)["']?''')
+              .firstMatch(block)
+              ?.group(1),
+        );
+        if (inBlock != null) return inBlock;
+      }
+      return _nonEmpty(
+            RegExp(
+              r'''empty\s*:\s*["']?false["']?[^}]*?\bvalue\s*:\s*["']([^"']+)["']''',
+              dotAll: true,
+            ).firstMatch(source)?.group(1),
+          ) ??
+          _nonEmpty(
+            RegExp(
+              r'''\bvalue\s*:\s*["']([^"']+)["'][^}]*?empty\s*:\s*["']?false["']?''',
+              dotAll: true,
+            ).firstMatch(source)?.group(1),
+          ) ??
+          _nonEmpty(
+            RegExp(r'''semester\.id["']?\s*[:=]\s*["']?(\d+)["']?''')
+                .firstMatch(source)
+                ?.group(1),
+          );
     }
 
     final table = field('ids');
-    if (table == null || table.isEmpty) throw const FormatException('无法读取本科课表编号');
+    if (table == null) throw const FormatException('无法读取本科课表编号');
     return (
       table: table,
       project: field('project.id') ?? '1',
-      semester: field('semester.id') ??
-          RegExp(r'''empty\s*:\s*["']false["']\s*,\s*value\s*:\s*["']([^"']+)''')
-              .firstMatch(source)
-              ?.group(1) ??
-          '',
+      semester: field('semester.id') ?? extractCalendarSemester() ?? '',
     );
   }
 
   static String _normalizeSchoolYear(String raw) =>
       raw.replaceAll(RegExp(r'\s+'), '').replaceAll('–', '-');
 
-  static SemesterInfo semesters(ScheduleEntry entry, String source) {
+  static String inferDefaultSemester(
+    Map<String, Map<String, String>> semesters, {
+    DateTime? now,
+  }) {
+    final current = now ?? DateTime.now();
+    final int targetStartYear;
+    final int targetRank;
+    if (current.month >= 9) {
+      targetStartYear = current.year;
+      targetRank = 0; // 秋
+    } else if (current.month == 1) {
+      targetStartYear = current.year - 1;
+      targetRank = 0; // 秋
+    } else if (current.month <= 6) {
+      targetStartYear = current.year - 1;
+      targetRank = 1; // 春
+    } else {
+      targetStartYear = current.year - 1;
+      targetRank = 2; // 暑
+    }
+
+    final parsed = <({int startYear, int rank, String id})>[];
+    String? lastNonEmpty;
+    for (final yearEntry in semesters.entries) {
+      final startYear = int.tryParse(yearEntry.key.split('-').first);
+      for (final termEntry in yearEntry.value.entries) {
+        final id = termEntry.value.trim();
+        if (id.isEmpty) continue;
+        lastNonEmpty = id;
+        if (startYear != null) {
+          parsed.add(
+            (
+              startYear: startYear,
+              rank: semesterTermRank(termEntry.key),
+              id: id,
+            ),
+          );
+        }
+      }
+    }
+    if (parsed.isEmpty) return lastNonEmpty ?? '';
+
+    for (final item in parsed) {
+      if (item.startYear == targetStartYear && item.rank == targetRank) {
+        return item.id;
+      }
+    }
+
+    parsed.sort((a, b) {
+      final byYear = a.startYear.compareTo(b.startYear);
+      return byYear != 0 ? byYear : a.rank.compareTo(b.rank);
+    });
+
+    final targetKey = targetStartYear * 10 + targetRank;
+    String? latestNotAfter;
+    for (final item in parsed) {
+      final key = item.startYear * 10 + item.rank;
+      if (key <= targetKey) {
+        latestNotAfter = item.id;
+      }
+    }
+    return latestNotAfter ?? parsed.first.id;
+  }
+
+  static SemesterInfo semesters(
+    ScheduleEntry entry,
+    String source, {
+    DateTime? now,
+  }) {
     final years = <String, Map<String, String>>{};
     void add(String id, String year, String term) =>
         (years[_normalizeSchoolYear(year)] ??= {})[term] = id;
@@ -53,7 +159,63 @@ class EamsScheduleParser {
       add(m[1]!, m[2]!, m[3]!);
     }
     if (years.isEmpty) throw const FormatException('无法读取学期列表');
-    return SemesterInfo(semesters: years, defaultSemester: entry.semester, tableId: entry.table);
+
+    bool containsId(String? id) =>
+        id != null &&
+        id.isNotEmpty &&
+        years.values.any((terms) => terms.containsValue(id));
+
+    String? indexedCalendarSemester() {
+      final yearIndex = int.tryParse(
+        RegExp(r'''["']?yearIndex["']?\s*:\s*["']?(\d+)["']?''')
+                .firstMatch(source)
+                ?.group(1) ??
+            '',
+      );
+      final termIndex = int.tryParse(
+        RegExp(r'''["']?termIndex["']?\s*:\s*["']?(\d+)["']?''')
+                .firstMatch(source)
+                ?.group(1) ??
+            '',
+      );
+      if (yearIndex == null || termIndex == null) return null;
+      final yearBlock = RegExp(
+        '["\']?y$yearIndex["\']?\\s*:\\s*\\[(.*?)\\]',
+        dotAll: true,
+      ).firstMatch(source)?.group(1);
+      if (yearBlock == null) return null;
+      final ids = RegExp(r'''["']?\bid["']?\s*:\s*["']?(\d+)["']?''')
+          .allMatches(yearBlock)
+          .map((m) => m[1]!)
+          .toList();
+      if (termIndex < 0 || termIndex >= ids.length) return null;
+      return ids[termIndex];
+    }
+
+    String? resolved;
+    if (containsId(entry.semester)) {
+      resolved = entry.semester;
+    } else {
+      final doc = html.parse(source);
+      final selectedOption = _nonEmpty(
+        doc.querySelector('option[selected]')?.attributes['value'],
+      );
+      if (containsId(selectedOption)) {
+        resolved = selectedOption;
+      } else {
+        final byIndex = indexedCalendarSemester();
+        if (containsId(byIndex)) {
+          resolved = byIndex;
+        }
+      }
+    }
+    resolved ??= inferDefaultSemester(years, now: now);
+
+    return SemesterInfo(
+      semesters: years,
+      defaultSemester: resolved,
+      tableId: entry.table,
+    );
   }
 
   static final _activityHead = RegExp(r'\bnew\s+TaskActivity\s*\(');

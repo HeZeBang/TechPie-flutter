@@ -296,8 +296,8 @@ void main() {
     expect(find.byIcon(TpIcons.schedule), findsWidgets);
     expect(find.text('登录以查看课表'), findsOneWidget);
 
-    // Tap Deadlines
-    await tester.tap(find.text('Deadlines').first);
+    // Tap Deadlines (compact bottom bar falls back to "DDL" when narrow while keeping "Deadlines" semantics)
+    await tester.tap(find.bySemanticsLabel('Deadlines').first);
     await tester.pumpAndSettle();
     expect(find.text('连接课程平台以获取Deadlines'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsNothing);
