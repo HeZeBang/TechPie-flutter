@@ -22,12 +22,14 @@ class TechPieWearDataSource implements WearDataSource {
     required this.campusCard,
     required this.timetable,
     this.reminderOffsets = const [Duration(hours: 1)],
+    this.now = DateTime.now,
   });
   final AuthService auth;
   final ThirdPartyAuthService accounts;
   final AssignmentService assignments;
   final CampusCardService campusCard;
   final ScheduleService timetable;
+  final DateTime Function() now;
 
   /// Product default: one hour before each open deadline; opt-in at WearLink.open.
   final List<Duration> reminderOffsets;
@@ -56,7 +58,10 @@ class TechPieWearDataSource implements WearDataSource {
     if (assignments.error != null || assignments.platformErrors.isNotEmpty) {
       throw const WearFailure('SERVICE_UNAVAILABLE', retryable: true);
     }
-    return assignments.visibleAssignments.map((assignment) {
+    final current = now();
+    return assignments.visibleAssignments
+        .where((assignment) => !assignment.isExpiredAt(current))
+        .map((assignment) {
       final id = sha256.convert(utf8.encode(AssignmentOverrides.keyFor(assignment))).toString();
       final complete = assignments.isCompleted(assignment);
       return WearDdl(

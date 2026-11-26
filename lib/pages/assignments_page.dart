@@ -333,7 +333,10 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     return ListenableBuilder(
       listenable: assignmentService,
       builder: (context, _) {
-        final allVisible = assignmentService.visibleAssignments;
+        final now = DateTime.now();
+        final allVisible = assignmentService.visibleAssignments
+            .where((a) => !a.isExpiredAt(now))
+            .toList();
         final visible = _filterAssignments(allVisible);
         return AdaptiveNavigationScaffold(
           extendBodyBehindAppBar:
@@ -957,16 +960,20 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     final colors = context.tpColors;
     final now = DateTime.now();
 
-    final uncompleted = sorted.where((a) => !service.isCompleted(a)).toList();
-    final completed = sorted.where((a) => service.isCompleted(a)).toList()
+    final uncompleted = sorted
+        .where((a) => !service.isCompleted(a) && !a.isExpiredAt(now))
+        .toList();
+    final completed = sorted
+        .where((a) => service.isCompleted(a) && !a.isExpiredAt(now))
+        .toList()
       ..sort((a, b) => b.effectiveDue.compareTo(a.effectiveDue));
 
     final overdue = uncompleted
-        .where((a) => a.effectiveDue.isBefore(now))
+        .where((a) => a.canBeOverdue && a.effectiveDue.isBefore(now))
         .toList()
       ..sort((a, b) => a.effectiveDue.compareTo(b.effectiveDue));
     final upcoming = uncompleted
-        .where((a) => !a.effectiveDue.isBefore(now))
+        .where((a) => !a.canBeOverdue || !a.effectiveDue.isBefore(now))
         .toList()
       ..sort((a, b) {
         final targetA = (a.effectiveLateDue != null && a.due.isBefore(now))
@@ -1543,6 +1550,18 @@ String _formatPlatformLabel(String platform) {
   };
 }
 
+String _formatExamDueText(ExamAssignment exam, String startShort) {
+  final end = exam.lateDue;
+  if (end == null || !end.isAfter(exam.due)) return startShort;
+  final sameDay = exam.due.year == end.year &&
+      exam.due.month == end.month &&
+      exam.due.day == end.day;
+  final endText = sameDay
+      ? DateFormat('HH:mm').format(end)
+      : DateFormat('MM/dd HH:mm').format(end);
+  return '$startShort–$endText';
+}
+
 String _formatRemainingLabel(
   DateTime due,
   DateTime now, {
@@ -1636,9 +1655,11 @@ class _AssignmentRowState extends State<_AssignmentRow> {
     final selected = widget.selected;
     final colors = context.tpColors;
     final now = DateTime.now();
+    final exam = assignment is ExamAssignment ? assignment : null;
+    final isExamInProgress = exam != null && exam.isInProgressAt(now);
     final lateDue = assignment.effectiveLateDue;
     final finalDue = assignment.effectiveDue;
-    final isPast = finalDue.isBefore(now);
+    final isPast = assignment.canBeOverdue && finalDue.isBefore(now);
     final isLateWindow = !completed &&
         lateDue != null &&
         assignment.due.isBefore(now) &&
@@ -1646,7 +1667,11 @@ class _AssignmentRowState extends State<_AssignmentRow> {
 
     final displayDue = isLateWindow ? lateDue : assignment.due;
     final hoursLeft = displayDue.difference(now).inHours;
-    final isCalm = !completed && !isPast && !isLateWindow && hoursLeft >= 72;
+    final isCalm = !completed &&
+        !isPast &&
+        !isLateWindow &&
+        !isExamInProgress &&
+        hoursLeft >= 72;
     final dueShort = DateFormat('MM/dd HH:mm').format(displayDue);
 
     final subtitle = switch (assignment) {
@@ -1664,20 +1689,22 @@ class _AssignmentRowState extends State<_AssignmentRow> {
 
     final Color urgencyColor = () {
       if (completed) return colors.successGreen;
-      if (isPast || isLateWindow) return colors.dangerRed;
+      if (isPast || isLateWindow || isExamInProgress) return colors.dangerRed;
       if (hoursLeft < 24) return colors.dangerRed;
       if (hoursLeft < 72) return colors.warningAmber;
       return colors.infoBlue;
     }();
     final Color countdownColor = isCalm ? colors.textMuted : urgencyColor;
 
-    final progress = _urgencyProgress(
-      due: displayDue,
-      now: now,
-      completed: completed,
-      isPast: isPast,
-      isLateWindow: isLateWindow,
-    );
+    final progress = isExamInProgress
+        ? 1.0
+        : _urgencyProgress(
+            due: displayDue,
+            now: now,
+            completed: completed,
+            isPast: isPast,
+            isLateWindow: isLateWindow,
+          );
 
     final completedStatusLabel = (completed && assignment is! CustomDeadline)
         ? (assignment.status == 'Graded' ? 'Graded' : 'Submitted')
@@ -1699,11 +1726,11 @@ class _AssignmentRowState extends State<_AssignmentRow> {
         ].join(' · '),
     };
 
-    final dueText = isLateWindow
-        ? '迟交截止 $dueShort'
-        : (isPast && !completed
-            ? '原截止 $dueShort'
-            : (assignment is ExamAssignment ? dueShort : '$dueShort 截止'));
+    final dueText = exam != null
+        ? _formatExamDueText(exam, dueShort)
+        : isLateWindow
+            ? '迟交截止 $dueShort'
+            : (isPast && !completed ? '原截止 $dueShort' : '$dueShort 截止');
 
     final showQuickActions =
         widget.onQuickToggleComplete != null || widget.onQuickHide != null;
@@ -1725,29 +1752,37 @@ class _AssignmentRowState extends State<_AssignmentRow> {
               ),
             ],
           )
-        : (isPast
+        : (isExamInProgress
             ? Text(
-                _formatOverdueLabel(finalDue, now),
-                key: const ValueKey('overdue'),
+                '考试中',
+                key: const ValueKey('in_progress'),
                 maxLines: 1,
                 style: TpTypography.badge(colors.dangerRed),
               )
-            : (isLateWindow
+            : (isPast
                 ? Text(
-                    _formatRemainingLabel(lateDue, now, late: true),
-                    key: const ValueKey('late_remain'),
+                    _formatOverdueLabel(finalDue, now),
+                    key: const ValueKey('overdue'),
                     maxLines: 1,
                     style: TpTypography.badge(colors.dangerRed),
                   )
-                : Text(
-                    _formatRemainingLabel(assignment.due, now),
-                    key: const ValueKey('remain'),
-                    maxLines: 1,
-                    style: TpTypography.badge(countdownColor).copyWith(
-                      fontSize: 12,
-                      fontWeight: isCalm ? FontWeight.w500 : FontWeight.w600,
-                    ),
-                  )));
+                : (isLateWindow
+                    ? Text(
+                        _formatRemainingLabel(lateDue, now, late: true),
+                        key: const ValueKey('late_remain'),
+                        maxLines: 1,
+                        style: TpTypography.badge(colors.dangerRed),
+                      )
+                    : Text(
+                        _formatRemainingLabel(assignment.due, now),
+                        key: const ValueKey('remain'),
+                        maxLines: 1,
+                        style: TpTypography.badge(countdownColor).copyWith(
+                          fontSize: 12,
+                          fontWeight:
+                              isCalm ? FontWeight.w500 : FontWeight.w600,
+                        ),
+                      ))));
 
     return MouseRegion(
       onEnter: (_) {

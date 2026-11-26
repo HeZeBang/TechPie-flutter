@@ -671,7 +671,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             : a.due;
     final pending = _assignments.visibleAssignments
         .where(
-          (a) => !_assignments.isCompleted(a) && !a.effectiveDue.isBefore(now),
+          (a) =>
+              !_assignments.isCompleted(a) &&
+              !a.isExpiredAt(now) &&
+              (!a.canBeOverdue || !a.effectiveDue.isBefore(now)),
         )
         .toList()
       ..sort((a, b) => activeDueOf(a).compareTo(activeDueOf(b)));
@@ -777,14 +780,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     DateTime now, {
     required bool showDivider,
   }) {
+    final isExamInProgress = a is ExamAssignment && a.isInProgressAt(now);
     final inLateWindow = a.effectiveLateDue != null && a.due.isBefore(now);
     final activeDue = inLateWindow ? a.effectiveLateDue! : a.due;
-    final dueColor =
-        inLateWindow ? colors.dangerRed : _dueColor(activeDue, now, colors);
-    final dueLabel = inLateWindow
-        ? '迟交${_dueLabel(activeDue, now)}'
-        : _dueLabel(activeDue, now);
-    final progress = inLateWindow ? 1.0 : _urgencyProgress(activeDue, now);
+    final dueColor = (isExamInProgress || inLateWindow)
+        ? colors.dangerRed
+        : _dueColor(activeDue, now, colors);
+    final dueLabel = isExamInProgress
+        ? '考试中'
+        : (inLateWindow
+            ? '迟交${_dueLabel(activeDue, now)}'
+            : _dueLabel(activeDue, now));
+    final progress = (isExamInProgress || inLateWindow)
+        ? 1.0
+        : _urgencyProgress(activeDue, now);
     final detail = switch (a) {
       ExamAssignment(:final location) => location.trim(),
       CustomDeadline(:final course, :final location) => [
