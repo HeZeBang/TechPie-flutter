@@ -24,6 +24,7 @@ import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import '../models/user_session.dart';
 import '../utils/secure_storage.dart';
+import 'desktop_home_preferences.dart';
 import 'sync_envelope.dart';
 
 class StorageService {
@@ -53,6 +54,8 @@ class StorageService {
   final SharedPreferences _prefs;
 
   StorageService(this._prefs) : _secure = appSecureStorage;
+
+  late final desktopHome = DesktopHomePreferences(_prefs);
 
   String? get campusWebOwner => _prefs.getString('campus_web_owner');
   Future<void> setCampusWebOwner(String owner) => _prefs.setString('campus_web_owner', owner);
