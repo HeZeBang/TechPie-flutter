@@ -142,10 +142,11 @@ Future<void> _realMain(SharedPreferences prefs) async {
     storageService,
     thirdPartyAuthService,
   );
-  final egateAppService = EgateAppService(
-    authService,
+  final egateAppService = EgateAppService.withClient(
+    campusClients.emap,
     storageService,
-    thirdPartyAuthService,
+    Listenable.merge([authService, thirdPartyAuthService]),
+    () => thirdPartyAuthService.idsStudentId,
   );
   final isApple = !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.iOS ||
