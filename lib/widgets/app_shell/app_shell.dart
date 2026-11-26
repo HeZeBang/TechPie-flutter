@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 
-import '../../features/campus_card/app/app_providers.dart';
 import '../../models/feature.dart';
 import '../../pages/assignments_page.dart';
 import '../../pages/campus_card_page.dart';
@@ -293,8 +292,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _openCampusServices() {
-    final services =
-        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    final services = context.getInheritedWidgetOfExactType<ServiceProvider>();
     if (services == null) return;
     unawaited(
       pushAdaptivePage<void>(
@@ -305,8 +303,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _refreshWorkbenchData() {
-    final services =
-        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    final services = context.getInheritedWidgetOfExactType<ServiceProvider>();
     if (services == null) return;
     switch (_selectedIndex) {
       case 1:
@@ -328,8 +325,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _toggleLightDarkTheme() {
-    final services =
-        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    final services = context.getInheritedWidgetOfExactType<ServiceProvider>();
     if (services == null) return;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final target = isDark ? AppThemeMode.light : AppThemeMode.dark;
@@ -343,8 +339,7 @@ class _AppShellState extends State<AppShell> {
 
   void _openCommandPalette({required bool allowSidebarToggle}) {
     if (closeDesktopCommandPaletteIfOpen()) return;
-    final services =
-        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    final services = context.getInheritedWidgetOfExactType<ServiceProvider>();
     final isMac = isMacOsDesktop();
     final mod = isMac ? '⌘' : 'Ctrl ';
 
@@ -408,8 +403,7 @@ class _AppShellState extends State<AppShell> {
             group: '校园服务',
             icon: feature.icon.icon ?? TpIcons.activities,
             keywords: <String>[...feature.keywords, feature.category.label],
-            onExecute: () =>
-                openCampusFeature(_activeNavigationContext(), feature),
+            onExecute: () => openCampusFeature(_activeNavigationContext(), feature),
           ),
       if (services != null)
         DesktopCommandItem(
@@ -428,9 +422,7 @@ class _AppShellState extends State<AppShell> {
           title: _sidebarCollapsed ? '展开侧边栏' : '收起侧边栏',
           subtitle: '切换桌面侧栏折叠状态',
           group: '快捷操作',
-          icon: _sidebarCollapsed
-              ? TpIcons.sidebarExpand
-              : TpIcons.sidebarCollapse,
+          icon: _sidebarCollapsed ? TpIcons.sidebarExpand : TpIcons.sidebarCollapse,
           shortcutLabel: '$mod\\',
           keywords: const ['sidebar', 'cebianlan', 'collapse'],
           onExecute: _onSidebarToggleCollapsed,
@@ -469,8 +461,7 @@ class _AppShellState extends State<AppShell> {
       displayName: displayName,
       avatarText: userAvatarLabel(displayName),
       isLoggedIn: true,
-      boundPlatformCount:
-          services.thirdPartyAuthService.boundPlatforms.length,
+      boundPlatformCount: services.thirdPartyAuthService.boundPlatforms.length,
     );
   }
 
@@ -528,10 +519,8 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final desktopShell =
-        _desktopShellEnabled && usesDesktopSidebarShell(context);
-    final autoCollapsedRail =
-        desktopShell && usesAutoCollapsedSidebarRail(context);
+    final desktopShell = _desktopShellEnabled && usesDesktopSidebarShell(context);
+    final autoCollapsedRail = desktopShell && usesAutoCollapsedSidebarRail(context);
     final effectiveSidebarCollapsed = autoCollapsedRail || _sidebarCollapsed;
     final showSidebarToggle = !autoCollapsedRail;
     final pageView = _buildPageView(
@@ -539,8 +528,7 @@ class _AppShellState extends State<AppShell> {
       usePerTabNavigators: isIos() || desktopShell || isDesktop(),
     );
 
-    final services =
-        context.dependOnInheritedWidgetOfExactType<ServiceProvider>();
+    final services = context.dependOnInheritedWidgetOfExactType<ServiceProvider>();
 
     Widget shellWidget;
     if (desktopShell) {
@@ -560,10 +548,8 @@ class _AppShellState extends State<AppShell> {
           showToggleButton: showSidebarToggle,
           onDestinationSelected: _onDestinationSelected,
           onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
-          onOpenCommandPalette: () =>
-              _openCommandPalette(allowSidebarToggle: showSidebarToggle),
-          onOpenCampusServices:
-              services == null ? null : _openCampusServices,
+          onOpenCommandPalette: () => _openCommandPalette(allowSidebarToggle: showSidebarToggle),
+          onOpenCampusServices: services == null ? null : _openCampusServices,
           onOpenAccount: () => _onDestinationSelected(3),
           child: pageView,
         );
@@ -571,8 +557,7 @@ class _AppShellState extends State<AppShell> {
         shellWidget = ListenableBuilder(
           listenable: Listenable.merge(listenables),
           builder: (context, child) {
-            final deadlineBadge =
-                computeDeadlineSidebarBadge(services!.assignmentService);
+            final deadlineBadge = computeDeadlineSidebarBadge(services!.assignmentService);
             return DesktopShell(
               destinations: _destinations,
               selectedIndex: _selectedIndex,
@@ -613,8 +598,7 @@ class _AppShellState extends State<AppShell> {
       onOpenCampusServices: _openCampusServices,
       onToggleTheme: _toggleLightDarkTheme,
       sidebarCollapsed: effectiveSidebarCollapsed,
-      onToggleSidebar:
-          desktopShell && showSidebarToggle ? _onSidebarToggleCollapsed : null,
+      onToggleSidebar: desktopShell && showSidebarToggle ? _onSidebarToggleCollapsed : null,
       child: shellWidget,
     );
   }
