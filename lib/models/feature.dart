@@ -12,6 +12,7 @@ import '../pages/elrc_recordings_page.dart';
 import '../pages/grades_page.dart';
 import '../pages/holiday_travel_page.dart';
 import '../pages/oa_gym_page.dart';
+import '../pages/pnp_minor_page.dart';
 import '../pages/student_allowance_page.dart';
 import '../pages/student_leave_page.dart';
 import '../services/service_provider.dart';
@@ -222,6 +223,16 @@ final featureEntries = <Feature>[
     mode: FeatureMode.native,
     nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const CourseCatalogSearchPage()),
     icon: const Icon(Icons.menu_book_outlined),
+  ),
+  Feature(
+    id: 'pnp_minor',
+    category: CampusServiceCategory.special,
+    description: 'P/NP 与辅修',
+    subtitle: '查看申请记录、报名和辅修方案',
+    keywords: const ['pnp', 'p/np', '辅修', 'minor', 'fuxiu', '二专'],
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const PnpMinorPage()),
+    icon: const Icon(Icons.school_outlined),
   ),
 ];
 

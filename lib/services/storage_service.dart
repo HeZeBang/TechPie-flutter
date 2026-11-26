@@ -384,6 +384,13 @@ class StorageService {
     return id;
   }
 
+  String _pnpMinorKey(String owner) => '${_campusCachePrefix}pnp_minor_history_$owner';
+
+  String? pnpMinorHistory(String owner) => _prefs.getString(_pnpMinorKey(owner));
+  Future<void> savePnpMinorHistory(String owner, String value) =>
+      _prefs.setString(_pnpMinorKey(owner), value);
+  Future<void> clearPnpMinorHistory(String owner) => _prefs.remove(_pnpMinorKey(owner));
+
   List<String> catalogHistory(String owner) =>
       _prefs.getStringList('${_campusCachePrefix}catalog_history_$owner') ?? [];
   Future<void> saveCatalogHistory(String owner, List<String> terms) =>

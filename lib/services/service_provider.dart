@@ -15,6 +15,7 @@ import 'grade_service.dart';
 import 'holiday_travel_service.dart';
 import 'island_service.dart';
 import 'oa_gym_service.dart';
+import 'pnp_minor_service.dart';
 import 'schedule_service.dart';
 import 'spending_alert_service.dart';
 import 'storage_service.dart';
@@ -44,6 +45,7 @@ class ServiceProvider extends InheritedWidget {
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
+  final PnpMinorService? pnpMinor;
   final CourseCatalogService? courseCatalog;
   final GradeService? gradeService;
   final CampusClients? campusClients;
@@ -75,6 +77,7 @@ class ServiceProvider extends InheritedWidget {
     required this.syncService,
     required this.updateService,
     this.campusClients,
+    this.pnpMinor,
     this.courseCatalog,
     this.gradeService,
     required this.campusCardService,
@@ -115,6 +118,7 @@ class ServiceProvider extends InheritedWidget {
       uniAuthService != oldWidget.uniAuthService ||
       syncService != oldWidget.syncService ||
       updateService != oldWidget.updateService ||
+      pnpMinor != oldWidget.pnpMinor ||
       courseCatalog != oldWidget.courseCatalog ||
       gradeService != oldWidget.gradeService ||
       campusClients != oldWidget.campusClients ||
