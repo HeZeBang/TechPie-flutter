@@ -1113,8 +1113,15 @@ class AssignmentService extends ChangeNotifier {
         .toList();
   }
 
-  String? _selectedSemesterId() =>
-      _schedule.selectedSemesterId ??
-      _storage.selectedSemester ??
-      _schedule.semesterInfo?.defaultSemester;
+  String? _selectedSemesterId() {
+    for (final candidate in [
+      _schedule.selectedSemesterId,
+      _storage.selectedSemester,
+      _schedule.semesterInfo?.defaultSemester,
+    ]) {
+      final trimmed = candidate?.trim();
+      if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+    }
+    return null;
+  }
 }

@@ -174,6 +174,21 @@ class ThemeService extends ChangeNotifier {
         color: isDark ? tp.border : scheme.outline.withValues(alpha: 0.45),
       ),
     );
+    final iosInputBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(TpTokens.radiusS),
+      borderSide: BorderSide(
+        color: isDark ? tp.border : tp.divider,
+        width: 0.75,
+      ),
+    );
+    final iosFocusedInputBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(TpTokens.radiusS),
+      borderSide: BorderSide(color: tp.brand, width: 1.25),
+    );
+    final iosErrorInputBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(TpTokens.radiusS),
+      borderSide: BorderSide(color: tp.dangerRed, width: 1.0),
+    );
 
     return ThemeData(
       useMaterial3: true,
@@ -407,7 +422,12 @@ class ThemeService extends ChangeNotifier {
       inputDecorationTheme: _usesIosTheme
           ? InputDecorationTheme(
               filled: true,
-              fillColor: tp.surfaceSubtle,
+              fillColor: tp.surface,
+              border: iosInputBorder,
+              enabledBorder: iosInputBorder,
+              focusedBorder: iosFocusedInputBorder,
+              errorBorder: iosErrorInputBorder,
+              focusedErrorBorder: iosErrorInputBorder,
             )
           : InputDecorationTheme(
               border: inputBorder,

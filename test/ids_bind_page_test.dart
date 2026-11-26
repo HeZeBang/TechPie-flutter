@@ -23,6 +23,8 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
+import 'package:techpie/theme/theme.dart';
+import 'package:techpie/widgets/design_system/design_system.dart';
 
 import 'support/fake_ids_client.dart';
 
@@ -141,4 +143,43 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
+
+  testWidgets('IDS validation error clears on edit and connected card has inner padding', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({});
+    final auth = _CaptchaAuth(StorageService(await SharedPreferences.getInstance()));
+    await tester.pumpWidget(await _host(auth));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Connect account'));
+    await tester.pump();
+    expect(find.text('Enter your IDS account and password.'), findsOneWidget);
+
+    final fields = find.byType(EditableText);
+    await tester.enterText(fields.first, 'synthetic-student');
+    await tester.pump();
+    expect(find.text('Enter your IDS account and password.'), findsNothing);
+
+    final password = find.byWidgetPredicate((w) => w is EditableText && w.obscureText);
+    await tester.tap(password);
+    tester.testTextInput.enterText('synthetic-password');
+    await tester.pump();
+    await tester.tap(find.text('Connect account'));
+    await tester.pumpAndSettle();
+
+    final captcha = find.byWidgetPredicate((w) => w is EditableText && !w.obscureText);
+    await tester.enterText(captcha, 'sample-code');
+    await tester.tap(find.text('Verify'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Campus account connected'), findsOneWidget);
+    final card = tester.widget<TpCard>(find.byType(TpCard));
+    expect(card.padding, const EdgeInsets.all(TpTokens.space4));
+    await tester.pumpWidget(const SizedBox());
+  });
 }

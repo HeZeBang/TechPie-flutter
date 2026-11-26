@@ -6,11 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../utils/platform.dart';
+import '../app_shell/adaptive_destination_label.dart';
 import 'sf_symbol_glyphs.dart';
 
 class IosNativeTabBarItem {
   const IosNativeTabBarItem({
     required this.label,
+    this.shortLabel,
     required this.icon,
     required this.selectedIcon,
     required this.sfSymbol,
@@ -18,6 +20,7 @@ class IosNativeTabBarItem {
   });
 
   final String label;
+  final String? shortLabel;
   final IconData icon;
   final IconData selectedIcon;
   final String sfSymbol;
@@ -183,43 +186,71 @@ class _IosNativeTabBarState extends State<IosNativeTabBar> {
   Widget build(BuildContext context) {
     if (widget.items.length < 2) return const SizedBox.shrink();
     final nativeGlass = usesIosLiquidGlass();
+    final horizontalInset =
+        nativeGlass ? IosNativeTabBar.liquidGlassHorizontalInset * 2 : 0.0;
+    final textDirection = Directionality.of(context);
+    final textScaler = MediaQuery.textScalerOf(context);
+    final locale = Localizations.maybeLocaleOf(context);
+
     return LayoutBuilder(
-      builder: (context, constraints) => Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: _onPointerDown,
-        onPointerUp: (event) => _onPointerUp(event, constraints.maxWidth),
-        onPointerCancel: (_) => _clearPointer(),
-        child: CNTabBar(
-          // CNTabBar 1.8.1 places UITabBar 14pt below its container's top.
-          // Reserve that headroom so the bar itself keeps its original height.
-          height: 49 + MediaQuery.viewPaddingOf(context).bottom + (nativeGlass ? 14 : 0),
-          // The native adapter treats zero as an unspecified symbol size,
-          // matching UIImage(systemName:) in the previous implementation. The
-          // Flutter fallback needs an explicit, nonzero icon size.
-          iconSize: nativeGlass ? 0 : 25,
-          currentIndex: _selected,
-          tint: Theme.of(context).colorScheme.primary,
-          items: [
-            for (final item in widget.items)
-              CNTabBarItem(
-                label: item.label,
-                icon: CNSymbol(item.sfSymbol),
-                activeIcon: CNSymbol(item.selectedSfSymbol),
-                // Before iOS 26 the bar is Flutter's CupertinoTabBar, which
-                // prefers these over the symbols: Flutter glyphs, not native
-                // icon views that would take the tap. See cupertinoGlyphFor.
-                customIcon: nativeGlass ? null : cupertinoGlyphFor(item.sfSymbol),
-                activeCustomIcon:
-                    nativeGlass ? null : cupertinoGlyphFor(item.selectedSfSymbol),
-              ),
-          ],
-          // A reselect is the Listener's to report; taking it from here too
-          // would report it twice wherever the plugin does forward one.
-          onTap: (index) {
-            if (index != _selected) _select(index);
-          },
-        ),
-      ),
+      builder: (context, constraints) {
+        final perItemLabelWidth =
+            ((constraints.maxWidth - horizontalInset)
+                        .clamp(0.0, double.infinity) /
+                    widget.items.length) -
+                8.0;
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: _onPointerDown,
+          onPointerUp: (event) => _onPointerUp(event, constraints.maxWidth),
+          onPointerCancel: (_) => _clearPointer(),
+          child: CNTabBar(
+            // CNTabBar 1.8.1 places UITabBar 14pt below its container's top.
+            // Reserve that headroom so the bar itself keeps its original height.
+            height: 49 +
+                MediaQuery.viewPaddingOf(context).bottom +
+                (nativeGlass ? 14 : 0),
+            // The native adapter treats zero as an unspecified symbol size,
+            // matching UIImage(systemName:) in the previous implementation. The
+            // Flutter fallback needs an explicit, nonzero icon size.
+            iconSize: nativeGlass ? 0 : 25,
+            currentIndex: _selected,
+            tint: Theme.of(context).colorScheme.primary,
+            items: [
+              for (final item in widget.items)
+                CNTabBarItem(
+                  label: resolveFittingLabel(
+                    label: item.label,
+                    shortLabel: item.shortLabel,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxWidth: perItemLabelWidth,
+                    textDirection: textDirection,
+                    textScaler: textScaler,
+                    locale: locale,
+                  ),
+                  icon: CNSymbol(item.sfSymbol),
+                  activeIcon: CNSymbol(item.selectedSfSymbol),
+                  // Before iOS 26 the bar is Flutter's CupertinoTabBar, which
+                  // prefers these over the symbols: Flutter glyphs, not native
+                  // icon views that would take the tap. See cupertinoGlyphFor.
+                  customIcon:
+                      nativeGlass ? null : cupertinoGlyphFor(item.sfSymbol),
+                  activeCustomIcon: nativeGlass
+                      ? null
+                      : cupertinoGlyphFor(item.selectedSfSymbol),
+                ),
+            ],
+            // A reselect is the Listener's to report; taking it from here too
+            // would report it twice wherever the plugin does forward one.
+            onTap: (index) {
+              if (index != _selected) _select(index);
+            },
+          ),
+        );
+      },
     );
   }
 }

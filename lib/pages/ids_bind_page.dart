@@ -224,6 +224,9 @@ class _IdsBindFormState extends State<IdsBindForm> with WidgetsBindingObserver {
                 obscureText: password,
                 enabled: !_busy,
                 textInputAction: password ? TextInputAction.done : TextInputAction.next,
+                onChanged: (_) {
+                  if (_error != null) setState(() => _error = null);
+                },
                 onSubmitted: password ? (_) => unawaited(_bind()) : null,
               ),
             ],
@@ -270,6 +273,7 @@ class _IdsBindFormState extends State<IdsBindForm> with WidgetsBindingObserver {
     if (connected != null || (upgrade && !verifying)) {
       details.add(
         TpCard(
+          padding: const EdgeInsets.all(TpTokens.space4),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -322,6 +326,9 @@ class _IdsBindFormState extends State<IdsBindForm> with WidgetsBindingObserver {
               placeholder: text('Enter the characters shown', '输入图中的字符'),
               enabled: _answer != null && !_refreshing,
               textInputAction: TextInputAction.done,
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
               onSubmitted: (_) => _submitCaptcha(),
             ),
           ],
