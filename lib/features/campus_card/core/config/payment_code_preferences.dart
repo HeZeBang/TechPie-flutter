@@ -8,10 +8,20 @@ final maximizePaymentCodeBrightnessProvider =
 
 final class MaximizePaymentCodeBrightnessController
     extends AsyncNotifier<bool> {
+  MaximizePaymentCodeBrightnessController() : _fixed = null;
+
+  /// A controller that ignores the stored preference, for surfaces that must
+  /// never touch the main display's brightness.
+  MaximizePaymentCodeBrightnessController.fixed(bool value) : _fixed = value;
+
   static const _key = 'geekpay.maximize_payment_code_brightness';
+
+  final bool? _fixed;
 
   @override
   Future<bool> build() async {
+    final fixed = _fixed;
+    if (fixed != null) return fixed;
     final preferences = await SharedPreferences.getInstance();
     return preferences.getBool(_key) ?? false;
   }

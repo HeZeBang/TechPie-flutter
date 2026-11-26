@@ -12,12 +12,14 @@ import 'debug_logger.dart';
 import 'ecard_bind_service.dart';
 import 'ecard_widget_service.dart';
 import 'egate_app_service.dart';
+import 'glance_settings_service.dart';
 import 'grade_service.dart';
 import 'holiday_travel_service.dart';
 import 'island_service.dart';
 import 'oa_gym_service.dart';
 import 'pnp_minor_service.dart';
 import 'schedule_service.dart';
+import 'screen_form_factor_service.dart';
 import 'spending_alert_service.dart';
 import 'storage_service.dart';
 import 'student_allowance_service.dart';
@@ -56,6 +58,8 @@ class ServiceProvider extends InheritedWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final ScreenFormFactorService? screenFormFactorService;
+  final GlanceSettings? glanceSettings;
   final WearEngineService? wearEngineService;
   final DeadlineWidgetService? deadlineWidgetService;
   final DeadlineReminderService? deadlineReminderService;
@@ -89,6 +93,8 @@ class ServiceProvider extends InheritedWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.screenFormFactorService,
+    this.glanceSettings,
     this.wearEngineService,
     this.deadlineWidgetService,
     this.deadlineReminderService,
@@ -107,6 +113,8 @@ class ServiceProvider extends InheritedWidget {
 
   @override
   bool updateShouldNotify(ServiceProvider oldWidget) =>
+      screenFormFactorService != oldWidget.screenFormFactorService ||
+      glanceSettings != oldWidget.glanceSettings ||
       holidayTravelService != oldWidget.holidayTravelService ||
       islandService != oldWidget.islandService ||
       authService != oldWidget.authService ||

@@ -26,6 +26,7 @@ import 'services/debug_logger.dart';
 import 'services/ecard_bind_service.dart';
 import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
+import 'services/glance_settings_service.dart';
 import 'services/grade_service.dart';
 import 'services/holiday_travel_service.dart';
 import 'services/http_client.dart';
@@ -34,6 +35,7 @@ import 'services/island_service.dart';
 import 'services/oa_gym_service.dart';
 import 'services/pnp_minor_service.dart';
 import 'services/schedule_service.dart';
+import 'services/screen_form_factor_service.dart';
 import 'services/service_provider.dart';
 import 'services/spending_alert_service.dart';
 import 'services/storage_service.dart';
@@ -53,6 +55,7 @@ import 'services/wear/wear_protocol.dart';
 import 'spending_background_refresh.dart';
 import 'widgets/adaptive_feedback.dart';
 import 'widgets/app_shell/app_shell.dart';
+import 'widgets/glance/glance_gate.dart';
 import 'widgets/privacy_consent.dart';
 import 'widgets/update_dialogs.dart';
 
@@ -93,6 +96,8 @@ void main(List<String> args) async {
 
 Future<void> _realMain(SharedPreferences prefs) async {
   final storageService = StorageService(prefs);
+  final screenFormFactorService = ScreenFormFactorService();
+  final glanceSettings = GlanceSettings(storageService);
   await storageService.migrateLegacyDefaultColorScheme();
   final package = await PackageInfo.fromPlatform();
   const collector = String.fromEnvironment(
@@ -285,6 +290,8 @@ Future<void> _realMain(SharedPreferences prefs) async {
       ecardWidgetService: ecardWidgetService,
       wearEngineService: wearEngineService,
       deadlineWidgetService: deadlineWidgetService,
+      screenFormFactorService: screenFormFactorService,
+      glanceSettings: glanceSettings,
       deadlineReminderService: deadlineReminderService,
       spendingAlertService: spendingAlertService,
       islandService: islandService,
@@ -457,6 +464,8 @@ class TechPieApp extends StatefulWidget {
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
+  final ScreenFormFactorService? screenFormFactorService;
+  final GlanceSettings? glanceSettings;
   final WearEngineService? wearEngineService;
   final DeadlineWidgetService? deadlineWidgetService;
   final DeadlineReminderService? deadlineReminderService;
@@ -482,6 +491,8 @@ class TechPieApp extends StatefulWidget {
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
+    this.screenFormFactorService,
+    this.glanceSettings,
     this.wearEngineService,
     this.deadlineWidgetService,
     this.deadlineReminderService,
@@ -800,6 +811,8 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         campusCardService: widget.campusCardService,
         ecardBindService: widget.ecardBindService,
         ecardWidgetService: widget.ecardWidgetService,
+        screenFormFactorService: widget.screenFormFactorService,
+        glanceSettings: widget.glanceSettings,
         wearEngineService: widget.wearEngineService,
         deadlineWidgetService: widget.deadlineWidgetService,
         deadlineReminderService: widget.deadlineReminderService,
@@ -811,9 +824,11 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
           scaffoldMessengerKey: rootMessengerKey,
           navigatorObservers: [FeedbackRouteObserver(), _nativeChromeObserver],
           builder: (context, child) {
-            final host = AdaptiveFeedbackHost(
-              key: adaptiveFeedbackHostKey,
-              child: child ?? const SizedBox.shrink(),
+            final host = GlanceGate(
+              child: AdaptiveFeedbackHost(
+                key: adaptiveFeedbackHostKey,
+                child: child ?? const SizedBox.shrink(),
+              ),
             );
             if (!isAndroid()) return host;
             final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -836,7 +851,12 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
           theme: widget.themeService.lightTheme,
           darkTheme: widget.themeService.darkTheme,
           themeMode: widget.themeService.themeMode,
-          home: const PrivacyGate(child: AppShell()),
+          home: PrivacyGate(
+            onAccepted: () {
+              if (mounted) setState(() {});
+            },
+            child: const AppShell(),
+          ),
         ),
       ),
     );

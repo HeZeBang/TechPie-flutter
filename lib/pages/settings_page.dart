@@ -42,6 +42,7 @@ import '../widgets/update_dialogs.dart';
 import 'account_deletion_page.dart';
 import 'developer_options_page.dart';
 import 'feedback_page.dart';
+import 'glance_settings_page.dart';
 import 'huawei_watch_page.dart';
 import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
@@ -258,6 +259,22 @@ class _SettingsBodyState extends State<_SettingsBody> {
             final hasSpending = spending != null && spending.supported;
 
             final deviceEntries = <Widget Function(bool showDivider)>[
+              if (sp.glanceSettings != null &&
+                  (sp.screenFormFactorService?.supported ?? false))
+                (showDivider) => TpListRow(
+                      icon: TpIcons.smartphone,
+                      iconColor: colors.textSecondary,
+                      title: '外屏与背屏',
+                      subtitle: '课程、截止日期和付款码',
+                      showChevron: true,
+                      showDivider: showDivider,
+                      onTap: () => unawaited(
+                        pushAdaptivePage<void>(
+                          context,
+                          builder: (_) => const GlanceSettingsPage(),
+                        ),
+                      ),
+                    ),
               if (_showsHuaweiWatch)
                 (showDivider) => TpListRow(
                       icon: TpIcons.watch,

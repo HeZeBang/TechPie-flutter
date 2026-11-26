@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 
-import '../../features/campus_card/app/app_providers.dart';
 import '../../models/feature.dart';
 import '../../pages/assignments_page.dart';
 import '../../pages/campus_card_page.dart';
@@ -22,13 +21,17 @@ import '../../utils/platform.dart';
 import '../../utils/user_display_name.dart';
 import '../../widgets/adaptive_feedback.dart';
 import '../../widgets/adaptive_page_navigation.dart';
+import '../glance/glance_active_scope.dart';
 import 'app_destination.dart';
+import 'app_entry_notifier.dart';
 import 'desktop/desktop_command_palette.dart';
 import 'desktop/desktop_shell.dart';
 import 'desktop/desktop_sidebar_tokens.dart';
 import 'desktop/desktop_workbench_chrome.dart';
 import 'desktop/macos_window_drag.dart';
 import 'mobile_shell.dart';
+
+export 'app_entry_notifier.dart';
 
 /// Computes the live desktop sidebar badge for the Deadlines tab.
 ///
@@ -46,8 +49,7 @@ SidebarBadgeData? computeDeadlineSidebarBadge(
     if (service.isCompleted(item)) continue;
     if (item.effectiveDue.isBefore(current)) continue;
     count++;
-    final inLateWindow =
-        item.effectiveLateDue != null && item.due.isBefore(current);
+    final inLateWindow = item.effectiveLateDue != null && item.due.isBefore(current);
     final remaining = item.effectiveDue.difference(current);
     if (inLateWindow || remaining < const Duration(hours: 24)) {
       urgent = true;
@@ -65,7 +67,6 @@ SidebarBadgeData? computeDeadlineSidebarBadge(
 /// tab the user left the app on — or the selected destination on a wide
 /// window, and on the root navigator otherwise. A value set before the shell
 /// mounts waits for it, which is what a cold start needs.
-final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
 final appShellPendingDeadlines = ValueNotifier<bool>(false);
 final appShellPendingTab = ValueNotifier<int?>(null);
 
@@ -184,9 +185,12 @@ class _AppShellState extends State<AppShell> {
   /// Pushes the entry onto the visible navigation stack.
   void _showPendingEcardEntry() {
     final entry = appShellPendingEcardEntry.value;
-    if (entry == null || !mounted) return;
+    if (entry == null || !mounted || GlanceActiveScope.isActive(context)) return;
     appShellPendingEcardEntry.value = null;
-    context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened('campus_card');
+    context
+        .getInheritedWidgetOfExactType<ServiceProvider>()
+        ?.telemetry
+        ?.featureOpened('campus_card');
     // Login and playback pages can cover the entire tab shell: the code then
     // opens above that page, and back returns to it.
     final shellCovered = !ModalRoute.of(context)!.isCurrent;
@@ -218,7 +222,10 @@ class _AppShellState extends State<AppShell> {
       return;
     }
     const features = ['home', 'schedule', 'deadlines', 'settings'];
-    context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened(features[index]);
+    context
+        .getInheritedWidgetOfExactType<ServiceProvider>()
+        ?.telemetry
+        ?.featureOpened(features[index]);
     _previousSelectedIndex = _selectedIndex;
     setState(() => _selectedIndex = index);
   }
@@ -236,11 +243,13 @@ class _AppShellState extends State<AppShell> {
     final animate = !MediaQuery.disableAnimationsOf(context);
     for (final position in controller.positions) {
       if (animate) {
-        unawaited(position.animateTo(
-          position.minScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-        ),);
+        unawaited(
+          position.animateTo(
+            position.minScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+          ),
+        );
       } else {
         position.jumpTo(position.minScrollExtent);
       }
@@ -253,9 +262,7 @@ class _AppShellState extends State<AppShell> {
     if (!_sidebarPrefLoaded) {
       _sidebarPrefLoaded = true;
       context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened('home');
-      final storage = context
-          .dependOnInheritedWidgetOfExactType<ServiceProvider>()
-          ?.storageService;
+      final storage = context.dependOnInheritedWidgetOfExactType<ServiceProvider>()?.storageService;
       if (storage != null) {
         _sidebarCollapsed = storage.desktopSidebarCollapsed;
       }
@@ -265,9 +272,7 @@ class _AppShellState extends State<AppShell> {
   void _onSidebarToggleCollapsed() {
     final next = !_sidebarCollapsed;
     setState(() => _sidebarCollapsed = next);
-    final storage = context
-        .dependOnInheritedWidgetOfExactType<ServiceProvider>()
-        ?.storageService;
+    final storage = context.dependOnInheritedWidgetOfExactType<ServiceProvider>()?.storageService;
     if (storage != null) {
       unawaited(storage.setDesktopSidebarCollapsed(next));
     }
@@ -287,8 +292,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _openCampusServices() {
-    final services =
-        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    final services = context.getInheritedWidgetOfExactType<ServiceProvider>();
     if (services == null) return;
     unawaited(
       pushAdaptivePage<void>(
@@ -299,8 +303,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _refreshWorkbenchData() {
-    final services =
-        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    final services = context.getInheritedWidgetOfExactType<ServiceProvider>();
     if (services == null) return;
     switch (_selectedIndex) {
       case 1:
@@ -322,8 +325,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _toggleLightDarkTheme() {
-    final services =
-        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    final services = context.getInheritedWidgetOfExactType<ServiceProvider>();
     if (services == null) return;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final target = isDark ? AppThemeMode.light : AppThemeMode.dark;
@@ -337,8 +339,7 @@ class _AppShellState extends State<AppShell> {
 
   void _openCommandPalette({required bool allowSidebarToggle}) {
     if (closeDesktopCommandPaletteIfOpen()) return;
-    final services =
-        context.getInheritedWidgetOfExactType<ServiceProvider>();
+    final services = context.getInheritedWidgetOfExactType<ServiceProvider>();
     final isMac = isMacOsDesktop();
     final mod = isMac ? '⌘' : 'Ctrl ';
 
@@ -402,8 +403,7 @@ class _AppShellState extends State<AppShell> {
             group: '校园服务',
             icon: feature.icon.icon ?? TpIcons.activities,
             keywords: <String>[...feature.keywords, feature.category.label],
-            onExecute: () =>
-                openCampusFeature(_activeNavigationContext(), feature),
+            onExecute: () => openCampusFeature(_activeNavigationContext(), feature),
           ),
       if (services != null)
         DesktopCommandItem(
@@ -422,9 +422,7 @@ class _AppShellState extends State<AppShell> {
           title: _sidebarCollapsed ? '展开侧边栏' : '收起侧边栏',
           subtitle: '切换桌面侧栏折叠状态',
           group: '快捷操作',
-          icon: _sidebarCollapsed
-              ? TpIcons.sidebarExpand
-              : TpIcons.sidebarCollapse,
+          icon: _sidebarCollapsed ? TpIcons.sidebarExpand : TpIcons.sidebarCollapse,
           shortcutLabel: '$mod\\',
           keywords: const ['sidebar', 'cebianlan', 'collapse'],
           onExecute: _onSidebarToggleCollapsed,
@@ -463,8 +461,7 @@ class _AppShellState extends State<AppShell> {
       displayName: displayName,
       avatarText: userAvatarLabel(displayName),
       isLoggedIn: true,
-      boundPlatformCount:
-          services.thirdPartyAuthService.boundPlatforms.length,
+      boundPlatformCount: services.thirdPartyAuthService.boundPlatforms.length,
     );
   }
 
@@ -522,20 +519,16 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final desktopShell =
-        _desktopShellEnabled && usesDesktopSidebarShell(context);
-    final autoCollapsedRail =
-        desktopShell && usesAutoCollapsedSidebarRail(context);
+    final desktopShell = _desktopShellEnabled && usesDesktopSidebarShell(context);
+    final autoCollapsedRail = desktopShell && usesAutoCollapsedSidebarRail(context);
     final effectiveSidebarCollapsed = autoCollapsedRail || _sidebarCollapsed;
     final showSidebarToggle = !autoCollapsedRail;
-
     final pageView = _buildPageView(
       context,
       usePerTabNavigators: isIos() || desktopShell || isDesktop(),
     );
 
-    final services =
-        context.dependOnInheritedWidgetOfExactType<ServiceProvider>();
+    final services = context.dependOnInheritedWidgetOfExactType<ServiceProvider>();
 
     Widget shellWidget;
     if (desktopShell) {
@@ -555,10 +548,8 @@ class _AppShellState extends State<AppShell> {
           showToggleButton: showSidebarToggle,
           onDestinationSelected: _onDestinationSelected,
           onToggleSidebarCollapsed: _onSidebarToggleCollapsed,
-          onOpenCommandPalette: () =>
-              _openCommandPalette(allowSidebarToggle: showSidebarToggle),
-          onOpenCampusServices:
-              services == null ? null : _openCampusServices,
+          onOpenCommandPalette: () => _openCommandPalette(allowSidebarToggle: showSidebarToggle),
+          onOpenCampusServices: services == null ? null : _openCampusServices,
           onOpenAccount: () => _onDestinationSelected(3),
           child: pageView,
         );
@@ -566,8 +557,7 @@ class _AppShellState extends State<AppShell> {
         shellWidget = ListenableBuilder(
           listenable: Listenable.merge(listenables),
           builder: (context, child) {
-            final deadlineBadge =
-                computeDeadlineSidebarBadge(services!.assignmentService);
+            final deadlineBadge = computeDeadlineSidebarBadge(services!.assignmentService);
             return DesktopShell(
               destinations: _destinations,
               selectedIndex: _selectedIndex,
@@ -608,8 +598,7 @@ class _AppShellState extends State<AppShell> {
       onOpenCampusServices: _openCampusServices,
       onToggleTheme: _toggleLightDarkTheme,
       sidebarCollapsed: effectiveSidebarCollapsed,
-      onToggleSidebar:
-          desktopShell && showSidebarToggle ? _onSidebarToggleCollapsed : null,
+      onToggleSidebar: desktopShell && showSidebarToggle ? _onSidebarToggleCollapsed : null,
       child: shellWidget,
     );
   }
@@ -678,15 +667,11 @@ class _AppDestinationSwitcherState extends State<AppDestinationSwitcher> {
 
     return PageTransitionSwitcher(
       duration: TgMotion.tabsPageSwitch,
-      layoutBuilder: (entries) => Stack(
-        fit: StackFit.expand,
-        children: entries,
-      ),
+      layoutBuilder: (entries) => Stack(fit: StackFit.expand, children: entries),
       transitionBuilder: (child, animation, secondaryAnimation) {
         // Pure horizontal slide synced to TgBottomNavBar's 320ms easeOutQuint
         // timeline so bar capsule and page motion read as one rigid body.
-        final direction =
-            widget.selectedIndex >= widget.previousSelectedIndex ? 1.0 : -1.0;
+        final direction = widget.selectedIndex >= widget.previousSelectedIndex ? 1.0 : -1.0;
         final incoming = Tween<Offset>(
           begin: Offset(direction, 0),
           end: Offset.zero,
