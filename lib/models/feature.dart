@@ -9,6 +9,7 @@ import '../pages/elearning_hub_page.dart';
 import '../pages/elrc_recordings_page.dart';
 import '../pages/oa_gym_page.dart';
 import '../pages/student_allowance_page.dart';
+import '../pages/student_leave_page.dart';
 import '../services/service_provider.dart';
 import '../theme/tp_icons.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -98,9 +99,11 @@ final featureEntries = <Feature>[
     keywords: const ['qingjia', 'leave'],
     pinnedByDefault: true,
     description: '学生请假',
-    mode: FeatureMode.webviewWithCookie,
-    url: 'https://egate.shanghaitech.edu.cn/xsfw/sys/ydxsqjxs/index.html#/',
-    cookieType: CookieType.egateApp,
+    mode: FeatureMode.native,
+    nativeEntry: (context) => pushAdaptivePage<void>(
+      context,
+      builder: (_) => const StudentLeavePage(),
+    ),
     icon: const Icon(TpIcons.building),
   ),
   Feature(
