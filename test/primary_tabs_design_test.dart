@@ -39,8 +39,10 @@ import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/theme/theme.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
+import 'package:techpie/widgets/adaptive_navigation_scaffold.dart';
 import 'package:techpie/widgets/course_detail_panel.dart';
 import 'package:techpie/widgets/design_system/design_system.dart';
+import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
 class _SignedInAuth extends AuthService {
   _SignedInAuth(super.storage, super.http, super.uniAuth, this._session);
@@ -937,6 +939,196 @@ void main() {
       await pumpAndVerifyPaymentCodeOpened(
         find.byKey(const ValueKey('home.campus-card-header-band')),
       );
+    },
+  );
+
+  testWidgets(
+    'IosNativeNavigationBar preserves large title typography when title is interactive',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var tapped = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AdaptiveNavigationScaffold(
+            appBar: IosNativeNavigationBar(
+              title: '第 2 周',
+              subtitle: '2026-2027 秋季学期',
+              largeTitleMode: true,
+              onTitlePressed: () => tapped++,
+            ),
+            body: ListView.builder(
+              primary: true,
+              itemCount: 30,
+              itemBuilder: (_, i) => ListTile(title: Text('Row $i')),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final titleContexts = tester.elementList(find.text('第 2 周')).toList();
+      expect(
+        titleContexts.any((c) {
+          final style = DefaultTextStyle.of(c).style;
+          return (style.fontSize ?? 0) >= 30 && style.fontWeight == FontWeight.w700;
+        }),
+        isTrue,
+      );
+      await tester.tap(find.text('第 2 周').last);
+      await tester.pump();
+      expect(tapped, 1);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'SchedulePage agenda coordinates with iOS large title and exposes refresh menu',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final now = DateTime.now();
+      final monday = DateUtils.addDaysToDate(now, 1 - now.weekday);
+      final termCalendar = TermCalendar(
+        code: 200,
+        schoolYearTerm: '2026-2027-1',
+        termBegin: DateUtils.addDaysToDate(monday, -7),
+        snapshotDate: null,
+        snapshotWeekOfTerm: null,
+        allTeachWeeks: 16,
+        allTermWeeks: 18,
+        amClasses: 4,
+        pmClasses: 5,
+        eveClasses: 4,
+      );
+      final table = CourseTable(
+        periods: const [
+          CoursePeriod(index: 1, timeRange: '08:15-09:00'),
+        ],
+        courses: [
+          for (var w = 1; w <= 5; w++)
+            EamsCourse(
+              name: '第$w周课程',
+              classroom: '教学中心 10$w',
+              teachers: '王老师',
+              weeks: List.generate(17, (i) => i == w ? '1' : '0').join(),
+              times: {
+                DateTime.monday: const [1],
+                now.weekday: const [1],
+              },
+            ),
+        ],
+      );
+      final host = await _buildTestHost(
+        signedIn: true,
+        prefsValues: {
+          'schedule_view_mode': 'agenda',
+          'schedule_selected_semester': 'term1',
+          'schedule_term_begin_term1': jsonEncode(termCalendar.toJson()),
+          'schedule_course_table_term1': jsonEncode(table.toJson()),
+        },
+        child: const SchedulePage(),
+      );
+      await tester.pumpWidget(host.widget);
+      await tester.pumpAndSettle();
+
+      final bar = tester
+          .widget<AdaptiveNavigationScaffold>(find.byType(AdaptiveNavigationScaffold))
+          .appBar as IosNativeNavigationBar;
+      expect(bar.trailingItems.last.menuItems.any((m) => m.value == 'refresh'), isTrue);
+
+      final nested = tester.state<NestedScrollViewState>(find.byType(NestedScrollView));
+      final beforeOuter = nested.outerController.offset;
+      await tester.drag(find.byType(CustomScrollView).last, const Offset(0, -300));
+      await tester.pumpAndSettle();
+      expect(nested.outerController.offset, greaterThan(beforeOuter));
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'SchedulePage week picker aligns return-to-week button in header row and sets initial Today arrow direction',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final now = DateTime.now();
+      final monday = DateUtils.addDaysToDate(now, 1 - now.weekday);
+      final termCalendar = TermCalendar(
+        code: 200,
+        schoolYearTerm: '2026-2027-1',
+        termBegin: DateUtils.addDaysToDate(monday, -7),
+        snapshotDate: null,
+        snapshotWeekOfTerm: null,
+        allTeachWeeks: 16,
+        allTermWeeks: 18,
+        amClasses: 4,
+        pmClasses: 5,
+        eveClasses: 4,
+      );
+      final table = CourseTable(
+        periods: const [CoursePeriod(index: 1, timeRange: '08:15-09:00')],
+        courses: [
+          EamsCourse(
+            name: '导论',
+            classroom: '101',
+            teachers: '张老师',
+            weeks: '01111100000000000',
+            times: {
+              now.weekday: const [1],
+            },
+          ),
+        ],
+      );
+      final host = await _buildTestHost(
+        signedIn: true,
+        prefsValues: {
+          'schedule_selected_semester': 'term1',
+          'schedule_term_begin_term1': jsonEncode(termCalendar.toJson()),
+          'schedule_course_table_term1': jsonEncode(table.toJson()),
+        },
+        child: const SchedulePage(),
+      );
+      await tester.pumpWidget(host.widget);
+      await tester.pumpAndSettle();
+
+      // Advance to Week 4 (after Week 2) in Week mode, then open Week Picker.
+      await tester.tap(find.byTooltip('下一周'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('下一周'));
+      await tester.pumpAndSettle();
+      expect(find.descendant(of: find.byType(AppBar), matching: find.text('第 4 周')), findsOneWidget);
+
+      await tester.tap(find.descendant(of: find.byType(AppBar), matching: find.text('第 4 周')));
+      await tester.pumpAndSettle();
+      final sheetTitleTop = tester.getTopLeft(find.text('选择周数')).dy;
+      final backToWeekTop = tester.getTopLeft(find.text('回到本周')).dy;
+      expect((sheetTitleTop - backToWeekTop).abs(), lessThan(20));
+
+      // Dismiss bottom sheet, switch to Agenda mode on frame 1 -> arrow should point UP immediately.
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('日程'));
+      await tester.pump();
+      final fabIcon = tester.widget<Icon>(
+        find.descendant(of: find.byType(FloatingActionButton), matching: find.byType(Icon)),
+      );
+      expect(fabIcon.icon, Icons.keyboard_arrow_up);
+
+      // Mobile agenda overflow menu exposes '刷新'.
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('视图设置'));
+      await tester.pumpAndSettle();
+      expect(find.text('刷新'), findsOneWidget);
     },
   );
 }

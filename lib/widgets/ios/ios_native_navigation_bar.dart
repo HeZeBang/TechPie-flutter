@@ -103,11 +103,9 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
       border: null,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.9),
       largeTitle: _titleControl(
-        context,
         Text(title, style: TextStyle(color: scheme.onSurface)),
       ),
       middle: _titleControl(
-        context,
         hasSubtitle
             ? Column(
                 mainAxisSize: MainAxisSize.min,
@@ -192,7 +190,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
                   centerMiddle: true,
                   middleSpacing: 8,
                   leading: leadingItems.isNotEmpty ? _actions(context, leadingItems) : null,
-                  middle: largeTitleMode ? null : _titleControl(context, titleWidget),
+                  middle: largeTitleMode ? null : _titleControl(titleWidget),
                   trailing: trailingItems.isNotEmpty ? _actions(context, trailingItems) : null,
                 ),
               ),
@@ -200,7 +198,7 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
                 Expanded(
                   child: Align(
                     alignment: AlignmentDirectional.centerStart,
-                    child: _titleControl(context, titleWidget),
+                    child: _titleControl(titleWidget),
                   ),
                 ),
             ],
@@ -210,17 +208,22 @@ class IosNativeNavigationBar extends StatelessWidget implements PreferredSizeWid
     );
   }
 
-  Widget _titleControl(BuildContext context, Widget child) {
+  Widget _titleControl(Widget child) {
     final onPressed = onTitlePressed;
     if (onPressed == null) return child;
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      minimumSize: const Size(44, 44),
-      onPressed: onPressed,
-      child: DefaultTextStyle(
-        style: DefaultTextStyle.of(context).style,
-        child: child,
-      ),
+    return Builder(
+      builder: (context) {
+        final inheritedStyle = DefaultTextStyle.of(context).style;
+        return CupertinoButton(
+          padding: EdgeInsets.zero,
+          minimumSize: const Size(44, 44),
+          onPressed: onPressed,
+          child: DefaultTextStyle(
+            style: inheritedStyle,
+            child: child,
+          ),
+        );
+      },
     );
   }
 

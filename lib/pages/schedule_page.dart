@@ -371,14 +371,26 @@ class _SchedulePageState extends State<SchedulePage> {
     return RenderAbstractViewport.maybeOf(target)?.getOffsetToReveal(target, 0).offset;
   }
 
+  ScrollPosition? get _agendaScrollPosition {
+    if (!AdaptiveNavigationScaffold.coordinatesPrimaryScroll()) {
+      return _agendaController.hasClients ? _agendaController.position : null;
+    }
+    final ctx = _agendaTodayStart.currentContext ??
+        _agendaWeekStarts[_agendaAnchorWeek]?.currentContext ??
+        _agendaWeekStarts.values
+            .map((k) => k.currentContext)
+            .firstWhere((c) => c != null, orElse: () => null);
+    return ctx == null ? null : Scrollable.maybeOf(ctx)?.position;
+  }
+
   void _jumpToAgendaWeek(int week) {
-    if (!_agendaController.hasClients) return;
+    final position = _agendaScrollPosition;
+    if (position == null) return;
     final start = week == _agendaTodayWeek ? _agendaTodayStart : _agendaWeekStarts[week];
     final offset = _agendaOffset(start);
     if (offset == null) _agendaAnchorWeek = week;
     _setCurrentWeek(week);
     if (offset == null) return;
-    final position = _agendaController.position;
     position.jumpTo(offset.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble());
   }
 
@@ -387,29 +399,49 @@ class _SchedulePageState extends State<SchedulePage> {
     _agendaUpdateScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _agendaUpdateScheduled = false;
-      if (!mounted || _viewMode != _ScheduleViewMode.agenda || !_agendaController.hasClients) {
-        return;
-      }
-      final position = _agendaController.position;
-      if (!position.hasContentDimensions) return;
-      final todayOffset = _agendaOffset(_agendaTodayStart);
-      final awayFromToday =
-          todayOffset != null && (position.pixels - todayOffset).abs() >= _returnToTodaySize;
-      final todayIsAbove = todayOffset != null && todayOffset < position.pixels;
-      if (awayFromToday != _agendaAwayFromToday) {
-        setState(() => _agendaAwayFromToday = awayFromToday);
-      }
-      if (todayIsAbove != _agendaTodayIsAbove) {
-        setState(() => _agendaTodayIsAbove = todayIsAbove);
-      }
+      if (!mounted || _viewMode != _ScheduleViewMode.agenda) return;
+      final position = _agendaScrollPosition;
+      if (position == null || !position.hasContentDimensions) return;
+      final actualCurrentWeek = _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
       var visibleWeek = _currentWeek;
+      int? firstWeek;
+      double? firstOffset;
       for (var week = _schedule.totalWeeks; week >= 1; week--) {
         final offset = _agendaOffset(_agendaWeekStarts[week]);
-        if (offset == null || offset > position.pixels + 0.5) continue;
-        visibleWeek = week;
-        break;
+        if (offset == null) continue;
+        firstWeek = week;
+        firstOffset = offset;
+        if (offset <= position.pixels + 0.5) {
+          visibleWeek = week;
+          break;
+        }
       }
-      if (visibleWeek != _currentWeek) _setCurrentWeek(visibleWeek, playHaptics: false);
+      if (firstWeek != null && firstOffset != null && position.pixels < firstOffset) {
+        visibleWeek = firstWeek;
+      }
+      final todayOffset = _agendaOffset(_agendaTodayStart);
+      final awayFromToday = todayOffset != null
+          ? (position.pixels - todayOffset).abs() >= _returnToTodaySize
+          : visibleWeek != actualCurrentWeek;
+      final todayIsAbove = todayOffset != null
+          ? todayOffset < position.pixels
+          : actualCurrentWeek < visibleWeek;
+      final nextWeek = visibleWeek.clamp(1, _schedule.totalWeeks).toInt();
+      final weekChanged = nextWeek != _currentWeek;
+      if (awayFromToday != _agendaAwayFromToday ||
+          todayIsAbove != _agendaTodayIsAbove ||
+          weekChanged) {
+        setState(() {
+          _agendaAwayFromToday = awayFromToday;
+          _agendaTodayIsAbove = todayIsAbove;
+          if (weekChanged) {
+            final old = _currentWeek;
+            _currentWeek = nextWeek;
+            _slideDirection = nextWeek > old ? 1 : -1;
+            _filterCoursesForWeek();
+          }
+        });
+      }
     });
     WidgetsBinding.instance.ensureVisualUpdate();
   }
@@ -474,14 +506,16 @@ class _SchedulePageState extends State<SchedulePage> {
                               style: sheetTheme.textTheme.titleLarge,
                             ),
                           ),
+                          if (!showAdjacentWeeks && !isViewingCurrentWeek) ...[
+                            const SizedBox(width: 8),
+                            FilledButton.tonalIcon(
+                              onPressed: goToCurrentWeek,
+                              icon: const Icon(Icons.today_outlined, size: 18),
+                              label: const Text('回到本周'),
+                            ),
+                          ],
                         ],
                       ),
-                      if (!showAdjacentWeeks && !isViewingCurrentWeek)
-                        FilledButton.tonalIcon(
-                          onPressed: goToCurrentWeek,
-                          icon: const Icon(Icons.today_outlined, size: 18),
-                          label: const Text('回到本周'),
-                        ),
                       if (showAdjacentWeeks)
                         Wrap(
                           spacing: TpTokens.space2,
@@ -740,7 +774,8 @@ class _SchedulePageState extends State<SchedulePage> {
         auth.isLoggedIn &&
         tpAuth.hasIdsBinding &&
         (!isViewingCurrentWeek || _agendaAwayFromToday);
-    final todayIsAbove = _agendaTodayIsAbove;
+    final todayIsAbove =
+        _agendaAwayFromToday ? _agendaTodayIsAbove : actualCurrentWeek < _currentWeek;
     final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(context);
 
     return AdaptiveNavigationScaffold(
@@ -764,6 +799,12 @@ class _SchedulePageState extends State<SchedulePage> {
               sfSymbol: 'ellipsis',
               accessibilityLabel: '视图设置',
               menuItems: [
+                if (isAgenda && auth.isLoggedIn && tpAuth.hasIdsBinding)
+                  const IosNativeNavigationBarMenuItem(
+                    value: 'refresh',
+                    title: '刷新课表',
+                    sfSymbol: 'arrow.clockwise',
+                  ),
                 const IosNativeNavigationBarMenuItem(
                   value: 'semester',
                   title: '切换学期',
@@ -906,7 +947,7 @@ class _SchedulePageState extends State<SchedulePage> {
                 onSelected: _onMenuSelected,
                 itemBuilder: (context) => [
                   if (isAgenda) ...[
-                    if (isDesktop())
+                    if (!isDesktop())
                       PopupMenuItem(
                         value: 'refresh',
                         enabled: auth.isLoggedIn &&
@@ -1040,7 +1081,9 @@ class _SchedulePageState extends State<SchedulePage> {
                           if (mode == _ScheduleViewMode.agenda) {
                             _agendaAnchorWeek = _currentWeek;
                             _agendaAwayFromToday = false;
-                            _agendaTodayIsAbove = false;
+                            _agendaTodayIsAbove =
+                                _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt() <
+                                    _currentWeek;
                           }
                         });
                         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1288,24 +1331,35 @@ class _SchedulePageState extends State<SchedulePage> {
       }
     }
 
-    final agenda = NotificationListener<ScrollMetricsNotification>(
+    final agenda = NotificationListener<ScrollNotification>(
       onNotification: (notification) {
-        if (notification.depth == 0) _scheduleAgendaWeekUpdate();
+        if (notification.depth == 0 && notification is ScrollUpdateNotification) {
+          _scheduleAgendaWeekUpdate();
+        }
         return false;
       },
-      child: CustomScrollView(
-        key: ValueKey(
-          (
-            _schedule.selectedSemesterId,
-            _schedule.termBegin,
-            anchorWeek,
-            anchorWeek == _agendaTodayWeek,
+      child: NotificationListener<ScrollMetricsNotification>(
+        onNotification: (notification) {
+          if (notification.depth == 0) _scheduleAgendaWeekUpdate();
+          return false;
+        },
+        child: CustomScrollView(
+          key: ValueKey(
+            (
+              _schedule.selectedSemesterId,
+              _schedule.termBegin,
+              anchorWeek,
+              anchorWeek == _agendaTodayWeek,
+            ),
           ),
+          primary: AdaptiveNavigationScaffold.coordinatesPrimaryScroll(),
+          controller: AdaptiveNavigationScaffold.coordinatesPrimaryScroll()
+              ? null
+              : _agendaController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          center: anchorWeek == _agendaTodayWeek ? todaySection : ValueKey(anchorWeek),
+          slivers: slivers,
         ),
-        controller: _agendaController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        center: anchorWeek == _agendaTodayWeek ? todaySection : ValueKey(anchorWeek),
-        slivers: slivers,
       ),
     );
     return agenda;
