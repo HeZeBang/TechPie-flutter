@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/services/campus/campus_errors.dart';
+import 'package:techpie/services/campus/campus_session.dart';
 import 'package:techpie/services/campus/eams_client.dart';
 import 'package:techpie/services/campus/eams_html_parser.dart';
 
@@ -126,5 +128,111 @@ void main() {
     release.complete(respond('old account data'));
     await checks;
     expect(f.requests, hasLength(1));
+  });
+
+  test('isLoginPage ignores informational body mentions and gridTable isolates outer rows', () {
+    expect(
+      EamsHtmlParser.isLoginPage(
+        '<html><head><title>我的课表</title></head><body><p>请使用统一身份认证账号登录教务系统</p></body></html>',
+      ),
+      isFalse,
+    );
+    expect(
+      EamsHtmlParser.isLoginPage(
+        '<html><head><title>统一身份认证</title></head><body>登录</body></html>',
+      ),
+      isTrue,
+    );
+    const nested = '''
+<table class="gridtable">
+  <thead><tr><th> 课程\n  代码 </th><th></th><th></th></tr></thead>
+  <tbody>
+    <tr>
+      <td><table><tr><th>Inner</th></tr><tr><td>Ignored</td></tr></table>CS101</td>
+      <td>First</td>
+      <td>Second</td>
+    </tr>
+  </tbody>
+</table>''';
+    final rows = EamsHtmlParser.gridTable(nested);
+    expect(rows, hasLength(1));
+    expect(rows.single['课程 代码'], endsWith('CS101'));
+    expect(rows.single['__col_1'], 'First');
+    expect(rows.single['__col_2'], 'Second');
+  });
+
+  test('detects uppercase XHTML rate notices and shares queue across EamsClients', () async {
+    final f = CampusFixture(origin, (r) {
+      if (r.uri.path == '/limited') {
+        return respond(
+          '请不要过快点击',
+          headers: {
+            'Content-Type': ['Text/HTML; charset=UTF-8'],
+          },
+        );
+      }
+      if (r.uri.path == '/xhtml-login') {
+        return respond(
+          '<input name="execution">',
+          headers: {
+            'Content-Type': ['Application/XHTML+XML; charset=UTF-8'],
+          },
+        );
+      }
+      return respond(r.uri.path);
+    });
+    final clock = Stopwatch()..start();
+    final times = <Duration>[];
+    final sharedF = CampusFixture(origin, (r) {
+      times.add(clock.elapsed);
+      return respond(r.uri.path);
+    });
+    final first = EamsClient(
+      sharedF.session,
+      minInterval: const Duration(milliseconds: 120),
+      retryDelay: const Duration(milliseconds: 50),
+    );
+    final second = EamsClient(sharedF.session)..shareQueueWith(first);
+    await Future.wait([first.getHtml('/one'), second.getHtml('/two')]);
+    expect(times, hasLength(2));
+    expect((times.last - times.first).inMilliseconds, greaterThanOrEqualTo(110));
+
+    final c = EamsClient(
+      f.session,
+      minInterval: Duration.zero,
+      retryDelay: const Duration(milliseconds: 10),
+    );
+    await expectLater(c.getHtml('/limited'), fails(CampusErrorKind.rateLimited));
+    await expectLater(c.getHtml('/xhtml-login'), fails(CampusErrorKind.sessionExpired));
+    expect(f.renewals, 1);
+  });
+
+  test('merges query parameters and submitFormOnce never replays or follows 307/308', () async {
+    var status = 307;
+    final f = CampusFixture(origin, (r) {
+      if (r.method == 'POST' && status == 307) {
+        return respond('', status: 307, headers: {'location': ['/submit-again']});
+      }
+      if (r.method == 'POST' && status == 200) {
+        return respond('<input name="execution">');
+      }
+      return respond(jsonEncode(r.uri.queryParameters));
+    });
+    final merged = await f.session.run(
+      (wire) async => jsonObject(
+        await wire.request('/eams/list.action?semester.id=9', query: {'page': '2'}),
+      ),
+    );
+    expect(merged, {'semester.id': '9', 'page': '2'});
+
+    final c = EamsClient(f.session, minInterval: Duration.zero);
+    await expectLater(c.submitFormOnce('/eams/apply.action', {'k': '1'}), fails(CampusErrorKind.rejected));
+    status = 200;
+    await expectLater(
+      c.submitFormOnce('/eams/apply.action', {'k': '2'}),
+      fails(CampusErrorKind.sessionExpired),
+    );
+    expect(f.renewals, 0);
+    expect(f.requests.where((r) => r.uri.path == '/eams/apply.action'), hasLength(2));
   });
 }

@@ -150,4 +150,51 @@ void main() {
       ('s', 'sample==', 'elearning.shanghaitech.edu.cn', '/'),
     );
   });
+
+  test('allPages follows safe nextPage links and halts on loops or off-path URLs', () async {
+    var mode = 'paged';
+    final f = CampusFixture(origin, (r) {
+      if (mode == 'offpath') {
+        return respond({
+          'results': [
+            {'id': 't1'},
+          ],
+          'paging': {'nextPage': '/learn/api/public/v1/other'},
+        });
+      }
+      if (mode == 'loop') {
+        return respond({
+          'results': [
+            {'id': 't1'},
+          ],
+          'paging': {'nextPage': '/learn/api/public/v1/terms?offset=1&limit=1'},
+        });
+      }
+      final offset = r.uri.queryParameters['offset'] ?? '0';
+      if (offset == '0' || r.uri.queryParameters.isEmpty) {
+        return respond({
+          'results': [
+            {'id': 't1', 'name': 'Autumn'},
+          ],
+          'paging': {'nextPage': '/learn/api/public/v1/terms?offset=1&limit=1'},
+        });
+      }
+      return respond({
+        'results': [
+          {'id': 't2', 'name': 'Spring'},
+        ],
+      });
+    });
+    final c = ElearningClient(f.session);
+    final all = await c.getTerms(limit: 1, allPages: true);
+    expect(all['results'], [
+      {'id': 't1', 'name': 'Autumn'},
+      {'id': 't2', 'name': 'Spring'},
+    ]);
+    mode = 'loop';
+    final looped = await c.getTerms(limit: 1, allPages: true);
+    expect(looped['results'], hasLength(2));
+    mode = 'offpath';
+    await expectLater(c.getTerms(limit: 1, allPages: true), fails(CampusErrorKind.rejected));
+  });
 }

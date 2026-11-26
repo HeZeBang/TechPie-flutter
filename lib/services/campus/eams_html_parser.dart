@@ -3,13 +3,30 @@ import 'package:html/parser.dart' as html;
 
 class EamsHtmlParser {
   static bool isLoginPage(String source) {
-    if (source.contains('统一身份认证')) return true;
     if (!source.contains('<') ||
-        (!source.contains('execution') && !source.contains('ids.shanghaitech.edu.cn'))) {
+        (!source.contains('统一身份认证') &&
+            !source.contains('execution') &&
+            !source.contains('ids.shanghaitech.edu.cn') &&
+            !source.contains('authserver'))) {
       return false;
     }
     final doc = html.parse(source);
     if (doc.querySelector('input[name="execution"]') != null) return true;
+    final title = doc.querySelector('title')?.text ?? '';
+    if (title.contains('统一身份认证')) return true;
+    final hasLoginForm = doc.querySelector(
+          'input[type="password"], input[name="username"], #casLoginForm, #pwdFromId',
+        ) !=
+        null;
+    if (hasLoginForm &&
+        doc
+            .querySelectorAll('h1, h2, h3, .auth_title, title')
+            .any((e) => e.text.contains('统一身份认证'))) {
+      return true;
+    }
+    if (doc.querySelector('form[action*="authserver"]') != null && hasLoginForm) {
+      return true;
+    }
     final redirects = [
       ...doc.querySelectorAll('form[action]').map((e) => e.attributes['action']!),
       ...doc
@@ -26,21 +43,39 @@ class EamsHtmlParser {
   static List<Map<String, String>> gridTable(String source) {
     final table = html.parse(source).querySelector('table.gridtable');
     if (table == null) return [];
-    final rows = table.querySelectorAll('tr');
+    final rows = <Element>[];
+    for (final child in table.children) {
+      if (child.localName == 'tr') {
+        rows.add(child);
+      } else if (child.localName == 'thead' ||
+          child.localName == 'tbody' ||
+          child.localName == 'tfoot') {
+        rows.addAll(child.children.where((e) => e.localName == 'tr'));
+      }
+    }
     final header = rows.indexWhere(
       (r) =>
           r.parent?.localName == 'thead' ||
-          r.querySelector('th') != null ||
+          r.children.any((c) => c.localName == 'th') ||
           r.classes.contains('gridhead'),
     );
     if (header < 0) return [];
-    List<String> cells(Element row) => row.children
-        .where((e) => ['td', 'th'].contains(e.localName))
-        .map((e) => e.text.trim())
+    List<String> cells(Element row, {required bool normalizeWhitespace}) => row.children
+        .where((e) => e.localName == 'td' || e.localName == 'th')
+        .map(
+          (e) => normalizeWhitespace
+              ? e.text.replaceAll(RegExp(r'\s+'), ' ').trim()
+              : e.text.trim(),
+        )
         .toList();
-    final names = cells(rows[header]);
+    final rawNames = cells(rows[header], normalizeWhitespace: true);
+    final seen = <String>{};
+    final names = <String>[
+      for (var i = 0; i < rawNames.length; i++)
+        if (rawNames[i].isEmpty || !seen.add(rawNames[i])) '__col_$i' else rawNames[i],
+    ];
     return [
-      for (final row in rows.skip(header + 1).map(cells))
+      for (final row in rows.skip(header + 1).map((r) => cells(r, normalizeWhitespace: false)))
         if (row.length == names.length) Map.fromIterables(names, row),
     ];
   }

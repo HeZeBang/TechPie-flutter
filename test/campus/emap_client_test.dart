@@ -2,9 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage_ohos/flutter_secure_storage_ohos.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/services/campus/campus_errors.dart';
+import 'package:techpie/services/campus/emap_account_cache.dart';
 import 'package:techpie/services/campus/emap_client.dart';
+import 'package:techpie/services/storage_service.dart';
 
 import 'campus_fixture.dart';
 
@@ -152,5 +158,92 @@ void main() {
     expect(form.files.single.key, 'bhFile');
     expect(form.files.single.value.filename, 'test.pdf');
     expect(await c.downloadFileByToken('file'), [0, 128, 255]);
+  });
+
+  test('getAction, allowMissingTotalSize and single-submission write protection', () async {
+    var postCalls = 0;
+    final f = CampusFixture(origin, (r) {
+      if (r.uri.path == config) {
+        if ((r.headers['Cookie'] as String).contains('v0')) {
+          return respond('<!DOCTYPE html>login');
+        }
+        return respond({});
+      }
+      if (r.method == 'GET' && r.uri.path.endsWith('/info.do')) {
+        return respond({'ok': true, 'q': r.uri.queryParameters['k']});
+      }
+      if (r.uri.path.endsWith('/noTotal.do')) {
+        return respond({
+          'code': '0',
+          'datas': {
+            'noTotal': {
+              'rows': [
+                {'id': '1'},
+              ],
+            },
+          },
+        });
+      }
+      postCalls++;
+      if (r.uri.path.endsWith('/xsqd.do')) {
+        return respond('success');
+      }
+      return respond({}, status: 403);
+    });
+    final c = EmapClient(f.session);
+    expect(
+      await c.getAction(app: 'demo', appId: '42', path: 'info.do?x=1', query: {'k': 'v'}),
+      {'ok': true, 'q': 'v'},
+    );
+    expect(f.renewals, 1);
+    final noTotal = await c.queryModel(
+      app: 'demo',
+      appId: '42',
+      module: 'm',
+      model: 'noTotal',
+      allowMissingTotalSize: true,
+    );
+    expect(noTotal.totalSize, 1);
+    expect(await c.submitTextOnce(app: 'demo', appId: '42', path: 'xsqd.do', form: {'a': '1'}), 'success');
+    await expectLater(
+      c.commonCall(
+        app: 'demo',
+        appId: '42',
+        actionName: 'submit',
+        actionType: 'save',
+        requestParams: {'x': 1},
+      ),
+      fails(CampusErrorKind.forbidden),
+    );
+    expect(postCalls, 2);
+  });
+
+  test('EmapAccountCache isolates owners and clears on logout or IDS unbind', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    FlutterSecureStorage.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({'emap_cache_corrupt': 'not-json'});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    final accounts = ValueNotifier<int>(0);
+    var identity = (user: 'u1', ids: 'id1');
+    final corrupt = EmapAccountCache('corrupt', storage, () => identity, accounts);
+    expect(corrupt.values, isEmpty);
+
+    final cache = EmapAccountCache('leave', storage, () => identity, accounts);
+    final rev = cache.revision;
+    await cache.save(rev, 'balance', 3);
+    expect(storage.readEmapCache('leave'), isNotNull);
+
+    await storage.clearThirdPartyAccount(ThirdPartyPlatform.ids);
+    expect(storage.readEmapCache('leave'), isNull);
+
+    await cache.save(rev, 'balance', 4);
+    await storage.clearSession();
+    expect(storage.readEmapCache('leave'), isNull);
+
+    identity = (user: 'u2', ids: 'id2');
+    accounts.value++;
+    expect(cache.values, isEmpty);
+    cache.dispose();
+    corrupt.dispose();
   });
 }

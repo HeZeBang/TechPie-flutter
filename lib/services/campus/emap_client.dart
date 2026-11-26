@@ -33,12 +33,15 @@ class EmapClient {
     }
   }
 
-  Future<Map<String, dynamic>> _post(
+  Future<CampusResponse> _request(
     String app,
     String appId,
-    String path,
-    Map<String, String> form,
-  ) {
+    String path, {
+    String method = 'POST',
+    Map<String, String>? query,
+    Map<String, String>? form,
+    bool singleSubmission = false,
+  }) {
     final base = '/xsfw/sys/${segment(app)}/';
     final route = Uri.parse(path.replaceFirst(RegExp(r'^/'), ''));
     if (route.hasScheme ||
@@ -50,39 +53,68 @@ class EmapClient {
       'X-Requested-With': 'XMLHttpRequest',
       'Referer': '${session.origin.origin}$base*default/index.do',
     };
-    return session.run((wire) async {
-      final cache = _bootstrappedApps[wire] ??= {};
-      final key = (app, appId);
-      Future<void> bootstrap() async {
-        final r = await wire.request(
-          '/xsfw/sys/funauthapp/api/getAppConfig/${segment(app)}-${segment(appId)}.do',
-          headers: headers,
-        );
-        _check(r);
-      }
+    var dispatched = false;
+    return session.run(
+      (wire) async {
+        final cache = _bootstrappedApps[wire] ??= {};
+        final key = (app, appId);
+        Future<void> bootstrap() async {
+          final r = await wire.request(
+            '/xsfw/sys/funauthapp/api/getAppConfig/${segment(app)}-${segment(appId)}.do',
+            headers: headers,
+          );
+          _check(r);
+        }
 
-      for (var attempt = 0;; attempt++) {
-        final ready = cache.putIfAbsent(key, bootstrap);
-        try {
-          await ready;
-        } catch (_) {
-          if (identical(cache[key], ready)) cache.remove(key)?.ignore();
-          rethrow;
+        if (singleSubmission) {
+          // Verify/bootstrap via an idempotent GET first so expired cookies renew
+          // before a non-idempotent POST leaves the wire.
+          final fresh = bootstrap();
+          cache[key] = fresh;
+          try {
+            await fresh;
+          } catch (_) {
+            if (identical(cache[key], fresh)) cache.remove(key)?.ignore();
+            rethrow;
+          }
+          dispatched = true;
+          final r = await wire.request(
+            '$base$route',
+            method: method,
+            query: query,
+            data: form,
+            headers: form == null ? headers : {...headers, ...formHeaders},
+            allowBodyRedirect: false,
+          );
+          _check(r);
+          return r;
         }
-        final r = await wire.request(
-          '$base$route',
-          method: 'POST',
-          data: form,
-          headers: {...headers, ...formHeaders},
-        );
-        if (r.statusCode == 403 && attempt == 0) {
-          if (identical(cache[key], ready)) cache.remove(key)?.ignore();
-          continue;
+
+        for (var attempt = 0;; attempt++) {
+          final ready = cache.putIfAbsent(key, bootstrap);
+          try {
+            await ready;
+          } catch (_) {
+            if (identical(cache[key], ready)) cache.remove(key)?.ignore();
+            rethrow;
+          }
+          final r = await wire.request(
+            '$base$route',
+            method: method,
+            query: query,
+            data: form,
+            headers: form == null ? headers : {...headers, ...formHeaders},
+          );
+          if (r.statusCode == 403 && attempt == 0) {
+            if (identical(cache[key], ready)) cache.remove(key)?.ignore();
+            continue;
+          }
+          _check(r);
+          return r;
         }
-        _check(r);
-        return jsonObject(r);
-      }
-    });
+      },
+      canRetryExpired: singleSubmission ? () => !dispatched : null,
+    );
   }
 
   Future<EmapPageResult> queryModel({
@@ -94,13 +126,21 @@ class EmapClient {
     int pageNumber = 1,
     List<Map<String, dynamic>>? querySetting,
     Map<String, String>? extraForm,
+    bool allowMissingTotalSize = false,
   }) async {
-    final body = await _post(app, appId, 'modules/${segment(module)}/${segment(model)}.do', {
-      ...?extraForm,
-      'pageSize': '$pageSize',
-      'pageNumber': '$pageNumber',
-      if (querySetting != null) 'querySetting': jsonEncode(querySetting),
-    });
+    final body = jsonObject(
+      await _request(
+        app,
+        appId,
+        'modules/${segment(module)}/${segment(model)}.do',
+        form: {
+          ...?extraForm,
+          'pageSize': '$pageSize',
+          'pageNumber': '$pageNumber',
+          if (querySetting != null) 'querySetting': jsonEncode(querySetting),
+        },
+      ),
+    );
     if ('${body['code']}' != '0') {
       throw const CampusRequestException(CampusErrorKind.rejected, '学工系统未接受查询');
     }
@@ -108,20 +148,53 @@ class EmapClient {
     final page = datas is Map ? datas[model] : null;
     if (page is! Map) throw CampusRequestException.invalid;
     final rows = page['rows'];
-    final total = int.tryParse('${page['totalSize']}');
+    final rawTotal = page['totalSize'];
+    final total = rawTotal == null && allowMissingTotalSize
+        ? (rows is List ? rows.length : null)
+        : int.tryParse('$rawTotal');
     if (rows is! List || total == null || !rows.every((v) => v is Map<String, dynamic>)) {
       throw CampusRequestException.invalid;
     }
     return EmapPageResult(rows.cast<Map<String, dynamic>>(), total);
   }
 
+  Future<Map<String, dynamic>> getAction({
+    required String app,
+    required String appId,
+    required String path,
+    Map<String, String>? query,
+  }) async =>
+      jsonObject(
+        await _request(app, appId, path, method: 'GET', query: query),
+      );
+
   Future<Map<String, dynamic>> postAction({
     required String app,
     required String appId,
     required String path,
     Map<String, String> form = const {},
-  }) =>
-      _post(app, appId, path, form);
+    bool singleSubmission = false,
+  }) async =>
+      jsonObject(
+        await _request(
+          app,
+          appId,
+          path,
+          form: form,
+          singleSubmission: singleSubmission,
+        ),
+      );
+
+  /// Submits a plain-text write action at most once without automatic retries.
+  Future<String> submitTextOnce({
+    required String app,
+    required String appId,
+    required String path,
+    Map<String, String> form = const {},
+  }) async =>
+      CampusHttp.text(
+        await _request(app, appId, path, form: form, singleSubmission: true),
+      );
 
   Future<Map<String, dynamic>> commonCall({
     required String app,
@@ -131,15 +204,19 @@ class EmapClient {
     String? dataModelAction,
     required Object requestParams,
     bool batch = false,
+    bool singleSubmission = true,
   }) async {
     final name = [actionName, actionType, if (dataModelAction != null) dataModelAction]
         .map(segment)
         .join('-');
-    final result = await _post(
-      app,
-      appId,
-      'commoncall/${batch ? 'callBatch' : 'call'}/$name.do',
-      {'requestParams': jsonEncode(requestParams)},
+    final result = jsonObject(
+      await _request(
+        app,
+        appId,
+        'commoncall/${batch ? 'callBatch' : 'call'}/$name.do',
+        form: {'requestParams': jsonEncode(requestParams)},
+        singleSubmission: singleSubmission,
+      ),
     );
     if (result['resultCode'] != '00000') {
       throw const CampusRequestException(CampusErrorKind.rejected, '学工系统未接受操作');
@@ -157,6 +234,7 @@ class EmapClient {
         final response = await wire.request(
           '/xsfw/sys/emapcomponent/file/uploadTempFile/${segment(scope)}/${segment(token)}.do',
           method: 'POST',
+          allowBodyRedirect: false,
           data: FormData.fromMap({
             'bhFile': MultipartFile.fromBytes(bytes, filename: filename),
             'storeId': 'imexport',

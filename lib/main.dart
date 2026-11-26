@@ -14,6 +14,7 @@ import 'models/third_party_account.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
 import 'services/campus/campus_clients.dart';
+import 'services/campus/campus_file_share.dart';
 import 'services/campus_card_service.dart';
 import 'services/deadline_reminder_service.dart';
 import 'services/deadline_widget_service.dart';
@@ -109,6 +110,11 @@ Future<void> _realMain(SharedPreferences prefs) async {
     httpClient,
     idsClient: IdsClient(logger: debugLogger),
   );
+  final campusClients = CampusClients(
+    authService,
+    thirdPartyAuthService,
+    onAccountChanged: () => unawaited(CampusFileShare.clearScopedFiles()),
+  );
   final scheduleService = ScheduleService(
     storageService,
     httpClient,
@@ -181,6 +187,8 @@ Future<void> _realMain(SharedPreferences prefs) async {
     // sync system. Only clear ephemeral state.
     await assignmentService.clearCache();
     await assignmentService.clearAllOverrides();
+    await storageService.clearCampusCaches();
+    await CampusFileShare.clearScopedFiles();
     oaGymService.clearSession();
     await thirdPartyAuthService.campusWebSession.prepare();
   };
@@ -239,6 +247,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       uniAuthService: uniAuthService,
       syncService: syncService,
       updateService: updateService,
+      campusClients: campusClients,
       campusCardService: campusCardService,
       ecardBindService: ecardBindService,
       ecardWidgetService: ecardWidgetService,
@@ -411,6 +420,7 @@ class TechPieApp extends StatefulWidget {
   final UniAuthService uniAuthService;
   final SyncService syncService;
   final UpdateService updateService;
+  final CampusClients? campusClients;
   final CampusCardService campusCardService;
   final EcardBindService ecardBindService;
   final EcardWidgetService? ecardWidgetService;
@@ -434,6 +444,7 @@ class TechPieApp extends StatefulWidget {
     required this.uniAuthService,
     required this.syncService,
     required this.updateService,
+    this.campusClients,
     required this.campusCardService,
     required this.ecardBindService,
     this.ecardWidgetService,
@@ -452,7 +463,19 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
   final _nativeChromeObserver = CNTabBarRouteObserver();
   late CampusClients _campusClients;
+  bool _ownsCampusClients = false;
   late StudentAllowanceService _studentAllowanceService;
+
+  void _initCampusClients() {
+    final external = widget.campusClients;
+    if (external != null) {
+      _campusClients = external;
+      _ownsCampusClients = false;
+    } else {
+      _campusClients = CampusClients(widget.authService, widget.thirdPartyAuthService);
+      _ownsCampusClients = true;
+    }
+  }
 
   StudentAllowanceService _createStudentAllowanceService() => StudentAllowanceService(
         widget.authService,
@@ -472,7 +495,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _campusClients = CampusClients(widget.authService, widget.thirdPartyAuthService);
+    _initCampusClients();
     widget.wearEngineService?.resumeSync();
     _studentAllowanceService = _createStudentAllowanceService();
     unawaited(_checkForUpdatesQuietly());
@@ -484,10 +507,14 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
   @override
   void didUpdateWidget(covariant TechPieApp oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.authService != widget.authService ||
-        oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService) {
+    if (oldWidget.campusClients != widget.campusClients) {
+      if (_ownsCampusClients) _campusClients.dispose();
+      _initCampusClients();
+    } else if (_ownsCampusClients &&
+        (oldWidget.authService != widget.authService ||
+            oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService)) {
       _campusClients.dispose();
-      _campusClients = CampusClients(widget.authService, widget.thirdPartyAuthService);
+      _initCampusClients();
     }
     if (oldWidget.authService != widget.authService ||
         oldWidget.thirdPartyAuthService != widget.thirdPartyAuthService ||
@@ -517,7 +544,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.spendingAlertService?.dispose();
     widget.islandService?.dispose();
     _studentAllowanceService.dispose();
-    _campusClients.dispose();
+    if (_ownsCampusClients) _campusClients.dispose();
     widget.campusCardService.dispose();
     widget.wearEngineService?.dispose();
     super.dispose();
