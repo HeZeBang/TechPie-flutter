@@ -84,12 +84,10 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     });
     final cards = runtime.cards;
     if (cards is CardSnapshotSource) {
-      _cardSubscription = (cards as CardSnapshotSource).snapshots.listen((card) {
-        _applyCachedBalance(card?.balance);
-      });
+      _cardSubscription = (cards as CardSnapshotSource).snapshots.listen(_applyCachedCard);
     }
     if (cards is CacheFirstCardRepository) {
-      unawaited(_hydrateCachedBalance(cards));
+      unawaited(_hydrateCachedCard(cards));
     }
     if (kDebugMode) {
       debugPrint('[ecard] runtime built ${watch.elapsedMilliseconds}ms');
@@ -177,6 +175,7 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
   StreamSubscription<CampusCard?>? _cardSubscription;
   String? _maskedOpenId;
   MoneyFen? _cachedBalance;
+  String? _cachedOwnerName;
   EcardOpenIdChannel _channel = EcardOpenIdChannel.wechat;
   EcardOpenIdChannel get openIdChannel => _channel;
   bool _busy = false;
@@ -186,21 +185,26 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
   bool get configured => _maskedOpenId != null;
   String? get maskedOpenId => _maskedOpenId;
   MoneyFen? get cachedBalance => configured ? _cachedBalance : null;
+  String? get cachedOwnerName => configured ? _cachedOwnerName : null;
   Object? get lastError => _lastError;
   AppRuntime get runtime => _runtime;
 
-  void _applyCachedBalance(MoneyFen? balance) {
-    if (_cachedBalance == balance) return;
+  void _applyCachedCard(CampusCard? card) {
+    final balance = card?.balance;
+    final trimmedOwner = card?.ownerName.trim() ?? '';
+    final ownerName = trimmedOwner.isEmpty ? null : trimmedOwner;
+    if (_cachedBalance == balance && _cachedOwnerName == ownerName) return;
     _cachedBalance = balance;
+    _cachedOwnerName = ownerName;
     notifyListeners();
   }
 
-  Future<void> _hydrateCachedBalance(CacheFirstCardRepository cards) async {
+  Future<void> _hydrateCachedCard(CacheFirstCardRepository cards) async {
     try {
       final cached = await cards.readCachedCard();
-      if (cached != null) _applyCachedBalance(cached.balance);
+      if (cached != null) _applyCachedCard(cached);
     } catch (_) {
-      // Optional home balance preview degrades cleanly when cache is unavailable.
+      // Optional home balance & name preview degrades cleanly when cache is unavailable.
     }
   }
 
@@ -209,10 +213,19 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     final masked = _maskOpenId(openId);
     final channel = await _sessionStore.readOpenIdChannel();
     final clearedBalance = masked == null && _cachedBalance != null;
-    if (_maskedOpenId == masked && _channel == channel && !clearedBalance) return;
+    final clearedOwnerName = masked == null && _cachedOwnerName != null;
+    if (_maskedOpenId == masked &&
+        _channel == channel &&
+        !clearedBalance &&
+        !clearedOwnerName) {
+      return;
+    }
     _channel = channel;
     _maskedOpenId = masked;
-    if (masked == null) _cachedBalance = null;
+    if (masked == null) {
+      _cachedBalance = null;
+      _cachedOwnerName = null;
+    }
     notifyListeners();
   }
 

@@ -17,9 +17,11 @@ import '../services/campus_card_service.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
 import '../services/storage_service.dart';
+import '../services/third_party_auth_service.dart';
 import '../theme/theme.dart';
 import '../utils/adaptive_motion.dart';
 import '../utils/haptics.dart';
+import '../utils/user_display_name.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -46,6 +48,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late ScheduleService _schedule;
   late AssignmentService _assignments;
   late AuthService _auth;
+  late ThirdPartyAuthService _tpAuth;
+  late CampusCardService _campusCard;
   List<Course> _todayCourses = [];
   List<Period> _periods = defaultPeriods.toList();
   bool _initialized = false;
@@ -86,9 +90,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _schedule = sp.scheduleService;
       _assignments = sp.assignmentService;
       _auth = sp.authService;
+      _tpAuth = sp.thirdPartyAuthService;
+      _campusCard = sp.campusCardService;
       _schedule.addListener(_rebuild);
       _assignments.addListener(_onAssignmentsChanged);
       _auth.addListener(_onAuthChanged);
+      _tpAuth.addListener(_onAuthChanged);
+      _campusCard.addListener(_onAuthChanged);
       _doRebuild();
       _refreshTimer = Timer.periodic(
         const Duration(minutes: 1),
@@ -103,6 +111,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _schedule.removeListener(_rebuild);
     _assignments.removeListener(_onAssignmentsChanged);
     _auth.removeListener(_onAuthChanged);
+    _tpAuth.removeListener(_onAuthChanged);
+    _campusCard.removeListener(_onAuthChanged);
     _staggerController?.dispose();
     super.dispose();
   }
@@ -266,26 +276,38 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return '晚上好';
   }
 
-  static String _greetingTitle(DateTime now, AuthService auth) {
+  static String _resolvedName(
+    AuthService auth,
+    ThirdPartyAuthService tpAuth,
+    CampusCardService campusCard,
+  ) {
+    if (!auth.isLoggedIn || auth.session == null) return '';
+    return resolveUserDisplayName(
+      session: auth.session,
+      idsRealName: tpAuth.idsAccount?.name,
+      campusCardOwnerName: campusCard.cachedOwnerName,
+    );
+  }
+
+  static String _greetingTitle(
+    DateTime now,
+    AuthService auth,
+    ThirdPartyAuthService tpAuth,
+    CampusCardService campusCard,
+  ) {
     final base = _greeting(now);
-    final session = auth.session;
-    if (!auth.isLoggedIn || session == null) return base;
-    final name = session.userName.trim().isNotEmpty
-        ? session.userName.trim()
-        : session.userId.trim();
+    final name = _resolvedName(auth, tpAuth, campusCard);
     if (name.isEmpty) return base;
     return '$base，$name';
   }
 
-  static String _avatarLabel(AuthService auth) {
-    if (!auth.isLoggedIn) return 'GP';
-    final name = auth.session?.userName.trim() ?? '';
-    if (name.isEmpty) return 'GP';
-    final runes = name.runes.toList();
-    if (runes.first > 127) {
-      return String.fromCharCode(runes.first);
-    }
-    return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
+  static String _avatarLabel(
+    AuthService auth,
+    ThirdPartyAuthService tpAuth,
+    CampusCardService campusCard,
+  ) {
+    final name = _resolvedName(auth, tpAuth, campusCard);
+    return userAvatarLabel(name);
   }
 
   // ── Debug controls ──
@@ -354,6 +376,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final colors = context.tpColors;
     final sp = ServiceProvider.of(context);
     final auth = sp.authService;
+    final tpAuth = sp.thirdPartyAuthService;
     final storage = sp.storageService;
     final campusCard = sp.campusCardService;
     final isDebug = storage.debugMode;
@@ -372,10 +395,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final header = TpPageHeader(
       key: const ValueKey('home.greeting-header'),
       subtitle: dateSubtitle,
-      title: _greetingTitle(now, auth),
+      title: _greetingTitle(now, auth, tpAuth, campusCard),
       trailing: TpAvatarBadge(
         key: const ValueKey('home.avatar'),
-        text: _avatarLabel(auth),
+        text: _avatarLabel(auth, tpAuth, campusCard),
         tooltip: auth.isLoggedIn ? '我的' : '登录',
         onTap: () {
           if (auth.isLoggedIn) {

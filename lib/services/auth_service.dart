@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../models/user_session.dart';
+import '../utils/user_display_name.dart';
 import 'api_base_url.dart';
 import 'debug_logger.dart';
 import 'http_client.dart';
@@ -173,7 +174,12 @@ class AuthService extends ChangeNotifier {
           (tokens.refreshToken != null && tokens.refreshToken!.isNotEmpty)
               ? tokens.refreshToken!
               : refreshToken;
+      final jwtDisplayName = casdoorDisplayNameFromJwt(
+        tokens.accessToken,
+        currentSessionUserName: session.userName,
+      );
       _session = session.copyWith(
+        userName: jwtDisplayName ?? session.userName,
         geekpieToken: tokens.accessToken,
         geekpieExpiresAt: tokens.expiresAt ?? session.geekpieExpiresAt,
         geekpieRefreshToken: nextRefreshToken,
@@ -243,9 +249,16 @@ class AuthService extends ChangeNotifier {
         throw Exception(data['error'] as String? ?? 'Login failed');
       }
 
+      final rawUserName = data['userName'] as String? ?? '';
+      final resolvedUserName = casdoorDisplayNameFromJwt(
+            tokens.accessToken,
+            currentSessionUserName: rawUserName,
+          ) ??
+          rawUserName;
+
       _session = UserSession(
         userId: data['userId'] as String? ?? '',
-        userName: data['userName'] as String? ?? '',
+        userName: resolvedUserName,
         schoolName: '上海科技大学',
         createdAt: DateTime.now(),
         geekpieToken: tokens.accessToken,
