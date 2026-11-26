@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/tp_colors.dart';
 import '../../theme/tp_tokens.dart';
 import '../../theme/tp_typography.dart';
+import 'tp_tap_surface.dart';
 
 /// List row with a 3dp vertical accent bar on the left, bold title, muted
 /// metadata, and an optional trailing badge or chevron.
@@ -90,13 +91,9 @@ class TpAccentRow extends StatelessWidget {
         if (onTap == null)
           row
         else
-          InkWell(
+          TpTapSurface(
+            style: TpTapFeedbackStyle.row,
             onTap: onTap,
-            hoverColor: colors.textPrimary.withValues(
-              alpha: colors.isDark ? 0.06 : 0.04,
-            ),
-            splashColor: colors.brandSoft,
-            highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
             child: row,
           ),
         if (showDivider)

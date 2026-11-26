@@ -1524,24 +1524,30 @@ class _HomeHeaderEditButton extends StatelessWidget {
           width: 44,
           height: 44,
           child: Center(
-            child: Material(
-              color: isEditing ? colors.brandInk : colors.surfaceSubtle,
-              shape: CircleBorder(
-                side: isEditing
-                    ? BorderSide.none
-                    : BorderSide(color: colors.divider, width: 0.75),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: onPressed,
-                child: SizedBox(
-                  width: 38,
-                  height: 38,
-                  child: Icon(
-                    isEditing ? TpIcons.check : TpIcons.dashboard,
-                    size: TpTokens.iconS,
-                    color: isEditing ? colors.onBrand : colors.textSecondary,
+            child: TpPressScale(
+              pressedScale: 0.92,
+              child: Material(
+                color: isEditing ? colors.brandInk : colors.surfaceSubtle,
+                shape: CircleBorder(
+                  side: isEditing
+                      ? BorderSide.none
+                      : BorderSide(color: colors.divider, width: 0.75),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: TpTapSurface(
+                  style: TpTapFeedbackStyle.button,
+                  customBorder: const CircleBorder(),
+                  pressedColor: isEditing ? colors.onBrand : null,
+                  enablePressScale: false,
+                  onTap: onPressed,
+                  child: SizedBox(
+                    width: 38,
+                    height: 38,
+                    child: Icon(
+                      isEditing ? TpIcons.check : TpIcons.dashboard,
+                      size: TpTokens.iconS,
+                      color: isEditing ? colors.onBrand : colors.textSecondary,
+                    ),
                   ),
                 ),
               ),
@@ -1652,24 +1658,31 @@ class _HomeEditPillButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: label,
-      child: Material(
-        color: bg,
-        borderRadius: BorderRadius.circular(TpTokens.radiusPill),
-        child: InkWell(
+      child: TpPressScale(
+        pressedScale: 0.95,
+        child: Material(
+          color: bg,
           borderRadius: BorderRadius.circular(TpTokens.radiusPill),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: TpTokens.space2 + 2,
-              vertical: 7,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 13, color: fg),
-                const SizedBox(width: TpTokens.space1),
-                Text(label, style: TpTypography.badge(fg)),
-              ],
+          clipBehavior: Clip.antiAlias,
+          child: TpTapSurface(
+            style: TpTapFeedbackStyle.button,
+            borderRadius: BorderRadius.circular(TpTokens.radiusPill),
+            pressedColor: primary ? colors.onBrand : null,
+            enablePressScale: false,
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: TpTokens.space2 + 2,
+                vertical: 7,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 13, color: fg),
+                  const SizedBox(width: TpTokens.space1),
+                  Text(label, style: TpTypography.badge(fg)),
+                ],
+              ),
             ),
           ),
         ),

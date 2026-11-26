@@ -4,6 +4,8 @@ import '../../theme/tp_colors.dart';
 import '../../theme/tp_density.dart';
 import '../../theme/tp_tokens.dart';
 import '../../theme/tp_typography.dart';
+import 'tp_press_scale.dart';
+import 'tp_tap_surface.dart';
 
 /// Unified surface-contrast card container for TechPie.
 ///
@@ -25,6 +27,8 @@ class TpCard extends StatelessWidget {
     this.borderColor,
     this.borderWidth = 0.75,
     this.borderRadius = TpTokens.radiusM,
+    this.enablePressScale = true,
+    this.pressedScale = 0.98,
   });
 
   final Widget child;
@@ -39,6 +43,8 @@ class TpCard extends StatelessWidget {
   final Color? borderColor;
   final double borderWidth;
   final double borderRadius;
+  final bool enablePressScale;
+  final double pressedScale;
 
   @override
   Widget build(BuildContext context) {
@@ -99,23 +105,26 @@ class TpCard extends StatelessWidget {
 
     final interactive = onTap != null || onLongPress != null;
 
-    return Material(
+    final card = Material(
       color: color ?? colors.surface,
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: !interactive
           ? content
-          : InkWell(
+          : TpTapSurface(
+              style: TpTapFeedbackStyle.card,
+              borderRadius: radius,
               onTap: onTap,
               onLongPress: onLongPress,
-              borderRadius: radius,
-              hoverColor: colors.textPrimary.withValues(
-                alpha: colors.isDark ? 0.06 : 0.04,
-              ),
-              splashColor: colors.brandSoft,
-              highlightColor: colors.surfacePressed.withValues(alpha: 0.4),
+              enablePressScale: false,
               child: content,
             ),
+    );
+
+    if (!interactive || !enablePressScale) return card;
+    return TpPressScale(
+      pressedScale: pressedScale,
+      child: card,
     );
   }
 }

@@ -314,6 +314,7 @@ class TpCampusCardStrip extends StatelessWidget {
             ? Colors.white.withValues(alpha: 0.14)
             : Colors.black.withValues(alpha: 0.06),
         onTap: onOpenPayCode,
+        enablePressScale: false,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.maxWidth.isFinite
@@ -352,6 +353,7 @@ class TpCampusCardStrip extends StatelessWidget {
       child: TpCard(
         key: const ValueKey('home.campus-card-strip'),
         onTap: onOpenPayCode,
+        enablePressScale: false,
         padding: const EdgeInsets.symmetric(
           horizontal: TpTokens.cardPaddingHorizontal,
           vertical: TpTokens.space1,

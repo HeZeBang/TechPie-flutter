@@ -4,6 +4,7 @@ import '../../theme/tp_colors.dart';
 import '../../theme/tp_tokens.dart';
 import '../../theme/tp_typography.dart';
 import 'tp_press_scale.dart';
+import 'tp_tap_surface.dart';
 
 class TpFeatureGridItem {
   const TpFeatureGridItem({
@@ -92,14 +93,11 @@ class _FeatureTile extends StatelessWidget {
       pressedScale: 0.95,
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
+        child: TpTapSurface(
           key: item.key,
+          style: TpTapFeedbackStyle.tile,
           borderRadius: radius,
-          hoverColor: colors.textPrimary.withValues(
-            alpha: colors.isDark ? 0.06 : 0.04,
-          ),
-          splashColor: colors.brandSoft,
-          highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
+          enablePressScale: false,
           onTap: item.onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(

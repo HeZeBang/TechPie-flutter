@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../theme/tp_colors.dart';
 import '../../theme/tp_tokens.dart';
 import '../../theme/tp_typography.dart';
+import 'tp_press_scale.dart';
+import 'tp_tap_surface.dart';
 
 /// Compact typographic header for root screens (subtitle + bold title + action).
 class TpPageHeader extends StatelessWidget {
@@ -104,17 +106,24 @@ class TpAvatarBadge extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: onTap == null
           ? content
-          : InkWell(
-              onTap: onTap,
+          : TpTapSurface(
+              style: TpTapFeedbackStyle.button,
               customBorder: const CircleBorder(),
-              hoverColor: colors.onBrand.withValues(alpha: 0.12),
-              highlightColor: colors.onBrand.withValues(alpha: 0.16),
-              splashColor: colors.onBrand.withValues(alpha: 0.22),
+              pressedColor: colors.onBrand,
+              enablePressScale: false,
+              onTap: onTap,
               child: content,
             ),
     );
 
-    if (tooltip == null) return badge;
-    return Tooltip(message: tooltip!, child: badge);
+    final interactiveBadge = onTap == null
+        ? badge
+        : TpPressScale(
+            pressedScale: 0.92,
+            child: badge,
+          );
+
+    if (tooltip == null) return interactiveBadge;
+    return Tooltip(message: tooltip!, child: interactiveBadge);
   }
 }

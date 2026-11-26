@@ -211,6 +211,65 @@ class ThemeService extends ChangeNotifier {
       canvasColor: tp.surface,
       cardColor: tp.surface,
       dividerColor: tp.divider,
+      splashFactory: _usesIosTheme ? NoSplash.splashFactory : null,
+      splashColor: _usesIosTheme ? Colors.transparent : null,
+      highlightColor: _usesIosTheme
+          ? tp.surfacePressed.withValues(alpha: isDark ? 0.85 : 0.90)
+          : null,
+      filledButtonTheme: _usesIosTheme
+          ? FilledButtonThemeData(
+              style: ButtonStyle(
+                splashFactory: NoSplash.splashFactory,
+                overlayColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.pressed)) {
+                    return (isDark ? Colors.white : Colors.black)
+                        .withValues(alpha: 0.18);
+                  }
+                  return null;
+                }),
+              ),
+            )
+          : null,
+      outlinedButtonTheme: _usesIosTheme
+          ? OutlinedButtonThemeData(
+              style: ButtonStyle(
+                splashFactory: NoSplash.splashFactory,
+                overlayColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.pressed)) {
+                    return tp.brand.withValues(alpha: isDark ? 0.22 : 0.14);
+                  }
+                  return null;
+                }),
+              ),
+            )
+          : null,
+      textButtonTheme: _usesIosTheme
+          ? TextButtonThemeData(
+              style: ButtonStyle(
+                splashFactory: NoSplash.splashFactory,
+                overlayColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.pressed)) {
+                    return tp.brand.withValues(alpha: isDark ? 0.22 : 0.14);
+                  }
+                  return null;
+                }),
+              ),
+            )
+          : null,
+      iconButtonTheme: _usesIosTheme
+          ? IconButtonThemeData(
+              style: ButtonStyle(
+                splashFactory: NoSplash.splashFactory,
+                overlayColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.pressed)) {
+                    return tp.textPrimary
+                        .withValues(alpha: isDark ? 0.18 : 0.12);
+                  }
+                  return null;
+                }),
+              ),
+            )
+          : null,
       dividerTheme: DividerThemeData(
         color: tp.divider,
         thickness: 0.5,

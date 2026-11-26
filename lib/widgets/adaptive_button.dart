@@ -4,6 +4,7 @@ import 'package:techpie/theme/theme.dart';
 import 'package:techpie/utils/platform.dart';
 
 import 'cupertino_symbol_icons.dart';
+import 'design_system/tp_press_scale.dart';
 
 enum AdaptiveButtonRole { prominent, standard, plain, destructive }
 
@@ -65,15 +66,16 @@ class AdaptiveButton extends StatelessWidget {
       enabled: enabled,
       child: Opacity(
         opacity: enabled || loading ? 1.0 : 0.45,
-        child: SizedBox(
-          width: buttonWidth,
-          height: buttonHeight,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: background,
-              borderRadius: BorderRadius.circular(TpTokens.radiusS),
-            ),
+        child: TpPressScale(
+          enabled: enabled,
+          pressedScale: 0.97,
+          child: SizedBox(
+            width: buttonWidth,
+            height: buttonHeight,
             child: CupertinoButton(
+              color: background,
+              disabledColor: background ?? Colors.transparent,
+              pressedOpacity: background != null ? 0.62 : 0.40,
               minimumSize: const Size.square(iosMinimumInteractiveDimension),
               padding: EdgeInsets.symmetric(horizontal: hasLabel ? 16 : 0),
               borderRadius: BorderRadius.circular(TpTokens.radiusS),

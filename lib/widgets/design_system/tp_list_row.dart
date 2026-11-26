@@ -5,6 +5,7 @@ import '../../theme/tp_density.dart';
 import '../../theme/tp_icons.dart';
 import '../../theme/tp_tokens.dart';
 import '../../theme/tp_typography.dart';
+import 'tp_tap_surface.dart';
 
 /// Unified grouped list row for settings, account hubs, and detail sheets.
 class TpListRow extends StatelessWidget {
@@ -130,13 +131,9 @@ class TpListRow extends StatelessWidget {
         if (onTap == null)
           row
         else
-          InkWell(
+          TpTapSurface(
+            style: TpTapFeedbackStyle.row,
             onTap: onTap,
-            hoverColor: colors.textPrimary.withValues(
-              alpha: colors.isDark ? 0.06 : 0.04,
-            ),
-            splashColor: colors.brandSoft,
-            highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
             child: row,
           ),
         if (showDivider)

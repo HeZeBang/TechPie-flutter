@@ -118,39 +118,46 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
                         label: '编辑首页快捷',
                         child: Tooltip(
                           message: '编辑首页快捷',
-                          child: Material(
-                            key: const ValueKey('campus_services.edit-shortcuts'),
-                            color: colors.surface,
-                            shape: StadiumBorder(
-                              side: BorderSide(color: colors.divider),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: InkWell(
-                              customBorder: const StadiumBorder(),
-                              onTap: () => _openShortcutEditor(context),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: TpTokens.space3,
-                                  vertical: TpTokens.space2,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      TpIcons.sliders,
-                                      size: TpTokens.iconS,
-                                      color: colors.brandInk,
-                                    ),
-                                    const SizedBox(width: TpTokens.space2),
-                                    Text(
-                                      '首页快捷',
-                                      style: TpTypography.itemTitle(colors)
-                                          .copyWith(
-                                        fontSize: 13.5,
-                                        color: colors.textPrimary,
+                          child: TpPressScale(
+                            pressedScale: 0.96,
+                            child: Material(
+                              key: const ValueKey(
+                                'campus_services.edit-shortcuts',
+                              ),
+                              color: colors.surface,
+                              shape: StadiumBorder(
+                                side: BorderSide(color: colors.divider),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: TpTapSurface(
+                                style: TpTapFeedbackStyle.button,
+                                customBorder: const StadiumBorder(),
+                                enablePressScale: false,
+                                onTap: () => _openShortcutEditor(context),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: TpTokens.space3,
+                                    vertical: TpTokens.space2,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        TpIcons.sliders,
+                                        size: TpTokens.iconS,
+                                        color: colors.brandInk,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: TpTokens.space2),
+                                      Text(
+                                        '首页快捷',
+                                        style: TpTypography.itemTitle(colors)
+                                            .copyWith(
+                                          fontSize: 13.5,
+                                          color: colors.textPrimary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
