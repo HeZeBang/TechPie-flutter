@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/home_layout.dart';
 import '../../theme/theme.dart';
+import '../../utils/adaptive_motion.dart';
+import '../../utils/haptics.dart';
 import '../adaptive_button.dart';
 import '../adaptive_navigation_scaffold.dart';
 import '../design_system/design_system.dart';
@@ -247,49 +251,57 @@ class _StyleOptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    return Material(
-      color: selected ? colors.brandSoft : colors.surfaceSubtle,
-      borderRadius: BorderRadius.circular(TpTokens.radiusM),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(TpTokens.radiusM),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(TpTokens.space3),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(TpTokens.radiusM),
-            border: Border.all(
-              color: selected ? colors.brandInk : colors.divider,
-              width: selected ? 1.5 : 0.75,
-            ),
+    final radius = BorderRadius.circular(TpTokens.radiusM);
+    final duration = appAnimationDuration(
+      context,
+      const Duration(milliseconds: 160),
+    );
+    return TpTapSurface(
+      style: TpTapFeedbackStyle.card,
+      borderRadius: radius,
+      onTap: () {
+        unawaited(AppHaptics.play(AppHaptics.selection));
+        onTap();
+      },
+      child: AnimatedContainer(
+        duration: duration,
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.all(TpTokens.space3),
+        decoration: BoxDecoration(
+          color: selected ? colors.brandSoft : colors.surfaceSubtle,
+          borderRadius: radius,
+          border: Border.all(
+            color: selected ? colors.brandInk : colors.divider,
+            width: selected ? 1.5 : 0.75,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: TpTypography.itemTitle(colors).copyWith(
-                        fontSize: 14,
-                        color: selected ? colors.brandInk : colors.textPrimary,
-                      ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TpTypography.itemTitle(colors).copyWith(
+                      fontSize: 14,
+                      color: selected ? colors.brandInk : colors.textPrimary,
                     ),
                   ),
-                  if (selected)
-                    Icon(TpIcons.checkCircle, size: 16, color: colors.brandInk),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: TpTypography.itemMeta(colors),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
+                ),
+                if (selected)
+                  Icon(TpIcons.checkCircle, size: 16, color: colors.brandInk),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TpTypography.itemMeta(colors),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );
@@ -327,7 +339,6 @@ class _GalleryWidgetRow extends StatelessWidget {
                 const TpBadge(
                   label: '已添加',
                   tone: TpBadgeTone.success,
-                  icon: TpIcons.check,
                 ),
                 const SizedBox(width: TpTokens.space1),
                 AdaptiveButton(

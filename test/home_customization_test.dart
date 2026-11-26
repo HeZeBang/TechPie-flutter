@@ -40,6 +40,10 @@ void main() {
       tester.platformDispatcher.accessibilityFeaturesTestValue =
           const FakeAccessibilityFeatures(disableAnimations: true);
     }
+    const feedbackChannel = MethodChannel('techpie/feedback');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(feedbackChannel, (_) async => null);
 
     try {
       SharedPreferences.setMockInitialValues({
@@ -80,6 +84,7 @@ void main() {
         http.close();
       }
     } finally {
+      messenger.setMockMethodCallHandler(feedbackChannel, null);
       debugDefaultTargetPlatformOverride = null;
       if (disableAnimations) {
         tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
@@ -533,6 +538,276 @@ void main() {
           findsNothing,
         );
         expect(find.byKey(const ValueKey('home.edit-bar')), findsNothing);
+      },
+    );
+  });
+
+  testWidgets(
+      'mobile immediate swipe scrolls cleanly without triggering reorder or Edit Mode',
+      (tester) async {
+    await runWithHomeApp(
+      tester,
+      size: const Size(390, 600),
+      platformOverride: TargetPlatform.iOS,
+      body: (storage) async {
+        final scrollableFinder = find.descendant(
+          of: find.byKey(const ValueKey('home.scroll-body')),
+          matching: find.byType(Scrollable),
+        );
+        final scrollableState = tester.state<ScrollableState>(scrollableFinder);
+        expect(scrollableState.position.pixels, 0);
+
+        await tester.drag(
+          find.byKey(const ValueKey('home.today-courses')),
+          const Offset(0, -180),
+        );
+        await tester.pumpAndSettle();
+
+        expect(scrollableState.position.pixels, greaterThan(0));
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsNothing);
+        expect(
+          find.byKey(const ValueKey('home.mobile-drag-proxy-today_courses')),
+          findsNothing,
+        );
+        expect(storage.homeMobileLayout.order, HomeMobileLayout.defaultOrder);
+      },
+    );
+  });
+
+  testWidgets(
+      'mobile press-and-hold outside Edit Mode lifts and reorders tall/short cards cleanly then enters Edit Mode',
+      (tester) async {
+    await runWithHomeApp(
+      tester,
+      size: const Size(390, 844),
+      platformOverride: TargetPlatform.iOS,
+      body: (storage) async {
+        final coursesRect =
+            tester.getRect(find.byKey(const ValueKey('home.today-courses')));
+        final campusRect = tester
+            .getRect(find.byKey(const ValueKey('home.campus-card-strip')));
+        final coursesCenter = coursesRect.center;
+        // Overshoot past the top of short compact campusCard (~75px) to verify
+        // monotonic slot selection never snaps back like SliverReorderableList.
+        final targetPointerY = campusRect.top - 24;
+
+        final gesture = await tester.startGesture(coursesCenter);
+        await tester.pump(const Duration(milliseconds: 420));
+
+        // Card lifts past hold delay without shifting the list into Edit Mode mid-drag.
+        expect(
+          find.byKey(const ValueKey('home.mobile-drag-proxy-today_courses')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsNothing);
+
+        final totalDeltaY = targetPointerY - coursesCenter.dy;
+        for (var step = 1; step <= 12; step++) {
+          await gesture.moveTo(
+            Offset(
+              coursesCenter.dx,
+              coursesCenter.dy + totalDeltaY * (step / 12),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(
+          storage.homeMobileLayout.order.first,
+          HomeWidgetId.todayCourses,
+        );
+        final coursesTop =
+            tester.getTopLeft(find.byKey(const ValueKey('home.today-courses'))).dy;
+        final cardTop = tester
+            .getTopLeft(find.byKey(const ValueKey('home.campus-card-strip')))
+            .dy;
+        expect(coursesTop, lessThan(cardTop));
+        expect(
+          find.byKey(const ValueKey('home.mobile-drag-proxy-today_courses')),
+          findsNothing,
+        );
+        // Settling the continuous drag automatically enters Edit Mode for fine-tuning.
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsOneWidget);
+
+        // Drag short campusCard (index 1) UP past taller todayCourses (index 0)
+        // in Edit Mode, then drag it right back DOWN past todayCourses.
+        final coursesItemRect = tester
+            .getRect(find.byKey(const ValueKey('home.mobile-item-today_courses')));
+        final campusItemCenter = tester
+            .getCenter(find.byKey(const ValueKey('home.campus-card-strip')));
+        final gUp = await tester.startGesture(campusItemCenter);
+        await tester.pump(const Duration(milliseconds: 260));
+        expect(
+          find.byKey(const ValueKey('home.mobile-drag-proxy-campus_card')),
+          findsOneWidget,
+        );
+        final upDelta = (coursesItemRect.top + 24) - campusItemCenter.dy;
+        for (var step = 1; step <= 12; step++) {
+          await gUp.moveTo(
+            Offset(
+              campusItemCenter.dx,
+              campusItemCenter.dy + upDelta * (step / 12),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        await gUp.up();
+        await tester.pumpAndSettle();
+        expect(
+          storage.homeMobileLayout.order.first,
+          HomeWidgetId.campusCard,
+        );
+        expect(storage.homeMobileLayout.order[1], HomeWidgetId.todayCourses);
+
+        // Now drag short campusCard (index 0) DOWN past taller todayCourses (index 1).
+        final campusCenterAfterUp = tester
+            .getCenter(find.byKey(const ValueKey('home.campus-card-strip')));
+        final coursesBottom = tester
+            .getRect(find.byKey(const ValueKey('home.mobile-item-today_courses')))
+            .bottom;
+        final gDown = await tester.startGesture(campusCenterAfterUp);
+        await tester.pump(const Duration(milliseconds: 260));
+        expect(
+          find.byKey(const ValueKey('home.mobile-drag-proxy-campus_card')),
+          findsOneWidget,
+        );
+        final downDelta = (coursesBottom - 16) - campusCenterAfterUp.dy;
+        for (var step = 1; step <= 12; step++) {
+          await gDown.moveTo(
+            Offset(
+              campusCenterAfterUp.dx,
+              campusCenterAfterUp.dy + downDelta * (step / 12),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        await gDown.up();
+        await tester.pumpAndSettle();
+        expect(
+          storage.homeMobileLayout.order.first,
+          HomeWidgetId.todayCourses,
+        );
+        expect(storage.homeMobileLayout.order[1], HomeWidgetId.campusCard);
+      },
+    );
+  });
+
+  testWidgets(
+      'mobile Edit Mode hides duplicate confirm/reset buttons at 320px and supports card-body hold-drag vs immediate scroll',
+      (tester) async {
+    await runWithHomeApp(
+      tester,
+      size: const Size(320, 600),
+      platformOverride: TargetPlatform.iOS,
+      body: (storage) async {
+        await tester.tap(find.byKey(const ValueKey('home.edit-toggle')));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsOneWidget);
+        expect(find.byKey(const ValueKey('home.edit-done')), findsOneWidget);
+        expect(find.byKey(const ValueKey('home.edit-toggle')), findsNothing);
+        expect(find.byKey(const ValueKey('home.avatar')), findsNothing);
+        expect(find.byKey(const ValueKey('home.reset-layout')), findsNothing);
+
+        final scrollableFinder = find.descendant(
+          of: find.byKey(const ValueKey('home.scroll-body')),
+          matching: find.byType(Scrollable),
+        );
+        final scrollableState = tester.state<ScrollableState>(scrollableFinder);
+
+        // Immediate swipe across a card body scrolls cleanly inside Edit Mode.
+        await tester.drag(
+          find.byKey(const ValueKey('home.mobile-item-today_courses')),
+          const Offset(0, -140),
+        );
+        await tester.pumpAndSettle();
+        expect(scrollableState.position.pixels, greaterThan(0));
+        expect(storage.homeMobileLayout.order, HomeMobileLayout.defaultOrder);
+
+        // Scroll back to top before testing hold-drag on the card body.
+        await tester.drag(
+          find.byKey(const ValueKey('home.mobile-item-today_courses')),
+          const Offset(0, 140),
+        );
+        await tester.pumpAndSettle();
+
+        final coursesRectC =
+            tester.getRect(find.byKey(const ValueKey('home.today-courses')));
+        final campusRectC = tester
+            .getRect(find.byKey(const ValueKey('home.campus-card-strip')));
+        final coursesCenter = coursesRectC.center;
+        final targetY = campusRectC.top - 24;
+
+        final gesture = await tester.startGesture(coursesCenter);
+        await tester.pump(const Duration(milliseconds: 280));
+        expect(
+          find.byKey(const ValueKey('home.mobile-drag-proxy-today_courses')),
+          findsOneWidget,
+        );
+
+        final totalDeltaY = targetY - coursesCenter.dy;
+        for (var step = 1; step <= 12; step++) {
+          await gesture.moveTo(
+            Offset(
+              coursesCenter.dx,
+              coursesCenter.dy + totalDeltaY * (step / 12),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          storage.homeMobileLayout.order.first,
+          HomeWidgetId.todayCourses,
+        );
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsOneWidget);
+      },
+    );
+  });
+
+  testWidgets(
+      'mobile single-widget edge case enters Edit Mode cleanly and quick tap leaves no pending timers',
+      (tester) async {
+    await runWithHomeApp(
+      tester,
+      size: const Size(390, 844),
+      platformOverride: TargetPlatform.iOS,
+      body: (storage) async {
+        await tester.tap(find.byKey(const ValueKey('home.edit-toggle')));
+        await tester.pumpAndSettle();
+
+        for (final id in [
+          HomeWidgetId.campusCard,
+          HomeWidgetId.deadlines,
+          HomeWidgetId.quickActions,
+        ]) {
+          final finder = find.byKey(ValueKey('home.remove-${id.key}'));
+          await tester.ensureVisible(finder);
+          await tester.tap(finder);
+          await tester.pumpAndSettle();
+          adaptiveFeedbackHostKey.currentState?.dismiss();
+          await tester.pumpAndSettle();
+        }
+        expect(storage.homeMobileLayout.order, [HomeWidgetId.todayCourses]);
+
+        await tester.tap(find.byKey(const ValueKey('home.edit-done')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsNothing);
+
+        await tester.longPress(find.byKey(const ValueKey('home.today-courses')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('home.edit-bar')), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('home.edit-done')));
+        await tester.pump();
       },
     );
   });

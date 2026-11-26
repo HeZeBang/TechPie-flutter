@@ -35,6 +35,7 @@ import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/app_shell/desktop/desktop_shell.dart';
 import '../widgets/design_system/design_system.dart';
 import '../widgets/home/home_bento_editor.dart';
+import '../widgets/home/home_mobile_reorder_list.dart';
 import '../widgets/home/home_widget_chrome.dart';
 import '../widgets/home/home_widget_gallery_sheet.dart';
 import '../widgets/page_refresh.dart';
@@ -81,6 +82,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   HomeMobileLayout _mobileLayout = HomeMobileLayout.defaults();
   HomeDesktopLayout _desktopLayout = HomeDesktopLayout.defaults();
   bool _isEditing = false;
+  bool _pendingEditAfterMobileDrag = false;
+  bool _mobileDragEndedNaturally = false;
   final ValueNotifier<HomeGalleryState> _galleryState = ValueNotifier(
     const HomeGalleryState(
       visibleIds: {
@@ -223,6 +226,50 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     setState(() => _desktopLayout = next);
     _syncGalleryNotifier(true);
     unawaited(_storage.setHomeDesktopLayout(next));
+  }
+
+  void _onMobileReorderStart(int index) {
+    unawaited(AppHaptics.play(AppHaptics.tabHold));
+    // Defer entering Edit Mode until the overlay proxy unmounts after drop so
+    // the pinned edit bar & card chrome never jump the list mid-gesture.
+    _pendingEditAfterMobileDrag = !_isEditing;
+    _mobileDragEndedNaturally = false;
+  }
+
+  void _onMobileReorderEnd(int index) {
+    _mobileDragEndedNaturally = true;
+  }
+
+  void _handleMobileDragProxyDisposed() {
+    final shouldEnterEdit =
+        _pendingEditAfterMobileDrag && _mobileDragEndedNaturally;
+    _pendingEditAfterMobileDrag = false;
+    _mobileDragEndedNaturally = false;
+    if (!shouldEnterEdit || !mounted || _isEditing) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isEditing) return;
+      final isBento =
+          MediaQuery.sizeOf(context).width >= TpTokens.bentoBreakpoint;
+      if (!isBento) {
+        _enterEditMode(false);
+      }
+    });
+  }
+
+  Widget _buildMobileReorderProxy(
+    Widget child,
+    int index,
+    Animation<double> animation,
+  ) {
+    final id = (index >= 0 && index < _mobileLayout.order.length)
+        ? _mobileLayout.order[index]
+        : null;
+    return HomeMobileDragProxy(
+      key: id == null ? null : ValueKey('home.mobile-drag-proxy-${id.key}'),
+      animation: animation,
+      onDisposed: _handleMobileDragProxyDisposed,
+      child: child,
+    );
   }
 
   void _onMobileReorder(int oldIndex, int newIndex) {
@@ -634,32 +681,32 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       key: const ValueKey('home.greeting-header'),
       subtitle: dateSubtitle,
       title: _greetingTitle(now, auth, tpAuth, campusCard),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _HomeHeaderEditButton(
-            key: const ValueKey('home.edit-toggle'),
-            isEditing: _isEditing,
-            onPressed:
-                _isEditing ? _exitEditMode : () => _enterEditMode(isBento),
-          ),
-          if (showHeaderAvatar) ...[
-            const SizedBox(width: TpTokens.space1),
-            TpAvatarBadge(
-              key: const ValueKey('home.avatar'),
-              text: _avatarLabel(auth, tpAuth, campusCard),
-              tooltip: auth.isLoggedIn ? '我的' : '登录',
-              onTap: () {
-                if (auth.isLoggedIn) {
-                  appShellPendingTab.value = 3;
-                } else {
-                  unawaited(startUniAuthLogin(context));
-                }
-              },
+      trailing: _isEditing
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _HomeHeaderEditButton(
+                  key: const ValueKey('home.edit-toggle'),
+                  onPressed: () => _enterEditMode(isBento),
+                ),
+                if (showHeaderAvatar) ...[
+                  const SizedBox(width: TpTokens.space1),
+                  TpAvatarBadge(
+                    key: const ValueKey('home.avatar'),
+                    text: _avatarLabel(auth, tpAuth, campusCard),
+                    tooltip: auth.isLoggedIn ? '我的' : '登录',
+                    onTap: () {
+                      if (auth.isLoggedIn) {
+                        appShellPendingTab.value = 3;
+                      } else {
+                        unawaited(startUniAuthLogin(context));
+                      }
+                    },
+                  ),
+                ],
+              ],
             ),
-          ],
-        ],
-      ),
     );
     final effectiveCardStyle = isBento
         ? _desktopLayout.campusCardStyle
@@ -716,7 +763,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       child: _HomeEditBar(
                         isBento: isBento,
                         onOpenGallery: () => _openWidgetGallery(isBento),
-                        onReset: () => _resetLayout(isBento),
                         onDone: _exitEditMode,
                       ),
                     ),
@@ -814,20 +860,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             sidePad,
                             debugPanel != null ? 0 : bottomPad,
                           ),
-                          sliver: SliverReorderableList(
-                            itemCount: _mobileLayout.order.length,
-                            onReorder:
-                                _isEditing ? _onMobileReorder : (_, __) {},
-                            proxyDecorator: (child, index, animation) {
-                              return Material(
-                                color: Colors.transparent,
-                                elevation: 6,
-                                borderRadius:
-                                    BorderRadius.circular(TpTokens.radiusL),
-                                child: child,
-                              );
-                            },
-                            itemBuilder: (context, index) {
+                          sliver: SliverToBoxAdapter(
+                            child: HomeMobileReorderList(
+                              itemCount: _mobileLayout.order.length,
+                              onReorder: _onMobileReorder,
+                              onReorderStart: _onMobileReorderStart,
+                              onReorderEnd: _onMobileReorderEnd,
+                              proxyDecorator: _buildMobileReorderProxy,
+                              itemBuilder: (context, index) {
                               final id = _mobileLayout.order[index];
                               final isLast =
                                   index == _mobileLayout.order.length - 1;
@@ -864,6 +904,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 ),
                               );
                             },
+                            ),
                           ),
                         ),
                       if (debugPanel != null && (!isBento || isLayoutEmpty))
@@ -1503,17 +1544,15 @@ class _DebugChip extends StatelessWidget {
 class _HomeHeaderEditButton extends StatelessWidget {
   const _HomeHeaderEditButton({
     super.key,
-    required this.isEditing,
     required this.onPressed,
   });
 
-  final bool isEditing;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    final label = isEditing ? '完成编辑' : '定制主页';
+    const label = '定制主页';
 
     return Semantics(
       button: true,
@@ -1527,26 +1566,23 @@ class _HomeHeaderEditButton extends StatelessWidget {
             child: TpPressScale(
               pressedScale: 0.92,
               child: Material(
-                color: isEditing ? colors.brandInk : colors.surfaceSubtle,
+                color: colors.surfaceSubtle,
                 shape: CircleBorder(
-                  side: isEditing
-                      ? BorderSide.none
-                      : BorderSide(color: colors.divider, width: 0.75),
+                  side: BorderSide(color: colors.divider, width: 0.75),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: TpTapSurface(
                   style: TpTapFeedbackStyle.button,
                   customBorder: const CircleBorder(),
-                  pressedColor: isEditing ? colors.onBrand : null,
                   enablePressScale: false,
                   onTap: onPressed,
                   child: SizedBox(
                     width: 38,
                     height: 38,
                     child: Icon(
-                      isEditing ? TpIcons.check : TpIcons.dashboard,
+                      TpIcons.dashboard,
                       size: TpTokens.iconS,
-                      color: isEditing ? colors.onBrand : colors.textSecondary,
+                      color: colors.textSecondary,
                     ),
                   ),
                 ),
@@ -1563,13 +1599,11 @@ class _HomeEditBar extends StatelessWidget {
   const _HomeEditBar({
     required this.isBento,
     required this.onOpenGallery,
-    required this.onReset,
     required this.onDone,
   });
 
   final bool isBento;
   final VoidCallback onOpenGallery;
-  final VoidCallback onReset;
   final VoidCallback onDone;
 
   @override
@@ -1586,26 +1620,33 @@ class _HomeEditBar extends StatelessWidget {
           Icon(TpIcons.dashboard, size: TpTokens.iconS, color: colors.brandInk),
           const SizedBox(width: TpTokens.space2),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '编辑主页',
-                  style: TpTypography.itemTitle(colors).copyWith(fontSize: 13.5),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  isBento
-                      ? '拖动组件调整栏位（主页直接按住卡片也可拖动）'
-                      : '按住右侧手柄拖动排序（主页长按卡片可快速进入）',
-                  style: TpTypography.itemMeta(colors),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+            child: isBento
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '编辑主页',
+                        style: TpTypography.itemTitle(colors)
+                            .copyWith(fontSize: 13.5),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '拖动卡片调整栏位与顺序',
+                        style: TpTypography.itemMeta(colors),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  )
+                : Text(
+                    '编辑主页',
+                    style: TpTypography.itemTitle(colors)
+                        .copyWith(fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
           ),
           const SizedBox(width: TpTokens.space2),
           _HomeEditPillButton(
@@ -1614,17 +1655,9 @@ class _HomeEditBar extends StatelessWidget {
             label: '组件',
             onTap: onOpenGallery,
           ),
-          const SizedBox(width: TpTokens.space1 + 2),
-          _HomeEditPillButton(
-            key: const ValueKey('home.reset-layout'),
-            icon: TpIcons.reset,
-            label: '重置',
-            onTap: onReset,
-          ),
-          const SizedBox(width: TpTokens.space1 + 2),
+          const SizedBox(width: TpTokens.space2),
           _HomeEditPillButton(
             key: const ValueKey('home.edit-done'),
-            icon: TpIcons.check,
             label: '完成',
             primary: true,
             onTap: onDone,
@@ -1638,13 +1671,13 @@ class _HomeEditBar extends StatelessWidget {
 class _HomeEditPillButton extends StatelessWidget {
   const _HomeEditPillButton({
     super.key,
-    required this.icon,
+    this.icon,
     required this.label,
     required this.onTap,
     this.primary = false,
   });
 
-  final IconData icon;
+  final IconData? icon;
   final String label;
   final VoidCallback onTap;
   final bool primary;
@@ -1659,7 +1692,7 @@ class _HomeEditPillButton extends StatelessWidget {
       button: true,
       label: label,
       child: TpPressScale(
-        pressedScale: 0.95,
+        pressedScale: 0.94,
         child: Material(
           color: bg,
           borderRadius: BorderRadius.circular(TpTokens.radiusPill),
@@ -1669,19 +1702,27 @@ class _HomeEditPillButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(TpTokens.radiusPill),
             pressedColor: primary ? colors.onBrand : null,
             enablePressScale: false,
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: TpTokens.space2 + 2,
-                vertical: 7,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 13, color: fg),
-                  const SizedBox(width: TpTokens.space1),
-                  Text(label, style: TpTypography.badge(fg)),
-                ],
+            onTap: () {
+              unawaited(AppHaptics.play(AppHaptics.lightImpact));
+              onTap();
+            },
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 32),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: TpTokens.space3,
+                  vertical: 7,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon, size: 13, color: fg),
+                      const SizedBox(width: TpTokens.space1),
+                    ],
+                    Text(label, style: TpTypography.badge(fg)),
+                  ],
+                ),
               ),
             ),
           ),

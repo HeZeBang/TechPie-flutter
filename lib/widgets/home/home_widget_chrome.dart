@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,8 @@ import '../../theme/theme.dart';
 import '../../utils/adaptive_motion.dart';
 import '../../utils/haptics.dart';
 import '../../utils/motion.dart';
+import '../design_system/design_system.dart';
+import 'home_mobile_reorder_list.dart';
 
 IconData homeWidgetIcon(HomeWidgetId id) => switch (id) {
       HomeWidgetId.campusCard => TpIcons.campusCard,
@@ -17,18 +20,74 @@ IconData homeWidgetIcon(HomeWidgetId id) => switch (id) {
       HomeWidgetId.quickActions => TpIcons.activities,
     };
 
+/// Scope and lifecycle wrapper for the floating mobile drag-reorder proxy inside
+/// [HomeMobileReorderList].
+///
+/// Exposes [animationOf] so [HomeEditableCardFrame] can render an iOS-style
+/// lifted card directly around the card bounds (excluding outer list spacing),
+/// and invokes [onDisposed] once the drop animation settles and the overlay
+/// proxy unmounts cleanly.
+class HomeMobileDragProxy extends StatefulWidget {
+  const HomeMobileDragProxy({
+    super.key,
+    required this.animation,
+    required this.child,
+    this.onDisposed,
+  });
+
+  final Animation<double> animation;
+  final Widget child;
+  final VoidCallback? onDisposed;
+
+  static Animation<double>? animationOf(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<_HomeMobileDragProxyScope>()
+        ?.animation;
+  }
+
+  @override
+  State<HomeMobileDragProxy> createState() => _HomeMobileDragProxyState();
+}
+
+class _HomeMobileDragProxyState extends State<HomeMobileDragProxy> {
+  @override
+  void dispose() {
+    widget.onDisposed?.call();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _HomeMobileDragProxyScope(
+      animation: widget.animation,
+      child: widget.child,
+    );
+  }
+}
+
+class _HomeMobileDragProxyScope extends InheritedWidget {
+  const _HomeMobileDragProxyScope({
+    required this.animation,
+    required super.child,
+  });
+
+  final Animation<double> animation;
+
+  @override
+  bool updateShouldNotify(covariant _HomeMobileDragProxyScope oldWidget) =>
+      oldWidget.animation != animation;
+}
+
 /// Wraps a Home dashboard widget with adaptive customization chrome:
 ///
-/// - Mobile (`isDesktopMode == false`): touching and holding a card triggers
-///   subtle scale-down anticipation followed by haptic tick + perimeter focus
-///   halo (`home.hold-halo-*`), then enters edit mode at `onLongPress` without
-///   blocking normal taps or scrolling; in edit mode an iOS-inspired toolbar
-///   exposes remove, options, and an explicit [ReorderableDragStartListener]
-///   handle.
+/// - Mobile (`isDesktopMode == false`): touching and holding a card charges a
+///   subtle scale-down + haptic + perimeter halo (`home.hold-halo-*`) and lifts
+///   into continuous drag-to-reorder without interrupting immediate vertical
+///   scroll swipes. In edit mode, the header toolbar exposes remove/options/drag
+///   handle (`0ms`) while holding anywhere on the card body also drags cleanly.
 /// - Desktop (`isDesktopMode == true`): right-clicking opens a context menu and
-///   pressing/holding lets the parent drag directly with a quiet press cue (no
-///   obtrusive hover badge); in edit mode an editorial toolbar exposes move/swap
-///   actions, inline style options, and remove controls.
+///   pressing/holding lets the parent drag directly with a quiet press cue; in
+///   edit mode an editorial toolbar exposes move/swap/style/remove controls.
 class HomeEditableCardFrame extends StatefulWidget {
   const HomeEditableCardFrame({
     super.key,
@@ -72,12 +131,6 @@ class HomeEditableCardFrame extends StatefulWidget {
 }
 
 class _HomeEditableCardFrameState extends State<HomeEditableCardFrame> {
-  void _triggerLongPressEdit() {
-    if (widget.isEditing || widget.onEnterEditMode == null) return;
-    unawaited(AppHaptics.play(AppHaptics.tabHold));
-    widget.onEnterEditMode!();
-  }
-
   Future<void> _showDesktopContextMenu(TapDownDetails details) async {
     final overlay = Overlay.maybeOf(context)?.context.findRenderObject();
     if (overlay is! RenderBox) return;
@@ -178,9 +231,12 @@ class _HomeEditableCardFrameState extends State<HomeEditableCardFrame> {
     final canMoveUp = widget.index > 0 && widget.onMoveUp != null;
     final canMoveDown =
         widget.index < widget.itemCount - 1 && widget.onMoveDown != null;
+    final proxyAnimation =
+        widget.isDesktopMode ? null : HomeMobileDragProxy.animationOf(context);
+    final isProxy = proxyAnimation != null;
 
-    Widget content = AbsorbPointer(
-      absorbing: widget.isEditing,
+    final content = AbsorbPointer(
+      absorbing: widget.isEditing || isProxy,
       child: widget.child,
     );
 
@@ -199,9 +255,16 @@ class _HomeEditableCardFrameState extends State<HomeEditableCardFrame> {
           ),
         );
       }
-      return GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onLongPress: _triggerLongPressEdit,
+      if (isProxy) {
+        return _HomeDragProxyVisual(
+          animation: proxyAnimation,
+          borderRadius: BorderRadius.circular(TpTokens.radiusL),
+          child: content,
+        );
+      }
+      return HomeMobileDelayedDragStartListener(
+        index: widget.index,
+        delay: const Duration(milliseconds: 360),
         child: _HomeHoldAffordance(
           id: widget.id,
           enabled: true,
@@ -220,17 +283,20 @@ class _HomeEditableCardFrameState extends State<HomeEditableCardFrame> {
       color: colors.textMuted,
     );
 
-    final dragHandle = widget.enableReorderDragHandle
+    final dragHandle = widget.enableReorderDragHandle && !isProxy
         ? Semantics(
             label: '拖动调整${homeWidgetMetaFor(widget.id).title}顺序',
-            child: ReorderableDragStartListener(
+            child: HomeMobileDragStartListener(
               index: widget.index,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: TpTokens.space2,
-                  vertical: TpTokens.space1,
+              child: ColoredBox(
+                color: Colors.transparent,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: TpTokens.space2 + 2,
+                    vertical: TpTokens.space1 + 2,
+                  ),
+                  child: dragHandleIcon,
                 ),
-                child: dragHandleIcon,
               ),
             ),
           )
@@ -248,7 +314,28 @@ class _HomeEditableCardFrameState extends State<HomeEditableCardFrame> {
             ),
           );
 
-    return AnimatedContainer(
+    final canDelayedBodyDrag =
+        !widget.isDesktopMode && widget.enableReorderDragHandle && !isProxy;
+    const editDragDelay = Duration(milliseconds: 220);
+
+    final bodyContent = canDelayedBodyDrag
+        ? HomeMobileDelayedDragStartListener(
+            index: widget.index,
+            delay: editDragDelay,
+            child: _HomeHoldAffordance(
+              id: widget.id,
+              enabled: true,
+              desktopMode: false,
+              chargeDelay: const Duration(milliseconds: 80),
+              chargeDuration: const Duration(milliseconds: 140),
+              immediateScale: 0.992,
+              chargedScale: 0.978,
+              child: content,
+            ),
+          )
+        : content;
+
+    final frame = AnimatedContainer(
       duration: duration,
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
@@ -284,10 +371,94 @@ class _HomeEditableCardFrameState extends State<HomeEditableCardFrame> {
               onSwapColumn: widget.onSwapColumn,
               onRemove: widget.onRemove,
               dragHandle: dragHandle,
+              delayedDragIndex: canDelayedBodyDrag ? widget.index : null,
+              delayedDragDelay: canDelayedBodyDrag ? editDragDelay : null,
             ),
           ),
-          content,
+          bodyContent,
         ],
+      ),
+    );
+
+    if (isProxy) {
+      return _HomeDragProxyVisual(
+        animation: proxyAnimation,
+        borderRadius: BorderRadius.circular(TpTokens.radiusL + 2),
+        child: frame,
+      );
+    }
+    return frame;
+  }
+}
+
+class _HomeDragProxyVisual extends StatelessWidget {
+  const _HomeDragProxyVisual({
+    required this.animation,
+    required this.borderRadius,
+    required this.child,
+  });
+
+  final Animation<double> animation;
+  final BorderRadius borderRadius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final reduceMotion =
+        MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+
+    return IgnorePointer(
+      child: Material(
+        type: MaterialType.transparency,
+        child: AnimatedBuilder(
+          animation: animation,
+          builder: (context, child) {
+            final t = Curves.easeOutCubic.transform(animation.value);
+            final scale = reduceMotion ? 1.0 : lerpDouble(1.0, 1.028, t)!;
+            final opacity = lerpDouble(1.0, 0.92, t)!;
+
+            return Transform.scale(
+              scale: scale,
+              alignment: Alignment.center,
+              child: Opacity(
+                opacity: opacity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: borderRadius,
+                    boxShadow: [
+                      if (t > 0.01)
+                        BoxShadow(
+                          color: colors.textPrimary.withValues(
+                            alpha: (colors.isDark ? 0.34 : 0.16) * t,
+                          ),
+                          blurRadius: 22 * t,
+                          offset: Offset(0, 10 * t),
+                        ),
+                    ],
+                  ),
+                  child: DecoratedBox(
+                    position: DecorationPosition.foreground,
+                    decoration: BoxDecoration(
+                      borderRadius: borderRadius,
+                      border: Border.all(
+                        color: colors.brandInk.withValues(
+                          alpha: (colors.isDark ? 0.55 : 0.44) * t,
+                        ),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: borderRadius,
+                      child: child,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+          child: child,
+        ),
       ),
     );
   }
@@ -304,6 +475,8 @@ class _HomeHoldAffordance extends StatefulWidget {
     required this.immediateScale,
     required this.chargedScale,
     required this.child,
+    this.chargeDelay = const Duration(milliseconds: 120),
+    this.chargeDuration = const Duration(milliseconds: 220),
   });
 
   final HomeWidgetId id;
@@ -311,6 +484,8 @@ class _HomeHoldAffordance extends StatefulWidget {
   final bool desktopMode;
   final double immediateScale;
   final double chargedScale;
+  final Duration chargeDelay;
+  final Duration chargeDuration;
   final Widget child;
 
   @override
@@ -337,7 +512,7 @@ class _HomeHoldAffordanceState extends State<_HomeHoldAffordance>
     _scale = AnimationController.unbounded(vsync: this, value: 1.0);
     _charge = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: widget.chargeDuration,
     );
   }
 
@@ -352,6 +527,9 @@ class _HomeHoldAffordanceState extends State<_HomeHoldAffordance>
   @override
   void didUpdateWidget(covariant _HomeHoldAffordance oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.chargeDuration != widget.chargeDuration) {
+      _charge.duration = widget.chargeDuration;
+    }
     if (!widget.enabled) {
       _release();
     }
@@ -399,7 +577,9 @@ class _HomeHoldAffordanceState extends State<_HomeHoldAffordance>
 
     _chargeTimer?.cancel();
     _chargeTimer = Timer(
-      Duration(milliseconds: widget.desktopMode ? 110 : 120),
+      widget.desktopMode
+          ? const Duration(milliseconds: 110)
+          : widget.chargeDelay,
       _beginHoldCharge,
     );
   }
@@ -413,7 +593,7 @@ class _HomeHoldAffordanceState extends State<_HomeHoldAffordance>
     unawaited(
       _scale.animateTo(
         widget.chargedScale,
-        duration: const Duration(milliseconds: 220),
+        duration: widget.chargeDuration,
         curve: Curves.easeOutCubic,
       ),
     );
@@ -546,6 +726,8 @@ class _EditHeaderRow extends StatelessWidget {
     required this.onSwapColumn,
     required this.onRemove,
     required this.dragHandle,
+    this.delayedDragIndex,
+    this.delayedDragDelay,
   });
 
   final HomeWidgetId id;
@@ -561,22 +743,16 @@ class _EditHeaderRow extends StatelessWidget {
   final VoidCallback? onSwapColumn;
   final VoidCallback? onRemove;
   final Widget dragHandle;
+  final int? delayedDragIndex;
+  final Duration? delayedDragDelay;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final meta = homeWidgetMetaFor(id);
 
-    return Row(
+    Widget titleRegion = Row(
       children: [
-        if (onRemove != null) ...[
-          _RemoveWidgetButton(
-            widgetId: id,
-            title: meta.title,
-            onPressed: onRemove!,
-          ),
-          const SizedBox(width: TpTokens.space2),
-        ],
         Icon(homeWidgetIcon(id), size: TpTokens.iconXs, color: colors.brandInk),
         const SizedBox(width: TpTokens.space1 + 2),
         Expanded(
@@ -590,24 +766,52 @@ class _EditHeaderRow extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ),
+      ],
+    );
+
+    if (delayedDragIndex != null && delayedDragDelay != null) {
+      titleRegion = HomeMobileDelayedDragStartListener(
+        index: delayedDragIndex!,
+        delay: delayedDragDelay!,
+        child: ColoredBox(
+          color: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: titleRegion,
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        if (onRemove != null) ...[
+          _RemoveWidgetButton(
+            widgetId: id,
+            title: meta.title,
+            onPressed: onRemove!,
+          ),
+          const SizedBox(width: TpTokens.space1 + 2),
+        ],
+        Expanded(child: titleRegion),
         if (id == HomeWidgetId.campusCard &&
             campusCardStyle != null &&
             onCampusCardStyleChanged != null) ...[
+          const SizedBox(width: TpTokens.space1),
           _CampusCardStyleSegmented(
             current: campusCardStyle!,
             onChanged: onCampusCardStyleChanged!,
           ),
-          const SizedBox(width: TpTokens.space1),
         ],
         if (id == HomeWidgetId.quickActions &&
             onConfigureQuickActions != null) ...[
+          const SizedBox(width: TpTokens.space1),
           _ToolbarChipButton(
             key: const ValueKey('home.configure-quick-actions'),
             icon: TpIcons.sliders,
             label: '定制',
             onTap: onConfigureQuickActions!,
           ),
-          const SizedBox(width: TpTokens.space1),
         ],
         if (isDesktopMode) ...[
           _SmallIconAction(
@@ -656,19 +860,37 @@ class _RemoveWidgetButton extends StatelessWidget {
       label: '移除$title',
       child: Tooltip(
         message: '移除$title',
-        child: Material(
-          color: colors.dangerRed.withValues(alpha: colors.isDark ? 0.22 : 0.12),
-          shape: const CircleBorder(),
-          child: InkWell(
-            key: ValueKey('home.remove-${widgetId.key}'),
-            customBorder: const CircleBorder(),
-            onTap: onPressed,
-            child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: Icon(
-                TpIcons.minus,
-                size: 14,
-                color: colors.dangerRed,
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: Center(
+            child: TpPressScale(
+              pressedScale: 0.88,
+              child: Material(
+                color: colors.dangerRed
+                    .withValues(alpha: colors.isDark ? 0.22 : 0.12),
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: TpTapSurface(
+                  key: ValueKey('home.remove-${widgetId.key}'),
+                  style: TpTapFeedbackStyle.button,
+                  customBorder: const CircleBorder(),
+                  pressedColor: colors.dangerRed,
+                  enablePressScale: false,
+                  onTap: () {
+                    unawaited(AppHaptics.play(AppHaptics.lightImpact));
+                    onPressed();
+                  },
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Icon(
+                      TpIcons.minus,
+                      size: 14,
+                      color: colors.dangerRed,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -704,13 +926,21 @@ class _CampusCardStyleSegmented extends StatelessWidget {
             key: const ValueKey('home.campus-card-style-compact'),
             label: '精简',
             selected: current == HomeCampusCardStyle.compact,
-            onTap: () => onChanged(HomeCampusCardStyle.compact),
+            onTap: () {
+              if (current == HomeCampusCardStyle.compact) return;
+              unawaited(AppHaptics.play(AppHaptics.selection));
+              onChanged(HomeCampusCardStyle.compact);
+            },
           ),
           _SegmentChoice(
             key: const ValueKey('home.campus-card-style-full'),
             label: '完整',
             selected: current == HomeCampusCardStyle.full,
-            onTap: () => onChanged(HomeCampusCardStyle.full),
+            onTap: () {
+              if (current == HomeCampusCardStyle.full) return;
+              unawaited(AppHaptics.play(AppHaptics.selection));
+              onChanged(HomeCampusCardStyle.full);
+            },
           ),
         ],
       ),
@@ -733,14 +963,24 @@ class _SegmentChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    final radius = BorderRadius.circular(TpTokens.radiusPill);
+    final duration = appAnimationDuration(
+      context,
+      const Duration(milliseconds: 160),
+    );
+    return TpTapSurface(
+      style: TpTapFeedbackStyle.button,
+      borderRadius: radius,
+      pressedColor: selected ? colors.onBrand : null,
+      pressedScale: 0.94,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      child: AnimatedContainer(
+        duration: duration,
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
           color: selected ? colors.brandInk : Colors.transparent,
-          borderRadius: BorderRadius.circular(TpTokens.radiusPill),
+          borderRadius: radius,
         ),
         child: Text(
           label,
@@ -768,24 +1008,37 @@ class _ToolbarChipButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    return Material(
-      color: colors.surface,
-      shape: StadiumBorder(side: BorderSide(color: colors.divider)),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 12, color: colors.brandInk),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TpTypography.badge(colors.textPrimary),
+    return Semantics(
+      button: true,
+      label: label,
+      child: TpPressScale(
+        pressedScale: 0.94,
+        child: Material(
+          color: colors.surface,
+          shape: StadiumBorder(side: BorderSide(color: colors.divider)),
+          clipBehavior: Clip.antiAlias,
+          child: TpTapSurface(
+            style: TpTapFeedbackStyle.button,
+            customBorder: const StadiumBorder(),
+            enablePressScale: false,
+            onTap: () {
+              unawaited(AppHaptics.play(AppHaptics.lightImpact));
+              onTap();
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 12, color: colors.brandInk),
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: TpTypography.badge(colors.textPrimary),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
