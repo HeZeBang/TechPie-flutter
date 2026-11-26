@@ -7,6 +7,7 @@ import '../models/pnp_and_minor.dart';
 import '../services/campus/campus_errors.dart';
 import '../services/pnp_minor_service.dart';
 import '../services/service_provider.dart';
+import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import 'generic_webview_page.dart';
 
@@ -54,6 +55,36 @@ class _ApplicationsState extends State<_Applications> {
       await widget.service.refresh(tab, semester: term);
     } catch (e) {
       if (mounted) error = e is CampusRequestException ? e.message : '教务数据读取失败';
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> confirmRevoke(AcademicApplicationRow row) async {
+    final service = widget.service;
+    final version = service.generation;
+    final term = service.semesters[service.selected];
+    final confirmed = await showAdaptiveAlertDialog<bool>(
+      context: context,
+      title: '撤销这项申请？',
+      message: [if (term != null) term, '将向教务系统申请撤销《${row.title}》的 P/NP 申请。'].join('\n'),
+      actions: const [
+        AdaptiveAlertAction(label: '取消', value: false, isDefault: true),
+        AdaptiveAlertAction(label: '确认撤销', value: true, isDestructive: true),
+      ],
+    );
+    if (confirmed != true || !mounted || busy || version != service.generation) return;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    try {
+      final message = await service.revoke(row);
+      if (mounted && version == service.generation) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      }
+    } on CampusRequestException catch (e) {
+      if (mounted) error = e.message;
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -163,15 +194,31 @@ class _ApplicationsState extends State<_Applications> {
                           Text(label == '辅修培养方案' ? '暂无已绑定的辅修培养方案' : '暂无记录'),
                         for (final r in s.sections[label] ?? const <AcademicApplicationRow>[])
                           Card(
-                            child: ListTile(
-                              title: Text(r.title),
-                              subtitle: r.fields.isEmpty
-                                  ? null
-                                  : Text(
-                                      r.fields.entries
-                                          .map((f) => '${f.key} · ${f.value}')
-                                          .join('\n'),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                ListTile(
+                                  title: Text(r.title),
+                                  subtitle: r.fields.isEmpty
+                                      ? null
+                                      : Text(
+                                          r.fields.entries
+                                              .map((f) => '${f.key} · ${f.value}')
+                                              .join('\n'),
+                                        ),
+                                ),
+                                if (label == '本学期申请' && s.canRevoke(r))
+                                  Align(
+                                    alignment: AlignmentDirectional.centerEnd,
+                                    child: TextButton(
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Theme.of(context).colorScheme.error,
+                                      ),
+                                      onPressed: busy ? null : () => confirmRevoke(r),
+                                      child: const Text('撤销申请'),
                                     ),
+                                  ),
+                              ],
                             ),
                           ),
                       ],

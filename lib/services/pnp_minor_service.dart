@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:html/dom.dart' show Element;
 import 'package:html/parser.dart' as html;
 
 import '../models/pnp_and_minor.dart';
@@ -69,6 +70,10 @@ class PnpMinorService extends ChangeNotifier {
   final windows = <AcademicApplicationTab, ApplicationWindow>{};
   Map<String, String> semesters = {};
   String? selected;
+  final _revokeIds = <AcademicApplicationRow, String>{};
+  bool _revoking = false;
+  bool canRevoke(AcademicApplicationRow row) => !_revoking && _revokeIds.containsKey(row);
+
   final sections = <String, List<AcademicApplicationRow>>{};
   final sectionErrors = <String, String>{};
   static const historyLabels = ['P/NP 历史申请', '我的辅修申请', '已退选'];
@@ -86,6 +91,7 @@ class PnpMinorService extends ChangeNotifier {
     generation++;
     windows.clear();
     sections.clear();
+    _revokeIds.clear();
     sectionErrors.clear();
     semesters = {};
     selected = null;
@@ -128,6 +134,8 @@ class PnpMinorService extends ChangeNotifier {
       return result;
     }
 
+    final revokeIds = <AcademicApplicationRow, String>{};
+    if (tab == AcademicApplicationTab.pnp) _revokeIds.clear();
     final pending = <String, List<AcademicApplicationRow>>{};
     final pendingErrors = <String, String>{};
     Object? firstError;
@@ -178,7 +186,10 @@ class PnpMinorService extends ChangeNotifier {
         if (term != null) {
           final rows = await runSection(
             '本学期申请',
-            () async => parseRows(await get('$pnp!myApplies.action', query: {'semesterId': term})),
+            () async => parseRows(
+              await get('$pnp!myApplies.action', query: {'semesterId': term}),
+              revokeIds: revokeIds,
+            ),
           );
           if (rows != null) pending['本学期申请'] = rows;
         }
@@ -215,6 +226,9 @@ class PnpMinorService extends ChangeNotifier {
     if (pendingTerms != null) {
       semesters = pendingTerms;
       selected = pendingSelected;
+      _revokeIds
+        ..clear()
+        ..addAll(revokeIds);
     }
     final labels = tab == AcademicApplicationTab.pnp ? _pnpLabels : _minorLabels;
     for (final label in labels) {
@@ -235,18 +249,68 @@ class PnpMinorService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<String> revoke(AcademicApplicationRow row) async {
+    final id = _revokeIds[row];
+    final term = selected;
+    final version = generation;
+    if (!ready || id == null || term == null || _revoking) {
+      throw const CampusRequestException(CampusErrorKind.rejected, '请刷新本学期申请后核对可撤销记录');
+    }
+    void checkAccount() {
+      if (version != generation) throw CampusRequestException.expired;
+    }
+
+    _revoking = true;
+    try {
+      final page = await client.getHtml('$pnp!myApplies.action', query: {'semesterId': term});
+      checkAccount();
+      final eligible = <AcademicApplicationRow, String>{};
+      parseRows(page, revokeIds: eligible);
+      if (_revokeIds[row] != id ||
+          selected != term ||
+          !eligible.entries.any((e) => e.value == id && e.key.title == row.title)) {
+        _revokeIds.remove(row);
+        throw const CampusRequestException(CampusErrorKind.rejected, '该申请已更新，请刷新后查看');
+      }
+      _revokeIds.remove(row);
+      var message = '撤销请求已发送，请核对学校记录中的申请状态';
+      try {
+        final response = await client.submitFormOnce('$pnp!revoke.action', {'applyId': id});
+        final doc = html.parse(response);
+        final error =
+            doc.querySelector('.error,.alert-danger,.fieldError,.actionError')?.text.trim();
+        if (error != null && error.isNotEmpty) message = '教务系统提示：$error';
+      } on CampusRequestException {
+        message = '暂时无法确认撤销结果，请核对学校记录';
+      }
+      checkAccount();
+      try {
+        await refresh(AcademicApplicationTab.pnp, semester: term);
+      } on CampusRequestException {
+        checkAccount();
+        return '$message；请手动刷新';
+      }
+      checkAccount();
+      return message;
+    } finally {
+      _revoking = false;
+      if (version == generation) notifyListeners();
+    }
+  }
+
+  static final _hiddenStyle = RegExp(
+    r'(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b',
+    caseSensitive: false,
+  );
+
   static ApplicationWindow parseWindow(String source) {
     final doc = html.parse(source);
     for (final hidden
         in doc.querySelectorAll('script,style,template,[hidden],[aria-hidden="true"]')) {
       hidden.remove();
     }
-    final hiddenByStyle = RegExp(
-      r'(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b',
-      caseSensitive: false,
-    );
     for (final elem in doc.querySelectorAll('[style]')) {
-      if (hiddenByStyle.hasMatch(elem.attributes['style'] ?? '')) {
+      if (_hiddenStyle.hasMatch(elem.attributes['style'] ?? '')) {
         elem.remove();
       }
     }
@@ -266,8 +330,8 @@ class PnpMinorService extends ChangeNotifier {
         continue;
       }
       final label = (elem.attributes['value'] ?? elem.text).replaceAll(RegExp(r'\s+'), '');
-      final hasActionAttr = elem.attributes.containsKey('onclick') ||
-          elem.attributes.containsKey('data-action');
+      final hasActionAttr =
+          elem.attributes.containsKey('onclick') || elem.attributes.containsKey('data-action');
       if (RegExp(r'^(?:新增申请|提交申请|申请P/NP|报名|我要报名|申请报名|新增报名)$').hasMatch(label)) {
         return ApplicationWindow.open;
       }
@@ -278,8 +342,38 @@ class PnpMinorService extends ChangeNotifier {
     return ApplicationWindow.unknown;
   }
 
-  static List<AcademicApplicationRow> parseRows(String source) {
+  static final _toolbarRevoke = RegExp(
+    r'''^\s*bar\.addItem\(\s*["']撤销申请["']\s*,\s*["']revoke\(\s*\)["']\s*\)''',
+    multiLine: true,
+  );
+
+  static bool _available(Element element) {
+    for (Element? node = element; node != null; node = node.parent) {
+      final attrs = node.attributes;
+      if (attrs.containsKey('disabled') ||
+          attrs.containsKey('hidden') ||
+          attrs['aria-disabled'] == 'true' ||
+          attrs['aria-hidden'] == 'true' ||
+          node.classes.contains('disabled') ||
+          node.classes.contains('hidden') ||
+          _hiddenStyle.hasMatch(attrs['style'] ?? '')) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static List<AcademicApplicationRow> parseRows(
+    String source, {
+    Map<AcademicApplicationRow, String>? revokeIds,
+  }) {
     final doc = html.parse(source);
+    final offersRevoke = revokeIds != null &&
+        doc.querySelector('form[name="stdAppliesForm"][method="post"]') != null &&
+        doc.querySelectorAll('script').any((script) {
+          final code = script.text.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+          return _toolbarRevoke.hasMatch(code);
+        });
     final rows = <AcademicApplicationRow>[];
     var recognized = false;
     for (final table in doc.querySelectorAll('table')) {
@@ -299,18 +393,24 @@ class PnpMinorService extends ChangeNotifier {
         final data = Map.fromIterables(headers, cells.take(headers.length));
         final key = appTitles.firstWhere((h) => data[h]?.isNotEmpty == true, orElse: () => '');
         if (key.isEmpty) continue;
-        rows.add(
-          AcademicApplicationRow(data[key]!, {
-            for (final entry in data.entries)
-              if (visibleFields.contains(entry.key) && entry.key != key && entry.value.isNotEmpty)
-                entry.key: entry.value,
-          }),
-        );
+        final row = AcademicApplicationRow(data[key]!, {
+          for (final entry in data.entries)
+            if (visibleFields.contains(entry.key) && entry.key != key && entry.value.isNotEmpty)
+              entry.key: entry.value,
+        });
+        rows.add(row);
+        if (offersRevoke) {
+          final boxes = tr.querySelectorAll('input[type="checkbox"][name="pnpApply.id"]');
+          final box = boxes.length == 1 ? boxes.single : null;
+          final id = box?.attributes['value']?.trim();
+          if (box != null && _available(box) && id != null && id.isNotEmpty && !id.contains(',')) {
+            revokeIds[row] = id;
+          }
+        }
       }
     }
     if (!recognized &&
-        !RegExp('未绑定|没有绑定|尚未绑定|暂无|没有.*(?:记录|数据)|未开放|未开始|尚未开放')
-            .hasMatch(doc.body?.text ?? '')) {
+        !RegExp('未绑定|没有绑定|尚未绑定|暂无|没有.*(?:记录|数据)|未开放|未开始|尚未开放').hasMatch(doc.body?.text ?? '')) {
       throw CampusRequestException.invalid;
     }
     return rows;
