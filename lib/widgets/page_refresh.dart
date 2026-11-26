@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/tp_icons.dart';
 import '../utils/platform.dart';
 import 'adaptive_feedback.dart';
 
@@ -59,12 +60,12 @@ class _PageRefreshButtonState extends State<PageRefreshButton> {
                 semanticsLabel: '正在刷新',
               ),
             )
-          : const Icon(Icons.refresh),
+          : const Icon(TpIcons.refresh),
     );
   }
 }
 
-/// Desktop uses the page action; other platforms retain their pull gesture.
+/// Desktop uses the page action; other platforms retain their native pull gesture.
 class PageRefreshIndicator extends StatelessWidget {
   const PageRefreshIndicator({
     super.key,
@@ -80,7 +81,7 @@ class PageRefreshIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) => isDesktop()
       ? child
-      : RefreshIndicator(
+      : RefreshIndicator.adaptive(
           onRefresh: onRefresh,
           notificationPredicate: notificationPredicate,
           child: child,

@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/features/campus_card/presentation/widgets/apple_wallet_components.dart';
+import 'package:techpie/theme/tp_icons.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 import 'package:techpie/widgets/page_refresh.dart';
 
@@ -21,6 +22,7 @@ void main() {
     TargetPlatform.macOS,
     TargetPlatform.windows,
     TargetPlatform.android,
+    TargetPlatform.iOS,
   ]) {
     testWidgets(
       '$platform uses the appropriate refresh controls',
@@ -44,6 +46,15 @@ void main() {
           ),
         );
         expect(find.byType(IconButton), desktop ? findsOneWidget : findsNothing);
+        if (desktop) {
+          final icon = tester.widget<Icon>(
+            find.descendant(
+              of: find.byType(PageRefreshButton),
+              matching: find.byType(Icon),
+            ),
+          );
+          expect(icon.icon, TpIcons.refresh);
+        }
         expect(
           find.byType(RefreshIndicator),
           desktop ? findsNothing : findsOneWidget,

@@ -6,12 +6,15 @@ This document is the single visual source of truth for **TechPie-flutter** acros
 
 **Unified content language; platform-native shell & system controls.**
 
-- **Content layer (`lib/pages/`, `lib/widgets/design_system/`)**: 100% unified across every platform. All colors, surfaces, radii, typography, icons, cards, badges, and progress rows come from `lib/theme/` and `lib/widgets/design_system/`. Pages must **not** branch on `isIos()` / `usesIosLiquidGlass()` / `TargetPlatform` to alter visual styling, and must **not** use raw `Color(0x...)`, `Card.outlined`, or `Card.filled`.
-- **Shell & system layer (`lib/widgets/app_shell/`, `lib/widgets/adaptive_*.dart`, `lib/widgets/ios/`)**: Owns platform-native chrome and interactions — iOS 26 Liquid Glass `IosNativeTabBar` / `IosNativeNavigationBar` + SF Symbols + haptics, Android/OHOS floating glass `TgBottomNavBar`, Desktop `DesktopShell` sidebar, and native system dialogs/pickers/switches.
+- **Content layer (`lib/pages/`, `lib/widgets/design_system/`)**: 100% unified across every platform. All colors, surfaces, radii, typography, icons, cards, badges, skeletons, empty/error state cards, and progress rows come from `lib/theme/` and `lib/widgets/design_system/`. Pages must **not** branch on `isIos()` / `usesIosLiquidGlass()` / `TargetPlatform` to alter visual styling, and must **not** use raw `Color(0x...)`, bare `Card(` / `Card.outlined` / `Card.filled`, bare `AppBar(`, Material `Icons.*`, or raw `showSnackBar(`.
+- **Shell & system layer (`lib/widgets/app_shell/`, `lib/widgets/adaptive_*.dart`, `lib/widgets/ios/`, `android/`, `macos/`)**: Owns platform-native chrome and interactions — iOS Liquid Glass `IosNativeTabBar` / `IosNativeNavigationBar` + SF Symbols + `RefreshIndicator.adaptive` + haptics, Android/OHOS floating glass `TgBottomNavBar`, Android Edge-to-Edge transparent system bars + Predictive Back (`PredictiveBackPageTransitionsBuilder` + `enableOnBackInvokedCallback`), Desktop `DesktopShell` sidebar + compact workbench density, and native system dialogs/pickers/switches.
 
-## 2. Design Tokens (`lib/theme/tp_tokens.dart`)
+## 2. Design Tokens & Dual Density (`lib/theme/tp_tokens.dart`, `lib/theme/tp_density.dart`)
 
-### Spacing (4 dp grid)
+### Spacing (4 dp grid) & Density Presets
+
+- **Mobile (`TpDensity.comfortable`)**: Touch-first sizing (`16 / 14` card padding, `12` row vertical padding, `48` min row height, `20` icon size).
+- **Desktop (`TpDensity.compact`)**: Automatically resolved on `macOS` / `Windows` / `Linux` via `context.tpDensity` (`14 / 12` card padding, `9` row vertical padding, `38` min row height, `18` icon size), with `TpDensityScope` for explicit overrides.
 
 | Token | Value |
 |---|---|
@@ -79,6 +82,16 @@ Derived opaque container helpers (`opaqueBrandContainer`, `opaqueDangerContainer
 
 `test/architecture/design_system_guard_test.dart` enforces these rules automatically in **repository-wide default-on (opt-out) mode** on every PR:
 
-- Every `.dart` file in `lib/pages/` (and modular page feature widgets such as `lib/widgets/gym/`) is automatically scanned against raw `Color(0x...)`, `Card.outlined`, `Card.filled`, direct `isIos()` / `usesIosLiquidGlass()` / `usesLegacyIosChrome()` style branches, and non-token `BorderRadius.circular(...)` magic numbers.
+- **Zero-tolerance rules** across every non-exempt `.dart` file in `lib/pages/` and `lib/widgets/gym/`:
+  - Raw `Color(0x...)` literals (`context.tpColors` required)
+  - `Card.outlined` / `Card.filled` (`TpCard` required)
+  - Direct `isIos()` / `usesIosLiquidGlass()` / `usesLegacyIosChrome()` style branches inside pages
+  - Non-token `BorderRadius.circular(...)` magic numbers (`TpTokens.radius*` required)
+- **Ratcheted transition rules** (zero tolerance for all newly added or migrated pages; pre-existing pages tracked strictly in `legacyMaterialTransitionPages` with an anti-stale check):
+  - Bare `Card(` (`TpCard` required)
+  - Bare `AppBar(` (`AdaptiveNavigationScaffold.adaptiveBar` required)
+  - Material `Icons.*` (`TpIcons.*` required)
+  - Raw `showSnackBar(` (`showAdaptiveFeedback` required)
+- **Loading & state primitives**: Prefer `TpSkeleton` / `TpSkeletonList` (respects `MediaQuery.disableAnimationsOf`) for initial loading and `TpStateCard` (`.empty`, `.error`, `.prerequisite`) for empty/error/unbound states; use `PageRefreshIndicator` (`RefreshIndicator.adaptive` on mobile) for pull-to-refresh.
 - Only narrowly scoped exemptions listed in `designSystemExemptPages` are skipped: WebView/SSO bridges, the immersive video player (`elrc_player_page.dart`), the Campus Card dedicated feature host (`campus_card_page.dart`, bridged via `GpColors.fromTheme`), and developer/debug utilities.
-- New product pages added to `lib/pages/` are protected automatically from their very first commit.
+- New product pages added to `lib/pages/` must pass all 8 rules from their very first commit.

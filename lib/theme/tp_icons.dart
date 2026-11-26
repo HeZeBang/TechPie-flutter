@@ -80,6 +80,11 @@ abstract final class TpIcons {
   static const IconData repeat = LucideIcons.repeat;
   static const IconData help = LucideIcons.info;
   static const IconData unlink = LucideIcons.unlink;
+  static const IconData alertCircle = LucideIcons.circle_exclamation_point;
+  static const IconData warning = LucideIcons.triangle_exclamation_point;
+  static const IconData inbox = LucideIcons.inbox;
+  static const IconData command = LucideIcons.command;
+  static const IconData wifiOff = LucideIcons.wifi_off;
 
   // Desktop sidebar chrome.
   static const IconData sidebar = LucideIcons.panel_left;
