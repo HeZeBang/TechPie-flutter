@@ -146,19 +146,11 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(bar().title, '第 12 周');
 
-      expect(find.byType(FloatingActionButton), findsOneWidget);
       expect(
-        tester
-            .widget<Icon>(
-              find.descendant(
-                of: find.byType(FloatingActionButton),
-                matching: find.byType(Icon),
-              ),
-            )
-            .icon,
-        Icons.keyboard_arrow_up,
+        bar().trailingItems.any((item) => item.id == 'currentWeek'),
+        isTrue,
       );
-      await tester.tap(find.byType(FloatingActionButton));
+      bar().onItemPressed!('currentWeek');
       final titles = <String?>[];
       for (var frame = 0; frame < 40; frame++) {
         await tester.pump(const Duration(milliseconds: 16));

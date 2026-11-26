@@ -735,11 +735,12 @@ class _SchedulePageState extends State<SchedulePage> {
     final actualCurrentWeek = _schedule.currentWeek().clamp(1, _schedule.totalWeeks).toInt();
     final isViewingCurrentWeek = isInTerm && _currentWeek == actualCurrentWeek;
     final isAgenda = _viewMode == _ScheduleViewMode.agenda;
-    final showToday = isInTerm &&
+    final showToday = isAgenda &&
+        isInTerm &&
         auth.isLoggedIn &&
         tpAuth.hasIdsBinding &&
-        (!isViewingCurrentWeek || (isAgenda && _agendaAwayFromToday));
-    final todayIsAbove = isAgenda ? _agendaTodayIsAbove : _currentWeek > actualCurrentWeek;
+        (!isViewingCurrentWeek || _agendaAwayFromToday);
+    final todayIsAbove = _agendaTodayIsAbove;
     final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(context);
 
     return AdaptiveNavigationScaffold(
