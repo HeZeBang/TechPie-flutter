@@ -14,12 +14,14 @@ import '../models/feature.dart';
 import '../services/assignment_service.dart';
 import '../services/auth_service.dart';
 import '../services/campus_card_service.dart';
+import '../services/desktop_home_preferences.dart';
 import '../services/schedule_service.dart';
 import '../services/service_provider.dart';
 import '../services/storage_service.dart';
 import '../theme/theme.dart';
 import '../utils/adaptive_motion.dart';
 import '../utils/haptics.dart';
+import '../utils/platform.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -30,10 +32,12 @@ import '../widgets/design_system/design_system.dart';
 import '../widgets/page_refresh.dart';
 import '../widgets/privacy_consent.dart';
 import '../widgets/uni_auth_login.dart';
+import 'campus_card_account_page.dart';
 import 'campus_card_page.dart';
 import 'campus_feature_navigation.dart';
 import 'campus_services_page.dart';
 import 'custom_deadline_editor_page.dart';
+import 'desktop_home_settings.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -46,6 +50,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late ScheduleService _schedule;
   late AssignmentService _assignments;
   late AuthService _auth;
+  DesktopHomePreferences? _desktopHome;
   List<Course> _todayCourses = [];
   List<Period> _periods = defaultPeriods.toList();
   bool _initialized = false;
@@ -86,9 +91,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _schedule = sp.scheduleService;
       _assignments = sp.assignmentService;
       _auth = sp.authService;
+      if (isDesktop()) {
+        _desktopHome = sp.storageService.desktopHome;
+        _desktopHome!.addListener(_onViewChanged);
+      }
       _schedule.addListener(_rebuild);
       _assignments.addListener(_onAssignmentsChanged);
-      _auth.addListener(_onAuthChanged);
+      _auth.addListener(_onViewChanged);
       _doRebuild();
       _refreshTimer = Timer.periodic(
         const Duration(minutes: 1),
@@ -100,14 +109,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _desktopHome?.removeListener(_onViewChanged);
     _schedule.removeListener(_rebuild);
     _assignments.removeListener(_onAssignmentsChanged);
-    _auth.removeListener(_onAuthChanged);
+    _auth.removeListener(_onViewChanged);
     _staggerController?.dispose();
     super.dispose();
   }
 
-  void _onAuthChanged() {
+  void _onViewChanged() {
     if (mounted) setState(() {});
   }
 
@@ -328,16 +338,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
+  bool _shows(DesktopHomeModule module) => _desktopHome?.isVisible(module) ?? true;
+
   Future<void> _refreshHome() async {
     final sp = ServiceProvider.of(context);
     final tasks = <Future<void>>[
-      sp.campusCardService.refreshAccount(),
+      if (_shows(DesktopHomeModule.campusCard)) sp.campusCardService.refreshAccount(),
     ];
-    if (sp.thirdPartyAuthService.hasIdsBinding) {
+    if (_shows(DesktopHomeModule.todayCourses) && sp.thirdPartyAuthService.hasIdsBinding) {
       tasks.add(sp.scheduleService.fetchAll());
     }
-    if (sp.authService.isLoggedIn ||
-        sp.thirdPartyAuthService.boundPlatforms.isNotEmpty) {
+    if ((_shows(DesktopHomeModule.todayCourses) || _shows(DesktopHomeModule.deadlines)) &&
+        (sp.authService.isLoggedIn || sp.thirdPartyAuthService.boundPlatforms.isNotEmpty)) {
       tasks.add(sp.assignmentService.fetchAssignments());
     }
     await Future.wait(tasks);
@@ -386,15 +398,22 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         },
       ),
     );
-    final campusCardStrip = _buildCampusCardStrip(
-      campusCard,
-      storage,
-      expandedCard: isBento,
-    );
-    final todayClasses = _buildTodayClasses(colors, auth.isLoggedIn);
-    final deadlines = _buildPendingAssignments(colors);
-    final quickActions = _buildQuickActions();
+    final primary = [
+      if (_shows(DesktopHomeModule.todayCourses)) _buildTodayClasses(colors, auth.isLoggedIn),
+      if (_shows(DesktopHomeModule.deadlines)) _buildPendingAssignments(colors),
+    ];
+    final card = _shows(DesktopHomeModule.campusCard)
+        ? _buildCampusCardStrip(campusCard, storage, expandedCard: isDesktop() || isBento)
+        : null;
+    final shortcuts = _shows(DesktopHomeModule.quickActions) ? _buildQuickActions() : null;
+    final secondary = [if (card != null) card, if (shortcuts != null) shortcuts];
     final debugPanel = isDebug ? _buildDebugPanel(colors) : null;
+    final stacked = [
+      if (card != null) card,
+      ...primary,
+      if (shortcuts != null) shortcuts,
+      if (debugPanel != null) debugPanel,
+    ];
 
     return Scaffold(
       backgroundColor: colors.canvas,
@@ -412,7 +431,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
             children: [
               TpPageBody(
-                maxWidth: isBento ? 1120 : TpTokens.singleColumnMaxWidth,
+                maxWidth: isBento && primary.isNotEmpty && secondary.isNotEmpty
+                    ? 1120
+                    : TpTokens.singleColumnMaxWidth,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -420,31 +441,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     SizedBox(
                       height: isBento ? TpTokens.space4 : TpTokens.sectionGap,
                     ),
-                    if (isBento)
+                    if (primary.isEmpty && secondary.isEmpty)
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () => showDesktopHomeSettings(context, storage.desktopHome),
+                          icon: const Icon(TpIcons.activities),
+                          label: const Text('选择要显示的首页模块'),
+                        ),
+                      ),
+                    if (isBento && primary.isNotEmpty && secondary.isNotEmpty)
                       TpBentoGrid(
-                        primaryColumn: [
-                          todayClasses,
-                          deadlines,
-                          if (debugPanel != null) debugPanel,
-                        ],
-                        secondaryColumn: [
-                          campusCardStrip,
-                          quickActions,
-                        ],
+                        primaryColumn: [...primary, if (debugPanel != null) debugPanel],
+                        secondaryColumn: secondary,
                       )
-                    else ...[
-                      campusCardStrip,
-                      const SizedBox(height: TpTokens.sectionGap),
-                      todayClasses,
-                      const SizedBox(height: TpTokens.sectionGap),
-                      deadlines,
-                      const SizedBox(height: TpTokens.sectionGap),
-                      quickActions,
-                      if (debugPanel != null) ...[
-                        const SizedBox(height: TpTokens.sectionGap),
-                        debugPanel,
+                    else
+                      for (var i = 0; i < stacked.length; i++) ...[
+                        if (i > 0) const SizedBox(height: TpTokens.sectionGap),
+                        stacked[i],
                       ],
-                    ],
                   ],
                 ),
               ),
@@ -466,6 +480,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final balance = campusCard.cachedBalance;
         final balanceText =
             balance == null ? null : '¥ ${balance.toYuanFixed()}';
+        if (_desktopHome?.balanceOnly == true) {
+          return TpCampusCardBalance(
+            configured: campusCard.configured,
+            balanceText: balanceText,
+            hideBalance: storage.hideCampusCardBalance,
+            onOpen: () => pushAdaptivePage<void>(
+              context,
+              builder: (_) => campusCard.configured
+                  ? const CampusCardPage(entry: CampusCardEntry.cardManagement)
+                  : const CampusCardAccountPage(),
+            ),
+          );
+        }
         return TpCampusCardStrip(
           configured: campusCard.configured,
           balanceText: balanceText,

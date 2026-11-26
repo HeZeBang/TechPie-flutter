@@ -113,6 +113,27 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('balance-only card masks the amount and opens the feature', (tester) async {
+    var opens = 0;
+    for (final hidden in [false, true]) {
+      await tester.pumpWidget(
+        wrap(
+          TpCampusCardBalance(
+            configured: true,
+            balanceText: '¥ 128.50',
+            hideBalance: hidden,
+            onOpen: () => opens++,
+          ),
+        ),
+      );
+      expect(find.text('¥ 128.50'), hidden ? findsNothing : findsOneWidget);
+      expect(find.text('余额已隐藏'), hidden ? findsOneWidget : findsNothing);
+      expect(find.text('亮码'), findsNothing);
+      await tester.tap(find.text('校园卡余额'));
+    }
+    expect(opens, 2);
+  });
+
   testWidgets('TpCampusCardStrip respects balance eye toggle and configured state',
       (tester) async {
     var payTaps = 0;

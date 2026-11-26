@@ -9,6 +9,41 @@ import '../../theme/tp_typography.dart';
 import 'tp_card.dart';
 import 'tp_press_scale.dart';
 
+/// A balance summary linking to card management or account binding.
+class TpCampusCardBalance extends StatelessWidget {
+  const TpCampusCardBalance({
+    super.key,
+    required this.configured,
+    required this.balanceText,
+    required this.hideBalance,
+    required this.onOpen,
+  });
+
+  final bool configured;
+  final String? balanceText;
+  final bool hideBalance;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final value = switch ((configured, hideBalance)) {
+      (false, _) => '未绑定 · 去绑定',
+      (true, true) => '余额已隐藏',
+      (true, false) => balanceText ?? '余额暂不可用',
+    };
+    return TpCard(
+      child: ListTile(
+        leading: Icon(TpIcons.wallet, color: colors.brandInk),
+        title: Text('校园卡余额', style: TpTypography.itemMeta(colors)),
+        subtitle: Text(value, style: TpTypography.itemTitle(colors)),
+        trailing: Icon(TpIcons.chevronRight, color: colors.textMuted),
+        onTap: onOpen,
+      ),
+    );
+  }
+}
+
 /// Responsive campus-card entry on Home.
 ///
 /// Tapping anywhere on the card (except the balance visibility toggle) opens the

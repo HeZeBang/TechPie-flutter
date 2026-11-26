@@ -39,6 +39,7 @@ import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/uni_auth_login.dart';
 import '../widgets/update_dialogs.dart';
 import 'account_deletion_page.dart';
+import 'desktop_home_settings.dart';
 import 'developer_options_page.dart';
 import 'feedback_page.dart';
 import 'huawei_watch_page.dart';
@@ -392,6 +393,14 @@ class _SettingsBodyState extends State<_SettingsBody> {
                           _buildThemeModeRow(colors, themeService),
                           if (themeService.supportsColorSchemeSelection)
                             _buildThemeColorRow(context, colors, themeService),
+                          if (isDesktop())
+                            TpListRow(
+                              title: '首页模块',
+                              subtitle: '选择首页内容和校园卡样式',
+                              icon: TpIcons.activities,
+                              showChevron: true,
+                              onTap: () => showDesktopHomeSettings(context, storage.desktopHome),
+                            ),
                         ],
                       ),
 

@@ -7,6 +7,7 @@ import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
 import 'package:techpie/services/debug_logger.dart';
+import 'package:techpie/services/desktop_home_preferences.dart';
 import 'package:techpie/services/ecard_bind_service.dart';
 import 'package:techpie/services/egate_app_service.dart';
 import 'package:techpie/services/http_client.dart';
@@ -250,6 +251,76 @@ void main() {
     final after = tester.widget<Switch>(switchFinder).value;
     expect(after, isNot(before));
   });
+
+  testWidgets(
+    'desktop modules update Home and remember the campus card style',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpApp(tester);
+      expect(find.byKey(const ValueKey('home.campus-card-header-band')), findsOneWidget);
+
+      await tester.tap(find.text('我的').first);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('首页模块'));
+      await tester.tap(find.text('首页模块'));
+      await tester.pumpAndSettle();
+      final dialog = find.byType(AlertDialog);
+      Future<void> choose(String label) async {
+        await tester.tap(find.descendant(of: dialog, matching: find.text(label)));
+        await tester.pumpAndSettle();
+      }
+
+      await choose('精简余额');
+      for (final label in ['今日课程', 'Deadlines', '校园卡', '快捷功能']) {
+        await choose(label);
+      }
+      await choose('完成');
+      await tester.tap(find.text('首页').first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('home.campus-card-strip')), findsNothing);
+      expect(find.byKey(const ValueKey('home.today-courses')), findsNothing);
+      expect(find.byKey(const ValueKey('home.deadlines')), findsNothing);
+      expect(find.byKey(const ValueKey('home.quick-actions')), findsNothing);
+      await tester.tap(find.text('选择要显示的首页模块'));
+      await tester.pumpAndSettle();
+      await choose('校园卡');
+      await choose('完成');
+      expect(find.text('校园卡余额'), findsOneWidget);
+      expect(find.text('未绑定 · 去绑定'), findsOneWidget);
+      expect(find.byKey(const ValueKey('home.campus-card-header-band')), findsNothing);
+
+      final saved = StorageService(await SharedPreferences.getInstance()).desktopHome;
+      expect(saved.balanceOnly, isTrue);
+      expect(saved.isVisible(DesktopHomeModule.campusCard), isTrue);
+      expect(saved.isVisible(DesktopHomeModule.todayCourses), isFalse);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.linux,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'desktop Home preferences do not hide modules on a phone',
+    (tester) async {
+      await pumpApp(
+        tester,
+        extraPrefs: {
+          'desktop_home_show_campusCard': false,
+          'desktop_home_show_todayCourses': false,
+          'desktop_home_balance_only': true,
+        },
+      );
+      expect(find.byKey(const ValueKey('home.campus-card-strip')), findsOneWidget);
+      expect(find.byKey(const ValueKey('home.today-courses')), findsOneWidget);
+      expect(find.text('校园卡余额'), findsNothing);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
 
   testWidgets('DesktopShell restores persisted sidebar collapsed state',
       (tester) async {
