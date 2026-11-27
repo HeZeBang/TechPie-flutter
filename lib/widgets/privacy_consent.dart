@@ -7,6 +7,7 @@ import '../services/service_provider.dart';
 import 'adaptive_alert_dialog.dart';
 import 'adaptive_button.dart';
 import 'adaptive_checkbox.dart';
+import 'design_system/tp_brand_mark.dart';
 
 const privacyPolicyUrl = 'https://techpie.geekpie.club/privacy';
 
@@ -104,6 +105,14 @@ class PrivacyConsentPage extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        TpBrandLockup(
+          key: const ValueKey('privacy.brand-lockup'),
+          markSize: compact ? 30 : 44,
+          wordmarkSize: compact ? 17 : 22,
+          subtitleSize: 12,
+          showSubtitle: !compact,
+        ),
+        SizedBox(height: compact ? 14 : 20),
         Text('隐私政策', style: theme.textTheme.titleLarge),
         const SizedBox(height: 12),
         Text(

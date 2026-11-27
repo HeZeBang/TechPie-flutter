@@ -670,7 +670,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                 children: [
                   Row(
                     children: [
-                      const TpAvatarBadge(text: 'GP', size: 46),
+                      const TpBrandMark(size: 46),
                       const SizedBox(width: TpTokens.space3),
                       Expanded(
                         child: Column(
@@ -1297,23 +1297,16 @@ class _SettingsBrandFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tpColors;
-    return Padding(
-      key: const ValueKey('settings.brand-footer'),
-      padding: const EdgeInsets.only(bottom: TpTokens.space4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const TpBrandMark(size: 20),
-          const SizedBox(height: TpTokens.space2),
-          Text(
-            'TechPie · Built with Flutter by GeekPie_',
-            style: TpTypography.cardMeta(colors).copyWith(
-              color: colors.textMuted,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+    return const Padding(
+      key: ValueKey('settings.brand-footer'),
+      padding: EdgeInsets.only(top: TpTokens.space2, bottom: TpTokens.space4),
+      child: TpBrandLockup(
+        markSize: 32,
+        wordmarkSize: 15.5,
+        subtitleSize: 11.5,
+        axis: Axis.vertical,
+        subtitlePrefix: 'Built with Flutter · by GeekPie',
+        subtitleAccentSuffix: '_',
       ),
     );
   }

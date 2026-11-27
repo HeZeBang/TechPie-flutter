@@ -683,20 +683,23 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final showHeaderAvatar = !(usesDesktopSidebarShell(context) &&
         context.findAncestorWidgetOfExactType<DesktopShell>() != null);
 
-    final header = TpPageHeader(
-      key: const ValueKey('home.greeting-header'),
-      subtitle: dateSubtitle,
-      title: _greetingTitle(now, auth, tpAuth, campusCard),
-      trailing: _isEditing
-          ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
+    final mobileBrandBar = showHeaderAvatar
+        ? Padding(
+            key: const ValueKey('home.brand-bar'),
+            padding: const EdgeInsets.only(bottom: TpTokens.space3),
+            child: Row(
               children: [
-                _HomeHeaderEditButton(
-                  key: const ValueKey('home.edit-toggle'),
-                  onPressed: () => _enterEditMode(isBento),
+                const TpBrandLockup(
+                  markSize: 24,
+                  wordmarkSize: 17,
+                  showSubtitle: false,
                 ),
-                if (showHeaderAvatar) ...[
+                const Spacer(),
+                if (!_isEditing) ...[
+                  _HomeHeaderEditButton(
+                    key: const ValueKey('home.edit-toggle'),
+                    onPressed: () => _enterEditMode(isBento),
+                  ),
                   const SizedBox(width: TpTokens.space1),
                   TpAvatarBadge(
                     key: const ValueKey('home.avatar'),
@@ -712,6 +715,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
                 ],
               ],
+            ),
+          )
+        : null;
+
+    final header = TpPageHeader(
+      key: const ValueKey('home.greeting-header'),
+      subtitle: dateSubtitle,
+      title: _greetingTitle(now, auth, tpAuth, campusCard),
+      trailing: showHeaderAvatar || _isEditing
+          ? null
+          : _HomeHeaderEditButton(
+              key: const ValueKey('home.edit-toggle'),
+              onPressed: () => _enterEditMode(isBento),
             ),
     );
     final effectiveCardStyle = isBento
@@ -795,6 +811,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
+                                  if (mobileBrandBar != null) mobileBrandBar,
                                   header,
                                   SizedBox(
                                     height: isBento

@@ -336,22 +336,38 @@ class _SidebarDragHeader extends StatelessWidget {
                 height: DesktopSidebarTokens.macOsTitlebarRowHeight,
               ),
             ),
+          if (showToggleButton)
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                isMac ? 4 : DesktopSidebarTokens.headerTopPadding,
+                horizontalPadding,
+                TpTokens.space2,
+              ),
+              child: Center(
+                child: _SidebarToggleButton(
+                  collapsed: true,
+                  compact: false,
+                  onPressed: onToggleCollapsed,
+                ),
+              ),
+            ),
           Padding(
             padding: EdgeInsets.fromLTRB(
               horizontalPadding,
-              isMac ? 4 : DesktopSidebarTokens.headerTopPadding,
+              showToggleButton
+                  ? 0
+                  : (isMac ? 4 : DesktopSidebarTokens.headerTopPadding),
               horizontalPadding,
               DesktopSidebarTokens.headerBottomPadding,
             ),
-            child: showToggleButton
-                ? Center(
-                    child: _SidebarToggleButton(
-                      collapsed: true,
-                      compact: false,
-                      onPressed: onToggleCollapsed,
-                    ),
-                  )
-                : const SizedBox.shrink(),
+            child: Center(
+              child: _SidebarBrandTile(
+                canShowLabel: false,
+                compactCollapsed: true,
+                onTap: onBrandTap,
+              ),
+            ),
           ),
         ],
       );
@@ -359,7 +375,8 @@ class _SidebarDragHeader extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final minExpandedWidth = DesktopSidebarTokens.iconColumnWidth +
+        final minExpandedWidth = DesktopSidebarTokens.brandIconSize +
+            12 +
             DesktopSidebarTokens.brandTextGap +
             DesktopSidebarTokens.minLabelWidth;
         final innerWidth = (constraints.maxWidth - 2 * horizontalPadding)
@@ -453,51 +470,63 @@ class _SidebarDragHeader extends StatelessWidget {
 class _SidebarBrandTile extends StatelessWidget {
   const _SidebarBrandTile({
     required this.canShowLabel,
+    this.compactCollapsed = false,
     this.onTap,
   });
 
   final bool canShowLabel;
+  final bool compactCollapsed;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final radius = BorderRadius.circular(TpTokens.radiusS);
-    final logo = SizedBox(
-      width: DesktopSidebarTokens.iconColumnWidth,
-      child: Center(
-        child: TpBrandMark(
-          size: DesktopSidebarTokens.brandIconSize,
-          semanticLabel: canShowLabel ? null : 'TechPie',
-        ),
-      ),
-    );
 
-    final row = SizedBox(
-      height: DesktopSidebarTokens.brandHeight,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.start,
-        children: [
-          logo,
-          if (canShowLabel) ...[
-            const SizedBox(width: DesktopSidebarTokens.brandTextGap),
-            Expanded(
-              child: Text(
-                'TechPie',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TpTypography.cardTitle(colors).copyWith(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                  color: colors.textPrimary,
-                ),
+    final Widget content = compactCollapsed
+        ? const SizedBox(
+            width: 40,
+            height: 40,
+            child: Center(
+              child: TpBrandMark(
+                size: DesktopSidebarTokens.brandIconSize,
+                semanticLabel: 'TechPie',
               ),
             ),
-          ],
-        ],
-      ),
-    );
+          )
+        : ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: DesktopSidebarTokens.brandHeight,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              child: Row(
+                mainAxisAlignment: canShowLabel
+                    ? MainAxisAlignment.start
+                    : MainAxisAlignment.center,
+                children: [
+                  TpBrandMark(
+                    size: DesktopSidebarTokens.brandIconSize,
+                    semanticLabel: canShowLabel ? null : 'TechPie',
+                  ),
+                  if (canShowLabel) ...[
+                    const SizedBox(width: DesktopSidebarTokens.brandTextGap),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TpBrandWordmark(fontSize: 16.5),
+                          SizedBox(height: 1),
+                          TpBrandSubtitle(fontSize: 11),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
 
     final tile = Material(
       key: const ValueKey('desktop.sidebar-brand'),
@@ -505,7 +534,7 @@ class _SidebarBrandTile extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: radius),
       clipBehavior: Clip.antiAlias,
       child: onTap == null
-          ? row
+          ? content
           : InkWell(
               onTap: onTap,
               borderRadius: radius,
@@ -514,7 +543,7 @@ class _SidebarBrandTile extends StatelessWidget {
               ),
               highlightColor: colors.textPrimary.withValues(alpha: 0.06),
               splashColor: colors.brand.withValues(alpha: 0.08),
-              child: row,
+              child: content,
             ),
     );
 
