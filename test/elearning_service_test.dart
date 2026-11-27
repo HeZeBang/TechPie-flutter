@@ -201,9 +201,13 @@ void main() {
     expect(f.requests, hasLength(3));
   });
 
-  test('calendar IDs, window params, term filtering and Shanghai wall time survive DDL migration',
+  test('deadlines merge submitted and graded states with calendar and gradebook dates',
       () async {
     final requestedColumns = <String>[];
+    var gradePageRequests = 0;
+    final now = DateTime.now();
+    final recentPast = now.subtract(const Duration(days: 3)).toUtc().toIso8601String();
+    final personalDue = now.add(const Duration(days: 2)).millisecondsSinceEpoch ~/ 1000;
     String? startParam;
     String? endParam;
     final f = CampusFixture('https://elearning.shanghaitech.edu.cn:8443', (r) {
@@ -213,13 +217,13 @@ void main() {
         endParam = r.uri.queryParameters['end'];
         return respond([
           {
-            'itemSourceId': 'col1',
+            'itemSourceId': '_101_1',
             'calendarName': '电路',
             'title': '实验',
             'end': '2030-02-03 10:00:00',
             'attemptable': true,
           },
-          {'calendarId': 'personal', 'title': '报告', 'start': 1800000000, 'attemptable': false},
+          {'calendarId': 'personal', 'title': '报告', 'start': personalDue, 'attemptable': false},
         ]);
       }
       if (path == '/learn/api/public/v1/users/me') return respond({'id': 'u'});
@@ -247,19 +251,42 @@ void main() {
           ],
         });
       }
+      if (path.endsWith('/myGrades')) {
+        gradePageRequests++;
+        expect(r.uri.queryParameters['course_id'], 'c');
+        return respond('''
+<div id="101" class="sortable_item_row upcoming_item_row">
+  <div class="gradeStatus"><img src="/images/needs_grading.png"></div>
+</div>
+<div id="102" class="sortable_item_row upcoming_item_row">
+  <div class="gradeStatus"><img src="/images/needs_grading.png"></div>
+</div>
+<div id="103" class="sortable_item_row graded_item_row"></div>
+''');
+      }
       if (path.endsWith('/columns')) {
         requestedColumns.add(path);
         return respond({
           'results': [
             {
-              'id': 'col1',
+              'id': '_101_1',
               'name': '实验',
               'grading': {'due': '2030-02-03T02:00:00Z'},
             },
             {
-              'id': 'col2',
+              'id': '_102_1',
               'name': '另一份作业',
               'contentId': 'item',
+              'grading': {'due': recentPast},
+            },
+            {
+              'id': '_103_1',
+              'name': 'Graded assignment',
+              'grading': {'due': recentPast},
+            },
+            {
+              'id': '_104_1',
+              'name': 'Upcoming assignment',
               'grading': {'due': '2030-02-05T02:00:00Z'},
             },
             {
@@ -278,11 +305,22 @@ void main() {
     expect(int.tryParse(startParam ?? ''), isNotNull);
     expect(int.tryParse(endParam ?? ''), greaterThan(int.parse(startParam!)));
     expect(requestedColumns, ['/learn/api/public/v1/courses/c/gradebook/columns']);
-    expect(deadlines.map((item) => item.id), ['col1', 'personal:报告:1800000000', 'col2']);
+    expect(gradePageRequests, 1);
+    expect(
+      deadlines.map((item) => item.id),
+      ['_101_1', 'personal:报告:$personalDue', '_102_1', '_103_1', '_104_1'],
+    );
+    expect(
+      deadlines.map((item) => item.status),
+      ['Submitted', 'Closed', 'Submitted', 'Graded', 'Open'],
+    );
+    expect(
+      deadlines.where((item) => item.submitted).map((item) => item.id),
+      ['_101_1', '_102_1', '_103_1'],
+    );
     expect(deadlines.first.due.toUtc(), DateTime.utc(2030, 2, 3, 2));
-    expect(deadlines.first.url, endsWith('GradableItem-col1'));
-    expect(deadlines[1].status, 'Closed');
-    expect(deadlines.last.url, contains('content_id=item'));
+    expect(deadlines.first.url, endsWith('GradableItem-_101_1'));
+    expect(deadlines[2].url, contains('content_id=item'));
   });
 
   testWidgets('folder node detail renders body, attachments and child contents', (tester) async {
