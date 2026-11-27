@@ -67,6 +67,14 @@ final class Sm2OfflineCrypto {
     );
   }
 
+  /// 穿戴端 ZA 计算需要未压缩公钥坐标；从私钥推导保证两者一致。
+  static ({String x, String y}) publicKeyCoordinates(String privateKeyHex) {
+    final privateKey = _parsePrivateKey(privateKeyHex);
+    final publicKey = _multiply(privateKey, _generator);
+    if (publicKey.isInfinity) throw StateError('Invalid SM2 public key');
+    return (x: _hex(publicKey.x!).toUpperCase(), y: _hex(publicKey.y!).toUpperCase());
+  }
+
   String sign({
     required String privateKeyHex,
     required List<int> message,

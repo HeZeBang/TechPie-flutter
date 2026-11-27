@@ -16,6 +16,7 @@ import 'models/third_party_account.dart';
 import 'services/academic_certificate_service.dart';
 import 'services/assignment_service.dart';
 import 'services/auth_service.dart';
+import 'services/band_service.dart';
 import 'services/campus/campus_clients.dart';
 import 'services/campus/campus_file_share.dart';
 import 'services/campus_card_service.dart';
@@ -263,6 +264,15 @@ Future<void> _realMain(SharedPreferences prefs) async {
   thirdPartyAuthService.campusWebSession.attachAuth(authService);
   assignmentService.loadCached();
   await scheduleService.loadCachedData();
+  if (isAndroid()) {
+    BandService.instance.attach(
+      scheduleService,
+      assignmentService,
+      storageService,
+      campusCardService,
+    );
+    unawaited(BandService.instance.start());
+  }
 
   runApp(
     TechPieApp(

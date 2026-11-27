@@ -1,0 +1,10 @@
+<script>
+export default {
+  onCreate() {
+    console.log('techpie band app created')
+  },
+  onDestroy() {
+    console.log('techpie band app destroyed')
+  }
+}
+</script>

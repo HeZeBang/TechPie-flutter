@@ -59,6 +59,15 @@
                 <data android:scheme="techpie" android:host="ecard" android:path="/pay"/>
             </intent-filter>
         </activity>
+        <receiver android:name=".BandReminderReceiver" android:exported="false"/>
+        <receiver android:name=".BandReminderBootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.TIME_SET"/>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
         <receiver android:name=".island.IslandFrameReceiver" android:exported="false"/>
         <receiver android:name=".island.IslandRestoreReceiver" android:exported="false">
             <intent-filter>

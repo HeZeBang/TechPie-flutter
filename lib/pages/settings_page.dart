@@ -47,6 +47,7 @@ import 'sync_settings_page.dart';
 import 'third_party_accounts_page.dart';
 import 'third_party_bind_page.dart';
 import 'watch_settings_page.dart';
+import 'wearables_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -258,6 +259,21 @@ class _SettingsBodyState extends State<_SettingsBody> {
             final hasSpending = spending != null && spending.supported;
 
             final deviceEntries = <Widget Function(bool showDivider)>[
+              if (WearablesPage.isSupported)
+                (showDivider) => TpListRow(
+                      icon: TpIcons.watch,
+                      iconColor: colors.textSecondary,
+                      title: '穿戴设备',
+                      subtitle: '小米手环、华为手表与 Apple Watch',
+                      showChevron: true,
+                      showDivider: showDivider,
+                      onTap: () => unawaited(
+                        pushAdaptivePage<void>(
+                          context,
+                          builder: (_) => const WearablesPage(),
+                        ),
+                      ),
+                    ),
               if (_showsHuaweiWatch)
                 (showDivider) => TpListRow(
                       icon: TpIcons.watch,

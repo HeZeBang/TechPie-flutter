@@ -143,6 +143,7 @@ android {
 }
 
 dependencies {
+    implementation(files("libs/xms-wearable-lib_1.4_release.aar"))
     implementation("com.xzakota.hyper.notification:focus-api:1.4")
     implementation("androidx.core:core:1.18.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")

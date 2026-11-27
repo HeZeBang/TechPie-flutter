@@ -40,6 +40,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var ecardWidgets: EcardWidgetBridge? = null
     private var ecardFeedback: EcardFeedback? = null
+    private var bandBridge: BandBridge? = null
     private var wearEngine: WearEngineBridge? = null
     private var islandBridge: IslandBridge? = null
     private var spendingAlerts: SpendingNotificationBridge? = null
@@ -50,6 +51,7 @@ class MainActivity : FlutterActivity() {
             it.capture(intent, notifyFlutter = false)
         }
         ecardFeedback = EcardFeedback(this, flutterEngine.dartExecutor.binaryMessenger)
+        bandBridge = BandBridge(this, flutterEngine.dartExecutor.binaryMessenger).also { it.start() }
         wearEngine = WearEngineBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         islandBridge = IslandBridge(
             this, flutterEngine.dartExecutor.binaryMessenger,
@@ -116,6 +118,8 @@ class MainActivity : FlutterActivity() {
         ecardWidgets = null
         ecardFeedback?.dispose()
         ecardFeedback = null
+        bandBridge?.dispose()
+        bandBridge = null
         wearEngine?.dispose()
         wearEngine = null
         islandBridge?.dispose()
