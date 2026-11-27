@@ -342,45 +342,12 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
       child: page,
       builder: (context, child) {
         final hasUnsavedChanges = _hasUnsavedChanges;
-        return PopScope<void>(
+        return AdaptivePagePopScope<void>(
           canPop: !_busy && !hasUnsavedChanges,
-          onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) unawaited(_confirmExit());
-          },
-          child: Stack(
-            fit: StackFit.passthrough,
-            children: [
-              child!,
-              if (isIos() && hasUnsavedChanges && !_busy) _buildBackSwipe(),
-            ],
-          ),
+          onPopBlocked: hasUnsavedChanges && !_busy ? () => unawaited(_confirmExit()) : null,
+          child: child!,
         );
       },
-    );
-  }
-
-  Widget _buildBackSwipe() {
-    // PopScope disables CupertinoPageRoute's interactive swipe while dirty.
-    final isRtl = Directionality.of(context) == TextDirection.rtl;
-    final padding = MediaQuery.paddingOf(context);
-    final leadingInset = isRtl ? padding.right : padding.left;
-    final edgeWidth = leadingInset < 20 ? 20.0 : leadingInset;
-    return PositionedDirectional(
-      start: 0,
-      top: 0,
-      bottom: 0,
-      width: edgeWidth,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        excludeFromSemantics: true,
-        onHorizontalDragEnd: (details) {
-          final velocity = (details.primaryVelocity ?? 0) * (isRtl ? -1 : 1);
-          final distance = isRtl ? -details.localPosition.dx : details.localPosition.dx - edgeWidth;
-          if (velocity > 0 || (velocity == 0 && distance >= 48)) {
-            unawaited(maybePopAdaptivePage<void>(context));
-          }
-        },
-      ),
     );
   }
 
