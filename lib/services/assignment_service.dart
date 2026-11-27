@@ -90,10 +90,27 @@ class AssignmentService extends ChangeNotifier {
 
   CustomDeadline? findCustomDeadline(String id) => _customDeadlines?[id];
 
+  Assignment? findImportedDeadline(Assignment assignment) =>
+      _assignments.where((item) => _sameImportedDeadline(item, assignment)).firstOrNull;
+
+  static bool _sameImportedDeadline(Assignment item, Assignment assignment) =>
+      item.kind == DeadlineKind.assignment &&
+      item.id == assignment.id &&
+      item.platform.toLowerCase() == assignment.platform.toLowerCase();
+
+  bool hasImportedDeadlineSourceEdit(Assignment assignment) {
+    final edit = _overrides.edits[_importedEditKey(assignment)];
+    return edit?.title != null || edit?.course != null || edit?.due != null || edit?.lateDue != null;
+  }
+
   void _rebuildAssignments() {
     _assignments = List.unmodifiable(
       <Assignment>[
-        ..._remoteAssignments,
+        for (final source in _remoteAssignments)
+          if (source.kind == DeadlineKind.assignment && _overrides.edits.isNotEmpty)
+            _overrides.applyEdit(source, _importedEditKey(source))
+          else
+            source,
         ...?_customDeadlines?.values,
       ]..sort((a, b) => a.due.compareTo(b.due)),
     );
@@ -112,6 +129,15 @@ class AssignmentService extends ChangeNotifier {
 
   String reminderKeyFor(Assignment assignment) =>
       _hash(scopedKeyFor(assignment));
+
+  String _importedEditKey(Assignment assignment) {
+    final platform = assignment.platform.toLowerCase();
+    return _hash(_scopedAssignmentKey('$platform:${assignment.id}', platform));
+  }
+
+  // A reminder can have pending detail and completion changes at the same time.
+  String _importedReminderEditKey(Assignment assignment) =>
+      'edit:${_importedEditKey(assignment)}';
 
   String? _reminderKeyForOverride(String key) {
     final separator = key.indexOf(':');
@@ -151,11 +177,16 @@ class AssignmentService extends ChangeNotifier {
   Future<({Map<String, DeadlineReminderChange> changes, Duration? nextRemoval})>
       readReminderSyncWork() => _writes.protect(() async => reminderSyncWork);
 
-  Map<String, CustomDeadline> get pendingReminderEdits => {
+  Map<String, Assignment> get pendingReminderEdits => {
         if (_customReminderChanges.containsValue(DeadlineReminderChange.edit))
           for (final deadline in _customDeadlines?.values ?? const <CustomDeadline>[])
             if (_customReminderChanges.containsKey(_reminderEditKey(deadline.id)))
               reminderKeyFor(deadline): deadline,
+        if (_overrides.reminderChanges.containsValue(DeadlineReminderChange.edit))
+          for (final assignment in _assignments)
+            if (assignment.kind == DeadlineKind.assignment &&
+                _overrides.reminderChanges.containsKey(_importedReminderEditKey(assignment)))
+              reminderKeyFor(assignment): assignment,
       };
 
   // Details and completion changes can both be pending for the same deadline.
@@ -468,14 +499,104 @@ class AssignmentService extends ChangeNotifier {
 
   // -- Override mutators --
 
-  Future<void> _mutateOverrides(bool Function(AssignmentOverrides) apply) {
+  Future<void> saveImportedDeadlineEdit(
+    Assignment assignment, {
+    required int epoch,
+    String? title,
+    String? course,
+    String? notes,
+    DateTime? due,
+    DateTime? lateDue,
+  }) =>
+      _changeImportedDeadlineEdit(assignment, epoch, (source, previous) {
+        if (title?.trim().isEmpty ?? false) throw ArgumentError('请输入标题');
+        if (lateDue != null && !source.supportsLateDue) {
+          throw ArgumentError('此作业不支持迟交时间');
+        }
+
+        String? editedText(String? input, String original, String? existing) {
+          if (input == null) return existing;
+          final text = input.trim();
+          return text == original.trim() ? null : text;
+        }
+
+        DateTime? editedTime(DateTime? input, DateTime? original, DateTime? existing) {
+          if (input == null) return existing;
+          return (original?.isAtSameMomentAs(input) ?? false) ? null : input.toLocal();
+        }
+
+        final edit = (
+          title: editedText(title, source.title, previous?.title),
+          course: editedText(course, source.course, previous?.course),
+          notes: editedText(notes, source.notes, previous?.notes),
+          due: editedTime(due, source.due, previous?.due),
+          lateDue: editedTime(lateDue, source.lateDue, previous?.lateDue),
+        );
+        final effectiveLateDue = edit.lateDue ?? source.lateDue;
+        if (source.supportsLateDue &&
+            (due != null || lateDue != null) &&
+            effectiveLateDue != null &&
+            effectiveLateDue.isBefore(edit.due ?? source.due)) {
+          throw ArgumentError('迟交截止时间不能早于普通截止时间');
+        }
+        return edit == (title: null, course: null, notes: null, due: null, lateDue: null)
+            ? null
+            : edit;
+      });
+
+  Future<void> restoreImportedDeadline(Assignment assignment, {required int epoch}) =>
+      _changeImportedDeadlineEdit(assignment, epoch, (_, previous) {
+        final notes = previous?.notes;
+        if (notes == null) return null;
+        return (title: null, course: null, notes: notes, due: null, lateDue: null);
+      });
+
+  Future<void> _changeImportedDeadlineEdit(
+    Assignment assignment,
+    int epoch,
+    AssignmentEdit? Function(Assignment, AssignmentEdit?) change,
+  ) =>
+      _mutateOverrides(
+        (overrides) {
+          final key = _importedEditKey(assignment);
+          final source = _remoteAssignments
+              .where((item) => _sameImportedDeadline(item, assignment))
+              .firstOrNull;
+          if (source == null) throw StateError('Imported deadline no longer exists');
+          final previous = overrides.edits[key];
+          final next = change(source, previous);
+          if (next == previous) return false;
+          if (next == null) {
+            overrides.edits.remove(key);
+          } else {
+            overrides.edits[key] = next;
+          }
+          if (_syncReminders) {
+            overrides.reminderChanges[_importedReminderEditKey(source)] =
+                DeadlineReminderChange.edit;
+          }
+          return true;
+        },
+        expectedEpoch: epoch,
+      );
+
+  Future<void> _mutateOverrides(
+    bool Function(AssignmentOverrides) apply, {
+    int? expectedEpoch,
+  }) {
     final epoch = _identityEpoch;
     return _writes.protect(() async {
-      if (_disposed || epoch != _identityEpoch) return;
+      if (_disposed ||
+          epoch != _identityEpoch ||
+          (expectedEpoch != null && expectedEpoch != _identityEpoch)) {
+        if (expectedEpoch != null) throw StateError('Deadline workspace changed');
+        return;
+      }
       final updated = _overrides.copy();
       if (!apply(updated)) return;
       await _storage.saveAssignmentOverrides(updated);
       if (_disposed) return;
+      final editsChanged = !mapEquals(_overrides.edits, updated.edits);
       if (!mapEquals(_overrides.reminderChanges, updated.reminderChanges) ||
           !mapEquals(_overrides.reminderRemovals, updated.reminderRemovals)) {
         _reminderChangesRevision++;
@@ -489,7 +610,9 @@ class AssignmentService extends ChangeNotifier {
               reminderCompletions: updated.reminderCompletions,
               reminderChanges: updated.reminderChanges,
               reminderRemovals: updated.reminderRemovals,
+              edits: updated.edits,
             );
+      if (editsChanged) _rebuildAssignments();
       notifyListeners();
     });
   }
@@ -569,20 +692,34 @@ class AssignmentService extends ChangeNotifier {
   }
 
   Future<void> acknowledgeReminderEdits(
-    Iterable<CustomDeadline> saved, {
+    Iterable<Assignment> saved, {
     required int epoch,
-  }) =>
-      _mutateCustomDeadlines(_primaryIdentity, (deadlines, pending) {
-        if (epoch != _identityEpoch) return false;
-        var changed = false;
-        for (final deadline in saved) {
-          if (identical(deadlines[deadline.id], deadline) &&
-              pending.remove(_reminderEditKey(deadline.id)) != null) {
-            changed = true;
-          }
+  }) async {
+    await _mutateOverrides((overrides) {
+      if (epoch != _identityEpoch) return false;
+      var changed = false;
+      for (final assignment in saved) {
+        if (assignment.kind == DeadlineKind.assignment &&
+            identical(findImportedDeadline(assignment), assignment) &&
+            overrides.reminderChanges.remove(_importedReminderEditKey(assignment)) != null) {
+          changed = true;
         }
-        return changed;
-      });
+      }
+      return changed;
+    });
+    if (_disposed || epoch != _identityEpoch) return;
+    await _mutateCustomDeadlines(_primaryIdentity, (deadlines, pending) {
+      if (epoch != _identityEpoch) return false;
+      var changed = false;
+      for (final deadline in saved.whereType<CustomDeadline>()) {
+        if (identical(deadlines[deadline.id], deadline) &&
+            pending.remove(_reminderEditKey(deadline.id)) != null) {
+          changed = true;
+        }
+      }
+      return changed;
+    });
+  }
 
   /// A null completion timestamp represents a linked reminder that is open.
   Future<void> applyReminderCompletions(
@@ -735,7 +872,9 @@ class AssignmentService extends ChangeNotifier {
           await _storage.saveAssignmentOverrides(reset);
         }
         if (_disposed) return;
+        final hadEdits = _overrides.edits.isNotEmpty;
         _overrides = reset;
+        if (hadEdits) _rebuildAssignments();
         notifyListeners();
       });
 

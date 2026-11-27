@@ -147,7 +147,10 @@ class DeadlineReminderService with WidgetsBindingObserver {
               if (location.isNotEmpty) '地点：$location',
               if (notes.isNotEmpty) notes,
             ].join('\n'),
-          _ => assignment.course,
+          _ => [
+              if (assignment.course.isNotEmpty) assignment.course,
+              if (assignment.notes.isNotEmpty) assignment.notes,
+            ].join('\n'),
         },
         if (assignment is CustomDeadline) 'location': assignment.location,
         'due': assignment.due.millisecondsSinceEpoch,
@@ -247,7 +250,7 @@ class DeadlineReminderService with WidgetsBindingObserver {
         );
         if (!_initialized || epoch != _assignments.identityEpoch || saved == null) return;
         await _assignments.acknowledgeReminderEdits(
-          saved.map((key) => edits[key]).whereType<CustomDeadline>(),
+          saved.map((key) => edits[key]).whereType<Assignment>(),
           epoch: epoch,
         );
       });

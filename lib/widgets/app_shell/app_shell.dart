@@ -218,8 +218,13 @@ class _AppShellState extends State<AppShell> {
   void _showDeadlines() {
     if (!mounted || !appShellPendingDeadlines.value) return;
     appShellPendingDeadlines.value = false;
-    _tabNavigatorKeys[2]?.currentState?.popUntil((route) => route.isFirst);
-    _onDestinationSelected(2);
+    const index = AppShell.deadlinesTabIndex;
+    final wasSelected = _selectedIndex == index;
+    _onDestinationSelected(index);
+    if (!wasSelected) {
+      final navigator = _tabNavigatorKeys[index]?.currentState;
+      if (navigator != null) _popTabToRoot(navigator);
+    }
   }
 
   /// Pushes the entry onto the visible navigation stack.
@@ -275,7 +280,7 @@ class _AppShellState extends State<AppShell> {
   void _returnToTabRoot(int index) {
     final navigator = _tabNavigatorKeys[index]?.currentState;
     if (navigator != null && navigator.canPop()) {
-      navigator.popUntil((route) => route.isFirst);
+      _popTabToRoot(navigator);
       return;
     }
     final controller = _tabScrollControllers[index];
@@ -292,6 +297,17 @@ class _AppShellState extends State<AppShell> {
         position.jumpTo(position.minScrollExtent);
       }
     }
+  }
+
+  void _popTabToRoot(NavigatorState navigator) {
+    // popUntil skips PopScope, so hand a blocked route the back attempt.
+    var blocked = false;
+    navigator.popUntil((route) {
+      if (route.isFirst) return true;
+      blocked = route.popDisposition == RoutePopDisposition.doNotPop;
+      return blocked;
+    });
+    if (blocked) unawaited(navigator.maybePop<void>());
   }
 
   @override
@@ -329,7 +345,7 @@ class _AppShellState extends State<AppShell> {
   void _navigateBackInActiveTab() {
     final navigator = _tabNavigatorKeys[_selectedIndex]?.currentState;
     if (navigator != null && navigator.canPop()) {
-      navigator.pop();
+      unawaited(navigator.maybePop<void>());
     }
   }
 
@@ -574,9 +590,14 @@ class _AppShellState extends State<AppShell> {
 
     // Only the selected tab answers a system back: an offstage tab with pages
     // of its own must not pop behind the user's back.
-    return NavigatorPopHandler(
+    return NavigatorPopHandler<void>(
       enabled: index == _selectedIndex,
-      onPopWithResult: (_) => navigatorKey.currentState?.pop(),
+      onPopWithResult: (_) {
+        final navigator = navigatorKey.currentState;
+        if (index == _selectedIndex && navigator != null) {
+          unawaited(navigator.maybePop<void>());
+        }
+      },
       child: HeroControllerScope(
         controller: _tabHeroControllers.putIfAbsent(
           index,

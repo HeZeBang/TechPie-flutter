@@ -46,7 +46,6 @@ import '../widgets/uni_auth_login.dart';
 import 'campus_card_page.dart';
 import 'campus_feature_navigation.dart';
 import 'campus_services_page.dart';
-import 'custom_deadline_editor_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -1431,11 +1430,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       trailingColor: visuals.trailingColor,
       highlightTrailing: visuals.highlightTrailing,
       showDivider: showDivider,
-      onTap: () => unawaited(
-        a is CustomDeadline
-            ? CustomDeadlineEditorPage.open(context, deadline: a)
-            : _openAssignmentUrl(a),
-      ),
+      onTap: a is CustomDeadline ? null : () => unawaited(_openAssignmentUrl(a)),
     );
   }
 

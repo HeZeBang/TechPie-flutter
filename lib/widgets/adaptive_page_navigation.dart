@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -41,4 +43,58 @@ Future<bool> maybePopAdaptivePage<T>(
   T? result,
 ]) {
   return Navigator.of(context).maybePop<T>(result);
+}
+
+/// Reports blocked back attempts, including the iOS edge swipe that a
+/// [CupertinoPageRoute] disables when the page cannot pop.
+class AdaptivePagePopScope<T> extends StatelessWidget {
+  const AdaptivePagePopScope({
+    super.key,
+    required this.canPop,
+    this.onPopBlocked,
+    required this.child,
+  });
+
+  final bool canPop;
+  final VoidCallback? onPopBlocked;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => PopScope<T>(
+        canPop: canPop,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) onPopBlocked?.call();
+        },
+        child: Stack(
+          fit: StackFit.passthrough,
+          children: [
+            child,
+            if (isIos() && !canPop && onPopBlocked != null) _buildBackSwipe(context),
+          ],
+        ),
+      );
+
+  Widget _buildBackSwipe(BuildContext context) {
+    final isRtl = Directionality.of(context) == TextDirection.rtl;
+    final padding = MediaQuery.paddingOf(context);
+    final leadingInset = isRtl ? padding.right : padding.left;
+    final edgeWidth = leadingInset < 20 ? 20.0 : leadingInset;
+    return PositionedDirectional(
+      start: 0,
+      top: 0,
+      bottom: 0,
+      width: edgeWidth,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        excludeFromSemantics: true,
+        onHorizontalDragEnd: (details) {
+          final velocity = (details.primaryVelocity ?? 0) * (isRtl ? -1 : 1);
+          final distance = isRtl ? -details.localPosition.dx : details.localPosition.dx - edgeWidth;
+          if (velocity > 0 || (velocity == 0 && distance >= 48)) {
+            unawaited(maybePopAdaptivePage<T>(context));
+          }
+        },
+      ),
+    );
+  }
 }
