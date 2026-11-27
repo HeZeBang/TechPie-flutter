@@ -20,7 +20,9 @@ class ElearningService {
       return;
     }
     try {
-      cachedCourses = _rows(saved['courses']).map(BlackboardCourse.fromJson).toList();
+      cachedCourses = _sortCachedCourses(
+        _rows(saved['courses']).map(BlackboardCourse.fromJson).toList(),
+      );
       cachedAnnouncements =
           _rows(saved['announcements']).map(BlackboardAnnouncement.fromJson).toList();
     } on TypeError {
@@ -89,6 +91,31 @@ class ElearningService {
     });
   }
 
+  static int? _parseBlackboardNumericId(String id) {
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) return null;
+    final direct = int.tryParse(trimmed);
+    if (direct != null) return direct;
+    final match = RegExp(r'_(\d+)_').firstMatch(trimmed);
+    return match == null ? null : int.tryParse(match.group(1)!);
+  }
+
+  static int? _termDurationSortKey(Map<String, dynamic> row) {
+    final duration = row['duration'] as Map?;
+    final dt = _deadlineTime(duration?['start']) ?? _deadlineTime(duration?['end']);
+    return dt == null ? null : dt.year * 100 + dt.month;
+  }
+
+  static List<BlackboardCourse> _sortCachedCourses(List<BlackboardCourse> courses) {
+    final entries = [
+      for (var i = 0; i < courses.length; i++) (course: courses[i], index: i),
+    ]..sort((a, b) {
+        final byTerm = compareBlackboardTermNames(a.course.term, b.course.term);
+        return byTerm != 0 ? byTerm : a.index.compareTo(b.index);
+      });
+    return [for (final e in entries) e.course];
+  }
+
   Future<List<BlackboardCourse>> _courses(int version) async {
     final user = await client.getMe();
     _check(version);
@@ -96,8 +123,23 @@ class ElearningService {
         _rows((await client.getMyCourses(user['id'] as String, allPages: true))['results']);
     _check(version);
     final termRows = _rows((await client.getTerms(allPages: true))['results']);
-    final terms = {for (final row in termRows) row['id']: row['name']};
-    final courses = <BlackboardCourse>[];
+    final terms = <String, String>{};
+    final termDurationKeys = <String, int>{};
+    for (final row in termRows) {
+      final termId = row['id']?.toString() ?? '';
+      if (termId.isEmpty) continue;
+      final name = row['name'] as String?;
+      if (name != null) terms[termId] = name;
+      final durationKey = _termDurationSortKey(row);
+      if (durationKey != null) termDurationKeys[termId] = durationKey;
+    }
+    final entries = <({
+      BlackboardCourse course,
+      bool hasTerm,
+      int? sortKey,
+      int? numericTermId,
+      int index,
+    })>[];
     final courseTermIds = <String, String>{};
     for (final id in {
       for (final m in memberships)
@@ -109,12 +151,37 @@ class ElearningService {
         if ((row['availability'] as Map?)?['available'] == 'No') continue;
         final termId = row['termId'] as String? ?? '';
         courseTermIds[id] = termId;
-        courses.add(BlackboardCourse.fromJson({...row, 'term': terms[termId] ?? ''}));
+        final course = BlackboardCourse.fromJson({...row, 'term': terms[termId] ?? ''});
+        final trimmedTerm = course.term.trim();
+        final hasTerm = trimmedTerm.isNotEmpty && trimmedTerm != '其他学期';
+        entries.add((
+          course: course,
+          hasTerm: hasTerm,
+          sortKey: parseBlackboardTermSortKey(course.term) ?? termDurationKeys[termId],
+          numericTermId: _parseBlackboardNumericId(termId),
+          index: entries.length,
+        ),);
       } on CampusRequestException catch (e) {
         if (e.kind != CampusErrorKind.forbidden && e.kind != CampusErrorKind.notFound) rethrow;
       }
     }
     _check(version);
+    entries.sort((a, b) {
+      if (a.hasTerm != b.hasTerm) return a.hasTerm ? -1 : 1;
+      final keyA = a.sortKey;
+      final keyB = b.sortKey;
+      if (keyA != null && keyB != null && keyA != keyB) {
+        return keyB.compareTo(keyA);
+      }
+      if ((keyA != null) != (keyB != null)) return keyA != null ? -1 : 1;
+      final numA = a.numericTermId;
+      final numB = b.numericTermId;
+      if (numA != null && numB != null && numA != numB) {
+        return numB.compareTo(numA);
+      }
+      return a.index.compareTo(b.index);
+    });
+    final courses = [for (final entry in entries) entry.course];
     _lastTermRows = termRows;
     _courseTermIds = courseTermIds;
     _loadedCourses = List.unmodifiable(courses);

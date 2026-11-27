@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/elearning_models.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/pages/elearning_course_detail_page.dart';
+import 'package:techpie/pages/elearning_hub_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus/campus_clients.dart';
@@ -394,6 +395,256 @@ void main() {
     expect(find.text('目录说明文字'), findsOneWidget);
     expect(find.text('folder_guide.pdf'), findsOneWidget);
     expect(find.text('子节点文档'), findsOneWidget);
+  });
+
+  test(
+      'parseBlackboardTermSortKey and compareBlackboardTermNames order terms newest-first with unassigned last',
+      () {
+    expect(parseBlackboardTermSortKey('2024-2025学年 第一学期'), 202409);
+    expect(parseBlackboardTermSortKey('2024-2025学年 第二学期'), 202502);
+    expect(parseBlackboardTermSortKey('2025-2026学年 第一学期'), 202509);
+    expect(parseBlackboardTermSortKey('2025-2026学年 第二学期'), 202602);
+    expect(parseBlackboardTermSortKey('2025-2026学年 暑期学期'), 202607);
+    expect(parseBlackboardTermSortKey('2025 Fall'), 202509);
+    expect(parseBlackboardTermSortKey('2026 Spring'), 202602);
+    expect(parseBlackboardTermSortKey('2026 Summer'), 202607);
+    expect(parseBlackboardTermSortKey('2026 Fall'), 202609);
+    expect(parseBlackboardTermSortKey('2025-2026-1'), 202509);
+    expect(parseBlackboardTermSortKey('2025-2026-2'), 202602);
+    expect(parseBlackboardTermSortKey('20261'), 202609);
+    expect(parseBlackboardTermSortKey('长期开放课程'), isNull);
+    expect(parseBlackboardTermSortKey(''), isNull);
+    expect(parseBlackboardTermSortKey('其他学期'), isNull);
+
+    final labels = [
+      '',
+      '2024-2025学年 第一学期',
+      '长期开放课程',
+      '2025-2026-2',
+      '2025-2026学年 暑期学期',
+      '2024-2025学年 第二学期',
+      '其他学期',
+      '2026 Fall',
+      '2025 Fall',
+    ]..sort(compareBlackboardTermNames);
+
+    expect(labels, [
+      '2026 Fall',
+      '2025-2026学年 暑期学期',
+      '2025-2026-2',
+      '2025 Fall',
+      '2024-2025学年 第二学期',
+      '2024-2025学年 第一学期',
+      '长期开放课程',
+      '',
+      '其他学期',
+    ]);
+  });
+
+  test(
+      'ElearningService.courses sorts fetched courses newest-term-first using term names and duration and restores legacy caches sorted',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = StorageService(await SharedPreferences.getInstance());
+    final f = CampusFixture('https://elearning.shanghaitech.edu.cn:8443', (r) {
+      final path = r.uri.path;
+      if (path == '/learn/api/public/v1/users/me') return respond({'id': 'me'});
+      if (path.endsWith('/users/me/courses')) {
+        return respond({
+          'results': [
+            {'courseId': 'c_empty'},
+            {'courseId': 'c_old'},
+            {'courseId': 'c_spring_a'},
+            {'courseId': 'c_dur'},
+            {'courseId': 'c_spring_b'},
+            {'courseId': 'c_summer'},
+            {'courseId': 'c_fall'},
+          ],
+        });
+      }
+      if (path.endsWith('/terms')) {
+        return respond({
+          'results': [
+            {'id': '_10_1', 'name': '2024-2025学年 第一学期'},
+            {'id': '_11_1', 'name': '2025-2026学年 第二学期'},
+            {
+              'id': '_99_1',
+              'name': '特别学期',
+              'duration': {'start': '2026-06-15T00:00:00Z'},
+            },
+            {'id': '_12_1', 'name': '2025-2026学年 暑期学期'},
+            {'id': '_13_1', 'name': '2026-2027学年 第一学期'},
+          ],
+        });
+      }
+      if (path.endsWith('/courses/c_empty')) {
+        return respond({'id': 'c_empty', 'courseId': 'GEN001', 'name': '导学'});
+      }
+      if (path.endsWith('/courses/c_old')) {
+        return respond({'id': 'c_old', 'courseId': 'CS100', 'name': '旧课', 'termId': '_10_1'});
+      }
+      if (path.endsWith('/courses/c_spring_a')) {
+        return respond({'id': 'c_spring_a', 'courseId': 'CS201', 'name': '春甲', 'termId': '_11_1'});
+      }
+      if (path.endsWith('/courses/c_spring_b')) {
+        return respond({'id': 'c_spring_b', 'courseId': 'CS202', 'name': '春乙', 'termId': '_11_1'});
+      }
+      if (path.endsWith('/courses/c_dur')) {
+        return respond({'id': 'c_dur', 'courseId': 'SP101', 'name': '专题', 'termId': '_99_1'});
+      }
+      if (path.endsWith('/courses/c_summer')) {
+        return respond({'id': 'c_summer', 'courseId': 'SUM1', 'name': '夏课', 'termId': '_12_1'});
+      }
+      if (path.endsWith('/courses/c_fall')) {
+        return respond({'id': 'c_fall', 'courseId': 'CS301', 'name': '新课', 'termId': '_13_1'});
+      }
+      fail(path);
+    });
+
+    final service = ElearningService(ElearningClient(f.session), storage: store);
+    final loaded = await service.courses();
+    expect(
+      loaded.map((c) => c.id),
+      ['c_fall', 'c_summer', 'c_dur', 'c_spring_a', 'c_spring_b', 'c_old', 'c_empty'],
+    );
+
+    await store.saveBlackboardIndex({
+      'owner': store.blackboardIndex!['owner'],
+      'courses': [
+        {'id': 'l_old', 'courseId': 'C1', 'name': '旧课', 'term': '2024-2025学年 第一学期'},
+        {'id': 'l_empty', 'courseId': 'C0', 'name': '无学期', 'term': ''},
+        {'id': 'l_new', 'courseId': 'C2', 'name': '新课', 'term': '2026-2027学年 第一学期'},
+      ],
+      'announcements': const <Object>[],
+    });
+    final restored = ElearningService(ElearningClient(f.session), storage: store);
+    expect(restored.cachedCourses.map((c) => c.id), ['l_new', 'l_old', 'l_empty']);
+  });
+
+  testWidgets('ElearningHubPage renders newest semester sections at top and unassigned term last',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    FlutterSecureStorage.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    await storage.saveSession(
+      UserSession(
+        userId: 'user',
+        userName: 'User',
+        schoolName: 'ShanghaiTech',
+        createdAt: DateTime(2026),
+      ),
+    );
+    await storage.saveThirdPartyAccount(FakeIdsClient.account('bound'));
+    final logger = DebugLogger();
+    final http = LoggingHttpClient(logger);
+    final uniAuth = UniAuthService();
+    final auth = AuthService(storage, http, uniAuth);
+    await auth.loadSession();
+    final tpAuth = ThirdPartyAuthService(storage, http, idsClient: FakeIdsClient());
+    await tpAuth.initialize();
+    final schedule = ScheduleService(storage, http, auth, tpAuth);
+    final assignments = AssignmentService(storage, http, auth, tpAuth, schedule);
+    final egate = EgateAppService(auth, storage, tpAuth);
+    final oa = OaGymService(auth, storage, tpAuth);
+    final card = CampusCardService(storage: storage);
+    final sync = SyncService(auth, tpAuth, storage, ecard: card);
+    final theme = ThemeService(storage);
+    final bind = EcardBindService();
+    final allowance = StudentAllowanceService(auth, tpAuth);
+    final update = UpdateService();
+    final f = CampusFixture('https://elearning.shanghaitech.edu.cn:8443', (r) {
+      final path = r.uri.path;
+      if (path == '/learn/api/public/v1/users/me') return respond({'id': 'u'});
+      if (path.endsWith('/users/u/courses')) {
+        return respond({
+          'results': [
+            {'courseId': 'c_none'},
+            {'courseId': 'c_25_fall'},
+            {'courseId': 'c_26_spring'},
+            {'courseId': 'c_26_summer'},
+            {'courseId': 'c_26_fall'},
+          ],
+        });
+      }
+      if (path.endsWith('/terms')) {
+        return respond({
+          'results': [
+            {'id': 't1', 'name': '2025-2026学年 第一学期'},
+            {'id': 't2', 'name': '2025-2026学年 第二学期'},
+            {'id': 't3', 'name': '2025-2026学年 暑期学期'},
+            {'id': 't4', 'name': '2026-2027学年 第一学期'},
+          ],
+        });
+      }
+      if (path.endsWith('/courses/c_none')) {
+        return respond({'id': 'c_none', 'courseId': 'GEN', 'name': '通识导论'});
+      }
+      if (path.endsWith('/courses/c_25_fall')) {
+        return respond({'id': 'c_25_fall', 'courseId': 'C1', 'name': '大一秋', 'termId': 't1'});
+      }
+      if (path.endsWith('/courses/c_26_spring')) {
+        return respond({'id': 'c_26_spring', 'courseId': 'C2', 'name': '大一春', 'termId': 't2'});
+      }
+      if (path.endsWith('/courses/c_26_summer')) {
+        return respond({'id': 'c_26_summer', 'courseId': 'C3', 'name': '暑期课', 'termId': 't3'});
+      }
+      if (path.endsWith('/courses/c_26_fall')) {
+        return respond({'id': 'c_26_fall', 'courseId': 'C4', 'name': '大二秋', 'termId': 't4'});
+      }
+      if (path.endsWith('/announcement')) return respond('');
+      fail(path);
+    });
+
+    final clients = _FixtureCampusClients(auth, tpAuth, ElearningClient(f.session), storage);
+    addTearDown(() {
+      clients.blackboard.dispose();
+      clients.dispose();
+      schedule.dispose();
+      assignments.dispose();
+      egate.dispose();
+      oa.dispose();
+      card.dispose();
+      allowance.dispose();
+    });
+
+    await tester.pumpWidget(
+      ServiceProvider(
+        authService: auth,
+        debugLogger: logger,
+        storageService: storage,
+        themeService: theme,
+        scheduleService: schedule,
+        assignmentService: assignments,
+        thirdPartyAuthService: tpAuth,
+        oaGymService: oa,
+        egateAppService: egate,
+        campusClients: clients,
+        studentAllowanceService: allowance,
+        uniAuthService: uniAuth,
+        syncService: sync,
+        updateService: update,
+        campusCardService: card,
+        ecardBindService: bind,
+        child: const MaterialApp(home: ElearningHubPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final y26Fall = tester.getTopLeft(find.text('2026-2027学年 第一学期')).dy;
+    final y26Summer = tester.getTopLeft(find.text('2025-2026学年 暑期学期')).dy;
+    final y26Spring = tester.getTopLeft(find.text('2025-2026学年 第二学期')).dy;
+    final y25Fall = tester.getTopLeft(find.text('2025-2026学年 第一学期')).dy;
+    final yOther = tester.getTopLeft(find.text('其他学期')).dy;
+
+    expect(y26Fall, lessThan(y26Summer));
+    expect(y26Summer, lessThan(y26Spring));
+    expect(y26Spring, lessThan(y25Fall));
+    expect(y25Fall, lessThan(yOther));
   });
 }
 

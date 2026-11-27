@@ -195,28 +195,41 @@ class _HubState extends State<_Hub> with SingleTickerProviderStateMixin {
                                     [])
                                 .add(course);
                           }
+                          final termEntries = terms.entries.toList();
+                          final orderedTerms = [
+                            for (var i = 0; i < termEntries.length; i++)
+                              (index: i, entry: termEntries[i]),
+                          ]..sort((a, b) {
+                              final byTerm = compareBlackboardTermNames(
+                                a.entry.key,
+                                b.entry.key,
+                              );
+                              return byTerm != 0
+                                  ? byTerm
+                                  : a.index.compareTo(b.index);
+                            });
                           return [
-                            if (terms.isEmpty)
+                            if (orderedTerms.isEmpty)
                               const TpStateCard.empty(
                                 icon: TpIcons.search,
                                 title: '没有匹配的课程',
                                 compact: true,
                               ),
-                            for (final term in terms.entries) ...[
+                            for (final item in orderedTerms) ...[
                               Padding(
                                 padding: const EdgeInsets.only(
                                   top: TpTokens.space3,
                                   bottom: TpTokens.space2,
                                 ),
                                 child: Text(
-                                  term.key,
+                                  item.entry.key,
                                   style: TpTypography.cardTitle(colors),
                                 ),
                               ),
                               TpCard(
                                 child: Column(
                                   children: [
-                                    for (final course in term.value)
+                                    for (final course in item.entry.value)
                                       ListTile(
                                         title: Text(course.name),
                                         subtitle: Text(course.code),
