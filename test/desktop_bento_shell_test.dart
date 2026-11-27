@@ -170,7 +170,7 @@ void main() {
     );
 
     final tp = TpColors.light();
-    expect(activeIndicator.color, tp.opaqueBrandContainer);
+    expect(activeIndicator.color, tp.surface);
     expect(inkWell.hoverColor, isNotNull);
     expect(inkWell.hoverColor, isNot(Colors.transparent));
     expect(inkWell.hoverColor!.a, lessThan(0.15));

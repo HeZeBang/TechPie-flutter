@@ -366,26 +366,54 @@ class TpCampusCardStrip extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: TpTokens.space2),
               child: Container(
                 key: const ValueKey('home.campus-card-mini-thumb'),
-                width: 48,
-                height: 32,
+                width: 54,
+                height: 34,
                 decoration: BoxDecoration(
                   color: _cardBodyCanvas,
                   borderRadius: BorderRadius.circular(TpTokens.radiusXs),
                   border: Border.all(
                     color: colors.isDark ? colors.border : colors.divider,
-                    width: 0.5,
+                    width: 0.6,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: colors.isDark ? 0.30 : 0.10,
+                      ),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Expanded(
-                      flex: 28,
-                      child: ColoredBox(color: _cardHeaderCrimson),
+                    Expanded(
+                      flex: 34,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFB5101F), Color(0xFF8C0813)],
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          width: 14,
+                          height: 2,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.72),
+                            borderRadius:
+                                BorderRadius.circular(TpTokens.radiusBar),
+                          ),
+                        ),
+                      ),
                     ),
                     Expanded(
-                      flex: 72,
+                      flex: 66,
                       child: ColoredBox(
                         color: _cardBodyCanvas,
                         child: Image.asset(
@@ -505,6 +533,10 @@ class _PayIndicator extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(TpTokens.radiusPill),
+        border: Border.all(
+          color: foregroundColor.withValues(alpha: 0.14),
+          width: 0.5,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

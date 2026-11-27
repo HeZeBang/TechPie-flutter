@@ -46,11 +46,11 @@ abstract final class DesktopSidebarTokens {
   static const double mediumHorizontalPadding = 12;
   static const double expandedHorizontalPadding = 12;
   static const double headerTopPadding = 10;
-  static const double headerBottomPadding = 10;
+  static const double headerBottomPadding = 12;
 
-  static const double brandHeight = 46;
-  static const double brandIconSize = 32;
-  static const double brandTextGap = navItemTextGap;
+  static const double brandHeight = 48;
+  static const double brandIconSize = 34;
+  static const double brandTextGap = 11;
 
   static const double toggleButtonSize = 32;
   static const double toggleIconSize = 18;
@@ -58,8 +58,8 @@ abstract final class DesktopSidebarTokens {
 
   static const double navTopPadding = 4;
   static const double navBottomPadding = 12;
-  static const double navItemSpacing = 3;
-  static const double navItemHeight = 40;
+  static const double navItemSpacing = 2;
+  static const double navItemHeight = 38;
   static const double mediumNavItemSpacing = 8;
   static const double mediumNavItemHeight = 76;
   static const double navItemRadius = 8;

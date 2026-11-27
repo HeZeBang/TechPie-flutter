@@ -26,19 +26,21 @@ abstract final class TpTypography {
   ];
 
   static TextStyle pageTitle(TpColors colors) => TextStyle(
-        fontSize: 28,
+        fontSize: 27,
         fontWeight: FontWeight.w700,
-        height: 1.2,
-        letterSpacing: -0.4,
+        height: 1.18,
+        letterSpacing: -0.6,
         color: colors.textPrimary,
         fontFamilyFallback: fontFamilyFallback,
       );
 
   static TextStyle pageSubtitle(TpColors colors) => TextStyle(
-        fontSize: 13,
+        fontSize: 12.5,
         fontWeight: FontWeight.w500,
         height: 1.3,
+        letterSpacing: 0.15,
         color: colors.textMuted,
+        fontFeatures: tabularFigures,
         fontFamilyFallback: fontFamilyFallback,
       );
 
@@ -46,6 +48,7 @@ abstract final class TpTypography {
         fontSize: 15,
         fontWeight: FontWeight.w700,
         height: 1.3,
+        letterSpacing: -0.25,
         color: colors.textPrimary,
         fontFamilyFallback: fontFamilyFallback,
       );
@@ -60,9 +63,10 @@ abstract final class TpTypography {
       );
 
   static TextStyle itemTitle(TpColors colors) => TextStyle(
-        fontSize: 15,
+        fontSize: 14.5,
         fontWeight: FontWeight.w600,
         height: 1.35,
+        letterSpacing: -0.15,
         color: colors.textPrimary,
         fontFamilyFallback: fontFamilyFallback,
       );

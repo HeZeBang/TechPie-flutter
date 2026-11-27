@@ -104,21 +104,77 @@ class TpCard extends StatelessWidget {
     );
 
     final interactive = onTap != null || onLongPress != null;
+    final Widget surfaceContent = colors.isDark
+        ? Stack(
+            clipBehavior: Clip.none,
+            children: [
+              content,
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 1,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.transparent,
+                          Colors.white.withValues(alpha: 0.07),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          )
+        : content;
 
-    final card = Material(
+    final materialCard = Material(
       color: color ?? colors.surface,
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: !interactive
-          ? content
+          ? surfaceContent
           : TpTapSurface(
               style: TpTapFeedbackStyle.card,
               borderRadius: radius,
               onTap: onTap,
               onLongPress: onLongPress,
               enablePressScale: false,
-              child: content,
+              child: surfaceContent,
             ),
+    );
+
+    final shadows = colors.isDark
+        ? [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.28),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ]
+        : [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.038),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.025),
+              blurRadius: 2,
+              offset: const Offset(0, 1),
+            ),
+          ];
+
+    final card = DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: shadows,
+      ),
+      child: materialCard,
     );
 
     if (!interactive || !enablePressScale) return card;

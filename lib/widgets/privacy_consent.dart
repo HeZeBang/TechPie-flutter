@@ -107,9 +107,11 @@ class PrivacyConsentPage extends StatelessWidget {
       children: [
         TpBrandLockup(
           key: const ValueKey('privacy.brand-lockup'),
-          markSize: compact ? 30 : 44,
-          wordmarkSize: compact ? 17 : 22,
-          subtitleSize: 12,
+          markSize: compact ? 32 : 44,
+          wordmarkSize: compact ? 17.5 : 22,
+          subtitleSize: 10.5,
+          subtitlePrefix: 'DESIGNED BY GEEKPIE',
+          subtitleAccentSuffix: '_',
           showSubtitle: !compact,
         ),
         SizedBox(height: compact ? 14 : 20),

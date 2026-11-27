@@ -20,6 +20,7 @@ import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
+import 'package:techpie/theme/tp_colors.dart';
 import 'package:techpie/theme/tp_tokens.dart';
 import 'package:techpie/widgets/app_shell/app_destination.dart';
 import 'package:techpie/widgets/app_shell/desktop/desktop_shell.dart';
@@ -121,59 +122,102 @@ void main() {
           MaterialApp(
             theme: themeService.lightTheme,
             home: const Scaffold(
-              body: TpBrandLockup(axis: Axis.horizontal),
+              body: TpBrandLockup(
+                axis: Axis.horizontal,
+                subtitlePrefix: 'DESIGNED BY GEEKPIE',
+                subtitleAccentSuffix: '_',
+              ),
             ),
           ),
         );
         await tester.pumpAndSettle();
 
-        TextSpan? findPieSpan(InlineSpan root) {
-          TextSpan? found;
-          root.visitChildren((span) {
-            if (span is TextSpan && span.text == 'Pie') {
-              found = span;
-              return false;
+        TextStyle? findResolvedStyle(
+          InlineSpan node,
+          String target, [
+          TextStyle? inherited,
+        ]) {
+          final effective = inherited == null
+              ? node.style
+              : inherited.merge(node.style);
+          if (node is TextSpan) {
+            if (node.text == target) {
+              return effective ?? const TextStyle();
             }
-            return true;
-          });
-          return found;
+            final children = node.children;
+            if (children != null) {
+              for (final child in children) {
+                final found = findResolvedStyle(child, target, effective);
+                if (found != null) return found;
+              }
+            }
+          }
+          return null;
         }
 
+        final lightTp = TpColors.fromTheme(themeService.lightTheme);
         final wordmarkRich = tester.widget<RichText>(
           find.descendant(
             of: find.byType(TpBrandWordmark),
             matching: find.byType(RichText),
           ),
         );
-        final pieSpan = findPieSpan(wordmarkRich.text);
-        expect(pieSpan?.style?.color, TpTokens.techRedLight);
-        expect(pieSpan?.style?.color, isNot(TpTokens.iosBlueLight));
+        final pieStyle = findResolvedStyle(wordmarkRich.text, 'Pie');
+        expect(pieStyle?.color, lightTp.textPrimary);
+        expect(pieStyle?.color, isNot(TpTokens.iosBlueLight));
+
+        final lightSubRich = tester.widget<RichText>(
+          find.descendant(
+            of: find.byType(TpBrandSubtitle),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(
+          findResolvedStyle(lightSubRich.text, '_')?.color,
+          TpTokens.techRedLight,
+        );
 
         await tester.pumpWidget(
           MaterialApp(
             theme: themeService.darkTheme,
             home: const Scaffold(
-              body: TpBrandLockup(axis: Axis.vertical),
+              body: TpBrandLockup(
+                axis: Axis.vertical,
+                subtitlePrefix: 'DESIGNED BY GEEKPIE',
+                subtitleAccentSuffix: '_',
+              ),
             ),
           ),
         );
         await tester.pumpAndSettle();
+        final darkTp = TpColors.fromTheme(themeService.darkTheme);
         final darkWordmark = tester.widget<RichText>(
           find.descendant(
             of: find.byType(TpBrandWordmark),
             matching: find.byType(RichText),
           ),
         );
-        final darkPieSpan = findPieSpan(darkWordmark.text);
-        expect(darkPieSpan?.style?.color, TpTokens.techRedDarkInk);
-        expect(darkPieSpan?.style?.color, isNot(TpTokens.iosBlueDark));
+        final darkPieStyle = findResolvedStyle(darkWordmark.text, 'Pie');
+        expect(darkPieStyle?.color, darkTp.textPrimary);
+        expect(darkPieStyle?.color, isNot(TpTokens.iosBlueDark));
+
+        final darkSubRich = tester.widget<RichText>(
+          find.descendant(
+            of: find.byType(TpBrandSubtitle),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(
+          findResolvedStyle(darkSubRich.text, '_')?.color,
+          TpTokens.techRedDarkInk,
+        );
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
     },
   );
 
-  testWidgets('TpBrandLockup renders TechPie and by GeekPie_ in horizontal and vertical layouts', (
+  testWidgets('TpBrandLockup renders TechPie and SHANGHAITECH / GEEKPIE subtitles cleanly', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -182,7 +226,11 @@ void main() {
           body: Column(
             children: [
               TpBrandLockup(),
-              TpBrandLockup(axis: Axis.vertical),
+              TpBrandLockup(
+                axis: Axis.vertical,
+                subtitlePrefix: 'DESIGNED BY GEEKPIE',
+                subtitleAccentSuffix: '_',
+              ),
             ],
           ),
         ),
@@ -190,7 +238,8 @@ void main() {
     );
 
     expect(find.text('TechPie'), findsNWidgets(2));
-    expect(find.text('by GeekPie_'), findsNWidgets(2));
+    expect(find.text('SHANGHAITECH'), findsOneWidget);
+    expect(find.text('DESIGNED BY GEEKPIE_'), findsOneWidget);
   });
 
   testWidgets('PrivacyConsentPage shows brand lockup in both full and compact modes', (

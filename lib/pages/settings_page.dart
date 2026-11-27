@@ -1301,11 +1301,11 @@ class _SettingsBrandFooter extends StatelessWidget {
       key: ValueKey('settings.brand-footer'),
       padding: EdgeInsets.only(top: TpTokens.space2, bottom: TpTokens.space4),
       child: TpBrandLockup(
-        markSize: 32,
-        wordmarkSize: 15.5,
-        subtitleSize: 11.5,
+        markSize: 34,
+        wordmarkSize: 16,
+        subtitleSize: 10,
         axis: Axis.vertical,
-        subtitlePrefix: 'Built with Flutter · by GeekPie',
+        subtitlePrefix: 'SHANGHAITECH · GEEKPIE',
         subtitleAccentSuffix: '_',
       ),
     );

@@ -686,12 +686,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final mobileBrandBar = showHeaderAvatar
         ? Padding(
             key: const ValueKey('home.brand-bar'),
-            padding: const EdgeInsets.only(bottom: TpTokens.space3),
+            padding: const EdgeInsets.only(bottom: TpTokens.space2),
             child: Row(
               children: [
                 const TpBrandLockup(
-                  markSize: 24,
-                  wordmarkSize: 17,
+                  markSize: 26,
+                  wordmarkSize: 17.5,
                   showSubtitle: false,
                 ),
                 const Spacer(),
@@ -1026,6 +1026,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         key: const ValueKey('not-logged-in'),
         colors: colors,
         icon: TpIcons.login,
+        accentColor: colors.brandInk,
         title: '登录以查看今日课程',
         subtitle: '连接你的教务系统账号',
         actionLabel: '登录',
@@ -1043,6 +1044,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         key: ValueKey('no-courses-${_now.weekday}'),
         colors: colors,
         icon: TpIcons.sun,
+        accentColor: colors.warningAmber,
         title: '今天没有课程',
         subtitle: '享受你的自由时间吧',
       );
@@ -1170,6 +1172,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         key: const ValueKey('no-pending'),
         colors: colors,
         icon: TpIcons.checkCircle,
+        accentColor: colors.successGreen,
         title: '没有待办事项',
         subtitle: 'All caught up!',
       );
@@ -1253,6 +1256,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
+  static String _formatPlatformLabel(String raw) => switch (raw.toLowerCase()) {
+        'blackboard' => 'Blackboard',
+        'gradescope' => 'Gradescope',
+        'hydro' => 'Hydro',
+        'custom' => '自定义',
+        _ => raw,
+      };
+
   Widget _buildPendingItem(
     TpColors colors,
     Assignment a,
@@ -1280,7 +1291,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           if (location.isNotEmpty) location,
         ].join(' · '),
       _ => [
-          if (a.platform.isNotEmpty) a.platform,
+          if (a.platform.isNotEmpty) _formatPlatformLabel(a.platform),
           if (a.course.isNotEmpty) a.course,
         ].join(' · '),
     };
@@ -1354,11 +1365,38 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     required IconData icon,
     required String title,
     required String subtitle,
+    Color? accentColor,
+    Widget? leading,
     String? actionLabel,
     String? actionSfSymbol,
     VoidCallback? onTap,
     Widget? footer,
   }) {
+    final resolvedBadge = leading ??
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: accentColor != null
+                ? accentColor.withValues(alpha: colors.isDark ? 0.16 : 0.10)
+                : colors.surfaceSubtle,
+            borderRadius: BorderRadius.circular(TpTokens.radiusS),
+            border: accentColor != null
+                ? Border.all(
+                    color: accentColor.withValues(
+                      alpha: colors.isDark ? 0.28 : 0.18,
+                    ),
+                    width: 0.75,
+                  )
+                : null,
+          ),
+          child: Icon(
+            icon,
+            size: TpTokens.iconM - 2,
+            color: accentColor ?? colors.textMuted,
+          ),
+        );
+
     return Padding(
       key: key,
       padding: const EdgeInsets.fromLTRB(
@@ -1373,19 +1411,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         children: [
           Row(
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: colors.surfaceSubtle,
-                  borderRadius: BorderRadius.circular(TpTokens.radiusS),
-                ),
-                child: Icon(
-                  icon,
-                  size: TpTokens.iconM - 2,
-                  color: colors.textMuted,
-                ),
-              ),
+              resolvedBadge,
               const SizedBox(width: TpTokens.space3),
               Expanded(
                 child: Column(
@@ -1594,24 +1620,41 @@ class _HomeHeaderEditButton extends StatelessWidget {
           child: Center(
             child: TpPressScale(
               pressedScale: 0.92,
-              child: Material(
-                color: colors.surfaceSubtle,
-                shape: CircleBorder(
-                  side: BorderSide(color: colors.divider, width: 0.75),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: TpTapSurface(
-                  style: TpTapFeedbackStyle.button,
-                  customBorder: const CircleBorder(),
-                  enablePressScale: false,
-                  onTap: onPressed,
-                  child: SizedBox(
-                    width: 38,
-                    height: 38,
-                    child: Icon(
-                      TpIcons.dashboard,
-                      size: TpTokens.iconS,
-                      color: colors.textSecondary,
+              child: DecoratedBox(
+                decoration: colors.isDark
+                    ? const BoxDecoration(shape: BoxShape.circle)
+                    : BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                child: Material(
+                  color: colors.isDark ? colors.surfaceSubtle : colors.surface,
+                  shape: CircleBorder(
+                    side: BorderSide(
+                      color: colors.isDark ? colors.border : colors.divider,
+                      width: 0.75,
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: TpTapSurface(
+                    style: TpTapFeedbackStyle.button,
+                    customBorder: const CircleBorder(),
+                    enablePressScale: false,
+                    onTap: onPressed,
+                    child: SizedBox(
+                      width: 38,
+                      height: 38,
+                      child: Icon(
+                        TpIcons.dashboard,
+                        size: TpTokens.iconS,
+                        color: colors.textSecondary,
+                      ),
                     ),
                   ),
                 ),

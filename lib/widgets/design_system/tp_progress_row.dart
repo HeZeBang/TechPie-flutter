@@ -19,7 +19,7 @@ class TpProgressRow extends StatelessWidget {
     this.showDivider = false,
     this.padding = const EdgeInsets.symmetric(
       horizontal: TpTokens.cardPaddingHorizontal,
-      vertical: 10,
+      vertical: 11,
     ),
   });
 
@@ -54,15 +54,22 @@ class TpProgressRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: TpTokens.space2),
-              Text(
-                trailingLabel,
-                style: TpTypography.badge(color),
-                maxLines: 1,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: colors.isDark ? 0.16 : 0.09),
+                  borderRadius: BorderRadius.circular(TpTokens.radiusPill),
+                ),
+                child: Text(
+                  trailingLabel,
+                  style: TpTypography.badge(color),
+                  maxLines: 1,
+                ),
               ),
             ],
           ),
           if (subtitle != null && subtitle!.isNotEmpty) ...[
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               subtitle!,
               style: TpTypography.itemMeta(colors),
@@ -70,7 +77,7 @@ class TpProgressRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ],
-          const SizedBox(height: TpTokens.space2),
+          const SizedBox(height: 7),
           TpProgressBar(progress: clamped, color: color),
         ],
       ),
@@ -105,7 +112,7 @@ class TpProgressBar extends StatelessWidget {
     super.key,
     required this.progress,
     required this.color,
-    this.height = TpTokens.progressBarHeight,
+    this.height = 3.0,
   });
 
   final double progress;
@@ -120,13 +127,15 @@ class TpProgressBar extends StatelessWidget {
       borderRadius: radius,
       child: Container(
         height: height,
-        color: colors.surfaceSubtle,
+        color: colors.textPrimary.withValues(alpha: colors.isDark ? 0.08 : 0.06),
         alignment: Alignment.centerLeft,
         child: FractionallySizedBox(
           widthFactor: progress.clamp(0.0, 1.0),
           child: Container(
             decoration: BoxDecoration(
-              color: color,
+              gradient: LinearGradient(
+                colors: [color.withValues(alpha: 0.82), color],
+              ),
               borderRadius: radius,
             ),
           ),

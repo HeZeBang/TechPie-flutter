@@ -29,9 +29,12 @@ class DesktopSidebarItem extends StatelessWidget {
     final foreground = selected ? colors.textPrimary : colors.textSecondary;
     final iconColor = selected ? colors.brandInk : colors.textMuted;
     final radius = BorderRadius.circular(TpTokens.radiusS);
-    final selectedBorder = colors.brand.withValues(
-      alpha: colors.isDark ? 0.30 : 0.22,
-    );
+    final pillFill = colors.isDark
+        ? Colors.white.withValues(alpha: 0.085)
+        : colors.surface;
+    final pillBorder = colors.isDark
+        ? Colors.white.withValues(alpha: 0.11)
+        : const Color(0x10000000);
     final showOwnSelectionSurface = selected && !usesSlidingIndicator;
 
     return LayoutBuilder(
@@ -52,7 +55,7 @@ class DesktopSidebarItem extends StatelessWidget {
         );
         final iconWidget = Icon(
           selected ? destination.selectedIcon : destination.icon,
-          size: TpTokens.iconM,
+          size: 19,
           color: iconColor,
         );
         final item = Semantics(
@@ -65,13 +68,11 @@ class DesktopSidebarItem extends StatelessWidget {
                 : MaterialType.canvas,
             color: usesSlidingIndicator
                 ? null
-                : (showOwnSelectionSurface
-                    ? colors.opaqueBrandContainer
-                    : colors.surface),
+                : (showOwnSelectionSurface ? pillFill : Colors.transparent),
             shape: RoundedRectangleBorder(
               borderRadius: radius,
               side: showOwnSelectionSurface
-                  ? BorderSide(color: selectedBorder)
+                  ? BorderSide(color: pillBorder, width: 0.75)
                   : BorderSide.none,
             ),
             clipBehavior: Clip.antiAlias,
@@ -80,123 +81,104 @@ class DesktopSidebarItem extends StatelessWidget {
               borderRadius: radius,
               hoverColor: hoverOverlay,
               highlightColor: colors.textPrimary.withValues(alpha: 0.06),
-              splashColor: colors.brand.withValues(alpha: 0.10),
-              focusColor: colors.brand.withValues(alpha: 0.08),
+              splashColor: colors.brand.withValues(alpha: 0.08),
+              focusColor: colors.brand.withValues(alpha: 0.06),
               child: SizedBox(
                 height: DesktopSidebarTokens.navItemHeight,
-                child: Stack(
-                  alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    if (showOwnSelectionSurface)
-                      Positioned(
-                        left: 0,
-                        top: 10,
-                        bottom: 10,
-                        child: Container(
-                          width: TpTokens.accentBarWidth,
-                          decoration: BoxDecoration(
-                            color: colors.brand,
-                            borderRadius: const BorderRadius.horizontal(
-                              right: Radius.circular(TpTokens.radiusBar),
+                    SizedBox(
+                      width: DesktopSidebarTokens.iconColumnWidth,
+                      child: Center(
+                        child: !canShowLabel && activeBadge != null
+                            ? Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  iconWidget,
+                                  Positioned(
+                                    right: -3,
+                                    top: -3,
+                                    child: Container(
+                                      key: ValueKey<String>(
+                                        'sidebar-badge-dot-${destination.label}',
+                                      ),
+                                      width: 8.5,
+                                      height: 8.5,
+                                      decoration: BoxDecoration(
+                                        color: activeBadge.urgent
+                                            ? colors.dangerRed
+                                            : colors.textMuted,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: colors.surface,
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : iconWidget,
+                      ),
+                    ),
+                    if (canShowLabel) ...[
+                      const SizedBox(
+                        width: DesktopSidebarTokens.navItemTextGap,
+                      ),
+                      Expanded(
+                        child: ExcludeSemantics(
+                          child: AdaptiveDestinationLabel(
+                            label: destination.label,
+                            shortLabel: destination.shortLabel,
+                            preserveFullSemantics: false,
+                            style: TpTypography.itemTitle(colors).copyWith(
+                              fontSize: 13.5,
+                              letterSpacing: -0.1,
+                              color: foreground,
+                              fontWeight: selected
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
                             ),
                           ),
                         ),
                       ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: DesktopSidebarTokens.iconColumnWidth,
-                          child: Center(
-                            child: !canShowLabel && activeBadge != null
-                                ? Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      iconWidget,
-                                      Positioned(
-                                        right: -3,
-                                        top: -3,
-                                        child: Container(
-                                          key: ValueKey<String>(
-                                            'sidebar-badge-dot-${destination.label}',
-                                          ),
-                                          width: 8.5,
-                                          height: 8.5,
-                                          decoration: BoxDecoration(
-                                            color: activeBadge.urgent
-                                                ? colors.dangerRed
-                                                : colors.textMuted,
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: colors.surface,
-                                              width: 1.5,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : iconWidget,
+                      if (activeBadge != null) ...[
+                        const SizedBox(width: TpTokens.space2),
+                        Container(
+                          key: ValueKey<String>(
+                            'sidebar-badge-${destination.label}',
+                          ),
+                          constraints: const BoxConstraints(minWidth: 20),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: activeBadge.urgent
+                                ? colors.dangerRed
+                                : colors.surfaceSubtle,
+                            borderRadius: BorderRadius.circular(
+                              TpTokens.radiusPill,
+                            ),
+                          ),
+                          child: Text(
+                            activeBadge.formatted,
+                            textAlign: TextAlign.center,
+                            style: TpTypography.badge(
+                              activeBadge.urgent
+                                  ? Colors.white
+                                  : colors.textSecondary,
+                            ).copyWith(
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
                           ),
                         ),
-                        if (canShowLabel) ...[
-                          const SizedBox(
-                            width: DesktopSidebarTokens.navItemTextGap,
-                          ),
-                          Expanded(
-                            child: ExcludeSemantics(
-                              child: AdaptiveDestinationLabel(
-                                label: destination.label,
-                                shortLabel: destination.shortLabel,
-                                preserveFullSemantics: false,
-                                style: TpTypography.itemTitle(colors).copyWith(
-                                  fontSize: 14,
-                                  color: foreground,
-                                  fontWeight: selected
-                                      ? FontWeight.w600
-                                      : FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (activeBadge != null) ...[
-                            const SizedBox(width: TpTokens.space2),
-                            Container(
-                              key: ValueKey<String>(
-                                'sidebar-badge-${destination.label}',
-                              ),
-                              constraints: const BoxConstraints(minWidth: 20),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: activeBadge.urgent
-                                    ? colors.dangerRed
-                                    : colors.surfaceSubtle,
-                                borderRadius: BorderRadius.circular(
-                                  TpTokens.radiusPill,
-                                ),
-                              ),
-                              child: Text(
-                                activeBadge.formatted,
-                                textAlign: TextAlign.center,
-                                style: TpTypography.badge(
-                                  activeBadge.urgent
-                                      ? Colors.white
-                                      : colors.textSecondary,
-                                ).copyWith(
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                          const SizedBox(width: TpTokens.space3),
-                        ],
                       ],
-                    ),
+                      const SizedBox(width: TpTokens.space3),
+                    ],
                   ],
                 ),
               ),

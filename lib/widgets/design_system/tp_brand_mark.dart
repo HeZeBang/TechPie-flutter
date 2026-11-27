@@ -8,17 +8,19 @@ import '../../theme/tp_typography.dart';
 
 /// Visual presentation of the faceted geometric TechPie "P" mark.
 enum TpBrandMarkVariant {
-  /// Iconic TechRed rounded badge carrying the crystalline pearl-white "P".
+  /// Sculpted Porcelain (Light) / Obsidian (Dark) squircle jewel carrying
+  /// the high-contrast 3D ruby prism "P".
   badge,
 
-  /// Standalone faceted TechRed "P" silhouette without the rounded tile.
+  /// Standalone faceted Ruby-Crimson "P" silhouette without the squircle plate.
   glyph,
 }
 
 /// Official pure-vector TechPie faceted "P" brand mark.
 ///
-/// Always preserves TechPie's iconic TechRed palette regardless of whether
-/// the user switches UI controls to system accent colors.
+/// Renders a Porcelain-White (Light) or Machined-Obsidian (Dark/AMOLED)
+/// squircle plate framing the sculpted 15-facet Ruby Prism "P", keeping
+/// TechPie's classic crimson prism unmistakable regardless of system accent.
 class TpBrandMark extends StatelessWidget {
   const TpBrandMark({
     super.key,
@@ -49,14 +51,13 @@ class TpBrandMark extends StatelessWidget {
         ),
       );
     } else {
-      final radius = BorderRadius.circular(size * 0.24);
-      final gradientColors = isDark
-          ? const [Color(0xFFF03A4A), Color(0xFFCF1628), Color(0xFF9C0B19)]
-          : const [Color(0xFFD91F31), Color(0xFFB50E1E), Color(0xFF8C0714)];
-      final rimColor =
-          Colors.white.withValues(alpha: isDark ? 0.24 : 0.18);
-      final sheenTop =
-          Colors.white.withValues(alpha: isDark ? 0.20 : 0.16);
+      final radius = BorderRadius.circular(size * 0.25);
+      final plateColors = isDark
+          ? const [Color(0xFF242429), Color(0xFF16161A), Color(0xFF0E0E11)]
+          : const [Color(0xFFFFFFFF), Color(0xFFF4F4F6)];
+      final plateBorder = isDark
+          ? Colors.white.withValues(alpha: 0.14)
+          : const Color(0x16000000);
 
       mark = Container(
         width: size,
@@ -66,26 +67,40 @@ class TpBrandMark extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: gradientColors,
-            stops: const [0.0, 0.52, 1.0],
+            colors: plateColors,
+            stops: isDark ? const [0.0, 0.55, 1.0] : const [0.0, 1.0],
           ),
           boxShadow: showShadow && size >= 20
-              ? [
-                  BoxShadow(
-                    color: TpTokens.techRedLight.withValues(
-                      alpha: isDark ? 0.34 : 0.24,
-                    ),
-                    blurRadius: size * 0.30,
-                    offset: Offset(0, size * 0.10),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withValues(
-                      alpha: isDark ? 0.24 : 0.08,
-                    ),
-                    blurRadius: size * 0.14,
-                    offset: Offset(0, size * 0.04),
-                  ),
-                ]
+              ? (isDark
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.48),
+                        blurRadius: size * 0.28,
+                        offset: Offset(0, size * 0.10),
+                      ),
+                      BoxShadow(
+                        color: TpTokens.techRedDark.withValues(alpha: 0.16),
+                        blurRadius: size * 0.30,
+                        offset: Offset(0, size * 0.08),
+                      ),
+                    ]
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: size * 0.24,
+                        offset: Offset(0, size * 0.08),
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: size * 0.06,
+                        offset: Offset(0, size * 0.02),
+                      ),
+                      BoxShadow(
+                        color: TpTokens.techRedLight.withValues(alpha: 0.08),
+                        blurRadius: size * 0.28,
+                        offset: Offset(0, size * 0.10),
+                      ),
+                    ])
               : null,
         ),
         child: ClipRRect(
@@ -93,12 +108,28 @@ class TpBrandMark extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
+              if (isDark)
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: const Alignment(0.05, -0.05),
+                      radius: 0.78,
+                      colors: [
+                        const Color(0xFFE03140).withValues(alpha: 0.24),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.center,
-                    colors: [sheenTop, Colors.transparent],
+                    colors: [
+                      Colors.white.withValues(alpha: isDark ? 0.11 : 0.65),
+                      Colors.transparent,
+                    ],
                   ),
                 ),
               ),
@@ -109,7 +140,7 @@ class TpBrandMark extends StatelessWidget {
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     borderRadius: radius,
-                    border: Border.all(color: rimColor, width: 0.75),
+                    border: Border.all(color: plateBorder, width: 0.75),
                   ),
                 ),
               ),
@@ -128,11 +159,11 @@ class TpBrandMark extends StatelessWidget {
   }
 }
 
-/// Dual-tone TechPie wordmark (`Tech` primary ink + iconic TechRed `Pie`).
+/// Editorial tight-tracked monochrome TechPie wordmark (`Tech` w600 + `Pie` w800).
 class TpBrandWordmark extends StatelessWidget {
   const TpBrandWordmark({
     super.key,
-    this.fontSize = 16.5,
+    this.fontSize = 17,
     this.textAlign = TextAlign.start,
   });
 
@@ -142,13 +173,11 @@ class TpBrandWordmark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    final pieColor =
-        colors.isDark ? TpTokens.techRedDarkInk : TpTokens.techRedLight;
     final baseStyle = TpTypography.cardTitle(colors).copyWith(
       fontSize: fontSize,
-      fontWeight: FontWeight.w700,
-      height: 1.1,
-      letterSpacing: fontSize >= 20 ? -0.55 : -0.35,
+      fontWeight: FontWeight.w800,
+      height: 1.08,
+      letterSpacing: fontSize >= 20 ? -0.65 : -0.45,
       color: colors.textPrimary,
     );
 
@@ -156,14 +185,14 @@ class TpBrandWordmark extends StatelessWidget {
       TextSpan(
         style: baseStyle,
         children: [
-          const TextSpan(text: 'Tech'),
           TextSpan(
-            text: 'Pie',
+            text: 'Tech',
             style: baseStyle.copyWith(
-              color: pieColor,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
+              color: colors.textPrimary.withValues(alpha: 0.90),
             ),
           ),
+          const TextSpan(text: 'Pie'),
         ],
       ),
       maxLines: 1,
@@ -173,13 +202,13 @@ class TpBrandWordmark extends StatelessWidget {
   }
 }
 
-/// GeekPie attribution subtitle with signature trailing TechRed underscore.
+/// Micro-caps institution/credit subtitle with optional TechRed terminal accent.
 class TpBrandSubtitle extends StatelessWidget {
   const TpBrandSubtitle({
     super.key,
-    this.fontSize = 11,
-    this.prefix = 'by GeekPie',
-    this.accentSuffix = '_',
+    this.fontSize = 9.5,
+    this.prefix = 'SHANGHAITECH',
+    this.accentSuffix = '',
     this.textAlign = TextAlign.start,
   });
 
@@ -192,14 +221,13 @@ class TpBrandSubtitle extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final accentColor =
-        (colors.isDark ? TpTokens.techRedDarkInk : TpTokens.techRedLight)
-            .withValues(alpha: 0.9);
+        colors.isDark ? TpTokens.techRedDarkInk : TpTokens.techRedLight;
     final baseStyle = TpTypography.cardMeta(colors).copyWith(
       fontSize: fontSize,
-      fontWeight: FontWeight.w500,
-      letterSpacing: 0.1,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 1.35,
       height: 1.15,
-      color: colors.textMuted,
+      color: colors.textMuted.withValues(alpha: 0.85),
     );
 
     return Text.rich(
@@ -229,12 +257,12 @@ class TpBrandSubtitle extends StatelessWidget {
 class TpBrandLockup extends StatelessWidget {
   const TpBrandLockup({
     super.key,
-    this.markSize = 32,
-    this.wordmarkSize = 16.5,
-    this.subtitleSize = 11,
+    this.markSize = 34,
+    this.wordmarkSize = 17,
+    this.subtitleSize = 9.5,
     this.showSubtitle = true,
-    this.subtitlePrefix = 'by GeekPie',
-    this.subtitleAccentSuffix = '_',
+    this.subtitlePrefix = 'SHANGHAITECH',
+    this.subtitleAccentSuffix = '',
     this.axis = Axis.horizontal,
     this.gap,
   });
@@ -250,7 +278,7 @@ class TpBrandLockup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolvedGap = gap ?? (axis == Axis.horizontal ? 10.0 : 10.0);
+    final resolvedGap = gap ?? 10.0;
 
     if (axis == Axis.vertical) {
       return Column(
@@ -351,31 +379,22 @@ class _FacetedPBrandPainter extends CustomPainter {
     ((1, 4), (1, 6), (2, 5), 4), // bowl underside junction
   ];
 
-  static const List<Color> _badgePalette = [
-    Color(0xFFFFFFFF),
-    Color(0xFFFEF4F5),
-    Color(0xFFF9E5E8),
-    Color(0xFFF2D4D9),
-    Color(0xFFE9BFC6),
-    Color(0xFFDFABB4),
+  static const List<Color> _lightRubyPrism = [
+    Color(0xFFF45C69),
+    Color(0xFFE03242),
+    Color(0xFFC81A2B),
+    Color(0xFFA80D1D),
+    Color(0xFF830714),
+    Color(0xFF5D040E),
   ];
 
-  static const List<Color> _lightGlyphPalette = [
-    Color(0xFFEC5A65),
-    Color(0xFFE0414E),
-    Color(0xFFC92533),
-    Color(0xFFB01624),
-    Color(0xFF910E1A),
-    Color(0xFF6F0813),
-  ];
-
-  static const List<Color> _darkGlyphPalette = [
-    Color(0xFFFF8891),
-    Color(0xFFFF6874),
-    Color(0xFFF24654),
-    Color(0xFFDC2A39),
-    Color(0xFFC01B29),
-    Color(0xFF9F1220),
+  static const List<Color> _darkRubyPrism = [
+    Color(0xFFFF8892),
+    Color(0xFFFF5E6C),
+    Color(0xFFEA3546),
+    Color(0xFFCC1B2B),
+    Color(0xFFA81020),
+    Color(0xFF820A18),
   ];
 
   @override
@@ -409,20 +428,19 @@ class _FacetedPBrandPainter extends CustomPainter {
 
     if (onBadge) {
       final shadowPaint = Paint()
-        ..color = const Color(0xFF4A030B).withValues(alpha: 0.28)
+        ..color = (isDark ? Colors.black : const Color(0xFF5D040E))
+            .withValues(alpha: isDark ? 0.45 : 0.16)
         ..maskFilter = MaskFilter.blur(
           BlurStyle.normal,
-          math.max(0.8, size.height * 0.032),
+          math.max(isDark ? 1.0 : 0.9, size.height * (isDark ? 0.04 : 0.036)),
         );
       canvas.save();
-      canvas.translate(0, size.height * 0.022);
+      canvas.translate(0, size.height * (isDark ? 0.028 : 0.025));
       canvas.drawPath(silhouette, shadowPaint);
       canvas.restore();
     }
 
-    final palette = onBadge
-        ? _badgePalette
-        : (isDark ? _darkGlyphPalette : _lightGlyphPalette);
+    final palette = isDark ? _darkRubyPrism : _lightRubyPrism;
     final fillPaint = Paint()..style = PaintingStyle.fill;
     final seamPaint = Paint()
       ..style = PaintingStyle.stroke
@@ -440,6 +458,20 @@ class _FacetedPBrandPainter extends CustomPainter {
       canvas.drawPath(tri, fillPaint);
       canvas.drawPath(tri, seamPaint);
     }
+
+    final catchlightPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..strokeWidth = math.max(0.55, size.height * 0.017)
+      ..color = Colors.white.withValues(alpha: isDark ? 0.36 : 0.28);
+    final ridgePath = Path()
+      ..moveTo(pt((1, 0)).dx, pt((1, 0)).dy)
+      ..lineTo(pt((2, 1)).dx, pt((2, 1)).dy)
+      ..lineTo(pt((3, 2)).dx, pt((3, 2)).dy)
+      ..moveTo(pt((2, 1)).dx, pt((2, 1)).dy)
+      ..lineTo(pt((2, 3)).dx, pt((2, 3)).dy);
+    canvas.drawPath(ridgePath, catchlightPaint);
     canvas.restore();
   }
 
