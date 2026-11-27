@@ -452,7 +452,8 @@ private final class _MacosSegmentedControlView: _TechPieAppKitContainerView {
     }
 
     applyAppearance(isDark: isDark)
-    control.segmentStyle = .automatic
+    control.controlSize = .large
+    control.segmentStyle = .rounded
     control.segmentDistribution = shrinkWrap ? .fit : .fillEqually
     configureLabels(labels, selectedIndex: selectedIndex)
     control.isEnabled = enabled
@@ -611,6 +612,8 @@ private final class _MacosPopUpButtonView: _TechPieAppKitContainerView {
       button.isBordered = false
     } else if pullsDown {
       button.bezelStyle = .texturedRounded
+    } else {
+      button.controlSize = .large
     }
     if let label = semanticLabel, !label.isEmpty {
       button.setAccessibilityLabel(label)

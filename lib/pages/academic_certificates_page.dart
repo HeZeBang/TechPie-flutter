@@ -16,6 +16,7 @@ import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_progress_indicator.dart';
+import '../widgets/adaptive_segmented_control.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
@@ -317,23 +318,18 @@ class _CertificatesState extends State<_Certificates> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Wrap(
-                          spacing: TpTokens.space2,
-                          runSpacing: TpTokens.space2,
-                          children: [
-                            for (final k in CertificateKind.values)
-                              ChoiceChip(
-                                label: Text(k.label),
-                                selected: k == kind,
-                                onSelected: busy
-                                    ? null
-                                    : (v) {
-                                        if (!v) return;
-                                        setState(() => kind = k);
-                                        unawaited(refresh());
-                                      },
-                              ),
+                        AdaptiveSegmentedControl(
+                          value: CertificateKind.values.indexOf(kind),
+                          segments: [
+                            for (final k in CertificateKind.values) k.label,
                           ],
+                          enabled: !busy,
+                          onChanged: (idx) {
+                            final next = CertificateKind.values[idx];
+                            if (next == kind) return;
+                            setState(() => kind = next);
+                            unawaited(refresh());
+                          },
                         ),
                         if (busy && _activeDownloadKey == null) ...[
                           const SizedBox(height: TpTokens.space2),

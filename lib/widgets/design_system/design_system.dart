@@ -10,6 +10,7 @@ export 'tp_page_header.dart';
 export 'tp_press_scale.dart';
 export 'tp_progress_row.dart';
 export 'tp_section_card.dart';
+export 'tp_segmented_control.dart';
 export 'tp_skeleton.dart';
 export 'tp_state_card.dart';
 export 'tp_tap_surface.dart';

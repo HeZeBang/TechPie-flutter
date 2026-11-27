@@ -223,7 +223,7 @@ class AdaptiveSelect extends StatelessWidget {
       placeholder: placeholder,
       enabled: enabled && options.isNotEmpty,
       shrinkWrap: shrinkWrap,
-      height: height < 34 ? height : 34,
+      height: height < 36 ? height : 36,
       semanticLabel: accessibilityLabel ?? label ?? placeholder,
       onSelected: (index) {
         if (index >= 0 && index < options.length) {

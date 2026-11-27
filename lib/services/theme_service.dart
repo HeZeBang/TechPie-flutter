@@ -332,6 +332,7 @@ class ThemeService extends ChangeNotifier {
         selectedColor: scheme.primaryContainer,
         secondarySelectedColor: scheme.primaryContainer,
         disabledColor: tp.surfaceSubtle,
+        showCheckmark: false,
         checkmarkColor: tp.brandInk,
         deleteIconColor: tp.textMuted,
         surfaceTintColor: Colors.transparent,

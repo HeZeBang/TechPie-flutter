@@ -142,33 +142,25 @@ class _CourseDetailScaffoldState extends State<_CourseDetailScaffold>
               onPressed: _openWeb,
             ),
           ],
-          bottom: TabBar(
-            controller: _tabs,
-            tabs: const [Tab(text: '课件'), Tab(text: '成绩'), Tab(text: '公告与小组')],
-          ),
         ),
       ),
       body: Column(
         children: [
-          AdaptiveNavigationScaffold.adaptiveChrome(
-            ios: () => Padding(
-              padding: const EdgeInsets.fromLTRB(
-                TpTokens.pageHorizontalPadding,
-                TpTokens.space2,
-                TpTokens.pageHorizontalPadding,
-                0,
-              ),
-              child: TpPageBody(
-                maxWidth: 880,
-                child: AdaptiveSegmentedControl(
-                  value: _tabIndex,
-                  segments: const ['课件', '成绩', '公告与小组'],
-                  shrinkWrap: true,
-                  onChanged: _tabs.animateTo,
-                ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              TpTokens.pageHorizontalPadding,
+              TpTokens.space3,
+              TpTokens.pageHorizontalPadding,
+              TpTokens.space2,
+            ),
+            child: TpPageBody(
+              maxWidth: 880,
+              child: AdaptiveSegmentedControl(
+                value: _tabIndex,
+                segments: const ['课件', '成绩', '公告与小组'],
+                onChanged: _tabs.animateTo,
               ),
             ),
-            material: () => const SizedBox.shrink(),
           ),
           Expanded(
             child: TabBarView(
@@ -204,7 +196,12 @@ class _GradesState extends State<_Grades> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(TpTokens.space2),
+          padding: const EdgeInsets.fromLTRB(
+            TpTokens.pageHorizontalPadding,
+            TpTokens.space1,
+            TpTokens.pageHorizontalPadding,
+            TpTokens.space2,
+          ),
           child: TpPageBody(
             maxWidth: 880,
             child: AdaptiveSegmentedControl(
@@ -324,7 +321,12 @@ class _NewsState extends State<_News> {
   Widget build(BuildContext context) => Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(TpTokens.space2),
+            padding: const EdgeInsets.fromLTRB(
+              TpTokens.pageHorizontalPadding,
+              TpTokens.space1,
+              TpTokens.pageHorizontalPadding,
+              TpTokens.space2,
+            ),
             child: TpPageBody(
               maxWidth: 880,
               child: AdaptiveSegmentedControl(

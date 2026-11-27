@@ -183,74 +183,10 @@ class _OaGymPageState extends State<OaGymPage>
                   0,
                 ),
                 child: TpPageBody(
-                  child: AdaptiveNavigationScaffold.adaptiveAppleChrome(
-                    apple: () => AdaptiveSegmentedControl(
-                      value: _selectedTab,
-                      segments: const ['预约', '查询', '个人信息'],
-                      shrinkWrap: true,
-                      onChanged: _tabController.animateTo,
-                    ),
-                    material: () => TpCard(
-                          borderRadius: TpTokens.radiusS,
-                          child: TabBar(
-                            controller: _tabController,
-                            dividerColor: Colors.transparent,
-                            indicatorSize: TabBarIndicatorSize.tab,
-                            labelColor: colors.brandInk,
-                            unselectedLabelColor: colors.textMuted,
-                            indicatorColor: colors.brand,
-                            tabs: const [
-                              Tab(
-                                height: 44,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(TpIcons.calendarCheck, size: 16),
-                                    SizedBox(width: 6),
-                                    Flexible(
-                                      child: Text(
-                                        '预约',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Tab(
-                                height: 44,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(TpIcons.search, size: 16),
-                                    SizedBox(width: 6),
-                                    Flexible(
-                                      child: Text(
-                                        '查询',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Tab(
-                                height: 44,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(TpIcons.profile, size: 16),
-                                    SizedBox(width: 6),
-                                    Flexible(
-                                      child: Text(
-                                        '个人信息',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                  child: AdaptiveSegmentedControl(
+                    value: _selectedTab,
+                    segments: const ['预约', '查询', '个人信息'],
+                    onChanged: _tabController.animateTo,
                   ),
                 ),
               ),
