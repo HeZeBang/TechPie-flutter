@@ -536,7 +536,7 @@ void main() {
     await flush();
     expect(edits.last[key], {
       'title': imported.title,
-      'notes': imported.course,
+      'notes': 'Course\nBring notes',
       'due': imported.due.millisecondsSinceEpoch,
     });
     expect(linkedKeys, {key});
@@ -725,6 +725,15 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final original = assignments.assignments.first;
       final action = find.byTooltip(desktop ? '编辑 Deadline' : 'Deadline 操作');
+      final restore = find.text('恢复来源信息');
+      final editor = find.byType(DeadlineEditorPage);
+      final notes = find.descendant(of: editor, matching: find.byType(EditableText)).last;
+
+      Future<void> tapRestore() async {
+        await tester.ensureVisible(restore);
+        await tester.tap(restore);
+        await tester.pumpAndSettle();
+      }
 
       Future<void> openEditor(Finder button) async {
         await tester.ensureVisible(button);
@@ -755,7 +764,30 @@ void main() {
       final title = find.byWidgetPredicate(
         (widget) => widget is EditableText && widget.controller.text == original.title,
       );
+      await tester.enterText(notes, 'Saved notes');
+      await tester.pump();
+      expect(restore, findsNothing);
       await tester.enterText(title, 'Edited deadline');
+      await tester.pump();
+      await tapRestore();
+      expect(editor, findsOneWidget);
+      expect(restore, findsNothing);
+      expect(title, findsOneWidget);
+      expect(tester.widget<EditableText>(notes).controller.text, 'Saved notes');
+      expect(assignments.findImportedDeadline(original)?.notes, original.notes);
+
+      await tester.ensureVisible(title);
+      await tester.enterText(title, 'Edited deadline');
+      await tester.pump();
+      if (defaultTargetPlatform != TargetPlatform.iOS) {
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('放弃未保存的修改？'), findsOneWidget);
+        await tester.tap(find.text('继续编辑'));
+        await tester.pumpAndSettle();
+        expect(assignments.findImportedDeadline(original)?.title, original.title);
+        expect(find.text('Edited deadline'), findsOneWidget);
+      }
       final localDue = original.due.toLocal();
       final editedDue = DateTime(
         localDue.year,
@@ -780,6 +812,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Edited deadline'), findsOneWidget);
       expect(assignments.findImportedDeadline(original)?.due, editedDue);
+      expect(assignments.findImportedDeadline(original)?.notes, 'Saved notes');
 
       await tester.pumpWidget(buildPage(home: const HomePage()));
       await tester.pumpAndSettle();
@@ -798,11 +831,19 @@ void main() {
         expect(tester.getTopRight(editAction).dx, greaterThan(tester.getTopRight(progressBar).dx));
       }
       await openEditor(editAction);
-      await tester.ensureVisible(find.text('恢复来源信息'));
-      await tester.tap(find.text('恢复来源信息'));
-      await tester.pumpAndSettle();
+      expect(restore, findsOneWidget);
+      await tester.enterText(notes, 'Draft notes');
+      await tester.pump();
+      await tapRestore();
       expect(assignments.findImportedDeadline(original)?.title, original.title);
       expect(assignments.findImportedDeadline(original)?.due, original.due);
+      expect(assignments.findImportedDeadline(original)?.notes, 'Saved notes');
+      expect(tester.widget<EditableText>(notes).controller.text, 'Draft notes');
+      expect(restore, findsNothing);
+      await tester.ensureVisible(find.text('保存'));
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      expect(assignments.findImportedDeadline(original)?.notes, 'Draft notes');
     },
     variant: const TargetPlatformVariant(
       {TargetPlatform.iOS, TargetPlatform.android, TargetPlatform.macOS},

@@ -23,6 +23,7 @@ Future<T?> showAdaptiveAlertDialog<T>({
   required String title,
   required String message,
   required List<AdaptiveAlertAction<T>> actions,
+  bool centerContent = false,
 }) {
   final usesIosDialog = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
   final normalizedActions = _normalizeActions(actions);
@@ -41,6 +42,7 @@ Future<T?> showAdaptiveAlertDialog<T>({
     title: title,
     message: message,
     actions: normalizedActions,
+    centerContent: centerContent,
   );
 }
 
@@ -91,34 +93,49 @@ Future<T?> _showFlutterAlertDialog<T>({
   required String title,
   required String message,
   required List<AdaptiveAlertAction<T>> actions,
+  required bool centerContent,
 }) {
   return showDialog<T>(
     context: context,
     builder: (dialogContext) {
       final colors = dialogContext.tpColors;
+      final alignment = centerContent ? TextAlign.center : null;
+      final buttons = [
+        for (final action in actions)
+          action.isDefault && !action.isDestructive
+              ? FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, action.value),
+                  child: Text(action.label, textAlign: alignment),
+                )
+              : TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: action.isDestructive
+                        ? colors.dangerRed
+                        : colors.textSecondary,
+                  ),
+                  onPressed: () => Navigator.pop(dialogContext, action.value),
+                  child: Text(action.label, textAlign: alignment),
+                ),
+      ];
       return AlertDialog(
         // A release changelog can be longer than a dialog is tall; without this
         // the content is clipped rather than scrolled.
         scrollable: true,
-        title: Text(title),
-        content: message.trim().isEmpty ? null : Text(message),
-        actions: [
-          for (final action in actions)
-            action.isDefault && !action.isDestructive
-                ? FilledButton(
-                    onPressed: () => Navigator.pop(dialogContext, action.value),
-                    child: Text(action.label),
-                  )
-                : TextButton(
-                    style: TextButton.styleFrom(
-                      foregroundColor: action.isDestructive
-                          ? colors.dangerRed
-                          : colors.textSecondary,
-                    ),
-                    onPressed: () => Navigator.pop(dialogContext, action.value),
-                    child: Text(action.label),
-                  ),
-        ],
+        title: Text(title, textAlign: alignment),
+        content: message.trim().isEmpty ? null : Text(message, textAlign: alignment),
+        actionsAlignment: centerContent ? MainAxisAlignment.center : null,
+        actions: centerContent && buttons.length == 2
+            ? [
+                Table(
+                  defaultColumnWidth: const FlexColumnWidth(),
+                  columnWidths: const {1: FixedColumnWidth(TpTokens.space2)},
+                  defaultVerticalAlignment: TableCellVerticalAlignment.intrinsicHeight,
+                  children: [
+                    TableRow(children: [buttons.first, const SizedBox.shrink(), buttons.last]),
+                  ],
+                ),
+              ]
+            : buttons,
       );
     },
   );

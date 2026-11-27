@@ -1,13 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import '../models/assignment.dart';
 import '../services/assignment_service.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_confirmation_button.dart';
 import '../widgets/adaptive_date_picker.dart';
@@ -64,21 +65,34 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
   late final _course = TextEditingController(text: widget.deadline?.course);
   late final _location = TextEditingController(text: _custom?.location);
   late final _notes = TextEditingController(text: widget.deadline?.notes);
-  late DateTime? _date = widget.deadline?.due.toLocal();
+  late final _textChanges = Listenable.merge([_title, _course, _location, _notes]);
+  late Assignment? _savedDeadline = widget.deadline;
+  late DateTime? _date = _savedDeadline?.due.toLocal();
   late TimeOfDay? _time = _date == null ? null : TimeOfDay.fromDateTime(_date!);
-  late DateTime? _lateDate = widget.deadline?.effectiveLateDue?.toLocal();
+  late DateTime? _lateDate = _savedDeadline?.effectiveLateDue?.toLocal();
   late TimeOfDay? _lateTime = _lateDate == null ? null : TimeOfDay.fromDateTime(_lateDate!);
   bool _busy = false;
+  bool _confirmingExit = false;
 
   String? get _id => widget.deadline?.id;
   CustomDeadline? get _custom => switch (widget.deadline) {
         final CustomDeadline deadline => deadline,
         _ => null,
       };
-  Assignment? get _imported => _custom == null ? widget.deadline : null;
+  Assignment? get _imported => _custom == null ? _savedDeadline : null;
+  String get _initialNotes => widget.deadline?.notes.trim() ?? '';
   bool get _workspaceChanged => _imported != null
       ? widget.epoch != widget.service.identityEpoch
       : widget.owner != widget.service.customDeadlineOwner;
+  bool get _hasUnsavedSourceChanges =>
+      _title.text.trim() != (_savedDeadline?.title.trim() ?? '') ||
+      _course.text.trim() != (_savedDeadline?.course.trim() ?? '') ||
+      _deadlineChanged(_date, _time, _savedDeadline?.due.toLocal()) ||
+      _deadlineChanged(_lateDate, _lateTime, _savedDeadline?.effectiveLateDue?.toLocal());
+  bool get _hasUnsavedChanges =>
+      _hasUnsavedSourceChanges ||
+      _location.text.trim() != (_custom?.location.trim() ?? '') ||
+      _notes.text.trim() != _initialNotes;
 
   @override
   void dispose() {
@@ -129,6 +143,10 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
   static DateTime _dateTime(DateTime date, TimeOfDay time) =>
       DateTime(date.year, date.month, date.day, time.hour, time.minute);
 
+  static bool _deadlineChanged(DateTime? date, TimeOfDay? time, DateTime? initial) =>
+      !DateUtils.isSameDay(date, initial) ||
+      time != (initial == null ? null : TimeOfDay.fromDateTime(initial));
+
   static DateTime? _changedTime(DateTime value, DateTime? initial) {
     final local = initial?.toLocal();
     if (local == null) return value;
@@ -160,14 +178,13 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
           epoch: widget.epoch,
           title: title == imported.title.trim() ? null : title,
           course: course == imported.course.trim() ? null : course,
-          notes: notes == imported.notes.trim() ? null : notes,
+          notes: notes == _initialNotes ? null : notes,
           due: _changedTime(due, imported.due),
           lateDue: lateDate == null || lateTime == null
               ? null
               : _changedTime(_dateTime(lateDate, lateTime), imported.effectiveLateDue),
         ),
         errorMessage: '保存失败，请重试',
-        close: true,
       );
       return;
     }
@@ -183,9 +200,53 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
         due: _changedTime(due, originalDue) ?? originalDue ?? due,
       ),
       errorMessage: '保存失败，请重试',
-      close: true,
     );
   }
+
+  Future<void> _confirmExit() async {
+    if (_busy || _confirmingExit || !_hasUnsavedChanges) return;
+    _confirmingExit = true;
+    try {
+      FocusManager.instance.primaryFocus?.unfocus();
+      final discard = await showAdaptiveAlertDialog<bool>(
+        context: context,
+        title: '放弃未保存的修改？',
+        message: '',
+        centerContent: true,
+        actions: const [
+          AdaptiveAlertAction(label: '继续编辑', value: false, isDefault: true),
+          AdaptiveAlertAction(label: '放弃并退出', value: true, isDestructive: true),
+        ],
+      );
+      if (discard == true && mounted && ModalRoute.isCurrentOf(context) == true) {
+        Navigator.pop(context);
+      }
+    } finally {
+      _confirmingExit = false;
+    }
+  }
+
+  Future<void> _restoreSource(Assignment imported) => _runAction(
+        () async {
+          await widget.service.restoreImportedDeadline(imported, epoch: widget.epoch);
+          if (!mounted || _workspaceChanged) return;
+          final restored = widget.service.findImportedDeadline(imported);
+          if (restored == null) return;
+          final due = restored.due.toLocal();
+          final lateDue = restored.effectiveLateDue?.toLocal();
+          setState(() {
+            _savedDeadline = restored;
+            _title.text = restored.title;
+            _course.text = restored.course;
+            _date = due;
+            _time = TimeOfDay.fromDateTime(due);
+            _lateDate = lateDue;
+            _lateTime = lateDue == null ? null : TimeOfDay.fromDateTime(lateDue);
+          });
+        },
+        errorMessage: '恢复失败，请重试',
+        close: false,
+      );
 
   void _showError(String message) => showAdaptiveFeedback(
         context: context,
@@ -196,14 +257,14 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
   Future<void> _runAction(
     Future<void> Function() action, {
     required String errorMessage,
-    bool close = false,
+    bool close = true,
   }) async {
-    if (_busy || _workspaceChanged) return;
+    if (_busy || _confirmingExit || _workspaceChanged) return;
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _busy = true);
     try {
       await action();
-      if (close && mounted) Navigator.pop(context);
+      if (close && mounted && ModalRoute.isCurrentOf(context) == true) Navigator.pop(context);
     } catch (error) {
       if (!mounted) return;
       _showError(
@@ -223,7 +284,7 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
       extra: TpTokens.space3,
     );
 
-    return Scaffold(
+    final page = Scaffold(
       backgroundColor: colors.canvas,
       extendBodyBehindAppBar: AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
       appBar: AdaptiveNavigationScaffold.adaptiveBar(
@@ -273,6 +334,51 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
               ),
             ],
           );
+        },
+      ),
+    );
+    return ListenableBuilder(
+      listenable: _textChanges,
+      child: page,
+      builder: (context, child) {
+        final hasUnsavedChanges = _hasUnsavedChanges;
+        return PopScope<void>(
+          canPop: !_busy && !hasUnsavedChanges,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) unawaited(_confirmExit());
+          },
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              child!,
+              if (isIos() && hasUnsavedChanges && !_busy) _buildBackSwipe(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBackSwipe() {
+    // PopScope disables CupertinoPageRoute's interactive swipe while dirty.
+    final isRtl = Directionality.of(context) == TextDirection.rtl;
+    final padding = MediaQuery.paddingOf(context);
+    final leadingInset = isRtl ? padding.right : padding.left;
+    final edgeWidth = leadingInset < 20 ? 20.0 : leadingInset;
+    return PositionedDirectional(
+      start: 0,
+      top: 0,
+      bottom: 0,
+      width: edgeWidth,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        excludeFromSemantics: true,
+        onHorizontalDragEnd: (details) {
+          final velocity = (details.primaryVelocity ?? 0) * (isRtl ? -1 : 1);
+          final distance = isRtl ? -details.localPosition.dx : details.localPosition.dx - edgeWidth;
+          if (velocity > 0 || (velocity == 0 && distance >= 48)) {
+            unawaited(maybePopAdaptivePage<void>(context));
+          }
         },
       ),
     );
@@ -344,40 +450,28 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
           loading: _busy,
           height: 46,
         ),
-        if (imported != null && widget.service.hasImportedDeadlineEdit(imported)) ...[
-          const SizedBox(height: TpTokens.space2),
-          AdaptiveButton(
-            onPressed: _busy
-                ? null
-                : () => unawaited(
-                      _runAction(
-                        () => widget.service.restoreImportedDeadline(imported, epoch: widget.epoch),
-                        errorMessage: '恢复失败，请重试',
-                        close: true,
-                      ),
-                    ),
-            icon: TpIcons.refresh,
-            sfSymbol: 'arrow.uturn.backward',
-            label: '恢复来源信息',
-            role: AdaptiveButtonRole.plain,
+        if (imported != null)
+          ListenableBuilder(
+            listenable: _textChanges,
+            builder: (context, _) {
+              if (!_hasUnsavedSourceChanges &&
+                  !widget.service.hasImportedDeadlineSourceEdit(imported)) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: TpTokens.space2),
+                child: AdaptiveButton(
+                  onPressed: _busy ? null : () => unawaited(_restoreSource(imported)),
+                  icon: TpIcons.refresh,
+                  sfSymbol: 'arrow.uturn.backward',
+                  label: '恢复来源信息',
+                  role: AdaptiveButtonRole.plain,
+                ),
+              );
+            },
           ),
-        ],
         if (current != null) ...[
           const SizedBox(height: TpTokens.space2),
-          AdaptiveButton(
-            onPressed: _busy
-                ? null
-                : () => unawaited(
-                      _runAction(
-                        () => widget.service.toggleCompleted(current),
-                        errorMessage: '更新完成状态失败，请重试',
-                      ),
-                    ),
-            icon: current.completed ? TpIcons.refresh : TpIcons.checkCircle,
-            sfSymbol: current.completed ? 'arrow.uturn.backward' : 'checkmark.circle',
-            label: current.completed ? '取消完成' : '标记完成',
-            role: AdaptiveButtonRole.plain,
-          ),
           IgnorePointer(
             ignoring: _busy,
             child: AdaptiveConfirmationButton(
@@ -394,7 +488,6 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
                     owner: widget.owner,
                   ),
                   errorMessage: '删除失败，请重试',
-                  close: true,
                 ),
               ),
             ),

@@ -98,8 +98,10 @@ class AssignmentService extends ChangeNotifier {
       item.id == assignment.id &&
       item.platform.toLowerCase() == assignment.platform.toLowerCase();
 
-  bool hasImportedDeadlineEdit(Assignment assignment) =>
-      _overrides.edits.containsKey(_importedEditKey(assignment));
+  bool hasImportedDeadlineSourceEdit(Assignment assignment) {
+    final edit = _overrides.edits[_importedEditKey(assignment)];
+    return edit?.title != null || edit?.course != null || edit?.due != null || edit?.lateDue != null;
+  }
 
   void _rebuildAssignments() {
     _assignments = List.unmodifiable(
@@ -543,7 +545,11 @@ class AssignmentService extends ChangeNotifier {
       });
 
   Future<void> restoreImportedDeadline(Assignment assignment, {required int epoch}) =>
-      _changeImportedDeadlineEdit(assignment, epoch, (_, __) => null);
+      _changeImportedDeadlineEdit(assignment, epoch, (_, previous) {
+        final notes = previous?.notes;
+        if (notes == null) return null;
+        return (title: null, course: null, notes: notes, due: null, lateDue: null);
+      });
 
   Future<void> _changeImportedDeadlineEdit(
     Assignment assignment,

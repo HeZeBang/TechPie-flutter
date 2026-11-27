@@ -340,7 +340,9 @@ void main() {
     );
     await service.saveImportedDeadlineEdit(original, epoch: oldEpoch, notes: 'Bring notes');
     expect(service.assignments.single.due.toUtc(), originalDue);
+    expect(service.hasImportedDeadlineSourceEdit(original), isFalse);
     await service.saveImportedDeadlineEdit(original, epoch: oldEpoch, due: editedDue);
+    expect(service.hasImportedDeadlineSourceEdit(original), isTrue);
 
     await service.fetchPlatform('gradescope');
     service.loadCached();
@@ -355,7 +357,7 @@ void main() {
 
     await fixture.thirdParty.replaceAll([_gradescopeAccount('new-account', 'new-token')]);
     await service.fetchPlatform('gradescope');
-    expect(service.hasImportedDeadlineEdit(service.assignments.single), isFalse);
+    expect(service.hasImportedDeadlineSourceEdit(service.assignments.single), isFalse);
     await expectLater(
       service.saveImportedDeadlineEdit(original, epoch: oldEpoch, title: 'Stale draft'),
       throwsStateError,
@@ -367,7 +369,8 @@ void main() {
     await service.restoreImportedDeadline(edited, epoch: service.identityEpoch);
     service.loadCached();
     expect(service.assignments.single.due.millisecondsSinceEpoch ~/ 1000, latest['due']);
-    expect(service.assignments.single.notes, isEmpty);
+    expect(service.assignments.single.notes, 'Bring notes');
+    expect(service.hasImportedDeadlineSourceEdit(service.assignments.single), isFalse);
   });
 
   test('scopes matching legacy reminder completions and keeps manual overrides', () async {

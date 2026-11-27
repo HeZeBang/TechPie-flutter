@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/campus_card/app/app_runtime.dart';
@@ -159,11 +160,91 @@ void main() {
       await tester.tap(find.text('编辑'));
       await tester.pumpAndSettle();
       expect(find.byType(DeadlineEditorPage), findsOneWidget);
-      await tester.ensureVisible(find.text('标记完成'));
-      await tester.tap(find.text('标记完成'));
+      await tester.ensureVisible(find.text('删除'));
+      expect(find.text('删除').hitTestable(), findsOneWidget);
+      expect(find.text('标记完成'), findsNothing);
+      expect(find.text('取消完成'), findsNothing);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'leaving a Deadline editor with a draft requires confirmation',
+    (tester) async {
+      const alertChannel = MethodChannel('cn_alert');
+      final messenger = tester.binding.defaultBinaryMessenger;
+      var confirmationCount = 0;
+      var discard = false;
+      messenger.setMockMethodCallHandler(alertChannel, (call) async {
+        expectSync(call.method, 'show');
+        expectSync(call.arguments['title'], '放弃未保存的修改？');
+        final actions = call.arguments['actions'] as List;
+        expectSync(actions.map((action) => action['label']), ['继续编辑', '放弃并退出']);
+        confirmationCount++;
+        return {'index': discard ? 1 : 0};
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(alertChannel, null));
+      await pumpApp(tester);
+      selectTab(tester, 2);
       await tester.pumpAndSettle();
-      expect(assignmentService.visibleAssignments.single.submitted, isTrue);
-      expect(find.text('取消完成'), findsOneWidget);
+
+      final editor = find.byType(DeadlineEditorPage);
+      final title = find.byType(EditableText).first;
+
+      Future<void> openEditor() async {
+        unawaited(DeadlineEditorPage.open(tester.element(find.byType(AssignmentsPage))));
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> tapBack() async {
+        final bar = find.descendant(of: editor, matching: find.byType(IosNativeNavigationBar));
+        tester.widget<IosNativeNavigationBar>(bar).onItemPressed!('back');
+        await tester.pumpAndSettle();
+      }
+
+      await openEditor();
+      await tapBack();
+      expect(editor, findsNothing);
+      expect(confirmationCount, 0);
+
+      await openEditor();
+      await tester.enterText(title, 'Draft deadline');
+      await tester.pumpAndSettle();
+      await tapBack();
+      expect(confirmationCount, 1);
+      expect(tester.widget<EditableText>(title).controller.text, 'Draft deadline');
+
+      selectTab(tester, 0);
+      await tester.pumpAndSettle();
+      selectTab(tester, 2);
+      await tester.pumpAndSettle();
+      expect(tester.widget<EditableText>(title).controller.text, 'Draft deadline');
+      final bar = tester.getRect(find.byType(CNTabBar));
+      await tester.tapAt(Offset(bar.left + bar.width * 5 / 8, bar.top + 24));
+      await tester.pumpAndSettle();
+      expect(confirmationCount, 2);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(confirmationCount, 3);
+
+      await tester.enterText(title, '');
+      await tester.pumpAndSettle();
+      await tapBack();
+      expect(editor, findsNothing);
+      expect(confirmationCount, 3);
+
+      await openEditor();
+      await tester.tap(find.text('截止日期'));
+      await tester.pumpAndSettle();
+      tester.widget<IosSheetHeader>(find.byType(IosSheetHeader)).onConfirm!();
+      await tester.pumpAndSettle();
+      discard = true;
+      await tester.dragFrom(const Offset(1, 350), const Offset(220, 0));
+      await tester.pumpAndSettle();
+      expect(confirmationCount, 4);
+      expect(editor, findsNothing);
+      expect(assignmentService.visibleAssignments, isEmpty);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
