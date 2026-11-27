@@ -26,6 +26,7 @@ import '../models/renew_status.dart';
 import '../models/third_party_account.dart';
 import '../models/user_session.dart';
 import '../utils/secure_storage.dart';
+import 'startup_trace.dart';
 import 'sync_envelope.dart';
 
 class StorageService {
@@ -64,6 +65,16 @@ class StorageService {
 
   final ValueNotifier<int> pinnedQuickFeaturesVersion = ValueNotifier<int>(0);
   final ValueNotifier<bool> hideCampusCardBalanceNotifier;
+
+  /// Every secure read in the boot path goes through here so the trace can
+  /// show both the key and the platform-channel cost. Values are never logged.
+  Future<String?> _readSecure(String key) async {
+    if (!startupTraceEnabled) return _secure.read(key: key);
+    final watch = Stopwatch()..start();
+    final value = await _secure.read(key: key);
+    StartupTrace.mark('secure.read $key ${watch.elapsedMilliseconds}ms');
+    return value;
+  }
 
   String? get campusWebOwner => _prefs.getString('campus_web_owner');
   Future<void> setCampusWebOwner(String owner) => _prefs.setString('campus_web_owner', owner);
@@ -112,7 +123,7 @@ class StorageService {
   }
 
   Future<UserSession?> loadSession() async {
-    final raw = await _secure.read(key: _sessionKey);
+    final raw = await _readSecure(_sessionKey);
     if (raw == null) return null;
     return UserSession.fromJson(jsonDecode(raw) as Map<String, dynamic>);
   }
@@ -147,7 +158,7 @@ class StorageService {
       _secure.write(key: 'third_party_ids_pending', value: jsonEncode({'account': account, 'credential': credential.toJson()}));
 
   Future<({String account, IdsPasskey credential})?> loadIdsCandidate() async {
-    final value = await _secure.read(key: 'third_party_ids_pending');
+    final value = await _readSecure('third_party_ids_pending');
     if (value == null) return null;
     final json = jsonDecode(value) as Map<String, dynamic>;
     return (account: json['account'] as String, credential: IdsPasskey.fromJson((json['credential'] as Map).cast<String, dynamic>()));
@@ -179,7 +190,7 @@ class StorageService {
   }
 
   Future<ThirdPartyAccount?> loadThirdPartyAccount(ThirdPartyPlatform p) async {
-    final raw = await _secure.read(key: _thirdPartyKey(p));
+    final raw = await _readSecure(_thirdPartyKey(p));
     if (raw == null) return null;
     try {
       return ThirdPartyAccount.fromJson(
@@ -197,7 +208,7 @@ class StorageService {
       // Read published campus accounts under their old keys. All writes use ids.
       if (p == ThirdPartyPlatform.ids && acc == null) {
         for (final legacyKey in _legacyCampusKeys) {
-          final raw = await _secure.read(key: legacyKey);
+          final raw = await _readSecure(legacyKey);
           if (raw == null) continue;
           try {
             acc = ThirdPartyAccount.fromJson(
@@ -244,7 +255,7 @@ class StorageService {
   }
 
   Future<String?> loadDerivedCookie(String nodeId) async {
-    return _secure.read(key: '$_derivedCookieKeyPrefix$nodeId');
+    return _readSecure('$_derivedCookieKeyPrefix$nodeId');
   }
 
   Future<void> clearDerivedCookie(String nodeId) async {
@@ -407,7 +418,7 @@ class StorageService {
   String? get syncLastAt => _prefs.getString(_syncLastAtKey);
   Future<void> setSyncLastAt(String iso) => _prefs.setString(_syncLastAtKey, iso);
 
-  Future<String?> loadSyncMasterKey() => _secure.read(key: _syncMasterKeyKey);
+  Future<String?> loadSyncMasterKey() => _readSecure(_syncMasterKeyKey);
   Future<void> saveSyncMasterKey(String serialized) =>
       _secure.write(key: _syncMasterKeyKey, value: serialized);
   Future<void> clearSyncMasterKey() => _secure.delete(key: _syncMasterKeyKey);

@@ -37,6 +37,7 @@ class SessionTree extends ChangeNotifier {
     this.recordRenewStatus,
     this.persistProbe,
     this.persistRenewTimestamp,
+    this.awaitHydration,
   }) {
     ids = SessionNode(
       id: 'ids',
@@ -171,6 +172,9 @@ class SessionTree extends ChangeNotifier {
     for (final n in [ids, gradescope, hydro]) {
       n.addListener(notifyListeners);
     }
+    for (final n in [ids, gradescope, hydro, eams, elearning, egateApp, oa]) {
+      n.awaitHydration = awaitHydration;
+    }
   }
   final Future<ThirdPartyAccount> Function(ThirdPartyAccount current)? localAccountRenew;
   final bool Function()? localCanRenew;
@@ -178,6 +182,9 @@ class SessionTree extends ChangeNotifier {
   final PersistAccount persist;
   final PersistDerivedCookie? persistDerived;
   final PersistProbe? persistProbe;
+
+  /// Optional boot gate shared by every node. Null means no gating.
+  final Future<void> Function()? awaitHydration;
   final PersistRenewStatus? recordRenewStatus;
   final PersistRenewTimestamp? persistRenewTimestamp;
   final LoggingHttpClient http;
@@ -252,6 +259,7 @@ class SessionTree extends ChangeNotifier {
     SessionNode node,
     Future<CookieAction<T>> Function(CookieProvider provider) action,
   ) async {
+    await awaitHydration?.call();
     int? parentEpochBeforeChildRenew;
     // First level: single-node renew-retry (handles initial minting + 401).
     var result = await _renewRetry(
@@ -318,8 +326,10 @@ class SessionTree extends ChangeNotifier {
   /// the new parent tgc. Best effort: null means nothing fresh could be
   /// produced (the page should still open and fall back to the campus SSO
   /// redirect).
-  Future<CookieProvider?> freshCookie(SessionNode node) async =>
-      await _ensureUsable(node) ? node.cookieProvider : null;
+  Future<CookieProvider?> freshCookie(SessionNode node) async {
+    await awaitHydration?.call();
+    return await _ensureUsable(node) ? node.cookieProvider : null;
+  }
 
   /// Renews [node] when its schedule says it is due, parent first, minting the
   /// downstream cookie when it is missing. Returns whether the node can be

@@ -6,6 +6,7 @@ import 'package:desktop_webview_window/desktop_webview_window.dart'
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,6 +38,7 @@ import 'services/pnp_minor_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
 import 'services/spending_alert_service.dart';
+import 'services/startup_trace.dart';
 import 'services/storage_service.dart';
 import 'services/student_allowance_service.dart';
 import 'services/student_leave_service.dart';
@@ -61,17 +63,21 @@ import 'widgets/update_dialogs.dart';
 Future<void> spendingBackgroundRefresh() => runSpendingBackgroundRefresh();
 
 void main(List<String> args) async {
+  StartupTrace.mark('main');
   // If this Flutter engine is a desktop_webview_window title bar (secondary
   // engine inside the webview popup), render the navigation controls and
   // return early — do not start the full TechPie app.
   if (runWebViewTitleBarWidget(args)) return;
 
   WidgetsFlutterBinding.ensureInitialized();
+  StartupTrace.mark('binding');
   await initializePlatformCapabilities();
+  StartupTrace.mark('platform_capabilities');
   if (isAndroid()) {
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   }
   await initializeCampusUserAgent();
+  StartupTrace.mark('campus_user_agent');
   // OHOS white-screen probe disabled to speed up startup. Re-enable by
   // restoring the runApp(_BootProbe...) calls and wrapping init in try/catch.
   // runApp(const _BootProbe(message: '启动中…'));
@@ -89,13 +95,17 @@ void main(List<String> args) async {
   // }
 
   final prefs = await SharedPreferences.getInstance();
+  StartupTrace.mark('preferences');
   await _realMain(prefs);
 }
 
 Future<void> _realMain(SharedPreferences prefs) async {
+  StartupTrace.mark('real_main');
   final storageService = StorageService(prefs);
   await storageService.migrateLegacyDefaultColorScheme();
+  StartupTrace.mark('color_scheme_migration');
   final package = await PackageInfo.fromPlatform();
+  StartupTrace.mark('package_info');
   const collector = String.fromEnvironment(
     'TECHPIE_TELEMETRY_URL',
     defaultValue: 'https://techpie.geekpie.club/api/telemetry',
@@ -109,6 +119,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     platform: kIsWeb ? 'web' : defaultTargetPlatform.name.toLowerCase(),
     existingInstall: storageService.privacyAccepted,
   );
+  StartupTrace.mark('telemetry_constructed');
   final configuredProxy =
       supportsInAppProxy() && storageService.appProxyEnabled
           ? normalizeAppProxy(storageService.appProxyUrl)
@@ -254,23 +265,26 @@ Future<void> _realMain(SharedPreferences prefs) async {
     } catch (_) {}
   };
 
-  // Boot timings, debug only: this is exactly what the splash waits for. Work
-  // that the first frame does not need belongs after `runApp` below.
-  final bootWatch = Stopwatch()..start();
-  void bootMark(String phase) {
-    if (!kDebugMode) return;
-    debugPrint('[BOOT] $phase ${bootWatch.elapsedMilliseconds}ms');
-  }
-
-  bootMark('services built');
+  // Boot timings are opt-in (`--dart-define=BOOT_TRACE=true`); the marks are
+  // compiled in but cost a constant check in normal builds.
+  StartupTrace.mark('services_built');
 
   // -- Boot critical path: local I/O only --
   // Hydrate everything from caches so the first frame paints with data.
+  thirdPartyAuthService.armDeferredHydration();
   await authService.loadSession();
-  await thirdPartyAuthService.initialize();
+  StartupTrace.mark('auth_session');
+  await thirdPartyAuthService.initializeCritical();
+  StartupTrace.mark('third_party_critical');
+  // Identity ordering: webview pages may read the owner as soon as they are
+  // reachable, so attach before runApp. This only registers listeners and
+  // triggers prefs/native WebView cleanup; it does not read secure storage.
   thirdPartyAuthService.campusWebSession.attachAuth(authService);
+  StartupTrace.mark('web_session_attach');
   assignmentService.loadCached();
+  StartupTrace.mark('assignment_cache');
   await scheduleService.loadCachedData();
+  StartupTrace.mark('schedule_cache');
 
   runApp(
     TechPieApp(
@@ -300,32 +314,92 @@ Future<void> _realMain(SharedPreferences prefs) async {
     ),
   );
 
-  spendingAlertService.start(authService, campusCardService);
-  bootMark('cached data ready');
-  if (isApple || (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux)) {
-    deadlineWidgetService.initialize();
-  }
-  if (homeWidgetsService.enabled) {
-    homeWidgetsService.initialize();
+  StartupTrace.mark('run_app');
+  var deferredBootStarted = false;
+  void startDeferredBootWork() {
+    if (deferredBootStarted) return;
+    deferredBootStarted = true;
+    StartupTrace.mark('deferred_boot_start');
+    // Everything below can touch secure storage or platform channels. Start
+    // it only after the first frame has actually been rasterized, so the
+    // pre-raster secure I/O is exactly the four critical reads above.
+    unawaited(thirdPartyAuthService.hydrateDeferred());
+
+    spendingAlertService.start(authService, campusCardService);
+    StartupTrace.mark('spending_alert_start');
+    if (isApple || (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux)) {
+      deadlineWidgetService.initialize();
+      StartupTrace.mark('deadline_widget_init');
+    }
+    if (homeWidgetsService.enabled) {
+      homeWidgetsService.initialize();
+      StartupTrace.mark('home_widgets_init');
+    }
+
+    islandService.start();
+    StartupTrace.mark('island_start');
+    unawaited(campusCardService.refreshAccount());
+
+    // The home-screen widget / shortcut only needs its handler once something
+    // could press it — a widget tap on iOS/Android, a long-press shortcut on OHOS.
+    if (isIos() ||
+        (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) ||
+        isAndroid() ||
+        isOhos()) {
+      ecardWidgetService.initialize();
+      StartupTrace.mark('ecard_widget_init');
+    }
+
+    // Build the campus-card runtime now that the first frame is up, so tapping
+    // the pass does not pay for it. This used to run before the frame even
+    // though it touches the credential store and the native channel.
+    campusCardService.prepare();
+    StartupTrace.mark('campus_card_prepare');
+    if (wearEngineService != null) {
+      unawaited(wearEngineService.reconcileAccount());
+    }
   }
 
-  islandService.start();
-  oaGymService.startProfileSync();
-  unawaited(campusCardService.refreshAccount());
+  var tracedFrames = 0;
+  var firstFrameRasterized = false;
+  late final void Function(List<FrameTiming>) onTimings;
+  onTimings = (timings) {
+    if (timings.isEmpty) return;
+    if (!firstFrameRasterized) {
+      firstFrameRasterized = true;
+      StartupTrace.mark('first_frame_rasterized');
+      startDeferredBootWork();
+    }
+    if (startupTraceEnabled) {
+      for (final timing in timings) {
+        if (tracedFrames >= 3) break;
+        tracedFrames++;
+        StartupTrace.mark(
+          'frame_$tracedFrames '
+          'build=${timing.buildDuration.inMilliseconds}ms '
+          'raster=${timing.rasterDuration.inMilliseconds}ms',
+        );
+      }
+    }
+    if (!startupTraceEnabled || tracedFrames >= 3) {
+      SchedulerBinding.instance.removeTimingsCallback(onTimings);
+    }
+  };
+  SchedulerBinding.instance.addTimingsCallback(onTimings);
 
-  // The home-screen widget / shortcut only needs its handler once something
-  // could press it — a widget tap on iOS/Android, a long-press shortcut on OHOS.
-  if (isIos() ||
-      (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) ||
-      isAndroid() ||
-      isOhos()) {
-    ecardWidgetService.initialize();
-  }
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    StartupTrace.mark('first_frame');
+    // Safety net for platforms that do not report frame timings. The normal
+    // path is first_frame_rasterized; this only avoids a permanently closed
+    // network gate, and is never the signal used for acceptance metrics.
+    Timer(const Duration(seconds: 2), () {
+      if (!deferredBootStarted) {
+        StartupTrace.mark('first_frame_fallback');
+        startDeferredBootWork();
+      }
+    });
+  });
 
-  // Build the campus-card runtime now that the first frame is up, so tapping the
-  // pass does not pay for it. Nothing session-related happens here: a request
-  // that needs a session issues one itself.
-  campusCardService.prepare();
   if (wearEngineService != null) {
     void accountChanged() => unawaited(wearEngineService.reconcileAccount());
     void deadlinesChanged() {
@@ -362,7 +436,6 @@ Future<void> _realMain(SharedPreferences prefs) async {
     thirdPartyAuthService.addListener(accountChanged);
     campusCardService.addListener(accountChanged);
     assignmentService.addListener(deadlinesChanged);
-    unawaited(wearEngineService.reconcileAccount());
   }
 
   // -- Background: renew tokens first (main SSO session + third-party in
@@ -370,6 +443,12 @@ Future<void> _realMain(SharedPreferences prefs) async {
   // depend on those tokens. The whole block is unawaited so the splash
   // never blocks. --
   unawaited(() async {
+    // Derived cookies are optional for the first frame but every campus
+    // request needs them. Wait for the post-frame hydration (or its failure)
+    // before the first renewal/fetch; SessionNode also gates direct callers.
+    await thirdPartyAuthService.deferredHydration;
+    oaGymService.startProfileSync();
+    StartupTrace.mark('oa_gym_profile_sync');
     // Primary SSO renewal uses Casdoor's refresh-token grant. Only an explicit
     // grant rejection (`invalid_grant` / `invalid_token`) means the user's
     // login expired; legacy sessions without a refresh token and transient

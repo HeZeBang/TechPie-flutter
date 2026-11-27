@@ -58,6 +58,21 @@ void main() {
     expect(service.openIdChannel, EcardOpenIdChannel.alipay);
     expect((await service.readSyncBinding())!.channel, EcardOpenIdChannel.alipay);
   });
+
+  test('watchSync builds the runtime on first read before warm-up', () async {
+    final runtime = await buildDemoRuntime();
+    final service = CampusCardService.withStore(
+      InMemorySecureCredentialStore(),
+      runtimeFactory: () => runtime,
+    );
+    addTearDown(service.dispose);
+
+    // The frame-time warm-up may not have run yet; a page is allowed to reach
+    // this getter first and must not hit a late-initialized field.
+    final first = service.watchSync;
+    final second = service.watchSync;
+    expect(identical(first, second), isTrue);
+  });
 }
 
 final class _VerifyingAuthPort implements AuthPort, OpenIdAuthVerifier {
